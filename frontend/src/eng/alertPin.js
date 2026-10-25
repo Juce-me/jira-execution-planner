@@ -62,3 +62,9 @@ export function pinScopeKey({ groupId, sprintId } = {}) {
 export function scrollTargetTop({ elementTop, scrollY, stickyBottom, guard = 12 }) {
     return Math.max(0, scrollY + elementTop - (stickyBottom + guard));
 }
+
+// Where a centered reveal must land instead so the target clears the sticky stack; null when centering already clears it.
+export function clearCenteredTarget({ elementTop, elementHeight, scrollY, viewportHeight, stickyBottom, guard = 12 }) {
+    if ((viewportHeight - elementHeight) / 2 >= stickyBottom + guard) return null;
+    return scrollTargetTop({ elementTop, scrollY, stickyBottom, guard });
+}

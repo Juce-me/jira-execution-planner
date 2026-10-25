@@ -20,14 +20,15 @@ function findStoryRequirement(requirementId) {
         .find(element => element.getAttribute('data-story-requirement-id') === normalizedId) || null;
 }
 
-const STICKY_STACK_SELECTORS = [
+export const STICKY_STACK_SELECTORS = [
     '.compact-sticky-header.is-visible',
     '.planning-panel.open',
     '.eng-filter-bar',
+    '[data-alert-pin]',
     '.epic-header',
 ];
 
-// Bottom edge of the sticky stack (compact header, Planning panel, filter bar, Epic header, plus any extra tiers the caller names).
+// Bottom edge of the sticky stack (compact header, Planning panel, filter bar, pinned alert, Epic header, plus any extra tiers the caller names).
 export function measureStickyBottom(selectors = STICKY_STACK_SELECTORS) {
     return selectors.reduce((bottom, selector) => {
         document.querySelectorAll(selector).forEach((element) => {

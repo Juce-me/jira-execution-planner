@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
     PIN_HEIGHT,
+    clearCenteredTarget,
     alertIdentitiesBySection,
     createAlertPin,
     pinScopeKey,
@@ -137,4 +138,16 @@ test('scrollTargetTop places the element below the sticky stack and clamps to 0'
     assert.equal(scrollTargetTop({ elementTop: 500, scrollY: 1000, stickyBottom: 120, guard: 12 }), 1368);
     assert.equal(scrollTargetTop({ elementTop: 500, scrollY: 1000, stickyBottom: 120 }), 1368);
     assert.equal(scrollTargetTop({ elementTop: -300, scrollY: 100, stickyBottom: 120, guard: 12 }), 0);
+});
+
+test('clearCenteredTarget keeps a centered reveal that already clears the sticky stack', () => {
+    assert.equal(clearCenteredTarget({ elementTop: 300, elementHeight: 100, scrollY: 0, viewportHeight: 800, stickyBottom: 200 }), null);
+});
+
+test('clearCenteredTarget moves a target whose centered top would sit under the sticky stack', () => {
+    // Centered top is (500 - 300) / 2 = 100, above 200 + 12, so the target lands at the guard instead.
+    assert.equal(
+        clearCenteredTarget({ elementTop: 900, elementHeight: 300, scrollY: 1000, viewportHeight: 500, stickyBottom: 200 }),
+        1688,
+    );
 });

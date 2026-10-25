@@ -65,7 +65,7 @@ test('closeAlertPin resolves from the rendered collections and the cohort settle
     assert.match(body, /dismissAlertItem\(alertPin\.identity, \{ suppressCelebration: true \}\)/);
     assert.match(body, /dismissStoryRequirement\(/);
     assert.match(body, /triggerAlertCelebration\(/);
-    assert.match(body, /scrollAfterPinClose\(outcome\.scroll\)/);
+    assert.match(body, /scrollAfterPinClose\(outcome\.scroll, alertPin\.sectionId\)/);
 });
 
 test('the alert cohort settle state flips beside every alertCohortRef set and clear', () => {

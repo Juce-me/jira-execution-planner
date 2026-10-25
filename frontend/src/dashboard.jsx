@@ -71,8 +71,9 @@ import { buildMutationScopeKey, createEngIssueEditState, overlaySnapshot, patchE
 import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
-import { navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { PIN_HEIGHT, alertIdentitiesBySection, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
+import { measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
+import { PIN_HEIGHT, alertIdentitiesBySection, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose, scrollTargetTop } from './eng/alertPin.js';
+import { alertCardId } from './shareView/focusCapture.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
@@ -4586,6 +4587,15 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const prefersReducedMotion = () => (
                 window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
             );
+            const afterTwoFrames = callback => window.requestAnimationFrame(() => window.requestAnimationFrame(callback));
+            const scrollToTop = () => window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+            // Lands the target's top just below the measured sticky stack (pin included); false when there is no target.
+            const scrollToAlertTarget = (element) => {
+                if (!element) return false;
+                const top = scrollTargetTop({ elementTop: element.getBoundingClientRect().top, scrollY: window.scrollY, stickyBottom: measureStickyBottom() });
+                window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+                return true;
+            };
 
             const highlightTaskItem = (element) => {
                 if (!element) return;
@@ -4609,6 +4619,13 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 element.scrollIntoView({
                     behavior: prefersReducedMotion() ? 'auto' : 'smooth',
                     block: 'center'
+                });
+                // The pin mounts in the same click, so check its clearance once it has laid out.
+                afterTwoFrames(() => {
+                    if (!document.querySelector('[data-alert-pin]')) return;
+                    const rect = element.getBoundingClientRect();
+                    const top = clearCenteredTarget({ elementTop: rect.top, elementHeight: rect.height, scrollY: window.scrollY, viewportHeight: window.innerHeight, stickyBottom: measureStickyBottom() });
+                    if (top !== null) window.scrollTo({ top, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
                 });
                 highlightTaskItem(element);
                 return true;
@@ -5566,9 +5583,24 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 if (!isCatchUpMode) setAlertPin(null);
             }, [activeGroupId, selectedSprint, isCatchUpMode]);
             const pinAlert = spec => setAlertPin(createAlertPin(spec));
-            // Task 5 replaces this body with the shared alert scroll helper; 'block' and 'block-or-top' do nothing until then.
-            const scrollAfterPinClose = (outcome) => {
-                if (outcome === 'top') window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+            // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
+            const revealAlertBlock = (sectionId, fallbackToTop) => {
+                setShowAlertsPanel(true);
+                shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
+                afterTwoFrames(() => {
+                    if (!scrollToAlertTarget(document.getElementById(sectionId)) && fallbackToTop) scrollToTop();
+                });
+            };
+            // Runs outside triggerAlertCelebration, which returns early under reduced motion.
+            const scrollAfterPinClose = (outcome, sectionId) => {
+                if (outcome === 'top') scrollToTop();
+                else revealAlertBlock(sectionId, outcome === 'block-or-top');
+            };
+            const scrollBackToAlerts = () => {
+                setShowAlertsPanel(true);
+                afterTwoFrames(() => {
+                    if (!scrollToAlertTarget(document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'))) scrollToTop();
+                });
             };
             const closeAlertPin = () => {
                 if (!alertPin) return;
@@ -5585,7 +5617,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                     }[alertPin.sectionId];
                     triggerAlertCelebration(paletteType ? { types: [paletteType] } : {});
                 }
-                scrollAfterPinClose(outcome.scroll);
+                scrollAfterPinClose(outcome.scroll, alertPin.sectionId);
             };
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
@@ -7044,7 +7076,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     alertCelebrationPieces={alertCelebrationPieces}
                                     alertPin={isCatchUpMode ? alertPin : null}
                                     alertPinStyle={{ '--alert-pin-top': `${compactStickyTop + filterBarHeight}px`, '--alert-pin-height': `${PIN_HEIGHT}px` }}
-                                    onPinBack={() => setShowAlertsPanel(true)}
+                                    onPinBack={scrollBackToAlerts}
                                     onPinClose={closeAlertPin}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel

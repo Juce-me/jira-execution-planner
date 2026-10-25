@@ -81,7 +81,8 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Lead Times modes Task 7: the new Mode, selection and notes props reach StatsPanel (+12).
     # Issue #209 Task 2: pinned alert state, cohort settle flag, pin sticky tier, pin/close handlers and EngView pin props;
     # re-synced to the measured size (the owner manifest held 7591) (+33 over the line above).
-    "frontend/src/dashboard.jsx": 7626,
+    # Issue #209 Task 5: the alert scroll helpers (block, back to alerts, top) and the pin clearance check in scrollToTaskItem (+32).
+    "frontend/src/dashboard.jsx": 7658,
 }
 
 

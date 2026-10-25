@@ -118,3 +118,12 @@ test('EngView passes the locate handler to the pin, and the dashboard locates th
     assert.match(dashboard, /const locateAlertPin = \(\) => revealAlertBlock\(alertPin\?\.sectionId, true, \(\) => findPinTarget\(document, alertPin, CSS\.escape\)\);/);
     assert.match(dashboard, /onPinLocate=\{locateAlertPin\}/);
 });
+
+// Follow-up 2: the pin is a rounded bordered card like the filter bar card (the app's 10px radius and border, no new value).
+test('the pinned modifier is a 10px rounded card with the app border', () => {
+    const rule = alertsCss.match(/\.alert-story\.alert-story--pinned\s*\{([^}]*)\}/);
+    assert.ok(rule, 'pinned rule');
+    assert.match(rule[1], /border:\s*1px solid var\(--border\);/);
+    assert.match(rule[1], /border-radius:\s*10px;/);
+    assert.match(rule[1], /box-sizing:\s*border-box;/);
+});

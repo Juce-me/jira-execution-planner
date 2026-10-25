@@ -6687,12 +6687,38 @@ button.alert-story-local-link:focus-visible {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) minmax(0, 0.6fr) 24px;
   column-gap: 0.55rem;
+  box-sizing: border-box;
   height: var(--alert-pin-height);
   position: sticky;
   top: var(--alert-pin-top);
   z-index: var(--sticky-filterbar-z);
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--bg-primary);
   white-space: nowrap;
+}
+.alert-story.alert-story--pinned::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    radial-gradient(
+      circle at 100% 100%,
+      transparent 10px,
+      var(--bg-primary) 10.5px) 0 0 / 9px 9px no-repeat,
+    radial-gradient(
+      circle at 0 100%,
+      transparent 10px,
+      var(--bg-primary) 10.5px) 100% 0 / 9px 9px no-repeat,
+    radial-gradient(
+      circle at 100% 0,
+      transparent 10px,
+      var(--bg-primary) 10.5px) 0 100% / 9px 9px no-repeat,
+    radial-gradient(
+      circle at 0 0,
+      transparent 10px,
+      var(--bg-primary) 10.5px) 100% 100% / 9px 9px no-repeat;
 }
 .alert-story--pinned > .icon-button--sm {
   grid-column: 1;

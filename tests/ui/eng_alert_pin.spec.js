@@ -783,6 +783,52 @@ test.describe('pinned row layout', () => {
         });
     }
 
+    // Follow-up 2: the pin is a rounded bordered card like the filter bar card above it, on that card's left and right edges.
+    for (const width of [1280, 1440]) {
+        test(`at ${width}px the pin is a 10px rounded card with the app border on the filter bar card's edges, in flow and stuck`, async ({ page }) => {
+            await openPinDashboard(page, { viewport: { width, height: 900 } });
+            await clickPrimary(page, 'eng-alert-blocked', 'PIN-3');
+            await settle(page);
+            const readCard = () => pin(page).evaluate((row) => {
+                const style = getComputedStyle(row);
+                const probe = document.createElement('span');
+                probe.style.color = 'var(--border)';
+                document.body.append(probe);
+                const border = getComputedStyle(probe).color;
+                probe.remove();
+                const box = row.getBoundingClientRect();
+                const card = document.querySelector('.filterbar').getBoundingClientRect();
+                // 2px in from each corner, outside the 10px rounded shape: the pin's own paint, never the content scrolling behind it.
+                const corners = [[box.left + 2, box.top + 2], [box.right - 2, box.top + 2], [box.left + 2, box.bottom - 2], [box.right - 2, box.bottom - 2]]
+                    .map(([x, y]) => row.contains(document.elementFromPoint(x, y)));
+                return {
+                    radii: [style.borderTopLeftRadius, style.borderTopRightRadius, style.borderBottomRightRadius, style.borderBottomLeftRadius],
+                    widths: [style.borderTopWidth, style.borderRightWidth, style.borderBottomWidth, style.borderLeftWidth],
+                    styles: [style.borderTopStyle, style.borderRightStyle, style.borderBottomStyle, style.borderLeftStyle],
+                    colors: [style.borderTopColor, style.borderRightColor, style.borderBottomColor, style.borderLeftColor],
+                    border,
+                    left: box.left, right: box.right, height: box.height, cardLeft: card.left, cardRight: card.right, corners,
+                };
+            });
+            for (const where of ['flow', 'stuck']) {
+                if (where === 'flow') await page.evaluate(() => window.scrollTo(0, 0));
+                else await page.evaluate(() => window.scrollTo(0, document.querySelector('.epic-block').getBoundingClientRect().top + window.scrollY + 200));
+                await settle(page);
+                const stack = await readStack(page);
+                expect(stack.pinStuck, where).toBe(where === 'stuck');
+                const card = await readCard();
+                expect(card.radii, where).toEqual(['10px', '10px', '10px', '10px']);
+                expect(card.widths, where).toEqual(['1px', '1px', '1px', '1px']);
+                expect(card.styles, where).toEqual(['solid', 'solid', 'solid', 'solid']);
+                expect(card.colors, where).toEqual([card.border, card.border, card.border, card.border]);
+                expect(Math.abs(card.left - card.cardLeft), `${where} left edge`).toBeLessThanOrEqual(1);
+                expect(Math.abs(card.right - card.cardRight), `${where} right edge`).toBeLessThanOrEqual(1);
+                expect(card.height, where).toBe(40);
+                if (where === 'stuck') expect(card.corners, 'stuck corners hide the content behind').toEqual([true, true, true, true]);
+            }
+        });
+    }
+
     test('header, filter bar and page shell do not move when the pin shows or hides, at the top and scrolled', async ({ page }) => {
         await openPinDashboard(page);
         const measure = () => page.evaluate(() => {

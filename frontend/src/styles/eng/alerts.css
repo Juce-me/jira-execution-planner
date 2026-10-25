@@ -691,17 +691,37 @@
 
         /* Pinned alert: the row the user opened, held under the filter bar. Top and height come from the
            dashboard's measured sticky offsets (--alert-pin-top, --alert-pin-height). The z-index and
-           background keep sticky Epic headers (z 50) from painting over or through it. */
+           background keep sticky Epic headers (z 50) from painting over or through it. It is a card like the
+           filter bar card above it (same 10px radius and border, same left and right edges); the border sits
+           inside the 40px box. */
         .alert-story.alert-story--pinned {
             display: grid;
             grid-template-columns: 24px minmax(0, 1fr) minmax(0, 0.6fr) 24px;
             column-gap: 0.55rem;
+            box-sizing: border-box;
             height: var(--alert-pin-height);
             position: sticky;
             top: var(--alert-pin-top);
             z-index: var(--sticky-filterbar-z);
+            border: 1px solid var(--border);
+            border-radius: 10px;
             background: var(--bg-primary);
             white-space: nowrap;
+        }
+
+        /* The corners outside the rounded shape: painted with the page background so content scrolling under the
+           stuck pin never shows there (the filter bar card gets the same from .filterbar-wrap::before). */
+        .alert-story.alert-story--pinned::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            z-index: -1;
+            /* The padding box: the outer 10px corner arc is centred 9px in from each corner here. Staying inside the box keeps the row from overflowing. */
+            background:
+                radial-gradient(circle at 100% 100%, transparent 10px, var(--bg-primary) 10.5px) 0 0 / 9px 9px no-repeat,
+                radial-gradient(circle at 0 100%, transparent 10px, var(--bg-primary) 10.5px) 100% 0 / 9px 9px no-repeat,
+                radial-gradient(circle at 100% 0, transparent 10px, var(--bg-primary) 10.5px) 0 100% / 9px 9px no-repeat,
+                radial-gradient(circle at 0 0, transparent 10px, var(--bg-primary) 10.5px) 100% 100% / 9px 9px no-repeat;
         }
 
         .alert-story--pinned > .icon-button--sm { grid-column: 1; }

@@ -72,7 +72,7 @@ import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
+import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, findPinTarget, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
 import { alertCardId } from './shareView/focusCapture.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
@@ -5600,6 +5600,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             };
             // Back expands the pinned category too, then lands on the alert list's top.
             const scrollBackToAlerts = () => revealAlertBlock(alertPin?.sectionId, true, () => document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'));
+            // The pin's title opens and expands its category like Back, then lands on the alert's own row (else its block, else the alert list).
+            const locateAlertPin = () => revealAlertBlock(alertPin?.sectionId, true, () => findPinTarget(document, alertPin, CSS.escape));
             const closeAlertPin = () => {
                 if (!alertPin) return;
                 const outcome = resolvePinClose(alertPin, alertIdentitiesBySection(visibleAlertCollections), { loading: !alertCohortSettled });
@@ -7076,6 +7078,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     alertPinStyle={{ '--alert-pin-top': `${compactStickyTop + filterBarHeight}px`, '--alert-pin-height': `${PIN_HEIGHT}px` }}
                                     onPinBack={scrollBackToAlerts}
                                     onPinClose={closeAlertPin}
+                                    onPinLocate={locateAlertPin}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
                                             selectedView={selectedView}

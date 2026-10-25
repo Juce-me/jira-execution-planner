@@ -87,3 +87,34 @@ test('the pinned modifier styles each tone with the summary pill tint, a left ac
     assert.match(alertsCss, /\.alert-story--pinned\[data-tone\] > \.alert-story-note\s*\{[^}]*color:\s*var\(--alert-pin-tone\)/);
     assert.doesNotMatch(alertsCss, /\.alert-story--pinned[^{]*\{[^}]*transition:\s*all/);
 });
+
+// Follow-up 1: the pin's title is the locate control, built like the list rows' alert-story-main.
+function findMain(node) {
+    if (!node || typeof node !== 'object') return null;
+    if (Array.isArray(node)) { for (const child of node) { const hit = findMain(child); if (hit) return hit; } return null; }
+    if (node.props?.className === 'alert-story-main') return node;
+    return findMain(node.props?.children);
+}
+
+test('the pin title is a button-role main that calls onLocate on click, Enter and Space only', () => {
+    const AlertPinBar = load('AlertPinBar.jsx');
+    const markup = renderToStaticMarkup(React.createElement(AlertPinBar, { pin, onBack: () => {}, onClose: () => {}, onLocate: () => {} }));
+    assert.match(markup, /<div class="alert-story-main" role="button" tabindex="0">/);
+    const calls = [];
+    const main = findMain(AlertPinBar({ pin, onBack: () => {}, onClose: () => {}, onLocate: () => calls.push('locate') }));
+    assert.ok(main, 'alert-story-main found');
+    main.props.onClick({});
+    for (const key of ['Enter', ' ', 'Tab', 'a']) {
+        const event = { key, prevented: false, preventDefault() { this.prevented = true; } };
+        main.props.onKeyDown(event);
+        assert.equal(event.prevented, key === 'Enter' || key === ' ', `${JSON.stringify(key)} prevented`);
+    }
+    assert.deepEqual(calls, ['locate', 'locate', 'locate']);
+});
+
+test('EngView passes the locate handler to the pin, and the dashboard locates through the block reveal and findPinTarget', () => {
+    assert.match(engViewSource, /<AlertPinBar[^>]*onLocate=\{onPinLocate\}/);
+    const dashboard = fs.readFileSync(path.join(root, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+    assert.match(dashboard, /const locateAlertPin = \(\) => revealAlertBlock\(alertPin\?\.sectionId, true, \(\) => findPinTarget\(document, alertPin, CSS\.escape\)\);/);
+    assert.match(dashboard, /onPinLocate=\{locateAlertPin\}/);
+});

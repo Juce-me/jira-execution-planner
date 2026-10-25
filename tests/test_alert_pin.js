@@ -191,3 +191,40 @@ test('ALERT_CATEGORY_STYLE gives all ten categories the summary-pill tone and an
     }
     assert.deepEqual([...new Set(Object.values(ALERT_CATEGORY_STYLE).map(style => style.tone))].sort(), ['blocked', 'done', 'empty', 'following', 'missing']);
 });
+
+// Follow-up 1: the pin's locate click target. A tiny DOM stand-in: sections by id, each with rows by data-alert-id.
+function fakeRoot({ sections = {}, shell = false, firstCard = null } = {}) {
+    const section = (id, rows) => ({ id, querySelector: selector => {
+        const match = selector.match(/^\.alert-story\[data-alert-id="(.*)"\]$/);
+        return match && rows.includes(match[1]) ? { row: `${id}:${match[1]}` } : null;
+    } });
+    return {
+        getElementById: id => (sections[id] ? section(id, sections[id]) : null),
+        querySelector: selector => (selector === '.alerts-panel-shell' && shell ? { shell: true }
+            : selector === '[id^="eng-alert-"]' && firstCard ? { card: firstCard } : null),
+    };
+}
+const escapeId = value => value.replace(/"/g, '\\"');
+
+test('findPinTarget returns the pinned row inside the pinned category', async () => {
+    const { findPinTarget } = await import('../frontend/src/eng/alertPin.js');
+    const root = fakeRoot({ sections: { 'eng-alert-missing': ['K-1'], 'eng-alert-blocked': ['K-1', 'K-2'] }, shell: true });
+    assert.deepEqual(findPinTarget(root, { sectionId: 'eng-alert-blocked', identity: 'K-1' }, escapeId), { row: 'eng-alert-blocked:K-1' });
+    assert.deepEqual(findPinTarget(root, { sectionId: 'eng-alert-missing', identity: 'K-1' }, escapeId), { row: 'eng-alert-missing:K-1' });
+});
+
+test('findPinTarget escapes the identity in the attribute selector', async () => {
+    const { findPinTarget } = await import('../frontend/src/eng/alertPin.js');
+    const root = fakeRoot({ sections: { 'eng-alert-needs-stories': ['a\\"b'] } });
+    assert.deepEqual(findPinTarget(root, { sectionId: 'eng-alert-needs-stories', identity: 'a"b' }, escapeId), { row: 'eng-alert-needs-stories:a\\"b' });
+});
+
+test('findPinTarget falls back to the category, then the alert list, then the first card, then null', async () => {
+    const { findPinTarget } = await import('../frontend/src/eng/alertPin.js');
+    const pin = { sectionId: 'eng-alert-blocked', identity: 'K-9' };
+    assert.equal(findPinTarget(fakeRoot({ sections: { 'eng-alert-blocked': ['K-2'] } }), pin, escapeId).id, 'eng-alert-blocked');
+    assert.deepEqual(findPinTarget(fakeRoot({ shell: true, firstCard: 'x' }), pin, escapeId), { shell: true });
+    assert.deepEqual(findPinTarget(fakeRoot({ firstCard: 'eng-alert-missing' }), pin, escapeId), { card: 'eng-alert-missing' });
+    assert.equal(findPinTarget(fakeRoot(), pin, escapeId), null);
+    assert.equal(findPinTarget(fakeRoot(), null, escapeId), null);
+});

@@ -90,3 +90,11 @@ export function alertLandingTop({ elementDocTop, headerBottom, compactHeight = 0
     const landing = compact => Math.max(0, elementDocTop - (compact + filterBarHeight + pinHeight + guard));
     return landing(0) < headerBottom ? landing(0) : landing(compactHeight);
 }
+
+// The pin's locate target: its own row in its own category, else that category (the alert was resolved), else the alert list, else null.
+export function findPinTarget(root, pin, escape) {
+    if (!pin) return null;
+    const section = root.getElementById(pin.sectionId);
+    return section?.querySelector(`.alert-story[data-alert-id="${escape(pin.identity)}"]`)
+        || section || root.querySelector('.alerts-panel-shell') || root.querySelector('[id^="eng-alert-"]') || null;
+}

@@ -237,7 +237,7 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(({ task, missingFields }) => {
                                                                         const editStoryPoints = missingFields.includes('Story Points');
                                                                         const navigateToStory = () => openAlertStory('eng-alert-missing', task.key, task.fields.summary, editStoryPoints);
-                                                                        return <div key={task.key} className="alert-story">
+                                                                        return <div key={task.key} className="alert-story" data-alert-id={task.key}>
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
@@ -326,7 +326,7 @@ export default function EngAlertsPanel({
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => {
                                                                         return (
-                                                                            <div key={task.key} className="alert-story alert-story-jump">
+                                                                            <div key={task.key} className="alert-story alert-story-jump" data-alert-id={task.key}>
                                                                                 <div
                                                                                     className="alert-story-main"
                                                                                     role="button"
@@ -403,7 +403,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => (
-                                                                        <div key={task.key} className="alert-story">
+                                                                        <div key={task.key} className="alert-story" data-alert-id={task.key}>
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
@@ -468,7 +468,7 @@ export default function EngAlertsPanel({
                                                                     </div>
                                                                     <div className="alert-stories">
                                                                         {group.items.map(epic => (
-                                                                            <div key={epic.key} className="alert-story">
+                                                                            <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                                 <div className="alert-story-main" onClick={() => openAlertStory('eng-alert-followup', epic.key, epic.summary)}>
                                                                                     {jiraUrl ? (
                                                                                         <a
@@ -544,7 +544,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => openAlertStory('eng-alert-backlog', epic.key, epic.summary)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openAlertStory('eng-alert-backlog', epic.key, epic.summary); }}>
                                                                                     <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
@@ -589,7 +589,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => openAlertStory('eng-alert-missing-team', epic.key, epic.summary)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openAlertStory('eng-alert-missing-team', epic.key, epic.summary); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</a>
                                                                             </div>
@@ -629,7 +629,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => openAlertStory('eng-alert-missing-labels', epic.key, epic.summary)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openAlertStory('eng-alert-missing-labels', epic.key, epic.summary); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</a>
                                                                             </div>
@@ -671,7 +671,7 @@ export default function EngAlertsPanel({
                                                                     {group.items.map(entry => {
                                                                         const epic = entry.epic;
                                                                         return (
-                                                                        <div key={entry.id} className="alert-story">
+                                                                        <div key={entry.id} className="alert-story" data-alert-id={entry.id}>
                                                                             <div className="alert-story-main">
                                                                                 <button className="alert-story-link alert-story-local-link" type="button" onClick={() => { pinFor('eng-alert-needs-stories', epic.key, epic.summary, { kind: 'requirement', identity: entry.id }); handleStoryRequirementClick(entry); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</button>
                                                                             </div>
@@ -715,7 +715,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
@@ -810,7 +810,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"
@@ -906,7 +906,7 @@ export default function EngAlertsPanel({
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
-                                                                        <div key={epic.key} className="alert-story">
+                                                                        <div key={epic.key} className="alert-story" data-alert-id={epic.key}>
                                                                             <div
                                                                                 className="alert-story-main"
                                                                                 role="button"

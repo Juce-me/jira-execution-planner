@@ -23,6 +23,22 @@ The alerts toolbar (Hide/Show Alerts and the count chips) and every alert card s
 
 Analytics allowlist reason: no analytics event is added; copying an alert group link reports through the existing `share_view_action` event (`workflow_action=copy_link`).
 
+## Pinned Alert
+
+Clicking an alert in Catch Up pins it: one sticky row directly under the filter bar (`alert-story alert-story--pinned`, `data-alert-pin`), fixed at 40px and a single line at every width. It reads Back button | issue key and summary (ellipsized) | category label | `×`. The pin is a static snapshot: it shows no status pill and no action column, so it never goes stale against an edit. The Back button is the shared `IconButton` (`icon-button--sm` with `planning-review-column-action`); the `×` is `task-remove alert-remove`. Both have at least a 24 by 24 hit area and neither is hover-gated, so both work by tap.
+
+What pins: every alert row's primary click and every action link, including the links that open Jira in a new tab (the link still opens). Only one alert is pinned at a time and a new click replaces the pin, whether or not the first alert was resolved. The `×` buttons in the alert list do not pin. Pin state lives in `dashboard.jsx` and renders outside the alerts panel, so it survives the panel returning nothing, loading states and task refreshes.
+
+Back: opens the alerts panel if hidden, expands the pinned category and scrolls the alert list to just below the sticky stack. The pin stays and nothing is dismissed.
+
+Pinned `×`: dismisses the alert if it is still live in its category (an alert already resolved by editing records no dismissal), clears the pin and scrolls to that category's block, expanding it first. If the category has no alerts left, it instead fires exactly one confetti burst (the pinned category only) and scrolls to the top; under reduced motion the scroll to the top is instant and there is no confetti. While the alert cohort is loading it never celebrates and never skips a dismissal, so a transient empty set cannot misfire.
+
+Pin lifetime: cleared on leaving Catch Up and on a user change of Sprint or Department group. It survives task refreshes, alert rechecks and reloads, filter clearing (including the clearing done by the alert click itself), Team changes and hiding the alerts panel. Board, Planning, Statistics and Scenario render no pin and their sticky offsets are unchanged.
+
+Scrolling: both scrolls land below the sticky stack using the dashboard's own offsets (the compact header if it is visible at the landing position, the filter bar, and the pin if it still exists), not DOM measurement. The sticky Epic header sits directly under the pin.
+
+Analytics allowlist reason: no analytics event is added; the pin controls are internal navigation and the pinned `×` is the same action as the list `×`. See `docs/README_ANALYTICS.md`.
+
 ## Current Alert Panels
 
 ### Missing Story Points

@@ -6707,7 +6707,7 @@ button.alert-story-local-link:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.alert-story--pinned > .alert-remove {
+.alert-story.alert-story--pinned > .alert-remove {
   grid-column: 4;
   width: 24px;
   height: 24px;

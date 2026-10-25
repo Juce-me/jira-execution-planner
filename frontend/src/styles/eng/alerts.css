@@ -707,7 +707,8 @@
         .alert-story--pinned > .icon-button--sm { grid-column: 1; }
         .alert-story--pinned > .alert-story-main { grid-column: 2; overflow: hidden; text-overflow: ellipsis; }
         .alert-story--pinned > .alert-story-note { grid-column: 3; overflow: hidden; text-overflow: ellipsis; }
-        .alert-story--pinned > .alert-remove { grid-column: 4; width: 24px; height: 24px; margin-left: 0; }
+        /* Both classes: issues.css loads later and its `.alert-story .alert-remove` (1.3rem) would otherwise win. */
+        .alert-story.alert-story--pinned > .alert-remove { grid-column: 4; width: 24px; height: 24px; margin-left: 0; }
 
 
 

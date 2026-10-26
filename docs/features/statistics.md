@@ -67,7 +67,8 @@ Main parts:
 - **Hidden parts:** the closed modes show no Open Epics list, no Workflow Status card and no Open column in the heatmap.
 - **Overflow column:** an Epic that took longer to close than the grid's column budget lands in a trailing `Q+12+` (Quarter grouping) or `M+24+` (Month grouping) column instead of vanishing.
 - **Jira link:** the Completed Epics link in the closed modes lists exactly the Epics the chart lists (`key in (...)`, up to 250 keys); above 250 the link is omitted and a note says why.
-- Mode, each mode's own selection and the Last N count are saved per Department group and can be shared in a link (see [Shareable view links](shareable-view-links.md)).
+- Mode, each mode's own selection and the Last N count are saved per Department group and can be shared in a link (see [Shareable view links](shareable-view-links.md)). The link also carries the Project, the Exclude boxes, the status chips that are on and Group By, so the recipient lands on the same filtered chart.
+- A saved or shared Project is kept until the Epics for the current Mode and range have loaded; it falls back to All Projects only when those Epics contain no such Project.
 
 ### Excluded Capacity
 

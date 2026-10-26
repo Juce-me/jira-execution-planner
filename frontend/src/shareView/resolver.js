@@ -2,13 +2,14 @@
 // docs/plans/SUPPORT-shareable-view-links-design-194.md, "Link contract" and "Apply machine").
 // A link only selects among values the recipient already owns. A miss is reported as a notice
 // category and its key is skipped; nothing here widens a miss into a value that changes the view.
-import { LEAD_TIMES_LAST_N_OPTIONS, buildQuarterOptions, compareQuarterLabels, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import { LEAD_TIMES_LAST_N_OPTIONS, LEAD_TIMES_STATUS_KEYS, buildQuarterOptions, compareQuarterLabels, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
 import { buildDefaultExcludedCapacityRange, compareSprintsChronologically } from '../stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import {
     SHARE_VIEW_ALERT_ANCHORS,
     SHARE_VIEW_ALERT_KEYS,
     SHARE_VIEW_DEFAULTS,
+    SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS,
     SHARE_VIEW_MODES,
 } from './viewDefaults.js';
 
@@ -181,6 +182,18 @@ function resolveLeadTimesMode(state, apply, reported) {
     if (apply.lead === 'last_n' && state.n === undefined) reported.push('mode');
 }
 
+// Lead Times filters: each the link's value or the model default of the resolved mode, never the recipient's saved choice. A status the
+// mode has no toggle for (a Closed link naming In Progress) is dropped and reported under filters. The Project is judged against the
+// loaded Epics by the Stats panel itself, which falls back to All Projects when none has it.
+function resolveLeadTimesFilters(state, apply, reported) {
+    apply.lproject = linkValue(state, 'lproject');
+    apply.lexclude = [...linkValue(state, 'lexclude')];
+    apply.lgroupby = linkValue(state, 'lgroupby');
+    const requested = state.lstatus === undefined ? SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS[apply.lead] : state.lstatus;
+    apply.lstatus = requested.filter((status) => LEAD_TIMES_STATUS_KEYS[apply.lead].includes(status));
+    if (apply.lstatus.length < requested.length) reported.push('filters');
+}
+
 function focusApplies(candidate, state, mode) {
     if (candidate.kind === 'alertTeam') {
         return mode === 'catch-up' && state.alerts !== 'off' && ALERT_ANCHORS.has(candidate.anchor);
@@ -226,7 +239,10 @@ export function buildShareViewFieldPlan(state, scope, ctx = {}) {
     } else if (scope.mode === 'statistics') {
         take('stats');
         apply.range = resolveStatsRange(state, apply.stats, scope, ctx, reported);
-        if (apply.stats === 'cohort') resolveLeadTimesMode(state, apply, reported);
+        if (apply.stats === 'cohort') {
+            resolveLeadTimesMode(state, apply, reported);
+            resolveLeadTimesFilters(state, apply, reported);
+        }
     } else {
         take('find', 'lanes');
         if (scope.mode === 'planning') {

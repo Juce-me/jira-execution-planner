@@ -1,4 +1,4 @@
-import { resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
+import { LEAD_TIMES_DEFAULT_STATUS_TOGGLES, LEAD_TIMES_STATUS_KEYS, resolveLeadTimesLastN, resolveLeadTimesMode } from '../cohort/cohortUtils.js';
 import { SHARE_VIEW_ALERT_KEYS, SHARE_VIEW_VERSION } from './viewDefaults.js';
 
 // The Statistics views that carry a range: a quarter pair (Lead Times) or a Sprint pair (the three source-only views).
@@ -11,6 +11,18 @@ function leadTimesRange(snapshot) {
     if (lead === 'closed') return { lead, from: snapshot.cohortClosedStartQuarter, to: snapshot.cohortClosedEndQuarter };
     if (lead === 'last_n') return { lead, n: resolveLeadTimesLastN(snapshot.cohortLastN) };
     return { from: snapshot.cohortStartQuarter, to: snapshot.cohortEndQuarter };
+}
+
+// The Lead Times filters as they stand: Project, the ticked Exclude boxes, the status toggles the active mode shows and Group By. A snapshot
+// field that was never set reads as the model default; the encoder drops each key that equals its default.
+function leadTimesFilters(snapshot) {
+    const toggles = { ...LEAD_TIMES_DEFAULT_STATUS_TOGGLES, ...(snapshot.cohortStatusToggles || {}) };
+    return {
+        lproject: snapshot.cohortProjectFilter || 'all',
+        lexclude: [snapshot.cohortExcludeAdHoc && 'adhoc', (snapshot.cohortExcludeCapacity ?? true) && 'capacity'].filter(Boolean),
+        lstatus: LEAD_TIMES_STATUS_KEYS[resolveLeadTimesMode(snapshot.cohortMode)].filter((status) => toggles[status]),
+        lgroupby: snapshot.cohortGroupBy === 'month' ? 'month' : 'quarter',
+    };
 }
 
 // The Board's facet selection and explicitly focused column. A facet the selection leaves absent is neutral, and a single-option
@@ -54,7 +66,7 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
         initiatives: typeof snapshot.groupByInitiativeChoice === 'boolean' ? snapshot.groupByInitiativeChoice : undefined,
         sort, layout, rows: rowsMode || undefined,
         ...boardViewState(mode, snapshot, focus?.column),
-        stats: statsView, ...range,
+        stats: statsView, ...range, ...(rangeKind === 'quarter' ? leadTimesFilters(snapshot) : {}),
         alerts: rendered.length ? (snapshot.showAlertsPanel || targetKey ? (expanded.length ? expanded : 'none') : 'off') : undefined,
         alertTeam: focus?.kind === 'alertTeam' ? { anchor: focus.anchor, id: focus.id } : undefined,
         focus: focus && focus.kind !== 'alertTeam' ? { kind: focus.kind, key: focus.key } : undefined,

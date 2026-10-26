@@ -573,6 +573,9 @@ export function useStatsDerivedB({
         if (cohortData && automaticCohortDataRef.current === cohortData) return;
         if (cohortAwaitingMode) return;
         if (cohortProjectFilter === 'all') return;
+        // Payloads are filed under their query key: data not filed there is not this query's answer yet (a saved or shared Project
+        // awaiting its first load, or the previous range's data).
+        if (cohortCacheRef.current[cohortQueryKey] !== cohortData) return;
         const exists = cohortProjectOptions.some((item) => item.value === cohortProjectFilter);
         if (!exists) setCohortProjectFilter('all');
     }, [cohortProjectFilter, cohortProjectOptions, cohortAwaitingMode]);

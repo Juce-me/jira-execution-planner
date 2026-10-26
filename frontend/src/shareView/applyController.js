@@ -8,7 +8,7 @@ import {
 } from './resolver.js';
 import { revealShareViewFocus } from './focusReveal.js';
 import { createApplyMachine, stepApplyMachine } from './applyMachine.js';
-import { LEAD_TIMES_LAST_N_OPTIONS, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import { LEAD_TIMES_DEFAULT_STATUS_TOGGLES, LEAD_TIMES_LAST_N_OPTIONS, LEAD_TIMES_STATUS_KEYS, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
 import { STATS_RANGE_KIND } from './captureState.js';
 import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { selectedTeamSelectionsEqual } from '../teamSelectionUtils.mjs';
@@ -78,11 +78,24 @@ function writeLeadTimes(o, apply) {
     o.setCohortLastN(lead === 'last_n' ? n : LEAD_TIMES_LAST_N_OPTIONS[0]);
 }
 
+// The filters travel with the view: the link's value or the model default, so a recipient's saved choice never leaks into a link. The
+// status toggles the link's mode does not show keep their defaults.
+function writeLeadTimesFilters(o, apply) {
+    const shown = LEAD_TIMES_STATUS_KEYS[apply.lead];
+    o.setCohortProjectFilter(apply.lproject);
+    o.setCohortExcludeAdHoc(apply.lexclude.includes('adhoc'));
+    o.setCohortExcludeCapacity(apply.lexclude.includes('capacity'));
+    o.setCohortGroupBy(apply.lgroupby);
+    o.setCohortStatusToggles(Object.fromEntries(Object.entries(LEAD_TIMES_DEFAULT_STATUS_TOGGLES)
+        .map(([status, fallback]) => [status, shown.includes(status) ? apply.lstatus.includes(status) : fallback])));
+}
+
 function writeRange(o, apply) {
     const { stats: view, range } = apply;
     const kind = has(STATS_RANGE_KIND, view) ? STATS_RANGE_KIND[view] : null;
     if (kind === 'quarter') {
         writeLeadTimes(o, apply);
+        writeLeadTimesFilters(o, apply);
     } else if (kind === 'sprint') {
         o.setExcludedCapacityStartSprintId(String(range.from));
         o.setExcludedCapacityEndSprintId(String(range.to));

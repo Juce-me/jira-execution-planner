@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { activeHomeTokenConnection, installDashboardFixture } = require('./epm_home_token_fixture');
+const { activeHomeTokenConnection, installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
@@ -285,6 +285,18 @@ test('browser DLV sequence clears sparse fields, logout identity and debug conte
 
 test('logical navigation emits one page_view occurrence for each accepted view change', async ({ page }) => {
     await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ activeGroupId: 'analytics-group', selectedTeams: ['all'] })));
+    await page.route('**/api/groups-config', route => route.fulfill({ json: {
+        version: 1, groups: [{ id: 'analytics-group', name: 'Synthetic Department', teamIds: ['analytics-team'], teamLabels: {} }], defaultGroupId: 'analytics-group', source: 'test',
+    } }));
+    await page.route('**/api/tasks-with-team-name**', route => route.fulfill({ json: {
+        issues: [{ id: '1001', key: 'TEST-1', fields: {
+            summary: 'Synthetic analytics story', status: { name: 'To Do' }, priority: { name: 'Major' }, issuetype: { name: 'Story' },
+            customfield_10004: 3, epicKey: 'TEST-100', parentSummary: 'Synthetic analytics epic', projectKey: 'TEST', teamId: 'analytics-team', teamName: 'Synthetic Team',
+            sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+        } }],
+        epics: { 'TEST-100': { key: 'TEST-100', summary: 'Synthetic analytics epic', status: { name: 'In Progress' }, teamId: 'analytics-team', teamName: 'Synthetic Team' } }, names: {},
+    } }));
     await installAnalyticsRoutes(page, { enabled: true });
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
     const views = () => page.evaluate(() => (window.dataLayer || []).filter(entry => entry.event === 'pageview'));
@@ -300,4 +312,20 @@ test('logical navigation emits one page_view occurrence for each accepted view c
     const occurrences = await views();
     expect(occurrences.map(entry => entry.dashboard_view)).toEqual(['eng', 'epm', 'eng', 'eng', 'eng']);
     expect(occurrences.map(entry => entry.eng_mode)).toEqual(['catch_up', undefined, 'catch_up', 'planning', 'statistics']);
+    expect(occurrences.map(entry => entry.page_name)).toEqual(['eng/catch_up', 'epm', 'eng/catch_up', 'eng/planning/table', 'eng/statistics/teams']);
+
+    const statsViews = page.getByRole('radiogroup', { name: 'Statistics view', exact: true });
+    for (const [label, subview] of [['Priority', 'priority'], ['Burndown', 'burndown'], ['Lead Times', 'lead_times'], ['Excluded Capacity', 'excluded_capacity'], ['Mono vs Cross', 'mono_cross_share'], ['Project Track', 'project_track']]) {
+        const previousNames = (await views()).map(entry => entry.page_name);
+        await statsViews.getByRole('radio', { name: label, exact: true }).click();
+        await expect.poll(async () => (await views()).map(entry => entry.page_name)).toEqual([
+            ...previousNames, `eng/statistics/${subview}`,
+        ]);
+    }
+    await page.getByRole('radio', { name: 'Planning', exact: true }).first().click();
+    await expect.poll(async () => (await views()).at(-1).page_name).toBe('eng/planning/table');
+    const count = (await views()).length;
+    await page.getByRole('button', { name: 'Show Planning list', exact: true }).click();
+    await expect.poll(async () => (await views()).at(-1).page_name).toBe('eng/planning/list');
+    expect((await views()).length).toBe(count + 1);
 });

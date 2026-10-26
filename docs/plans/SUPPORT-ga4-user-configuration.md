@@ -205,9 +205,9 @@ Create these Data Layer Variables and map them as GA4 event parameters on that t
 
 | Data layer key | GA4 parameter | Notes |
 | --- | --- | --- |
-| `page_name` | `page_name` | Low-cardinality app page name, for example `dashboard`. |
+| `page_name` | `page_name` | Fixed logical hierarchy, for example `eng/planning/table` or `eng/statistics/lead_times`; EPM uses `epm`. See [Logical Page Names](../README_ANALYTICS.md#logical-page-names). |
 | `dashboard_view` | `dashboard_view` | `eng` or `epm`. |
-| `eng_mode` | `eng_mode` | `catch_up`, `planning`, `statistics`, or `scenario` when applicable. |
+| `eng_mode` | `eng_mode` | `catch_up`, `planning`, `board`, `statistics`, or `scenario` when applicable. |
 | `auth_mode` | `auth_mode` | Low-cardinality auth mode. |
 | `source_surface` | `source_surface` | Where the pageview was produced. |
 | `debug_mode` | `debug_mode` | Map only in debug environments; do not create a custom dimension. |
@@ -477,6 +477,7 @@ Start with Explore reports or standard custom reports:
    - Rows: `page_name`, `dashboard_view`, `eng_mode`, `auth_mode`, `source_surface`
    - Metrics: event count, active users
    - Events: `page_view`
+   - Use the existing **Page Name** custom dimension for the logical hierarchy. Since 2026-10-26, Statistics subview and Planning Table/List changes each emit one new pageview; rerenders, hidden subviews and filters do not. Older `dashboard` values remain historical. Keep the existing pageview parameter mapping; no new GTM or GA4 admin configuration is required. Standard URL/title dimensions retain GA4-managed metadata.
 
 3. **Search And Filter Friction**
    - Rows: `search_scope`, `query_length_bucket`, `result_count_bucket`, `filter_type`, `selection_count_bucket`, `source_surface`

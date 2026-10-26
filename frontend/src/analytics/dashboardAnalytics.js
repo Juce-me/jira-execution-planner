@@ -18,6 +18,15 @@ const SHARE_VIEW_RESULTS = new Map([
     ['apply_link', new Set(['success', 'partial', 'rejected'])],
 ]);
 const SHARE_VIEW_SURFACES = new Set(['catch_up', 'planning', 'board', 'statistics']);
+const STATS_PAGE_SUBVIEWS = new Map([
+    ['teams', 'teams'],
+    ['priority', 'priority'],
+    ['burnout', 'burndown'],
+    ['cohort', 'lead_times'],
+    ['excludedCapacity', 'excluded_capacity'],
+    ['monoCrossShare', 'mono_cross_share'],
+    ['projectTrack', 'project_track'],
+]);
 
 export function analyticsToken(value, fallback = 'unknown') {
     return String(value || fallback).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || fallback;
@@ -153,6 +162,8 @@ export function useDashboardAnalytics(React, {
     showStats,
     showScenario,
     showBoard,
+    statsView,
+    planningLayout,
     serverConnectionError,
 }) {
     const { useCallback, useEffect, useRef, useState } = React;
@@ -175,7 +186,11 @@ export function useDashboardAnalytics(React, {
     useEffect(() => {
         if (!analyticsReady || !authMode) return;
         const engMode = showScenario ? 'scenario' : showStats ? 'statistics' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up';
+        const subview = engMode === 'statistics' ? STATS_PAGE_SUBVIEWS.get(statsView) || 'teams'
+            : engMode === 'planning' ? (planningLayout === 'list' ? 'list' : 'table') : '';
+        const pageName = selectedView === 'eng' ? `eng/${engMode}${subview ? `/${subview}` : ''}` : 'epm';
         const pageParams = {
+            page_name: pageName,
             dashboard_view: currentDashboardView(),
             auth_mode: analyticsToken(authMode),
             source_surface: 'dashboard',
@@ -184,8 +199,8 @@ export function useDashboardAnalytics(React, {
         const signature = JSON.stringify(pageParams);
         if (analyticsPageviewRef.current === signature) return;
         analyticsPageviewRef.current = signature;
-        JepAnalytics.trackPageview('dashboard', pageParams);
-    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, showBoard, currentDashboardView]);
+        JepAnalytics.trackPageview(pageName, pageParams);
+    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, currentDashboardView]);
 
     const trackProductEvent = useCallback(safeTrackEvent, []);
     const trackApiResult = useCallback(safeTrackApiResult, []);

@@ -81,8 +81,10 @@ window.dataLayer.push({
   trigger: 'pageview',
   event_type: 'pageview',
   event_name: 'page_view',
-  page_name: 'dashboard',
+  page_name: 'eng/planning/table',
   dashboard_view: 'eng',
+  eng_mode: 'planning',
+  auth_mode: 'atlassian_oauth',
   source_surface: 'dashboard'
 });
 ```
@@ -91,7 +93,7 @@ Every app-owned `userevent` requires `feature_name`. Every app-owned pageview re
 
 | Event name | Required params | Trigger | Primary anchors | Side | Decision/use |
 | --- | --- | --- | --- | --- | --- |
-| `page_view` | `page_name`, `dashboard_view`, `auth_mode`, `source_surface` | GTM receives `dataLayer.event=pageview` | `frontend/src/dashboard.jsx` | browser/GTM | Logical page/view adoption |
+| `page_view` | `page_name` (fixed hierarchy below), `dashboard_view`, `eng_mode` (ENG only), `auth_mode`, `source_surface` | Initial logical view, ENG mode change, Statistics subview change, or Planning table/list change; GTM receives `dataLayer.event=pageview` | `frontend/src/analytics/dashboardAnalytics.js`, wired by `frontend/src/dashboard.jsx` | browser/GTM | Mode and subview adoption |
 | `login` | `method`, `auth_mode`, `result`, `source_surface` | OAuth authenticated transition only | `frontend/src/dashboard.jsx`, `backend/routes/auth_routes.py` | browser | Auth adoption and recovery |
 | `logout` | `auth_mode`, `source_surface` | User-triggered logout completes | `backend/routes/auth_routes.py` | browser | Auth exit |
 | `select_content` | `content_type`, `content_id`, `from_view`, `source_surface` | ENG/EPM view changes | `frontend/src/dashboard.jsx` | browser | ENG/EPM adoption |
@@ -119,6 +121,28 @@ Every app-owned `userevent` requires `feature_name`. Every app-owned pageview re
 | `share_view_action` | `feature_name=share_view`, `workflow_action` (`copy_link`\|`apply_link`), `result` (`copy_link`: `success`\|`failure`; `apply_link`: `success`\|`partial`\|`rejected`), `source_surface` (`catch_up`\|`planning`\|`board`\|`statistics`) | One click of the header Copy view link or explicit Epic copy control (`copy_link`: `success` once the URL reached the clipboard, also when optional keys that exceeded the length cap were left out; `failure` when the URL is refused as too long or invalid, or the clipboard is unavailable or rejects the write and the notice shows the read-only URL field instead), and one terminal outcome per opened link (`apply_link`, sent once and only after analytics is ready: `success` every key applied, `partial` some keys skipped, `rejected` invalid, dropped or cancelled). The four enum params are the whole payload: never ids, names, URLs, query text, issue keys or notice categories, and never `epm` or `scenario` as `source_surface` because Share is hidden there. Applying a link uses raw setters that emit no `filter_changed`, `select_content` or `sort_changed`; effect-driven `page_view` (a mode change), `app_search` (a non-empty `find`, length bucket only) and `api_result` still fire exactly as for manual navigation. No new parameter key and no custom definition | `frontend/src/shareView/ShareViewButton.jsx`, `frontend/src/shareView/useShareViewApply.js`, `frontend/src/analytics/dashboardAnalytics.js` | browser | Share adoption and how often recipients resolve only partially, to decide whether stored links are worth building |
 | `api_result` | `feature_name`, `api_surface`, `method`, `status_bucket`, `result`, `duration_bucket`, `cache_state`; for EPM APIs use `feature_name=epm` and also include `epm_tab`, `project_scope`, `subgoal_scope` when known; `api_surface=eng_board` uses `feature_name=eng_board`, bounded `scope_type=all_work|component|sprint`, and one terminal numeric duration only, never Department/sprint/generation IDs, names, Jira keys, JQL, raw errors, per-frame events, or superseded/auth-locked generations; `api_surface=jira_issue_transitions` sends only `feature_name=eng_status_transitions` plus the standard `method`/`status_bucket`/`result`/`duration_bucket`/`cache_state` reliability params, never issue keys, transition ids, or Jira error text; `api_surface=jira_issue_priorities` sends only `feature_name=eng_priority_changes` plus the same standard reliability params, never issue keys, priority ids, or Jira error text; `api_surface=jira_issue_project_track` sends only `feature_name=eng_project_track_changes` plus the same standard reliability params, never issue keys, field ids, or Jira error text; `api_surface=jira_issue_field_edits` sends only `feature_name=eng_issue_field_edits` plus the same standard reliability params, never query text, names, emails, account IDs, issue keys, field IDs, Story Point values, or raw errors; `api_surface=epic_refresh` sends only `feature_name=epic_refresh` plus the same standard reliability params, never Epic keys, sprint or group ids, team labels, JQL, or Jira error text; `api_surface=eng_issue_description` sends only `feature_name=eng_epic_description` plus the same standard reliability params, never issue keys, description HTML, or Jira error text; `api_surface=board_config_statuses` sends only `feature_name=group_board_composer` plus the same standard reliability params, never board ids, status ids, or Jira error text | Browser-observed allowlisted API response completes | `frontend/src/api/*` | browser | API reliability |
 | `app_error_shown` | `error_area`, `error_code`, `recoverable_state`, `source_surface` | User-visible server/auth/config unavailable state appears; the global auth lock emits once per mounted-document lock episode only when analytics was already initialized and enabled, using a fixed payload with `ga4_user_id=null` and `debug_mode=undefined` to clear retained context | `frontend/src/dashboard.jsx`, `frontend/src/components/AuthRequiredGate.jsx` | browser | Reliability and recovery |
+
+### Logical Page Names
+
+Since 2026-10-26, dashboard pageviews use the existing `page_name` parameter as a fixed `eng/<mode>/<subview>` hierarchy. EPM reports `epm`; modes without subviews stop after the mode.
+
+| Visible view | `page_name` |
+| --- | --- |
+| Catch Up | `eng/catch_up` |
+| Planning Table / List | `eng/planning/table` / `eng/planning/list` |
+| Board | `eng/board` |
+| Scenario | `eng/scenario` |
+| Statistics Teams / Priority | `eng/statistics/teams` / `eng/statistics/priority` |
+| Statistics Burndown (`statsView=burnout`) | `eng/statistics/burndown` |
+| Statistics Lead Times (`statsView=cohort`) | `eng/statistics/lead_times` |
+| Statistics Excluded Capacity | `eng/statistics/excluded_capacity` |
+| Statistics Mono vs Cross | `eng/statistics/mono_cross_share` |
+| Statistics Project Track | `eng/statistics/project_track` |
+| EPM | `epm` |
+
+The initial view and each visible mode/subview change emit one `pageview` occurrence (`event_type=pageview`, canonical `event_name=page_view`). Rerenders, hidden Statistics/Planning state changes, filters, scope changes and chart options do not emit additional pageviews. Names come only from the fixed allowlist; no identifiers, user text, URL or query parameters enter the hierarchy. Tests: `tests/test_analytics_events.js` and `tests/ui/ga4_tag_and_events.spec.js`.
+
+Use the existing **Page Name** event-scoped dimension (`page_name`) in the Page Name/View Adoption report. No new parameter, custom dimension, GTM tag or trigger is needed. The predefined page URL/title dimensions still use GA4-managed metadata. Historical `page_name=dashboard` remains accepted for compatibility; it cannot be split retrospectively, and new subview pageviews increase counts relative to the earlier mode-only series.
 
 ### Planning Capacity Editing
 

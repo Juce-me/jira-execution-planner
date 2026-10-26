@@ -1070,7 +1070,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
-            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
+            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, serverConnectionError });
             const {
                 groupsConfig,
                 setGroupsConfig,

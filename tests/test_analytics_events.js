@@ -1630,6 +1630,74 @@ test('useDashboardAnalytics exposes analyticsReady and trackShareViewAction; eve
     }
 });
 
+test('dashboard pageviews name each visible ENG mode and subview once', async () => {
+    const { createRuntime } = require('./react_hook_harness');
+    const { useDashboardAnalytics } = await loadDashboardAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = capturingDataLayer(pushed);
+    global.fetch = async () => ({ ok: true, json: async () => ({ enabled: true }) });
+    const runtime = createRuntime();
+    let props = { authMode: 'basic', selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false, showBoard: false, statsView: 'teams', planningLayout: 'table', serverConnectionError: '' };
+    const render = (changes = {}) => {
+        props = { ...props, ...changes };
+        runtime.begin();
+        useDashboardAnalytics(runtime.react, props);
+        runtime.commit();
+    };
+    const views = () => pushed.filter(entry => entry.event === 'pageview');
+    try {
+        render();
+        assert.equal(views().length, 0, 'initialization must finish before the first view');
+        await new Promise(resolve => setTimeout(resolve, 0));
+        render();
+        render();
+        render({ statsView: 'cohort', planningLayout: 'list' });
+        assert.deepEqual(views().map(entry => entry.page_name), ['eng/catch_up'], 'hidden subviews and rerenders do not count');
+
+        render({ showPlanning: true });
+        render({ planningLayout: 'table' });
+        render({ showPlanning: false, showBoard: true });
+        render({ showBoard: false, showScenario: true });
+        render({ showScenario: false, showStats: true });
+        for (const statsView of ['teams', 'priority', 'burnout', 'excludedCapacity', 'monoCrossShare', 'projectTrack']) render({ statsView });
+        render({ selectedView: 'epm' });
+        render({ statsView: 'teams', planningLayout: 'list' });
+        render({ selectedView: 'eng' });
+        render({ showStats: false });
+
+        assert.deepEqual(views().map(entry => entry.page_name), [
+            'eng/catch_up', 'eng/planning/list', 'eng/planning/table', 'eng/board', 'eng/scenario',
+            'eng/statistics/lead_times', 'eng/statistics/teams', 'eng/statistics/priority',
+            'eng/statistics/burndown', 'eng/statistics/excluded_capacity',
+            'eng/statistics/mono_cross_share', 'eng/statistics/project_track',
+            'epm', 'eng/statistics/teams', 'eng/catch_up',
+        ]);
+        assert.equal(views()[12].eng_mode, undefined, 'EPM does not carry hidden ENG state');
+        for (const entry of views()) {
+            assert.equal(entry.trigger, 'pageview');
+            assert.equal(entry.event_type, 'pageview');
+            assert.equal(entry.event_name, 'page_view');
+            assert.equal(entry.source_surface, 'dashboard');
+            assert.equal(entry.page_location, undefined);
+        }
+    } finally {
+        runtime.unmount();
+        delete global.fetch;
+    }
+});
+
+test('hierarchical page names allow only the fixed product taxonomy', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+    for (const pageName of ['eng/catch_up', 'eng/planning/table', 'eng/statistics/lead_times', 'epm', 'dashboard']) {
+        assert.deepEqual(sanitizeAnalyticsParams({ page_name: pageName }, 'page_view'), { page_name: pageName });
+    }
+    for (const pageName of ['eng/statistics/secret', 'eng/planning/table/TEST-123', 'eng/catch_up?find=secret', 'https://example.invalid/eng', '/Users/local/path', 'eng/board/free text']) {
+        assert.throws(() => sanitizeAnalyticsParams({ page_name: pageName }, 'page_view'), /analytics value/);
+    }
+    assert.throws(() => sanitizeAnalyticsParams({ source_surface: 'eng/planning/table' }, 'page_view'), /unsafe analytics value/);
+});
+
 // GTM DLV v2 keeps a model across pushes; omitted keys retain their old value.
 function installPersistentDataLayer() {
     const model = {};

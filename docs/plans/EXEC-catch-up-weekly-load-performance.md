@@ -138,6 +138,25 @@ Task 4's own commits cannot be recorded here (they contain this file); the final
 5. **Plan was already committed** (`e09a078d`) rather than uncommitted when execution started.
 6. **Open for the requester (not changed):** the legacy summary lines and "About these measurements" copy still render above the weekly charts for `eng_sprint` (call 8 keeps them), and the latter says failed and cancelled loads are excluded from latency summaries, which contradicts the List loaded note; the pinned UI copy names only app start as excluded while Definition of Done item 3 also lists readiness and alerts; weeks with no rows are omitted so the line joins neighbouring weeks at equal spacing; the 2s and 4s reference labels overlap above a roughly 38 s axis.
 
+### Verification at the committed head (2026-10-26, numbers only)
+
+Head after the review fixes and the second bundle commit. `make test` Ran 2423 tests, OK (skipped=50) (baseline 2413); `make test-security` Ran 82 tests, OK; `test:frontend:unit` 3055 pass, 0 fail (baseline 3048); Chromium `load_performance` + `design_system_hover_surfaces` 53 passed (baseline 42); extraction lint exit 1 with the same six enforced problem identities and 104 ESLint warnings, 83 modules.
+
+| Check | Measured | Threshold | Result |
+|---|---|---|---|
+| P1 `_catch_up_weekly`, 10,000 rows, six weeks, median of 5 (three trials) | 63.4 to 64.6 ms | <= 150 ms | PASS |
+| P1 `load_report` now minus origin/main, same rows (three trials) | 98.3, 82.1, 68.8 ms (one run under CPU load: 110.6 ms) | <= 100 ms | PASS, close to the limit and noisy |
+| P1 `catchUpWeekly` JSON, six weeks | 1,589 bytes | <= 3 KB | PASS |
+| P2 entry `dashboard.js` raw / gzip vs origin/main | +8,234 B / +2,143 B | <= 1 KB raw | FAIL (see Divergence 1: the Performance panel is in the entry bundle, not a lazy chunk) |
+| P2 Settings chunk raw | +0 B (code is not in it) | <= 12 KB | PASS, vacuous |
+| P2 'real dashboard emits one measured load ...' unchanged | green in the 53-spec run | green | PASS |
+| P3 load-path files in the branch diff | 0 | none | PASS |
+| P4 select Surface until both charts exist, Chromium, 5 runs | median 7.7 ms (7.5 to 13 ms), 0 long tasks, 0 console errors or warnings | <= 500 ms, no long task > 100 ms, none | PASS |
+| P5a HAR golden (lanes 286 and 526 ms, hit, 8236 ms) | server 526 / 8236 ms; rendered 0.53s and 8.24s | exact | PASS |
+| P5b offline real data | not done: the Docker Postgres the app uses is not running (only Homebrew's is listening); not substituted | n/a | NOT DONE |
+| P5c browser on the user's server | not done: nothing listens on 5050 | n/a | NOT DONE |
+| Step 4 cross-layer (six seeded weeks, all outcomes) | 6 table rows, every cell equals the server value, no `NaN`, `Unknown` only where the server sent null | identical | PASS |
+
 ### Task 0: Baseline
 
 **Files:** none changed.

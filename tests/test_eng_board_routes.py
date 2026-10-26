@@ -194,6 +194,28 @@ class EngBoardRouteContractTests(unittest.TestCase):
         self.assertEqual('no-store', response.headers['Cache-Control'])
         self.assertEqual('no', response.headers['X-Accel-Buffering'])
 
+    def test_real_board_stream_ignores_gzip(self):
+        install_oauth_session(self.client)
+        frames = tuple(b'{"type":"start","note":"' + b'x' * 1500 + b'"}\n' for _ in range(3))
+        bodies = {}
+        for label, headers in (('plain', {}), ('gzip', {'Accept-Encoding': 'gzip'})):
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
+                eng_board_routes, 'database_storage_enabled', return_value=True,
+            ), patch.object(
+                eng_board_routes, '_capture_snapshot', return_value=board_snapshot(),
+            ), patch.object(
+                eng_board_routes, '_frame_stream', side_effect=lambda *_args, **_kwargs: iter(frames),
+            ):
+                response = self.client.get(BOARD_PATH, query_string=VALID_QUERY, headers=headers)
+            self.assertEqual(200, response.status_code, response.get_data(as_text=True))
+            self.assertEqual('application/x-ndjson', response.mimetype)
+            self.assertNotIn('Content-Encoding', response.headers)
+            self.assertEqual('no-store', response.headers['Cache-Control'])
+            bodies[label] = response.get_data()
+
+        self.assertGreater(len(bodies['plain']), 1024)
+        self.assertEqual(bodies['plain'], bodies['gzip'])
+
     def test_preflight_and_stream_share_one_generated_identity(self):
         install_oauth_session(self.client)
         observed = []

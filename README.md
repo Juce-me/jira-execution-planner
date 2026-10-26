@@ -268,6 +268,7 @@ Can prepare now:
 - Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
 - Run CI verification that installs backend/frontend dependencies, runs tests/builds, and tags the image with the commit SHA.
 - Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
+- Response compression is done by the app (gzip, `Vary: Accept-Encoding`; see Performance & Caching). An ingress or proxy that also compresses must leave a response that already has a `Content-Encoding` alone.
 
 Container env contract:
 
@@ -602,6 +603,7 @@ The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 - **Reference data**: Jira projects, components, epic search results, labels, and update-check results use short-lived caches to avoid repeated lookup calls while editing settings.
 - **Request shaping**: heavy Jira fetches are paginated and capped per endpoint instead of trying to pull everything in one call.
 - **Timeout protection**: Jira requests use bounded timeouts, typically between 10 and 30 seconds depending on the endpoint.
+- **Response compression**: the app gzips JSON, JavaScript, CSS, HTML and SVG responses of 1 KB or more for clients that accept gzip (standard-library `gzip`, level 6, no extra dependency). Static `/frontend/dist/*` files are compressed once per process and reused; a compressed response carries a weak ETag, so a conditional request still gets a 304. `Vary: Accept-Encoding` is set on these responses whatever the client sent. Streams (the Board NDJSON stream and Scenario draft events), `/api/auth/*`, source maps (`*.map`), range and error responses and bodies that already have a `Content-Encoding` are never touched.
 
 ## 📚 Documentation & Postmortems
 

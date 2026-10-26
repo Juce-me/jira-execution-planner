@@ -35,7 +35,7 @@ const PLOT_HEIGHT = CHART_HEIGHT - PADDING.top - PADDING.bottom;
 const HOVER_EDGE_GUTTER = 12;
 const HOVER_POINTER_GAP = 12;
 const HOVER_BUBBLE_WIDTH = 260;
-const HOVER_BUBBLE_HEIGHT = 130;
+const HOVER_BUBBLE_HEIGHT = 144;
 
 const weekName = week => `${weekLabel(week.weekStart)}${week.partial ? '*' : ''}`;
 const share = value => Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Unknown';
@@ -79,7 +79,7 @@ function PerformanceLineChart({ weeks, metric, isolated }) {
             <i className={`burnout-color performance-phase is-${series.slug}`} />
             <span>{series.label}: <strong>{seconds(valueOf(hovered.week, metric, series))}</strong></span>
         </div>)}
-        <div className="burnout-hover-row muted"><span>Errors {hovered.week.errors} · cancelled {hovered.week.cancelled} · capped {hovered.week.capped} · cache hit {share(hovered.week.cacheHitShare)}</span></div>
+        <div className="burnout-hover-row muted performance-week-counts"><span>Errors {hovered.week.errors} · cancelled {hovered.week.cancelled} · capped {hovered.week.capped} · cache hit {share(hovered.week.cacheHitShare)}</span></div>
         {loads < PRELIMINARY_LOADS && <div className="burnout-hover-row muted"><span>Preliminary: fewer than {PRELIMINARY_LOADS} loads</span></div>}
     </div> : null;
     return <div className="performance-week-chart" onMouseLeave={() => setHovered(null)}>

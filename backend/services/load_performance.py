@@ -337,7 +337,7 @@ def _catch_up_weekly(rows, now, truncated=False):
             cacheHitShare=round(hits / len(listed), 2) if listed else None,
             listLoaded=_catch_up_metric([value for _row, value in listed]),
             fullyLoaded=_catch_up_metric(full),
-            partial=(start + timedelta(days=7) > now.date() or start < window_start
+            partial=(start + timedelta(days=7) > now.date() or start <= window_start
                      or (truncated and start == min(by_week)))))
     return dict(weeks=weeks)
 

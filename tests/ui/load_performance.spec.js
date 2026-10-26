@@ -540,6 +540,49 @@ test('Catch Up weekly readout shows its own chart\'s numbers, stays inside the v
     expect(await page.locator(`${catchUpSection} [title], ${catchUpSection} title`).count()).toBe(0);
 });
 
+test('Catch Up readout rows are never cut off and the readout stays inside the viewport, with large counts too', async ({ page }) => {
+    const large = { errors: 128, cancelled: 64, capped: 32, cacheHitShare: 1 };
+    const largeCountPayload = { ...catchUpPayload, catchUpWeekly: { weeks: [
+        catchUpWeek('2026-09-07', 2600, 8000, { ...large, partial: true }), ...catchUpWeeks.slice(1, -1), catchUpWeek('2026-10-19', 3300, 9800, { ...large, partial: true }),
+    ] } };
+    for (const [data, counts] of [[catchUpPayload, 'Errors 1 · cancelled 2 · capped 0 · cache hit 25%'], [largeCountPayload, 'Errors 128 · cancelled 64 · capped 32 · cache hit 100%']]) {
+        for (const viewport of [{ width: 390, height: 900 }, { width: 700, height: 900 }]) {
+            await openCatchUpWeeks(page, viewport, data);
+            for (const chart of ['listLoaded', 'fullyLoaded']) {
+                for (const which of ['first', 'last']) {
+                    const hit = page.locator(`.performance-week-svg[data-chart="${chart}"] .performance-week-hit`)[which]();
+                    await hit.evaluate(node => node.scrollIntoView({ block: 'center' }));
+                    const box = await hit.boundingBox();
+                    for (const [fx, fy] of [[0.05, 0.05], [0.95, 0.05], [0.05, 0.95], [0.95, 0.95]]) {
+                        const where = `${counts} ${viewport.width}px ${chart} ${which} ${fx},${fy}`;
+                        await page.mouse.move(box.x + box.width * fx, box.y + box.height * fy);
+                        const bubble = page.locator('.performance-week-hover-bubble');
+                        await expect(bubble).toBeVisible();
+                        await expect(bubble).toContainText(counts);
+                        await expect(bubble).toContainText('Preliminary: fewer than 20 loads');
+                        const rect = await bubble.boundingBox();
+                        expect(rect.x, `${where} left`).toBeGreaterThanOrEqual(0);
+                        expect(rect.x + rect.width, `${where} right`).toBeLessThanOrEqual(viewport.width);
+                        expect(rect.y, `${where} top`).toBeGreaterThanOrEqual(0);
+                        expect(rect.y + rect.height, `${where} bottom`).toBeLessThanOrEqual(viewport.height);
+                        const cut = await bubble.evaluate(node => {
+                            const right = node.getBoundingClientRect().right;
+                            return [...node.querySelectorAll('.burnout-hover-title, .burnout-hover-row, .burnout-hover-row span')]
+                                .filter(element => element.scrollWidth > element.clientWidth || element.getBoundingClientRect().right > right + 0.5)
+                                .map(element => element.textContent);
+                        });
+                        expect(cut, `${where} truncated rows`).toEqual([]);
+                    }
+                }
+            }
+            if (data === largeCountPayload && viewport.width === 700) {
+                fs.mkdirSync(path.join(root, 'tmp/load-performance'), { recursive: true });
+                await page.locator('.performance-week-hover-bubble').screenshot({ path: path.join(root, 'tmp/load-performance/catch-up-readout-large-counts.png'), animations: 'disabled' });
+            }
+        }
+    }
+});
+
 test('a click alone opens the Catch Up readout, so touch needs no hover', async ({ page }) => {
     await openCatchUpWeeks(page, { width: 700, height: 900 });
     const hit = page.locator('.performance-week-svg[data-chart="listLoaded"] .performance-week-hit').nth(2);

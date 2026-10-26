@@ -59,6 +59,7 @@
 .performance-week-hover-bubble.is-right { transform: translate(12px, -50%); }
 .performance-week-hover-bubble .burnout-hover-title, .performance-week-hover-bubble .burnout-hover-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-week-hover-bubble .burnout-hover-row { align-items: center; display: flex; gap: .28rem; }
+.performance-week-hover-bubble .performance-week-counts span { white-space: normal; }
 .performance-settings th.num, .performance-settings td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .performance-settings table tr.is-selected > * { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .performance-sort, .performance-week-pick, .performance-load-toggle { background: transparent; border: 0; border-radius: 4px; margin: 0; padding: 2px 6px; font: inherit; color: inherit; cursor: pointer; text-transform: none; letter-spacing: normal; box-shadow: none; min-height: 0; }

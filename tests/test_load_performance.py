@@ -669,6 +669,14 @@ class LoadPerformanceTests(unittest.TestCase):
         self.assertEqual(('2026-09-21', 1, True), (week['weekStart'], week['loads'], week['partial']))
         self.assertEqual(30, report['retentionDays'])
 
+    def test_catch_up_weekly_marks_the_week_the_retention_window_starts_in(self):
+        # NOW is a Wednesday, so the window starts Monday Sep 21 at 12:00 and that week has lost its morning
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc))
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc))
+        oldest, following = performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual(('2026-09-21', True), (oldest['weekStart'], oldest['partial']))
+        self.assertEqual(('2026-09-28', False), (following['weekStart'], following['partial']))
+
 
 class LoadPerformanceSecurityTests(unittest.TestCase):
     def setUp(self):

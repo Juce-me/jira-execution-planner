@@ -241,6 +241,8 @@ def board_phases(row):
 
 
 def _week_start(moment):
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc)
     day = moment.date()
     return day - timedelta(days=day.weekday())
 
@@ -275,6 +277,69 @@ def _weekly(rows, now):
             cancelled=sum(row.outcome == 'cancelled' for row in group),
             partial=start + timedelta(days=7) > now.date()))
     return dict(scopeType=next(iter(scopes)) if scopes and weeks else None, mixedScopes=False, weeks=weeks)
+
+
+def _finite(value):
+    return not isinstance(value, bool) and isinstance(value, (int, float)) and math.isfinite(value)
+
+
+def _lane_dicts(row):
+    return [lane for lane in (row.lanes or []) if isinstance(lane, dict)]
+
+
+def _catch_up_capped(row):
+    return any(lane.get('completeness') == 'capped' for lane in _lane_dicts(row))
+
+
+def catch_up_list_ms(row):
+    """Time until both issue lists arrived (the slower lane), or None when a lane failed, was aborted or capped.
+
+    A failed or aborted lane is recorded with no body, so `payloadBytes > 0` separates a list that arrived from one
+    that did not; the dependency tail and the load outcome do not matter.
+    """
+    if row.outcome not in ('success', 'error', 'cancelled') or _catch_up_capped(row):
+        return None
+    lanes = {lane.get('project'): lane for lane in _lane_dicts(row)}
+    if set(lanes) != {'product', 'tech'}:
+        return None
+    for lane in lanes.values():
+        payload_bytes = lane.get('payloadBytes')
+        if not _finite(lane.get('durationMs')) or not _finite(payload_bytes) or payload_bytes <= 0:
+            return None
+    return max(lane['durationMs'] for lane in lanes.values())
+
+
+def _catch_up_metric(values):
+    return dict(avgMs=round(sum(values) / len(values), 2) if values else None,
+                medianMs=_percentile(values, .5), p95Ms=_percentile(values, .95))
+
+
+def _catch_up_weekly(rows, now, truncated=False):
+    """Catch Up load times per UTC calendar week: lists loaded (slower lane) and fully loaded (whole group)."""
+    by_week = defaultdict(list)
+    for row in rows:
+        if row.surface == 'eng_sprint':
+            by_week[_week_start(row.recorded_at)].append(row)
+    window_start = (now - timedelta(days=RETENTION_DAYS)).date()
+    weeks = []
+    for start in sorted(by_week):
+        group = by_week[start]
+        full = [row.duration_ms for row in group
+                if row.outcome == 'success' and not _catch_up_capped(row) and _finite(row.duration_ms)]
+        listed = [(row, catch_up_list_ms(row)) for row in group]
+        listed = [(row, value) for row, value in listed if value is not None]
+        hits = sum(all(lane.get('cacheState') == 'hit' for lane in _lane_dicts(row)) for row, _value in listed)
+        weeks.append(dict(
+            weekStart=start.isoformat(), loads=len(full), listLoads=len(listed),
+            errors=sum(row.outcome == 'error' for row in group),
+            cancelled=sum(row.outcome == 'cancelled' for row in group),
+            capped=sum(_catch_up_capped(row) for row in group),
+            cacheHitShare=round(hits / len(listed), 2) if listed else None,
+            listLoaded=_catch_up_metric([value for _row, value in listed]),
+            fullyLoaded=_catch_up_metric(full),
+            partial=(start + timedelta(days=7) > now.date() or start < window_start
+                     or (truncated and start == min(by_week)))))
+    return dict(weeks=weeks)
 
 
 def _cohort_key(row):
@@ -379,6 +444,7 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
             day.update(avgMs=None, p50Ms=None, p95Ms=None, p50FirstContentMs=None,
                        p95FirstContentMs=None, breachCount=0, contextual=True, mixedCohorts=True)
     return dict(summary=summary, trend=trend, weekly=_weekly(rows, now),
+                catchUpWeekly=_catch_up_weekly(rows, now, truncated),
                 samples=[dict(loadId=row.load_id, groupId=row.group_id, sprintId=row.sprint_id,
                               surface=row.surface, outcome=row.outcome, durationMs=row.duration_ms,
                               dependencyDurationMs=row.dependency_duration_ms,

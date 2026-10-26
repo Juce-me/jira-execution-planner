@@ -81,6 +81,12 @@ async function mountHarness(page) {
     const parentRoutes = [];
     const fieldRoutes = [];
     await installDashboardShell(page);
+    // The harness replaces the app bundle, so the app's early startup prefetch must not issue its own /api/config read.
+    await page.route('**/frontend/dist/early-bootstrap.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: '',
+    }));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',

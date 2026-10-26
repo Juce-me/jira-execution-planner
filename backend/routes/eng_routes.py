@@ -27,6 +27,7 @@ from backend.services.story_readiness import (
     InvalidCompleteReadinessInput,
     project_story_readiness,
 )
+from backend.services.jira_batches import JIRA_BATCH_CONCURRENCY, JiraBatchIncomplete
 from backend.services.team_catalog import normalize_group_team_labels, normalize_team_catalog
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
@@ -93,6 +94,7 @@ _STORY_READINESS_CACHE_MAX_ENTRIES = 128
 _STORY_READINESS_MAX_EPICS = 2000
 _STORY_READINESS_MAX_CHILDREN = 20000
 _STORY_READINESS_DEADLINE_SECONDS = 25
+_DEPENDENCIES_DEADLINE_SECONDS = 25
 
 _STORY_READINESS_ERRORS = {
     'invalid_story_readiness_scope': (400, 'Story readiness scope is invalid.'),
@@ -867,6 +869,7 @@ def get_dependencies():
         force_refresh = payload.get('refresh') is True
 
         started_at = time.perf_counter()
+        deadline = time.monotonic() + _DEPENDENCIES_DEADLINE_SECONDS
         auth_context = current_request_auth_context()
         cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
@@ -881,14 +884,25 @@ def get_dependencies():
             return response
 
         collect_started_at = time.perf_counter()
-        dependencies = collect_dependencies(keys, context=auth_context)
+        incomplete = None
+        try:
+            dependencies = collect_dependencies(keys, context=auth_context, max_concurrency=JIRA_BATCH_CONCURRENCY,
+                                                strict=True, deadline=deadline)
+        except JiraBatchIncomplete as error:
+            # A failed, cut-short, rate-limited or late batch: answer with what completed, flagged, never cached.
+            incomplete = error
+            dependencies = error.partial or {}
+            log_warning(f'Dependencies incomplete: reason={error.reason}')
         collect_ms = round((time.perf_counter() - collect_started_at) * 1000, 1)
-        if cache_enabled:
+        if cache_enabled and incomplete is None:
             with _cache_lock:
                 if get_jira_issue_cache_generation() == cache_generation:
                     DEPENDENCIES_CACHE[cache_key] = {'timestamp': time.time(), 'data': dependencies}
         total_ms = round((time.perf_counter() - started_at) * 1000, 1)
-        response = jsonify({'dependencies': dependencies})
+        body = {'dependencies': dependencies}
+        if incomplete is not None:
+            body.update(incomplete=True, reason=incomplete.reason)
+        response = jsonify(body)
         response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
         return response
     except AuthError as error:

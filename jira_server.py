@@ -30,6 +30,7 @@ from requests import Session
 from sqlalchemy.exc import OperationalError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.services.request_performance import measure_task_load, mark_task_cache_hit, submit_with_performance
+from backend.services.jira_batches import JiraBatchIncomplete
 from backend.services import epic_cohort_closed
 from backend.epm import config as epm_config
 from backend.epm import home as epm_home
@@ -1446,11 +1447,10 @@ def build_team_value(raw_team):
     return raw_team
 
 
-def jira_search_request(payload, *, context=None):
-    """Call Jira search endpoint through the active request auth boundary."""
-    if context is None:
-        return current_jira_search(payload)
-    return current_jira_search(payload, context=context)
+def jira_search_request(payload, *, context=None, timeout=None):
+    """Call Jira search endpoint through the active request auth boundary; context and timeout pass only when given."""
+    options = {name: value for name, value in (('context', context), ('timeout', timeout)) if value is not None}
+    return current_jira_search(payload, **options)
 
 
 def fetch_teams_from_jira_api():
@@ -3674,7 +3674,7 @@ def fetch_tasks(include_team_name=False):
         return error_response, 500
 
 
-def fetch_issues_by_keys(keys, fields_list, context=None):
+def fetch_issues_by_keys(keys, fields_list, context=None, max_concurrency=1, strict=False, deadline=None):
     """Fetch issues by keys in batches."""
     return _jira_client.fetch_issues_by_keys(
         keys,
@@ -3682,6 +3682,7 @@ def fetch_issues_by_keys(keys, fields_list, context=None):
         search_request=jira_search_request,
         context=context,
         log_warning_fn=log_warning,
+        max_concurrency=max_concurrency, strict=strict, deadline=deadline,
     )
 
 
@@ -3778,8 +3779,8 @@ def build_issue_snapshot(issue, team_field_id=None, epic_link_field_id=None):
     }
 
 
-def collect_dependencies(keys, context=None):
-    """Fetch dependency links for a set of issues."""
+def collect_dependencies(keys, context=None, max_concurrency=1, strict=False, deadline=None):
+    """Fetch dependency links for a set of issues; strict raises JiraBatchIncomplete with the partial map."""
     keys = sorted({str(k).strip() for k in keys if str(k).strip()})
     if not keys:
         return {}
@@ -3831,7 +3832,19 @@ def collect_dependencies(keys, context=None):
     if team_field_id and team_field_id not in fields_list:
         fields_list.append(team_field_id)
 
-    issues = fetch_issues_by_keys(keys, fields_list)
+    # Cap 1 keeps today's implicit per-call context; above it, workers (no request context) carry the resolved one.
+    worker_context = current_jira_auth_context(auth_context) if max_concurrency > 1 else None
+    failures = []
+
+    def fetch_round(round_keys):
+        try:
+            return fetch_issues_by_keys(round_keys, fields_list, context=worker_context,
+                                        max_concurrency=max_concurrency, strict=strict, deadline=deadline)
+        except JiraBatchIncomplete as error:
+            failures.append(error)
+            return error.partial or []
+
+    issues = fetch_round(keys)
     issue_map = {}
     linked_keys = set()
     for issue in issues:
@@ -3844,8 +3857,8 @@ def collect_dependencies(keys, context=None):
                 linked_keys.add(linked['key'])
 
     missing_linked = sorted(linked_keys - set(issue_map.keys()))
-    if missing_linked:
-        linked_issues = fetch_issues_by_keys(missing_linked, fields_list)
+    if missing_linked and not failures:
+        linked_issues = fetch_round(missing_linked)
         for issue in linked_issues:
             snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
             if snapshot.get('key'):
@@ -3913,6 +3926,8 @@ def collect_dependencies(keys, context=None):
         if entries:
             dependencies[base_key] = entries
 
+    if failures:
+        raise JiraBatchIncomplete(failures[0].reason, failures[0].rate_limited, partial=dependencies)
     return dependencies
 
 

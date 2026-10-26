@@ -7,10 +7,13 @@ import time
 
 import requests
 
+from backend.services.jira_batches import JiraBatchIncomplete, run_batches
 from backend.services.request_performance import current_observer
 
 
 RETRYABLE_JIRA_STATUS_CODES = {429, 500, 502, 503, 504}
+KEY_BATCH_SIZE = 100
+MAX_PAGES_PER_BATCH = 10
 
 # Bound how long a single attempt may spend establishing the TCP/TLS connection.
 # Connection-level stalls (the dominant transient Jira failure) must fail fast so
@@ -319,28 +322,81 @@ def jira_search_request(jira_url, headers, payload, *, request_fn=None):
     )
 
 
-def fetch_issues_by_keys(keys, fields_list, *, search_request, context=None, log_warning_fn=None):
-    """Fetch issues by keys in batches using Jira search."""
+def _strict_key_batch(search, payload):
+    """Every page of one key batch, following nextPageToken; anything unusable raises JiraBatchIncomplete."""
+    issues = []
+    seen_tokens = set()
+    for _page in range(MAX_PAGES_PER_BATCH):
+        response = search(payload)
+        if response.status_code != 200:
+            try:
+                upstream = (response.json() or {}).get('upstreamStatus')
+            except (AttributeError, TypeError, ValueError):
+                upstream = None
+            limited = response.status_code == 429 or upstream == 429
+            raise JiraBatchIncomplete('rate_limited' if limited else 'http_status', limited)
+        try:
+            data = response.json()
+        except ValueError:
+            data = None
+        rows = data.get('issues') if isinstance(data, dict) else None
+        token = data.get('nextPageToken') if isinstance(data, dict) else None
+        if (not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows)
+                or not isinstance(data.get('isLast'), bool)):
+            raise JiraBatchIncomplete('continuation')
+        issues.extend(rows)
+        if data['isLast']:
+            return issues
+        if not isinstance(token, str) or not token or token in seen_tokens:
+            raise JiraBatchIncomplete('continuation')
+        seen_tokens.add(token)
+        payload = {**payload, 'nextPageToken': token}
+    raise JiraBatchIncomplete('continuation')
+
+
+def fetch_issues_by_keys(keys, fields_list, *, search_request, context=None, log_warning_fn=None,
+                         max_concurrency=1, strict=False, deadline=None):
+    """Fetch issues by keys in batches of 100 using Jira search.
+
+    Non-strict (the default for every caller but /api/dependencies) reads one page per batch and logs
+    and skips a failed batch. Strict follows each batch's continuation tokens and raises
+    JiraBatchIncomplete, carrying the issues of the batches that completed, when any batch fails, is
+    malformed, needs more than MAX_PAGES_PER_BATCH pages or misses the deadline (a time.monotonic()
+    value that also bounds each call's timeout). Batches run through run_batches with max_concurrency.
+    """
     if not keys:
         return []
     log_warning_fn = log_warning_fn or _noop_log
 
-    results = []
-    batch_size = 100
-    for i in range(0, len(keys), batch_size):
-        batch = keys[i:i + batch_size]
+    def search(payload):
+        if deadline is None:
+            return search_request(payload, context=context)
+        return search_request(payload, context=context, timeout=max(1.0, min(30.0, deadline - time.monotonic())))
+
+    def fetch_batch(batch):
         quoted_keys = ','.join(f'"{key}"' for key in batch)
         payload = {
             'jql': f'key in ({quoted_keys})',
-            'maxResults': batch_size,
+            'maxResults': KEY_BATCH_SIZE,
             'fields': fields_list,
         }
-        response = search_request(payload, context=context)
+        if strict:
+            return _strict_key_batch(search, payload)
+        response = search(payload)
         if response.status_code != 200:
             log_warning_fn(f'Dependencies fetch error: status={response.status_code}')
-            continue
+            return []
         data = response.json() or {}
-        results.extend(data.get('issues', []) or [])
+        return data.get('issues', []) or []
+
+    batches = [keys[i:i + KEY_BATCH_SIZE] for i in range(0, len(keys), KEY_BATCH_SIZE)]
+    outcome = run_batches(batches, fetch_batch, max_concurrency=max_concurrency, deadline=deadline)
+    results = [issue for issues in outcome.results if issues for issue in issues]
+    if outcome.failure is not None and not isinstance(outcome.failure, JiraBatchIncomplete):
+        raise outcome.failure
+    if not outcome.complete:
+        reason = outcome.failure.reason if outcome.failure is not None else 'deadline'
+        raise JiraBatchIncomplete(reason, outcome.rate_limited, partial=results)
     return results
 
 

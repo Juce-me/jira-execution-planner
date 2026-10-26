@@ -67,7 +67,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # _normalize_cohort_issues tail, the full-changelog option, parse_epic_cohort_request and the
     # route branch (+128 over the line above; the query building and selection live in
     # backend/services/epic_cohort_closed.py).
-    "jira_server.py": 6615,
+    # Catch Up cold load speed Task 2a: collect_dependencies gains the cap/strict/deadline keywords, the explicit
+    # worker context and the per-round JiraBatchIncomplete capture that raises with the partial map; the batch
+    # runner, continuation and deadline logic live in backend/services/jira_batches.py and backend/jira_client.py
+    # (+15 over the line above; jira_search_request's pass-through got shorter).
+    "jira_server.py": 6630,
     # App decomposition ratchets the entrypoint to its exact measured size.
     # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
     # pass-through, status readout, projection calls and shared EPM availability,

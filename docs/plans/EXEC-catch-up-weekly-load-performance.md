@@ -1,6 +1,6 @@
 # Catch Up Weekly Load Performance Implementation Plan
 
-> **Status:** Planned on 2026-10-25 from `origin/main` at `57601293` on branch `feature/catch-up-weekly-load-performance` (no issue number was supplied; rename the branch to `feature/<issue>-catch-up-weekly-load-performance` if one exists). Revised the same day after four independent reviews (metrics and definition of done, backend and data, frontend and project rules, contract and execution safety); every finding folded in was checked against the code first. Not started. This plan is its own design record (no separate spec file).
+> **Status:** Planned on 2026-10-25 from `origin/main` at `57601293` on branch `feature/catch-up-weekly-load-performance` (no issue number was supplied; rename the branch to `feature/<issue>-catch-up-weekly-load-performance` if one exists). Revised the same day after four independent reviews (metrics and definition of done, backend and data, frontend and project rules, contract and execution safety); every finding folded in was checked against the code first. Executed locally on 2026-10-26 (Tasks 0-4, subagent-driven); not pushed, no PR, awaiting the requester's review and confirmation of the calls. This plan is its own design record (no separate spec file).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -123,11 +123,11 @@ Task 4's own commits cannot be recorded here (they contain this file); the final
 
 | Task | Status | Commit | Notes |
 |---|---|---|---|
-| T0 | pending | | baseline |
-| T1 | pending | | backend |
-| T2 | pending | | chart component |
-| T3 | pending | | wiring and browser spec |
-| T4 | pending | | docs, build, full verification |
+| T0 | done 2026-10-26 | | baseline at `e09a078d` (plan commit; origin/main `57601293`): `make test` Ran 2413 tests, OK (skipped=50); `make test-security` Ran 82 tests, OK; `test:frontend:unit` 3048 pass, 0 fail; Chromium `load_performance` + `design_system_hover_surfaces` 42 passed; extraction lint exit 1 with the six enforced problems (GroupBoardSettings `expandedInputCount` and unresolved inventory, `useTeamCatalogLifecycle` default, `useTeamGroupSettings` x3) and 104 ESLint warnings (0 errors); 'before' screenshots copied to `tmp/load-performance/before/` |
+| T1 | done 2026-10-26 | `8daf153b` | backend; `tests.test_load_performance` + endpoint guards 86 tests OK; four mutations (smaller lane, error rows in Fully loaded, no UTC normalisation, ignored truncation flag) each turned tests red and were reverted |
+| T2 | done 2026-10-26 | `66198528` | chart component; `test_performance_settings.js` + `test_design_system_ratchets.js` 29 pass; budgets OK; lint unchanged (same six problems, 104 warnings, 83 modules) |
+| T3 | done 2026-10-26 | `bf1ad44e` | wiring and browser spec; `load_performance.spec.js` 26 passed (16 existing + 10 new); `design_system_hover_surfaces` 26 passed; Surface All screenshots byte-identical to `before/` |
+| T4 | in progress | | docs, build, full verification; its commits are in the final report |
 
 ### Task 0: Baseline
 

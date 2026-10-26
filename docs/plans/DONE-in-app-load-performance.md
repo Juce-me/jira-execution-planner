@@ -2,7 +2,7 @@
 
 Status: Implemented and accepted by the user on 2026-09-08; issue #137 baseline instrumentation. This record is retained for audit. The All work feature is a separate implementation.
 
-Current accuracy (2026-10-21): partially accurate. The sample, filter and storage contract below still holds. With Surface set to `eng_board`, Settings -> Admin -> Performance no longer shows the daily average/p95 chart and the expandable evidence list; it shows a weekly phase view instead (see the Performance weekly Board stats entry in `docs/ontology.md`). Other selections keep the layout described here, with the secondary filters behind a disclosure.
+Current accuracy (2026-10-21): partially accurate. The sample, filter and storage contract below still holds. With Surface set to `eng_board`, Settings -> Admin -> Performance no longer shows the daily average/p95 chart and the expandable evidence list; it shows a weekly phase view instead (see the Performance weekly Board stats entry in `docs/ontology.md`). Other selections keep the layout described here, with the secondary filters behind a disclosure. Updated 2026-10-26: with Surface `eng_sprint` the daily average/p95 chart is likewise replaced by weekly List loaded / Fully loaded charts (see the Performance weekly Catch Up stats entry in `docs/ontology.md`).
 
 Goal: Measure real selected-group sprint loads through rendering, persist debug observations, and expose workspace-admin trends and slow-load evidence. Target <=2 seconds, SLO p95 <=4 seconds. This slice does not implement All work or claim capped legacy data is complete.
 

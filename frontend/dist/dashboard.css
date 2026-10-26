@@ -2494,6 +2494,9 @@ h1 {
   display: flex;
   gap: .28rem;
 }
+.performance-week-hover-bubble .performance-week-counts span {
+  white-space: normal;
+}
 .performance-settings th.num,
 .performance-settings td.num {
   text-align: right;

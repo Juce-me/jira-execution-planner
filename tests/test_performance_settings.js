@@ -173,7 +173,7 @@ test('Catch Up weekly view draws average, median and p95 lines for list and full
     for (const copy of [
         'Counts a load even when its dependency request failed or it was cancelled afterwards. Measured from the start of the data requests; downloading and starting the app is not included.',
         'Time until the issue lists and the requested dependencies have loaded and painted. Successful loads only.',
-        'Weeks are UTC calendar weeks starting Monday. * marks a partial week: the current week is still filling, and the oldest week can begin before the 30-day window.',
+        'Weeks are UTC calendar weeks starting Monday. * marks a partial week: the current week is still filling, and the oldest week can begin before the 30-day window. Neither measurement includes the readiness check or alerts.',
         'Each week blends every revision, cache state, Sprint and Group in the current selection; Cache hit shows how much of the week was served from cache. Use the Group, Sprint and Revision filters to compare like with like.',
         'Fewer than 20 loads in a week is preliminary: its p95 is close to the slowest load.',
         'With dependencies hidden or skipped, Fully loaded ends with the lists.']) assert.ok(html.includes(copy), copy);
@@ -225,6 +225,46 @@ test('one week draws markers without a line; a gap week breaks the line', () => 
         catchWeek('2026-10-05', { listLoads: 0, listLoaded: none, cacheHitShare: null }), catchWeek('2026-10-12'), catchWeek('2026-10-19')] });
     assert.equal(gap.match(/<polyline[^>]*data-series=/g).length, 9, 'list chart: two segments per series; full chart: one');
     assert.equal(gap.match(/data-point=/g).length, 27, 'list chart skips the gap week: 4 weeks x 3 series; full chart 5 x 3');
+});
+
+test('a calendar week missing from the response breaks the line, and consecutive weeks keep one line', () => {
+    const lines = svg => [...svg.matchAll(/<polyline[^>]*points="([^"]*)"[^>]*data-series="(\w+)"/g)]
+        .map(([, list, series]) => ({ series, points: list.split(' ').length }));
+    const missing = renderCatchUp({ weeks: [catchWeek('2026-09-14'), catchWeek('2026-09-21'), catchWeek('2026-10-05'), catchWeek('2026-10-12')] });
+    assert.equal(missing.match(/<polyline[^>]*data-series=/g).length, 12, 'two runs per series in each of two charts');
+    assert.equal(missing.match(/data-point=/g).length, 24, 'every week keeps its markers: 4 weeks x 3 series x 2 charts');
+    for (const key of ['listLoaded', 'fullyLoaded']) {
+        const svg = chartOf(missing, key);
+        for (const series of ['avgMs', 'medianMs', 'p95Ms']) {
+            assert.deepEqual(lines(svg).filter(line => line.series === series).map(line => line.points), [2, 2], `${key} ${series}`);
+        }
+        const xs = points(svg).filter(point => point.series === 'avgMs').map(point => point.x);
+        assert.ok(Math.abs((xs[1] - xs[0]) - (xs[2] - xs[1])) < 0.01, 'markers keep equal slot spacing across the missing week');
+    }
+    const consecutive = renderCatchUp({ weeks: [catchWeek('2026-09-14'), catchWeek('2026-09-21'), catchWeek('2026-09-28'), catchWeek('2026-10-05')] });
+    assert.equal(consecutive.match(/<polyline[^>]*data-series=/g).length, 6, 'one line per series in each of two charts');
+    for (const key of ['listLoaded', 'fullyLoaded']) assert.deepEqual(lines(chartOf(consecutive, key)).map(line => line.points), [4, 4, 4]);
+});
+
+test('the 2s and 4s reference labels keep a text height apart on a large axis and stay by their lines otherwise', () => {
+    // { line, text }: the reference line's y and its label's baseline y, in viewBox units.
+    const reference = (svg, label) => {
+        const [, line, text] = svg.match(new RegExp(`<g class="performance-reference"><line[^>]*y1="([\\d.]+)"[^>]*></line><text[^>]*y="([\\d.]+)"[^>]*>${label}<`));
+        return { line: Number(line), text: Number(text) };
+    };
+    for (const slowest of [60000, 120000]) {
+        const html = renderCatchUp({ weeks: [catchWeek('2026-10-12'), catchWeek('2026-10-19', { fullyLoaded: metric(9000, 8500, slowest) })] });
+        const target = reference(chartOf(html, 'fullyLoaded'), '2s target');
+        const slo = reference(chartOf(html, 'fullyLoaded'), '4s SLO');
+        assert.ok(target.text - slo.text >= 12, `${slowest} ms axis: baselines ${slo.text} and ${target.text} are at least 12 apart`);
+        assert.ok(Math.abs((target.text - (target.line + 4)) - ((slo.line + 4) - slo.text)) < 0.01, 'the 2s label moves down as far as the 4s label moves up');
+        assert.ok(target.text <= 256 && slo.text >= 22, 'both labels stay inside the drawing');
+    }
+    const list = chartOf(renderCatchUp({ weeks: [catchWeek('2026-10-12')] }), 'listLoaded');
+    for (const label of ['2s target', '4s SLO']) {
+        const { line, text } = reference(list, label);
+        assert.ok(Math.abs(text - (line + 4)) < 0.01, `${label} sits by its line when the lines are far apart`);
+    }
 });
 
 test('an empty selection and a chart with no qualifying week say so', () => {

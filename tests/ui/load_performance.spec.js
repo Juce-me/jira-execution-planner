@@ -467,6 +467,25 @@ test('Catch Up weekly charts and the blended-cohort notice follow the Surface', 
     await expect(page.getByText('Choose one surface, scope, cache, revision and configuration cohort', { exact: false })).toHaveCount(0);
 });
 
+test('Catch Up drops the legacy summary line and its disclosure, and keeps the counts line; Surface All keeps all three', async ({ page }) => {
+    await page.setViewportSize({ width: 1000, height: 1100 });
+    await openPanel(page, catchUpPayload);                                    // Surface "All"
+    const summaryLine = page.locator('.performance-settings p').filter({ hasText: /^Average .* · p50 .* · p95 / });
+    const disclosure = page.locator('.performance-settings summary').filter({ hasText: 'About these measurements' });
+    const counts = page.getByText('5 loads above 4s · 1 errors · 1 cancelled · 2 capped · 21 completeness unverified', { exact: true });
+    await expect(page.locator('.performance-trend')).toBeVisible();
+    await expect(summaryLine).toHaveCount(1);
+    await expect(disclosure).toHaveCount(1);
+    await expect(counts).toBeVisible();
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('eng_sprint');
+    await expect(page.getByRole('heading', { name: 'List loaded, by week' })).toBeVisible();
+    await expect(summaryLine).toHaveCount(0);
+    await expect(page.locator('.performance-summary')).toHaveCount(0);
+    await expect(page.getByText('About these measurements')).toHaveCount(0);
+    await expect(counts).toBeVisible();
+    await expect(page.getByText('Contextual timings — completeness unverified.', { exact: true })).toBeVisible();
+});
+
 test('Catch Up legend isolates one series in both charts, lines and markers, and a second press restores them', async ({ page }) => {
     await openCatchUpWeeks(page);
     const median = page.getByRole('button', { name: 'Median', exact: true });
@@ -494,6 +513,51 @@ test('Catch Up weekly labels and marks stay inside each drawing, and the page ne
             expect(clipped, `${chart} ${viewport.width}px`).toEqual([]);
         }
         expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `${viewport.width}px page overflow`).toBeLessThanOrEqual(0);
+        // The panel scrolls on its own (overflow-y: auto), so a sideways overflow inside it would not reach the page:
+        // check the panel and every ancestor up to the document root (this harness mounts the panel without the settings dialog).
+        const sideways = await page.locator('.performance-settings').evaluate(panel => {
+            const found = [];
+            for (let node = panel; node; node = node.parentElement) {
+                found.push({ node: `${node.tagName.toLowerCase()}${node.id ? `#${node.id}` : ''}${node.className ? `.${node.className}` : ''}`,
+                    overflow: node.scrollWidth - node.clientWidth });
+            }
+            return found;
+        });
+        expect(sideways.length, 'panel, its ancestors and the document root').toBeGreaterThanOrEqual(4);
+        expect(sideways.filter(entry => entry.overflow > 0), `${viewport.width}px sideways overflow`).toEqual([]);
+    }
+});
+
+test('the 2s and 4s reference labels never overlap and stay inside each Catch Up chart, on a 60 s and a 120 s axis', async ({ page }) => {
+    for (const slowest of [120000, 60000]) {
+        const weeks = catchUpWeeks.map((week, index) => index === 4
+            ? { ...week, fullyLoaded: { ...week.fullyLoaded, p95Ms: slowest } } : week);
+        for (const viewport of [{ width: 1000, height: 1100 }, { width: 390, height: 900 }]) {
+            await openCatchUpWeeks(page, viewport, { ...catchUpPayload, catchUpWeekly: { weeks } });
+            for (const chart of ['listLoaded', 'fullyLoaded']) {
+                const where = `${slowest} ms ${viewport.width}px ${chart}`;
+                const svg = page.locator(`.performance-week-svg[data-chart="${chart}"]`);
+                const { labels, box } = await svg.evaluate(node => ({
+                    labels: [...node.querySelectorAll('.performance-reference text')].map(text => ({ label: text.textContent, ...text.getBoundingClientRect().toJSON() })),
+                    box: node.getBoundingClientRect().toJSON(),
+                }));
+                expect(labels.map(label => label.label), where).toEqual(['2s target', '4s SLO']);
+                const [target, slo] = labels;
+                expect(target.height, `${where} painted text`).toBeGreaterThan(0);
+                const apart = target.bottom <= slo.top || slo.bottom <= target.top || target.right <= slo.left || slo.right <= target.left;
+                expect(apart, `${where} labels overlap: 2s ${target.top}-${target.bottom}, 4s ${slo.top}-${slo.bottom}`).toBe(true);
+                for (const label of labels) {
+                    expect(label.top, `${where} ${label.label} top`).toBeGreaterThanOrEqual(box.top - 0.5);
+                    expect(label.bottom, `${where} ${label.label} bottom`).toBeLessThanOrEqual(box.bottom + 0.5);
+                    expect(label.left, `${where} ${label.label} left`).toBeGreaterThanOrEqual(box.left - 0.5);
+                    expect(label.right, `${where} ${label.label} right`).toBeLessThanOrEqual(box.right + 0.5);
+                }
+            }
+            if (slowest === 120000 && viewport.width === 1000) {
+                fs.mkdirSync(path.join(root, 'tmp/load-performance'), { recursive: true });
+                await page.locator('.performance-week-svg[data-chart="fullyLoaded"]').screenshot({ path: path.join(root, 'tmp/load-performance/catch-up-reference-labels-120s.png'), animations: 'disabled' });
+            }
+        }
     }
 });
 

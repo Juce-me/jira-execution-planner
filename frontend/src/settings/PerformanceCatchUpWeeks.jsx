@@ -22,7 +22,7 @@ const NOTES = {
     fullyLoaded: 'Time until the issue lists and the requested dependencies have loaded and painted. Successful loads only.',
 };
 const ABOUT = [
-    'Weeks are UTC calendar weeks starting Monday. * marks a partial week: the current week is still filling, and the oldest week can begin before the 30-day window.',
+    'Weeks are UTC calendar weeks starting Monday. * marks a partial week: the current week is still filling, and the oldest week can begin before the 30-day window. Neither measurement includes the readiness check or alerts.',
     'Each week blends every revision, cache state, Sprint and Group in the current selection; Cache hit shows how much of the week was served from cache. Use the Group, Sprint and Revision filters to compare like with like.',
     `Fewer than ${PRELIMINARY_LOADS} loads in a week is preliminary: its p95 is close to the slowest load.`,
     'With dependencies hidden or skipped, Fully loaded ends with the lists.',
@@ -36,10 +36,15 @@ const HOVER_EDGE_GUTTER = 12;
 const HOVER_POINTER_GAP = 12;
 const HOVER_BUBBLE_WIDTH = 260;
 const HOVER_BUBBLE_HEIGHT = 144;
+const REFERENCE_LABEL_GAP = 12;   // viewBox units between the two reference label baselines: more than the 9px tick text height
 
 const weekName = week => `${weekLabel(week.weekStart)}${week.partial ? '*' : ''}`;
 const share = value => Number.isFinite(value) ? `${Math.round(value * 100)}%` : 'Unknown';
 const valueOf = (week, metric, series) => (Number.isFinite(week[metric.key]?.[series.key]) ? week[metric.key][series.key] : null);
+const utcDay = weekStart => {
+    const [year, month, day] = weekStart.split('-').map(Number);
+    return Date.UTC(year, month - 1, day) / 86400000;
+};
 
 function marker(series, x, y, value, className) {
     const props = { className, 'data-point': series.key, 'data-value': value };
@@ -59,10 +64,14 @@ function PerformanceLineChart({ weeks, metric, isolated }) {
     const dimmed = series => (isolated && isolated !== series.key ? ' is-dimmed' : '');
     const runs = series => weeks.reduce((all, week, index) => {
         const value = valueOf(week, metric, series);
-        if (value === null) all.push([]);
-        else all[all.length - 1].push(`${center(index)},${y(value)}`);
+        // The server returns only weeks with rows: a missing calendar week breaks the line like an empty one.
+        if (value === null || (index > 0 && utcDay(week.weekStart) - utcDay(weeks[index - 1].weekStart) > 7)) all.push([]);
+        if (value !== null) all[all.length - 1].push(`${center(index)},${y(value)}`);
         return all;
     }, [[]]).filter(run => run.length >= 2);
+    // On a large axis the 2s and 4s lines nearly meet: move the 2s label down and the 4s label up by the same amount.
+    const [targetBaseline, sloBaseline] = REFERENCES.map(([value]) => y(value) + 4);
+    const nudge = Math.max(0, (REFERENCE_LABEL_GAP - (targetBaseline - sloBaseline)) / 2);
     const showBubble = (event, week) => {
         const boundaryRect = event.currentTarget.ownerSVGElement?.closest?.('.performance-week-chart')?.getBoundingClientRect?.();
         const point = resolveFloatingHoverPosition({
@@ -89,9 +98,9 @@ function PerformanceLineChart({ weeks, metric, isolated }) {
                 <line x1={PADDING.left} x2={CHART_WIDTH - PADDING.right} y1={y(tick)} y2={y(tick)} className="performance-week-grid" />
                 <text x={PADDING.left - 8} y={y(tick) + 4} textAnchor="end" className="performance-week-tick">{`${tick / 1000}s`}</text>
             </g>)}
-            {REFERENCES.map(([value, label]) => <g key={label} className="performance-reference">
+            {REFERENCES.map(([value, label], index) => <g key={label} className="performance-reference">
                 <line x1={PADDING.left} x2={CHART_WIDTH - PADDING.right + 6} y1={y(value)} y2={y(value)} />
-                <text x={CHART_WIDTH - PADDING.right + 10} y={y(value) + 4} className="performance-week-tick">{label}</text>
+                <text x={CHART_WIDTH - PADDING.right + 10} y={index === 0 ? targetBaseline + nudge : sloBaseline - nudge} className="performance-week-tick">{label}</text>
             </g>)}
             {SERIES.flatMap(series => runs(series).map(run => <polyline key={`${series.key}-${run[0]}`} points={run.join(' ')}
                 className={`performance-line-path performance-phase is-${series.slug}${dimmed(series)}`} data-series={series.key} />))}

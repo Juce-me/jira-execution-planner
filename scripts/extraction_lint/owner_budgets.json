@@ -4984,7 +4984,7 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/settings/PerformanceSettings.jsx:8",
-            "sourceDigest": "52a641851c6281437172869f639aa3df14b9d91037cb8d5b54920669c6b72132"
+            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2"
           },
           "callers": [
             {
@@ -5020,7 +5020,7 @@
           ],
           "inventory": {
             "source": "frontend/src/settings/PerformanceSettings.jsx:56",
-            "sourceDigest": "52a641851c6281437172869f639aa3df14b9d91037cb8d5b54920669c6b72132",
+            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -19105,8 +19105,8 @@
         "SERIES",
         "default"
       ],
-      "lineCount": 162,
-      "lineCeiling": 162,
+      "lineCount": 171,
+      "lineCeiling": 171,
       "interfaces": [
         {
           "exportName": "default",
@@ -19129,8 +19129,8 @@
           "propCeiling": 1,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceCatchUpWeeks.jsx:138",
-            "sourceDigest": "edf9e7225182e992d6587390f4c11540b6e75cd19c8e730ed2082c15d19f911d"
+            "source": "frontend/src/settings/PerformanceCatchUpWeeks.jsx:147",
+            "sourceDigest": "b7b1e6bd4b70146ebfe800373d23de1d1a9b17cf5411cdb43cf000d970ed7133"
           },
           "callers": [
             {
@@ -19152,8 +19152,8 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16992,
-      "ceiling": 16992
+      "measured": 17001,
+      "ceiling": 17001
     },
     "stats": {
       "measured": 2896,
@@ -19164,12 +19164,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 27136,
-      "ceiling": 27136
+      "measured": 27145,
+      "ceiling": 27145
     },
     "appPlusOwners": {
-      "measured": 34795,
-      "ceiling": 34795
+      "measured": 34804,
+      "ceiling": 34804
     }
   },
   "transfer": {

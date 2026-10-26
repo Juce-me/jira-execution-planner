@@ -112,15 +112,15 @@ export default function PerformanceSettings({ backendUrl }) {
         {summary?.sampleCount > 0 && (filters.surface === 'eng_board'
             ? <PerformanceBoardWeeks weekly={data.weekly} samples={data.samples || []} />
             : <>
-            <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>
+            {filters.surface !== 'eng_sprint' && <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>}
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>
             {(data.contextual || summary.contextual) && <p role="status">Contextual timings — completeness unverified.</p>}
             {summary.mixedCohorts && filters.surface !== 'eng_sprint' && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
-            <details className="performance-methodology"><summary>About these measurements</summary>
+            {filters.surface !== 'eng_sprint' && <details className="performance-methodology"><summary>About these measurements</summary>
                 {summary.eligibleCount < 20 && <p>Fewer than 20 complete successful loads: percentiles are preliminary.</p>}
                 <p>Timing includes data collection through rendering. Failed, cancelled and capped loads are excluded from latency summaries. Unverified loads do not establish that the full-load SLO passes.</p>
                 <p>Compare the same group, sprint, cache state and revision. Expand a load to inspect issue counts and backend stages.</p>
-            </details>
+            </details>}
             {summary.p95Ms > 4000 && <p className="performance-breach" role="status">p95 exceeds the 4s SLO. Expand slow loads below to compare lane times, issue counts, cache state and backend stages.</p>}
             {filters.surface === 'eng_sprint' ? <PerformanceCatchUpWeeks weekly={data.catchUpWeekly} /> : <PerformanceTrend trend={data.trend} />}
             <h4>Recent load evidence</h4>

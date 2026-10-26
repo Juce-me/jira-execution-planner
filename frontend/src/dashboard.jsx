@@ -951,7 +951,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
             const searchInputRef = useRef(null);
 
 
-            const [dependencyData, setDependencyData] = useState({}), [dependencyRefreshNonce, setDependencyRefreshNonce] = useState(0);
+            const [dependencyData, setDependencyData] = useState({}), [dependencyRefreshNonce, setDependencyRefreshNonce] = useState(0), [dependencyIncomplete, setDependencyIncomplete] = useState(false);
             const [dependencyFocus, setDependencyFocus] = useState(null);
             const [dependencyHover, setDependencyHover] = useState(null);
             const [dependencyLookupCache, setDependencyLookupCache] = useState({});
@@ -3773,20 +3773,21 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 }
                 if (dependencySkipRef.current.consume(keys.join('|'), loadEpochRef.current)) return ENG_TASK_LOAD_OUTCOME.APPLIED;
                 const controller = registerSprintFetch(), readToken = issueEditStateRef.current.beginRead({ aggregate: true });
+                setDependencyIncomplete(false);
                 try {
                     const response = await requestDependencies(BACKEND_URL, keys, { signal: controller.signal });
                     if (!response.ok) {
-                        console.error('Dependencies fetch failed:', response.status);
+                        console.error('Dependencies fetch failed:', response.status); setDependencyIncomplete(true);
                         return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                     }
                     const data = await response.json();
                     if (!issueEditStateRef.current.isCurrentAggregateRead(readToken)) { setDependencyRefreshNonce(value => value + 1); return ENG_TASK_LOAD_OUTCOME.IGNORED; }
-                    setDependencyData(data.dependencies || {});
+                    setDependencyData(data.dependencies || {}); setDependencyIncomplete(data.incomplete === true);
                     return ENG_TASK_LOAD_OUTCOME.APPLIED;
                 } catch (err) {
                     if (err.name === 'AbortError') return ENG_TASK_LOAD_OUTCOME.IGNORED;
                     if (isAuthenticationRequiredError(err)) return ENG_TASK_LOAD_OUTCOME.AUTH_REQUIRED;
-                    console.error('Dependencies fetch error:', err);
+                    console.error('Dependencies fetch error:', err); setDependencyIncomplete(true);
                     return ENG_TASK_LOAD_OUTCOME.NON_AUTH_FAILURE;
                 } finally {
                     issueEditStateRef.current.finishRead(readToken); cleanupSprintFetch(controller);
@@ -7153,6 +7154,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     readinessStatus={storyReadiness.status}
                                     readinessError={storyReadinessMessage}
                                     onRetryReadiness={storyReadiness.retry}
+                                    dependenciesIncomplete={dependencyIncomplete && Boolean(dependencyKeySignature)}
+                                    onRetryDependencies={() => setDependencyRefreshNonce(value => value + 1)}
                                     activeDependencyFocus={activeDependencyFocus}
                                     handleDependencyFocusClick={handleDependencyFocusClick}
                                     initiativeGroups={initiativeGroups}

@@ -26,6 +26,8 @@ export default function EngView({
     readinessStatus = 'idle',
     readinessError = '',
     onRetryReadiness,
+    dependenciesIncomplete = false,
+    onRetryDependencies,
     activeDependencyFocus,
     handleDependencyFocusClick,
     initiativeGroups,
@@ -113,6 +115,12 @@ export default function EngView({
                             {readinessStatus === 'unavailable' && onRetryReadiness && (
                                 <button type="button" className="secondary compact" onClick={onRetryReadiness}>Retry</button>
                             )}
+                        </div>
+                    )}
+                    {dependenciesIncomplete && (
+                        <div className="story-readiness-notice" role="status">
+                            <span>Some dependencies could not be loaded.</span>
+                            <button type="button" className="secondary compact" onClick={onRetryDependencies}>Retry</button>
                         </div>
                     )}
 

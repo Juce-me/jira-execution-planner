@@ -124,3 +124,132 @@ test('formatters follow the server grouping: UTC Monday weeks and stated-once UT
     assert.equal(niceMaximum(3000), 8000);
     assert.equal(phaseTotal(phases(1000, 2000, 3000, 4000)), 10000);
 });
+
+function loadCatchUp() {
+    const result = buildSync({ entryPoints: ['frontend/src/settings/PerformanceCatchUpWeeks.jsx'], bundle: true,
+        platform: 'node', format: 'cjs', write: false, external: ['react', 'react-dom'] });
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, module, module.exports);
+    return module.exports;
+}
+
+const metric = (avg, median, p95) => ({ avgMs: avg, medianMs: median, p95Ms: p95 });
+const none = metric(null, null, null);
+// A valid week: 12 successful loads; 14 list-eligible loads (the other two were an error and a cancellation after both lists arrived).
+const catchWeek = (weekStart, overrides = {}) => ({ weekStart, partial: false, loads: 12, listLoads: 14, errors: 1, cancelled: 2, capped: 0,
+    cacheHitShare: 0.25, listLoaded: metric(3200, 3000, 5200), fullyLoaded: metric(9000, 8500, 12000), ...overrides });
+const renderCatchUp = weekly => renderToStaticMarkup(React.createElement(loadCatchUp().default, { weekly }));
+const chartOf = (html, key) => html.match(new RegExp(`<svg[^>]*data-chart="${key}"[\\s\\S]*?</svg>`))[0];
+const points = svg => [...svg.matchAll(/<(circle|rect)([^>]*data-point[^>]*)>/g)].map(([, kind, attrs]) => ({
+    series: attrs.match(/data-point="(\w+)"/)[1], value: Number(attrs.match(/data-value="([\d.]+)"/)[1]),
+    x: kind === 'circle' ? Number(attrs.match(/cx="([\d.]+)"/)[1])
+        : Number(attrs.match(/ x="([\d.]+)"/)[1]) + Number(attrs.match(/width="([\d.]+)"/)[1]) / 2,
+    y: kind === 'circle' ? Number(attrs.match(/cy="([\d.]+)"/)[1])
+        : Number(attrs.match(/ y="([\d.]+)"/)[1]) + Number(attrs.match(/height="([\d.]+)"/)[1]) / 2 }));
+const seriesValues = (svg, series) => points(svg).filter(point => point.series === series).map(point => point.value);
+const plotY = (value, axis) => 22 + 192 * (1 - value / axis);
+
+test('Catch Up weekly view draws average, median and p95 lines for list and full loads', () => {
+    const html = renderCatchUp({ weeks: [catchWeek('2026-10-12'), catchWeek('2026-10-19', { partial: true })] });
+    assert.match(html, /^<section aria-label="Catch Up weekly load times"/);
+    assert.equal(html.match(/<polyline[^>]*data-series=/g).length, 6, 'three series in each of two charts');
+    assert.equal(html.match(/data-week-hit=/g).length, 4);
+    assert.equal(html.match(/<button(?=[^>]*aria-pressed="true")(?=[^>]*performance-week-legend-item)[^>]*>/g).length, 3);
+    assert.match(html, /Average<\/button>[\s\S]*Median<\/button>[\s\S]*p95<\/button>/, 'legend order');
+    assert.equal(html.match(/class="burnout-color performance-phase is-(avg|median|p95)"/g).length, 3, 'legend swatches reuse the phase hook');
+    assert.equal(html.match(/<div class="performance-week-chart"/g).length, 2, 'each chart is its own readout boundary');
+    assert.doesNotMatch(html, /<title>|\stitle=/, 'readouts are in-app, never native title tooltips');
+    assert.equal(html.match(/2s target/g).length, 2);
+    assert.equal(html.match(/4s SLO/g).length, 2);
+    assert.match(html, /Oct 19\*/);
+    assert.doesNotMatch(html, /Oct 12\*/, 'only the partial week is starred');
+    assert.ok(chartOf(html, 'listLoaded').includes('Oct 19*') && chartOf(html, 'fullyLoaded').includes('Oct 19*')
+        && !chartOf(html, 'listLoaded').includes('Oct 12*'), 'the chart labels star the partial week');
+    assert.match(html, /<details[^>]*open[^>]*><summary>Weekly table/);
+    assert.match(html, /<details(?![^>]*open)[^>]*><summary>About the weekly charts/);
+    assert.match(html, /aria-label="Weekly average, median and p95 of List loaded time for Catch Up\. Exact values follow in the table\."/);
+    assert.match(chartOf(html, 'listLoaded').match(/<rect[^>]*data-point="p95Ms"[^>]*>/)[0], /width="8"/);
+    assert.match(html, /performance-table-scroll"><table/);
+    for (const copy of [
+        'Counts a load even when its dependency request failed or it was cancelled afterwards. Measured from the start of the data requests; downloading and starting the app is not included.',
+        'Time until the issue lists and the requested dependencies have loaded and painted. Successful loads only.',
+        'Weeks are UTC calendar weeks starting Monday. * marks a partial week: the current week is still filling, and the oldest week can begin before the 30-day window.',
+        'Each week blends every revision, cache state, Sprint and Group in the current selection; Cache hit shows how much of the week was served from cache. Use the Group, Sprint and Revision filters to compare like with like.',
+        'Fewer than 20 loads in a week is preliminary: its p95 is close to the slowest load.',
+        'With dependencies hidden or skipped, Fully loaded ends with the lists.']) assert.ok(html.includes(copy), copy);
+});
+
+test('each chart plots its own metric under its own heading, weeks in order', () => {
+    const html = renderCatchUp({ weeks: [catchWeek('2026-10-12'), catchWeek('2026-10-19', { listLoaded: metric(1000, 900, 1500), fullyLoaded: metric(2000, 1800, 2500), listLoads: 5, loads: 4 })] });
+    const list = chartOf(html, 'listLoaded');
+    const full = chartOf(html, 'fullyLoaded');
+    assert.ok(html.indexOf('List loaded, by week') < html.indexOf(list) && html.indexOf(list) < html.indexOf('Fully loaded, by week')
+        && html.indexOf('Fully loaded, by week') < html.indexOf(full), 'heading, chart, heading, chart');
+    assert.deepEqual([seriesValues(list, 'avgMs'), seriesValues(list, 'medianMs'), seriesValues(list, 'p95Ms')], [[3200, 1000], [3000, 900], [5200, 1500]]);
+    assert.deepEqual([seriesValues(full, 'avgMs'), seriesValues(full, 'medianMs'), seriesValues(full, 'p95Ms')], [[9000, 2000], [8500, 1800], [12000, 2500]]);
+    for (const svg of [list, full]) assert.deepEqual([...svg.matchAll(/data-week-hit="([\d-]+)"/g)].map(match => match[1]), ['2026-10-12', '2026-10-19']);
+    assert.ok(list.includes('14 loads') && list.includes('5 loads') && !list.includes('12 loads'), 'the list chart labels list loads');
+    assert.ok(full.includes('12 loads') && full.includes('4 loads') && !full.includes('14 loads'), 'the full chart labels full loads');
+    const listNote = 'Time until both the Product and Tech issue lists arrive';
+    const fullNote = 'Time until the issue lists and the requested dependencies have loaded and painted.';
+    assert.ok(html.indexOf('List loaded, by week') < html.indexOf(listNote) && html.indexOf(listNote) < html.indexOf(list), 'the list note sits under the list heading');
+    assert.ok(html.indexOf('Fully loaded, by week') < html.indexOf(fullNote) && html.indexOf(fullNote) < html.indexOf(full), 'the full note sits under the full heading');
+    for (const svg of [list, full]) for (const series of ['avgMs', 'medianMs', 'p95Ms']) {
+        const xs = points(svg).filter(point => point.series === series).map(point => point.x);
+        assert.ok(xs.every((x, index) => index === 0 || x > xs[index - 1]), `${series} weeks run left to right`);
+    }
+});
+
+test('each chart sizes its own axis from its largest average, median or p95 and draws every mark at its height', () => {
+    const weeks = [catchWeek('2026-10-05', { listLoaded: metric(140, 120, 160), fullyLoaded: metric(150, 130, 170) }),
+        catchWeek('2026-10-12', { listLoaded: metric(4000, 3000, 9000), fullyLoaded: metric(9000, 8500, 12000) }),
+        catchWeek('2026-10-19', { listLoaded: metric(4900, 3000, 3000), fullyLoaded: metric(30000, 20000, 12000) })];
+    const html = renderCatchUp({ weeks });
+    // List axis: the 9 s p95 decides (niceMaximum = 12000). Full axis: the 30 s average decides (niceMaximum = 40000).
+    for (const [key, axis] of [['listLoaded', 12000], ['fullyLoaded', 40000]]) {
+        const found = points(chartOf(html, key));
+        assert.equal(found.length, 9);
+        for (const point of found) {
+            assert.ok(Math.abs(point.y - plotY(point.value, axis)) < 0.5, `${key} ${point.series} ${point.value}`);
+            assert.ok(point.y >= 22 && point.y <= 214, `${point.y} inside the 22 to 214 plot`);
+        }
+    }
+    assert.doesNotMatch(html, /NaN/);
+});
+
+test('one week draws markers without a line; a gap week breaks the line', () => {
+    const one = renderCatchUp({ weeks: [catchWeek('2026-10-19')] });
+    assert.doesNotMatch(one, /<polyline/);
+    assert.equal(one.match(/data-point=/g).length, 6);
+    const gap = renderCatchUp({ weeks: [catchWeek('2026-09-21'), catchWeek('2026-09-28'),
+        catchWeek('2026-10-05', { listLoads: 0, listLoaded: none, cacheHitShare: null }), catchWeek('2026-10-12'), catchWeek('2026-10-19')] });
+    assert.equal(gap.match(/<polyline[^>]*data-series=/g).length, 9, 'list chart: two segments per series; full chart: one');
+    assert.equal(gap.match(/data-point=/g).length, 27, 'list chart skips the gap week: 4 weeks x 3 series; full chart 5 x 3');
+});
+
+test('an empty selection and a chart with no qualifying week say so', () => {
+    for (const weekly of [{ weeks: [] }, undefined]) {
+        const html = renderCatchUp(weekly);
+        assert.match(html, /No Catch Up loads in this selection yet\./);
+        assert.doesNotMatch(html, /<svg/);
+    }
+    const html = renderCatchUp({ weeks: [catchWeek('2026-10-12', { listLoads: 0, listLoaded: none, cacheHitShare: null })] });
+    assert.match(html, /<p role="status"[^>]*>No loads in this selection reached this measurement yet\./);
+    assert.equal(html.match(/data-chart=/g).length, 1, 'only the Fully loaded chart is drawn');
+});
+
+test('Catch Up weekly table keeps the exact numbers in the right column order and alignment', () => {
+    const html = renderCatchUp({ weeks: [catchWeek('2026-10-12'), catchWeek('2026-10-19', { partial: true, cacheHitShare: 0.666 }),
+        catchWeek('2026-10-26', { listLoads: 0, listLoaded: none, cacheHitShare: null })] });
+    assert.match(html, /<th scope="col">Week<\/th><th scope="col" class="num">List loads<\/th><th scope="col" class="num">List avg<\/th><th scope="col" class="num">List median<\/th><th scope="col" class="num">List p95<\/th><th scope="col" class="num">Full loads<\/th><th scope="col" class="num">Full avg<\/th><th scope="col" class="num">Full median<\/th><th scope="col" class="num">Full p95<\/th><th scope="col" class="num">Cache hit<\/th><th scope="col" class="num">Errors<\/th><th scope="col" class="num">Cancelled<\/th><th scope="col" class="num">Capped<\/th>/);
+    assert.match(html, /<td>Oct 12<\/td><td class="num">14<\/td><td class="num">3\.20s<\/td><td class="num">3\.00s<\/td><td class="num">5\.20s<\/td><td class="num">12<\/td><td class="num">9\.00s<\/td><td class="num">8\.50s<\/td><td class="num">12\.00s<\/td><td class="num">25%<\/td><td class="num">1<\/td><td class="num">2<\/td><td class="num">0<\/td>/);
+    assert.match(html, /<td>Oct 19\*<\/td>[\s\S]*?<td class="num">67%<\/td>/, 'a partial week is starred in the table and the share is rounded');
+    assert.match(html, /<td>Oct 26<\/td><td class="num">0<\/td><td class="num">Unknown<\/td><td class="num">Unknown<\/td><td class="num">Unknown<\/td>[\s\S]*?<td class="num">12\.00s<\/td><td class="num">Unknown<\/td><td class="num">1<\/td>/);
+});
+
+test('the week contract is pinned and the component never fetches or emits analytics', () => {
+    assert.deepEqual(Object.keys(catchWeek('2026-10-12')).sort(),
+        ['cacheHitShare', 'cancelled', 'capped', 'errors', 'fullyLoaded', 'listLoaded', 'listLoads', 'loads', 'partial', 'weekStart']);
+    const source = require('node:fs').readFileSync('frontend/src/settings/PerformanceCatchUpWeeks.jsx', 'utf8');
+    assert.doesNotMatch(source, /dataLayer|analytics|fetch\(|api\//);
+});

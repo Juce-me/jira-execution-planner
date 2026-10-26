@@ -12,7 +12,7 @@ export const PHASES = [
     { key: 'focusedMs', slug: 'focused', label: 'Focused column' },
     { key: 'restMs', slug: 'rest', label: 'Other columns + render' },
 ];
-const REFERENCES = [[2000, '2s target'], [4000, '4s SLO']];
+export const REFERENCES = [[2000, '2s target'], [4000, '4s SLO']];
 const CHART_WIDTH = 700;
 const CHART_HEIGHT = 316;
 const PADDING = { left: 44, right: 92, top: 22, bottom: 60 };

@@ -27,6 +27,7 @@ RICE = (Reach x Impact x Confidence) / Effort
 
 ## Deferred
 - Catch Up load speed (from the 2026-10-25 production HAR; the weekly charts in Settings -> Admin -> Performance only measure it): add a page-start-to-list metric with a `startOffsetMs`; static and JSON compression, early API prefetch and long-cache hashed bundle names; parallelise `/api/dependencies` and `/api/eng/story-readiness`; stop the alerts fetch duplicating the lane payloads.
+- Lazy-load the admin settings panels (`AdminSettingsContainer`, which carries Settings -> Admin -> Performance) out of the entry `dashboard.js`; on origin/main they are statically imported, and the weekly Catch Up charts added 8.2 KB raw (2.1 KB gzip) to the entry.
 - Performance report `trend` and the samples' `recordedAt` still bucket by the database session's date, so they are off by the session offset when it is not UTC; only `_week_start` is normalised.
 - Performance Cache filter options come from the `cache_state` column, which is NULL for Catch Up rows, so the filter lists Board values only.
 - Extract a shared weekly chart frame from `PerformanceBoardWeeks` and `PerformanceCatchUpWeeks` (they duplicate the axis, legend and readout code on purpose, to leave the Board file and its registered digest alone).

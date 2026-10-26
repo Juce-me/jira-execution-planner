@@ -57,6 +57,10 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 - [Per-epic refresh with glare](EXEC-per-epic-refresh-213.md): implemented on `feature/213-per-epic-refresh` (issue #213), awaiting review and merge; an epic-header refresh button that patches one epic in place, re-checks that epic's alerts only, and plays a subtle glare on changed cards. Design: `docs/agents/features/2026-09-29-executed-per-epic-refresh-with-glare.md`.
 
+## Catch Up weekly load performance
+
+- [Catch Up weekly load performance](EXEC-catch-up-weekly-load-performance.md): planned and revised after four independent reviews, then executed locally on `feature/catch-up-weekly-load-performance` (2026-10-26; not pushed, awaiting review); Settings -> Admin -> Performance gains weekly average, median and p95 line charts of List loaded (slower of the Product and Tech lane) and Fully loaded for the Catch Up surface, computed server-side from existing stored observations with 30-day retention unchanged.
+
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.

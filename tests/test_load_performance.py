@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 from alembic.migration import MigrationContext
 from alembic.operations import Operations
 
-from backend.db.models import Base
+from backend.db.models import Base, LoadPerformance
 from backend.services import load_performance as performance
 
 
@@ -25,6 +25,23 @@ def observation(duration=1000, completeness='complete', outcome='success'):
                             cacheState='miss', completeness=completeness,
                             stages={'total': duration}, jiraRequests=None,
                             jiraPages=None, jiraRetries=None) for project in ('product', 'tech')])
+
+
+def catch_up_load(product_ms, tech_ms, total_ms, *, cache='miss', group='department-a', outcome='success',
+                  completeness='unknown', failed=(), first_content_ms=None):
+    payload = observation(total_ms, completeness=completeness, outcome=outcome)
+    payload['groupId'] = group
+    if first_content_ms is not None:
+        payload['firstContentMs'] = first_content_ms
+    for lane, duration in zip(payload['lanes'], (product_ms, tech_ms)):
+        lane.update(durationMs=duration, cacheState=cache)
+        if lane['project'] in failed:   # a failed or aborted lane is recorded without a body
+            lane.update(payloadBytes=0, issueCount=0, epicCount=0, storyCount=0)
+    return payload
+
+
+WEEK_KEYS = ['cacheHitShare', 'cancelled', 'capped', 'errors', 'fullyLoaded', 'listLoaded', 'listLoads', 'loads',
+             'partial', 'weekStart']
 
 
 def board_observation(duration=1000, scope_type='all_work', outcome='success'):
@@ -532,6 +549,134 @@ class LoadPerformanceTests(unittest.TestCase):
                 migration.downgrade()
                 self.assertNotIn('load_performance', inspect(connection).get_table_names())
 
+    NOW = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)   # a Wednesday
+
+    def test_catch_up_weekly_plots_the_slower_lane_and_the_full_duration_per_utc_week(self):
+        for days_ago, loads, extra in ((9, (1000, 3000, 9000), {'first_content_ms': 100}), (8, (2000, 2500, 7000), {}),
+                                       (7, (4000, 1000, 11000), {}), (2, (1500, 500, 3000), {}), (1, (500, 2500, 5000), {})):
+            self.save(catch_up_load(*loads, **extra), now=self.NOW - timedelta(days=days_ago))
+        self.save(catch_up_load(60000, 60000, 60000), 'workspace-b', now=self.NOW - timedelta(days=1))
+        report = performance.load_report(self.session, 'workspace-a', now=self.NOW)
+        weeks = report['catchUpWeekly']['weeks']
+        self.assertEqual(['2026-10-12', '2026-10-19'], [week['weekStart'] for week in weeks])
+        first, second = weeks
+        self.assertEqual(WEEK_KEYS, sorted(first))
+        self.assertEqual((3, 3, False, 0, 0, 0, 0.0), (first['loads'], first['listLoads'], first['partial'], first['errors'],
+                                                      first['cancelled'], first['capped'], first['cacheHitShare']))
+        self.assertEqual({'avgMs': 3166.67, 'medianMs': 3000, 'p95Ms': 3900}, first['listLoaded'])
+        self.assertEqual({'avgMs': 9000, 'medianMs': 9000, 'p95Ms': 10800}, first['fullyLoaded'])
+        self.assertEqual((2, 2, True), (second['loads'], second['listLoads'], second['partial']))
+        self.assertEqual({'avgMs': 2000, 'medianMs': 2000, 'p95Ms': 2450}, second['listLoaded'])
+        self.assertEqual({'avgMs': 4000, 'medianMs': 4000, 'p95Ms': 4900}, second['fullyLoaded'])
+        for week in weeks:
+            for key in ('avgMs', 'medianMs', 'p95Ms'):
+                self.assertLessEqual(week['listLoaded'][key], week['fullyLoaded'][key])
+
+    def test_catch_up_weekly_blends_revisions_and_cache_states_that_blank_the_summary(self):
+        for revision, cache, duration in (('rev-a', 'hit', 1000), ('rev-b', 'miss', 3000)):
+            performance.record_load(self.session, 'workspace-a', catch_up_load(duration, duration, duration, cache=cache),
+                                    environment='local', revision=revision, now=self.NOW - timedelta(hours=2))
+        report = performance.load_report(self.session, 'workspace-a', now=self.NOW)
+        self.assertTrue(report['summary']['mixedCohorts'])
+        self.assertIsNone(report['summary']['p95Ms'])
+        week, = report['catchUpWeekly']['weeks']
+        self.assertEqual((2, 0.5), (week['loads'], week['cacheHitShare']))
+        self.assertEqual({'avgMs': 2000, 'medianMs': 2000, 'p95Ms': 2900}, week['listLoaded'])
+        self.assertEqual(week['listLoaded'], week['fullyLoaded'])
+
+    def test_catch_up_list_loaded_survives_a_failed_dependency_tail_but_not_a_failed_lane(self):
+        hours = iter(range(8, 0, -1))
+        def at():
+            return self.NOW - timedelta(hours=next(hours))
+        self.save(catch_up_load(500, 600, 1000), now=at())                                        # success: list 600, full 1000
+        self.save(catch_up_load(500, 600, 2000, completeness='capped'), now=at())                 # capped: counted only as capped
+        self.save(catch_up_load(700, 900, 3000, outcome='error'), now=at())                       # dependency failed: list 900
+        self.save(catch_up_load(500, 200, 3000, outcome='error', failed=('tech',)), now=at())     # tech lane failed: nothing
+        self.save(catch_up_load(800, 400, 4000, outcome='cancelled'), now=at())                   # left during the tail: list 800
+        self.save(catch_up_load(300, 100, 4000, outcome='cancelled', failed=('tech',)), now=at()) # aborted lane: nothing
+        self.save(phased_board(10000, 1000, 7000, 3000), now=at())                                # Board ignored
+        week, = performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual((1, 3, 2, 2, 1), (week['loads'], week['listLoads'], week['errors'], week['cancelled'], week['capped']))
+        self.assertEqual({'avgMs': 766.67, 'medianMs': 800, 'p95Ms': 890}, week['listLoaded'])
+        self.assertEqual({'avgMs': 1000, 'medianMs': 1000, 'p95Ms': 1000}, week['fullyLoaded'])
+
+    def test_catch_up_weekly_keeps_empty_weeks_and_ignores_malformed_lanes(self):
+        self.save(phased_board(10000, 1000, 7000, 3000), now=self.NOW - timedelta(hours=1))
+        self.assertEqual({'weeks': []}, performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly'])
+        broken = [dict(project='product', durationMs=True, payloadBytes=10, completeness='unknown', cacheState='miss'),
+                  dict(project='tech', durationMs='3000', payloadBytes=10, completeness='unknown', cacheState='miss')]
+        for lanes in ([], broken):
+            self.session.add(LoadPerformance(workspace_id='workspace-a', load_id=str(uuid.uuid4()), group_id='department-a',
+                                             sprint_id='sprint-a', surface='eng_sprint', outcome='success', duration_ms=1000,
+                                             lanes=lanes, environment='local', revision='abc123',
+                                             recorded_at=self.NOW - timedelta(hours=1)))
+        self.save(catch_up_load(500, 600, 3000, outcome='error', failed=('tech',)), now=self.NOW - timedelta(days=8))
+        self.session.flush()
+        outage, current = performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual((0, 0, 1), (outage['loads'], outage['listLoads'], outage['errors']))
+        self.assertEqual({'avgMs': None, 'medianMs': None, 'p95Ms': None}, outage['fullyLoaded'])
+        self.assertEqual((2, 0, None), (current['loads'], current['listLoads'], current['cacheHitShare']))
+        self.assertEqual({'avgMs': None, 'medianMs': None, 'p95Ms': None}, current['listLoaded'])
+        self.assertEqual({'avgMs': 1000, 'medianMs': 1000, 'p95Ms': 1000}, current['fullyLoaded'])
+
+    def test_catch_up_weekly_follows_the_report_filters_and_the_environment(self):
+        self.save(catch_up_load(1000, 1000, 1000, cache='hit'), now=self.NOW - timedelta(hours=3))
+        self.save(catch_up_load(3000, 3000, 3000, group='department-b'), now=self.NOW - timedelta(hours=2))
+        performance.record_load(self.session, 'workspace-a', catch_up_load(9000, 9000, 9000), environment='production',
+                                revision='abc123', now=self.NOW - timedelta(hours=1))
+        def weeks(filters=None, environment='local'):
+            return performance.load_report(self.session, 'workspace-a', filters, environment=environment,
+                                           now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual([2], [week['loads'] for week in weeks()])
+        self.assertEqual([(1, 1000)], [(w['loads'], w['listLoaded']['avgMs']) for w in weeks({'cacheState': 'hit'})])
+        self.assertEqual([(1, 3000)], [(w['loads'], w['listLoaded']['avgMs']) for w in weeks({'groupId': 'department-b'})])
+
+    def test_catch_up_weekly_counts_every_scanned_row_not_only_the_returned_samples(self):
+        for minute in range(205):
+            self.save(catch_up_load(500, 600, 1000), now=self.NOW - timedelta(minutes=minute))
+        report = performance.load_report(self.session, 'workspace-a', now=self.NOW)
+        self.assertEqual(205, report['catchUpWeekly']['weeks'][0]['loads'])
+        self.assertEqual(200, len(report['samples']))
+
+    def test_catch_up_weekly_flags_the_oldest_week_after_a_truncated_scan(self):
+        for day in (6, 13, 20):                                        # three weeks of ten loads each
+            for index in range(10):
+                self.save(catch_up_load(500, 600, 1000), now=self.NOW.replace(day=day) + timedelta(minutes=index))
+        report = performance.load_report(self.session, 'workspace-a', now=self.NOW, limit=12)
+        self.assertTrue(report['truncated'])
+        oldest, newest = report['catchUpWeekly']['weeks']
+        self.assertEqual(('2026-10-12', 2, True), (oldest['weekStart'], oldest['loads'], oldest['partial']))
+        self.assertEqual(('2026-10-19', 10), (newest['weekStart'], newest['loads']))
+
+    def test_catch_up_weekly_splits_at_utc_monday_midnight_in_any_database_zone(self):
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 10, 18, 23, 59, 59, tzinfo=timezone.utc))
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 10, 19, 0, 0, 0, tzinfo=timezone.utc))
+        weeks = performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual(['2026-10-12', '2026-10-19'], [week['weekStart'] for week in weeks])
+        paris = timezone(timedelta(hours=2))                           # Monday 00:30 in Paris is Sunday 22:30 UTC
+        moment = datetime(2026, 10, 19, 0, 30, tzinfo=paris)
+        self.assertEqual('2026-10-12', performance._week_start(moment).isoformat())
+        row = SimpleNamespace(surface='eng_sprint', outcome='success', duration_ms=1000, recorded_at=moment,
+                              lanes=catch_up_load(500, 600, 1000)['lanes'])
+        self.assertEqual(['2026-10-12'], [week['weekStart'] for week in performance._catch_up_weekly([row], self.NOW)['weeks']])
+
+    def test_catch_up_weekly_marks_a_week_that_starts_before_the_retention_window(self):
+        now = datetime(2026, 10, 25, 12, 0, tzinfo=timezone.utc)       # a Sunday: the window starts Sep 25, a Friday
+        self.save(catch_up_load(500, 600, 1000), now=now - timedelta(days=31))
+        self.save(catch_up_load(500, 600, 1000), now=now - timedelta(days=29))
+        report = performance.load_report(self.session, 'workspace-a', now=now)
+        week = report['catchUpWeekly']['weeks'][0]
+        self.assertEqual(('2026-09-21', 1, True), (week['weekStart'], week['loads'], week['partial']))
+        self.assertEqual(30, report['retentionDays'])
+
+    def test_catch_up_weekly_marks_the_week_the_retention_window_starts_in(self):
+        # NOW is a Wednesday, so the window starts Monday Sep 21 at 12:00 and that week has lost its morning
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc))
+        self.save(catch_up_load(500, 600, 1000), now=datetime(2026, 9, 30, 12, 0, tzinfo=timezone.utc))
+        oldest, following = performance.load_report(self.session, 'workspace-a', now=self.NOW)['catchUpWeekly']['weeks']
+        self.assertEqual(('2026-09-21', True), (oldest['weekStart'], oldest['partial']))
+        self.assertEqual(('2026-09-28', False), (following['weekStart'], following['partial']))
+
 
 class LoadPerformanceSecurityTests(unittest.TestCase):
     def setUp(self):
@@ -564,6 +709,7 @@ class LoadPerformanceSecurityTests(unittest.TestCase):
             response = self.client.get('/api/admin/performance')
             self.assertEqual(response.status_code, 403)
             self.assertEqual(response.get_json()['error'], 'admin_required')
+            self.assertNotIn('catchUpWeekly', response.get_json())
 
     def test_ingestion_and_admin_read_are_workspace_scoped(self):
         from tests.test_endpoint_security_matrix import _verified_context
@@ -589,8 +735,11 @@ class LoadPerformanceSecurityTests(unittest.TestCase):
             response = self.client.get('/api/admin/performance')
             self.assertEqual(response.status_code, 200, response.get_json())
             self.assertEqual(response.get_json()['summary']['sampleCount'], 1)
+            self.assertIn('catchUpWeekly', response.get_json())
             with patch.object(self.server, 'current_request_auth_context', return_value=replace(context, workspace_id='other-workspace')):
-                self.assertEqual(self.client.get('/api/admin/performance').get_json()['summary']['sampleCount'], 0)
+                other = self.client.get('/api/admin/performance').get_json()
+                self.assertEqual(other['summary']['sampleCount'], 0)
+                self.assertEqual({'weeks': []}, other['catchUpWeekly'])
             payload['workspaceId'] = 'other-workspace'
             self.assertEqual(self.client.post('/api/performance/loads', json=payload).status_code, 400)
             self.assertEqual(self.client.post('/api/performance/loads', data='x' * 16385).status_code, 413)

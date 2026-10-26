@@ -4959,8 +4959,8 @@
         "PerformanceTrend",
         "default"
       ],
-      "lineCount": 131,
-      "lineCeiling": 131,
+      "lineCount": 132,
+      "lineCeiling": 132,
       "interfaces": [
         {
           "exportName": "PerformanceTrend",
@@ -4983,14 +4983,14 @@
           "propCeiling": 1,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:7",
-            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa"
+            "source": "frontend/src/settings/PerformanceSettings.jsx:8",
+            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2"
           },
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceTrend",
-              "line": 124,
+              "line": 125,
               "phase": "render"
             }
           ],
@@ -5019,8 +5019,8 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:55",
-            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa",
+            "source": "frontend/src/settings/PerformanceSettings.jsx:56",
+            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -19026,6 +19026,7 @@
       ],
       "exports": [
         "PHASES",
+        "REFERENCES",
         "default",
         "niceMaximum",
         "phaseTotal"
@@ -19058,13 +19059,13 @@
           "unresolved": [],
           "inventory": {
             "source": "frontend/src/settings/PerformanceBoardWeeks.jsx:191",
-            "sourceDigest": "10df951f384f8dd6bfcef5e4d69556972cda8938174ffccecec64d90a1507ecb"
+            "sourceDigest": "75bc5f74b556041c2feb3cf51ed76d7d91db4bc4af0809d1cad2a18dec0eb4b8"
           },
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceBoardWeeks",
-              "line": 112,
+              "line": 113,
               "phase": "render"
             }
           ],
@@ -19091,6 +19092,58 @@
       "lineCount": 33,
       "lineCeiling": 33,
       "interfaces": []
+    },
+    {
+      "id": "settings.PerformanceCatchUpWeeks",
+      "path": "frontend/src/settings/PerformanceCatchUpWeeks.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "METRICS",
+        "PRELIMINARY_LOADS",
+        "SERIES",
+        "default"
+      ],
+      "lineCount": 171,
+      "lineCeiling": 171,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "weekly"
+          ],
+          "expandedInputNames": [
+            "weekly",
+            "weekly.weeks"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 2,
+          "returnCount": 0,
+          "propCount": 1,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 2,
+          "returnCeiling": 0,
+          "propCeiling": 1,
+          "unresolved": [],
+          "inventory": {
+            "source": "frontend/src/settings/PerformanceCatchUpWeeks.jsx:147",
+            "sourceDigest": "b7b1e6bd4b70146ebfe800373d23de1d1a9b17cf5411cdb43cf000d970ed7133"
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceSettings.jsx",
+              "symbol": "PerformanceCatchUpWeeks",
+              "line": 125,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
     }
   ],
   "aggregates": {
@@ -19099,8 +19152,8 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16829,
-      "ceiling": 16829
+      "measured": 17001,
+      "ceiling": 17001
     },
     "stats": {
       "measured": 2896,
@@ -19111,12 +19164,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 26973,
-      "ceiling": 26973
+      "measured": 27145,
+      "ceiling": 27145
     },
     "appPlusOwners": {
-      "measured": 34632,
-      "ceiling": 34632
+      "measured": 34804,
+      "ceiling": 34804
     }
   },
   "transfer": {

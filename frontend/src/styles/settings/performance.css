@@ -21,11 +21,16 @@
 .performance-sample { border-bottom: 1px solid var(--border-color, #ddd); }
 .performance-sample p { font-size: 12px; overflow-wrap: anywhere; }
 .performance-breach { border-left: 3px solid #b45309; padding-left: 10px; }
-.performance-settings, .performance-week-hover-bubble { --performance-phase-wait: #2a78d6; --performance-phase-index: #eb6834; --performance-phase-focused: #1baf7a; --performance-phase-rest: #eda100; }
+.performance-settings, .performance-week-hover-bubble { --performance-phase-wait: #2a78d6; --performance-phase-index: #eb6834; --performance-phase-focused: #1baf7a; --performance-phase-rest: #eda100; --performance-phase-avg: #2563eb; --performance-phase-median: #15803d; --performance-phase-p95: #a344b4; }
 .performance-phase.is-wait { --phase-color: var(--performance-phase-wait); }
 .performance-phase.is-index { --phase-color: var(--performance-phase-index); }
 .performance-phase.is-focused { --phase-color: var(--performance-phase-focused); }
 .performance-phase.is-rest { --phase-color: var(--performance-phase-rest); }
+.performance-phase.is-avg { --phase-color: var(--performance-phase-avg); }
+.performance-phase.is-median { --phase-color: var(--performance-phase-median); }
+.performance-phase.is-p95 { --phase-color: var(--performance-phase-p95); }
+.performance-phase.is-avg.burnout-color { border-radius: 50%; }
+.performance-phase.is-p95.burnout-color { transform: rotate(45deg); }
 .performance-phase { background: var(--phase-color); }
 .performance-more-filters { margin: 4px 0 8px; }
 .performance-more-filters > summary { color: var(--text-secondary); }
@@ -37,6 +42,9 @@
 .performance-week-label { fill: var(--text-primary); }
 .performance-week-segment { fill: var(--phase-color); background: none; transition: opacity .12s ease; }
 .performance-week-segment.is-dimmed { opacity: .25; }
+.performance-line-path { fill: none; stroke: var(--phase-color); stroke-width: 2; background: none; transition: opacity .12s ease; }
+.performance-line-point { fill: var(--phase-color); stroke: var(--bg-secondary); stroke-width: 2; background: none; transition: opacity .12s ease; }
+.performance-line-path.is-dimmed, .performance-line-point.is-dimmed { opacity: .25; }
 .performance-week-p95 { fill: var(--text-primary); stroke: var(--bg-secondary); stroke-width: 2; }
 .performance-week-selection { fill: none; stroke: var(--text-primary); stroke-width: 1.5; }
 .performance-week-hit { fill: transparent; cursor: pointer; }
@@ -51,6 +59,7 @@
 .performance-week-hover-bubble.is-right { transform: translate(12px, -50%); }
 .performance-week-hover-bubble .burnout-hover-title, .performance-week-hover-bubble .burnout-hover-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .performance-week-hover-bubble .burnout-hover-row { align-items: center; display: flex; gap: .28rem; }
+.performance-week-hover-bubble .performance-week-counts span { white-space: normal; }
 .performance-settings th.num, .performance-settings td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .performance-settings table tr.is-selected > * { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .performance-sort, .performance-week-pick, .performance-load-toggle { background: transparent; border: 0; border-radius: 4px; margin: 0; padding: 2px 6px; font: inherit; color: inherit; cursor: pointer; text-transform: none; letter-spacing: normal; box-shadow: none; min-height: 0; }

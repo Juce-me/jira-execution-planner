@@ -94,7 +94,10 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # the two EngView notice props (+3 over the line above; the set/clear sites, including the resets in resetSprintScopedState,
     # clearEngGroupScopeData and applyGroupState, share existing lines and the notice markup lives in EngView; the dependencies
     # effect stays untouched, as tests/test_epic_refresh_source_guards.js pins it).
-    "frontend/src/dashboard.jsx": 7662,
+    # Catch Up cold load speed Task 3: the admin settings panels become the fourth lazy view. The static import line
+    # leaves; the module-scope loader (2 lines) and loading fallback (1 line) and the LazyViewBoundary open and close lines
+    # around the unchanged 160 explicit props join (+4 over the line above).
+    "frontend/src/dashboard.jsx": 7666,
 }
 
 

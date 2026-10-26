@@ -143,7 +143,6 @@ import EpmSettingsTab from './epm/EpmSettingsTab.jsx';
 import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';
 import { createSettingsDraftReadGuard, useSettingsConfigBaselineRevision } from './settings/settingsConfigReadState.js';
 import { useSettingsPermissions } from './settings/useSettingsPermissions.js';
-import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';
 import { createEmptyEpmConfigDraft } from './settings/epmConfigDraft.js';
 import { createPerformanceGate } from './eng/loadPerformance.js';
 import { useJiraFieldPickers } from './settings/useJiraFieldPickers.js';
@@ -197,9 +196,12 @@ const loadScenarioView = createLazyViewLoader({ viewId: 'scenario',
         module => ({ default: module.ScenarioView })) });
 const loadSettingsView = createLazyViewLoader({ viewId: 'settings',
     initialLoad: () => import('./settings/SettingsModalContainer.jsx') });
+const loadAdminSettingsView = createLazyViewLoader({ viewId: 'adminSettings',
+    initialLoad: () => import('./settings/AdminSettingsContainer.jsx') });
 const statsLoadingFallback = <div className="stats-note">Loading Statistics…</div>;
 const scenarioLoadingFallback = <div className="stats-note">Loading Scenario…</div>;
 const settingsLoadingFallback = <div className="stats-note">Loading Settings…</div>;
+const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin settings…</div>;
 
         const { useState, useEffect, useRef } = React;
         const EMPTY_ARRAY = Object.freeze([]);
@@ -7242,7 +7244,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                 />
                                 )}
                                 {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (
-                                <AdminSettingsContainer
+                                <LazyViewBoundary load={loadAdminSettingsView} fallback={adminSettingsLoadingFallback}>
+                                {AdminSettingsContainer => <AdminSettingsContainer
                                     BACKEND_URL={BACKEND_URL}
                                     addIssueType={addIssueType}
                                     addProjectSelection={addProjectSelection}
@@ -7403,7 +7406,8 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                                     teamFieldSearchQuery={teamFieldSearchQuery}
                                     teamFieldSearchResults={teamFieldSearchResults}
                                     updatePriorityWeightDraft={updatePriorityWeightDraft}
-                                />
+                                />}
+                                </LazyViewBoundary>
                                 )}
                                 {groupManageTab === 'epm' && (
                                 <EpmSettingsTab

@@ -19,8 +19,8 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7662,
-    "lineCeiling": 7662
+    "lineCount": 7666,
+    "lineCeiling": 7666
   },
   "modules": [
     {
@@ -8640,14 +8640,7 @@
             "source": "frontend/src/settings/AdminSettingsContainer.jsx:8",
             "sourceDigest": "a2d1f91aee76a8841ac75e21788bb260545d3da3dc16fb91d8315f11df8c3f2a"
           },
-          "callers": [
-            {
-              "path": "frontend/src/dashboard.jsx",
-              "symbol": "AdminSettingsContainer",
-              "line": 10412,
-              "phase": "render"
-            }
-          ],
+          "callers": [],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -18979,19 +18972,25 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "LazyViewBoundary",
-              "line": 6816,
+              "line": 6869,
               "phase": "render"
             },
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "LazyViewBoundary",
-              "line": 6946,
+              "line": 7008,
               "phase": "render"
             },
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "LazyViewBoundary",
-              "line": 7127,
+              "line": 7203,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "LazyViewBoundary",
+              "line": 7247,
               "phase": "render"
             }
           ],
@@ -19014,8 +19013,8 @@
         "isLazyLoadFailure",
         "validateLazyViewManifest"
       ],
-      "lineCount": 96,
-      "lineCeiling": 96,
+      "lineCount": 97,
+      "lineCeiling": 97,
       "interfaces": []
     },
     {
@@ -19148,28 +19147,28 @@
   ],
   "aggregates": {
     "scenario": {
-      "measured": 5766,
-      "ceiling": 5766
+      "measured": 5767,
+      "ceiling": 5767
     },
     "settings": {
-      "measured": 17001,
-      "ceiling": 17001
+      "measured": 17002,
+      "ceiling": 17002
     },
     "stats": {
-      "measured": 2896,
-      "ceiling": 2896
+      "measured": 2897,
+      "ceiling": 2897
     },
     "eng": {
       "measured": 1786,
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 27145,
-      "ceiling": 27145
+      "measured": 27146,
+      "ceiling": 27146
     },
     "appPlusOwners": {
-      "measured": 34807,
-      "ceiling": 34807
+      "measured": 34812,
+      "ceiling": 34812
     }
   },
   "transfer": {

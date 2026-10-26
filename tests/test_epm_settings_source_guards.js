@@ -203,7 +203,10 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(dashboardSource.includes("import DepartmentsSettingsTab from './settings/DepartmentsSettingsTab.jsx';"), 'Expected dashboard to import the Departments tab container');
     assert.ok(departmentsTabSource.includes("import TeamGroupsSettings from './TeamGroupsSettings.jsx';"), 'Expected the Departments container to import TeamGroupsSettings');
     assert.ok(adminSettingsContainerSource.includes("import JiraFieldSettings from './JiraFieldSettings.jsx';"), 'Expected the admin container to import JiraFieldSettings');
-    assert.ok(dashboardSource.includes("import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';"), 'Expected dashboard to import the admin container');
+    assert.ok(!dashboardSource.includes("import AdminSettingsContainer from './settings/AdminSettingsContainer.jsx';"), 'Expected dashboard to load the admin container lazily, not import it statically');
+    assert.ok(/const loadAdminSettingsView = createLazyViewLoader\(\{ viewId: 'adminSettings',\s*initialLoad: \(\) => import\('\.\/settings\/AdminSettingsContainer\.jsx'\) \}\);/.test(dashboardSource), 'Expected dashboard to load the admin container through the lazy view loader');
+    assert.ok(dashboardSource.includes('const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin settings…</div>;'), 'Expected the admin loading fallback to reuse the stats-note notice');
+    assert.ok(/\{ADMIN_SETTINGS_TAB_IDS\.has\(groupManageTab\) && \(\s*<LazyViewBoundary load=\{loadAdminSettingsView\} fallback=\{adminSettingsLoadingFallback\}>\s*\{AdminSettingsContainer => <AdminSettingsContainer\s/.test(dashboardSource), 'Expected the admin container to render inside its lazy view boundary under the admin tab wrapper');
     assert.ok(settingsModalChildrenSource.includes('DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab)') && settingsModalChildrenSource.includes('<DepartmentsSettingsTab') && departmentsTabSource.includes('<TeamGroupsSettings'), 'Expected dashboard to delegate department tab content to the container, which mounts TeamGroupsSettings');
     assert.ok(!/useState\(|useEffect\(|useRef\(|useMemo\(|useCallback\(/.test(departmentsTabSource), 'DepartmentsSettingsTab must stay stateless');
     assert.deepStrictEqual(

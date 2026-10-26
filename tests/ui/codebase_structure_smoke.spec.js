@@ -921,6 +921,7 @@ async function installApiMocks(page, calls, options = {}) {
                 userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
+                ...(options.configExtras || {}),
                 ...(options.sharedStartupSnapshot ? {
                     sharedConfigRevision: 1,
                     sharedConfig: {
@@ -6041,6 +6042,35 @@ function lazyManifest() {
     expect(files).toHaveLength(1);
     return JSON.parse(fs.readFileSync(path.join(dist, files[0]), 'utf8'));
 }
+// The static import graph esbuild wrote into the committed dist: `import{...}from"./x.js"` and `export{...}from"./x.js"`,
+// never the dynamic `import("./x.js")` that makes a lazy view.
+function staticDistImports(file) {
+    const source = fs.readFileSync(path.join(repoRoot, 'frontend/dist', file), 'utf8');
+    return [...source.matchAll(/(?:^|[;}\s])(?:import|export)(?:[^"'`;()]*?from\s*)?["']\.\/([^"']+\.js)["']/g)]
+        .map(match => path.posix.join(path.posix.dirname(file), match[1]));
+}
+function staticDistClosure(file, seen = new Set()) {
+    if (seen.has(file)) return seen;
+    seen.add(file);
+    for (const dependency of staticDistImports(file)) staticDistClosure(dependency, seen);
+    return seen;
+}
+// Chunks the Admin tab needs that the entry does not already import and that Settings does not load with its own chunk:
+// the Admin chunk and any chunk only it (and its dependencies) reaches. These are what a first open may request.
+function adminExclusiveChunks(manifest) {
+    const entry = staticDistClosure('dashboard.js');
+    const settings = staticDistClosure(manifest.views.settings.path);
+    return [...staticDistClosure(manifest.views.adminSettings.path)].filter(file => !entry.has(file) && !settings.has(file)).sort();
+}
+function watchDistChunkRequests(page) {
+    const requested = [];
+    page.on('request', request => {
+        const { pathname, searchParams } = new URL(request.url());
+        if (pathname.startsWith('/frontend/dist/chunks/')) requested.push({ file: pathname.slice('/frontend/dist/'.length), retry: searchParams.get('jep_retry') });
+    });
+    return requested;
+}
+const requestsFor = (requested, file) => requested.filter(entry => entry.file === file);
 // Records whether a node containing `text` is ever added; a later reopen must not suspend again.
 async function watchLazyFallback(page, text) {
     await page.evaluate(text => {
@@ -6255,6 +6285,169 @@ test('Statistics lazy sibling Scenario and Settings retain named and default exp
     await expect(page.locator('.group-modal')).toBeVisible();
     expect(requested).toContain(`/frontend/dist/${manifest.views.settings.path}`);
     expect(requested).not.toContain(`/frontend/dist/${manifest.views.stats.path}`);
+});
+
+test('Admin settings lazy first open requests only its own chunks once and reopen requests nothing', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { useCommittedDist: true, allowSettingsModalLookups: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    const manifest = lazyManifest();
+    expect(manifest.views.adminSettings.exportName).toBe('default');
+    expect(Object.keys(manifest.views)).toEqual(['stats', 'scenario', 'settings', 'adminSettings']);
+    const exclusive = adminExclusiveChunks(manifest);
+    expect(exclusive).toContain(manifest.views.adminSettings.path);
+    expect(staticDistClosure('dashboard.js').has(manifest.views.adminSettings.path)).toBe(false);
+    const requested = watchDistChunkRequests(page);
+    const gate = createDeferred();
+    await page.route(`**/frontend/dist/${manifest.views.adminSettings.path}`, async route => { await gate.promise; await route.fallback(); });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    for (const file of exclusive) expect(requestsFor(requested, file)).toHaveLength(0);
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await expect(dialog.getByRole('button', { name: 'Departments', exact: true })).toBeVisible();
+    expect(requestsFor(requested, manifest.views.settings.path)).toHaveLength(1);
+    // Opening Settings (Departments tab) must not pull anything only the Admin tab needs.
+    for (const file of exclusive) expect(requestsFor(requested, file)).toHaveLength(0);
+
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    const loading = dialog.getByText('Loading Admin settings…', { exact: true });
+    await expect(loading).toBeVisible();
+    expect(await loading.evaluate(node => ({ tag: node.tagName, classes: [...node.classList] }))).toEqual({ tag: 'DIV', classes: ['stats-note'] });
+    await expect(dialog.getByRole('tablist', { name: 'Admin settings sections' })).toHaveCount(0);
+    expect(requestsFor(requested, manifest.views.adminSettings.path)).toHaveLength(1);
+    fs.mkdirSync(path.join(repoRoot, 'tmp/lazy-admin-settings'), { recursive: true });
+    await dialog.screenshot({ path: path.join(repoRoot, 'tmp/lazy-admin-settings/admin-loading.png'), animations: 'disabled' });
+
+    gate.resolve();
+    const tabs = dialog.getByRole('tablist', { name: 'Admin settings sections' });
+    await expect(tabs).toBeVisible();
+    await expect(loading).toHaveCount(0);
+    await expect(tabs.getByRole('tab', { name: 'Scope projects', exact: true })).toHaveAttribute('aria-selected', 'true');
+    await dialog.screenshot({ path: path.join(repoRoot, 'tmp/lazy-admin-settings/admin-loaded.png'), animations: 'disabled' });
+    await settleContract(page);
+    for (const file of exclusive) expect(requestsFor(requested, file), file).toHaveLength(1);
+    const chunkRequestsAfterFirstOpen = requested.length;
+    expect(requested.filter(entry => entry.retry !== null)).toEqual([]);
+
+    // Close and reopen: the module is cached, so no request and no fallback.
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await watchLazyFallback(page, 'Loading Admin settings…');
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(tabs).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(reopened.getByRole('tablist', { name: 'Admin settings sections' })).toBeVisible();
+    expect(await lazyFallbackSeen(page)).toBe(false);
+    await settleContract(page);
+    expect(requested).toHaveLength(chunkRequestsAfterFirstOpen);
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Admin settings lazy Retry refetches the chunk after one abort and keeps the Settings draft', async ({ page }) => {
+    const calls = [];
+    const apiMocks = await installApiMocks(page, calls, { useCommittedDist: true, allowSettingsModalLookups: true, configExtras: { performanceAdminAvailable: true } });
+    await seedStatsContractPrefs(page, { showStats: false });
+    await page.route('**/api/admin/performance?**', route => route.fulfill({ json: { enabled: true, summary: { sampleCount: 0, eligibleCount: 0 }, samples: [], trend: [] } }));
+    const manifest = lazyManifest();
+    const exclusive = adminExclusiveChunks(manifest);
+    const requested = watchDistChunkRequests(page);
+    const manifestRequests = [];
+    await page.route('**/frontend/dist/lazy-views-*.json', route => { manifestRequests.push(route.request().url()); return route.fallback(); });
+    await page.route(`**/frontend/dist/${manifest.views.adminSettings.path}*`, route => (
+        new URL(route.request().url()).searchParams.has('jep_retry') ? route.fallback() : route.abort('failed')));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await dialog.getByPlaceholder('Group name').fill('Draft Department Name');
+    await page.addStyleTag({ content: '* { transition: none !important; animation: none !important; }' });
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    // The modal also carries its own validation alert, so the lazy notice is addressed by its shared class.
+    const notice = dialog.locator('.stats-note[role="alert"]');
+    await expect(notice).toContainText('This view could not be loaded.');
+    expect(await notice.evaluate(node => [...node.classList])).toEqual(['stats-note']);
+    await expect(dialog.getByText('Loading Admin settings…', { exact: true })).toHaveCount(0);
+    expect(requestsFor(requested, manifest.views.adminSettings.path)).toHaveLength(1);
+    expect(manifestRequests).toEqual([]);
+    fs.mkdirSync(path.join(repoRoot, 'tmp/lazy-admin-settings'), { recursive: true });
+    await dialog.screenshot({ path: path.join(repoRoot, 'tmp/lazy-admin-settings/admin-retry.png'), animations: 'disabled' });
+    // The rest of Settings is unaffected while Admin is failed.
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await expect(dialog.getByPlaceholder('Group name')).toHaveValue('Draft Department Name');
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(notice).toContainText('This view could not be loaded.');
+    expect(requestsFor(requested, manifest.views.adminSettings.path)).toHaveLength(1);
+
+    await notice.getByRole('button', { name: 'Retry', exact: true }).click();
+    const tabs = dialog.getByRole('tablist', { name: 'Admin settings sections' });
+    await expect(tabs).toBeVisible();
+    await settleContract(page);
+    const adminRequests = requestsFor(requested, manifest.views.adminSettings.path);
+    expect(adminRequests.map(entry => entry.retry)).toEqual([null, '1']);
+    expect(manifestRequests).toEqual([`${appBaseUrl}/frontend/dist/lazy-views-${manifest.buildId}.json`]);
+    for (const file of exclusive.filter(file => file !== manifest.views.adminSettings.path)) expect(requestsFor(requested, file), file).toHaveLength(1);
+
+    await tabs.getByRole('tab', { name: 'Jira source', exact: true }).click();
+    await expect(dialog.getByText('Jira Source', { exact: true })).toBeVisible();
+    await tabs.getByRole('tab', { name: 'Access', exact: true }).click();
+    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toBeVisible();
+    await tabs.getByRole('tab', { name: 'Performance', exact: true }).click();
+    await expect(dialog.getByRole('status')).toContainText('No loads recorded in this selection yet.');
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await expect(dialog.getByPlaceholder('Group name')).toHaveValue('Draft Department Name');
+    expect(apiMocks.unexpectedCalls).toEqual([]);
+});
+
+test('Admin settings lazy failure twice offers reload guidance and leaves the other Settings tabs working', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true, allowSettingsModalLookups: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    const manifest = lazyManifest();
+    const requested = watchDistChunkRequests(page);
+    await page.route(`**/frontend/dist/${manifest.views.adminSettings.path}*`, route => route.abort('failed'));
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByPlaceholder('Group name').fill('Draft Department Name');
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(dialog.locator('.stats-note[role="alert"]')).toContainText('Reload the page to get the latest version');
+    await expect(dialog.getByRole('button', { name: 'Reload page', exact: true })).toBeVisible();
+    await expect(dialog.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    expect(requestsFor(requested, manifest.views.adminSettings.path).map(entry => entry.retry)).toEqual([null, '1']);
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await expect(dialog.getByPlaceholder('Group name')).toHaveValue('Draft Department Name');
+});
+
+test('Admin settings lazy load survives closing Settings while the chunk is in flight', async ({ page }) => {
+    await installApiMocks(page, [], { useCommittedDist: true, allowSettingsModalLookups: true });
+    await seedStatsContractPrefs(page, { showStats: false });
+    const manifest = lazyManifest();
+    const requested = watchDistChunkRequests(page);
+    const gate = createDeferred();
+    await page.route(`**/frontend/dist/${manifest.views.adminSettings.path}`, async route => { await gate.promise; await route.fallback(); });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(dialog.getByText('Loading Admin settings…', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    gate.resolve();
+    await settleContract(page);
+    const count = requested.length;
+    await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
+    await watchLazyFallback(page, 'Loading Admin settings…');
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(reopened.getByRole('tablist', { name: 'Admin settings sections' })).toBeVisible();
+    expect(await lazyFallbackSeen(page)).toBe(false);
+    expect(requested).toHaveLength(count);
 });
 
 test('Statistics lazy cached reopen never shows the loading fallback', async ({ page }) => {

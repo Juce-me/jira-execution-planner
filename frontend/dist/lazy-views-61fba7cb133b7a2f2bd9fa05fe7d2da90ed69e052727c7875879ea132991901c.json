@@ -1,9 +1,9 @@
 {
   "schemaVersion": 1,
-  "buildId": "075bfaf69212900f7aa51c1e4c5231d466525ce35edc61badecd1b63b64ea81a",
+  "buildId": "61fba7cb133b7a2f2bd9fa05fe7d2da90ed69e052727c7875879ea132991901c",
   "views": {
     "stats": {
-      "path": "chunks/StatsPanel-CIUXSDQQ.js",
+      "path": "chunks/StatsPanel-ZZ56YHTX.js",
       "exportName": "default"
     },
     "scenario": {
@@ -12,6 +12,10 @@
     },
     "settings": {
       "path": "chunks/SettingsModalContainer-5YBFAQ5U.js",
+      "exportName": "default"
+    },
+    "adminSettings": {
+      "path": "chunks/AdminSettingsContainer-RDPHLJ25.js",
       "exportName": "default"
     }
   }

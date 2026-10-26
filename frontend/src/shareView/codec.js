@@ -12,7 +12,12 @@ import {
     SHARE_VIEW_DEFAULTS,
     SHARE_VIEW_KEYS_BY_MODE,
     SHARE_VIEW_LEAD_TIMES_COUNTS,
+    SHARE_VIEW_LEAD_TIMES_EXCLUDES,
+    SHARE_VIEW_LEAD_TIMES_GROUPS,
     SHARE_VIEW_LEAD_TIMES_LEADS,
+    SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS,
+    SHARE_VIEW_LEAD_TIMES_STATUS_KEYS,
+    SHARE_VIEW_LEAD_TIMES_STATUSES,
     SHARE_VIEW_MODES,
     SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT,
     SHARE_VIEW_PLANNING_LAYOUTS,
@@ -29,7 +34,7 @@ export const SHARE_VIEW_MAX_QUERY = 1536;
 
 // Every key a link can carry, in the order the encoder writes them.
 export const SHARE_VIEW_QUERY_KEYS = Object.freeze([
-    'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'teams', 'find',
+    'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby', 'teams', 'find',
     'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn',
     'alerts', 'alertTeam', 'epic', 'story',
 ]);
@@ -47,6 +52,7 @@ const VERSION = /^[1-9][0-9]{0,2}$/;
 const SPRINT_ID = /^[1-9][0-9]{0,11}$/;
 const QUARTER = /^[0-9]{4}Q[1-4]$/;
 const ISSUE_KEY = /^[A-Z][A-Z0-9_]{1,63}-[0-9]{1,10}$/;
+const PROJECT_KEY = /^[A-Z][A-Z0-9_]{1,63}$/;
 
 const ROW_TOKENS = Object.freeze({ epic: 'epics', story: 'stories' });
 
@@ -155,6 +161,16 @@ const parseRangeEnd = (raw) => (QUARTER.test(raw) || SPRINT_ID.test(raw) ? raw :
 // The Last N count is one of the model's own options, spelled without padding or sign.
 const parseCount = (raw) => (SHARE_VIEW_LEAD_TIMES_COUNTS.map(String).includes(raw) ? Number(raw) : INVALID);
 
+// `all` is every Project, the neutral value; otherwise a Jira project key.
+const parseLeadProject = (raw) => (raw === 'all' ? OMIT : PROJECT_KEY.test(raw) ? raw : INVALID);
+
+// A subset of a closed vocabulary, restored to the vocabulary's order; `none` is the empty subset. A duplicate folds, an unknown or empty item invalidates it.
+const parseTokenSet = (vocabulary) => (raw) => {
+    if (raw === 'none') return [];
+    const items = raw.split(',');
+    return items.every((item) => vocabulary.includes(item)) ? vocabulary.filter((item) => items.includes(item)) : INVALID;
+};
+
 function parseAlerts(raw) {
     if (raw === 'off' || raw === 'none') return raw;
     const keys = [...new Set(raw.split(','))];
@@ -197,6 +213,10 @@ const SPEC = Object.freeze({
     to: { key: 'to', parse: parseRangeEnd },
     lead: { key: 'lead', parse: parseToken(SHARE_VIEW_LEAD_TIMES_LEADS) },
     n: { key: 'n', parse: parseCount },
+    lproject: { key: 'lproject', parse: parseLeadProject },
+    lexclude: { key: 'lexclude', parse: parseTokenSet(SHARE_VIEW_LEAD_TIMES_EXCLUDES) },
+    lstatus: { key: 'lstatus', parse: parseTokenSet(SHARE_VIEW_LEAD_TIMES_STATUSES) },
+    lgroupby: { key: 'lgroupby', parse: parseToken(SHARE_VIEW_LEAD_TIMES_GROUPS) },
     alerts: { key: 'alerts', parse: parseAlerts },
     alertTeam: { key: 'alertTeam', parse: parseAlertTeam },
     epic: { key: 'focus', parse: parseIssueKey('epic') },
@@ -293,6 +313,27 @@ const encodeSort = encodeToken(SHARE_VIEW_SORTS, SHARE_VIEW_DEFAULTS.sort);
 const encodeLayout = encodeToken(SHARE_VIEW_PLANNING_LAYOUTS, SHARE_VIEW_DEFAULTS.layout);
 const encodeStats = encodeToken(SHARE_VIEW_STATS_VIEWS, SHARE_VIEW_DEFAULTS.stats);
 const encodeLead = encodeToken(SHARE_VIEW_LEAD_TIMES_LEADS, SHARE_VIEW_DEFAULTS.lead);
+const encodeLeadGroup = encodeToken(SHARE_VIEW_LEAD_TIMES_GROUPS, SHARE_VIEW_DEFAULTS.lgroupby);
+
+function encodeLeadProject(value) {
+    if (value === SHARE_VIEW_DEFAULTS.lproject) return undefined;
+    return typeof value === 'string' && PROJECT_KEY.test(value) ? value : null;
+}
+
+// A subset of `vocabulary` in its order: undefined when it equals `fallback`, `none` when empty, null when it names anything else.
+function encodeTokenSet(value, vocabulary, fallback) {
+    if (!Array.isArray(value) || !value.every((item) => vocabulary.includes(item))) return null;
+    const ordered = vocabulary.filter((item) => value.includes(item));
+    if (sameList(ordered, fallback)) return undefined;
+    return ordered.length ? ordered.join(',') : 'none';
+}
+
+// The statuses are the toggles the link's own mode shows, so a Closed link cannot name In Progress.
+function encodeLeadStatuses(state) {
+    const lead = state.lead === undefined ? SHARE_VIEW_DEFAULTS.lead : state.lead;
+    if (!Object.hasOwn(SHARE_VIEW_LEAD_TIMES_STATUS_KEYS, lead)) return null;
+    return encodeTokenSet(state.lstatus, SHARE_VIEW_LEAD_TIMES_STATUS_KEYS[lead], SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS[lead]);
+}
 
 // `n` only means something with lead=last_n, so it is never written for another mode.
 const encodeCount = (state) => (state.lead !== 'last_n' ? undefined : SHARE_VIEW_LEAD_TIMES_COUNTS.includes(state.n) ? String(state.n) : null);
@@ -384,6 +425,10 @@ const ENCODERS = Object.freeze({
     range: encodeRange,
     lead: (state) => one('lead', encodeLead(state.lead)),
     n: (state) => one('n', encodeCount(state)),
+    lproject: (state) => one('lproject', encodeLeadProject(state.lproject)),
+    lexclude: (state) => one('lexclude', encodeTokenSet(state.lexclude, SHARE_VIEW_LEAD_TIMES_EXCLUDES, SHARE_VIEW_DEFAULTS.lexclude)),
+    lstatus: (state) => one('lstatus', encodeLeadStatuses(state)),
+    lgroupby: (state) => one('lgroupby', encodeLeadGroup(state.lgroupby)),
     teams: (state) => one('teams', encodeTeams(state.teams)),
     find: (state) => one('find', encodeFind(state.find)),
     status: (state) => one('status', encodeFacet(state.status, SHARE_VIEW_DEFAULTS.status)),
@@ -416,7 +461,7 @@ function applicableKeys(state) {
     }
     if (state.mode === 'statistics') {
         const view = SHARE_VIEW_STATS_VIEWS.includes(state.stats) ? state.stats : SHARE_VIEW_DEFAULTS.stats;
-        ['teams', 'from', 'to', 'lead', 'n'].forEach((key) => { if (!SHARE_VIEW_STATS_KEYS_BY_VIEW[view].includes(key)) keys.delete(key); });
+        ['teams', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby'].forEach((key) => { if (!SHARE_VIEW_STATS_KEYS_BY_VIEW[view].includes(key)) keys.delete(key); });
     }
     return keys;
 }

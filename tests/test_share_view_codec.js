@@ -85,12 +85,13 @@ test('exports match the binding interface', () => {
         'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
         planning: ['teams', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
         board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus'],
-        statistics: ['teams', 'stats', 'from', 'to', 'lead', 'n'],
+        statistics: ['teams', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby'],
     });
     const { find, ...categories } = plain(defaults.SHARE_VIEW_CATEGORY_BY_KEY);
     assert.deepEqual(categories, {
         group: 'group', sprint: 'sprint',
         mode: 'mode', scope: 'mode', layout: 'mode', rows: 'mode', stats: 'mode', from: 'mode', to: 'mode', lead: 'mode', n: 'mode',
+        lproject: 'filters', lexclude: 'filters', lstatus: 'filters', lgroupby: 'filters',
         teams: 'teams',
         status: 'filters', priority: 'filters', track: 'filters', lanes: 'filters', initiatives: 'filters', sort: 'filters',
         bpriority: 'filters', bprojects: 'filters', bassignee: 'filters', btrack: 'filters', bcolumn: 'filters',
@@ -642,7 +643,7 @@ test('encode: junk values never throw and never produce a link the decoder would
         undefined, null, 0, 1, NaN, '', ' ', 'x', 'all', [], [1], [null], ['a'], {}, { only: 1 }, { hidden: ['a'] }, { product: 'x' },
         { product: true, tech: true }, true, () => 1, { anchor: 'blocked' }, { kind: 'epic' }, { kind: 'story', key: 'PROJ-1' }, 'ab'.repeat(300),
     ];
-    const keys = ['scope', 'teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'alerts', 'alertTeam', 'focus'];
+    const keys = ['scope', 'teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby', 'alerts', 'alertTeam', 'focus'];
     const random = mulberry32(7);
     for (let run = 0; run < 3000; run += 1) {
         const state = { ...BASE, mode: defaults.SHARE_VIEW_MODES[Math.floor(random() * 4)] };
@@ -1202,4 +1203,129 @@ test('Lead Times link decode: an unknown lead or n is dropped and reported, a mi
     assert.deepEqual(missing.reported, []);
     assert.equal(Object.hasOwn(missing.state, 'n'), false);
     for (const good of [30, 50, 60]) assert.strictEqual(decode(`?${stats}&lead=last_n&n=${good}`).state.n, good);
+});
+
+// ---- Lead Times filters (Project, Exclude, statuses, Group By) -------------------------------
+
+const LEAD_FILTER_NAMES = /\b(?:lproject|lexclude|lstatus|lgroupby)=/;
+const leadTimes = (patch = {}) => ({ ...BASE, mode: 'statistics', stats: 'cohort', teams: ['all'], from: '2026Q3', to: '2026Q4', ...patch });
+
+test('Lead Times filter keys: a view at the app defaults writes none of them, in every mode', () => {
+    const created = { lproject: 'all', lexclude: ['capacity'], lstatus: ['done', 'open'], lgroupby: 'quarter' };
+    assert.equal(LEAD_FILTER_NAMES.test(encode(leadTimes(created)).query), false);
+    const closedDefaults = { lproject: 'all', lexclude: ['capacity'], lstatus: ['done'], lgroupby: 'quarter' };
+    assert.equal(LEAD_FILTER_NAMES.test(encode(leadTimes({ ...closedDefaults, lead: 'closed' })).query), false);
+    assert.equal(LEAD_FILTER_NAMES.test(encode(leadTimes({ ...closedDefaults, lead: 'last_n', n: 30 })).query), false);
+    assert.equal(LEAD_FILTER_NAMES.test(encode(leadTimes()).query), false, 'an absent key is the default');
+});
+
+test('Lead Times filter keys: Project, exclusions, statuses and Group By are written and round-trip', () => {
+    const state = leadTimes({
+        teams: ['t1'], lead: 'closed', from: '2025Q4', to: '2026Q1',
+        lproject: 'PROJ_A', lexclude: ['adhoc', 'capacity'], lstatus: ['done', 'killed', 'incomplete'], lgroupby: 'month',
+    });
+    const result = encode(state);
+    assert.deepEqual(result.dropped, []);
+    for (const pair of ['lproject=PROJ_A', 'lexclude=adhoc,capacity', 'lstatus=done,killed,incomplete', 'lgroupby=month']) assert.ok(result.query.includes(pair), `${pair} in ${result.query}`);
+    const decoded = decode(`?${result.query}`);
+    assert.deepEqual(decoded.reported, []);
+    assert.deepEqual(decoded.state.lproject, 'PROJ_A');
+    assert.deepEqual(decoded.state.lexclude, ['adhoc', 'capacity']);
+    assert.deepEqual(decoded.state.lstatus, ['done', 'killed', 'incomplete']);
+    assert.equal(decoded.state.lgroupby, 'month');
+    assertRoundTrip('Lead Times filters', state);
+});
+
+test('Lead Times filter keys: an explicit empty selection is `none`, and a default-looking list is judged against its own mode', () => {
+    const none = encode(leadTimes({ lexclude: [], lstatus: [] }));
+    assert.ok(none.query.includes('lexclude=none') && none.query.includes('lstatus=none'), none.query);
+    const decoded = decode(`?${none.query}`);
+    assert.deepEqual(decoded.state.lexclude, []);
+    assert.deepEqual(decoded.state.lstatus, []);
+    // Done alone is the Closed default, so only a Created link has to say it.
+    assert.ok(encode(leadTimes({ lstatus: ['done'] })).query.includes('lstatus=done'));
+    assert.equal(/\blstatus=/.test(encode(leadTimes({ lead: 'closed', lstatus: ['done'] })).query), false);
+    assert.ok(encode(leadTimes({ lead: 'closed', lstatus: ['done', 'killed'] })).query.includes('lstatus=done,killed'));
+    // Lists are written in the model's order whatever order the state holds them in.
+    assert.ok(encode(leadTimes({ lstatus: ['incomplete', 'done', 'postponed'] })).query.includes('lstatus=done,incomplete,postponed'));
+    assert.ok(encode(leadTimes({ lexclude: ['capacity', 'adhoc'] })).query.includes('lexclude=adhoc,capacity'));
+    assert.ok(encode(leadTimes({ lexclude: ['adhoc'] })).query.includes('lexclude=adhoc'));
+});
+
+test('Lead Times filter keys apply to the Lead Times view only', () => {
+    const extras = { lproject: 'PROJ_A', lexclude: [], lstatus: ['killed'], lgroupby: 'month' };
+    assert.equal(LEAD_FILTER_NAMES.test(encode({ ...BASE, mode: 'statistics', stats: 'teams', teams: ['all'], ...extras }).query), false);
+    assert.equal(LEAD_FILTER_NAMES.test(encode({ ...BASE, mode: 'statistics', stats: 'projectTrack', ...extras }).query), false);
+    assert.equal(LEAD_FILTER_NAMES.test(encode({ ...BASE, ...extras }).query), false);
+    assert.equal(LEAD_FILTER_NAMES.test(encode({ ...BASE, mode: 'board', ...extras }).query), false);
+});
+
+test('Lead Times filter keys: a value the link cannot spell is dropped by the encoder and named', () => {
+    const cases = [
+        ['lproject', 'proj_a'], ['lproject', 'A-B'], ['lproject', ''], ['lproject', 3],
+        ['lexclude', ['foo']], ['lexclude', 'adhoc'],
+        ['lstatus', ['foo']], ['lstatus', 'done'],
+        ['lgroupby', 'week'], ['lgroupby', 1],
+    ];
+    for (const [key, value] of cases) {
+        const result = encode(leadTimes({ [key]: value }));
+        assert.equal(result.ok, true, key);
+        assert.deepEqual(result.dropped, [key], `${key}=${JSON.stringify(value)}`);
+        assert.equal(new RegExp(`\\b${key}=`).test(result.query), false, key);
+    }
+    const outside = encode(leadTimes({ lead: 'closed', lstatus: ['done', 'open'] }));
+    assert.deepEqual(outside.dropped, ['lstatus'], 'In Progress is not a Closed status');
+});
+
+test('Lead Times filter keys decode: a bad value is dropped and reported as filters, `all` is the neutral Project', () => {
+    const stats = 'v=1&mode=statistics&group=g&sprint=4182&stats=cohort';
+    const bad = [
+        'lproject=proj', 'lproject=', 'lproject=A-B', 'lproject=A%2FB',
+        'lexclude=foo', 'lexclude=adhoc,foo', 'lexclude=', 'lexclude=adhoc,,capacity',
+        'lstatus=foo', 'lstatus=', 'lstatus=done,Done', 'lstatus=done,',
+        'lgroupby=week', 'lgroupby=', 'lgroupby=Month',
+    ];
+    for (const query of bad) {
+        const result = decode(`?${stats}&${query}`);
+        assert.deepEqual(result.reported, ['filters'], query);
+        assert.equal(Object.hasOwn(result.state, query.slice(0, query.indexOf('='))), false, query);
+    }
+    const all = decode(`?${stats}&lproject=all`);
+    assert.deepEqual(all.reported, []);
+    assert.equal(Object.hasOwn(all.state, 'lproject'), false);
+    const lists = decode(`?${stats}&lexclude=capacity,adhoc,capacity&lstatus=killed,done,killed`);
+    assert.deepEqual(lists.state.lexclude, ['adhoc', 'capacity'], 'duplicates fold and the model order is restored');
+    assert.deepEqual(lists.state.lstatus, ['done', 'killed']);
+    assert.equal(decode(`?${stats}&lgroupby=quarter`).state.lgroupby, 'quarter');
+});
+
+test('Lead Times filter keys: the query cap still holds with a long Team list and every filter written', () => {
+    const state = leadTimes({
+        teams: UUIDS, lead: 'closed', lproject: 'A'.repeat(64), lexclude: ['adhoc', 'capacity'], lstatus: ['done', 'killed', 'incomplete'], lgroupby: 'month',
+    });
+    const result = encode(state);
+    assert.equal(result.ok, true);
+    assert.ok(result.query.length <= SHARE_VIEW_MAX_QUERY, String(result.query.length));
+});
+
+test('Lead Times filter defaults are the ones the model starts with', () => {
+    const { buildDefaultStatsGroupState } = loadModule('stats/statsGroupState.js');
+    const resolvers = {
+        resolveStatsView: () => 'teams', resolveStatsGraphMode: () => 'teams', resolveBurndownMetric: () => 'storyPoints',
+        resolveCohortGroupBy: (value) => (value === 'month' ? 'month' : 'quarter'),
+    };
+    const model = buildDefaultStatsGroupState({}, resolvers);
+    assert.equal(model.cohortProjectFilter, defaults.SHARE_VIEW_DEFAULTS.lproject);
+    assert.equal(model.cohortGroupBy, defaults.SHARE_VIEW_DEFAULTS.lgroupby);
+    const excluded = [model.cohortExcludeAdHoc && 'adhoc', model.cohortExcludeCapacity && 'capacity'].filter(Boolean);
+    assert.deepEqual(plain(defaults.SHARE_VIEW_DEFAULTS.lexclude), excluded);
+    const { LEAD_TIMES_STATUS_KEYS } = loadModule('cohort/cohortUtils.js');
+    for (const mode of ['created', 'closed', 'last_n']) {
+        assert.deepEqual(plain(defaults.SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS[mode]), plain(LEAD_TIMES_STATUS_KEYS[mode]).filter((key) => model.cohortStatusToggles[key]), mode);
+    }
+    assert.deepEqual(plain(LEAD_TIMES_STATUS_KEYS), {
+        created: ['done', 'open', 'killed', 'incomplete', 'postponed'],
+        closed: ['done', 'killed', 'incomplete'],
+        last_n: ['done', 'killed', 'incomplete'],
+    });
 });

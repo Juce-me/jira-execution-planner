@@ -69,6 +69,8 @@ function planFor(overrides = {}, ctx = CTX) {
     const state = link(overrides);
     return buildShareViewFieldPlan(state, resolveShareViewScope(state, ctx), ctx);
 }
+// A Lead Times link with no filter keys resolves to the model defaults of its mode, never to the recipient's saved choices.
+const leadFilters = (lead = 'created', extra = {}) => ({ lproject: 'all', lexclude: ['capacity'], lstatus: lead === 'created' ? ['done', 'open'] : ['done'], lgroupby: 'quarter', ...extra });
 const withSprint = (state) => ({ ...CTX, sprints: [{ id: 4182, name: 'Sprint 82', state, startDate: '2026-08-31' }] });
 
 // --- Contract with viewDefaults ----------------------------------------------------------------
@@ -429,14 +431,14 @@ test('Board plan carries its own facet selection and focused column, nothing els
 test('Statistics plan: stats and range; keys outside the resolved mode are absent', () => {
     assert.deepEqual(planFor({ mode: 'statistics' }), { apply: { stats: SHARE_VIEW_DEFAULTS.stats, range: null }, reported: [] });
     const future = planFor({ mode: 'statistics', sprint: '4183', stats: 'cohort' });
-    assert.deepEqual(future, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'created', n: 30 }, reported: [] });
+    assert.deepEqual(future, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'created', n: 30, ...leadFilters() }, reported: [] });
     const planning = planFor({ mode: 'planning', sprint: '4181' });
     assert.deepEqual(Object.keys(planning.apply).sort(), ['alerts', 'find', 'initiatives', 'lanes', 'sort']);
 });
 
 test('Statistics cohort range: both bounds or neither, from <= to, inside the 16-quarter window', () => {
     const cohort = (extra) => planFor({ mode: 'statistics', stats: 'cohort', ...extra });
-    assert.deepEqual(cohort({}), { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'created', n: 30 }, reported: [] });
+    assert.deepEqual(cohort({}), { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'created', n: 30, ...leadFilters() }, reported: [] });
     assert.deepEqual(cohort({ from: '2025Q3', to: '2026Q2' }).apply.range, { from: '2025Q3', to: '2026Q2' });
     assert.deepEqual(cohort({ from: '2023Q1', to: '2026Q4' }).apply.range, { from: '2023Q1', to: '2026Q4' });
     assert.deepEqual(cohort({ from: '2026Q3', to: '2026Q3' }).apply.range, { from: '2026Q3', to: '2026Q3' });
@@ -452,7 +454,7 @@ test('Statistics cohort window follows the current quarter, defaulting to the cl
     const state = link({ mode: 'statistics', stats: 'cohort', from: '2030Q1', to: '2030Q2' });
     const later = { ...CTX, currentQuarter: '2030Q2' };
     const resolved = buildShareViewFieldPlan(state, resolveShareViewScope(state, later), later);
-    assert.deepEqual(resolved, { apply: { stats: 'cohort', range: { from: '2030Q1', to: '2030Q2' }, lead: 'created', n: 30 }, reported: [] });
+    assert.deepEqual(resolved, { apply: { stats: 'cohort', range: { from: '2030Q1', to: '2030Q2' }, lead: 'created', n: 30, ...leadFilters() }, reported: [] });
     const unbounded = link({ mode: 'statistics', stats: 'cohort' });
     assert.deepEqual(buildShareViewFieldPlan(unbounded, resolveShareViewScope(unbounded, later), later).apply.range, { from: '2030Q2', to: '2030Q2' });
     const now = new Date();
@@ -588,16 +590,59 @@ test('focus follows the resolved mode: a Planning link on a closed sprint keeps 
 test('Statistics Lead Times modes: Closed validates its range like Created, Last N takes no range and defaults an invalid or missing N', () => {
     const cohort = (extra) => planFor({ mode: 'statistics', stats: 'cohort', ...extra });
     const closed = cohort({ lead: 'closed', from: '2025Q3', to: '2026Q2' });
-    assert.deepEqual(closed, { apply: { stats: 'cohort', range: { from: '2025Q3', to: '2026Q2' }, lead: 'closed', n: 30 }, reported: [] });
+    assert.deepEqual(closed, { apply: { stats: 'cohort', range: { from: '2025Q3', to: '2026Q2' }, lead: 'closed', n: 30, ...leadFilters('closed') }, reported: [] });
     const closedBad = cohort({ lead: 'closed', from: '2022Q4', to: '2026Q4' });
     assert.deepEqual(closedBad.apply.range, { from: '2026Q4', to: '2026Q4' });
     assert.deepEqual(closedBad.reported, ['mode']);
     const lastN = cohort({ lead: 'last_n', n: 60 });
-    assert.deepEqual(lastN, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'last_n', n: 60 }, reported: [] });
+    assert.deepEqual(lastN, { apply: { stats: 'cohort', range: { from: '2026Q4', to: '2026Q4' }, lead: 'last_n', n: 60, ...leadFilters('last_n') }, reported: [] });
     assert.deepEqual(cohort({ lead: 'last_n', n: 60, from: 'nope', to: 'nope' }).reported, [], 'a Last N link ignores any quarters');
     const missingN = cohort({ lead: 'last_n' });
     assert.equal(missingN.apply.n, 30);
     assert.deepEqual(missingN.reported, ['mode']);
     assert.equal(Object.hasOwn(planFor({ mode: 'statistics', stats: 'teams', lead: 'closed' }).apply, 'lead'), false);
     assert.equal(cohort({ n: 50 }).apply.n, 30, 'n only counts with lead=last_n');
+});
+
+test('Lead Times filters: a link with none of them resolves to the model defaults of its mode', () => {
+    const cohort = (extra) => planFor({ mode: 'statistics', stats: 'cohort', ...extra });
+    const picked = ({ lproject, lexclude, lstatus, lgroupby }) => ({ lproject, lexclude, lstatus, lgroupby });
+    assert.deepEqual(picked(cohort({}).apply), leadFilters('created'));
+    assert.deepEqual(picked(cohort({ lead: 'closed', from: '2025Q3', to: '2026Q2' }).apply), leadFilters('closed'));
+    assert.deepEqual(picked(cohort({ lead: 'last_n', n: 50 }).apply), leadFilters('last_n'));
+});
+
+test('Lead Times filters: the link values are applied as written', () => {
+    const plan = planFor({
+        mode: 'statistics', stats: 'cohort', lead: 'closed', from: '2025Q3', to: '2026Q2',
+        lproject: 'PROJ_A', lexclude: ['adhoc'], lstatus: ['killed', 'incomplete'], lgroupby: 'month',
+    });
+    assert.deepEqual(plan.reported, []);
+    assert.equal(plan.apply.lproject, 'PROJ_A');
+    assert.deepEqual(plan.apply.lexclude, ['adhoc']);
+    assert.deepEqual(plan.apply.lstatus, ['killed', 'incomplete']);
+    assert.equal(plan.apply.lgroupby, 'month');
+    const explicitNone = planFor({ mode: 'statistics', stats: 'cohort', lexclude: [], lstatus: [] });
+    assert.deepEqual(explicitNone.apply.lexclude, []);
+    assert.deepEqual(explicitNone.apply.lstatus, []);
+    assert.deepEqual(explicitNone.reported, []);
+    const created = planFor({ mode: 'statistics', stats: 'cohort', lstatus: ['done', 'open', 'postponed'] });
+    assert.deepEqual(created.apply.lstatus, ['done', 'open', 'postponed']);
+});
+
+test('Lead Times filters: a status the resolved mode has no toggle for is dropped and named under filters', () => {
+    for (const lead of ['closed', 'last_n']) {
+        const plan = planFor({ mode: 'statistics', stats: 'cohort', lead, n: 30, from: '2025Q3', to: '2026Q2', lstatus: ['done', 'open', 'postponed', 'killed'] });
+        assert.deepEqual(plan.apply.lstatus, ['done', 'killed'], lead);
+        assert.deepEqual(plan.reported, ['filters'], lead);
+    }
+});
+
+test('Lead Times filters are written for the Lead Times view only', () => {
+    const extras = { lproject: 'PROJ_A', lexclude: [], lstatus: ['killed'], lgroupby: 'month' };
+    for (const stats of ['teams', 'priority', 'burnout', 'projectTrack']) {
+        const keys = Object.keys(planFor({ mode: 'statistics', stats, ...extras }).apply);
+        for (const key of ['lproject', 'lexclude', 'lstatus', 'lgroupby']) assert.equal(keys.includes(key), false, `${stats}: ${key}`);
+    }
+    assert.equal(Object.hasOwn(planFor({ mode: 'catch-up', ...extras }).apply, 'lproject'), false);
 });

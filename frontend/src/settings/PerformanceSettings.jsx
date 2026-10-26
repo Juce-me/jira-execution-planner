@@ -2,6 +2,7 @@ import * as React from 'react';
 import { fetchAdminPerformance } from '../api/performanceApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import PerformanceBoardWeeks from './PerformanceBoardWeeks.jsx';
+import PerformanceCatchUpWeeks from './PerformanceCatchUpWeeks.jsx';
 import { count, seconds } from './performanceFormat.js';
 
 export function PerformanceTrend({ trend = [] }) {
@@ -114,14 +115,14 @@ export default function PerformanceSettings({ backendUrl }) {
             <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>
             {(data.contextual || summary.contextual) && <p role="status">Contextual timings — completeness unverified.</p>}
-            {summary.mixedCohorts && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
+            {summary.mixedCohorts && filters.surface !== 'eng_sprint' && <p role="status">Choose one surface, scope, cache, revision and configuration cohort before comparing latency percentiles.</p>}
             <details className="performance-methodology"><summary>About these measurements</summary>
                 {summary.eligibleCount < 20 && <p>Fewer than 20 complete successful loads: percentiles are preliminary.</p>}
                 <p>Timing includes data collection through rendering. Failed, cancelled and capped loads are excluded from latency summaries. Unverified loads do not establish that the full-load SLO passes.</p>
                 <p>Compare the same group, sprint, cache state and revision. Expand a load to inspect issue counts and backend stages.</p>
             </details>
             {summary.p95Ms > 4000 && <p className="performance-breach" role="status">p95 exceeds the 4s SLO. Expand slow loads below to compare lane times, issue counts, cache state and backend stages.</p>}
-            <PerformanceTrend trend={data.trend} />
+            {filters.surface === 'eng_sprint' ? <PerformanceCatchUpWeeks weekly={data.catchUpWeekly} /> : <PerformanceTrend trend={data.trend} />}
             <h4>Recent load evidence</h4>
             {data.samplesTruncated && <p>Showing the 200 most recent observations. Narrow the filters to investigate older loads.</p>}
             {(data.samples || []).map(sample => <LoadDetails key={sample.loadId} sample={sample} />)}

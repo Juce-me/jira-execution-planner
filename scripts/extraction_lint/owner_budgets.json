@@ -4959,8 +4959,8 @@
         "PerformanceTrend",
         "default"
       ],
-      "lineCount": 131,
-      "lineCeiling": 131,
+      "lineCount": 132,
+      "lineCeiling": 132,
       "interfaces": [
         {
           "exportName": "PerformanceTrend",
@@ -4983,14 +4983,14 @@
           "propCeiling": 1,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:7",
-            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa"
+            "source": "frontend/src/settings/PerformanceSettings.jsx:8",
+            "sourceDigest": "52a641851c6281437172869f639aa3df14b9d91037cb8d5b54920669c6b72132"
           },
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceTrend",
-              "line": 124,
+              "line": 125,
               "phase": "render"
             }
           ],
@@ -5019,8 +5019,8 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:55",
-            "sourceDigest": "f5886d7f5358e562dcac02fcd5bfcc8a4f645667e2b04dc2116bfbdd7d5de2aa",
+            "source": "frontend/src/settings/PerformanceSettings.jsx:56",
+            "sourceDigest": "52a641851c6281437172869f639aa3df14b9d91037cb8d5b54920669c6b72132",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -19065,7 +19065,7 @@
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceBoardWeeks",
-              "line": 112,
+              "line": 113,
               "phase": "render"
             }
           ],
@@ -19132,7 +19132,14 @@
             "source": "frontend/src/settings/PerformanceCatchUpWeeks.jsx:138",
             "sourceDigest": "9d3f0800fc9689a8c6d3f09f9257d39fe1ce099614b12f8df941e588800aa071"
           },
-          "callers": [],
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceSettings.jsx",
+              "symbol": "PerformanceCatchUpWeeks",
+              "line": 125,
+              "phase": "render"
+            }
+          ],
           "remainingAppReaders": [],
           "getters": []
         }
@@ -19145,8 +19152,8 @@
       "ceiling": 5766
     },
     "settings": {
-      "measured": 16991,
-      "ceiling": 16991
+      "measured": 16992,
+      "ceiling": 16992
     },
     "stats": {
       "measured": 2896,
@@ -19157,12 +19164,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 27135,
-      "ceiling": 27135
+      "measured": 27136,
+      "ceiling": 27136
     },
     "appPlusOwners": {
-      "measured": 34794,
-      "ceiling": 34794
+      "measured": 34795,
+      "ceiling": 34795
     }
   },
   "transfer": {

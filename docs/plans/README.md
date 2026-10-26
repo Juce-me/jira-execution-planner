@@ -61,6 +61,10 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 - [Catch Up weekly load performance](EXEC-catch-up-weekly-load-performance.md): planned and revised after four independent reviews, then executed locally on `feature/catch-up-weekly-load-performance` (2026-10-26; not pushed, awaiting review); Settings -> Admin -> Performance gains weekly average, median and p95 line charts of List loaded (slower of the Product and Tech lane) and Fully loaded for the Catch Up surface, computed server-side from existing stored observations with 30-day retention unchanged.
 
+## Catch Up cold load speed
+
+- [Catch Up cold load speed](EXEC-catch-up-cold-load-speed.md): planned and revised after two independent reviews (2026-10-26) on `improvement/catch-up-cold-load-speed`, execution in progress, not pushed; four separately committed speed-ups: gzip for JSON and static responses, bounded concurrent Jira batches in `/api/dependencies` (complete or explicitly `incomplete`, never cached when incomplete) and `/api/eng/story-readiness`, the admin settings panels out of the entry bundle, and an early prefetch of `/api/config` and `/api/groups-config`; measured gates, with the 250-issue lane cap deliberately out of scope.
+
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.

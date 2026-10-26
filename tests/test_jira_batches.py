@@ -184,6 +184,60 @@ class JiraBatchesTests(unittest.TestCase):
             outcome.raise_if_failed()
         self.assertIs(raised.exception, errors[1])
 
+    def test_any_other_error_outranks_an_incomplete_batch_whatever_its_index(self):
+        incomplete = JiraBatchIncomplete('http_status')
+        auth = RuntimeError('auth_required')
+        all_started = threading.Barrier(3, timeout=2)
+        failed_first = threading.Event()
+
+        def fetch(batch):
+            all_started.wait()
+            if batch == 0:
+                failed_first.set()
+                raise incomplete
+            if batch == 2:
+                self.assertTrue(failed_first.wait(2))
+                time.sleep(0.02)
+                raise auth
+            return batch
+
+        outcome = run_batches([0, 1, 2], fetch, max_concurrency=4)
+
+        self.assertIs(outcome.failure, auth)
+        self.assertFalse(outcome.complete)
+        self.assertEqual(outcome.results, [None, 1, None])
+        with self.assertRaises(RuntimeError):
+            outcome.raise_if_failed()
+
+        first, second = JiraBatchIncomplete('http_status'), JiraBatchIncomplete('continuation')
+        both = run_batches([0, 1], lambda batch: (_ for _ in ()).throw(first if batch == 0 else second),
+                           max_concurrency=1)
+        self.assertIs(both.failure, first)
+
+    def test_a_base_exception_in_a_batch_is_a_failure_and_releases_the_slot(self):
+        class Abort(BaseException):
+            pass
+
+        threads = []
+
+        def fetch(batch):
+            threads.append(threading.current_thread())
+            if batch == 1:
+                raise Abort()
+            time.sleep(0.01)
+            return batch
+
+        outcome = run_batches(list(range(6)), fetch, max_concurrency=4)
+
+        self.assertFalse(outcome.complete)
+        self.assertIsInstance(outcome.failure, Abort)
+        self.assertIsNone(outcome.results[1])
+        self.assertEqual(join_batch_threads(threads), [])
+        self.assertEqual(self.admission.held, 0)
+        self.assertTrue(all_slots_free(self.admission))
+        with self.assertRaises(Abort):
+            run_batches([0, 1, 2], fetch, max_concurrency=1)
+
     def test_cancel_check_and_deadline_stop_admission(self):
         for cap in (1, 4):
             with self.subTest(stop='cancel', cap=cap):
@@ -219,8 +273,16 @@ class JiraBatchesTests(unittest.TestCase):
         for cap in (1, 2):
             with self.subTest(stop='deadline', cap=cap):
                 flight = InFlight()
+                reading = threading.local()
+                admitted_at = {}
+
+                def clock():
+                    # The runner reads the clock at admission; keep each thread's last reading.
+                    reading.value = time.monotonic()
+                    return reading.value
 
                 def fetch(batch):
+                    admitted_at[batch] = reading.value
                     flight.enter(batch)
                     try:
                         time.sleep(0.05)
@@ -229,13 +291,15 @@ class JiraBatchesTests(unittest.TestCase):
                         flight.leave()
 
                 deadline = time.monotonic() + 0.12
-                outcome = run_batches(list(range(10)), fetch, max_concurrency=cap, deadline=deadline)
-                time.sleep(0.1)
+                with patch.object(jira_batches, '_monotonic', clock):
+                    outcome = run_batches(list(range(10)), fetch, max_concurrency=cap, deadline=deadline)
+                    time.sleep(0.1)
                 self.assertTrue(outcome.deadline_exceeded)
                 self.assertFalse(outcome.complete)
                 self.assertIsNone(outcome.failure)
                 self.assertLess(len(flight.started), 10)
-                self.assertTrue(all(started < deadline for started in flight.started.values()))
+                self.assertEqual(sorted(admitted_at), sorted(flight.started))
+                self.assertTrue(all(at < deadline for at in admitted_at.values()))
                 with self.assertRaises(JiraBatchIncomplete) as raised:
                     outcome.raise_if_failed()
                 self.assertEqual(raised.exception.reason, 'deadline')

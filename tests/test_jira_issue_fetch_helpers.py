@@ -1,6 +1,7 @@
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend import jira_client
@@ -301,6 +302,51 @@ class FetchIssuesByKeysModesTests(unittest.TestCase):
                 deadline=time.monotonic() - 1)
         self.assertEqual(raised.exception.reason, 'deadline')
         self.assertEqual(len(timeouts), 2)
+
+    def test_strict_starts_no_continuation_page_after_the_deadline(self):
+        keys = [f'SYN-{idx}' for idx in range(200)]
+        for cap in (1, 4):
+            with self.subTest(cap=cap):
+                clock = {'now': 100.0}
+                deadline = 100.5
+                calls = []
+                lock = threading.Lock()
+                first_pages = threading.Barrier(1 if cap == 1 else 2, timeout=2)
+
+                def search_request(payload, context=None, timeout=None):
+                    with lock:
+                        calls.append((clock['now'], payload))
+                    if not payload.get('nextPageToken'):
+                        first_pages.wait()           # both first pages are in flight before time moves
+                        with lock:
+                            clock['now'] = 101.0      # the deadline passes during the first page
+                        return FakeResponse(200, {'issues': [{'key': 'ROW-1'}],
+                                                  'nextPageToken': 'page-2', 'isLast': False})
+                    return FakeResponse(200, {'issues': [], 'isLast': True})
+
+                admission = jira_batches._ProcessAdmission()
+                with patch.object(jira_batches, '_ADMISSION', admission), \
+                        patch.object(jira_batches, '_monotonic', lambda: clock['now']), \
+                        patch.object(jira_client, 'time', SimpleNamespace(monotonic=lambda: clock['now'])), \
+                        self.assertRaises(JiraBatchIncomplete) as raised:
+                    jira_client.fetch_issues_by_keys(
+                        keys, ['summary'], search_request=search_request, strict=True,
+                        max_concurrency=cap, deadline=deadline)
+                slots_back = 0
+                give_up = time.monotonic() + 2         # workers left behind finish and release their slot
+                while slots_back < 6 and time.monotonic() < give_up:
+                    if admission.slots.acquire(blocking=False):
+                        slots_back += 1
+                    else:
+                        time.sleep(0.01)
+                time.sleep(0.05)                       # a worker that wrongly went on would have called by now
+
+                self.assertEqual(raised.exception.reason, 'deadline')
+                self.assertFalse(raised.exception.rate_limited)
+                self.assertEqual(slots_back, 6)
+                self.assertEqual(len(calls), 1 if cap == 1 else 2)
+                self.assertTrue(all(started < deadline for started, _payload in calls))
+                self.assertFalse(any('nextPageToken' in payload for _started, payload in calls))
 
 
 if __name__ == '__main__':

@@ -322,11 +322,16 @@ def jira_search_request(jira_url, headers, payload, *, request_fn=None):
     )
 
 
-def _strict_key_batch(search, payload):
-    """Every page of one key batch, following nextPageToken; anything unusable raises JiraBatchIncomplete."""
+def _strict_key_batch(search, payload, deadline=None):
+    """Every page of one key batch, following nextPageToken; anything unusable raises JiraBatchIncomplete.
+
+    No continuation page starts after the deadline: a worker finishes only the call it is in.
+    """
     issues = []
     seen_tokens = set()
-    for _page in range(MAX_PAGES_PER_BATCH):
+    for page in range(MAX_PAGES_PER_BATCH):
+        if page and deadline is not None and time.monotonic() >= deadline:
+            raise JiraBatchIncomplete('deadline')
         response = search(payload)
         if response.status_code != 200:
             try:
@@ -381,7 +386,7 @@ def fetch_issues_by_keys(keys, fields_list, *, search_request, context=None, log
             'fields': fields_list,
         }
         if strict:
-            return _strict_key_batch(search, payload)
+            return _strict_key_batch(search, payload, deadline)
         response = search(payload)
         if response.status_code != 200:
             log_warning_fn(f'Dependencies fetch error: status={response.status_code}')

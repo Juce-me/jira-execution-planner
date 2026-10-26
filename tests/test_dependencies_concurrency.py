@@ -164,6 +164,22 @@ def auth_context(connection_id='connection-1'):
     )
 
 
+def local_basic_context():
+    return RequestAuthContext(
+        auth_mode='basic', user_id='local-basic-user', stable_subject='local-basic',
+        atlassian_account_id='', workspace_id='local-workspace-synthetic',
+        auth_connection_id='local-basic-connection', cloud_id='',
+        site_url='https://example.atlassian.net', token_version='1',
+        account_status='active', is_admin=True,
+    )
+
+
+def _no_database(stack):
+    """Any database access fails loudly instead of reaching a local database."""
+    stack.enter_context(patch.dict('os.environ', {
+        'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': ''}, clear=False))
+
+
 def _field_patches(stack):
     stack.enter_context(patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_team'))
     stack.enter_context(patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None))
@@ -175,6 +191,7 @@ class DependenciesConcurrencyTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(jira_batches, '_ADMISSION', jira_batches._ProcessAdmission()))
+        _no_database(self.stack)
         _field_patches(self.stack)
         self.dataset_keys = [f'DS-{n}' for n in range(1000)]
         self.issues, self.semantic = build_dataset(self.dataset_keys)
@@ -422,9 +439,10 @@ class DependenciesRouteTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(jira_batches, '_ADMISSION', jira_batches._ProcessAdmission()))
+        _no_database(self.stack)
         _field_patches(self.stack)
         self.stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'))
-        self.ctx = auth_context()
+        self.ctx = local_basic_context()
         self.stack.enter_context(patch.object(jira_server, 'current_request_auth_context', return_value=self.ctx))
         self.stack.enter_context(patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True))
         self.stack.enter_context(patch.dict(jira_server.DEPENDENCIES_CACHE, {}, clear=True))
@@ -487,6 +505,34 @@ class DependenciesRouteTests(unittest.TestCase):
         self.assertTrue(any(call['thread'] is not threading.current_thread() for call in fake.calls))
         self.assertEqual(jira_server.DEPENDENCIES_CACHE, {})
 
+    def test_route_auth_error_after_a_lower_batch_503_is_still_a_401(self):
+        keys = self.dataset_keys[:300]
+        batches = [sorted(keys)[start:start + 100] for start in (0, 100, 200)]
+        first_pages = threading.Barrier(3, timeout=2)
+        batch_zero_failed = threading.Event()
+
+        def respond(payload):
+            if payload.get('nextPageToken'):
+                return None
+            first_pages.wait()                                   # all three batches are admitted
+            if f'"{batches[0][0]}"' in payload['jql']:
+                batch_zero_failed.set()
+                return jira_client._build_jira_unavailable_response('Jira is unavailable', upstream_status=503)
+            if f'"{batches[2][0]}"' in payload['jql']:
+                self.assertTrue(batch_zero_failed.wait(2))
+                time.sleep(0.02)
+                raise jira_server.AuthError('auth_required', 'Atlassian authentication is required.')
+            return None
+
+        fake = FakeJira(self.issues, respond=respond)
+        with patch.object(jira_server, 'current_jira_search', side_effect=fake.search):
+            response = self.post(keys)
+
+        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertNotIn('incomplete', response.get_json())
+        self.assertEqual(jira_server.DEPENDENCIES_CACHE, {})
+
     def test_route_deadline_returns_partial_incomplete_and_a_scope_switch_proceeds(self):
         stall_keys = [f'STALL-{n}' for n in range(150)]
         other_keys = [f'OK-{n}' for n in range(20)]
@@ -515,7 +561,9 @@ class DependenciesRouteTests(unittest.TestCase):
             first = threading.Thread(target=slow_request)
             first.start()
             self.assertTrue(stalled.wait(5))
-            switched = self.post(other_keys)
+            # The stalled request's 0.3 s deadline is already set; the switched scope gets the normal one.
+            with patch.object(eng_routes, '_DEPENDENCIES_DEADLINE_SECONDS', 25):
+                switched = self.post(other_keys)
             first.join(5)
             self.assertFalse(first.is_alive())
             self.assertTrue(stalled_threads[0].is_alive())
@@ -556,8 +604,11 @@ class DependenciesRouteTests(unittest.TestCase):
 
         collect = MagicMock(return_value={})
         rows = [{'key': key, 'fields': copy.deepcopy(self.issues[key]['fields'])} for key in keys[:3]]
+        unresolved_capacity = {'project': '', 'fieldId': '', 'requiresResolution': True, 'mutationEnabled': False}
         with patch.object(jira_server, 'collect_dependencies', collect), \
                 patch.object(jira_server, 'fetch_issues_by_jql', return_value=rows), \
+                patch.object(jira_server, 'load_sprints_cache', return_value={}), \
+                patch.object(jira_server, 'load_request_capacity_config', return_value=unresolved_capacity), \
                 patch.object(jira_server, 'fetch_capacity_team_sizes', return_value=({}, {})):
             scenario = jira_server.app.test_client().post(
                 '/api/scenario', json={'filters': {'sprint': '2026Q2'}, 'config': {}})

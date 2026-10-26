@@ -70,7 +70,7 @@ class _ProcessAdmission:
         with self._lock:
             if self._cooldown_until is not None and _monotonic() < self._cooldown_until:
                 return False
-        return self.slots.acquire(blocking=False)
+            return self.slots.acquire(blocking=False)
 
     def release_helper(self):
         self.slots.release()
@@ -106,8 +106,13 @@ class _Run:
         self.pool = None
 
     def _fail(self, index, error):
-        """Record a failure (the lowest batch index wins) and stop admission; caller holds the lock."""
-        if self.failure_index is None or index < self.failure_index:
+        """Record a failure and stop admission; caller holds the lock.
+
+        Any other error (an auth error, for one) outranks JiraBatchIncomplete, so it is never hidden
+        behind an incomplete batch; among equals the lowest batch index wins.
+        """
+        rank = (isinstance(error, JiraBatchIncomplete), index)
+        if self.failure is None or rank < (isinstance(self.failure, JiraBatchIncomplete), self.failure_index):
             self.failure, self.failure_index = error, index
         self.stopped = True
         if getattr(error, 'rate_limited', False) is True and not self.rate_limited:
@@ -141,10 +146,12 @@ class _Run:
     def _execute(self, index):
         try:
             result = self.fetch_batch(self.batches[index])
-        except Exception as error:
+        except BaseException as error:
             with self.lock:
                 self.running -= 1
                 self._fail(index, error)
+            if not isinstance(error, Exception):
+                raise
             return False
         with self.lock:
             self.running -= 1

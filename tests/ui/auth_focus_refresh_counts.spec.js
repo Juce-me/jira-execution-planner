@@ -7,6 +7,7 @@ const { installDashboardFixture } = require('./epm_home_token_fixture');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const repoRoot = path.join(__dirname, '..', '..');
 const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
+const earlyBootstrapJs = fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'early-bootstrap.js'), 'utf8');
 
 // Mirrors frontend/src/api/authRefreshContract.js's AUTH_LONG_ABSENCE_EVENT. Hardcoded
 // rather than imported because this spec is CommonJS and the contract module is a plain
@@ -63,6 +64,22 @@ async function installAuthShell(page) {
         contentType: 'application/javascript',
         body: '',
     }));
+    // The real early startup script: one asset that starts the two documented startup reads.
+    await page.route('**/frontend/dist/early-bootstrap.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: earlyBootstrapJs,
+    }));
+    await page.route('**/api/config?includeViewConfig=true', route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+    }));
+    await page.route('**/api/groups-config', route => route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: '{}',
+    }));
     await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
         status: 200,
         contentType: 'text/css',
@@ -88,15 +105,17 @@ async function installAuthShell(page) {
 }
 
 // Counts the three request classes the auth-refresh state machine can affect:
-// the document itself, the auth-shell script, and the throttled refresh POST.
+// the document itself, the auth-shell script, and the throttled refresh POST;
+// plus the early startup script, which is one more asset per document load.
 function attachCounters(page) {
-    const counters = { documents: [], authScripts: [], authPosts: [], assets: [], data: [], pageErrors: [] };
+    const counters = { documents: [], authScripts: [], earlyScripts: [], authPosts: [], assets: [], data: [], pageErrors: [] };
     page.on('request', request => {
         const url = new URL(request.url());
         if (request.resourceType() === 'document') counters.documents.push(url.pathname);
         if (!url.pathname.startsWith('/api/') && request.resourceType() !== 'document') counters.assets.push(url.pathname);
         if (url.pathname.startsWith('/api/') && url.pathname !== '/api/auth/refresh') counters.data.push(url.pathname);
         if (url.pathname === '/frontend/dist/auth-focus-refresh.js') counters.authScripts.push(url.pathname);
+        if (url.pathname === '/frontend/dist/early-bootstrap.js') counters.earlyScripts.push(url.pathname);
         if (request.method() === 'POST' && url.pathname === '/api/auth/refresh') counters.authPosts.push(url.pathname);
     });
     page.on('pageerror', error => counters.pageErrors.push(error.message));
@@ -196,6 +215,9 @@ test('one document load produces one auth-script request and one auth POST; a fo
     expect(counters.documents.length).toBe(1);
     expect(counters.authScripts.length).toBe(1);
     expect(counters.authPosts.length).toBe(1);
+    // The early startup script is one asset and its two documented startup reads are the only data requests.
+    expect(counters.earlyScripts.length).toBe(1);
+    expect([...counters.data].sort()).toEqual(['/api/config', '/api/groups-config']);
 
     // Under-throttle burst while the document stays visible: today's module
     // never re-requests the document or script, so this must add zero
@@ -212,6 +234,8 @@ test('one document load produces one auth-script request and one auth POST; a fo
     expect(counters.documents.length).toBe(1);
     expect(counters.authScripts.length).toBe(1);
     expect(counters.authPosts.length).toBe(1);
+    expect(counters.earlyScripts.length).toBe(1);
+    expect([...counters.data].sort()).toEqual(['/api/config', '/api/groups-config']);
     expect(counters.pageErrors).toEqual([]);
 });
 

@@ -8,6 +8,7 @@ const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const dashboardHtml = fs.readFileSync(path.join(repoRoot, 'jira-dashboard.html'), 'utf8');
 const dashboardCss = fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8');
+const earlyBootstrapJs = fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'early-bootstrap.js'), 'utf8');
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
 
@@ -136,6 +137,12 @@ async function installDashboard(page, options = {}) {
         status: 200,
         contentType: 'text/css',
         body: dashboardCss,
+    }));
+    // The early startup script starts /api/config and /api/groups-config, which the app adopts.
+    await page.route('**/frontend/dist/early-bootstrap.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: earlyBootstrapJs,
     }));
     await page.route('**/epm-burst.svg', route => route.fulfill({
         status: 200,

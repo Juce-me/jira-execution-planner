@@ -5,6 +5,7 @@ const { expect } = require('@playwright/test');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const dashboardHtml = fs.readFileSync(path.join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8');
 const authFocusRefreshJs = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'auth-focus-refresh.js'), 'utf8');
+const earlyBootstrapJs = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'early-bootstrap.js'), 'utf8');
 const dashboardJs = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.js'), 'utf8');
 const dashboardCss = fs.readFileSync(path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.css'), 'utf8');
 const selectedSprintId = 34625;
@@ -266,6 +267,13 @@ async function installDashboardShell(page) {
         status: 200,
         contentType: 'application/javascript',
         body: authFocusRefreshJs,
+    }));
+    // The early startup script starts /api/config and /api/groups-config at HTML parse; the app
+    // adopts both, so each is still requested once and served by the page's /api routes.
+    await page.route('**/frontend/dist/early-bootstrap.js', route => route.fulfill({
+        status: 200,
+        contentType: 'application/javascript',
+        body: earlyBootstrapJs,
     }));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,

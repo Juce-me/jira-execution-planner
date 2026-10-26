@@ -1646,7 +1646,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setMissingInfoEpics([]);
                 setBacklogProductEpics([]);
                 setBacklogTechEpics([]);
-                setDependencyData({});
+                setDependencyData({}); setDependencyIncomplete(false);
                 clearStorySubtasks();
                 resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 setBurnoutData(null);
@@ -2798,7 +2798,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
                 setShowAlertsPanel(nextState.showAlertsPanel ?? true);
                 setDismissedAlertKeys(nextState.dismissedAlertKeys || []);
                 setAlertCelebrationPieces([]);
-                setDependencyData(nextState.dependencyData || {});
+                setDependencyData(nextState.dependencyData || {}); setDependencyIncomplete(false);
                 setDependencyFocus(nextState.dependencyFocus || null);
                 setDependencyLookupCache(nextState.dependencyLookupCache || {});
                 setDependencyLookupLoading(false);
@@ -3013,7 +3013,7 @@ const settingsLoadingFallback = <div className="stats-note">Loading Settings…<
 
             const resetSprintScopedState = React.useCallback(() => {
                 abortSprintFetches();
-                setDependencyData({});
+                setDependencyData({}); setDependencyIncomplete(false);
                 setDependencyFocus(null);
                 setDependencyLookupCache({});
                 setDependencyLookupLoading(false);

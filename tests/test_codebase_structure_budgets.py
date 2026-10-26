@@ -91,8 +91,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Issue #209 follow-up 1: the pin's title handler, its comment and the EngView prop (+3); follow-up 2 replaced the locate handler
     # with the Story/Epic handler in the same lines (net 0).
     # Catch Up cold load speed Task 2a: the dependencyIncomplete state cell, its reset at the start of fetchDependencies and
-    # the two EngView notice props (+3 over the line above; the set/clear sites share existing lines and the notice markup
-    # lives in EngView; the dependencies effect stays untouched, as tests/test_epic_refresh_source_guards.js pins it).
+    # the two EngView notice props (+3 over the line above; the set/clear sites, including the resets in resetSprintScopedState,
+    # clearEngGroupScopeData and applyGroupState, share existing lines and the notice markup lives in EngView; the dependencies
+    # effect stays untouched, as tests/test_epic_refresh_source_guards.js pins it).
     "frontend/src/dashboard.jsx": 7662,
 }
 

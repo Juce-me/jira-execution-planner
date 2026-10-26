@@ -44,19 +44,23 @@ const partialMap = { 'TEST-1': [blockedBy('TEST-1', 'TEST-9')] };
 const completeMap = { ...partialMap, 'TEST-2': [blockedBy('TEST-2', 'TEST-8')] };
 
 // Opens Catch Up with two Stories. `replies` answers /api/dependencies call by call (the last entry repeats):
-// { status, json } is fulfilled, { abort: true } fails the request.
-async function openCatchUp(page, { replies, readiness = 'ready', otherSprint = null }) {
+// { status, json } is fulfilled, { abort: true } fails the request, and `hold` (a promise) keeps the request pending until it settles.
+// `otherSprint` adds a second Sprint and `otherGroup` a second Department group, each holding `otherStories`;
+// `holdOtherTech` keeps that scope's tech lane pending.
+async function openCatchUp(page, { replies, readiness = 'ready', otherSprint = null, otherGroup = null, otherStories = [], holdOtherTech = null }) {
     const fixture = await installDashboardFixture(page);
     const dependencyCalls = [];
     await page.addInitScript((prefs) => {
         localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, { selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName });
+    const groupIds = ['sample-group', ...(otherGroup ? [otherGroup.id] : [])];
     await page.route('**/api/groups-config', route => route.fulfill({ json: {
-        version: 1, groups: [{ id: 'sample-group', name: 'Sample Department', teamIds: ['sample-team'] }],
+        version: 1, groups: [{ id: 'sample-group', name: 'Sample Department', teamIds: ['sample-team'] },
+            ...(otherGroup ? [{ id: otherGroup.id, name: otherGroup.name, teamIds: ['sample-team'] }] : [])],
         defaultGroupId: 'sample-group', source: 'workspace_db', preferences: {
             customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true,
             completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
-            visibleGroupIds: ['sample-group'], activeGroupId: 'sample-group', effectiveVisibleGroupIds: ['sample-group'],
+            visibleGroupIds: groupIds, activeGroupId: 'sample-group', effectiveVisibleGroupIds: groupIds,
         },
     } }));
     if (otherSprint) {
@@ -64,11 +68,16 @@ async function openCatchUp(page, { replies, readiness = 'ready', otherSprint = n
             { id: selectedSprintId, name: selectedSprintName, state: 'active' }, otherSprint,
         ] } }));
     }
-    await page.route('**/api/tasks-with-team-name?**', route => {
+    await page.route('**/api/tasks-with-team-name?**', async route => {
         const params = new URL(route.request().url()).searchParams;
-        const lane = params.get('project') === 'product' && !params.get('purpose') && params.get('sprint') === String(selectedSprintId);
+        const visibleLane = !params.get('purpose');
+        const sprint = params.get('sprint');
+        const inOtherScope = otherGroup ? params.get('groupId') === otherGroup.id : Boolean(otherSprint) && sprint === String(otherSprint.id);
+        if (holdOtherTech && visibleLane && params.get('project') === 'tech' && inOtherScope) await holdOtherTech;
+        const sprintStories = inOtherScope ? otherStories
+            : (sprint === String(selectedSprintId) ? [story('TEST-1', 'First sample story'), story('TEST-2', 'Second sample story')] : []);
         return route.fulfill({ json: {
-            issues: lane ? [story('TEST-1', 'First sample story'), story('TEST-2', 'Second sample story')] : [],
+            issues: visibleLane && params.get('project') === 'product' ? sprintStories : [],
             epics: { 'TEST-100': { key: 'TEST-100', summary: 'Sample epic', status: { name: 'In Progress' }, teamId: 'sample-team', teamName: 'Sample Team',
                 sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] } },
             epicsInScope: [], names: {},
@@ -81,10 +90,11 @@ async function openCatchUp(page, { replies, readiness = 'ready', otherSprint = n
             groupId: params.get('groupId'), sprintId: params.get('sprint'), sprintName: params.get('sprintName'), sprintState: params.get('sprintState'),
         } } });
     });
-    await page.route('**/api/dependencies', route => {
-        const reply = replies[Math.min(dependencyCalls.length, replies.length - 1)];
+    await page.route('**/api/dependencies', async route => {
+        const { hold, abort, ...fulfillment } = replies[Math.min(dependencyCalls.length, replies.length - 1)];
         dependencyCalls.push(route.request().postDataJSON());
-        return reply.abort ? route.abort('connectionfailed') : route.fulfill(reply);
+        if (hold) await hold;
+        return abort ? route.abort('connectionfailed') : route.fulfill(fulfillment);
     });
     await page.goto(fixture.appBaseUrl);
     return { dependencyCalls };
@@ -217,6 +227,86 @@ test('the notice does not outlive its scope: a Sprint without Stories shows none
     await expect(page.getByText('No tasks found')).toBeVisible();
     await expect(page.locator('.task-item')).toHaveCount(0);
     await expect(page.getByText(NOTICE_TEXT)).toHaveCount(0);
+});
+
+// Shows the notice, switches to a scope whose product lane answers while its tech lane is held, and proves the old notice is gone
+// before that scope's own dependencies request exists; then releases the lane and checks the new answer is handled normally.
+async function expectNoticeClearedBeforeOwnRequest(page, scope, switchScope) {
+    const otherDependencies = { 'TEST-3': [blockedBy('TEST-3', 'TEST-7')] };
+    let releaseTech;
+    const holdOtherTech = new Promise(resolve => { releaseTech = resolve; });
+    const state = await openCatchUp(page, {
+        replies: [incompleteReply, { json: { dependencies: otherDependencies } }],
+        ...scope, otherStories: [story('TEST-3', 'Third sample story'), story('TEST-4', 'Fourth sample story')], holdOtherTech,
+    });
+    await expect(depNotice(page)).toBeVisible();
+    expect(state.dependencyCalls).toHaveLength(1);
+    await switchScope();
+    // The product lane has applied the new scope's Stories, the tech lane has not answered, so no dependencies request exists yet.
+    await expect(page.locator('.task-item[data-task-key="TEST-3"]')).toBeVisible();
+    await expect(page.locator('.task-item[data-task-key="TEST-1"]')).toHaveCount(0);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(state.dependencyCalls).toHaveLength(1);
+    await expect(depNotice(page)).toHaveCount(0);
+    await expect(page.getByText(NOTICE_TEXT)).toHaveCount(0);
+
+    releaseTech();
+    await expect.poll(() => state.dependencyCalls.length).toBe(2);
+    expect(state.dependencyCalls[1].keys).toEqual(['TEST-3', 'TEST-4']);
+    await expect(page.locator('.task-item[data-task-key="TEST-3"] button[data-dep-chip="blocked-by"]')).toBeVisible();
+    await expect(depNotice(page)).toHaveCount(0);
+}
+
+test('a new Sprint with Stories shows no notice before its own dependencies request', async ({ page }) => {
+    const otherSprint = { id: selectedSprintId + 1, name: '2026Q2 Sprint 43', state: 'active' };
+    await expectNoticeClearedBeforeOwnRequest(page, { otherSprint }, async () => {
+        await page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle').click();
+        await page.locator('.sprint-dropdown-option', { hasText: otherSprint.name }).click();
+    });
+});
+
+test('a new Department with Stories shows no notice before its own dependencies request', async ({ page }) => {
+    const otherGroup = { id: 'second-group', name: 'Second Department' };
+    await expectNoticeClearedBeforeOwnRequest(page, { otherGroup }, async () => {
+        await page.locator('.view-selector .group-dropdown-toggle').click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: otherGroup.name }).click();
+    });
+});
+
+test('returning to the first Department asks again and shows its notice again', async ({ page }) => {
+    const otherGroup = { id: 'second-group', name: 'Second Department' };
+    const state = await openCatchUp(page, {
+        replies: [incompleteReply, { json: { dependencies: { 'TEST-3': [blockedBy('TEST-3', 'TEST-7')] } } }, incompleteReply],
+        otherGroup, otherStories: [story('TEST-3', 'Third sample story'), story('TEST-4', 'Fourth sample story')],
+    });
+    const choose = async (name) => {
+        await page.locator('.view-selector .group-dropdown-toggle').click();
+        await page.locator('.view-selector .group-dropdown-option', { hasText: name }).click();
+    };
+    await expect(depNotice(page)).toBeVisible();
+    await choose(otherGroup.name);
+    await expect(page.locator('.task-item[data-task-key="TEST-3"] button[data-dep-chip="blocked-by"]')).toBeVisible();
+    await expect(depNotice(page)).toHaveCount(0);
+    await choose('Sample Department');
+    await expect.poll(() => state.dependencyCalls.length).toBe(3);
+    expect(state.dependencyCalls[2].keys).toEqual(state.dependencyCalls[0].keys);
+    await expect(depNotice(page)).toBeVisible();
+    await expect(page.locator('.task-item[data-task-key="TEST-1"] button[data-dep-chip="blocked-by"]')).toBeVisible();
+});
+
+test('a fetch that starts clears the notice while it is in flight', async ({ page }) => {
+    let releaseSecond;
+    const hold = new Promise(resolve => { releaseSecond = resolve; });
+    const state = await openCatchUp(page, { replies: [incompleteReply, { json: { dependencies: completeMap }, hold }] });
+    await expect(depNotice(page)).toBeVisible();
+    await depNotice(page).getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect.poll(() => state.dependencyCalls.length).toBe(2);
+    // The second request is pending: nothing has answered, yet the earlier notice is already gone.
+    await expect(depNotice(page)).toHaveCount(0);
+    await expect(depChips(page)).toHaveCount(1);
+    releaseSecond();
+    await expect(depChips(page)).toHaveCount(2);
+    await expect(depNotice(page)).toHaveCount(0);
 });
 
 test('a 401 is not a notice: it locks the document as before', async ({ page }) => {

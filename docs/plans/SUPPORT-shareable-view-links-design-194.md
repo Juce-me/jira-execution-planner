@@ -417,7 +417,7 @@ The operator accepted all of these on 2026-10-15: items 1, 2 and 4 to 7 as writt
 
 ## Risks
 
-- `dashboard.jsx` is mid-decomposition (`EXEC-dashboard-app-decomposition.md`); sequence with it or accept rebase conflicts in the same file.
+- `dashboard.jsx` is mid-decomposition (`DONE-dashboard-app-decomposition.md`); sequence with it or accept rebase conflicts in the same file.
 - The GA4 container configuration is outside the repo. The design relies on stripping before Tag Manager loads and proves it with a test, but does not inspect the container.
 - A reload before the apply completes drops the link; a second tab can overwrite persisted prefs. Both accepted.
 - The estimated shape of `useShareViewApply` is about 55 named inputs; the plan must keep it as one options object in the house style (`usePlanningSelectionSync`, `useDashboardFreshness`).

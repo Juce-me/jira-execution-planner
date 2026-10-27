@@ -500,7 +500,6 @@ def api_auth_refresh():
 
 @bp.route('/api/auth/dev/home-graphql-oauth-probe', methods=['GET'])
 def api_dev_home_graphql_oauth_probe():
-    context = None
     if APP_ENVIRONMENT_KEY.strip().lower() not in {'local', 'dev'}:
         return jsonify({'error': 'not_found'}), 404
     if os.getenv('ALLOW_DEV_DIAGNOSTIC_ENDPOINTS', '').strip().lower() not in {'1', 'true', 'yes'}:
@@ -509,45 +508,26 @@ def api_dev_home_graphql_oauth_probe():
         return jsonify({'error': 'not_found'}), 404
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return jsonify({'error': 'oauth_required'}), 400
-    if database_storage_enabled() and db_oauth_browser_session_data():
-        try:
-            context = current_request_auth_context()
-            active = current_jira_session_data(context)
-        except AuthError as error:
-            if error.code == 'auth_required':
-                save_oauth_session({})
-                return jsonify({
-                    'error': 'auth_required',
-                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
-                    'loginUrl': '/login?reason=session_expired',
-                }), 401
-            return auth_error_response(error, 401)
-    else:
-        data = oauth_session_data()
-        if not data.get('access_token') or not data.get('cloudid'):
-            save_oauth_session({})
-            return jsonify({
-                'error': 'auth_required',
-                'message': 'Your Jira sign-in expired. Sign in again to continue.',
-                'loginUrl': '/login?reason=session_expired',
-            }), 401
-        try:
-            active = ensure_oauth_token(
-                current_auth_config(),
-                data,
-                save_oauth_session,
-                reload_session=oauth_session_data,
-                refresh_lock=oauth_refresh_lock(),
-            )
-        except AuthError as error:
-            if error.code == 'auth_required':
-                save_oauth_session({})
-                return jsonify({
-                    'error': 'auth_required',
-                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
-                    'loginUrl': '/login?reason=session_expired',
-                }), 401
-            return auth_error_response(error, 401)
+    profile = (request.args.get('profile') or 'legacy').strip()
+    if profile not in {'legacy', epm_home.PUBLIC_READ_V1_PROFILE}:
+        return jsonify({'error': 'unknown_probe_profile'}), 400
+    # Both profiles read the DB browser session only; the local OAuth token store is never consulted.
+    auth_required = (jsonify({
+        'error': 'auth_required',
+        'message': 'Your Jira sign-in expired. Sign in again to continue.',
+        'loginUrl': '/login?reason=session_expired',
+    }), 401)
+    if not database_storage_enabled() or not db_oauth_browser_session_data().get('db_browser_session_id'):
+        return auth_required
+    try:
+        context = current_request_auth_context()
+        if not getattr(context, 'browser_session_id', ''):
+            return auth_required
+        active = current_jira_session_data(context)
+    except AuthError as error:
+        if error.code == 'auth_required':
+            return auth_required
+        return auth_error_response(error, 401)
 
     try:
         epm_config = get_epm_config(context=context)
@@ -559,17 +539,36 @@ def api_dev_home_graphql_oauth_probe():
         }), 503
     scope = epm_config.get('scope') or {}
     sub_goal_keys = normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey'))
-    root_goal_key = normalize_epm_upper_text(request.args.get('rootGoalKey') or scope.get('rootGoalKey'))
-    sub_goal_key = normalize_epm_upper_text(
-        request.args.get('subGoalKey') or (sub_goal_keys[0] if sub_goal_keys else '')
-    )
+    private_root_key = normalize_epm_upper_text(scope.get('rootGoalKey'))
+    # The current private scope is the only fixture authority: a query value is accepted only when it
+    # repeats that scope (legacy profile) and is rejected outright for public-read-v1.
+    requested_root = normalize_epm_upper_text(request.args.get('rootGoalKey'))
+    requested_sub = normalize_epm_upper_text(request.args.get('subGoalKey'))
+    requested_project = str(request.args.get('homeProjectId') or '').strip()
+    if profile == epm_home.PUBLIC_READ_V1_PROFILE:
+        overrides_ok = not (requested_root or requested_sub or requested_project)
+    else:
+        overrides_ok = (
+            (not requested_root or requested_root == private_root_key)
+            and (not requested_sub or requested_sub in sub_goal_keys)
+            and not requested_project
+        )
+    if not overrides_ok:
+        return jsonify({'error': 'invalid_probe_override'}), 400
+    if profile == epm_home.PUBLIC_READ_V1_PROFILE:
+        payload = epm_home.run_home_graphql_public_read_probe(
+            active.get('access_token', ''),
+            active.get('cloudid', ''),
+            epm_scope=scope,
+        )
+        return jsonify(epm_home.redact_home_oauth_probe_payload(payload))
     payload = epm_home.run_home_graphql_oauth_probe(
         active.get('access_token', ''),
         active.get('cloudid', ''),
         epm_scope=scope,
-        root_goal_key=root_goal_key,
-        sub_goal_key=sub_goal_key,
-        home_project_id=str(request.args.get('homeProjectId') or '').strip(),
+        root_goal_key=requested_root or private_root_key,
+        sub_goal_key=requested_sub or (sub_goal_keys[0] if sub_goal_keys else ''),
+        home_project_id='',
         jira_url=str(active.get('site_url') or JIRA_URL or '').strip(),
     )
     return jsonify(epm_home.redact_home_oauth_probe_payload(payload))

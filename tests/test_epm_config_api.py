@@ -229,6 +229,8 @@ class TestEpmConfigApi(unittest.TestCase):
                 auth_connection_id=f'route-connection-{user_index}-{workspace_index}',
                 cloud_id=f'cloud-{workspace_index}', site_url=f'https://route-private-{workspace_index}.example.net',
                 token_version='1', account_status='active', is_admin=False,
+                browser_session_id=f'route-browser-{user_index}-{workspace_index}',
+                granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()), granted_scopes_verified=True,
             )
 
         contexts = (context(0, 0), context(1, 0), context(0, 1))
@@ -279,7 +281,8 @@ class TestEpmConfigApi(unittest.TestCase):
                     with patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
                          patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
                          patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-                         patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'active': True}), \
+                         patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'db_browser_session_id': 'browser-session'}), \
+                         patch.object(jira_server, 'strict_db_oauth_browser_session_data', return_value={'db_browser_session_id': 'browser-session'}), \
                          patch.object(jira_server, 'current_request_auth_context', return_value=request_context), \
                          patch.object(jira_server, 'current_jira_session_data', return_value={
                              'access_token': f'access-{index}', 'cloudid': f'cloud-{index}',

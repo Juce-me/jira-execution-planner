@@ -68,7 +68,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("health", "/health", PUBLIC_METHODS, "public_page"),
     EndpointPolicy("auth-pages", "/auth/", PUBLIC_METHODS, "auth_flow", "prefix"),
     EndpointPolicy("login", "/login", PUBLIC_METHODS, "auth_flow"),
-    EndpointPolicy("auth-dev-home-probe", "/api/auth/dev/home-graphql-oauth-probe", PUBLIC_METHODS, "dev_local"),
+    EndpointPolicy("auth-dev-home-probe", "/api/auth/dev/home-graphql-oauth-probe", PUBLIC_METHODS, "dev_local_oauth_read"),
     EndpointPolicy("auth-api", "/api/auth/", frozenset({"GET", "POST"}), "auth_flow", "prefix", ("/api/auth/dev/",)),
     EndpointPolicy("eng-board-measurement-runner", "/api/dev/eng-board-measurement", PUBLIC_METHODS, "dev_local"),
     EndpointPolicy("eng-board-measurement-runner-js", "/api/dev/eng-board-measurement/runner.js", PUBLIC_METHODS, "dev_local"),

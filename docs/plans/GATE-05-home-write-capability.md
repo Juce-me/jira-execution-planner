@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-10-14. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-10-26. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,9 +15,9 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-10-14 |
-| Last result | Not run — Part 3 continuation sweep on 2026-10-14 found 0 of 4 required inputs in the process environment and no approved disposable target. Previous FAIL insufficient_home_write_probe_input remains unresolved; no PASS evidence. This frontend hover work has no dependency on Home writes. |
-| Next review | 2026-10-19 (Europe/Berlin) |
+| Checked on | 2026-10-26 |
+| Last result | Not run: required inputs unavailable; no PASS evidence. Startup sweep on 2026-10-26 found 0 of 4 required inputs in the process environment and no approved disposable target (names checked, no values read). Previous FAIL insufficient_home_write_probe_input remains unresolved. The Catch Up cold load speed work has no dependency on Home writes. |
+| Next review | 2026-11-02 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
 

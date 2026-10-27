@@ -4,6 +4,7 @@ import {
     publishAuthenticationRequired,
     readPendingAuthenticationRequired,
 } from './authRequired.js';
+import { earlyTimingOf, takeEarlyResponse } from './earlyBootstrapRegistry.js';
 
 async function authenticationPayload(response) {
     if (!response || response.ok) return null;
@@ -81,9 +82,12 @@ export async function apiFetch(url, options = {}) {
 
 async function performApiFetch(url, options) {
     let response;
-    const requestStartedAt = Date.now();
+    // A startup read the early script already started is adopted whatever its status, and its start
+    // time stamps an authentication lock; no response (network error, abort) means one normal request.
+    const early = takeEarlyResponse(url, options);
+    const requestStartedAt = early ? early.startedAtEpoch : Date.now();
     try {
-        response = await fetch(url, options);
+        response = (early ? await early.promise : null) || await fetch(url, options);
     } catch (error) {
         const lockedAfterFailure = readPendingAuthenticationRequired();
         if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, 0);
@@ -217,11 +221,13 @@ export async function trackedFetch(apiSurface, url, options = {}, analyticsParam
     try {
         const response = await apiFetch(url, options);
         const endedAt = typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now();
+        // An adopted early response is timed from its own start to the earlier of its settle and now.
+        const early = earlyTimingOf(response);
         safelyTrackApiResult(apiSurface, {
             featureName: analyticsParams.featureName || 'api',
             method,
             status: response.status,
-            durationMs: endedAt - startedAt,
+            durationMs: early ? Math.min(early.settledAt, endedAt) - early.startedAt : endedAt - startedAt,
             cacheState: analyticsParams.cacheState || cacheStateFromResponse(response),
             epmTab: analyticsParams.epmTab,
             projectScope: analyticsParams.projectScope,

@@ -326,6 +326,7 @@ OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-leve
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled.
 - Internal hostname, TLS/proxy termination, OAuth2 Proxy policy, Atlassian redirect/callback URL registration, secure cookie settings, and `APP_ALLOWED_ORIGINS`.
+- Ingress compression: the app already gzips allowlisted responses (JSON, JavaScript, CSS, HTML and SVG of 1 KB or more) for clients that send `Accept-Encoding: gzip`, and sets `Vary: Accept-Encoding` on them. An ingress or proxy that also compresses must leave a response that already carries `Content-Encoding` alone, and must not strip `Vary`. The Board NDJSON stream and Scenario draft event stream are never compressed by the app and must stay unbuffered.
 - PostgreSQL provisioning, migration execution owner, durable persistence, log retention, backup/restore ownership, resource limits, and readiness/liveness probe policy.
 
 Blocked until deployment reference:

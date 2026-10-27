@@ -4,6 +4,7 @@ const viewEntries = {
     stats: { name: 'StatsPanel', exportName: 'default' },
     scenario: { name: 'ScenarioView', exportName: 'ScenarioView' },
     settings: { name: 'SettingsModalContainer', exportName: 'default' },
+    adminSettings: { name: 'AdminSettingsContainer', exportName: 'default' },
 };
 const manifestViewIds = Object.keys(viewEntries).sort().join(',');
 export const STALE_LAZY_BUILD_CODE = 'JEP_STALE_LAZY_BUILD';

@@ -1,11 +1,22 @@
+import json
+import re
+import threading
+import time
 import unittest
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.auth.context import RequestAuthContext
+from backend.auth.jira_auth import AuthError
 from backend.routes import eng_routes
-from backend.services.eng_board_stream import EngBoardRequestBudget, EngBoardRequestTransport
+from backend.services import eng_board, jira_batches
+from backend.services.eng_board_stream import (
+    EngBoardRequestBudget,
+    EngBoardRequestDeadline,
+    EngBoardRequestTransport,
+)
+from backend.services.jira_batches import JIRA_BATCH_CONCURRENCY, JIRA_BATCH_GLOBAL_SLOTS
 from backend.services.story_readiness import (
     InvalidCompleteReadinessInput,
     project_story_readiness,
@@ -51,6 +62,116 @@ def _complete_input(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+class _ReadinessJira:
+    """Synthetic Jira for `_story_readiness_compute` that records call times and the peak in flight.
+
+    One board sprint page, discovery in pages of at most 100 Epics, the field list, then child
+    and enrichment batches (two Stories per Epic). `respond(kind, payload)` may raise, block or
+    return a response to replace the synthetic one; it runs while the call counts as in flight.
+    """
+
+    SPRINT = ('42', 'Sprint 42', 'active')
+
+    def __init__(self, epics=160, latency=0.0, respond=None):
+        self.epic_keys = sorted(f'PROD-{n}' for n in range(1, epics + 1))
+        self.latency = latency
+        self.respond = respond
+        self.lock = threading.Lock()
+        self.calls = []
+        self.in_flight = 0
+        self.peak = 0
+        self.group = {'id': 'dept', 'revision': 1, 'teams': [
+            {'id': 'team-a', 'name': 'Alpha', 'labels': ['team_alpha']},
+            {'id': 'team-b', 'name': 'Beta', 'labels': ['team_beta']},
+        ]}
+        self.projects = [{'key': 'PROD', 'type': 'product'}]
+        self.config = {'board': {'boardId': '7'}, 'sprintField': {'fieldId': 'customfield_sprint'},
+                       'teamField': {'fieldId': 'customfield_team'},
+                       'projectTrackField': {'fieldId': 'customfield_track'}}
+
+    def _call(self, kind, payload, build):
+        started = time.perf_counter()
+        with self.lock:
+            self.in_flight += 1
+            self.peak = max(self.peak, self.in_flight)
+        try:
+            if self.latency:
+                time.sleep(self.latency)
+            response = self.respond(kind, payload) if self.respond else None
+            return response if response is not None else build()
+        finally:
+            with self.lock:
+                self.in_flight -= 1
+                self.calls.append({'kind': kind, 'payload': payload, 'start': started,
+                                   'end': time.perf_counter(), 'thread': threading.current_thread()})
+
+    def calls_of(self, *kinds):
+        with self.lock:
+            return [call for call in self.calls if call['kind'] in kinds]
+
+    def get(self, path, **_kwargs):
+        if path == '/rest/agile/1.0/board/7/sprint':
+            return self._call('sprint', {'path': path}, lambda: _FakeResponse(200, {
+                'values': [{'id': 42, 'name': 'Sprint 42', 'state': 'active'}], 'isLast': True}))
+        if path == '/rest/api/3/field':
+            return self._call('field', {'path': path}, lambda: _FakeResponse(
+                200, [{'id': 'customfield_epic', 'name': 'Epic Link'}]))
+        raise AssertionError(path)
+
+    def search(self, payload, **_kwargs):
+        jql = payload['jql']
+        batch = list(dict.fromkeys(re.findall(r'"(PROD-\d+)"', jql)))
+        if 'issuetype = Epic' in jql:
+            token = payload.get('nextPageToken')
+            page = self.epic_keys[100:] if token else self.epic_keys[:100]
+            body = {'issues': [{'key': key, 'fields': {'project': {'key': 'PROD'}}} for key in page],
+                    'isLast': bool(token) or len(self.epic_keys) <= 100}
+            if not body['isLast']:
+                body['nextPageToken'] = 'page-2'
+            return self._call('discovery', payload, lambda: _FakeResponse(200, body))
+        if jql.startswith('issuetype = Story'):
+            rows = [{'key': f'PROD-{int(epic.split("-")[1]) * 10 + j + 10000}', 'fields': {
+                'parent': {'key': epic}, 'status': {'name': 'In Progress'},
+                'customfield_sprint': [{'id': 42}], 'customfield_team': {'id': 'team-a'}}}
+                for epic in batch for j in range(2)]
+            return self._call('child', payload, lambda: _FakeResponse(200, {'issues': rows, 'isLast': True}))
+        if jql.startswith('key in'):
+            rows = [{'id': epic.split('-')[1], 'key': epic, 'fields': {
+                'summary': f'Synthetic {epic}', 'status': {'name': 'In Progress'}, 'priority': {'name': 'High'},
+                'assignee': None, 'labels': ['team_alpha', 'team_beta'], 'components': [{'name': 'Synthetic'}],
+                'parent': None, 'project': {'key': 'PROD'}, 'customfield_track': {'value': 'Committed'},
+                'customfield_team': {'id': 'team-a'}}} for epic in batch]
+            return self._call('enrichment', payload, lambda: _FakeResponse(200, {'issues': rows, 'isLast': True}))
+        raise AssertionError(jql)
+
+
+_READINESS_CONTEXT = RequestAuthContext(
+    auth_mode='basic', user_id='local', stable_subject='local',
+    workspace_id='workspace', auth_connection_id='local-basic-connection',
+    atlassian_account_id='', cloud_id='', site_url='https://example.invalid', token_version='1',
+    account_status='active', is_admin=True,
+)
+
+
+def run_readiness_compute(jira, *, cap=None, transport=None):
+    """Call `_story_readiness_compute` against `jira`; `cap` patches the batch concurrency.
+
+    Returns `(result, timing, wall_ms)`. Also the G2b measurement harness (Task 2 step 1).
+    """
+    eng_routes.bind_server_globals(vars(eng_routes))
+    transport = transport or EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+    with ExitStack() as stack:
+        stack.enter_context(patch.object(eng_routes, 'current_jira_get', jira.get))
+        stack.enter_context(patch.object(eng_routes, 'current_jira_search', jira.search))
+        if cap is not None:
+            stack.enter_context(patch.object(eng_routes, '_STORY_READINESS_BATCH_CONCURRENCY', cap))
+        started = time.perf_counter()
+        result, timing = eng_routes._story_readiness_compute(
+            _READINESS_CONTEXT, jira.SPRINT, jira.group, jira.projects, jira.config, transport,
+        )
+        return result, timing, (time.perf_counter() - started) * 1000
 
 
 class StoryReadinessProjectionTests(unittest.TestCase):
@@ -537,9 +658,189 @@ class StoryReadinessRouteTests(unittest.TestCase):
                 ])
                 self.assertEqual(result['epics'][0]['projectTrack'], 'Committed')
                 self.assertEqual(result['epics'][0]['components'], ['Synthetic Component'])
-                self.assertIn('components', search_calls[-1]['fields'])
+                # Child and enrichment batches run concurrently, so their order is not fixed:
+                # exactly one search (the enrichment one) asks for components, four in total.
+                enrichment_calls = [call for call in search_calls if call['jql'].startswith('key in')]
+                self.assertEqual(len(enrichment_calls), 1)
+                self.assertEqual([call for call in search_calls if 'components' in call['fields']],
+                                 enrichment_calls)
                 self.assertEqual(len(search_calls), 4)
                 self.assertIn('discovery;dur=', timing)
+
+
+class StoryReadinessConcurrentBatchTests(unittest.TestCase):
+    def setUp(self):
+        stack = ExitStack()
+        self.addCleanup(stack.close)
+        # No database: the compute takes explicit config, and a stray lookup fails loudly.
+        stack.enter_context(patch.dict('os.environ', {
+            'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': ''}, clear=False))
+        self.admission = jira_batches._ProcessAdmission()
+        stack.enter_context(patch.object(jira_batches, '_ADMISSION', self.admission))
+
+    @staticmethod
+    def _payloads(jira):
+        return sorted(json.dumps(call['payload'], sort_keys=True) for call in jira.calls)
+
+    @staticmethod
+    def _batch_index(jira, payload):
+        """Index of a child or enrichment batch: batches hold 40 consecutive sorted Epic keys."""
+        first = re.search(r'"(PROD-\d+)"', payload['jql']).group(1)
+        return jira.epic_keys.index(first) // 40
+
+    def _slots_all_free(self):
+        acquired = [self.admission.slots.acquire(blocking=False) for _ in range(JIRA_BATCH_GLOBAL_SLOTS)]
+        for ok in acquired:
+            if ok:
+                self.admission.slots.release()
+        return all(acquired)
+
+    def test_compute_runs_child_and_enrichment_batches_with_a_cap_of_four(self):
+        # The four child batches must be in flight together (a serial run breaks the barrier).
+        first_wave = threading.Barrier(JIRA_BATCH_CONCURRENCY, timeout=5)
+
+        def respond(kind, _payload):
+            if kind == 'child':
+                first_wave.wait()
+            return None
+
+        jira = _ReadinessJira(latency=0.03, respond=respond)
+        result, timing, _wall = run_readiness_compute(jira)
+        self.assertEqual(jira.peak, 4)
+
+        serial_jira = _ReadinessJira(latency=0.03)
+        serial, _serial_timing, _wall = run_readiness_compute(serial_jira, cap=1)
+
+        self.assertEqual(eng_routes._STORY_READINESS_BATCH_CONCURRENCY, JIRA_BATCH_CONCURRENCY)
+        self.assertEqual(result, serial)
+        self.assertEqual(len(result['epics']), 160)
+        self.assertEqual(self._payloads(jira), self._payloads(serial_jira))
+        self.assertEqual({call['payload'].get('jql') for call in jira.calls},
+                         {call['payload'].get('jql') for call in serial_jira.calls})
+        self.assertEqual(len(jira.calls_of('child')), 4)
+        self.assertEqual(len(jira.calls_of('enrichment')), 4)
+        # Sprint validation, discovery and the field list stay serial and first, on the compute thread.
+        ordered = sorted(jira.calls, key=lambda call: call['start'])
+        self.assertEqual([call['kind'] for call in ordered[:4]], ['sprint', 'discovery', 'discovery', 'field'])
+        self.assertTrue(all(call['thread'] is threading.current_thread() for call in ordered[:4]))
+        self.assertTrue(all(call['thread'] is not threading.current_thread() for call in ordered[4:]))
+        # Cap 1 is today's order, inline: every child batch, then every enrichment batch.
+        self.assertEqual(serial_jira.peak, 1)
+        self.assertEqual([call['kind'] for call in serial_jira.calls],
+                         ['sprint', 'discovery', 'discovery', 'field'] + ['child'] * 4 + ['enrichment'] * 4)
+        self.assertTrue(all(call['thread'] is threading.current_thread() for call in serial_jira.calls))
+        # Server-Timing keeps its four segment names; the batch spans may overlap but fit in the total.
+        segments = dict(part.split(';dur=') for part in timing.split(', '))
+        self.assertEqual(list(segments), ['discovery', 'child-distribution', 'enrichment', 'total'])
+        durations = {name: float(value) for name, value in segments.items()}
+        self.assertGreater(durations['child-distribution'], 0)
+        self.assertGreater(durations['enrichment'], 0)
+        self.assertLessEqual(durations['child-distribution'], durations['total'])
+        self.assertLessEqual(durations['enrichment'], durations['total'])
+        self.assertTrue(self._slots_all_free())
+
+    def test_compute_raises_the_same_classification_when_any_batch_fails(self):
+        def fail_at(kind, index, error, delay=0.0):
+            return {(kind, index): (error, delay)}
+
+        missing_key = lambda: _FakeResponse(200, {'issues': [], 'isLast': True})  # noqa: E731
+        cases = {
+            'child batch 503': (fail_at('child', 1, lambda: _FakeResponse(503, {})), RuntimeError),
+            'child batch malformed page': (fail_at('child', 0, lambda: _FakeResponse(200, {'issues': 'x'})),
+                                           eng_board.EngBoardError),
+            'enrichment batch missing a key': (fail_at('enrichment', 2, missing_key), RuntimeError),
+            'enrichment batch auth error': (fail_at('enrichment', 3, AuthError('auth_required')), AuthError),
+            # The lower batch fails later than a higher one: the lowest index wins, as in serial order.
+            'lower child fails after a higher child': ({
+                **fail_at('child', 0, lambda: _FakeResponse(200, {'issues': 'x'}), delay=0.15),
+                **fail_at('child', 2, lambda: _FakeResponse(503, {})),
+            }, eng_board.EngBoardError),
+            # A higher-index auth error does not outrank a lower-index ordinary failure (serial: the child fails first).
+            'child 503 after an enrichment auth error': ({
+                **fail_at('child', 3, lambda: _FakeResponse(503, {}), delay=0.1),
+                **fail_at('enrichment', 0, AuthError('auth_required')),
+            }, RuntimeError),
+        }
+        for name, (failures, expected_type) in cases.items():
+            with self.subTest(case=name):
+                raised = {}
+                for cap in (1, None):
+                    jira = _ReadinessJira(latency=0.02)
+
+                    def respond(kind, payload, jira=jira, failures=failures):
+                        if kind not in ('child', 'enrichment'):
+                            return None
+                        error, delay = failures.get((kind, self._batch_index(jira, payload)), (None, 0))
+                        if error is None:
+                            return None
+                        time.sleep(delay)
+                        if isinstance(error, Exception):
+                            raise error
+                        return error()
+
+                    jira.respond = respond
+                    with self.assertRaises(Exception) as caught:
+                        run_readiness_compute(jira, cap=cap)
+                    raised[cap] = caught.exception
+                serial, concurrent = raised[1], raised[None]
+                self.assertIsInstance(serial, expected_type)
+                self.assertIs(type(concurrent), type(serial))
+                self.assertEqual(str(concurrent), str(serial))
+                self.assertEqual(getattr(concurrent, 'code', None), getattr(serial, 'code', None))
+                self.assertTrue(self._slots_all_free())
+
+    def test_compute_deadline_cancel_stops_queued_batches_and_leaves_no_worker(self):
+        for stop in ('cancel', 'expiry'):
+            for cap in (1, None):
+                with self.subTest(stop=stop, cap=cap):
+                    release = threading.Event()
+                    started = threading.Semaphore(0)
+
+                    def respond(kind, _payload, release=release, started=started):
+                        if kind in ('child', 'enrichment'):
+                            started.release()
+                            release.wait(30)  # longer than the start waits below; set in `finally`
+                        return None
+
+                    jira = _ReadinessJira(respond=respond)
+                    clock = [0.0]
+                    budget = EngBoardRequestBudget.start(25, now_fn=lambda clock=clock: clock[0])
+                    transport = EngBoardRequestTransport(budget=budget)
+                    before = set(threading.enumerate())
+                    outcome = {}
+
+                    def compute(jira=jira, cap=cap, transport=transport, outcome=outcome):
+                        try:
+                            run_readiness_compute(jira, cap=cap, transport=transport)
+                        except Exception as exc:
+                            outcome['error'] = exc
+
+                    runner = threading.Thread(target=compute)
+                    runner.start()
+                    in_flight = cap or JIRA_BATCH_CONCURRENCY
+                    try:
+                        for _ in range(in_flight):
+                            self.assertTrue(started.acquire(timeout=5))
+                        self.assertFalse(started.acquire(timeout=0.1), 'no batch beyond the cap starts')
+                        if stop == 'cancel':
+                            budget.cancel()  # what the route does when its 25 s wait times out
+                        else:
+                            clock[0] = 26.0
+                    finally:
+                        release.set()  # never leave a blocked compute (and its patches) behind
+                        runner.join(5)
+                    self.assertFalse(runner.is_alive())
+
+                    self.assertIsInstance(outcome.get('error'), EngBoardRequestDeadline)
+                    self.assertEqual(len(jira.calls_of('child', 'enrichment')), in_flight,
+                                     'queued batches never start after the cancel')
+                    self.assertEqual(jira.calls_of('enrichment'), [])
+                    workers = [thread for thread in threading.enumerate()
+                               if thread not in before and thread.name.startswith('jira-batch')]
+                    for worker in workers:
+                        worker.join(2)
+                    self.assertEqual([worker for worker in workers if worker.is_alive()], [])
+                    self.assertTrue(self._slots_all_free())
 
 
 if __name__ == "__main__":

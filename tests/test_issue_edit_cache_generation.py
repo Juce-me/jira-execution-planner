@@ -76,7 +76,7 @@ class IssueEditCacheGenerationTests(unittest.TestCase):
         calls = []
         responses = []
 
-        def blocked_collect(keys, context=None):
+        def blocked_collect(keys, context=None, **_kwargs):
             calls.append(list(keys))
             if len(calls) == 1:
                 started.set()

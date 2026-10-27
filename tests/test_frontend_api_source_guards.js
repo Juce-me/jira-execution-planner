@@ -57,8 +57,10 @@ function loadHttpHelpers() {
         'AuthenticationRequiredError',
         'publishAuthenticationRequired',
         'readPendingAuthenticationRequired',
+        'takeEarlyResponse',
+        'earlyTimingOf',
         `${source}; return { apiFetch, json, jsonOrStructuredError, getJson, postJson, trackedFetch };`,
-    )(() => {}, TestAuthenticationRequiredError, () => ({ loginUrl: '/login?reason=session_expired' }), () => null);
+    )(() => {}, TestAuthenticationRequiredError, () => ({ loginUrl: '/login?reason=session_expired' }), () => null, () => null, () => undefined);
 }
 
 test('the common HTTP boundary does not import the analytics singleton', () => {
@@ -232,14 +234,106 @@ function withoutMountedManifestFetch(source) {
     return remainingSource;
 }
 
+const httpBoundaryOwner = 'frontend/src/api/http.js';
+const earlyBootstrapOwner = 'frontend/src/api/earlyBootstrap.js';
+const earlyBootstrapFetch = "fetch(request.url, { ...request.init, signal: controller.signal, credentials: 'same-origin', referrerPolicy: 'no-referrer' })";
+const nativeFetchCall = /\bfetch\s*\(/g;
+
+function countNativeFetches(source) {
+    return (source.match(nativeFetchCall) || []).length;
+}
+
+function functionBody(source, header) {
+    const start = source.indexOf(header);
+    assert.ok(start >= 0, `Shared HTTP boundary is missing: ${header}`);
+    const end = source.indexOf('\n}\n', start);
+    return source.slice(start, end < 0 ? source.length : end);
+}
+
+// The shared boundary keeps exactly its two native fetch calls: the buffered performApiFetch (which
+// adopts an early startup response first) and the streaming apiFetchHeaders.
+function assertBoundaryFetches(source) {
+    const buffered = functionBody(source, 'async function performApiFetch(url, options) {');
+    const streaming = functionBody(source, 'export async function apiFetchHeaders(url, options = {}) {');
+    assert.ok(buffered.includes('const early = takeEarlyResponse(url, options);'), 'performApiFetch must offer each read to the early registry');
+    assert.ok(buffered.includes('response = (early ? await early.promise : null) || await fetch(url, options);'), 'performApiFetch must adopt the early response before its own fetch');
+    assert.equal(countNativeFetches(buffered), 1, 'Expected one native fetch in performApiFetch');
+    assert.equal(countNativeFetches(streaming), 1, 'Expected one native fetch in apiFetchHeaders');
+    assert.equal(countNativeFetches(source), 2, 'Expected exactly two native fetch calls in the shared HTTP boundary');
+}
+
+// The early startup script owns exactly one fetch, of the contract's two URLs, with no Referer.
+function withoutEarlyBootstrapFetch(source) {
+    for (const pin of [
+        "import { resolveBackendUrl } from './backendUrl.js';",
+        "import { earlyBootstrapRequests, earlySlot } from './earlyBootstrapContract.js';",
+        'resolveBackendUrl(window)',
+        'if (slot[request.key]) return;',
+    ]) {
+        assert.ok(source.includes(pin), `Early bootstrap contract is missing: ${pin}`);
+    }
+    assert.doesNotMatch(source, /\/api\//, 'The early script takes its URLs from the shared contract');
+    assert.doesNotMatch(source, /location\.(?:search|href|hash)|URLSearchParams|localStorage|sessionStorage|indexedDB|document\.cookie/,
+        'The early script reads no query string and no storage');
+    assert.equal(source.split(earlyBootstrapFetch).length - 1, 1, 'Expected exactly one approved early bootstrap fetch');
+    const remainingSource = source.replace(earlyBootstrapFetch, '');
+    assert.doesNotMatch(remainingSource, nativeFetchCall, 'The early script must not add native fetch calls');
+    return remainingSource;
+}
+
+function nativeFetchViolations(sourceByFile) {
+    const violations = [];
+    for (const [file, source] of Object.entries(sourceByFile)) {
+        if (file === httpBoundaryOwner) {
+            assertBoundaryFetches(source);
+            continue;
+        }
+        const checked = file === lazyLoaderOwner ? withoutMountedManifestFetch(source)
+            : file === earlyBootstrapOwner ? withoutEarlyBootstrapFetch(source)
+                : source;
+        if (checked.includes('fetch(')) violations.push(file);
+    }
+    return violations;
+}
+
+function currentFrontendSources() {
+    const sources = Object.fromEntries(listSourceFiles(frontendSrcPath).map(filePath => [relativeFile(filePath), readSource(filePath)]));
+    sources[lazyLoaderOwner] = readOwnerSource([lazyLoaderOwner], { anchor: 'export function validateLazyViewManifest' });
+    return sources;
+}
+
 test('native application API fetch is owned only by the shared HTTP boundary', () => {
-    const loaderSource = readOwnerSource([lazyLoaderOwner], { anchor: 'export function validateLazyViewManifest' });
-    const loaderWithoutStaticFetch = withoutMountedManifestFetch(loaderSource);
-    const violations = listSourceFiles(frontendSrcPath)
-        .filter((filePath) => (relativeFile(filePath) === lazyLoaderOwner ? loaderWithoutStaticFetch : readSource(filePath)).includes('fetch('))
-        .filter((filePath) => relativeFile(filePath) !== 'frontend/src/api/http.js')
-        .map(relativeFile);
-    assert.deepEqual(violations, []);
+    const sources = currentFrontendSources();
+    assert.ok(sources[httpBoundaryOwner], 'Expected the shared HTTP boundary to exist');
+    assert.ok(sources[earlyBootstrapOwner], 'Expected the early bootstrap script to exist');
+    assert.deepEqual(nativeFetchViolations(sources), []);
+});
+
+test('native fetch classification rejects extra early bootstrap fetches, a third boundary fetch and fetches elsewhere', () => {
+    const sources = currentFrontendSources();
+    const early = sources[earlyBootstrapOwner];
+    const boundary = sources[httpBoundaryOwner];
+    assert.ok(early && boundary);
+    const mutations = [
+        { [earlyBootstrapOwner]: `${early}\n${earlyBootstrapFetch};` },
+        { [earlyBootstrapOwner]: `${early}\nfetch('/unexpected');` },
+        { [earlyBootstrapOwner]: early.replace(earlyBootstrapFetch, earlyBootstrapFetch.replace(", referrerPolicy: 'no-referrer'", '')) },
+        { [earlyBootstrapOwner]: early.replace(earlyBootstrapFetch, earlyBootstrapFetch.replace("credentials: 'same-origin'", "credentials: 'include'")) },
+        { [earlyBootstrapOwner]: `${early}\nconst query = window.location.search;` },
+        { [earlyBootstrapOwner]: `${early}\nlocalStorage.getItem('jira_dashboard_ui_prefs_v1');` },
+        { [earlyBootstrapOwner]: `${early}\nconst endpoint = '/api/sprints';` },
+        { [earlyBootstrapOwner]: early.replace('resolveBackendUrl(window)', 'window.location.origin') },
+        { [httpBoundaryOwner]: `${boundary}\nfetch('/unexpected');` },
+        { [httpBoundaryOwner]: boundary.replace('export function getJson(', "function extraRead() { return fetch('/unexpected'); }\nexport function getJson(") },
+        { [httpBoundaryOwner]: boundary.replace('response = (early ? await early.promise : null) || await fetch(url, options);', 'response = await fetch(url, options);') },
+    ];
+    for (const mutation of mutations) {
+        assert.throws(() => nativeFetchViolations({ ...sources, ...mutation }), assert.AssertionError);
+    }
+    const otherFile = 'frontend/src/eng/earlyConfigProbe.js';
+    assert.deepEqual(nativeFetchViolations({ ...sources, [otherFile]: "export const probe = () => fetch('/api/config');" }), [otherFile]);
+    const registry = 'frontend/src/api/earlyBootstrapRegistry.js';
+    assert.deepEqual(nativeFetchViolations({ ...sources, [registry]: `${sources[registry] || ''}\nfetch('/api/config');` }), [registry]);
 });
 
 test('static manifest fetch classification rejects extra fetches and changed asset contracts', () => {

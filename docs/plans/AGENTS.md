@@ -72,6 +72,13 @@ Minimum review coverage:
 
 ## Home/Townsquare 3LO Gate
 
+**Scoped operator decision (2026-10-27; expires when EXEC-home-oauth-public-reads becomes DONE):**
+
+> all good, I'm the only user for that right now, so you can proceed ignoring the usage gates (migrations) — i'll test everything.
+> the goal for now: cover the design plan with dod, implementation plan, unlock the gate for fullfilment.
+
+This authorizes the bounded [public-read-v1 plan](EXEC-home-oauth-public-reads.md) and its [design/DoD](SUPPORT-home-oauth-public-read-design.md), waiving usage/migration staging, not auth/security/ownership, non-empty Jira parity or final acceptance. Subsequent operator clarification is **“Fix the plans only”**: the current delivery is finalized documents; Tasks 0–6 run in a separate execution session. The old eight-operation FAIL remains a FAIL. Require `PASS home_graphql_public_read_v1_supported` before any “public-read-v1 ready” claim and real product evidence before completion. The new profile cannot flip legacy `home_3lo_gate_mode` or count as `home_graphql_3lo_supported`. GATE-05 still blocks writes. This exception applies only to this named plan and must be removed or archived when it becomes DONE; the general rules below still apply elsewhere.
+
 Before creating or executing any plan that touches Atlassian Home/Townsquare GraphQL auth, Home-backed EPM/APM routes, or Jira-project-backed EPM/APM route migration:
 
 1. Read `docs/SUPPORT-atlassian-oauth-setup.md`, especially the Home GraphQL OAuth gate and visibility model.

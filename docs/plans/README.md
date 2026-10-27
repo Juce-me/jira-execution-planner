@@ -19,6 +19,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Planning Work
 
+- [Home OAuth public reads](EXEC-home-oauth-public-reads.md): plan finalized; implementation authorized but not started. Current delivery is plan corrections only; Tasks 0–6 run separately. The [design/DoD](SUPPORT-home-oauth-public-read-design.md) uses a self-controlled private Enable EPM view checkbox, EPM-only Home scopes and a bounded Home-access signal; no-access Goals/Projects navigation stays hidden. It preserves non-empty Goals -> Home projects -> exact-label Jira entities and documents rollback without a credential switch. Validation against main `e99b7e2a` records F-01–F-39 dispositions; historical 141/190 baseline counts are not current-main test evidence. Public-read-v1 runtime/product proof remains pending; GATE-05 remains write-only.
+
 - [Alerts pinned workflow #209](EXEC-alerts-pinned-workflow-209.md): implemented locally on `feature/209-alerts-pinned-workflow` (issue #209), awaiting publication and merge (kept `EXEC-`, not `DONE-`). Follow-up 2 was merged with the dismiss-ring and Epic-reveal fixes (`90bf6ad8`); the full gates at the merged head are being re-run. Verified before that merge (after follow-up 2): node 3038 pass, Python 2413 OK/50 skipped, design-system 60, Chromium `tests/ui` 1909 passed/12 skipped/0 failed, 82 pin specs; Tasks 5 and 6 each took one review fix round; the final whole-branch review found no Critical issues and its fixes are in. Clicking an ENG Catch Up alert pins it under the sticky header with a back-to-alerts button; the pinned `×` dismisses it and returns to the alert block, or fires confetti and scrolls to the top when the block is gone. Design: [revision 2](../agents/features/2026-10-24-planned-alerts-pinned-workflow-209-design.md), validated by three independent reviews. Follow-up 1 (operator review): the pin carries its category tone and icon. Follow-up 2: the pin is a rounded bordered card aligned with the filter bar, its title goes to the alert's Story or Epic (replacing follow-up 1's scroll to the alert row), and its tone labels read at 4.5:1. Frontend only; no endpoint, migration or analytics event.
 Publication update (2026-10-14): the operator approved one combined design-system PR with the existing five-commit history and 108 audited raw paths; fresh full verification passes (Chromium 1,600/eight skipped, Python 2,102/29 skipped, frontend unit 2,538); the committed-revision and remote publication gates are tracked in Part 3. The original three-PR delivery is superseded for this publication only.
 
@@ -102,11 +104,11 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
+   - Current implemented output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. The accepted [public-read cutover](EXEC-home-oauth-public-reads.md) replaces that prerequisite once implemented; do not reopen this DONE plan.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.
-   - Expected output while blocked: checked date and status only. If it passes, create or execute a separate Home write implementation plan.
+   - Expected output while blocked: checked date and status only. If it passes, create or execute a separate Home write implementation plan. It does not block the accepted [read-only implementation](EXEC-home-oauth-public-reads.md).
 
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.

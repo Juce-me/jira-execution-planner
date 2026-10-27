@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
+const { activeHomeTokenConnection, expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -100,7 +100,7 @@ async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, configResponseGate = null,
     configStatus = 200, taskResponseGate = null, boardResponseGate = null, strictEpicKeyForRequest = null,
-    homeTokenDelayMs = 0, homeTokenFailureCount = 0,
+    homeTokenDelayMs = 0, homeTokenFailureCount = 0, homeTokenConnection = { connected: false },
     groupsResponseGate = null, groupsStatus = 200, groupsSource = 'test', groupPreferences = null,
     groupPreferencesResponseGate = null,
     sprintResponseGate = null, sprintResponder = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
@@ -182,7 +182,7 @@ async function installBoardFixture(page, {
             homeTokenRequestCount += 1;
             if (homeTokenDelayMs) await new Promise(resolve => setTimeout(resolve, homeTokenDelayMs));
             if (homeTokenRequestCount <= homeTokenFailureCount) return route.abort('failed');
-            return json({ connected: false });
+            return json(homeTokenConnection);
         }
         if (url.pathname === '/api/team-catalog') {
             return json({ catalog: { 'team-alpha': 'Alpha Team' }, meta: { source: 'test' } });
@@ -394,7 +394,7 @@ async function installBoardFixture(page, {
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
     configResponseGate, configStatus, taskResponseGate, boardResponseGate, strictEpicKeyForRequest,
-    homeTokenDelayMs, homeTokenFailureCount, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
+    homeTokenDelayMs, homeTokenFailureCount, homeTokenConnection, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
     selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
@@ -419,6 +419,7 @@ async function openBoard(page, {
         ...(strictEpicKeyForRequest === undefined ? {} : { strictEpicKeyForRequest }),
         ...(homeTokenDelayMs === undefined ? {} : { homeTokenDelayMs }),
         ...(homeTokenFailureCount === undefined ? {} : { homeTokenFailureCount }),
+        ...(homeTokenConnection === undefined ? {} : { homeTokenConnection }),
         ...(groupsResponseGate === undefined ? {} : { groupsResponseGate }),
         ...(groupsStatus === undefined ? {} : { groupsStatus }),
         ...(groupsSource === undefined ? {} : { groupsSource }),
@@ -4267,6 +4268,75 @@ test('focusing the search field never moves the title block or the rows below th
         expect(focused.search.right, `${width}px: the focused field keeps its right edge`).toBe(idle.search.right);
         expect(focused.search.width, `${width}px: the focused field widens`).toBeGreaterThan(idle.search.width);
         expect(focused.title, `${width}px: the title block stays put while the search field is focused`).toEqual(idle.title);
+        expect(focused.below, `${width}px: the controls row stays put`).toEqual(idle.below);
+        expect(focused.header, `${width}px: the header keeps its box`).toEqual(idle.header);
+    }
+});
+
+test('focusing the search field never covers the ENG/EPM view switch or the title text', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900, homeTokenConnection: activeHomeTokenConnection() });
+    const frame = () => page.evaluate(() => {
+        // Firefox lays out in 1/60px units, so equal edges can differ in the fifth decimal.
+        const tenth = (value) => Math.round(value * 10) / 10;
+        const box = (element) => {
+            const { left, right, top, bottom, width } = element.getBoundingClientRect();
+            return { left: tenth(left), right: tenth(right), top: tenth(top), bottom: tenth(bottom), width: tenth(width) };
+        };
+        const viewSwitch = document.querySelector('.header-actions-row .view-mode-control');
+        const centre = viewSwitch.getBoundingClientRect();
+        const titleInkRight = (() => {
+            const walker = document.createTreeWalker(document.querySelector('.subtitle-main'), NodeFilter.SHOW_TEXT);
+            let right = 0;
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (!node.textContent.trim() || getComputedStyle(node.parentElement).visibility === 'hidden') continue;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                for (const rect of range.getClientRects()) right = Math.max(right, rect.right);
+            }
+            return tenth(right);
+        })();
+        return {
+            header: box(document.querySelector('header')),
+            below: box(document.querySelector('.view-selector')),
+            title: box(document.querySelector('.subtitle-main')),
+            titleInkRight,
+            viewSwitch: box(viewSwitch),
+            search: box(document.querySelector('.header-actions-row .control-search')),
+            switchHit: viewSwitch.contains(document.elementFromPoint(centre.left + centre.width / 2, centre.top + centre.height / 2)),
+        };
+    });
+    const settled = async () => {
+        await page.evaluate(async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await Promise.all(document.getAnimations({ subtree: true })
+                .filter(animation => animation.effect.getComputedTiming().iterations !== Infinity)
+                .map(animation => animation.finished.catch(() => undefined)));
+        });
+        await page.waitForTimeout(400);
+    };
+    for (const width of [1440, 1280, 1100, 1060, 1059, 1028, 960, 800, 700, 620]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.locator('body').click({ position: { x: 2, y: 400 } });
+        await settled();
+        const idle = await frame();
+        await page.getByRole('textbox', { name: 'Find in view' }).first().focus();
+        await settled();
+        const focused = await frame();
+        const widens = width >= 1060;
+        if (width === 1280) {
+            await page.screenshot({ path: path.join(screenshotDir, 'header-search-focused-with-view-switch.png'), clip: { x: 0, y: 0, width: 1280, height: 140 }, animations: 'disabled' });
+        }
+        expect(focused.search.left, `${width}px: the focused field stays clear of the view switch`).toBeGreaterThanOrEqual(focused.viewSwitch.right);
+        expect(focused.switchHit, `${width}px: the view switch is what sits at its own centre`).toBe(true);
+        expect(focused.viewSwitch.left, `${width}px: the view switch stays on screen`).toBeGreaterThanOrEqual(0);
+        expect(focused.search.right, `${width}px: the focused field keeps its right edge`).toBe(idle.search.right);
+        expect(focused.search.left - focused.viewSwitch.right, `${width}px: the switch keeps its gap to the field`).toBeCloseTo(idle.search.left - idle.viewSwitch.right, 1);
+        expect(focused.search.width - idle.search.width, `${width}px: the field widens only where there is room for the switch to give way`).toBeCloseTo(widens ? 140 : 0, 1);
+        expect(idle.viewSwitch.left - focused.viewSwitch.left, `${width}px: the switch gives way by exactly the widening`).toBeCloseTo(widens ? 140 : 0, 1);
+        if (widens) {
+            expect(focused.viewSwitch.left, `${width}px: the switch does not cover the title text`).toBeGreaterThanOrEqual(idle.titleInkRight);
+        }
+        expect(focused.title, `${width}px: the title block stays put`).toEqual(idle.title);
         expect(focused.below, `${width}px: the controls row stays put`).toEqual(idle.below);
         expect(focused.header, `${width}px: the header keeps its box`).toEqual(idle.header);
     }

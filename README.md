@@ -52,7 +52,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
-- `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
+- `frontend/` - Frontend source (`src/`) and generated bundle (`dist/`, gitignored build output)
 - `assets/` - Static assets (icons, images)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `docs/AGENTS.md` - Rules for agent-created work artifacts
@@ -81,7 +81,7 @@ Starting `.venv/bin/python jira_server.py` directly still does not start Postgre
 
 ## 📦 Prebuilt download (no Node required)
 
-If you want the fastest setup with no frontend build step:
+The release zip contains a built `frontend/dist`, so this path needs no Node and no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
@@ -239,8 +239,7 @@ For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configurat
 
 ## 🧱 Frontend build (contributors)
 
-The repo commits the compiled frontend output so normal users don’t need Node.
-If you edit the UI, rebuild and commit `frontend/dist`:
+`frontend/dist` is generated build output and is not committed. A source checkout must build it before the server can serve the dashboard; people without Node use the release zip, which ships a built `frontend/dist`. Build after cloning and after every pull or branch switch that touches `frontend/src`:
 
 ```bash
 npm ci
@@ -252,9 +251,9 @@ Optional during development:
 npm run watch
 ```
 
-CI will fail if `frontend/dist` is out of sync. We precompile JSX so production does not transform JSX in the browser.
+Startup preflight (`.venv/bin/python scripts/check_startup_preflight.py`) fails when the build is missing and the server warns when it looks stale (sources newer than the output). To update a branch, run `make sync` (`scripts/sync_main.sh`): it untracks any previously committed `frontend/dist` on the first sync past this change and rebuilds. We precompile JSX so production does not transform JSX in the browser.
 
-Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design:
+Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design. The UI suite and `npm run test:frontend:unit` read `frontend/dist`, so build first (`npm run build && npx playwright test tests/ui --browser=chromium --workers=4` for the UI suite alone):
 
 ```bash
 make verify
@@ -265,7 +264,7 @@ make verify
 This repo ships container packaging for verification and image build only. It does not include production registry push, release, or deployment automation.
 
 Can prepare now:
-- Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
+- Build the container from `Dockerfile`, the image builds its own `frontend/dist` in a build stage, run startup preflight, and expose `/health` as shallow liveness.
 - Run CI verification that installs backend/frontend dependencies, runs tests/builds, and tags the image with the commit SHA.
 - Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
 - Response compression is done by the app (gzip, `Vary: Accept-Encoding`; see Performance & Caching). An ingress or proxy that also compresses must leave a response that already has a `Content-Encoding` alone.
@@ -566,7 +565,7 @@ jira-dashboard/
 │   │   ├── stats/          # Statistics views and utilities
 │   │   ├── ui/             # Shared UI primitives
 │   │   └── dashboard.jsx   # App shell and remaining legacy wiring
-│   └── dist/               # Compiled JS + CSS output (committed)
+│   └── dist/               # Generated JS + CSS output (gitignored; run npm run build)
 ├── docs/                   # Documentation
 │   ├── plans/              # EXEC/DONE/FUTURE/SUPPORT/GATE plans
 │   ├── features/           # User-facing feature guides

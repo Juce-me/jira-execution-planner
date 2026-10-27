@@ -9,6 +9,7 @@ import csv
 import dataclasses
 import logging
 import os
+from pathlib import Path
 import re
 import json
 import hashlib
@@ -33,6 +34,7 @@ from backend.services.request_performance import measure_task_load, mark_task_ca
 from backend.services.jira_batches import JiraBatchIncomplete
 from backend.services import epic_cohort_closed
 from backend.epm import config as epm_config
+from backend.frontend_build import frontend_build_missing, frontend_build_stale
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
 from backend.epm import payload as epm_payload
@@ -823,6 +825,10 @@ def validate_startup_auth_config():
         validate_config_storage_startup()
     except ConfigStorageError as error:
         raise AuthError('config_storage_invalid', str(error))
+    root = Path(__file__).resolve().parent
+    for problem in (frontend_build_missing(root), frontend_build_stale(root)):
+        if problem:
+            log_warning(problem)
 
 
 def _env_flag(name):

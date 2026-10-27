@@ -28,6 +28,7 @@ from backend.auth.jira_auth import (  # noqa: E402
 from backend.auth.key_provider import KeyProviderConfigurationError, key_provider_from_env  # noqa: E402
 from backend.config.repository import ConfigStorageError, selected_config_storage_backend, validate_config_storage_startup  # noqa: E402
 from backend.db import engine as db_engine  # noqa: E402
+from backend.frontend_build import frontend_build_missing, frontend_build_stale  # noqa: E402
 
 
 TRUE_VALUES = {"1", "true", "yes"}
@@ -175,6 +176,14 @@ def _check_network_bind(env: dict[str, str]) -> str:
     return host
 
 
+def _check_frontend_build(env: dict[str, str]) -> str:
+    missing = frontend_build_missing(REPO_ROOT)
+    if missing:
+        raise PreflightError(missing)
+    stale = frontend_build_stale(REPO_ROOT)
+    return f"complete; {stale}" if stale else "complete"
+
+
 CHECKS = (
     ("runtime", _check_runtime),
     ("auth_config", _check_auth_config),
@@ -184,6 +193,7 @@ CHECKS = (
     ("token_encryption", _check_token_encryption),
     ("migrations", _check_migrations),
     ("network_bind", _check_network_bind),
+    ("frontend_build", _check_frontend_build),
 )
 
 

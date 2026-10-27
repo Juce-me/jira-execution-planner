@@ -19,6 +19,8 @@ Run the local CI-style verification path:
 make verify
 ```
 
+`frontend/dist` is not committed. Run `npm run build` first: tests that read the built bundle (`npm run test:frontend:unit`, `tests/ui`, parts of the Python suite) fail or run on a stale bundle without it.
+
 Run all tests:
 ```bash
 python3 -m unittest discover -s tests

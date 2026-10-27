@@ -1,5 +1,7 @@
 # Shareable View Links Design
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Proposed design, validated and tightened on 2026-10-14 by four independent adversarial reviews (security and privacy, frontend state machine, schema and encoding, repo rules and verification) against `origin/main` `bd5b2bc2`, then refined while the plan was drafted and replayed end to end. `origin/main` has since moved to `4247a3b1` (PR #269, the design-system hover contract; PR #275, the Board card layout; PR #276, removal of the release update notice; PR #278, the people-editor search) and was merged into the branch; the line anchors below are for `bd5b2bc2` and the execution plan carries the re-verified ones. Reviewed by the operator on 2026-10-15: the default decisions and gate G1 are accepted (see "Open items for the operator"). This is not an implementation plan; the execution plan is `EXEC-shareable-view-links-194.md`. The first version of this document (commit `63e898f3`) had defects the review found; section "Validation record" lists them and where each is resolved.
 
 | Field | Value |

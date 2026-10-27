@@ -49,6 +49,15 @@ class ProjectPackagingTests(unittest.TestCase):
         self.assertIn("cp -R assets release-root/", source)
         self.assertIn("cp -R scripts release-root/", source)
 
+    def test_release_workflow_builds_frontend_before_zip(self):
+        source = (ROOT / ".github" / "workflows" / "release-latest.yml").read_text(encoding="utf8")
+
+        build = source.index("npm run build")
+        guard = source.index("test -f release-root/frontend/dist/dashboard.js")
+        zip_step = source.index("zip -r ../jira-execution-planner-latest.zip")
+        self.assertLess(build, guard)
+        self.assertLess(guard, zip_step)
+
     def test_docs_state_release_zip_is_runnable_package(self):
         readme = (ROOT / "README.md").read_text(encoding="utf8")
         install = (ROOT / "INSTALL.md").read_text(encoding="utf8")

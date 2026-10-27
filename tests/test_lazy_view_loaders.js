@@ -116,7 +116,7 @@ test('concurrent retries share one manifest read', async () => {
     assert.equal(requests, 1);
 });
 
-test('the committed manifest passes the runtime validator', () => {
+test('the built manifest passes the runtime validator', () => {
     const dist = path.join(__dirname, '../frontend/dist');
     const names = fs.readdirSync(dist).filter(file => /^lazy-views-[a-f0-9]{64}\.json$/.test(file));
     assert.equal(names.length, 1);

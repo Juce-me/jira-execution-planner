@@ -4,7 +4,7 @@ This source-checkout-only runner starts PostgreSQL in Docker, applies Alembic mi
 
 ## Run
 
-Prerequisites: Docker Engine 28+ with a local Unix-socket context, Docker Compose with `--wait-timeout`, `.venv`, and a valid local `.env` for the application's auth/encryption settings.
+Prerequisites: Docker Engine 28+ with a local Unix-socket context, Docker Compose with `--wait-timeout`, `.venv`, a built frontend (`npm ci && npm run build`; `frontend/dist` is not committed and preflight fails without it), and a valid local `.env` for the application's auth/encryption settings.
 
 ```bash
 ./runners/local/run.sh

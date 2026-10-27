@@ -1,5 +1,7 @@
 # Codebase Operability: CSS Source Split
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done. Executed in PR #54 (`879ad59`). Kept for audit context only.
 > **Current accuracy:** This completed the first split from one monolithic source file into ordered top-level partials. It does not cover the follow-up nested feature-owned partial split tracked in `EXEC-css-feature-owned-partials.md`.
 

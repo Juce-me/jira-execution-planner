@@ -20,6 +20,15 @@ python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
 
+Source checkouts also need the frontend build, because `frontend/dist` is gitignored build output (Node 20.x):
+
+```bash
+npm ci
+npm run build
+```
+
+`./scripts/install.sh` runs this when `frontend/src` exists and `frontend/dist/dashboard.js` is missing. Release zips already contain a built `frontend/dist` and need no Node. Rebuild after pulling changes that touch `frontend/src`; preflight fails on a missing build and warns on a stale one.
+
 ## 2. PostgreSQL
 
 Choose exactly one PostgreSQL setup: native PostgreSQL or the optional localhost Docker runner. Do not run both for the same local app instance.
@@ -209,7 +218,7 @@ The repository provides container packaging for verification and image build. It
 
 Can prepare now:
 - Build the image with `docker build` and a commit-SHA tag, using the committed `Dockerfile`.
-- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the committed `frontend/dist` check.
+- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the frontend unit tests. `frontend/dist` is not committed and CI does not diff it; the release workflow builds it before packaging the zip.
 - Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
 
 Container env contract:

@@ -1,5 +1,7 @@
 # Planning Team Capacity Editing Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Implemented with changes and verified on `feature/planning-capacity-editing`; pending integration into `main`.
 
 ## Outcome

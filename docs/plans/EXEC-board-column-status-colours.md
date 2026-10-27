@@ -1,5 +1,7 @@
 # Board Column Status Colours Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **For agentic workers:** Use `superpowers:executing-plans` (or `superpowers:subagent-driven-development`) to implement this plan task by task. Follow repository publication rules; this plan does not authorize commit, push, or PR creation.
 
 **Status:** Implemented, uncommitted and awaiting operator confirmation for Task 8, 2026-10-07 (see Execution status below). Originally proposed 2026-10-06; decisions confirmed 2026-10-07 (text colour and filter-bar treatment settled the same day); revised after a three-reviewer validation (backend/storage, pill surfaces, settings/process) and again on 2026-10-07 after a six-reviewer validation (backend/ownership, Settings state machine, pill surfaces and CSS, budgets/docs/process, test feasibility, document consistency), whose findings are applied below; the operator settled the open questions the same day (Decision 1 wording, Decisions 9 and 10). Plan only; no production code written. Tracking issue: #244 ("Inherit colors from board for jira status pills"); the branch is `feature/244-board-column-status-colours` (renamed on 2026-10-07 from `feature/board-column-status-colours`, which had no upstream).

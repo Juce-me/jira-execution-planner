@@ -1,5 +1,7 @@
 # Design system Part 3: surface migration implementation plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Active, locally implemented and verified 2026-10-14. Prior migration committed locally as `1960753e`; the Planning refinements are verified for the approved follow-up commit. One combined PR with five commits and 108 audited raw paths is authorized 2026-10-14; remains EXEC until acceptance or merge.
 > **For agentic workers:** Use Superpowers subagent-driven-development for bounded ownership tasks and review each batch. The original implementation authorization prohibited commits; the operator separately authorized a local commit on 2026-10-14. The operator subsequently authorized commit, push and one combined PR with five commits and 108 audited paths, plus GitHub page inspection, on 2026-10-14. Merge, history reconstruction and secondary worktrees remain unauthorized.
 

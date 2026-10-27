@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_home_token_fixture');
 
@@ -184,14 +183,6 @@ async function openBoardsTab(page, dialog) {
 
 test('a newly added column goes before Done and can move left after save and reload', async ({ page }) => {
     const calls = await mockConfigSettings(page);
-    if (process.env.JEP_BOARD_COLUMN_BASE_REF) {
-        await page.route('**/frontend/dist/**', route => {
-            const asset = new URL(route.request().url()).pathname.slice('/frontend/dist/'.length);
-            if (!/^(?:dashboard\.js|chunks\/[A-Za-z0-9_-]+\.js|lazy-views-[a-f0-9]{64}\.json)$/.test(asset)) return route.fallback();
-            const body = execFileSync('git', ['show', `${process.env.JEP_BOARD_COLUMN_BASE_REF}:frontend/dist/${asset}`], { cwd: path.join(__dirname, '../..'), maxBuffer: 16 * 1024 * 1024 });
-            return route.fulfill({ contentType: asset.endsWith('.json') ? 'application/json' : 'application/javascript', body });
-        });
-    }
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     let dialog = page.getByRole('dialog').first();

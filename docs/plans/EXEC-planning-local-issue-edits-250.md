@@ -1,5 +1,7 @@
 # Issue #250: Planning local priority and status edits
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 **Status:** Executed locally on 2026-10-09 (uncommitted, awaiting operator review; see "Execution status" for the divergences and the verification results); implementation contract, revision R4 (2026-10-09), updated against fetched `origin/main` `fb359349` (the R2/R3 validation ran at `33f4452e`; see "Main delta absorbed"). The original design and the current-main task contract were each reviewed and repaired by three independent reviewers. Two further rounds of independent validators (five, then four) re-checked the contract against source and the existing test baseline; their findings are folded into the sections below (see "Independent validation (R2)" and "(R3)"). The operator resolved the product decisions on 2026-10-08: **keep the full design (D1)**, **Planning status changes are single-issue only (D2)**, **extract first (D3)**, **readiness placeholders update on Refresh or Catch Up entry (D4)** and **a confirmed edit reveals and blinks its row (D5)**. No application implementation has started.
 **Created / verified:** 2026-10-08 (Europe/Berlin).
 **Issue:** [#250 — planning improvements: priority update refetch the whole board](https://github.com/Juce-me/jira-execution-planner/issues/250).

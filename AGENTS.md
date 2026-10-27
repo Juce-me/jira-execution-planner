@@ -150,10 +150,10 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Build: `npm run build`
 - Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`
-- Test (all): `python3 -m unittest discover -s tests`
+- Test (all): `python3 -m unittest discover -s tests` (run `npm run build` first: `frontend/dist` is gitignored and not committed, so tests that read it need a build; the same applies to `npm run test:frontend:unit`)
 - Test (single file): `python3 -m unittest tests.test_planning`
 - Test (single case): `python3 -m unittest tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
-- Test (UI, local only): `npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes). Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. The Project Track glyph guard runs only with `--headed`; run it with `--browser=firefox` and `--browser=webkit` when touching emoji or form-control geometry.
+- Test (UI, local only): `npm run build && npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes). Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. The Project Track glyph guard runs only with `--headed`; run it with `--browser=firefox` and `--browser=webkit` when touching emoji or form-control geometry.
 - Run locally: `.venv/bin/python jira_server.py`
 - Quick API check: `curl http://localhost:5050/api/test`
 - EPM scope: configure `rootGoalKey` and `subGoalKey` in `Settings -> EPM`; the Atlassian site cloudId is detected from Jira /_edge/tenant_info
@@ -174,7 +174,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Config keys in `.env` are `UPPER_SNAKE_CASE`
 - No formatter or linter is enforced; match existing style in touched files
 - Tests use `unittest` in `tests/test_*.py` with `test_*` methods
-- Do not hand-edit `frontend/dist/`; rebuild it from `frontend/src/` with `npm run build`
+- `frontend/dist/` is untracked build output: never commit or hand-edit it; rebuild it from `frontend/src/` with `npm run build` after any pull that touches `frontend/src` or `package-lock.json`. `backend/frontend_build.py` reports a missing or stale build in preflight and at startup (staleness is an mtime heuristic and only warns).
 - Reusable rules and design guidance belong at the highest applicable `AGENTS.md`; subfolder `AGENTS.md` files are for local constraints only.
 - Look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook; a new class for an existing kind is a review-stop.
 - Hover and focus use the design-system foundation tokens; no transform in `:hover`/`:active` and no `transition: all`. Part 1's generated baseline grandfathers existing declarations until their surface migration.
@@ -214,14 +214,14 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Before editing, confirm the current branch and sync it when network access is available.
 - Keep commits atomic and honest. Do not claim measured improvements you did not verify.
 - For UI changes, include screenshots in the PR notes.
-- Before push, run the full test suite and the full Chromium `tests/ui` run, review `git log --oneline -5`, and wait for explicit user confirmation.
+- Before push, run `npm run build`, then the full test suite and the full Chromium `tests/ui` run, review `git log --oneline -5`, and wait for explicit user confirmation.
 - When a plan-driven feature is implemented and verified, rename its `docs/plans/EXEC-*` plan to `DONE-*` and set its top `> **Status:**` to done before the push or PR, so the pushed branch already carries the finished plan: update the plan's Outcome and Current Accuracy, its `docs/plans/README.md` entry and every link to the old name in the same commit, and name the implementing branch or head commit (the PR number is added after the PR exists). A plan executed across several PRs records each PR's task status in the plan file; the PR that completes it does the rename. Work that is blocked or abandoned keeps `EXEC-`.
 - `tests/ui` has no CI job, by decision: it takes about 8 minutes, parts of it are only meaningful headed in Firefox and WebKit on macOS, and a headless Chromium job would miss them. The local run above is the gate; do not add a CI job for it without a new decision.
 - Treat commit, push, and PR creation as one blocking publication transaction. Before the first publication mutation:
   1. Fetch the intended base and record the exact base and head SHAs.
   2. Run `git status --short`, `git log --oneline origin/<base>..HEAD`, and `git diff --name-status origin/<base>...HEAD`.
   3. Compare the complete commit list, commit count, and every changed path with the approved plan and publication contract. A clean worktree is insufficient. If history or scope differs, stop before commit/push/PR and ask the operator whether to reconstruct it; do not stack cleanup commits or rewrite history without explicit authorization.
-  4. Run the required verification and committed-revision build at the exact proposed head.
+  4. Run `npm run build`, then the required verification, at the exact proposed head; `frontend/dist` is untracked, so CI and the release job build it themselves.
   5. Send multiline PR Markdown through stdin with `gh pr create --body-file -` or `gh pr edit --body-file -`. Never pass JSON-stringified, backslash-escaped, or command-substituted multiline content through `--body`.
   6. Before reporting success, prove the remote head equals the approved local head, read back the body as rendered text (not serialized JSON), visually inspect the GitHub PR page, verify the remote changed-file list and commit count, and report the actual CI state.
   7. If any post-publication check fails, report the publication as malformed and stop for operator direction. A successful CLI exit code is not proof of a correct PR.
@@ -320,7 +320,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - EPM project board status pills must reuse the existing status-pill sizing, casing, and success green; do not create one-off completed badge styling.
 - In ENG Group Board epic cards, keep summaries single-line and ellipsized within a fixed card layout; never wrap long titles or let them change card height.
 - When preparing PRs, keep feature commits on the feature branch; never merge feature work into local `main` just to create or test the PR branch.
-- When frontend source changes, run `npm run build` and commit generated `frontend/dist` output if `.github/workflows/verify-frontend-build.yml` requires a clean post-build diff; do not hand-edit dist.
+- When frontend source changes, run `npm run build` before tests; `frontend/dist` is not committed and is never hand-edited.
 - For first-ever DB/OAuth users, require a focused department group-selection popup before dashboard group-scoped data loads; do not silently default them into all groups.
 - Startup paths that read dashboard config before a Flask request exists must pass `source="jsonfile"` explicitly in DB config mode.
 - In ENG story subtask rows, keep desktop columns table-aligned and drop low-priority mobile cells instead of cramming every column into narrow cards.
@@ -347,7 +347,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Use one categorical color resolver (e.g. `resolveProjectTrackColor`) as the single source of an entity's color across every chart/section; never let an entity (e.g. `No track`) fall through to a hash-assigned new color in one view while it is fixed in another.
 - For Jira status changes, make the displayed status pill/text the click target; do not add separate Change Status buttons unless explicitly requested.
 - At session start, before the first commit, check `git branch --show-current`; if the branch is auto-generated or agent-branded (e.g. `claude/*`), rename it to `feature/`|`bugfix/`|`improvement/`|`docs/` + kebab-case summary (see docs/postmortem/MRT022-agent-branded-branch-names.md). For feature delivery, use `feature/<issue>-<summary>` even when the initial commit contains only design and implementation plans.
-- Run `npm ci` in a fresh git worktree before `npm run build`; a build that resolves node_modules from an ancestor checkout embeds wrong relative paths in `dashboard.js.map` and fails the CI dist check.
+- Run `npm ci` in a fresh git worktree before `npm run build`; a build that resolves node_modules from an ancestor checkout embeds wrong relative paths in `dashboard.js.map` and breaks the reproducible build.
 - `group.teamLabels` values are Jira epic labels for Future Planning epic matching and JQL `labels =` clauses, never team display names; resolve team names through the team catalog lookup (`teamNameLookup`/`resolveTeamName`) or task-derived `getTeamInfo(task).name`, and note the catalog only loads when the settings modal opens.
 - In ENG filter popovers, color the Status label itself instead of adding a separate dot; Project Track must always show Committed and Flexible even at zero, show the full admitted facet total independently of their option counts, and let both unchecked mean only untracked epics with `No Project Track` as the active filter state.
 - Once the user explicitly resolves a security-policy tradeoff, implement that choice without reopening it unless new evidence materially changes the risk.

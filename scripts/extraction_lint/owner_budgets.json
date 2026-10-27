@@ -15536,8 +15536,8 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1421,
-      "lineCeiling": 1421,
+      "lineCount": 1424,
+      "lineCeiling": 1424,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15656,7 +15656,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
+            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16057,7 +16057,7 @@
           ],
           "inventory": {
             "source": "frontend/src/stats/useStatsData.js:341",
-            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
+            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16536,8 +16536,8 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1166",
-            "sourceDigest": "058d853648d3f2804af1eecc29ee5f8c9812d9b361b703f2de87442b2a0dae11",
+            "source": "frontend/src/stats/useStatsData.js:1169",
+            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -19155,20 +19155,20 @@
       "ceiling": 17002
     },
     "stats": {
-      "measured": 2897,
-      "ceiling": 2897
+      "measured": 2900,
+      "ceiling": 2900
     },
     "eng": {
       "measured": 1786,
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 27146,
-      "ceiling": 27146
+      "measured": 27149,
+      "ceiling": 27149
     },
     "appPlusOwners": {
-      "measured": 34812,
-      "ceiling": 34812
+      "measured": 34815,
+      "ceiling": 34815
     }
   },
   "transfer": {

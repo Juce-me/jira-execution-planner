@@ -113,7 +113,7 @@ async function installDocumentRoutes(page) {
 
 async function installLinkFixture(page, {
     groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, homeToken = { connected: false },
-    prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false,
+    prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false, cohortIssues = null,
 } = {}) {
     const calls = [];
     const requestCalls = new Map();
@@ -211,6 +211,11 @@ async function installLinkFixture(page, {
             sprintId: url.pathname.split('/')[4], schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: false } });
         if (matrix && url.pathname.endsWith('/review/values/read')) return cachedReply({ cells: [], unavailableIssueIds: [] });
         if (matrix && url.pathname === '/api/stats/excluded-capacity-source') return cachedReply({ data: { issues: [], epics: {}, sprints: SPRINTS } });
+        if (cohortIssues && url.pathname === '/api/stats/epic-cohort') {
+            const mode = cacheBody?.mode;
+            return reply({ data: { range: mode === 'last_n' ? null : { startDate: '2026-01-01', endDate: '2026-12-31' }, issues: cohortIssues,
+                meta: { warnings: [], ...(mode ? { mode, scope: 'components', windowCeiling: mode === 'last_n' ? 200 : null, windowFull: mode === 'last_n' ? false : null } : {}) } } });
+        }
         if (matrix && url.pathname === '/api/stats/epic-cohort') {
             const mode = cacheBody?.mode;
             return cachedReply({ data: { range: mode === 'last_n' ? null : { startDate: '2026-01-01', endDate: '2026-12-31' }, issues: [],
@@ -883,6 +888,67 @@ for (const [name, mode, carried, absent, landed] of [
         } finally { await source.close(); await recipient.close(); }
     });
 }
+
+// Lead Times filters ride in the link. The Epics hold both Projects, so the one the link names must still be chosen once they have loaded.
+const cohortEpic = (key, projectKey, status = 'Done') => ({ key, projectKey, createdDate: '2026-01-10', terminalDate: '2026-02-10', status, jiraStatus: status, leadTimeDays: 30 });
+const LEAD_TIMES_EPICS = [cohortEpic('PRA-1', 'PROJ_A'), cohortEpic('PRA-2', 'PROJ_A', 'Killed'), cohortEpic('PRB-1', 'PROJ_B')];
+const leadTimesControls = page => page.locator('.cohort-controls');
+const projectSelect = page => leadTimesControls(page).getByRole('combobox', { name: 'Project', exact: true });
+
+test('a Lead Times link carries Project, Exclude boxes, status chips and Group By, and the Project survives the first load', async ({ browser }) => {
+    const source = await browser.newPage();
+    const recipient = await browser.newPage();
+    try {
+        await installLinkFixture(source, { analytics: ANALYTICS_ENABLED, prefs: {
+            ...LEAD_TIMES_SENDER, cohortMode: 'closed', cohortProjectFilter: 'PROJ_A', cohortExcludeAdHoc: true, cohortExcludeCapacity: false,
+            cohortStatusToggles: { done: true, open: true, killed: true, incomplete: false, postponed: false }, cohortGroupBy: 'month',
+        } });
+        await source.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => source.evaluate(() => window.__shareViewProbe?.shareDisabled)).toBe(false);
+        const { ok, url } = await source.evaluate(() => window.__shareViewProbe.captureShareUrl());
+        expect(ok).toBe(true);
+        const query = new URL(url).search;
+        ['lproject=PROJ_A', 'lexclude=adhoc', 'lstatus=done,killed', 'lgroupby=month'].forEach(part => expect(query).toContain(part));
+        await installLinkFixture(recipient, { analytics: ANALYTICS_ENABLED, cohortIssues: LEAD_TIMES_EPICS, prefs: {
+            cohortProjectFilter: 'PROJ_B', cohortExcludeAdHoc: false, cohortExcludeCapacity: true, cohortGroupBy: 'quarter',
+            cohortStatusToggles: { done: false, open: true, killed: false, incomplete: true, postponed: false },
+        } });
+        await recipient.goto(url, { waitUntil: 'domcontentloaded' });
+        await expect.poll(() => applyEvents(recipient).then(events => events.map(event => event.result))).toEqual(['success']);
+        await expect(projectSelect(recipient)).toHaveValue('PROJ_A');
+        await expect(leadTimesControls(recipient).getByRole('checkbox', { name: 'Exclude Ad Hoc' })).toBeChecked();
+        await expect(leadTimesControls(recipient).getByRole('checkbox', { name: 'Exclude Excluded Capacity' })).not.toBeChecked();
+        await expect(recipient.locator('.cohort-status-actions .stats-toggle.active')).toHaveText(['Done', 'Killed']);
+        await expect(leadTimesControls(recipient).getByRole('radio', { name: 'Month' })).toHaveAttribute('aria-checked', 'true');
+        expect(await readPrefs(recipient)).toMatchObject({
+            cohortMode: 'closed', cohortProjectFilter: 'PROJ_A', cohortExcludeAdHoc: true, cohortExcludeCapacity: false, cohortGroupBy: 'month',
+            cohortStatusToggles: { done: true, open: true, killed: true, incomplete: false, postponed: false },
+        });
+        expect(await recipient.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
+    } finally { await source.close(); await recipient.close(); }
+});
+
+test('a Lead Times link without filters opens the starting filters, not the recipient\'s saved ones', async ({ page }) => {
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, cohortIssues: [cohortEpic('PRB-1', 'PROJ_B')], prefs: {
+        cohortProjectFilter: 'PROJ_B', cohortExcludeAdHoc: true, cohortExcludeCapacity: false, cohortGroupBy: 'month',
+        cohortStatusToggles: { done: false, open: false, killed: true, incomplete: true, postponed: true },
+    } });
+    await page.goto(`${appBaseUrl}/?v=1&mode=statistics&group=grp-a&sprint=41&stats=cohort&lead=last_n&n=30`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expect(projectSelect(page)).toHaveValue('all');
+    await expect(leadTimesControls(page).getByRole('checkbox', { name: 'Exclude Ad Hoc' })).not.toBeChecked();
+    await expect(leadTimesControls(page).getByRole('checkbox', { name: 'Exclude Excluded Capacity' })).toBeChecked();
+    await expect(page.locator('.cohort-status-actions .stats-toggle.active')).toHaveText(['Done']);
+    expect(await readPrefs(page)).toMatchObject({ cohortGroupBy: 'quarter', cohortStatusToggles: { done: true, open: true, killed: false, incomplete: false, postponed: false } });
+});
+
+test('a Lead Times link naming a Project the Epics do not have falls back to All Projects without a notice', async ({ page }) => {
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, cohortIssues: [cohortEpic('PRB-1', 'PROJ_B')] });
+    await page.goto(`${appBaseUrl}/?v=1&mode=statistics&group=grp-a&sprint=41&stats=cohort&lead=last_n&n=30&lproject=PROJ_A`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    await expect(projectSelect(page)).toHaveValue('all');
+    expect(await page.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
+});
 
 // Real dashboard cold-focus regression. Only synthetic API members are held; the controller/reveal run unchanged.
 async function coldFocus(page, { alerts = null, homeToken } = {}) {

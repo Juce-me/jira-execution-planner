@@ -7,7 +7,9 @@ import { DEFAULT_ENG_STATUS_FILTER } from '../eng/engCatchUpFilters.js';
 import { DEFAULT_ENG_EPIC_SORT, ENG_EPIC_SORT_OPTIONS } from '../eng/engTaskUtils.js';
 import { PROJECT_TRACK_COMMITTED, PROJECT_TRACK_FLEXIBLE } from '../eng/engProjectTrack.js';
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
-import { LEAD_TIMES_LAST_N_OPTIONS, LEAD_TIMES_MODES, getCurrentQuarterLabel } from '../cohort/cohortUtils.js';
+import {
+    LEAD_TIMES_DEFAULT_STATUS_TOGGLES, LEAD_TIMES_LAST_N_OPTIONS, LEAD_TIMES_MODES, LEAD_TIMES_STATUS_KEYS, getCurrentQuarterLabel,
+} from '../cohort/cohortUtils.js';
 import { buildDefaultExcludedCapacityRange } from '../stats/excludedCapacityStats.js';
 
 export const SHARE_VIEW_VERSION = 1;
@@ -36,13 +38,13 @@ export const SHARE_VIEW_TRACK_IDS = Object.freeze([PROJECT_TRACK_COMMITTED, PROJ
 export const SHARE_VIEW_PRIORITY_IDS = Object.freeze([...PRIORITY_AXIS]);
 
 // Statistics views and the optional keys each one honors: `teams` for the four task-loading
-// views, `from` and `to` for Lead Times quarters (`cohort`) and the three source-only sprint views, and
-// `lead` and `n` for the Lead Times mode (`cohort`).
+// views, `from` and `to` for Lead Times quarters (`cohort`) and the three source-only sprint views,
+// `lead` and `n` for the Lead Times mode (`cohort`), and `lproject`, `lexclude`, `lstatus` and `lgroupby` for its filters.
 export const SHARE_VIEW_STATS_KEYS_BY_VIEW = Object.freeze({
     teams: Object.freeze(['teams']),
     priority: Object.freeze(['teams']),
     burnout: Object.freeze(['teams']),
-    cohort: Object.freeze(['teams', 'from', 'to', 'lead', 'n']),
+    cohort: Object.freeze(['teams', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby']),
     excludedCapacity: Object.freeze(['from', 'to']),
     monoCrossShare: Object.freeze(['from', 'to']),
     projectTrack: Object.freeze(['from', 'to']),
@@ -53,6 +55,17 @@ export const SHARE_VIEW_STATS_VIEWS = Object.freeze(Object.keys(SHARE_VIEW_STATS
 // counts `n` can take with `lead=last_n`; both are owned by the cohort model.
 export const SHARE_VIEW_LEAD_TIMES_LEADS = Object.freeze(LEAD_TIMES_MODES.filter((mode) => mode !== 'created'));
 export const SHARE_VIEW_LEAD_TIMES_COUNTS = LEAD_TIMES_LAST_N_OPTIONS;
+
+// Lead Times filters. `lexclude` lists the Exclude boxes that are ticked, `lstatus` the status toggles that are on (the vocabulary and
+// the starting set depend on the mode), `lgroupby` the Group By choice; all four are owned by the cohort model and the Stats panel.
+export const SHARE_VIEW_LEAD_TIMES_EXCLUDES = Object.freeze(['adhoc', 'capacity']);
+export const SHARE_VIEW_LEAD_TIMES_GROUPS = Object.freeze(['quarter', 'month']);
+export const SHARE_VIEW_LEAD_TIMES_STATUS_KEYS = LEAD_TIMES_STATUS_KEYS;
+// Every status a link can name: the Created set, which holds the other modes' toggles.
+export const SHARE_VIEW_LEAD_TIMES_STATUSES = LEAD_TIMES_STATUS_KEYS.created;
+export const SHARE_VIEW_LEAD_TIMES_STATUS_DEFAULTS = Object.freeze(Object.fromEntries(
+    Object.entries(LEAD_TIMES_STATUS_KEYS).map(([mode, keys]) => [mode, Object.freeze(keys.filter((key) => LEAD_TIMES_DEFAULT_STATUS_TOGGLES[key]))]),
+));
 
 // Catch Up alert categories; the keys name the ten expand flags, in the panel's order.
 export const SHARE_VIEW_ALERT_KEYS = Object.freeze([
@@ -82,6 +95,10 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
     stats: 'teams',
     lead: 'created',
     n: LEAD_TIMES_LAST_N_OPTIONS[0],
+    // `all` is every Project; Excluded Capacity is ticked and Ad Hoc is not.
+    lproject: 'all',
+    lexclude: Object.freeze(['capacity']),
+    lgroupby: 'quarter',
     // Panel shown with every category expanded.
     alerts: SHARE_VIEW_ALERT_KEYS,
     quarterRange: () => {
@@ -102,7 +119,7 @@ export const SHARE_VIEW_KEYS_BY_MODE = Object.freeze({
     'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
     planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus']),
     board: Object.freeze(['scope', 'find', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus']),
-    statistics: Object.freeze(['teams', 'stats', 'from', 'to', 'lead', 'n']),
+    statistics: Object.freeze(['teams', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby']),
 });
 export const SHARE_VIEW_PLANNING_KEYS_BY_LAYOUT = Object.freeze({
     table: Object.freeze(['rows']),
@@ -122,6 +139,10 @@ export const SHARE_VIEW_CATEGORY_BY_KEY = Object.freeze({
     to: 'mode',
     lead: 'mode',
     n: 'mode',
+    lproject: 'filters',
+    lexclude: 'filters',
+    lstatus: 'filters',
+    lgroupby: 'filters',
     teams: 'teams',
     find: 'filters',
     status: 'filters',

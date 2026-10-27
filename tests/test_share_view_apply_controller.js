@@ -24,6 +24,13 @@ const SPRINTS = [
     { id: 40, name: 'Sprint 40', state: 'closed', startDate: '2025-12-22' },
 ];
 
+const LEAD_FILTER_SETTERS = ['setCohortProjectFilter', 'setCohortExcludeAdHoc', 'setCohortExcludeCapacity', 'setCohortGroupBy', 'setCohortStatusToggles'];
+// A Lead Times link with no filter keys writes the model defaults, so the recipient's saved choices never leak into it.
+const DEFAULT_LEAD_FILTER_WRITES = [
+    ['setCohortProjectFilter', 'all'], ['setCohortExcludeAdHoc', false], ['setCohortExcludeCapacity', true], ['setCohortGroupBy', 'quarter'],
+    ['setCohortStatusToggles', { done: true, open: true, killed: false, incomplete: false, postponed: false }],
+];
+
 function createRig({ link, search, options = {} } = {}) {
     const revealLog = [];
     const reveal = {
@@ -79,6 +86,8 @@ function createRig({ link, search, options = {} } = {}) {
         setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'), setPlanningLayout: spy('setPlanningLayout'),
         setStatsView: spy('setStatsView'), setCohortStartQuarter: spy('setCohortStartQuarter'), setCohortEndQuarter: spy('setCohortEndQuarter'),
         setCohortMode: spy('setCohortMode'), setCohortClosedStartQuarter: spy('setCohortClosedStartQuarter'), setCohortClosedEndQuarter: spy('setCohortClosedEndQuarter'), setCohortLastN: spy('setCohortLastN'),
+        setCohortProjectFilter: spy('setCohortProjectFilter'), setCohortExcludeAdHoc: spy('setCohortExcludeAdHoc'), setCohortExcludeCapacity: spy('setCohortExcludeCapacity'),
+        setCohortGroupBy: spy('setCohortGroupBy'), setCohortStatusToggles: spy('setCohortStatusToggles'),
         setExcludedCapacityStartSprintId: spy('setExcludedCapacityStartSprintId'), setExcludedCapacityEndSprintId: spy('setExcludedCapacityEndSprintId'),
         setShowAlertsPanel: spy('setShowAlertsPanel'), setBoardStrictScope: spy('setBoardStrictScope'), setSelectedTeams: spy('setSelectedTeams'),
         setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'), setEngBoardFilterSelection: spy('setEngBoardFilterSelection'), setBoardView: spy('setBoardView'),
@@ -562,6 +571,7 @@ test('Statistics writes its view and range, and a source-only view skips Stage C
     assert.deepEqual(cohort.take().filter(([name]) => /^set(Stats|Cohort|Excluded)/.test(name)), [
         ['setStatsView', 'cohort'], ['setCohortMode', 'created'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
         ['setCohortClosedStartQuarter', THIS_QUARTER], ['setCohortClosedEndQuarter', THIS_QUARTER], ['setCohortLastN', 30],
+        ...DEFAULT_LEAD_FILTER_WRITES,
     ]);
 
     const sourceOnly = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-b', sprint: '41', stats: 'projectTrack', from: '40', to: '41' }, options: { engLoadsTasks: false } });
@@ -583,7 +593,7 @@ test('a Lead Times link writes its own mode selection and resets the others to t
         rig.tick();
         rig.take();
         rig.tick();
-        return rig.take().filter(([name]) => /^setCohort/.test(name));
+        return rig.take().filter(([name]) => /^setCohort/.test(name) && !LEAD_FILTER_SETTERS.includes(name));
     };
     assert.deepEqual(written({ lead: 'closed', from: '2025Q4', to: THIS_QUARTER }), [
         ['setCohortMode', 'closed'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
@@ -593,6 +603,33 @@ test('a Lead Times link writes its own mode selection and resets the others to t
         ['setCohortMode', 'last_n'], ['setCohortStartQuarter', THIS_QUARTER], ['setCohortEndQuarter', THIS_QUARTER],
         ['setCohortClosedStartQuarter', THIS_QUARTER], ['setCohortClosedEndQuarter', THIS_QUARTER], ['setCohortLastN', 50],
     ]);
+});
+
+test('a Lead Times link writes its Project, exclusions, statuses and Group By; a status the mode hides keeps its default', () => {
+    const filterWrites = (link) => {
+        const rig = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-a', sprint: '41', stats: 'cohort', teams: ['t1'], ...link } });
+        rig.tick();
+        rig.take();
+        rig.tick();
+        return rig.take().filter(([name]) => LEAD_FILTER_SETTERS.includes(name));
+    };
+    assert.deepEqual(filterWrites({ lead: 'closed', from: '2025Q4', to: THIS_QUARTER, lproject: 'PROJ_A', lexclude: ['adhoc'], lstatus: ['killed', 'incomplete'], lgroupby: 'month' }), [
+        ['setCohortProjectFilter', 'PROJ_A'], ['setCohortExcludeAdHoc', true], ['setCohortExcludeCapacity', false], ['setCohortGroupBy', 'month'],
+        ['setCohortStatusToggles', { done: false, open: true, killed: true, incomplete: true, postponed: false }],
+    ]);
+    assert.deepEqual(filterWrites({ from: THIS_QUARTER, to: THIS_QUARTER, lexclude: [], lstatus: ['done', 'postponed'] }), [
+        ['setCohortProjectFilter', 'all'], ['setCohortExcludeAdHoc', false], ['setCohortExcludeCapacity', false], ['setCohortGroupBy', 'quarter'],
+        ['setCohortStatusToggles', { done: true, open: false, killed: false, incomplete: false, postponed: true }],
+    ]);
+    assert.deepEqual(filterWrites({ lead: 'last_n', n: 30 }), DEFAULT_LEAD_FILTER_WRITES);
+});
+
+test('a link for another Statistics view writes no Lead Times filters', () => {
+    const rig = createRig({ link: { version: 1, mode: 'statistics', group: 'grp-a', sprint: '41', stats: 'teams', teams: ['t1'] } });
+    rig.tick();
+    rig.take();
+    rig.tick();
+    assert.deepEqual(rig.take().filter(([name]) => LEAD_FILTER_SETTERS.includes(name)), []);
 });
 
 test('a Sprint range is ordered by the catalog start dates, not by the Sprint names', () => {

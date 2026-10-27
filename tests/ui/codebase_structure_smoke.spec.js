@@ -5682,7 +5682,8 @@ const coldModeRequestContracts = {
     ]
 };
 
-// Positive app-owned dataLayer records captured before source moves.
+// Positive app-owned dataLayer records captured before source moves;
+// pageviews updated for the ENG mode/subview hierarchy.
 const statsAnalyticsBaseline = {
     "start": [
         {
@@ -5694,7 +5695,7 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "dashboard"
+            "page_name": "eng/statistics/teams"
         },
         {
             "event": "userevent",
@@ -5733,7 +5734,7 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "dashboard"
+            "page_name": "eng/statistics/teams"
         },
         {
             "event": "userevent",
@@ -5770,6 +5771,17 @@ const statsAnalyticsBaseline = {
             "stats_view": "monocrossshare",
             "source_surface": "stats",
             "workflow_action": "view_change"
+        },
+        {
+            "event": "pageview",
+            "trigger": "pageview",
+            "event_type": "pageview",
+            "event_name": "page_view",
+            "dashboard_view": "eng",
+            "auth_mode": "basic",
+            "source_surface": "dashboard",
+            "eng_mode": "statistics",
+            "page_name": "eng/statistics/mono_cross_share"
         },
         {
             "event": "userevent",
@@ -5805,6 +5817,17 @@ const statsAnalyticsBaseline = {
             "stats_view": "projecttrack",
             "source_surface": "stats",
             "workflow_action": "view_change"
+        },
+        {
+            "event": "pageview",
+            "trigger": "pageview",
+            "event_type": "pageview",
+            "event_name": "page_view",
+            "dashboard_view": "eng",
+            "auth_mode": "basic",
+            "source_surface": "dashboard",
+            "eng_mode": "statistics",
+            "page_name": "eng/statistics/project_track"
         },
         {
             "event": "userevent",

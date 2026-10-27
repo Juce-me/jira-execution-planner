@@ -122,6 +122,13 @@ const RAW_TEXT = /\s|{|}|\[|\]|stack trace|returned|sprint \d+|team [a-z]|draft-
 const RESERVED_PREFIX = /^(ga_|google_|firebase_|_|gtag\.)/;
 const BUCKETS = new Set(['0', '1_5', '6_10', '11_25', '26_50', '51_100', 'over_100', 'under_1s', '1_3s', '3_10s', 'over_10s', '2xx', '3xx', '4xx', '5xx']);
 const EVENT_PARAM_VALUE_ALLOWLISTS = {
+    page_name: new Set([
+        'dashboard', 'epm', 'eng/catch_up', 'eng/board', 'eng/scenario',
+        'eng/planning/table', 'eng/planning/list',
+        'eng/statistics/teams', 'eng/statistics/priority', 'eng/statistics/burndown',
+        'eng/statistics/lead_times', 'eng/statistics/excluded_capacity',
+        'eng/statistics/mono_cross_share', 'eng/statistics/project_track',
+    ]),
     module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
     scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'sprint']),
     reason: new Set(['short', 'narrow', 'touch']),

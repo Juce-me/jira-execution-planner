@@ -3,6 +3,15 @@ const TERMINAL_STATUS_KEYS = new Set(['done', 'killed', 'incomplete', 'postponed
 export const LEAD_TIMES_MODES = Object.freeze(['created', 'closed', 'last_n']);
 export const LEAD_TIMES_LAST_N_OPTIONS = Object.freeze([30, 50, 60]);
 
+// The status toggles each mode shows, in button order. Closed and Last N list closed Epics only, so they have no In Progress or Postponed toggle.
+export const LEAD_TIMES_STATUS_KEYS = Object.freeze({
+    created: Object.freeze(['done', 'open', 'killed', 'incomplete', 'postponed']),
+    closed: Object.freeze(['done', 'killed', 'incomplete']),
+    last_n: Object.freeze(['done', 'killed', 'incomplete']),
+});
+// The toggles a Lead Times view starts with; useStatsState.js and statsGroupState.js hold the same literal, pinned by tests/test_share_view_codec.js.
+export const LEAD_TIMES_DEFAULT_STATUS_TOGGLES = Object.freeze({ done: true, open: true, killed: false, incomplete: false, postponed: false });
+
 export function resolveLeadTimesMode(value) {
     return LEAD_TIMES_MODES.includes(value) ? value : 'created';
 }

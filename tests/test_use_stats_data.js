@@ -670,9 +670,11 @@ test('closed-mode heatmap rows span the displayed Epics and keep long-lived Epic
 test('Project filter survives Created to Closed and back, and is still pruned when its data is for the right mode', () => {
     const effects = [], fakeReact = { useMemo: (fn) => fn(), useRef: (initial) => ({ current: initial }), useEffect: (fn) => effects.push(fn) };
     const hooks = loadHooks({ reactRuntime: fakeReact });
-    const run = (overrides) => {
+    // `fetched` is whether the data in hand is what the current query loaded: the hook files every payload under cohortQueryKey.
+    const run = (overrides, { fetched = true } = {}) => {
         effects.length = 0;
-        const value = Object.assign(inputs(), overrides);
+        const value = Object.assign(inputs(), { cohortQueryKey: 'synthetic-cohort' }, overrides);
+        if (fetched && value.cohortData) value.cohortCacheRef.current[value.cohortQueryKey] = value.cohortData;
         const cleared = [];
         value.setCohortProjectFilter = (next) => cleared.push(next);
         hooks.useStatsDerivedB(value);
@@ -687,6 +689,22 @@ test('Project filter survives Created to Closed and back, and is still pruned wh
     assert.deepEqual(run({ cohortMode: 'created', cohortProjectFilter: 'PROD', cohortData: closedPayload }), [], 'Closed data under Created must not reset Project');
     assert.deepEqual(run({ cohortMode: 'closed', cohortProjectFilter: 'PROD', cohortData: closedPayload }), ['all'], 'a project missing from matching data is still pruned');
     assert.deepEqual(run({ cohortMode: 'created', cohortProjectFilter: 'PROD', cohortData: createdPayload }), []);
+    // A Project chosen before its data arrives (a saved choice on a cold start, or a shared link) is not judged against no data or the old range's data.
+    assert.deepEqual(run({ cohortMode: 'created', cohortProjectFilter: 'PROD', cohortData: null }), [], 'no data yet');
+    assert.deepEqual(run({ cohortMode: 'closed', cohortProjectFilter: 'PROD', cohortData: closedPayload }, { fetched: false }), [], 'data of the previous range while the new one loads');
+});
+
+test('Lead Times status vocabulary of a link is the toggle set each mode shows', () => {
+    const { LEAD_TIMES_STATUS_KEYS } = (() => {
+        const code = esbuild.buildSync({ entryPoints: [path.join(__dirname, '../frontend/src/cohort/cohortUtils.js')], bundle: true, write: false, format: 'cjs', platform: 'node' }).outputFiles[0].text;
+        const module = { exports: {} };
+        new Function('module', 'exports', code)(module, module.exports);
+        return module.exports;
+    })();
+    for (const mode of ['created', 'closed', 'last_n']) {
+        const controls = renderLayer('B', Object.assign(inputs(), { cohortMode: mode })).cohortStatusControls;
+        assert.deepEqual(controls.map((item) => item.key), [...LEAD_TIMES_STATUS_KEYS[mode]], mode);
+    }
 });
 
 for (const mode of ['created', 'closed', 'last_n']) test(`cohort ${mode} reads send one request shape, explicit and automatic`, async () => {

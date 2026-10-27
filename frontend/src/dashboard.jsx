@@ -1072,7 +1072,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
-            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, serverConnectionError });
+            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, serverConnectionError });
             const {
                 groupsConfig,
                 setGroupsConfig,
@@ -5666,7 +5666,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 restoredInitialEpmViewRef, setSelectedView, setActiveGroupId, commitSprintSelection, persistTeamSelection,
                 setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
                 setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
-                setCohortMode, setCohortClosedStartQuarter, setCohortClosedEndQuarter, setCohortLastN, setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
+                setCohortMode, setCohortClosedStartQuarter, setCohortClosedEndQuarter, setCohortLastN, setCohortProjectFilter, setCohortExcludeAdHoc, setCohortExcludeCapacity, setCohortGroupBy, setCohortStatusToggles, setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
                 setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngBoardFilterSelection, setBoardView,
                 alertFlags: {
                     missing: [showMissingAlert, setShowMissingAlert], blocked: [showBlockedAlert, setShowBlockedAlert], followup: [showPostponedAlert, setShowPostponedAlert],

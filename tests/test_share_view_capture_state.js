@@ -130,3 +130,40 @@ test('a Lead Times capture carries only the active mode: Created its range, Clos
     const teams = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'teams', cohortMode: 'closed' } }).state;
     assert.equal(Object.hasOwn(teams, 'lead'), false);
 });
+
+test('a Lead Times capture carries Project, exclusions, statuses and Group By when they differ from the defaults', () => {
+    const cohort = (patch) => received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'cohort', selectedTeams: ['t1'], ...patch } }).state;
+    const filters = (patch) => {
+        const { lproject, lexclude, lstatus, lgroupby } = cohort(patch);
+        return { lproject, lexclude, lstatus, lgroupby };
+    };
+    const toggles = { done: true, open: true, killed: false, incomplete: false, postponed: false };
+    assert.deepEqual(filters({}), { lproject: undefined, lexclude: undefined, lstatus: undefined, lgroupby: undefined }, 'a snapshot at the model defaults carries nothing');
+    assert.deepEqual(filters({ cohortProjectFilter: 'all', cohortExcludeAdHoc: false, cohortExcludeCapacity: true, cohortStatusToggles: toggles, cohortGroupBy: 'quarter' }),
+        { lproject: undefined, lexclude: undefined, lstatus: undefined, lgroupby: undefined });
+    assert.deepEqual(filters({
+        cohortProjectFilter: 'PROJ_A', cohortExcludeAdHoc: true, cohortExcludeCapacity: false, cohortGroupBy: 'month',
+        cohortStatusToggles: { ...toggles, killed: true, incomplete: true, postponed: true },
+    }), { lproject: 'PROJ_A', lexclude: ['adhoc'], lstatus: ['done', 'open', 'killed', 'incomplete', 'postponed'], lgroupby: 'month' });
+    assert.deepEqual(filters({ cohortExcludeCapacity: false }).lexclude, [], 'both boxes cleared is an explicit none');
+    assert.deepEqual(filters({ cohortStatusToggles: { ...toggles, done: false, open: false } }).lstatus, [], 'every status off is an explicit none');
+});
+
+test('a Closed or Last N capture carries only the statuses its toggles show', () => {
+    const toggles = { done: true, open: true, killed: true, incomplete: false, postponed: true };
+    for (const cohortMode of ['closed', 'last_n']) {
+        const { state } = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'cohort', cohortMode, cohortStatusToggles: toggles } });
+        assert.deepEqual(state.lstatus, ['done', 'killed'], `${cohortMode}: In Progress and Postponed are Created-only`);
+    }
+    const { state } = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView: 'cohort', cohortMode: 'closed', cohortStatusToggles: { ...toggles, killed: false } } });
+    assert.equal(Object.hasOwn(state, 'lstatus'), false, 'Done alone is the Closed default');
+});
+
+test('only a Lead Times capture carries the Lead Times filters', () => {
+    const extras = { cohortProjectFilter: 'PROJ_A', cohortExcludeCapacity: false, cohortGroupBy: 'month', cohortStatusToggles: { done: true, open: true, killed: true, incomplete: false, postponed: false } };
+    for (const statsView of ['teams', 'burnout', 'projectTrack']) {
+        const { query } = received({ mode: 'statistics', snapshot: { ...input().snapshot, statsView, ...extras } });
+        assert.doesNotMatch(query, /\b(?:lproject|lexclude|lstatus|lgroupby)=/, statsView);
+    }
+    assert.doesNotMatch(received({ snapshot: { ...input().snapshot, ...extras } }).query, /\b(?:lproject|lexclude|lstatus|lgroupby)=/);
+});

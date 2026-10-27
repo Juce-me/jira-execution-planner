@@ -4,7 +4,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { expect } = require('@playwright/test');
-const { installDashboardFixture, activeHomeTokenConnection } = require('./epm_home_token_fixture');
+const { installDashboardFixture, enabledEpmOptions } = require('./epm_home_token_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -190,7 +190,7 @@ async function installStatusColourFixture(page, {
     const requests = [];
     const posts = [];
     const base = await installDashboardFixture(page, {
-        authMode, connection: activeHomeTokenConnection(), settingsAdminOnly, userCanEditSettings,
+        authMode, ...enabledEpmOptions(), settingsAdminOnly, userCanEditSettings,
         allProjectsRollup: epmRollup,
     });
     const js = await dashboardBundle();
@@ -218,6 +218,8 @@ async function installStatusColourFixture(page, {
                 jiraUrl: 'https://jira.example', capacityProject: '', groupQueryTemplateEnabled: false, authMode,
                 settingsAdminOnly, userCanEditSettings, userCanEditEpmConfig: true, environmentConfigExists: true,
                 projectsConfigured: true,
+                // This fixture serves its own config, so the EPM capability fields come from the shared fixture's state.
+                epmViewEnabled: base.epmState.viewEnabled, epmHomeReadAvailable: base.epmState.homeReadAvailable,
                 epm: {
                     version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] },
                     issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },

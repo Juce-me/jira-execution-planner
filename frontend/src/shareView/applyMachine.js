@@ -100,7 +100,7 @@ export function stepApplyMachine(previous, input) {
         const { gate } = input;
         if (gate.groupsFailed || gate.adminGate === 'missing' || gate.catalog === 'failed') return drop();
         const open = !gate.groupsLoading && !gate.onboardingRequired && gate.adminGate === 'clear'
-            && gate.catalog === 'validated' && !gate.capsulesPending && gate.homeTokenReady;
+            && gate.catalog === 'validated' && !gate.capsulesPending && gate.epmHomeReadReady;
         if (open && state.armedActive === null) state.armedActive = state.active;
         if (state.armedActive !== null && state.active - state.armedActive >= APPLY_STAGE_BUDGET_MS.A) return drop();
         if (!open) return wait();

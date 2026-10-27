@@ -502,6 +502,84 @@ export function isActiveHomeTokenConnection(connection) {
     return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
 }
 
+const EPM_ACCESS_STATES = new Set(['available', 'disabled', 'scope_missing', 'empty', 'denied', 'unavailable']);
+
+// Same-tab scope-update link: only the app's own /login or /login?reason=missing_scope is accepted.
+function normalizeSameTabLoginUrl(value) {
+    return typeof value === 'string' && /^\/login(\?reason=missing_scope)?$/.test(value.trim()) ? value.trim() : '';
+}
+
+// The three EPM capability fields of the config response. Production fails closed: a missing or mistyped field is
+// false/empty. Basic compatibility is the established `authMode === 'basic'` rule (service credentials).
+export function normalizeEpmCapabilities(config) {
+    const source = config && typeof config === 'object' ? config : {};
+    return {
+        basicCompatibility: source.authMode === 'basic',
+        viewEnabled: source.epmViewEnabled === true,
+        homeReadAvailable: source.epmHomeReadAvailable === true,
+        loginUrl: normalizeSameTabLoginUrl(source.epmHomeReadLoginUrl),
+    };
+}
+
+// The EPM access response body. An unknown or mistyped state is `unavailable`; null stays unresolved.
+export function normalizeEpmAccess(payload) {
+    if (!payload || typeof payload !== 'object') return null;
+    const state = EPM_ACCESS_STATES.has(payload.state) ? payload.state : 'unavailable';
+    return {
+        state,
+        homeReadAvailable: payload.epmHomeReadAvailable === true,
+        loginUrl: normalizeSameTabLoginUrl(payload.loginUrl),
+        message: typeof payload.message === 'string' ? payload.message : '',
+    };
+}
+
+// The single EPM navigation rule. An unresolved access state hides navigation.
+export function isEpmNavigationVisible(capabilities, access) {
+    if (!capabilities) return false;
+    if (capabilities.basicCompatibility === true) return true;
+    return capabilities.viewEnabled === true
+        && capabilities.homeReadAvailable === true
+        && access?.state === 'available';
+}
+
+const EPM_RATE_LIMIT_CATEGORIES = new Set(['home_rate_limited', 'jira_rate_limited']);
+const EPM_DENIED_CATEGORIES = new Set(['home_access_denied', 'jira_access_denied']);
+
+// Shared by automatic and explicit EPM refresh paths. Real 401s never reach it (apiFetch owns them).
+// retryAtMs is deliberately null: callers must not schedule retries from it.
+export function classifyEpmReadError(error) {
+    const status = Number(error?.status) || 0;
+    const category = String(error?.category || error?.code || '');
+    const retryAfterSeconds = Number.isFinite(error?.retryAfterSeconds) && error.retryAfterSeconds > 0
+        ? Math.min(error.retryAfterSeconds, 30)
+        : undefined;
+    let outcome = 'failed';
+    if (status === 429 || (status === 503 && EPM_RATE_LIMIT_CATEGORIES.has(category))) outcome = 'rate_limited';
+    else if (status === 403 && EPM_DENIED_CATEGORIES.has(category)) outcome = 'denied';
+    return {
+        outcome,
+        status,
+        category,
+        retryAfterSeconds,
+        retryAtMs: null,
+        invalidateHomeAvailability: outcome === 'denied' && category === 'home_access_denied',
+    };
+}
+
+// Settings copy for typed OAuth goals/scope failures; never echoes a provider payload.
+export function describeEpmReadError(error, fallback = '') {
+    const status = Number(error?.status) || 0;
+    const category = String(error?.category || error?.code || '');
+    if (status === 409 && category === 'epm_scope_required') return 'Atlassian Home read permission is needed. Update your Atlassian permissions in Settings > Connections.';
+    if (status === 403 && category === 'home_access_denied') return 'Atlassian Home did not grant access to this scope.';
+    if (status === 502 && category === 'home_read_failed') return 'Atlassian Home could not be read. Try again later.';
+    if (status === 503 && category === 'home_rate_limited') {
+        const seconds = classifyEpmReadError(error).retryAfterSeconds;
+        return seconds ? `Atlassian Home is rate limiting requests. Try again in ${seconds}s.` : 'Atlassian Home is rate limiting requests. Try again shortly.';
+    }
+    return error?.message || fallback;
+}
+
 export function isBackendConnectionFailure(error) {
     if (!error || error.name === 'AbortError') return false;
     if (error.name === 'ConfigBootstrapTimeoutError') return true;

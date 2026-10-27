@@ -36,8 +36,21 @@ function disconnectedHomeTokenConnection() {
     return { connected: false };
 }
 
-function isActiveHomeToken(connection) {
-    return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
+// EPM read readiness is the private checkbox + verified Home scopes + the access decision; the Home token
+// connection (write purpose) never gates reads. An ENABLED OAuth fixture says so explicitly; production-like
+// missing fields fail closed, so the fixture defaults are off.
+function enabledEpmOptions(extra = {}) {
+    return {
+        epmViewEnabled: true,
+        epmHomeReadAvailable: true,
+        epmAccess: { state: 'available' },
+        ...extra,
+    };
+}
+
+function epmAccessBody(access) {
+    const source = typeof access === 'string' ? { state: access } : (access || { state: 'disabled' });
+    return { epmHomeReadAvailable: source.state === 'available', ...source };
 }
 
 function epmProject(tab = 'active') {
@@ -96,9 +109,17 @@ function requestBody(request) {
 async function installDashboardFixture(page, options = {}) {
     const calls = [];
     const authMode = options.authMode || 'atlassian_oauth';
-    const requiresHomeTokenConnection = authMode !== 'basic';
     let currentConnection = options.connection || disconnectedHomeTokenConnection();
-    let epmPrerequisite = Boolean(options.epmPrerequisite);
+    const epmState = {
+        viewEnabled: options.epmViewEnabled === true,
+        homeReadAvailable: options.epmHomeReadAvailable === true,
+        loginUrl: options.epmHomeReadLoginUrl || '',
+        access: options.epmAccess || { state: 'disabled' },
+        preferenceFailure: options.epmPreferenceFailure || null,
+        // Applied when a successful preference POST turns the checkbox on (consent granted meanwhile).
+        afterEnable: options.epmAfterEnable || null,
+        failure: options.epmFailure || null,
+    };
 
     await installDashboardShell(page);
 
@@ -116,12 +137,17 @@ async function installDashboardFixture(page, options = {}) {
             contentType: 'application/json',
             body: JSON.stringify(body),
         });
-        const homeTokenRequired = () => json({
-            error: 'home_user_token_required',
-            message: 'Connect your Atlassian API token to load EPM Home projects.',
-            connectUrl: '/settings/connections/home-token',
-        }, 409);
 
+        const epmRead = url.pathname.startsWith('/api/epm/') && request.method() === 'GET';
+        const injected = epmRead && epmState.failure ? epmState.failure(url, calls) : null;
+        if (injected) {
+            return route.fulfill({
+                status: injected.status,
+                contentType: 'application/json',
+                headers: injected.headers || {},
+                body: JSON.stringify(injected.body || {}),
+            });
+        }
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') {
             return json({ authMode, authenticated: true, email: 'profile@example.com', profile: { email: 'profile@example.com' } });
@@ -132,12 +158,10 @@ async function installDashboardFixture(page, options = {}) {
         }
         if (url.pathname === '/api/me/connections/home-token' && request.method() === 'POST') {
             currentConnection = activeHomeTokenConnection('profile@example.com');
-            epmPrerequisite = false;
             return json(currentConnection);
         }
         if (url.pathname === '/api/me/connections/home-token' && request.method() === 'DELETE') {
             currentConnection = disconnectedHomeTokenConnection();
-            epmPrerequisite = true;
             return json(currentConnection);
         }
         if (url.pathname === '/api/config') {
@@ -152,6 +176,12 @@ async function installDashboardFixture(page, options = {}) {
                 environmentConfigExists: options.environmentConfigExists ?? true,
                 projectsConfigured: true,
                 epm: { ...epmConfig, ...(options.epmConfig || {}) },
+                ...(options.omitEpmCapabilityFields ? {} : {
+                    epmViewEnabled: epmState.viewEnabled,
+                    epmHomeReadAvailable: epmState.homeReadAvailable,
+                    ...(epmState.loginUrl ? { epmHomeReadLoginUrl: epmState.loginUrl } : {}),
+                }),
+                ...(options.configExtras || {}),
                 viewConfig: {
                     workspaceId: 'workspace-test',
                     viewConfigId: 'view-test',
@@ -180,15 +210,22 @@ async function installDashboardFixture(page, options = {}) {
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/epm/config') return json({ ...epmConfig, ...(options.epmConfig || {}) });
         if (url.pathname === '/api/epm/scope') return json({ cloudId: 'synthetic-cloud', error: '' });
-        if (url.pathname === '/api/epm/goals') {
-            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
-                return json({
-                    goals: [],
-                    error: 'Connect your Atlassian API token to load EPM Home projects.',
-                    errorCode: 'home_user_token_required',
-                    connectUrl: '/settings/connections/home-token',
-                });
+        if (url.pathname === '/api/epm/access') {
+            return json(epmAccessBody(typeof epmState.access === 'function' ? epmState.access(url) : epmState.access));
+        }
+        if (url.pathname === '/api/epm/preferences' && request.method() === 'POST') {
+            if (epmState.preferenceFailure) {
+                return json(epmState.preferenceFailure.body || { error: 'epm_preferences_failed' }, epmState.preferenceFailure.status || 500);
             }
+            epmState.viewEnabled = requestBody(request)?.viewEnabled === true;
+            if (epmState.viewEnabled && epmState.afterEnable) {
+                if ('homeReadAvailable' in epmState.afterEnable) epmState.homeReadAvailable = epmState.afterEnable.homeReadAvailable;
+                if ('access' in epmState.afterEnable) epmState.access = epmState.afterEnable.access;
+                if ('loginUrl' in epmState.afterEnable) epmState.loginUrl = epmState.afterEnable.loginUrl;
+            }
+            return json({ epmViewEnabled: epmState.viewEnabled });
+        }
+        if (url.pathname === '/api/epm/goals') {
             if (url.searchParams.get('rootGoalKey')) {
                 return json({
                     goals: options.epmSubGoals || [{ id: 'child', key: 'CHILD-200', name: 'Connected Child Goal' }],
@@ -197,36 +234,21 @@ async function installDashboardFixture(page, options = {}) {
             }
             return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Connected Root Goal' }], error: '' });
         }
+        const projectsFor = (tab) => (options.epmProjects ? options.epmProjects(tab) : [epmProject(tab)]);
         if (url.pathname === '/api/epm/projects/configuration') {
-            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
-                currentConnection = disconnectedHomeTokenConnection();
-                return homeTokenRequired();
-            }
-            return json({ projects: [epmProject('active')], homeProjectCount: 1, cacheHit: false });
+            return json({ projects: projectsFor('active'), homeProjectCount: projectsFor('active').length, cacheHit: false });
         }
         if (url.pathname === '/api/jira/labels') return json({ labels: ['rnd_project_connected'] });
         if (url.pathname === '/api/epm/projects') {
-            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
-                currentConnection = disconnectedHomeTokenConnection();
-                return homeTokenRequired();
-            }
-            return json({ projects: [epmProject(url.searchParams.get('tab') || 'active')] });
+            return json({ projects: projectsFor(url.searchParams.get('tab') || 'active') });
         }
         if (url.pathname === '/api/epm/projects/rollup/all') {
-            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
-                currentConnection = disconnectedHomeTokenConnection();
-                return homeTokenRequired();
-            }
             const project = epmProject(url.searchParams.get('tab') || 'active');
             const rollupPayload = resolveFixturePayload(options.allProjectsRollup, project, url);
             if (rollupPayload) return json(rollupPayload);
             return json({ projects: [emptyRollup(project)], duplicates: {}, truncated: false, fallback: true });
         }
         if (url.pathname.startsWith('/api/epm/projects/') && url.pathname.endsWith('/rollup')) {
-            if (requiresHomeTokenConnection && (epmPrerequisite || !isActiveHomeToken(currentConnection))) {
-                currentConnection = disconnectedHomeTokenConnection();
-                return homeTokenRequired();
-            }
             const project = epmProject(url.searchParams.get('tab') || 'active');
             const rollupPayload = resolveFixturePayload(options.projectRollup, project, url);
             return json(rollupPayload || emptyRollup(project).rollup);
@@ -239,7 +261,10 @@ async function installDashboardFixture(page, options = {}) {
         calls,
         getConnection: () => currentConnection,
         setConnection: (connection) => { currentConnection = connection || disconnectedHomeTokenConnection(); },
-        setEpmPrerequisite: (value) => { epmPrerequisite = Boolean(value); },
+        epmState,
+        setEpmAccess: (access) => { epmState.access = access; },
+        setEpmFailure: (failure) => { epmState.failure = failure; },
+        setEpmHomeReadAvailable: (value, loginUrl = '') => { epmState.homeReadAvailable = value === true; epmState.loginUrl = loginUrl; },
     };
 }
 
@@ -314,6 +339,14 @@ function epmMetadataCalls(calls) {
     ));
 }
 
+function epmAccessCalls(calls) {
+    return calls.filter(call => call.pathname === '/api/epm/access');
+}
+
+function homeTokenStatusCalls(calls) {
+    return calls.filter(call => call.pathname === '/api/me/connections/home-token' && call.method === 'GET');
+}
+
 // The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
 // Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
 async function expectConfigBootstrapHoldsJiraWork(page, paths) {
@@ -341,7 +374,12 @@ module.exports = {
     appBaseUrl,
     activeHomeTokenConnection,
     disconnectedHomeTokenConnection,
+    enabledEpmOptions,
+    epmAccessCalls,
     epmMetadataCalls,
+    epmProject,
+    emptyRollup,
+    homeTokenStatusCalls,
     expectConfigBootstrapHoldsJiraWork,
     installDashboardFixture,
     installDashboardShell,

@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     appBaseUrl,
     installDashboardFixture,
     selectedSprintId,
@@ -18,7 +18,7 @@ test('visible EPM tab exposes settings gear that opens EPM settings', async ({ p
         sprintName: selectedSprintName,
     });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         userCanEditEpmConfig: true,
     });
 
@@ -61,7 +61,7 @@ test('EPM settings sub-goal results keep wheel scroll inside the picker', async 
         sprintName: selectedSprintName,
     });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         userCanEditEpmConfig: true,
         epmConfig: {
             scope: { rootGoalKey: 'ROOT-100', subGoalKeys: [] },

@@ -63,7 +63,7 @@ function createRig({ link, search, options = {} } = {}) {
     const o = {
         sharedConfigReady: true, groupsLoading: false, groupsFailed: false, onboardingRequired: false, adminSettingsGate: { status: 'clear' },
         sprintCatalogState: { authority: 'validated', status: 'ready', validatedSnapshot: {}, availableSprints: SPRINTS },
-        homeTokenConnectionLoaded: true, savedViewIsEpm: false,
+        epmHomeReadReady: true, savedViewIsEpm: false,
         visibleControlGroups: [{ id: 'grp-a', teamIds: ['t1', 't2'] }, { id: 'grp-b', teamIds: ['t3', ' t4 ', 't3'] }],
         pendingShellAuthResumeRef: { current: null }, pendingPlanningAuthResumeRef: { current: null }, pendingConnectionRecoveryRef: { current: null },
         tourRunning: false, planningReviewBusy: false,
@@ -224,11 +224,11 @@ test('a consumed same-scope Planning recovery capsule applies Teams and facets w
     assert.deepEqual(rig.store.log.at(-1), ['finish', 'done', []]);
 });
 
-test('a recipient whose saved view is EPM waits for the Home token read, then lands in ENG without the one-shot restore', () => {
-    const rig = createRig({ link: LINK, options: { savedViewIsEpm: true, homeTokenConnectionLoaded: false } });
+test('a recipient whose saved view is EPM waits for the EPM Home read readiness, then lands in ENG without the one-shot restore', () => {
+    const rig = createRig({ link: LINK, options: { savedViewIsEpm: true, epmHomeReadReady: false } });
     rig.tick();
     assert.deepEqual(rig.take(), []);
-    rig.o.homeTokenConnectionLoaded = true;
+    rig.o.epmHomeReadReady = true;
     rig.tick();
     assert.deepEqual(rig.take().slice(0, 1), [['setSelectedView', 'eng']]);
     assert.equal(rig.o.restoredInitialEpmViewRef.current, true);

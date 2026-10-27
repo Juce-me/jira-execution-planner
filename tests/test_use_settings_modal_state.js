@@ -75,8 +75,11 @@ function modalHarness(overrides = {}) {
         canEditEpmConfiguration: true,
         canEditSharedConfiguration: true,
         departmentSettingsTab: 'teams',
+        discardEpmViewPreference: rec('discardEpmViewPreference'),
         epmConfigBaselineRef: { current: '{"base":1}' },
         epmConfigSaving: false,
+        epmViewPreferenceDirty: false,
+        epmViewPreferenceSaving: false,
         firstRunConfigurationActive: false,
         firstRunConfigurationSession: { guideStep: 'name' },
         groupDraft: { groups: [{ id: 'g' }] },
@@ -119,8 +122,8 @@ test('state layer: 0 inputs, 17 returns, nine cells with the documented defaults
     assert.equal(mod.effects.length, 0, 'the state layer registers no effect');
 });
 
-test('behaviour hook: 55 inputs, 20 returns, no effects, no ref or state of its own', async () => {
-    assert.equal(MODAL_INPUTS.length, 55);
+test('behaviour hook: 58 inputs, 20 returns, no effects, no ref or state of its own', async () => {
+    assert.equal(MODAL_INPUTS.length, 58);
     const { hook, mod } = await mountModal();
     assert.deepEqual(Object.keys(hook).sort(), MODAL_RETURNS);
     assert.equal(mod.effects.length, 0, 'the behaviour layer registers no effect, so its call position crosses none');
@@ -168,18 +171,18 @@ test('requestCloseGroupManage: a save in flight blocks it, a dirty draft asks, a
 test('discardGroupDraftChanges restores the private EPM baseline only when dirty, tolerates a bad baseline, then closes', async () => {
     const dirty = await mountModal({ input: { isEpmConfigDirty: true } });
     dirty.hook.discardGroupDraftChanges();
-    assert.deepEqual(dirty.log.slice(0, 3), [['setEpmConfigDraft', { base: 1 }], ['setShowGroupDiscardConfirm', false], ['setShowGroupManage', false]]);
+    assert.deepEqual(dirty.log.slice(0, 4), [['discardEpmViewPreference'], ['setEpmConfigDraft', { base: 1 }], ['setShowGroupDiscardConfirm', false], ['setShowGroupManage', false]]);
     const clean = await mountModal();
     clean.hook.discardGroupDraftChanges();
     assert.equal(clean.log.some((entry) => entry[0] === 'setEpmConfigDraft'), false);
-    assert.deepEqual(clean.log.slice(0, 2), [['setShowGroupDiscardConfirm', false], ['setShowGroupManage', false]]);
+    assert.deepEqual(clean.log.slice(0, 3), [['discardEpmViewPreference'], ['setShowGroupDiscardConfirm', false], ['setShowGroupManage', false]]);
     const bad = await mountModal({ input: { isEpmConfigDirty: true, epmConfigBaselineRef: { current: '{nope' } } });
     bad.hook.discardGroupDraftChanges();
     assert.equal(bad.log.some((entry) => entry[0] === 'setEpmConfigDraft'), false);
     assert.equal(bad.log.some((entry) => entry[0] === 'setShowGroupManage'), true);
     const empty = await mountModal({ input: { isEpmConfigDirty: true, epmConfigBaselineRef: { current: '' } } });
     empty.hook.discardGroupDraftChanges();
-    assert.deepEqual(empty.log[0], ['setEpmConfigDraft', {}]);
+    assert.deepEqual(empty.log[1], ['setEpmConfigDraft', {}]);
 });
 
 test('labelsTabEnabled follows the draft first, then the saved groups', async () => {
@@ -320,6 +323,9 @@ test('footer Save: handler clears the error, passes the first-run session only w
         [{ firstRunConfigurationActive: true, groupPreferences: { onboardingDone: true } }, { disabled: false, title: '', label: 'Save', shows: true }],
         [{ firstRunConfigurationActive: false, groupPreferences: { onboardingDone: false } }, { disabled: false, title: '', label: 'Save', shows: true }],
         [{ groupManageTab: 'connections' }, { disabled: false, title: '', label: 'Save', shows: false }],
+        [{ groupManageTab: 'connections', epmViewPreferenceDirty: true }, { disabled: false, title: '', label: 'Save', shows: true }],
+        [{ groupManageTab: 'connections', epmViewPreferenceDirty: true, epmViewPreferenceSaving: true }, { disabled: false, title: '', label: 'Saving...', shows: true }],
+        [{ epmViewPreferenceSaving: true }, { disabled: false, title: '', label: 'Saving...', shows: true }],
     ]) {
         const { hook } = await mountModal({ input });
         assert.deepEqual({ disabled: hook.settingsSaveDisabled, title: hook.settingsSaveTitle, label: hook.settingsSaveLabel, shows: hook.settingsShowsSave }, expected, JSON.stringify(input));
@@ -372,6 +378,8 @@ async function hotkey(inputOverrides = {}) {
     const input = {
         closeAllTeamSearchDropdowns: () => log.push('closeAllTeamSearchDropdowns'),
         epmConfigSaving: false,
+        epmViewPreferenceDirty: false,
+        epmViewPreferenceSaving: false,
         firstRunConfigurationActive: false,
         firstRunConfigurationSession: { guideStep: 'teams' },
         groupManageTab: 'teams',
@@ -394,7 +402,7 @@ async function hotkey(inputOverrides = {}) {
 
 test('hotkey layer: dependency array, no listener while closed, cleanup removes the registered handler', async () => {
     const open = await hotkey();
-    assert.deepEqual(open.mod.effects[0].deps, [true, 'teams', false, false, false, { guideStep: 'teams' }, {}, false, open.input.requestCloseGroupManage, open.input.saveAllSettings].map((value, index) => (index === 5 ? open.input.firstRunConfigurationSession : index === 6 ? open.input.teamSearchOpen : value)));
+    assert.deepEqual(open.mod.effects[0].deps, [true, 'teams', false, false, false, false, false, { guideStep: 'teams' }, {}, false, open.input.requestCloseGroupManage, open.input.saveAllSettings].map((value, index) => (index === 7 ? open.input.firstRunConfigurationSession : index === 8 ? open.input.teamSearchOpen : value)));
     assert.equal(open.env.listeners.length, 1);
     assert.equal(open.env.listeners[0][0], 'keydown');
     open.cleanup();
@@ -414,7 +422,10 @@ test('hotkey layer: Cmd/Ctrl+S saves unless on Connections or already saving, al
     const connections = await hotkey({ groupManageTab: 'connections' });
     assert.equal(connections.press({ key: 's', metaKey: true }).prevented, 1);
     assert.deepEqual(connections.log, []);
-    for (const busy of [{ groupSaving: true }, { epmConfigSaving: true }]) {
+    const connectionsDirty = await hotkey({ groupManageTab: 'connections', epmViewPreferenceDirty: true });
+    assert.equal(connectionsDirty.press({ key: 's', metaKey: true }).prevented, 1);
+    assert.deepEqual(connectionsDirty.log, [['saveAllSettings', { firstRunSession: null }]]);
+    for (const busy of [{ groupSaving: true }, { epmConfigSaving: true }, { epmViewPreferenceSaving: true, groupManageTab: 'connections', epmViewPreferenceDirty: true }]) {
         const blocked = await hotkey(busy);
         blocked.press({ key: 's', ctrlKey: true });
         assert.deepEqual(blocked.log, []);

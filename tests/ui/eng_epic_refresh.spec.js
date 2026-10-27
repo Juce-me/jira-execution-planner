@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardFixture,
     selectedSprintId: epmSprintId,
     selectedSprintName: epmSprintName,
@@ -1403,7 +1403,7 @@ test('25. IssueCard in EPM never gets data-glare and the per-epic refresh button
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: epmSprintId, sprintName: epmSprintName });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: project => ({ projects: [epmPopulatedRollup(project)], duplicates: {}, truncated: false, fallback: false }),
     });
     await page.goto(appBaseUrl, { waitUntil: 'networkidle' });

@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     appBaseUrl,
     installDashboardFixture,
     selectedSprintId,
@@ -107,7 +107,7 @@ test('EPM portfolio issue board keeps default IssueCard density when ENG compact
         sprintName: selectedSprintName,
     });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: populatedRollup,
     });
 
@@ -126,7 +126,7 @@ test('EPM selected-project issue board keeps default IssueCard density when ENG 
         sprintName: selectedSprintName,
     });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: () => ({
             projects: [],
             duplicates: {},

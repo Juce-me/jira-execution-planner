@@ -3,7 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
 } = require('./epm_home_token_fixture');
@@ -566,7 +566,7 @@ test('outside-card click dismisses the priority menu; Escape, trigger toggle, an
 test('EPM issue boards render inert priority icons and never call priority APIs', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: (project) => ({
             projects: [{
                 project,

@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
 
 const epmConfig = {
     version: 2,
@@ -63,20 +63,17 @@ async function mockDashboardLoad(page) {
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
                 projectsConfigured: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: epmConfig,
             });
         }
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
+        }
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
-        }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
         }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 34625, name: '2026Q2', state: 'active' }] });
@@ -100,7 +97,7 @@ async function mockDashboardLoad(page) {
 test('EPM view loads saved config from initial user config without opening Settings', async ({ page }) => {
     const calls = await mockDashboardLoad(page);
 
-    await page.goto('http://127.0.0.1:5050');
+    await page.goto(appBaseUrl);
 
     await expect(page.locator('.epm-project-board-name', { hasText: 'AI for RFP creation' })).toBeVisible();
     await page.getByRole('button', { name: 'Show Jira rollup for AI for RFP creation' }).click();
@@ -108,5 +105,8 @@ test('EPM view loads saved config from initial user config without opening Setti
     expect(calls).toContain('GET /api/config');
     expect(calls).toContain('GET /api/epm/projects/rollup/all');
     expect(calls).not.toContain('POST /api/epm/projects/configuration');
-    await page.screenshot({ path: '/tmp/epm-initial-load-from-user-config.png', fullPage: true });
+    // Reads are gated by the private checkbox + Home scopes + one access decision, never by the token status.
+    expect(calls.filter(call => call === 'GET /api/epm/access')).toHaveLength(1);
+    expect(calls).not.toContain('GET /api/me/connections/home-token');
+    await page.screenshot({ path: 'tmp/h4c/epm-initial-load-from-user-config.png', fullPage: true, animations: 'disabled' });
 });

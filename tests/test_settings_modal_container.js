@@ -12,7 +12,7 @@ const containerPath = path.join(__dirname, '../frontend/src/settings/SettingsMod
 const containerSource = fs.readFileSync(containerPath, 'utf8');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
 
-const PROP_NAMES = ['activeSettingsModalTab', 'canEditEpmConfiguration', 'cancelFirstRunConfiguration', 'discardGroupDraftChanges', 'discardMineOnGroupsConfigConflict', 'firstRunConfigurationActive', 'firstRunHasCommittedSection', 'groupConfigValidationErrors', 'groupDraftError', 'groupManageTab', 'groupTestMessage', 'groupTesting', 'groupsConfigConflict', 'isEpmConfigDirty', 'isGroupBoardDraftDirty', 'isGroupDraftDirty', 'isGroupVisibilityDraftDirty', 'keepMineOnGroupsConfigConflict', 'keepMineOnWorkspaceConfigConflict', 'requestCloseGroupManage', 'setShowGroupDiscardConfirm', 'settingsHeaderAction', 'settingsModalTabs', 'settingsSaveDisabled', 'settingsSaveError', 'settingsSaveHandler', 'settingsSaveLabel', 'settingsSaveTitle', 'settingsShowsSave', 'showGroupDiscardConfirm', 'testGroupsConfigConnection', 'unsavedSectionsCount', 'useLatestWorkspaceConfig', 'workspaceConfigConflict'];
+const PROP_NAMES = ['activeSettingsModalTab', 'canEditEpmConfiguration', 'cancelFirstRunConfiguration', 'discardGroupDraftChanges', 'discardMineOnGroupsConfigConflict', 'epmViewPreferenceDirty', 'firstRunConfigurationActive', 'firstRunHasCommittedSection', 'groupConfigValidationErrors', 'groupDraftError', 'groupManageTab', 'groupTestMessage', 'groupTesting', 'groupsConfigConflict', 'isEpmConfigDirty', 'isGroupBoardDraftDirty', 'isGroupDraftDirty', 'isGroupVisibilityDraftDirty', 'keepMineOnGroupsConfigConflict', 'keepMineOnWorkspaceConfigConflict', 'requestCloseGroupManage', 'setShowGroupDiscardConfirm', 'settingsHeaderAction', 'settingsModalTabs', 'settingsSaveDisabled', 'settingsSaveError', 'settingsSaveHandler', 'settingsSaveLabel', 'settingsSaveTitle', 'settingsShowsSave', 'showGroupDiscardConfirm', 'testGroupsConfigConnection', 'unsavedSectionsCount', 'useLatestWorkspaceConfig', 'workspaceConfigConflict'];
 
 let bundlePromise;
 function loadBundle() {
@@ -54,7 +54,7 @@ async function modalProps(overrides = {}, children = 'child') {
     return { props: globalThis.__modalProps, html };
 }
 
-test('interface: stateless, first parameter destructured with the 34 explicit props plus children', () => {
+test('interface: stateless, first parameter destructured with the 35 explicit props plus children', () => {
     const start = containerSource.indexOf('({\n') + 3;
     const names = containerSource.slice(start, containerSource.indexOf('\n}) {', start)).split('\n').map((line) => line.trim().replace(/,$/, '')).filter(Boolean);
     assert.deepEqual(names.filter((name) => name !== 'children').sort(), PROP_NAMES);
@@ -108,6 +108,13 @@ test('Connections tab: never dirty, no unsaved count, no validation messages or 
     assert.equal(other.cancelLabel, 'Cancel');
     const { props: clean } = await modalProps({ isGroupDraftDirty: false });
     assert.equal(clean.isDirty, false);
+    // A dirty private EPM view preference makes the Connections tab dirty and shows the unsaved count; other Connections state stays hidden.
+    const { props: preferenceDirty } = await modalProps({ groupManageTab: 'connections', isGroupDraftDirty: true, epmViewPreferenceDirty: true, unsavedSectionsCount: 1, groupConfigValidationErrors: ['x'] });
+    assert.equal(preferenceDirty.isDirty, true);
+    assert.equal(preferenceDirty.unsavedSectionsCount, 1);
+    assert.deepEqual(preferenceDirty.validationMessages, []);
+    const { props: preferenceClean } = await modalProps({ groupManageTab: 'connections', isGroupDraftDirty: false, epmViewPreferenceDirty: true });
+    assert.equal(preferenceClean.isDirty, false);
 });
 
 test('Test configuration is offered on every tab except EPM, Connections, Access and Performance; its busy state and label follow groupTesting', async () => {

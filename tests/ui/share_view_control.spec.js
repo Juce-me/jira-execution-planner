@@ -3,7 +3,6 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { catchUpPrefs, deferred, groupsConfigPayload, mockDashboard, openCatchUp } = require('./eng_epic_refresh_fixture');
-const { activeHomeTokenConnection } = require('./epm_home_token_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -605,7 +604,9 @@ test.describe('Share control: in the app', () => {
 
     test('the control is hidden in EPM and in Scenario and returns in the ENG modes', async ({ page }) => {
         const ctx = await mockDashboard(page);
-        ctx.respond('/api/me/connections/home-token', ({ json }) => json(activeHomeTokenConnection()));
+        // EPM navigation needs the private checkbox, verified Home scopes and an `available` access decision.
+        ctx.respond('/api/config', ({ json }) => json({ jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true, epmViewEnabled: true, epmHomeReadAvailable: true }));
+        ctx.respond('/api/epm/access', ({ json }) => json({ state: 'available', epmHomeReadAvailable: true }));
         await openCatchUp(page, ctx, { width: 1440, height: 900 });
         await expect(shareButton(page)).toHaveCount(1);
         await page.getByRole('radio', { name: 'EPM', exact: true }).click();

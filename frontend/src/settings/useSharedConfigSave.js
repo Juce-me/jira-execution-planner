@@ -60,6 +60,7 @@ export function useSharedConfigSave({
     anyFieldConfigDirty,
     applyAdminSettingsGateConfig,
     applyCapacityLoaded,
+    applyEpmCapabilityConfig,
     applyJiraIssueTypesLoaded,
     applyJiraProjectsAndBoardLoaded,
     applyPriorityWeightsLoaded,
@@ -78,6 +79,7 @@ export function useSharedConfigSave({
     dispatchFirstRunConfigurationSession,
     epmConfigLoading,
     epmConfigSaving,
+    epmViewPreferenceDirty,
     favoriteGroupValidationError,
     firstRunConfigurationActive,
     firstRunConfigurationSession,
@@ -113,10 +115,12 @@ export function useSharedConfigSave({
     persistGroupPreferences,
     priorityWeightsValidationError,
     queueConfigSaveRefresh,
+    refreshEpmAccess,
     saveBoardConfig,
     saveCapacityConfig,
     saveDeliveryOwnerFieldConfig,
     saveEpmConfig,
+    saveEpmViewPreference,
     saveFirstRunGroupPreferences,
     saveIssueTypesConfig,
     saveParentNameFieldConfig,
@@ -193,10 +197,11 @@ export function useSharedConfigSave({
     const isGroupDraftDirty = React.useMemo(() => {
         if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
         if (canEditEpmConfiguration && isEpmConfigDirty) return true;
+        if (epmViewPreferenceDirty) return true;
         if (isGroupVisibilityDraftDirty) return true;
         if (!groupDraft) return false;
         return groupDraftSignature !== groupDraftBaselineRef.current;
-    }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty, isGroupVisibilityDraftDirty]);
+    }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty, epmViewPreferenceDirty, isGroupVisibilityDraftDirty]);
     const unsavedSectionsCount = React.useMemo(() => {
         return [
             canEditSharedConfiguration && isProjectsDraftDirty,
@@ -206,10 +211,11 @@ export function useSharedConfigSave({
             canEditSharedConfiguration && isIssueTypesDraftDirty,
             canEditSharedConfiguration && isAdminAccessDirty,
             canEditEpmConfiguration && isEpmConfigDirty,
+            epmViewPreferenceDirty,
             Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current),
             isGroupVisibilityDraftDirty
         ].filter(Boolean).length + (canEditSharedConfiguration ? dirtyFieldConfigCount : 0);
-    }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
+    }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, epmViewPreferenceDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
     const shouldValidateAdminSettings = canEditSharedConfiguration
         && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
     const groupConfigValidationErrors = React.useMemo(() => {
@@ -531,6 +537,7 @@ export function useSharedConfigSave({
                         setAuthMode(cfg.authMode || '');
                         setCapacityEnabled(Boolean(cfg.capacityProject || cfg.capacityConfigRequiresResolution));
                         applySavePermissions(cfg);
+                        applyEpmCapabilityConfig(cfg);
                         setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
                         const nextAdminSettingsGate = applyAdminSettingsGateConfig(cfg);
                         sprintCatalogControllerRef.current.acceptSource(cfg.sprintCatalogSource || null);
@@ -646,10 +653,24 @@ export function useSharedConfigSave({
         }
     };
 
+    // The preference has its own endpoint and body; the config refresh afterwards is the third ingestion
+    // site for the EPM capability fields and is best effort apart from an authentication loss.
+    const saveEpmViewPreferenceAndRefresh = async () => {
+        const result = await saveEpmViewPreference();
+        if (!result.ok) return result;
+        try {
+            applyEpmCapabilityConfig(await fetchAppConfig(BACKEND_URL));
+        } catch (err) {
+            if (isAuthenticationRequiredError(err)) throw err;
+        }
+        Promise.resolve(refreshEpmAccess?.()).catch(() => {});
+        return result;
+    };
+
     const saveAllSettingsOnce = async ({ rebaseOnto = null, firstRunSession = null } = {}) => {
         const activeDepartmentSettingsTab = getActiveDepartmentSettingsTab();
         const closeGroupManage = getCloseGroupManage();
-        if (groupManageTab === 'connections') return;
+        if (groupManageTab === 'connections' && !epmViewPreferenceDirty) return;
         if (firstRunSession) {
             const validation = validateFirstRunPendingGroup(groupDraft?.groups || [], firstRunSession.pendingGroupId);
             if (!validation.ok) {
@@ -669,6 +690,7 @@ export function useSharedConfigSave({
         const hasSharedSettingsChanges = canEditSharedConfiguration && isSharedConfigurationDraftDirty;
         const hasDepartmentSettingsChanges = Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current) || isGroupVisibilityDraftDirty;
         const hasEpmSettingsChanges = canEditEpmConfiguration && isEpmConfigDirty;
+        const hasEpmViewPreferenceChanges = epmViewPreferenceDirty === true;
         if (firstRunSession) dispatchFirstRunConfigurationSession({ type: 'save_sections_started' });
         let normalizedGroups = firstRunSession?.latestNormalizedGroups || groupsConfig;
         let committedSections = {
@@ -753,6 +775,24 @@ export function useSharedConfigSave({
                 if (firstRunSession) dispatchFirstRunConfigurationSession({
                     type: 'sections_progress', committedSections: { epm: true }, normalizedGroups,
                 });
+            }
+            if (hasEpmViewPreferenceChanges) {
+                const preferenceSaved = await saveEpmViewPreferenceAndRefresh();
+                if (!preferenceSaved.ok) {
+                    if (firstRunSession) {
+                        setGroupManageTab(activeDepartmentSettingsTab);
+                        dispatchFirstRunConfigurationSession({
+                            type: 'save_sections_failed', committedSections, committedAdminSections, error: preferenceSaved.error,
+                        });
+                    }
+                    return buildSettingsSaveOutcome({
+                        normalizedGroups,
+                        committedSections,
+                        pendingSections: { preference: Boolean(firstRunSession) },
+                        committedAdminSections,
+                        error: preferenceSaved.error,
+                    });
+                }
             }
             if (firstRunSession) {
                 dispatchFirstRunConfigurationSession({

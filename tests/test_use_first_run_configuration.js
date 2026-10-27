@@ -394,7 +394,7 @@ test('layer order and getter phase: the state layer precedes its first reader an
     const teamGroupsCall = at('} = useTeamGroupSettings({');
     const epmCall = at('} = useEpmSettings({');
     const handlersCall = at('} = useFirstRunConfiguration({');
-    const homeTokenEffect = at('if (!homeTokenConnectionLoaded) return;');
+    const homeTokenEffect = at('if (!epmHomeReadReady) return;');
     const modalOpenEffect = at('const nextGroupDraft = pendingDraft ? {');
     assert.ok(stateCall < teamGroupsCall, 'the state layer is called before useTeamGroupSettings, which reads firstRunConfigurationActive while rendering');
     assert.ok(epmCall < handlersCall && handlersCall < homeTokenEffect && handlersCall < modalOpenEffect, 'the handlers layer sits at the old handler position, after useEpmSettings and before the next unmoved effect');

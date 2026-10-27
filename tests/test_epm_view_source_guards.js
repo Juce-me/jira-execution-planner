@@ -1074,22 +1074,24 @@ function loadAutomaticEpmOwner() {
     const module={exports:{}}; new Function('module','exports','require',code)(module,module.exports,name=>name==='react'?fakeReact:require(name));
     return {useEpmViewData:module.exports.useEpmViewData,setters, render(props) { stateIndex=0;refIndex=0;return module.exports.useEpmViewData(props); }};
 }
-for (const failure of [null, 'null', '500', '409']) test(`EPM automatic transaction is silent and atomic for ${failure || 'success'}`, async () => {
+for (const failure of [null, 'null', '500', '403', '409', '429']) test(`EPM automatic transaction is silent and atomic for ${failure || 'success'}`, async () => {
     const {useEpmViewData,setters}=loadAutomaticEpmOwner(); const calls=[]; let home=0, leases=0;
     const prior=global.fetch;
     global.fetch=async (url,options)=>{
         calls.push({url,options});
         if(failure==='500')return new Response('{}',{status:500});
-        if(failure==='409')return new Response(JSON.stringify({error:'home_user_token_required'}),{status:409});
+        if(failure==='403')return new Response(JSON.stringify({error:'home_access_denied'}),{status:403});
+        if(failure==='409')return new Response(JSON.stringify({error:'epm_scope_required'}),{status:409});
+        if(failure==='429')return new Response('{}',{status:429});
         return new Response(JSON.stringify(url.includes('/rollup')?{projects:[],duplicates:{}}:failure==='null'?null:{projects:[{id:'synthetic',tabBucket:'active',label:'synthetic_label'}],cacheHit:false}),{status:200});
     };
-    const owner=useEpmViewData({backendUrl:'http://synthetic',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:'',onHomeTokenRequired:()=>home++});
+    const owner=useEpmViewData({backendUrl:'http://synthetic',selectedView:'epm',epmConfigLoaded:true,hasSavedEpmScope:true,selectedSprint:'synthetic-sprint',epmProjectSearch:'',epmProjectSort:'name',searchQuery:'',onHomeAccessDenied:()=>home++});
     try {
         const checks=await owner.refreshEpmView({job:{shouldApply:()=>true,signal:new AbortController().signal,pendingSources:['epm_projects','epm_rollup']},issueEditState:{beginRead(){leases++;return {};},finishRead(){leases--;},isCurrentAggregateRead:()=>true}});
-        assert.ok(Array.isArray(checks)); assert.equal(home,0);assert.equal(leases,0);
+        assert.ok(Array.isArray(checks)); assert.equal(home,failure==='403'?1:0);assert.equal(leases,0);
         assert.equal(setters.some(({index})=>[2,3,10,11].includes(index)),false,'no loading/error setters');
         if(!failure){assert.equal(calls.length,2);assert.ok(calls[0].url.includes('/projects?tab=active'));assert.ok(calls[1].url.includes('/rollup/all?tab=active&sprint=synthetic-sprint'));assert.equal(checks[0].checkKind,'forced');assert.equal(checks[1].checkKind,'unknown');}
-        else {assert.equal(setters.length,0);assert.equal(calls.length,1);assert.equal(checks[0].status,failure==='409'?'denied':'failed');}
+        else {assert.equal(setters.length,0);assert.equal(calls.length,1);assert.equal(checks[0].status,failure==='403'?'denied':failure==='429'?'rate_limited':'failed');}
     } finally {global.fetch=prior;}
 });
 
@@ -1185,3 +1187,40 @@ test('EPM metadata acceptance belongs to the current owner scope and survives on
         assert.equal(render(props).epmProjectsLoaded, false, 'external metadata clearing also clears its evidence');
     } finally { global.fetch = prior; }
 });
+
+// Explicit refresh paths share the automatic classifier: throttled/denied reads keep loaded content, a plain failure clears it,
+// only home_access_denied invalidates the Home availability gate, and Settings-style copy never echoes a provider payload.
+const explicitFailures = [
+    { name: 'rate limited', status: 429, body: {}, keeps: true, invalidates: 0 },
+    { name: 'home denied', status: 403, body: { error: 'home_access_denied' }, keeps: true, invalidates: 1 },
+    { name: 'jira denied', status: 403, body: { error: 'jira_access_denied' }, keeps: true, invalidates: 0 },
+    { name: 'failed', status: 502, body: { error: 'home_read_failed' }, keeps: false, invalidates: 0 },
+];
+for (const failure of explicitFailures) {
+    test(`EPM explicit all-projects rollup refresh ${failure.name}: ${failure.keeps ? 'keeps' : 'clears'} content, invalidation ${failure.invalidates}`, async () => {
+        const { useEpmViewData, setters } = loadAutomaticEpmOwner(), prior = global.fetch, originalError = console.error; let invalidations = 0;
+        console.error = () => {};
+        global.fetch = async url => url.includes('/rollup')
+            ? new Response(JSON.stringify(failure.body), { status: failure.status })
+            : new Response(JSON.stringify({ projects: [{ id: 'synthetic', tabBucket: 'active', label: 'synthetic_label' }], cacheHit: false }));
+        const owner = useEpmViewData({ backendUrl: 'http://synthetic', selectedView: 'epm', epmConfigLoaded: true, hasSavedEpmScope: true, selectedSprint: 'synthetic-sprint', epmProjectSearch: '', epmProjectSort: 'name', searchQuery: '', onHomeAccessDenied: () => { invalidations += 1; } });
+        try {
+            await owner.refreshEpmView();
+            assert.equal(invalidations, failure.invalidates);
+            assert.equal(setters.some(({ index, value }) => index === 6 && value === null), !failure.keeps);
+        } finally { global.fetch = prior; console.error = originalError; }
+    });
+    test(`EPM explicit project list refresh ${failure.name}: ${failure.keeps ? 'keeps' : 'clears'} the held projects and sets typed copy`, async () => {
+        const { useEpmViewData, setters } = loadAutomaticEpmOwner(), prior = global.fetch, originalError = console.error; let invalidations = 0;
+        console.error = () => {};
+        global.fetch = async () => new Response(JSON.stringify({ ...failure.body, rawProviderDetail: 'synthetic-secret' }), { status: failure.status });
+        const owner = useEpmViewData({ backendUrl: 'http://synthetic', selectedView: 'epm', epmConfigLoaded: true, hasSavedEpmScope: true, selectedSprint: 'synthetic-sprint', epmProjectSearch: '', epmProjectSort: 'name', searchQuery: '', onHomeAccessDenied: () => { invalidations += 1; } });
+        try {
+            await owner.refreshEpmProjects();
+            assert.equal(invalidations, failure.invalidates);
+            assert.equal(setters.some(({ index, value }) => index === 1 && Array.isArray(value) && value.length === 0), !failure.keeps);
+            const message = setters.filter(({ index }) => index === 3).map(({ value }) => value).pop();
+            assert.ok(message && !message.includes('synthetic-secret'));
+        } finally { global.fetch = prior; console.error = originalError; }
+    });
+}

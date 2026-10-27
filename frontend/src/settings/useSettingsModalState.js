@@ -42,8 +42,11 @@ export function useSettingsModal({
     canEditEpmConfiguration,
     canEditSharedConfiguration,
     departmentSettingsTab,
+    discardEpmViewPreference,
     epmConfigBaselineRef,
     epmConfigSaving,
+    epmViewPreferenceDirty,
+    epmViewPreferenceSaving,
     firstRunConfigurationActive,
     firstRunConfigurationSession,
     groupDraft,
@@ -139,6 +142,7 @@ export function useSettingsModal({
     };
 
     const discardGroupDraftChanges = () => {
+        discardEpmViewPreference();
         if (isEpmConfigDirty) {
             try {
                 setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
@@ -289,10 +293,10 @@ export function useSettingsModal({
             if (outcome?.error) setSettingsSaveError(outcome.error);
         });
     };
-    const settingsShowsSave = groupManageTab !== 'connections';
+    const settingsShowsSave = groupManageTab !== 'connections' || epmViewPreferenceDirty === true;
     const settingsSaveDisabled = Boolean(saveBlockedReason);
     const settingsSaveTitle = saveBlockedReason || '';
-    const settingsSaveLabel = groupSaving || epmConfigSaving
+    const settingsSaveLabel = groupSaving || epmConfigSaving || epmViewPreferenceSaving
         ? 'Saving...'
         : (firstRunConfigurationActive && groupPreferences.onboardingDone === false ? 'Save and continue' : 'Save');
 
@@ -352,6 +356,8 @@ export function useSettingsAutoOpenEffect({
 export function useSettingsHotkeyEffect({
     closeAllTeamSearchDropdowns,
     epmConfigSaving,
+    epmViewPreferenceDirty,
+    epmViewPreferenceSaving,
     firstRunConfigurationActive,
     firstRunConfigurationSession,
     groupManageTab,
@@ -370,8 +376,8 @@ export function useSettingsHotkeyEffect({
             const key = event.key;
             if ((event.metaKey || event.ctrlKey) && key.toLowerCase() === 's') {
                 event.preventDefault();
-                if (groupManageTab === 'connections') return;
-                if (!groupSaving && !epmConfigSaving) void saveAllSettings({
+                if (groupManageTab === 'connections' && !epmViewPreferenceDirty) return;
+                if (!groupSaving && !epmConfigSaving && !epmViewPreferenceSaving) void saveAllSettings({
                     firstRunSession: firstRunConfigurationActive ? firstRunConfigurationSession : null,
                 });
                 return;
@@ -400,7 +406,7 @@ export function useSettingsHotkeyEffect({
         };
         window.addEventListener('keydown', handleKey);
         return () => window.removeEventListener('keydown', handleKey);
-    }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, firstRunConfigurationActive, firstRunConfigurationSession, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
+    }, [showGroupManage, groupManageTab, groupSaving, epmConfigSaving, epmViewPreferenceDirty, epmViewPreferenceSaving, firstRunConfigurationActive, firstRunConfigurationSession, teamSearchOpen, showGroupDiscardConfirm, requestCloseGroupManage, saveAllSettings]);
 }
 
 export function useSettingsTabGuardEffects({

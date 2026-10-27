@@ -100,7 +100,6 @@ async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, configResponseGate = null,
     configStatus = 200, taskResponseGate = null, boardResponseGate = null, strictEpicKeyForRequest = null,
-    homeTokenDelayMs = 0, homeTokenFailureCount = 0,
     groupsResponseGate = null, groupsStatus = 200, groupsSource = 'test', groupPreferences = null,
     groupPreferencesResponseGate = null,
     sprintResponseGate = null, sprintResponder = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
@@ -132,7 +131,6 @@ async function installBoardFixture(page, {
         source: groupsSource,
     };
     let acceptedGroupPreferences = groupPreferences;
-    let homeTokenRequestCount = 0;
     let configRequestCount = 0;
     let groupsRequestCount = 0;
     let sprintRequestCount = 0;
@@ -177,12 +175,6 @@ async function installBoardFixture(page, {
             if (observationGate) await observationGate;
             if (performanceStatus !== 201) return json({ error: 'performance_unavailable' }, performanceStatus);
             return json({ recorded: true }, 201);
-        }
-        if (url.pathname === '/api/me/connections/home-token') {
-            homeTokenRequestCount += 1;
-            if (homeTokenDelayMs) await new Promise(resolve => setTimeout(resolve, homeTokenDelayMs));
-            if (homeTokenRequestCount <= homeTokenFailureCount) return route.abort('failed');
-            return json({ connected: false });
         }
         if (url.pathname === '/api/team-catalog') {
             return json({ catalog: { 'team-alpha': 'Alpha Team' }, meta: { source: 'test' } });
@@ -394,7 +386,7 @@ async function installBoardFixture(page, {
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
     configResponseGate, configStatus, taskResponseGate, boardResponseGate, strictEpicKeyForRequest,
-    homeTokenDelayMs, homeTokenFailureCount, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
+    groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
     selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
@@ -417,8 +409,6 @@ async function openBoard(page, {
         ...(taskResponseGate === undefined ? {} : { taskResponseGate }),
         ...(boardResponseGate === undefined ? {} : { boardResponseGate }),
         ...(strictEpicKeyForRequest === undefined ? {} : { strictEpicKeyForRequest }),
-        ...(homeTokenDelayMs === undefined ? {} : { homeTokenDelayMs }),
-        ...(homeTokenFailureCount === undefined ? {} : { homeTokenFailureCount }),
         ...(groupsResponseGate === undefined ? {} : { groupsResponseGate }),
         ...(groupsStatus === undefined ? {} : { groupsStatus }),
         ...(groupsSource === undefined ? {} : { groupsSource }),
@@ -2812,6 +2802,19 @@ test('selector scheduling: incrementally delivered retired frames cannot publish
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
 });
 
+// A non-automatic Sprint refresh is the one OAuth-mode read that reports an unreachable backend (the Home token status
+// read that used to do it at startup is gone), so the outage the Retry connection specs need starts from one aborted refresh.
+async function triggerConnectionOutage(page) {
+    let aborted = false;
+    await page.route('**/api/sprints**', route => {
+        if (aborted) return route.fallback();
+        aborted = true;
+        return route.abort('failed');
+    });
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+}
+
 test('selector scheduling: Retry connection probes config once and hard reloads instead of rereading in place', async ({ page }) => {
     const requests = [];
     let documents = 0;
@@ -2822,10 +2825,8 @@ test('selector scheduling: Retry connection probes config once and hard reloads 
         requests,
         sourceBundle: true,
         strictBoard: true,
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
     });
-    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+    await triggerConnectionOutage(page);
     await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
@@ -2864,15 +2865,13 @@ test('selector scheduling: Retry waits for an in-flight Department save before r
             activeGroupId: 'grp-default',
         },
         groupsResponseGate: ({ requestIndex }) => requestIndex === 2 ? groupSaveGate : null,
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
     });
     const groupSaves = () => requestLog.filter(entry => (
         entry.method === 'POST' && new URL(entry.url).pathname === '/api/groups-config'
     ));
 
     try {
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await triggerConnectionOutage(page);
         await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
         const dialog = page.getByRole('dialog').first();
         await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
@@ -2910,10 +2909,8 @@ for (const probeFailure of [
             sourceBundle: true,
             strictBoard: true,
             configStatus: ({ requestIndex }) => requestIndex === 2 ? probeFailure.status : 200,
-            homeTokenDelayMs: 1500,
-            homeTokenFailureCount: 1,
         });
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await triggerConnectionOutage(page);
         await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();

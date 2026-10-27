@@ -246,6 +246,34 @@ test('saveEpmConfig reaches the EPM view through the handler-only getter after s
     }
 });
 
+test('goal lookup shows typed OAuth failures as useful copy, while a Basic 200 + error body keeps its own text', async () => {
+    const previousFetch = global.fetch;
+    const reply = (status, payload, headers = {}) => ({ ok: status < 400, status, headers: new Headers(headers), body: null, clone() { return this; }, json: async () => payload });
+    const run = async (response) => {
+        global.fetch = async () => response;
+        const { result, setterCalls } = renderHook();
+        const outcome = await result.loadEpmSubGoalsForRoot('GOAL-1');
+        return { outcome, errors: setterCalls.filter(([name]) => name === 'setEpmSubGoalsError').map(([, value]) => value) };
+    };
+    try {
+        const limited = await run(reply(503, { error: 'home_rate_limited', message: 'RAW provider text', retryAfterSeconds: 9 }, { 'Retry-After': '9' }));
+        assert.equal(limited.outcome.lookupFailed, true);
+        assert.deepEqual(limited.errors.slice(-1), ['Atlassian Home is rate limiting requests. Try again in 9s.']);
+        const scope = await run(reply(409, { error: 'epm_scope_required', loginUrl: '/login?reason=missing_scope', message: 'RAW' }));
+        assert.match(scope.errors.slice(-1)[0], /Atlassian Home read permission is needed/);
+        const denied = await run(reply(403, { error: 'home_access_denied', message: 'RAW' }));
+        assert.match(denied.errors.slice(-1)[0], /did not grant access/);
+        const failed = await run(reply(502, { error: 'home_read_failed', message: 'RAW' }));
+        assert.match(failed.errors.slice(-1)[0], /could not be read/);
+        for (const { errors } of [limited, scope, denied, failed]) assert.equal(errors.some((text) => String(text).includes('RAW')), false);
+        const basic = await run(reply(200, { goals: [], error: 'Home lookup failed (Basic)' }));
+        assert.equal(basic.outcome.lookupFailed, true);
+        assert.deepEqual(basic.errors.slice(-1), ['Home lookup failed (Basic)']);
+    } finally {
+        global.fetch = previousFetch;
+    }
+});
+
 test('the four effects layers render with the hook outputs', () => {
     const { useEpmSettings, useEpmLabelMenuEffects, useEpmSettingsLoadEffect, useEpmSavedSubGoalsEffect, useEpmSettingsProjectsEffects } = loadHooks();
     const { inputs } = appInputs();

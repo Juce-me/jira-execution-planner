@@ -172,7 +172,7 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     assert.ok(/\{showGroupManage && \(\s*<LazyViewBoundary load=\{loadSettingsView\} fallback=\{settingsLoadingFallback\}>\s*\{SettingsModalContainer => <SettingsModalContainer/.test(dashboardSource), 'Expected the open-state conditional to stay in dashboard so closed Settings build no tab bodies');
     assert.ok(settingsModalCallSource.includes('activeTab={activeSettingsModalTab}'), 'Expected dashboard to pass grouped active settings tab into SettingsModal');
     assert.ok(settingsModalCallSource.includes('tabs={settingsModalTabs}'), 'Expected dashboard to pass tab descriptors into SettingsModal');
-    assert.ok(settingsModalCallSource.includes("isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
+    assert.ok(settingsModalCallSource.includes("isDirty={(groupManageTab !== 'connections' || epmViewPreferenceDirty === true) && isGroupDraftDirty}"), 'Expected dashboard to pass dirty state into SettingsModal');
     assert.ok(settingsModalCallSource.includes('onRequestClose={firstRunConfigurationActive ? () => {} : requestCloseGroupManage}'), 'Expected backdrop close handling to stay wired through dashboard and suppressed during the mandatory guide');
     assert.ok(settingsModalCallSource.includes('showDiscardConfirm={showGroupDiscardConfirm}'), 'Expected discard-confirm state to stay owned by dashboard');
     assert.ok(settingsModalCallSource.includes('onDiscard={discardGroupDraftChanges}'), 'Expected discard action to stay owned by dashboard');
@@ -361,7 +361,7 @@ test('dashboard source includes the EPM settings tab and lazy-load flow', () => 
     assert.ok(epmSettingsUiSource.includes('Loading main goals...'), 'Expected main goal loading copy');
     assert.ok(epmSettingsUiSource.includes('Loading sub-goals...'), 'Expected sub-goal loading copy');
     assert.ok(dashboardSource.includes('setShowGroupManage(true);') && epmSettingsHookSource.includes('setGroupManageTab(\'epm\');'), 'Expected EPM settings open action to switch tabs without mutating main EPM project state');
-    assert.ok(epmViewDataSource.includes("setEpmProjectsError(err?.message || 'Failed to load EPM projects.');"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
+    assert.ok(epmViewDataSource.includes("setEpmProjectsError(describeEpmReadError(err, 'Failed to load EPM projects.'));"), 'Expected EPM project refresh failures to surface distinct settings-state copy');
     assert.ok(epmSettingsHookSource.includes('setEpmRootGoalsError(String(rootGoalsPayload?.error || \'\').trim());'), 'Expected handled root-goal discovery errors to surface in picker state');
     assert.ok(epmSettingsHookSource.includes('const lookupError = String(payload?.error || \'\').trim();') && epmSettingsHookSource.includes('setEpmSubGoalsError(lookupError);'), 'Expected handled sub-goal discovery errors to surface in picker state');
     assert.ok(epmSettingsHookSource.includes("setGroupDraftError('Failed to load EPM settings.');"), 'Expected config-load failures to clear stale EPM draft state and surface an error');
@@ -425,7 +425,7 @@ test('dashboard calls the EPM settings layers at their original effect positions
     const analyticsPosition = positionOf('} = useDashboardAnalytics(React,');
     const hookPosition = positionOf('} = useEpmSettings({');
     const firstEpmStateReaderPosition = positionOf('} = useFirstRunConfiguration({');
-    const navigationEffectEnd = positionOf('}, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);');
+    const navigationEffectEnd = positionOf('}, [epmHomeReadReady, showEpmNavigation, selectedView]);');
     const labelMenuEffectsPosition = positionOf('useEpmLabelMenuEffects({');
     const modalOpenEffectEnd = positionOf('setTeamNameInputs(loadTeamsFromCurrentView());\n            }, [showGroupManage]);');
     const loadEffectPosition = positionOf('useEpmSettingsLoadEffect({');

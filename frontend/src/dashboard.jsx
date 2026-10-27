@@ -22,7 +22,7 @@ import LoadingState from './ui/LoadingState.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
+import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -157,7 +157,8 @@ import {
     useEpmSettingsProjectsEffects,
 } from './settings/useEpmSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
-import { fetchHomeTokenConnection } from './api/authApi.js';
+import { useEpmNavigationState } from './epm/useEpmNavigationState.js';
+import { useEpmViewPreference } from './settings/useEpmViewPreference.js';
 import { useDashboardFreshness } from './useDashboardFreshness.js';
 import DashboardFreshnessStatus from './components/DashboardFreshnessStatus.jsx';
 import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
@@ -338,8 +339,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
             const restoredInitialEpmViewRef = useRef(false);
             const [selectedView, setSelectedView] = useState(savedInitialViewRef.current === 'epm' ? 'eng' : savedInitialViewRef.current);
-            const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
-            const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
             const [authMode, setAuthMode] = useState('');
             const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team' });
             const {
@@ -376,11 +375,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 scenarioRefreshNonceRef,
                 scenarioGroupValues,
             } = scenarioState;
-            const hasActiveHomeTokenConnection = React.useMemo(
-                () => isActiveHomeTokenConnection(homeTokenConnection),
-                [homeTokenConnection]
-            );
-            const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
+            const {
+                applyEpmCapabilityConfig, epmAccess, epmCapabilities, epmReadReady: epmHomeReadReady,
+                invalidateHomeAvailability: invalidateEpmHomeAvailability, refreshEpmAccess, showEpmNavigation,
+            } = useEpmNavigationState({ backendUrl: BACKEND_URL });
             const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
             const selectedSprintRef = useRef(null);
             const planningReviewGuardRef = useRef(null), planningInteractionRef = useRef(false), capacityInteractionRef = useRef(false), planningAutomaticReadRef = useRef(0);
@@ -1039,40 +1037,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 authResumeStagedRevision,
                 setGroupDraftError,
             });
-            const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
-                try {
-                    const payload = await fetchHomeTokenConnection(BACKEND_URL);
-                    const nextConnection = payload || { connected: false };
-                    clearServerConnectionError();
-                    setHomeTokenConnection(nextConnection);
-                    return nextConnection;
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return null;
-                    reportServerConnectionError(err);
-                    setHomeTokenConnection({ connected: false });
-                    return { connected: false };
-                } finally {
-                    setHomeTokenConnectionLoaded(true);
-                }
-            }, [clearServerConnectionError, reportServerConnectionError]);
-            const markHomeTokenRequired = React.useCallback(() => {
-                setHomeTokenConnection({ connected: false });
-                setHomeTokenConnectionLoaded(true);
-                void refreshHomeTokenConnectionStatus();
-            }, [refreshHomeTokenConnectionStatus]);
-            const handleHomeTokenConnectionChange = React.useCallback((connection) => {
-                const nextConnection = connection || { connected: false };
-                setHomeTokenConnection(nextConnection);
-                setHomeTokenConnectionLoaded(true);
-            }, []);
-            useEffect(() => {
-                void refreshHomeTokenConnectionStatus();
-            }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, serverConnectionError });
+            const epmViewPreference = useEpmViewPreference({ BACKEND_URL, savedViewEnabled: epmCapabilities?.viewEnabled, trackSettingsAction });
+            const epmViewPreferenceDirty = epmViewPreference.isDirty;
             const {
                 groupsConfig,
                 setGroupsConfig,
@@ -1438,7 +1409,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 workspaceConfigConflict,
             });
             useEffect(() => {
-                if (!homeTokenConnectionLoaded) return;
+                if (!epmHomeReadReady) return;
                 if (showEpmNavigation) {
                     if (!restoredInitialEpmViewRef.current && savedInitialViewRef.current === 'epm') {
                         restoredInitialEpmViewRef.current = true;
@@ -1449,7 +1420,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (selectedView === 'epm') {
                     setSelectedView('eng');
                 }
-            }, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);
+            }, [epmHomeReadReady, showEpmNavigation, selectedView]);
             useEpmLabelMenuEffects({
                 epmLabelMenuAnchor,
                 epmLabelMenuInputRef,
@@ -1947,6 +1918,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectedView,
                 showEpmNavigation,
             });
+            // A changed saved EPM root goal (after the first load) is a new scope: recheck access once.
+            const epmAccessScopeRef = useRef(null);
+            useEffect(() => {
+                if (!epmConfigLoaded) return;
+                const previous = epmAccessScopeRef.current;
+                epmAccessScopeRef.current = savedEpmRootGoalKey || '';
+                if (previous !== null && previous !== epmAccessScopeRef.current) refreshEpmAccess();
+            }, [epmConfigLoaded, savedEpmRootGoalKey, refreshEpmAccess]);
             const {
                 epmTab,
                 setEpmTab,
@@ -1984,7 +1963,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 epmProjectSearch,
                 epmProjectSort,
                 searchQuery,
-                onHomeTokenRequired: markHomeTokenRequired,
+                onHomeAccessDenied: invalidateEpmHomeAvailability,
                 onServerConnectionFailure: reportServerConnectionError,
             });
             const epmSeenProjectKeysRef = useRef(new Set());
@@ -2068,6 +2047,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 applyCapacityLoaded,
                 applyJiraIssueTypesLoaded,
                 applyJiraProjectsAndBoardLoaded,
+                applyEpmCapabilityConfig,
                 applyPriorityWeightsLoaded,
                 applySavePermissions,
                 applySavedEpmConfig,
@@ -2084,6 +2064,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 dispatchFirstRunConfigurationSession,
                 epmConfigLoading,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
                 favoriteGroupValidationError,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
@@ -2119,10 +2100,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 persistGroupPreferences,
                 priorityWeightsValidationError,
                 queueConfigSaveRefresh,
+                refreshEpmAccess,
                 saveBoardConfig,
                 saveCapacityConfig,
                 saveDeliveryOwnerFieldConfig,
                 saveEpmConfig,
+                saveEpmViewPreference: epmViewPreference.save,
                 saveFirstRunGroupPreferences,
                 saveIssueTypesConfig,
                 saveParentNameFieldConfig,
@@ -2210,8 +2193,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 canEditEpmConfiguration,
                 canEditSharedConfiguration,
                 departmentSettingsTab,
+                discardEpmViewPreference: epmViewPreference.discard,
                 epmConfigBaselineRef,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
+                epmViewPreferenceSaving: epmViewPreference.saving,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
                 groupDraft,
@@ -2315,6 +2301,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             useSettingsHotkeyEffect({
                 closeAllTeamSearchDropdowns,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
+                epmViewPreferenceSaving: epmViewPreference.saving,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
                 groupManageTab,
@@ -2938,7 +2926,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
                 if (requestedSprint && String(selectedSprint) !== resume.selectedSprint) return;
                 if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
-                if (!sharedConfigReady || !homeTokenConnectionLoaded) return;
+                if (!sharedConfigReady || !epmHomeReadReady) return;
 
                 const nextView = resume.selectedView === 'epm' && showEpmNavigation ? 'epm' : 'eng';
                 const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
@@ -2956,7 +2944,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                 const settingsTabPermitted = resume.settingsTab === 'connections'
                     || DEPARTMENT_SETTINGS_TAB_IDS.has(resume.settingsTab)
-                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration && showEpmNavigation)
+                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration)
                     || (ADMIN_SETTINGS_TAB_IDS.has(resume.settingsTab) && canEditSharedConfiguration);
                 if (resume.settingsOpen && settingsTabPermitted) {
                     setGroupManageTab(resume.settingsTab);
@@ -2969,7 +2957,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 clearAuthResumeWhenSettled();
             }, [
                 activeGroupId, selectedSprint, selectedSprintState, planningScopeKey, visibleControlGroups, availableSprints,
-                sharedConfigReady, homeTokenConnectionLoaded, showEpmNavigation,
+                sharedConfigReady, epmHomeReadReady, showEpmNavigation,
                 canEditEpmConfiguration, canEditSharedConfiguration, clearAuthResumeWhenSettled,
                 authResumeStagedRevision,
             ]);
@@ -3427,6 +3415,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
+                    applyEpmCapabilityConfig(config);
                     setCapacityEnabled(Boolean(config.capacityProject || config.capacityConfigRequiresResolution));
                     applyBootstrapPermissions(config);
                     applyAdminSettingsGateConfig(config);
@@ -3592,7 +3581,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     || !sharedConfigReady
                     || !principal?.workspaceId
                     || !principal?.viewConfigId
-                    || !homeTokenConnectionLoaded
+                    || !epmHomeReadReady
                 ) return;
                 if (!readPendingAuthenticationRequired()) {
                     pendingShellAuthResumeRef.current = null;
@@ -3602,7 +3591,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clearAuthResumeWhenSettled();
                 }
             }, [
-                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, homeTokenConnectionLoaded,
+                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, epmHomeReadReady,
                 clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision,
                 markConnectionBootstrapHealthy,
             ]);
@@ -5656,7 +5645,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             });
             const shareViewOptions = {
                 sharedConfigReady, groupsLoading, groupsFailed: Boolean(groupsError || boardGroupsReadFailed), onboardingRequired: groupPreferences.onboardingRequired,
-                adminSettingsGate, sprintCatalogState, homeTokenConnectionLoaded, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
+                adminSettingsGate, sprintCatalogState, epmHomeReadReady, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
                 pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, pendingConnectionRecoveryRef, tourRunning: onboarding.run,
                 planningReviewBusy: Boolean(planningReview.dirty || planningReview.saving || planningReview.pendingScopeChange),
                 activeGroupId, selectedSprint, planningScopeKey, teamSelectionScopeKey, selectedView, selectedTeams, tasksFetched,
@@ -7207,6 +7196,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             cancelFirstRunConfiguration={cancelFirstRunConfiguration}
                             discardGroupDraftChanges={discardGroupDraftChanges}
                             discardMineOnGroupsConfigConflict={discardMineOnGroupsConfigConflict}
+                            epmViewPreferenceDirty={epmViewPreferenceDirty}
                             firstRunConfigurationActive={firstRunConfigurationActive}
                             firstRunHasCommittedSection={firstRunHasCommittedSection}
                             groupConfigValidationErrors={groupConfigValidationErrors}
@@ -7240,7 +7230,17 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 {groupManageTab === 'connections' && (
                                 <UserConnectionsSettings
                                     backendUrl={BACKEND_URL}
-                                    onConnectionChange={handleHomeTokenConnectionChange}
+                                    epmViewPreference={{
+                                        checked: epmViewPreference.checked,
+                                        onChange: epmViewPreference.setChecked,
+                                        saving: epmViewPreference.saving,
+                                        error: epmViewPreference.error,
+                                        savedEnabled: epmViewPreference.savedEnabled,
+                                        access: epmAccess || (epmCapabilities?.viewEnabled && !epmCapabilities?.homeReadAvailable
+                                            ? { state: 'scope_missing', loginUrl: epmCapabilities?.loginUrl || '' }
+                                            : null),
+                                        loginUrl: epmCapabilities?.loginUrl || '',
+                                    }}
                                 />
                                 )}
                                 {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (

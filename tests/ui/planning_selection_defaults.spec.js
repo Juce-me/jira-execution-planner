@@ -156,27 +156,25 @@ async function installPlanningFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            if (shellAuthDependency === 'home-token') {
+        if (url.pathname === '/api/epm/access') {
+            // The shell waits for this read when EPM is enabled: a late 401 lands after the groups loaded.
+            if (shellAuthDependency === 'epm-access') {
                 await shellAuthRelease;
                 return json(route, {
                     error: 'auth_required',
                     loginUrl: '/login?reason=session_expired',
                 }, 401);
             }
-            return json(route, {
-                connected: false,
-                provider: 'atlassian_user_api_token',
-                status: 'missing',
-                needsReconnect: false,
-            });
+            return json(route, { state: 'disabled', epmHomeReadAvailable: false });
         }
         if (url.pathname === '/api/config') {
             await configRelease;
             return json(route, {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
-                authMode: 'basic',
+                authMode: shellAuthDependency ? 'atlassian_oauth' : 'basic',
+                epmViewEnabled: shellAuthDependency === 'epm-access',
+                epmHomeReadAvailable: shellAuthDependency === 'epm-access',
                 projectsConfigured: true,
                 userCanEditSettings: true,
                 environmentConfigExists: true,
@@ -877,7 +875,7 @@ test('late authenticated config staging holds Jira work, then resumes shell and 
 
 test('typed auth during a shell dependency keeps the capsule for the next document', async ({ page }) => {
     await seedPlanningAuthResume(page, { engMode: 'catch-up' });
-    const fixture = await installPlanningFixture(page, { shellAuthDependency: 'home-token' });
+    const fixture = await installPlanningFixture(page, { shellAuthDependency: 'epm-access' });
     await page.goto(appBaseUrl);
 
     await expect.poll(() => fixture.calls.some(call => call.pathname === '/api/projects/selected')).toBe(true);
@@ -934,7 +932,7 @@ test('onboarding waits for delayed config and Home auth before deciding capsule 
     await seedPlanningAuthResume(page);
     const fixture = await installPlanningFixture(page, {
         delayConfig: true,
-        shellAuthDependency: 'home-token',
+        shellAuthDependency: 'epm-access',
         onboardingRequired: true,
     });
     await page.goto(appBaseUrl);

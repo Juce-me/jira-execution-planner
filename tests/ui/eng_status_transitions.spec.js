@@ -3,7 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
 } = require('./epm_home_token_fixture');
@@ -993,7 +993,7 @@ test('Opening the Settings modal makes ENG Catch Up status pills inert', async (
 test('EPM project boards render inert status pills, no triggers, and never call the transition API', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: (project) => ({
             projects: [{
                 project,

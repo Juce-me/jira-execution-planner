@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
 
 const viewports = [
     { name: 'desktop', width: 1440, height: 1000 },
@@ -57,19 +57,6 @@ async function mockSettings(page, overrides = {}) {
                     userCanEditSettings: true,
                     userCanEditEpmConfig: true,
                     epm: { ...epmConfig, ...(overrides.config || {}) },
-                }),
-            });
-        }
-        if (requestUrl.pathname === '/api/me/connections/home-token') {
-            return route.fulfill({
-                status: 200,
-                contentType: 'application/json',
-                body: JSON.stringify({
-                    connected: true,
-                    provider: 'atlassian_user_api_token',
-                    credentialSubject: 'profile@example.com',
-                    status: 'active',
-                    needsReconnect: false,
                 }),
             });
         }
@@ -139,7 +126,7 @@ async function mockSettings(page, overrides = {}) {
 }
 
 async function openEpmSettings(page) {
-    await page.goto('http://127.0.0.1:5050');
+    await page.goto(appBaseUrl);
     await page.getByRole('button', { name: /manage team groups/i }).click();
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('button', { name: 'EPM' }).click();
@@ -154,7 +141,7 @@ for (const viewport of viewports) {
             await mockSettings(page);
             await openEpmSettings(page);
             await expect(page.getByRole('tab', { name: 'Scope' })).toHaveAttribute('aria-selected', 'true');
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-scope-loaded.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-scope-loaded.png`, fullPage: true });
         });
 
         test('scope content scrolls above pinned footer on short screens', async ({ page }) => {
@@ -180,7 +167,7 @@ for (const viewport of viewports) {
             const footerBox = await dialog.locator('.group-modal-footer').boundingBox();
             const dialogBox = await dialog.boundingBox();
             expect(footerBox.y + footerBox.height).toBeLessThanOrEqual(dialogBox.y + dialogBox.height + 1);
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-scope-short-screen-scroll.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-scope-short-screen-scroll.png`, fullPage: true });
         });
 
         test('projects prerequisites', async ({ page }) => {
@@ -190,7 +177,7 @@ for (const viewport of viewports) {
             await expect(page.getByText('Setup required')).toBeVisible();
             await expect(page.getByRole('button', { name: 'Set sub-goal' })).toBeVisible();
             await expect(page.getByRole('button', { name: 'Set label prefix' })).toBeVisible();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-prerequisites.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-prerequisites.png`, fullPage: true });
         });
 
         test.skip('projects loading skeleton', async ({ page }) => {
@@ -198,7 +185,7 @@ for (const viewport of viewports) {
             await openEpmSettings(page);
             await page.getByRole('tab', { name: 'Projects' }).click();
             await expect(page.locator('.epm-project-skeleton-row').first()).toBeVisible();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-loading.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-loading.png`, fullPage: true });
         });
 
         test('projects many rows and long labels', async ({ page }) => {
@@ -209,7 +196,7 @@ for (const viewport of viewports) {
             await expect(page.getByText('No Jira label selected.').first()).toBeVisible();
             await expect(page.getByText('On track').first()).toBeVisible();
             await expect(page.getByText('Synthetic update').first()).toHaveCount(0);
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-many-rows.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-many-rows.png`, fullPage: true });
         });
 
         test('projects status and label columns stay aligned', async ({ page }) => {
@@ -241,7 +228,7 @@ for (const viewport of viewports) {
             const deleteBtn = customRow.getByRole('button', { name: /^Delete / });
             await expect(deleteBtn).toBeVisible();
             await deleteBtn.scrollIntoViewIfNeeded();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-empty-custom-delete.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-empty-custom-delete.png`, fullPage: true });
             await deleteBtn.click();
             await expect(customRow).toHaveCount(0);
         });
@@ -256,7 +243,7 @@ for (const viewport of viewports) {
             // 2b regression guard: opening from "Choose label" button alone (no input click) must show the menu
             await page.getByRole('button', { name: 'Choose label' }).last().click();
             await expect(page.locator('.epm-label-menu-layer')).toBeVisible();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-scrolled-label-menu.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-scrolled-label-menu.png`, fullPage: true });
         });
 
         test('projects label prefix pill and placeholder toggle (Change C)', async ({ page }) => {
@@ -274,12 +261,12 @@ for (const viewport of viewports) {
             // Wait for it to settle out of the 'Searching labels...' transient state
             const labelInput = rows.nth(1).locator('.team-search-wrapper input.team-search-input');
             await expect(labelInput).toHaveAttribute('placeholder', 'Labels starting with rnd_project_…');
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-label-prefix-pill.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-label-prefix-pill.png`, fullPage: true });
             // Click "Show all labels" — pill must disappear and placeholder must switch
             await rows.nth(1).getByRole('button', { name: 'Show all labels' }).click();
             await expect(rows.nth(1).locator('.epm-label-prefix-pill')).toHaveCount(0);
             await expect(labelInput).toHaveAttribute('placeholder', 'Search all Jira labels…');
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-label-show-all.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-label-show-all.png`, fullPage: true });
         });
 
         test('projects prefix strips trailing star before label request (2a guard)', async ({ page }) => {
@@ -328,11 +315,11 @@ for (const viewport of viewports) {
             await expect(rows).toHaveCount(initialCount - 1);
             // Section helper note about Jira Home must be visible
             await expect(page.getByText(/Removing a Home-discovered project only hides it until the next refresh/)).toBeVisible();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-home-row-deleted.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-home-row-deleted.png`, fullPage: true });
             // (c) Forced refresh via "Refresh from Jira Home" should restore the deleted Home row
             await page.getByRole('button', { name: 'Refresh from Jira Home' }).click();
             await expect(rows).toHaveCount(initialCount, { timeout: 5000 });
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-home-row-restored.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-home-row-restored.png`, fullPage: true });
         });
 
         test('projects error state', async ({ page }) => {
@@ -341,7 +328,7 @@ for (const viewport of viewports) {
             await page.getByRole('tab', { name: 'Projects' }).click();
             // The ENG Sprint catalog Retry behind the modal also exists since #196 (11c18401); scope to the dialog.
             await expect(page.getByRole('dialog').getByRole('button', { name: 'Retry' })).toBeVisible();
-            await page.screenshot({ path: `/tmp/epm-settings-qa/${viewport.name}-projects-error.png`, fullPage: true });
+            await page.screenshot({ path: `tmp/h4c/epm-settings-qa/${viewport.name}-projects-error.png`, fullPage: true });
         });
     });
 }

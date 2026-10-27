@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { activeHomeTokenConnection, installDashboardFixture } = require('./epm_home_token_fixture');
+const { enabledEpmOptions, installDashboardFixture } = require('./epm_home_token_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const repoRoot = path.join(__dirname, '..', '..');
@@ -128,7 +128,7 @@ function planningEpic() {
 }
 
 async function installFreshDashboard(page) {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -276,7 +276,7 @@ async function triggerAuth401(page, state) {
 }
 
 test('bootstrap 401 locks the mounted app behind one accessible sanitized recovery gate', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     let analyticsContextCalls = 0;
     let configCalls = 0;
     await page.route('**/api/analytics/context', async route => {
@@ -325,7 +325,7 @@ test('bootstrap 401 locks the mounted app behind one accessible sanitized recove
 });
 
 test('parallel 401 failures keep the first safe target and do not stack dialogs', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.route('**/api/config**', route => route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -342,14 +342,11 @@ test('parallel 401 failures keep the first safe target and do not stack dialogs'
     await expect(page.getByRole('alertdialog').getByRole('link')).toHaveAttribute('href', '/login?reason=missing_scope');
 });
 
-test('Home connection prerequisites retain targeted semantics without locking', async ({ page }) => {
+test('Home access denial retains targeted semantics without locking', async ({ page }) => {
     await page.addInitScript(() => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ selectedView: 'epm' }));
     });
-    await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
-        epmPrerequisite: true,
-    });
+    await installDashboardFixture(page, enabledEpmOptions({ epmAccess: { state: 'denied' } }));
     await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
 
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
@@ -359,10 +356,11 @@ test('Home connection prerequisites retain targeted semantics without locking', 
     await settings.getByRole('button', { name: 'Connections', exact: true }).click();
     await expect(settings.getByText('Not connected')).toBeVisible();
     await expect(settings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
+    await expect(settings.getByText('No access')).toBeVisible();
 });
 
 test('admin_required and csrf_required remain non-terminal application errors', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
     for (const error of ['admin_required', 'csrf_required']) {
         await page.unroute('**/api/analytics/context');
@@ -392,7 +390,7 @@ test('a latch published between render and external-store subscription is not mi
             return addEventListener(type, listener, options);
         };
     });
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByRole('alertdialog')).toBeVisible();
@@ -400,7 +398,7 @@ test('a latch published between render and external-store subscription is not mi
 });
 
 test('focus refresh 401 before dashboard bootstrap is visible to the later root gate without redirect', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.route('**/api/auth/refresh', route => route.fulfill({
         status: 401,
         contentType: 'application/json',
@@ -414,7 +412,7 @@ test('focus refresh 401 before dashboard bootstrap is visible to the later root 
 });
 
 test('an initialized enabled analytics session emits one privacy-safe auth lock event', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page);
     await page.route('**/api/analytics/context', route => route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -465,7 +463,7 @@ test('an initialized enabled analytics session emits one privacy-safe auth lock 
 });
 
 test('an initialized disabled analytics session emits no auth event', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, enabledEpmOptions());
     await page.route('**/api/analytics/context', route => route.fulfill({
         status: 200,
         contentType: 'application/json',

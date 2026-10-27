@@ -12,6 +12,7 @@ import {
     fetchEpmScope,
     saveEpmConfig as requestSaveEpmConfig,
 } from '../api/epmApi.js';
+import { describeEpmReadError } from '../dashboardRuntime.js';
 import { fetchJiraLabels as requestJiraLabels } from '../api/jiraCatalogApi.js';
 import {
     filterEpmSettingsProjectsForView,
@@ -184,7 +185,7 @@ export function useEpmSettings({
             }
             if (isAuthenticationRequiredError(err)) return [];
             console.error('Failed to load EPM projects:', err);
-            setEpmSettingsProjectsError(err?.message || 'Failed to load EPM projects.');
+            setEpmSettingsProjectsError(describeEpmReadError(err, 'Failed to load EPM projects.'));
             return [];
         } finally {
             if (epmSettingsProjectsRequestIdRef.current === requestId) {
@@ -515,7 +516,7 @@ export function useEpmSettings({
             if (isAuthenticationRequiredError(err)) return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
             console.error('Failed to fetch EPM sub-goals:', err);
             setEpmSubGoals([]);
-            setEpmSubGoalsError(err?.message || '');
+            setEpmSubGoalsError(describeEpmReadError(err));
             return { goals: [], hasExpectedSubGoal: true, lookupFailed: true };
         } finally {
             if (epmSubGoalsRequestIdRef.current === requestId) {
@@ -1115,7 +1116,7 @@ export function useEpmSettingsLoadEffect({
                 if (isAuthenticationRequiredError(err)) return;
                 console.error('Failed to load EPM scope metadata:', err);
                 if (!cancelled) {
-                    setEpmScopeMeta({ cloudId: '', error: err?.message || '' });
+                    setEpmScopeMeta({ cloudId: '', error: describeEpmReadError(err) });
                 }
             }
             if (cancelled) return;
@@ -1131,7 +1132,7 @@ export function useEpmSettingsLoadEffect({
                 console.error('Failed to load EPM root goals:', err);
                 if (!cancelled) {
                     setEpmRootGoals([]);
-                    setEpmRootGoalsError(err?.message || '');
+                    setEpmRootGoalsError(describeEpmReadError(err));
                 }
             } finally {
                 if (!cancelled) {

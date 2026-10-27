@@ -3,7 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
 } = require('./epm_home_token_fixture');
@@ -501,7 +501,7 @@ test('Statistics, Scenario, and Settings-open ENG surfaces never call Project Tr
 test('EPM project boards render no interactive Project Track trigger and never call the Project Track API', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: (project) => ({
             projects: [{
                 project,

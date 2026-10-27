@@ -28,11 +28,11 @@ At the start of any session touching auth, DB, Home/Townsquare, EPM, or plan exe
 1. Open every `docs/plans/GATE-*.md` file.
 2. Check whether the external blocker might have changed.
 3. If the gate can be re-tested safely, run the gate command exactly as documented.
-4. Update `Checked on` and `Last result` in the status table.
+4. Update `Checked on` and `Last result` in the status table only when the result changed or `Next review` has passed.
 5. Do not mark the gate as passed without command output showing the required `PASS` result.
 6. Do not paste personal emails, API tokens, Authorization headers, raw GraphQL responses, OAuth callback URLs, bearer tokens, or refresh tokens into the gate document.
 
-If the required credentials or approved disposable Home project are unavailable, update `Checked on` and keep `Status` as `Blocked`.
+If the required credentials or approved disposable Home project are unavailable and the result is unchanged, leave the file untouched unless `Next review` has passed; then update `Checked on` and `Next review` and keep `Status` as `Blocked`.
 
 ## Gate Command
 

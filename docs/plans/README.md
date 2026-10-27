@@ -8,10 +8,11 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - `EXEC-*`: implementation-ready execution plans. Run these in numeric order unless a plan says it is gated or explicitly independent of the previous `EXEC-*` plan.
 - `DONE-*`: completed and verified execution plans. Keep these for audit/history only; do not execute them as active plans.
-- `GATE-*`: blocked external capability gates. Check these at session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, then update `Checked on` and `Last result`.
+- `GATE-*`: blocked external capability gates. Check these at session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, then update `Checked on` and `Last result` only when the result changed or `Next review` has passed.
 - `SUPPORT-*`: review, handoff, or operator support documents. Do not execute them as implementation plans.
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
+- Index entries are one line each (`- [Title](PREFIX-name.md): one-sentence scope`); plan status lives only in the plan's top `> **Status:**`. The file merges with `merge=union` and each plan link must appear exactly once (`tests/test_agents_md_learnings.py`).
 
 ## Dashboard data freshness
 
@@ -680,7 +681,7 @@ Use this section to avoid treating missing historical artifacts as current work:
 ## Expectations
 
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.
-- At session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, check every `GATE-*` doc and update `Checked on` plus `Last result`.
+- At session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, check every `GATE-*` doc; update `Checked on` plus `Last result` only when the result changed or `Next review` has passed.
 - Keep Home/Townsquare user 3LO blocked unless `scripts/check_home_graphql_oauth.py` records a real `PASS home_graphql_3lo_supported`.
 - Before the `DONE-04` commits, workspace Home/Townsquare reads were service-integration-backed while the Home 3LO gate failed.
 - `DONE-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.

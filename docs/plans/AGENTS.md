@@ -36,9 +36,13 @@ At the start of any session that touches auth, DB, Home/Townsquare, EPM, or plan
 2. Open each `GATE-*` file.
 3. Check whether the external blocker might now be testable.
 4. Run the gate command only when the file's required credentials, approved target, and safety constraints are available.
-5. Update the gate's `Checked on` and `Last result` fields.
+5. Update the gate's `Checked on` and `Last result` fields only when the result changed or the recorded `Next review` date has passed; otherwise leave the file untouched.
 6. Keep `Status` as `Blocked` unless the required command prints the documented `PASS` result.
 7. Never paste token material, personal emails, Authorization headers, OAuth callback URLs, bearer tokens, refresh tokens, or raw sensitive probe payloads into the gate doc.
+
+## Plan Index Convention
+
+Each plan has one one-line link entry in `docs/plans/README.md`; plan status lives only in the plan's top `> **Status:**` line, never restated in the index entry. `tests/test_agents_md_learnings.py` fails if a plan link appears twice (the index merges with `merge=union`).
 
 ## Plan Review Prompt
 

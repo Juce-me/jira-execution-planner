@@ -683,7 +683,7 @@ Use this section to avoid treating missing historical artifacts as current work:
 - Before the `DONE-04` commits, workspace Home/Townsquare reads were service-integration-backed while the Home 3LO gate failed.
 - `DONE-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.
 - Commit each completed task with the commit message specified in the plan.
-- Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed, verified, and accepted or merged, then add a top status note with the execution commit or PR.
+- Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed and verified, in the commit that completes the work and before the push or PR (merge is not required first; a plan executed across several PRs keeps `EXEC-*` until the PR that completes it), then add a top status note with the execution branch, commit or PR.
 
 ## Repo Hygiene
 

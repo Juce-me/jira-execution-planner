@@ -497,6 +497,39 @@ test('a loaded description is clamped to 11.5rem and Show full description expan
     await page.screenshot({ path: `${screenshotDir}/panel-expanded.png` });
 });
 
+test('Show full description widens the panel within the viewport and Show less restores it', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 1440, height: 900 });
+    await openPanel(page, 'PLAT-1');
+    const width = () => panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    const normal = await width();
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).toHaveClass(/is-description-expanded/);
+    const wide = await width();
+    expect(wide).toBeGreaterThan(normal + 100);
+    const box = await panel(page).evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+    });
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(box.viewport);
+    await page.screenshot({ path: `${screenshotDir}/panel-expanded-wide.png` });
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).not.toHaveClass(/is-description-expanded/);
+    expect(Math.abs((await width()) - normal)).toBeLessThanOrEqual(1);
+});
+
+test('Show full description leaves the narrow-viewport panel width unchanged', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 375, height: 812 });
+    await openPanel(page, 'PLAT-1');
+    const before = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).toHaveClass(/is-description-expanded/);
+    const after = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+});
+
 test('a description H1 appears without an entrance animation', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls, { descriptionHtml: HEADING_DESCRIPTION_HTML });

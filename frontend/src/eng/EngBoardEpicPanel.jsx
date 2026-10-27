@@ -288,7 +288,7 @@ export default function EngBoardEpicPanel({
             onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}
         >
             <div
-                className="epic-panel"
+                className={`epic-panel${expanded ? ' is-description-expanded' : ''}`}
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby={titleId}

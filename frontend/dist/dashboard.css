@@ -5758,6 +5758,12 @@ button.toggle.applied-filter.active {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
   text-align: left;
 }
+.eng-board .epic-panel.is-description-expanded {
+  width: min(1000px, 100%);
+}
+.eng-board .epic-panel.is-description-expanded .m-desc {
+  max-width: none;
+}
 .eng-board .m-head {
   padding: 1.1rem 1.25rem 1rem;
   border-bottom: 1px solid var(--border);

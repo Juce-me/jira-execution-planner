@@ -52,7 +52,7 @@ from backend.auth.context import RequestAuthContext, build_auth_cache_key, stabl
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
 from backend.auth.csrf import csrf_session_data_for_auth_context, validate_csrf_token
-from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
+from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context, revalidate_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
 from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
@@ -766,8 +766,36 @@ def _cache_policy_context(context=None):
     if context is not None:
         return context
     if has_request_context():
-        return current_request_auth_context()
+        memo = g.get('epm_guard_context')
+        return memo if memo is not None else current_request_auth_context()
     return None
+
+
+def memoize_epm_guard_context():
+    """EPM blueprint before_request: keep the guard's context and build the one Home snapshot."""
+    g.epm_guard_context = current_request_auth_context()
+    resolve_epm_home_read_auth()
+
+
+def resolve_epm_home_read_auth(context=None):
+    """The request's single Home read snapshot (memoized on `g`; workers get the captured object)."""
+    in_request = has_request_context()
+    memo = g.get('epm_home_read_auth') if in_request else None
+    if memo is not None and (
+        context is None
+        or (memo.context.auth_connection_id, memo.context.user_id) == (context.auth_connection_id, context.user_id)
+    ):
+        return memo
+    auth_context = context if context is not None else _cache_policy_context()
+    snapshot = epm_home.HomeReadAuth(
+        epm_home.select_epm_home_read_profile(auth_context),
+        auth_context,
+        revalidate=lambda captured: revalidate_db_request_auth_context(captured, required_scopes=ATLASSIAN_SCOPES),
+        load_session=db_oauth_session_data_for_auth_context,
+    )
+    if in_request and context is None:
+        g.epm_home_read_auth = snapshot
+    return snapshot
 
 
 def auth_error_response(error, status=401):
@@ -2052,8 +2080,11 @@ def get_jira_issue_cache_generation():
 register_service_integration_cache_invalidator(clear_auth_sensitive_caches)
 
 
-def build_epm_projects_dependencies(context=None, epm_config_override=None):
-    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+def build_epm_projects_dependencies(context=None, epm_config_override=None, home_auth=None):
+    auth_context = context if context is not None else (_cache_policy_context() if has_request_context() else None)
+    if home_auth is None and auth_context is not None:
+        home_auth = resolve_epm_home_read_auth(auth_context)
+    strict_home = home_auth if home_auth is not None and home_auth.strict else None
     fetch_context = auth_context if auth_context is not None and not jira_home_process_cache_enabled(auth_context) else None
     config_snapshot = normalize_epm_config(
         epm_config_override
@@ -2063,9 +2094,11 @@ def build_epm_projects_dependencies(context=None, epm_config_override=None):
     get_config = lambda: config_snapshot
     return epm_projects.EpmProjectsDependencies(
         fetch_epm_home_projects=(
-            lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context)
+            (lambda epm_scope: fetch_epm_home_projects(epm_scope, home_auth=strict_home))
+            if strict_home is not None
+            else (lambda epm_scope: fetch_epm_home_projects(epm_scope, context=fetch_context))
             if fetch_context is not None
-            else fetch_epm_home_projects(epm_scope)
+            else (lambda epm_scope: fetch_epm_home_projects(epm_scope))
         ),
         merge_epm_linkage=merge_epm_linkage,
         normalize_epm_config=normalize_epm_config,
@@ -2078,21 +2111,22 @@ def build_epm_projects_dependencies(context=None, epm_config_override=None):
         abort_not_found=abort,
         context=auth_context,
         config_generation=build_epm_config_generation(config_snapshot),
+        home_auth=strict_home,
     )
 
 
-def build_epm_home_projects_state(epm_scope, force_refresh=False):
+def build_epm_home_projects_state(epm_scope, force_refresh=False, home_auth=None):
     return epm_projects.build_epm_home_projects_state(
         epm_scope,
-        build_epm_projects_dependencies(),
+        build_epm_projects_dependencies(home_auth=home_auth),
         force_refresh=force_refresh,
     )
 
 
-def get_cached_epm_home_projects(epm_scope, force_refresh=False):
+def get_cached_epm_home_projects(epm_scope, force_refresh=False, home_auth=None):
     return epm_projects.get_cached_epm_home_projects(
         epm_scope,
-        build_epm_projects_dependencies(),
+        build_epm_projects_dependencies(home_auth=home_auth),
         force_refresh=force_refresh,
     )
 
@@ -2218,8 +2252,11 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
     return raw_issues
 
 
-def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None):
-    auth_context = context if context is not None else (current_request_auth_context() if has_request_context() else None)
+def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None, home_auth=None):
+    auth_context = context if context is not None else (_cache_policy_context() if has_request_context() else None)
+    if home_auth is None and auth_context is not None:
+        home_auth = resolve_epm_home_read_auth(auth_context)
+    strict_home = home_auth if home_auth is not None and home_auth.strict else None
     epm_config_snapshot = epm_config_override if epm_config_override is not None else get_epm_config(context=auth_context)
     base_jql_snapshot = build_base_jql()
     story_points_field_id_snapshot = get_story_points_field_id()
@@ -2231,6 +2268,7 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
             epm_config_override=epm_config_snapshot,
+            home_auth=home_auth,
         ),
         normalize_epm_text=normalize_epm_text,
         validate_epm_tab_sprint=validate_epm_tab_sprint,
@@ -2273,6 +2311,7 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
         context=auth_context,
         config_generation=build_epm_config_generation(epm_config_snapshot),
+        authorize_cache=strict_home.revalidate if strict_home is not None else None,
     )
 
 
@@ -2305,10 +2344,10 @@ def find_epm_config_row(projects, project_id):
     return epm_projects.find_epm_config_row(projects, project_id)
 
 
-def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None):
+def build_epm_projects_payload(epm_config, force_refresh=False, tab=None, sub_goal_keys=None, context=None, home_auth=None):
     return epm_projects.build_epm_projects_payload(
         epm_config,
-        build_epm_projects_dependencies(context=context, epm_config_override=epm_config),
+        build_epm_projects_dependencies(context=context, epm_config_override=epm_config, home_auth=home_auth),
         force_refresh=force_refresh,
         tab=tab,
         sub_goal_keys=sub_goal_keys,
@@ -2324,7 +2363,8 @@ def collect_epm_rollup_issue_keys(rollup):
 
 
 def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
-    auth_context = current_request_auth_context() if has_request_context() else None
+    auth_context = _cache_policy_context() if has_request_context() else None
+    home_auth = resolve_epm_home_read_auth(auth_context) if auth_context is not None else None
     epm_config_snapshot = get_epm_config(context=auth_context)
     return epm_aggregate.build_all_epm_projects_rollup(
         tab,
@@ -2334,24 +2374,26 @@ def build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=None):
             validate_epm_tab_sprint=validate_epm_tab_sprint,
             get_epm_config=lambda: epm_config_snapshot,
             build_epm_projects_payload=lambda config, **kwargs: build_epm_projects_payload(
-                config, context=auth_context, **kwargs,
+                config, context=auth_context, home_auth=home_auth, **kwargs,
             ),
             filter_epm_projects_for_tab=filter_epm_projects_for_tab,
             build_epm_rollup_dependencies=lambda **kwargs: build_epm_rollup_dependencies(
                 context=auth_context,
                 epm_config_override=epm_config_snapshot,
+                home_auth=home_auth,
                 **kwargs,
             ),
             get_epm_project_payload_identity=get_epm_project_payload_identity,
             build_empty_epm_rollup_payload=build_empty_epm_rollup_payload,
             build_per_project_rollup=build_per_project_rollup,
             logger=logger,
+            home_auth=home_auth,
         ),
         sub_goal_keys=sub_goal_keys,
     )
 
 
-def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None):
+def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_config_override=None, home_auth=None):
     requested_sub_goal_keys = epm_projects.normalize_epm_sub_goal_keys(sub_goal_keys)
     if requested_sub_goal_keys:
         epm_config = (
@@ -2363,6 +2405,7 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_co
             epm_config,
             sub_goal_keys=requested_sub_goal_keys,
             context=context,
+            home_auth=home_auth,
         )
         for project in projects_payload.get('projects') or []:
             candidates = [
@@ -2374,7 +2417,7 @@ def find_epm_project_or_404(project_id, sub_goal_keys=None, context=None, epm_co
         abort(404)
     return epm_projects.find_epm_project_or_404(
         project_id,
-        build_epm_projects_dependencies(context=context, epm_config_override=epm_config_override),
+        build_epm_projects_dependencies(context=context, epm_config_override=epm_config_override, home_auth=home_auth),
     )
 
 
@@ -2437,15 +2480,23 @@ def get_epm_config(context=None, source='auto'):
     return normalize_epm_config(config.get('epm') or {})
 
 
-def fetch_home_site_cloud_id(context=None):
+def fetch_home_site_cloud_id(context=None, home_auth=None):
     auth_context = _cache_policy_context(context)
+    if home_auth is None and auth_context is not None:
+        home_auth = resolve_epm_home_read_auth(auth_context)
+    if home_auth is not None and home_auth.strict:
+        return epm_home.fetch_home_site_cloud_id(home_auth=home_auth)
     if auth_context is not None:
         return epm_home.fetch_home_site_cloud_id(context=auth_context)
     return epm_home.fetch_home_site_cloud_id()
 
 
-def _build_epm_home_graphql_client(context=None):
+def _build_epm_home_graphql_client(context=None, home_auth=None):
     auth_context = _cache_policy_context(context)
+    if home_auth is None and auth_context is not None:
+        home_auth = resolve_epm_home_read_auth(auth_context)
+    if home_auth is not None and home_auth.strict:
+        return home_auth.client()
     credential = epm_home._read_metadata_credential(auth_context)
     return (
         epm_home.build_home_graphql_client(credential)
@@ -2454,10 +2505,10 @@ def _build_epm_home_graphql_client(context=None):
     )
 
 
-def fetch_epm_goal_catalog(context=None):
+def fetch_epm_goal_catalog(context=None, home_auth=None):
     auth_context = _cache_policy_context(context)
-    client = _build_epm_home_graphql_client(context=auth_context)
-    cloud_id = fetch_home_site_cloud_id(context=auth_context)
+    client = _build_epm_home_graphql_client(context=auth_context, home_auth=home_auth)
+    cloud_id = fetch_home_site_cloud_id(context=auth_context, home_auth=home_auth)
     container_id = epm_home._container_id_from_cloud(cloud_id)
     return client.execute_paginated(
         epm_home.QUERY_GOALS_SEARCH,
@@ -2466,10 +2517,10 @@ def fetch_epm_goal_catalog(context=None):
     )
 
 
-def fetch_epm_sub_goals(root_goal_key, context=None):
+def fetch_epm_sub_goals(root_goal_key, context=None, home_auth=None):
     auth_context = _cache_policy_context(context)
-    client = _build_epm_home_graphql_client(context=auth_context)
-    cloud_id = fetch_home_site_cloud_id(context=auth_context)
+    client = _build_epm_home_graphql_client(context=auth_context, home_auth=home_auth)
+    cloud_id = fetch_home_site_cloud_id(context=auth_context, home_auth=home_auth)
     container_id = epm_home._container_id_from_cloud(cloud_id)
     return epm_home.fetch_sub_goals_for_root_key(client, root_goal_key, container_id, context=auth_context)
 

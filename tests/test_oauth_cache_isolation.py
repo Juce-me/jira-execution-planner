@@ -302,7 +302,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
                 'CAPACITY_FIELD_CACHE',
             ],
             'backend/epm/issues.py': ['cache_key'],
-            'backend/epm/home.py': ['_CLOUD_ID_CACHE', '_GOAL_BY_KEY_CACHE'],
+            'backend/epm/home.py': ['_CLOUD_ID_CACHE', '_GOAL_BY_KEY_CACHE', '_STRICT_GOAL_LOOKUP_CACHE'],
             'backend/epm/projects.py': ['build_epm_home_projects_cache_key'],
             'backend/epm/rollup.py': ['cache_key'],
         }

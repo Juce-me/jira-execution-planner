@@ -35,6 +35,8 @@ class EpmRollupDependencies:
     cache_ttl_seconds: int
     context: object = None
     config_generation: str = ''
+    # Strict Home reads: forced direct authority check returning the context for cache keys.
+    authorize_cache: Callable | None = None
     now: Callable = time.time
 
 
@@ -143,12 +145,22 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         return deps.build_empty_epm_rollup_payload(project, metadata_only=True), 200, {}
 
     base_jql = deps.build_base_jql()
-    cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
-    cache_key = build_jira_home_process_cache_key(
-        deps.context,
-        f"{project_id}::{tab}::{sprint}::{label}::{base_jql}",
-        deps.config_generation,
-    )
+    key_part = f"{project_id}::{tab}::{sprint}::{label}::{base_jql}"
+
+    def cache_key_for(context):
+        return build_jira_home_process_cache_key(context, key_part, deps.config_generation)
+
+    key_context = deps.authorize_cache() if deps.authorize_cache else deps.context
+    cache_enabled = jira_home_partitioned_process_cache_enabled(key_context)
+    cache_key = cache_key_for(key_context)
+
+    def admit(value):
+        if not cache_enabled:
+            return
+        admission_key = cache_key_for(deps.authorize_cache()) if deps.authorize_cache else cache_key
+        with deps.cache_lock:
+            deps.cache[admission_key] = {'timestamp': deps.now(), 'data': value}
+
     cached = None
     if cache_enabled:
         with deps.cache_lock:
@@ -184,9 +196,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     q1_raw = deps.fetch_epm_rollup_query(q1_jql, 'q1', headers, fields_list, truncated_queries)
     if not q1_raw:
         payload = deps.build_empty_epm_rollup_payload(project, empty_rollup=True)
-        if cache_enabled:
-            with deps.cache_lock:
-                deps.cache[cache_key] = {'timestamp': deps.now(), 'data': payload}
+        admit(payload)
         return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}
 
     q1_issues, _ = deps.shape_epm_rollup_issue_payload(q1_raw, epic_link_field_id=epic_link_field_id, team_field_id=team_field_id)
@@ -238,9 +248,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         payload = deps.build_empty_epm_rollup_payload(project, empty_rollup=True)
         payload['truncated'] = bool(truncated_queries)
         payload['truncatedQueries'] = truncated_queries
-        if cache_enabled:
-            with deps.cache_lock:
-                deps.cache[cache_key] = {'timestamp': deps.now(), 'data': payload}
+        admit(payload)
         return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}
     payload = {
         'project': project,
@@ -250,7 +258,5 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         'truncatedQueries': truncated_queries,
         **hierarchy,
     }
-    if cache_enabled:
-        with deps.cache_lock:
-            deps.cache[cache_key] = {'timestamp': deps.now(), 'data': payload}
+    admit(payload)
     return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}

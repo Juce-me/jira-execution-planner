@@ -335,6 +335,7 @@ def frozen_epm_time(frozen):
 KNOWN_EPM_CACHES = {
     ('jira_server', 'EPM_PROJECTS_CACHE'), ('jira_server', 'EPM_ISSUES_CACHE'), ('jira_server', 'EPM_ROLLUP_CACHE'),
     ('backend.epm.home', '_CLOUD_ID_CACHE'), ('backend.epm.home', '_GOAL_BY_KEY_CACHE'),
+    ('backend.epm.home', '_STRICT_GOAL_LOOKUP_CACHE'),
 }
 
 
@@ -344,6 +345,7 @@ def reset_epm_caches():
     jira_server.EPM_ROLLUP_CACHE.clear()
     epm_home._CLOUD_ID_CACHE.clear()
     epm_home._GOAL_BY_KEY_CACHE.clear()
+    epm_home._STRICT_GOAL_LOOKUP_CACHE.clear()
 
 
 # --------------------------------------------------------------------------
@@ -432,9 +434,80 @@ class DbUserTokenModeRunner:
         return self.client.get(path)
 
 
+HOME_READ_SCOPES = ('read:goal:goals', 'read:access:goals', 'read:project:projects', 'read:access:projects')
+
+
+class FakeOAuthHttpResponse(FakeHttpResponse):
+    status = 200
+
+
+def _strip_identity_fields(value):
+    """Emulate the public documents' projection: they never select owner or creator."""
+    if isinstance(value, dict):
+        return {k: _strip_identity_fields(v) for k, v in value.items() if k not in ('owner', 'creator')}
+    if isinstance(value, list):
+        return [_strip_identity_fields(v) for v in value]
+    return value
+
+
+class DbOAuthPublicReadRunner:
+    """Candidate: DB OAuth browser session whose provider grant has the four Home read scopes, NO Home API token.
+
+    Home I/O goes to the fixed OAuth endpoint with a Bearer token; the raw Home server answers by operation name
+    and the adapter drops owner/creator like the real public documents. A request to any other Home endpoint,
+    or with Basic credentials, is recorded as unexpected.
+    """
+    name = 'db_oauth_public_read'
+
+    def enter(self, stack, fixture, transports):
+        from tests import test_db_oauth_cutover as cutover
+        from backend.db import models
+
+        self.home_email = ''
+        helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
+        helper.setUp()
+        stack.callback(helper.tearDown)
+        self.helper = helper
+        callback = helper._store_callback_through_route(client=helper.client)
+        stack.enter_context(helper._db_route_mode())
+        with helper.factory() as session:
+            connection = session.get(models.AuthConnection, callback.connection_id)
+            connection.scopes = sorted(set(connection.scopes or []) | set(HOME_READ_SCOPES))
+            connection.scope_provenance = 'provider'
+            session.commit()
+            self.context = RequestAuthContext(
+                auth_mode='atlassian_oauth', user_id=connection.user_id,
+                stable_subject='account-123', atlassian_account_id='account-123',
+                workspace_id=connection.workspace_id, auth_connection_id=connection.id,
+                cloud_id=connection.cloud_id, site_url='https://example.atlassian.net',
+                token_version=str(connection.token_version), account_status='active', is_admin=False,
+            )
+        self.transports = transports
+
+        def urlopen(request, timeout=None):
+            headers = {str(k).lower(): v for k, v in request.header_items()}
+            url, method = request.full_url, request.get_method()
+            if url != epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT or not headers.get('authorization', '').startswith('Bearer '):
+                transports.log.unexpected.append(['home', method, url])
+                raise UnexpectedTransportCall(f'{method} {url}')
+            _status, payload = transports.home.handle(method, epm_home.HOME_GRAPHQL_ENDPOINT, {}, request.data)
+            return FakeOAuthHttpResponse(_strip_identity_fields(payload))
+
+        stack.enter_context(patch.object(epm_home, 'urlopen', urlopen))
+        self.client = helper.client
+
+    def install_config(self, config):
+        from backend.services.user_view_config import save_user_epm_config
+        save_user_epm_config(self.context, config)
+
+    def get(self, path):
+        return self.client.get(path)
+
+
 MODE_FACTORIES = {
     BasicModeRunner.name: BasicModeRunner,
     DbUserTokenModeRunner.name: DbUserTokenModeRunner,
+    DbOAuthPublicReadRunner.name: DbOAuthPublicReadRunner,
 }
 
 
@@ -1005,9 +1078,45 @@ class OracleCanFailTests(unittest.TestCase):
         self.assertTrue(compare_candidate(projects, pages, self.comparison))
 
 
+class DbOAuthPublicReadCandidateTests(unittest.TestCase):
+    """Task 2 candidate: the DB OAuth public-read-v1 path through compare_candidate, all 35 scenarios.
+
+    Expected Home call logs come from the DB user-token baseline; only the enumerated normalization applies
+    (four identity keys, goal-node owner, transport and enablement fields, site detection kind).
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.fixture = load_fixture()
+        cls.mode_run = run_mode('db_oauth_public_read', cls.fixture)
+
+    def test_every_scenario_matches_the_frozen_expected_through_the_candidate_comparer(self):
+        outcome = compare_run(assemble_expected(self.fixture, 'db_user_token'), self.mode_run,
+                              self.fixture['comparison'], compare_candidate)
+        self.assertEqual(set(outcome), {s['name'] for s in self.fixture['scenarios']})
+        for name, mismatches in outcome.items():
+            with self.subTest(scenario=name):
+                self.assertEqual(mismatches[:8], [])
+
+    def test_no_unmodelled_calls_exceptions_tenant_detection_or_basic_identity(self):
+        for name, result in self.mode_run.results.items():
+            with self.subTest(scenario=name):
+                self.assertEqual(result['unexpected'], [])
+                for step in result['steps']:
+                    self.assertNotEqual(step['status'], 'exception', step['body'])
+                    self.assertEqual(step['home']['kinds'].get('site_detection', 0), 0)
+        self.assertEqual(self.mode_run.home_emails, set())
+
+    def test_the_candidate_is_not_vacuous(self):
+        calls = [c for r in self.mode_run.results.values() for s in r['steps'] for c in s['home']['calls']]
+        self.assertTrue(calls)
+        body = self.mode_run.results['rollup_all_active_s101']['steps'][0]['body']
+        self.assertTrue(_count_hierarchy_issues(body['projects'][0]['rollup']))
+
+
 class CandidateSeamTests(unittest.TestCase):
-    def test_only_todays_modes_are_registered_until_the_candidate_lands(self):
-        self.assertEqual(sorted(MODE_FACTORIES), ['basic_json', 'db_user_token'])
+    def test_registered_modes_expose_the_runner_interface(self):
+        self.assertEqual(sorted(MODE_FACTORIES), ['basic_json', 'db_oauth_public_read', 'db_user_token'])
         for factory in MODE_FACTORIES.values():
             for attribute in ('enter', 'install_config', 'get'):
                 self.assertTrue(callable(getattr(factory, attribute)))

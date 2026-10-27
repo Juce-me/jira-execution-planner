@@ -11,8 +11,10 @@ import logging
 import math
 import os
 import re
+import threading
 import time
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -22,7 +24,7 @@ from backend.auth.cache_policy import (
     jira_home_partitioned_process_cache_enabled,
 )
 from backend.auth.home_credentials import HomeCredential, resolve_home_credential
-from backend.auth.jira_auth import AuthError
+from backend.auth.jira_auth import AuthError, is_oauth_token_expired, oauth_scope_set
 from backend.db.engine import database_storage_enabled
 
 logger = logging.getLogger(__name__)
@@ -44,6 +46,8 @@ HOME_MAX_PROJECT_GOALS_PER_SCOPE = 100
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
 _GOAL_BY_KEY_CACHE: dict[str, dict] = {}
+_STRICT_GOAL_LOOKUP_CACHE: dict[tuple, tuple[float, dict]] = {}
+_STRICT_GOAL_LOOKUP_LOCK = threading.Lock()
 
 PENDING_EPM_STATES = {"PENDING"}
 ACTIVE_EPM_STATES = PENDING_EPM_STATES | {"ON_TRACK", "AT_RISK", "OFF_TRACK"}
@@ -366,11 +370,166 @@ class HomeOAuthGraphQLClient:
             return all_nodes
 
 
+class LeasedHomeOAuthClient(HomeOAuthGraphQLClient):
+    """Strict client whose every page passes the snapshot's lease and picks up a rotated or refreshed token."""
+
+    def __init__(self, auth: "HomeReadAuth"):
+        self._auth = auth
+        super().__init__(auth.access_token())
+
+    def _post(self, query, operation_name, variables):
+        self._headers = _bearer_headers(self._auth.access_token())
+        return super()._post(query, operation_name, variables)
+
+
 def build_home_oauth_graphql_client(
     access_token: str, endpoint: str = HOME_OAUTH_GRAPHQL_ENDPOINT
 ) -> HomeOAuthGraphQLClient:
     """Seam for Tasks 2-3: construct the strict client from the DB-resolved OAuth access token."""
     return HomeOAuthGraphQLClient(access_token, endpoint)
+
+
+EPM_HOME_READ_SCOPES = (
+    "read:goal:goals",
+    "read:access:goals",
+    "read:project:projects",
+    "read:access:projects",
+)
+HOME_READ_PROFILE_LEGACY = "legacy"
+HOME_READ_PROFILE_PUBLIC_READ_V1 = "public-read-v1"
+HOME_AUTH_LEASE_SECONDS = 5
+GOAL_LOOKUP_CACHE_MAX_ENTRIES = 512
+GOAL_LOOKUP_CACHE_TTL_SECONDS = 300
+
+
+def select_epm_home_read_profile(context) -> str:
+    """public-read-v1 only for a DB OAuth actor whose provider-confirmed grant has every Home read scope."""
+    if getattr(context, "auth_mode", "") != AUTH_MODE_ATLASSIAN_OAUTH:
+        return HOME_READ_PROFILE_LEGACY
+    connection_id = str(getattr(context, "auth_connection_id", "") or "")
+    if not connection_id or connection_id.startswith("local-"):
+        return HOME_READ_PROFILE_LEGACY
+    if not getattr(context, "granted_scopes_verified", False):
+        return HOME_READ_PROFILE_LEGACY
+    if not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(getattr(context, "granted_scopes", ())):
+        return HOME_READ_PROFILE_LEGACY
+    return HOME_READ_PROFILE_PUBLIC_READ_V1
+
+
+class HomeReadAuth:
+    """One request's Home read authority: the validated context, a bounded lease and a warmed index.
+
+    Built once per request (never holds a DB session). `revalidate()` is a forced direct
+    check used before cache use and before cache admission; `lease()` re-checks at most
+    once per `lease_seconds` for long reads. `revalidate`/`load_session` are injected
+    (DB status check and the existing encrypted token loader with its locked refresh), so
+    this module has no Flask or server dependency and workers can share the object.
+    """
+
+    def __init__(self, profile, context, *, revalidate=None, load_session=None,
+                 monotonic=time.monotonic, lease_seconds=HOME_AUTH_LEASE_SECONDS):
+        self.profile = profile
+        self._context = context
+        self._revalidate = revalidate
+        self._load_session = load_session
+        self._monotonic = monotonic
+        self._lease_seconds = lease_seconds
+        self._lock = threading.RLock()
+        self._validated_at = None
+        self._token = None
+        self._token_version = None
+        self._token_expires = 0
+        self.revalidation_count = 0
+        self.token_load_count = 0
+        self._index_recording: dict | None = None
+        self._index: MappingProxyType | None = None
+
+    def __repr__(self) -> str:
+        return f"HomeReadAuth(profile={self.profile!r})"
+
+    @property
+    def strict(self) -> bool:
+        return self.profile == HOME_READ_PROFILE_PUBLIC_READ_V1
+
+    @property
+    def context(self):
+        """Context last proven by a direct check; no I/O."""
+        return self._context
+
+    def revalidate(self):
+        """Forced direct status/authority check; returns the context to use for keys and admission."""
+        if not self.strict:
+            return self._context
+        with self._lock:
+            current = self._revalidate(self._context)
+            self.revalidation_count += 1
+            if not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(current.granted_scopes):
+                raise AuthError("epm_scope_required", "Home read scopes are required.")
+            self._context = current
+            self._validated_at = self._monotonic()
+            return current
+
+    def lease(self):
+        """Validated context; re-checks only when the five-second lease has lapsed."""
+        if not self.strict:
+            return self._context
+        with self._lock:
+            if self._validated_at is None or self._monotonic() - self._validated_at >= self._lease_seconds:
+                return self.revalidate()
+            return self._context
+
+    def cloud_id(self) -> str:
+        cloud_id = str(self.lease().cloud_id or "").strip()
+        if not cloud_id:
+            raise HomeReadError("invalid_target")
+        return cloud_id
+
+    def access_token(self) -> str:
+        with self._lock:
+            context = self.lease()
+            if (
+                self._token is None
+                or self._token_version != context.token_version
+                or is_oauth_token_expired({"expires_at": self._token_expires})
+            ):
+                self._reload_token(context)
+            return self._token
+
+    def _reload_token(self, context):
+        data = self._load_session(context) or {}
+        self.token_load_count += 1
+        if str(data.get("db_token_version") or "") != str(context.token_version):
+            context = self.revalidate()  # the loader refreshed or rotated the token
+        granted = oauth_scope_set(data.get("scope") or "")
+        if data.get("scope_provenance") != "provider" or not set(EPM_HOME_READ_SCOPES) <= granted:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
+        token = data.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise AuthError("auth_required", "Atlassian authentication is required.")
+        self._token = token
+        self._token_expires = int(data.get("expires_at") or 0)
+        self._token_version = str(context.token_version)
+
+    def client(self):
+        return LeasedHomeOAuthClient(self)
+
+    # -- immutable warmed index (request thread records, then freezes before any worker starts) --
+    def begin_index(self) -> None:
+        self._index_recording = {}
+
+    def record_home_state(self, scope_key, state) -> None:
+        if self._index_recording is not None:
+            self._index_recording[scope_key] = {**state, "homeProjects": tuple(state["homeProjects"])}
+
+    def freeze_index(self) -> None:
+        recorded, self._index_recording = self._index_recording or {}, None
+        self._index = MappingProxyType(recorded)
+
+    def indexed_home_state(self, scope_key):
+        state = self._index.get(scope_key) if self._index is not None else None
+        if state is None:
+            return None
+        return {**state, "homeProjects": list(state["homeProjects"]), "cacheHit": True}
 
 
 def _is_strict_client(client) -> bool:
@@ -1788,7 +1947,9 @@ def get_configured_jira_url(context=None) -> str:
     return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
 
-def fetch_home_site_cloud_id(context=None) -> str:
+def fetch_home_site_cloud_id(context=None, home_auth=None) -> str:
+    if home_auth is not None and home_auth.strict:
+        return home_auth.cloud_id()  # context cloud id; no tenant_info HTTP, no cache entry
     jira_url = get_configured_jira_url(context)
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
@@ -1821,6 +1982,39 @@ def _goal_cache_key(container_id: str, goal_key: str) -> str:
     }, sort_keys=True)
 
 
+def _strict_goal_lookup_get(cache_key):
+    with _STRICT_GOAL_LOOKUP_LOCK:
+        entry = _STRICT_GOAL_LOOKUP_CACHE.get(cache_key)
+        if entry is None:
+            return None
+        if entry[0] <= time.time():
+            _STRICT_GOAL_LOOKUP_CACHE.pop(cache_key, None)
+            return None
+        return dict(entry[1])
+
+
+def _strict_goal_lookup_put(cache_key, goal):
+    """Bounded public-read goal cache: 512 entries, 300 s TTL; the key keeps its identity/version partition.
+
+    When full, expired entries go first, then the oldest entries of the inserting
+    partition, and only an empty partition falls back to the globally oldest entry,
+    so one user's lookups cannot flush another partition while it has its own to give up.
+    """
+    now = time.time()
+    partition = cache_key[:-1]
+    with _STRICT_GOAL_LOOKUP_LOCK:
+        _STRICT_GOAL_LOOKUP_CACHE.pop(cache_key, None)
+        for key in [key for key, entry in _STRICT_GOAL_LOOKUP_CACHE.items() if entry[0] <= now]:
+            del _STRICT_GOAL_LOOKUP_CACHE[key]
+        while len(_STRICT_GOAL_LOOKUP_CACHE) >= GOAL_LOOKUP_CACHE_MAX_ENTRIES:
+            victim = next(
+                (key for key in _STRICT_GOAL_LOOKUP_CACHE if key[:-1] == partition),
+                next(iter(_STRICT_GOAL_LOOKUP_CACHE)),
+            )
+            del _STRICT_GOAL_LOOKUP_CACHE[victim]
+        _STRICT_GOAL_LOOKUP_CACHE[cache_key] = (now + GOAL_LOOKUP_CACHE_TTL_SECONDS, dict(goal))
+
+
 def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
     expected_key = _normalize_goal_key(goal_key)
     if not expected_key:
@@ -1828,9 +2022,23 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
     cache_key = _goal_cache_key(container_id, expected_key)
     cache_enabled = jira_home_partitioned_process_cache_enabled(context)
     cache_key = build_jira_home_process_cache_key(context, cache_key)
-    cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
+    strict = _is_strict_client(client)
+    if strict:
+        # Only identity/version-partitioned (tuple) keys are ever cached for the public profile.
+        cache_enabled = cache_enabled and isinstance(cache_key, tuple)
+        cached = _strict_goal_lookup_get(cache_key) if cache_enabled else None
+    else:
+        cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
     if cache_enabled and cached:
         return dict(cached)
+
+    def remember(goal_value):
+        if not cache_enabled:
+            return
+        if strict:
+            _strict_goal_lookup_put(cache_key, goal_value)
+        else:
+            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal_value)
     try:
         if _is_strict_client(client):
             data = _execute_data(client, "goals_byKey", QUERY_GOAL_BY_KEY, {"containerId": container_id, "goalKey": expected_key})
@@ -1842,8 +2050,7 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
             )
             goal = ((response.get("data") or {}).get("goals_byKey") or {})
         if goal and _normalize_goal_key(goal.get("key")) == expected_key:
-            if cache_enabled:
-                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            remember(goal)
             return goal
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal by key lookup failed for %s: %s", expected_key, exc)
@@ -1859,8 +2066,7 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         return None
     for goal in goals:
         if _normalize_goal_key(goal.get("key")) == expected_key:
-            if cache_enabled:
-                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            remember(goal)
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
@@ -1993,6 +2199,8 @@ def _fetch_goal_project_links_strict(client, goal_id: str) -> list[dict]:
         goal = result.data.get("goals_byId")
         connection = goal.get("projects") if isinstance(goal, dict) else None
         if not isinstance(connection, dict) or not isinstance(connection.get("pageInfo"), dict):
+            if result.errors:
+                result.fail()  # a denied or throttled goal reads as null data plus errors: keep the real category
             raise HomeReadError("invalid_response", status=result.status)
         edges = connection.get("edges")
         edges = edges if isinstance(edges, list) else []
@@ -2181,25 +2389,31 @@ def merge_epm_linkage(home_project, epm_config_row):
     return {"labels": labels, "epicKeys": epic_keys}, match_state
 
 
-def fetch_epm_home_projects(epm_scope, context=None):
+def fetch_epm_home_projects(epm_scope, context=None, home_auth=None):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
         logger.warning("EPM home fetch skipped: subGoalKeys is required")
         return []
 
-    try:
-        credential = _read_metadata_credential(context)
-        client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
-        if credential is not None and credential.cloud_id:
-            cloud_id = credential.cloud_id
-        elif context is not None:
-            cloud_id = fetch_home_site_cloud_id(context=context)
-        else:
-            cloud_id = fetch_home_site_cloud_id()
-    except RuntimeError as exc:
-        logger.warning("EPM home fetch failed: %s", exc)
-        return []
+    if home_auth is not None and home_auth.strict:
+        # public-read-v1: typed failures (HomeReadError, AuthError) propagate; never an empty list.
+        client = home_auth.client()
+        cloud_id = home_auth.cloud_id()
+        context = home_auth.context
+    else:
+        try:
+            credential = _read_metadata_credential(context)
+            client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
+            if credential is not None and credential.cloud_id:
+                cloud_id = credential.cloud_id
+            elif context is not None:
+                cloud_id = fetch_home_site_cloud_id(context=context)
+            else:
+                cloud_id = fetch_home_site_cloud_id()
+        except RuntimeError as exc:
+            logger.warning("EPM home fetch failed: %s", exc)
+            return []
 
     container_id = _container_id_from_cloud(cloud_id)
     sub_goals = (

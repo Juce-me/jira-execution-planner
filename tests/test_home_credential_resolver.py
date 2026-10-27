@@ -331,6 +331,24 @@ class HomeCredentialResolverTests(unittest.TestCase):
         self.assertEqual(user_credential.cache_key, (self.workspace_id, self.user_id, user_connection_id, 5))
         self.assertNotIn('user-home-token', repr(user_credential))
 
+    def test_strict_public_read_profile_never_resolves_a_home_credential(self):
+        context = RequestAuthContext(
+            auth_mode='atlassian_oauth', user_id=self.user_id, stable_subject='s', atlassian_account_id='s',
+            workspace_id=self.workspace_id, auth_connection_id='conn-1', cloud_id='cloud-1',
+            site_url='https://example.atlassian.net', token_version='1', account_status='active', is_admin=False,
+            granted_scopes=tuple(epm_home.EPM_HOME_READ_SCOPES), granted_scopes_verified=True, browser_session_id='b')
+        snapshot = epm_home.HomeReadAuth(
+            'public-read-v1', context, revalidate=lambda c: c,
+            load_session=lambda c: {'access_token': 'tok', 'expires_at': 4102444800,
+                                    'scope': ' '.join(epm_home.EPM_HOME_READ_SCOPES), 'scope_provenance': 'provider',
+                                    'db_token_version': '1'})
+        with patch('backend.auth.home_credentials._resolve_user_credential', side_effect=AssertionError('user token')), \
+                patch('backend.auth.home_credentials._resolve_service_credential', side_effect=AssertionError('service')), \
+                patch.object(epm_home, 'resolve_home_credential', side_effect=AssertionError('resolver')):
+            client = snapshot.client()
+        self.assertTrue(client.strict_public_read)
+        self.assertEqual(client.endpoint, epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT)
+
     def test_db_mode_home_client_requires_explicit_credential_descriptor(self):
         with self._env_patch():
             with self.assertRaises(RuntimeError):

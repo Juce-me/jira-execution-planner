@@ -31,6 +31,7 @@ class EpmProjectsDependencies:
     abort_not_found: Callable | None = None
     context: object = None
     config_generation: str = ''
+    home_auth: object = None
     now: Callable = time.time
 
 
@@ -127,17 +128,28 @@ def build_epm_home_projects_cache_key(epm_scope):
 
 
 def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
-    cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
-    cache_key = build_jira_home_process_cache_key(
-        deps.context,
-        build_epm_home_projects_cache_key(epm_scope),
-        deps.config_generation,
-    )
+    home_auth = deps.home_auth if getattr(deps.home_auth, 'strict', False) else None
+    scope_key = build_epm_home_projects_cache_key(epm_scope)
+    if home_auth is not None:
+        indexed = home_auth.indexed_home_state(scope_key)
+        if indexed is not None:
+            return indexed  # immutable warmed index: no validation, cache or Home I/O per worker
+
+    def key_for(context):
+        parts = (scope_key, deps.config_generation)
+        if home_auth is not None:
+            parts += (home_auth.profile,)
+        return build_jira_home_process_cache_key(context, *parts)
+
+    # Strict reads prove authority directly before cache use and again before admission.
+    key_context = home_auth.revalidate() if home_auth is not None else deps.context
+    cache_enabled = jira_home_partitioned_process_cache_enabled(key_context)
+    cache_key = key_for(key_context)
     if cache_enabled and not force_refresh:
         with deps.cache_lock:
             cached = deps.cache.get(cache_key)
             if cached and (deps.now() - cached['timestamp']) < deps.cache_ttl_seconds:
-                return {
+                state = {
                     'homeProjects': cached.get('homeProjects', []),
                     'cacheHit': True,
                     'fetchedAt': cached.get('fetchedAt', ''),
@@ -145,10 +157,16 @@ def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
                     'homeProjectLimit': cached.get('homeProjectLimit'),
                     'possiblyTruncated': bool(cached.get('possiblyTruncated')),
                 }
+                if home_auth is not None:
+                    home_auth.record_home_state(scope_key, state)
+                return state
 
     home_projects = deps.fetch_epm_home_projects(epm_scope)
     possibly_truncated = bool(deps.home_project_limit and len(home_projects) >= deps.home_project_limit)
     fetched_at = deps.utc_now_iso(timespec='seconds')
+    if home_auth is not None:
+        # Rejects (raises) when authority failed; otherwise admits under the last revalidated context.
+        cache_key = key_for(home_auth.revalidate())
     if cache_enabled:
         with deps.cache_lock:
             deps.cache[cache_key] = {
@@ -158,7 +176,7 @@ def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
                 'homeProjectLimit': deps.home_project_limit,
                 'possiblyTruncated': possibly_truncated,
             }
-    return {
+    state = {
         'homeProjects': home_projects,
         'cacheHit': False,
         'fetchedAt': fetched_at,
@@ -166,6 +184,9 @@ def build_epm_home_projects_state(epm_scope, deps, force_refresh=False):
         'homeProjectLimit': deps.home_project_limit,
         'possiblyTruncated': possibly_truncated,
     }
+    if home_auth is not None:
+        home_auth.record_home_state(scope_key, state)
+    return state
 
 
 def get_cached_epm_home_projects(epm_scope, deps, force_refresh=False):

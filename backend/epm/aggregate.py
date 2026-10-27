@@ -22,6 +22,7 @@ class EpmAggregateDependencies:
     build_per_project_rollup: Callable
     logger: logging.Logger
     now: Callable = time.perf_counter
+    home_auth: object = None
 
 
 def _collection_values(collection):
@@ -71,7 +72,15 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
 
     epm_config = deps.get_epm_config()
     projects_started = deps.now()
-    projects_payload = deps.build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
+    home_auth = deps.home_auth if getattr(deps.home_auth, 'strict', False) else None
+    if home_auth is not None:
+        home_auth.begin_index()
+    try:
+        projects_payload = deps.build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
+    finally:
+        if home_auth is not None:
+            # Immutable before the eight workers start; they resolve Home projects from it, never from Home.
+            home_auth.freeze_index()
     projects_ms = round((deps.now() - projects_started) * 1000, 1)
     visible_projects = deps.filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
     rollup_dependencies = deps.build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys)

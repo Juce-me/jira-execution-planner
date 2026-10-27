@@ -29,6 +29,16 @@ def _sync_server_globals():
     bind_server_globals(globals())
 
 
+@bp.before_request
+def _memoize_epm_guard_context():
+    # One snapshot per request; creation never requires Home scopes (config and preference
+    # routes must stay reachable). A failure here is re-raised by the handler's own call.
+    try:
+        memoize_epm_guard_context()
+    except (AuthError, ConfigStorageError, DatabaseConfigurationError):
+        pass
+
+
 def _is_home_user_token_required(error):
     return isinstance(error, AuthError) and error.code == 'home_user_token_required'
 
@@ -101,7 +111,8 @@ def _strict_epm_request_payload(*, rekey_custom_projects=False):
 
 
 def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None):
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
+    home_auth = resolve_epm_home_read_auth(auth_context)
     epm_config_snapshot = get_epm_config(context=auth_context)
     deps = epm_issues.EpmIssuesDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
@@ -109,6 +120,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
             epm_config_override=epm_config_snapshot,
+            home_auth=home_auth,
         ),
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_epm_scope_clause=build_epm_scope_clause,
@@ -126,6 +138,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
         context=auth_context,
         config_generation=build_epm_config_generation(epm_config_snapshot),
+        authorize_cache=home_auth.revalidate if home_auth.strict else None,
     )
     return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
@@ -133,7 +146,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
 @bp.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
     try:
-        return jsonify(get_epm_config(context=current_request_auth_context()))
+        return jsonify(get_epm_config(context=_cache_policy_context()))
     except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
         logger.error('EPM config read failed errorClass=%s', type(error).__name__)
         return _epm_storage_unavailable_response()
@@ -141,7 +154,7 @@ def get_epm_config_endpoint():
 
 @bp.route('/api/epm/scope', methods=['GET'])
 def get_epm_scope_endpoint():
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
     scope = (get_epm_config(context=auth_context).get('scope') or {})
     try:
         cloud_id = fetch_home_site_cloud_id(context=auth_context)
@@ -190,7 +203,7 @@ def get_epm_goals_endpoint():
 
 @bp.route('/api/epm/projects', methods=['GET'])
 def get_epm_projects_endpoint():
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
     epm_config = get_epm_config(context=auth_context)
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     tab = normalize_epm_text(request.args.get('tab'))
@@ -289,7 +302,7 @@ def get_epm_project_rollup_endpoint(project_id):
             sprint,
             build_epm_rollup_dependencies(
                 sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
-                context=current_request_auth_context(),
+                context=_cache_policy_context(),
             ),
         )
     except AuthError as exc:
@@ -310,7 +323,7 @@ def save_epm_config_endpoint():
         return _invalid_epm_config_response()
     try:
         if config_storage_db_enabled():
-            context = current_request_auth_context()
+            context = _cache_policy_context()
             result = build_db_config_repository().save_user_epm_config(
                 context,
                 payload,

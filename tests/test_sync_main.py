@@ -456,6 +456,28 @@ class SyncMainTests(unittest.TestCase):
         self.assertIn("user.email=" + REPO_EMAIL, local)
         self.assertNotIn(EMAIL, local)
 
+    def test_commit_identity_beats_configured_author_and_committer_email(self):
+        self.make()
+        self.git(self.work, "config", "--local", "author.email", OTHER_EMAIL)
+        self.git(self.work, "config", "--local", "committer.email", OTHER_EMAIL)
+        self.commit(self.work, {"mine.txt": "m\n"})
+        self.origin_commit({"docs/x.md": "x\n"})
+        p = self.run_sync()
+        self.assertEqual(p.returncode, 0, self.out(p))
+        self.assert_identity()
+
+    def test_continue_ignores_conflict_markers_quoted_in_an_incoming_file(self):
+        self.make()
+        self.commit(self.work, {"notes.txt": "mine\n"}, msg="mine")
+        self.origin_commit({"notes.txt": "theirs\n", "docs/quote.md": "<<<<<<< quoted\nexample\n>>>>>>> quoted\n"})
+        p = self.run_sync()
+        self.assertEqual(p.returncode, 1, self.out(p))
+        self.write(self.work, {"notes.txt": "resolved\n"})
+        self.git(self.work, "add", "notes.txt")
+        p2 = self.run_sync("--continue")
+        self.assertEqual(p2.returncode, 0, self.out(p2))
+        self.assertFalse(self.merge_head())
+
 
 if __name__ == "__main__":
     unittest.main()

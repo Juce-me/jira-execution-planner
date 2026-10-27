@@ -71,10 +71,14 @@ prepare_attributes() {
 g() {
   if [ -n "$ATTR_FILE" ]; then
     git -c "user.name=$SYNC_GIT_NAME" -c "user.email=$SYNC_GIT_EMAIL" \
+      -c "author.name=$SYNC_GIT_NAME" -c "author.email=$SYNC_GIT_EMAIL" \
+      -c "committer.name=$SYNC_GIT_NAME" -c "committer.email=$SYNC_GIT_EMAIL" \
       -c rerere.enabled=true -c rerere.autoupdate=false \
       -c "core.attributesFile=$ATTR_FILE" "$@"
   else
     git -c "user.name=$SYNC_GIT_NAME" -c "user.email=$SYNC_GIT_EMAIL" \
+      -c "author.name=$SYNC_GIT_NAME" -c "author.email=$SYNC_GIT_EMAIL" \
+      -c "committer.name=$SYNC_GIT_NAME" -c "committer.email=$SYNC_GIT_EMAIL" \
       -c rerere.enabled=true -c rerere.autoupdate=false "$@"
   fi
 }
@@ -99,10 +103,16 @@ finish() {
   fi
 
   local need_build=0 lock_changed=0
-  if printf '%s\n' "$touched" | grep -Eq '^(frontend/dist/|frontend/src/|package\.json$|package-lock\.json$|scripts/build_dashboard\.mjs$)'; then
+  if grep -Eq '^(frontend/dist/|frontend/src/|package\.json$|package-lock\.json$|scripts/build_dashboard\.mjs$)' <<EOF_TOUCHED
+$touched
+EOF_TOUCHED
+  then
     need_build=1
   fi
-  if printf '%s\n' "$touched" | grep -Eq '^package-lock\.json$'; then
+  if grep -Eq '^package-lock\.json$' <<EOF_TOUCHED
+$touched
+EOF_TOUCHED
+  then
     lock_changed=1
   fi
   if [ ! -f frontend/dist/dashboard.js ]; then
@@ -161,7 +171,13 @@ if [ "$CONTINUE" -eq 1 ]; then
   marked=""
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    if git grep -q -I --cached -E '^(<<<<<<< |>>>>>>> )' -- "$f"; then
+    merged=$(git rev-parse -q --verify ":$f" 2>/dev/null) || merged=""
+    ours=$(git rev-parse -q --verify "HEAD:$f" 2>/dev/null) || ours=""
+    theirs=$(git rev-parse -q --verify "origin/main:$f" 2>/dev/null) || theirs=""
+    if [ "$merged" = "$ours" ] || [ "$merged" = "$theirs" ]; then
+      continue
+    fi
+    if git grep -q -I --cached -E '^(<<<<<<< |>>>>>>> )' -- ":(literal)$f"; then
       marked="$marked  $f
 "
     fi

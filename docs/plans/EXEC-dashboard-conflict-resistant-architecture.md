@@ -1,7 +1,7 @@
 # Conflict-Resistant Repository and Dashboard Architecture Plan
 
 > **Status:** Proposed on 2026-10-26; revision R1 the same day after two independent read-only reviews, revision R2 on 2026-10-27 after four more against current `origin/main` (findings and dispositions in the [Review Log](#review-log)). Not approved. No task is authorized to run; push and PR authority are separate operator decisions under `AGENTS.md` section 10. Decisions D-1 to D-9 are open and gate the tasks named in [Decisions](#decisions).
-> **Branch:** every task starts from freshly fetched `origin/main` on its own `improvement/`, `bugfix/` or `docs/` branch (see D-2). This document lives on `docs/conflict-resistant-architecture-plan`.
+> **Branch:** every task starts from freshly fetched `origin/main` on its own `improvement/`, `bugfix/` or `docs/` branch (see D-2). This document lives on `improvement/conflict-resistant-architecture-plan`.
 > **Base:** first authored against `origin/main` `abd0258b` (measured at `7316263a`). R2 re-checked every anchor against `origin/main` `1f3ae5b0`, after PR #308 (Catch Up cold load speed) added lazy admin settings, an early-bootstrap bundle, gzip responses and 10 more tracked `frontend/dist` files. Figures below are at `1f3ae5b0` unless a row names another base. Re-measure every anchor at the start of each task.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

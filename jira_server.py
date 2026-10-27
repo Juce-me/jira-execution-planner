@@ -1762,7 +1762,6 @@ def load_dashboard_config(*, source='auto'):
     if source == 'jsonfile':
         return _load_dashboard_config_json()
     if source == 'db' or config_storage_db_enabled():
-        context = _current_dashboard_config_context_or_error()
         return load_dashboard_config_snapshot(source='db').payload
     return _load_dashboard_config_json()
 
@@ -1773,10 +1772,10 @@ def load_dashboard_config_snapshot(*, source='auto'):
         from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
         payload = _load_dashboard_config_json() or {}
         return WorkspaceConfigSnapshot(payload, 0, 'legacy_json')
-    context = _current_dashboard_config_context_or_error()
     cache_key = '_workspace_dashboard_config_snapshot'
     if has_request_context() and hasattr(g, cache_key):
         return getattr(g, cache_key)
+    context = _current_dashboard_config_context_or_error()
     snapshot = build_db_config_repository().load_dashboard_config_snapshot(
         context,
         fallback_loader=_load_dashboard_config_json,

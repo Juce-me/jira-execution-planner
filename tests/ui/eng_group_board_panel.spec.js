@@ -679,11 +679,12 @@ test('every story control resolves to an existing app class, priority asserted a
     await expect(row.locator('a.story-subtask-name')).toHaveCount(1);
     await expect(row.locator('span.story-subtask-assignee')).toHaveCount(1);
     await expect(row.locator('time.story-subtask-updated')).toHaveCount(1);
-    // Exactly the five cells of the table, so story points stay absent from the row (§6.3).
-    expect(await row.evaluate((node) => node.children.length)).toBe(5);
+    // The five cells of the table plus the Story Points cell (#311).
+    expect(await row.evaluate((node) => node.children.length)).toBe(6);
+    await expect(row.locator('span.story-subtask-sp')).toHaveText('2.0');
 });
 
-test('the Board panel row computes five grid cells and Catch Up\'s computes four', async ({ page }) => {
+test('the Board panel row computes six grid cells and Catch Up\'s computes four', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
     await openPanel(page, 'PLAT-1');
@@ -692,7 +693,7 @@ test('the Board panel row computes five grid cells and Catch Up\'s computes four
     await expect(rows.first()).toHaveClass(/has-priority/);
     const templates = await rowTemplates(rows);
     expect(templates.length).toBe(5);
-    templates.forEach((row) => expect(row.cells).toBe(5));
+    templates.forEach((row) => expect(row.cells).toBe(6));
     // Column-aligned: every row computes the identical template.
     expect(new Set(templates.map((row) => row.template)).size).toBe(1);
 
@@ -705,6 +706,35 @@ test('the Board panel row computes five grid cells and Catch Up\'s computes four
         return cells;
     });
     expect(bare).toBe(4);
+});
+
+// #311: an SP header over a right-aligned one-decimal column, mirrored by every row.
+test('the panel shows an SP header aligned right over one-decimal Story Points', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await openPanel(page, 'PLAT-1');
+
+    const head = panel(page).locator('.story-subtask-head .story-subtask-sp');
+    await expect(head).toHaveText('SP');
+    const cells = panel(page).locator('.story-subtask-row .story-subtask-sp');
+    await expect(cells).toHaveCount(5);
+    for (const text of await cells.allTextContents()) expect(text).toMatch(/^\d+\.\d$/);
+    const rights = await panel(page).evaluate((node) => [node.querySelector('.story-subtask-head .story-subtask-sp'), ...node.querySelectorAll('.story-subtask-row .story-subtask-sp')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { right: Math.round(box.right * 10) / 10, align: getComputedStyle(el).justifySelf, clipped: el.scrollWidth > el.clientWidth };
+    }));
+    expect(rights.map((entry) => entry.right)).toEqual(rights.map(() => rights[0].right));
+    rights.forEach((entry) => { expect(entry.align).toMatch(/end|right/); expect(entry.clipped).toBe(false); });
+    await page.waitForTimeout(500);
+    await panel(page).screenshot({ path: `${screenshotDir}/panel-sp.png` });
+});
+
+test('the SP header and cells are dropped below 761px', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 375, height: 812 });
+    await openPanel(page, 'PLAT-1');
+    await expect(panel(page).locator('.story-subtask-head')).toBeHidden();
+    await expect(panel(page).locator('.story-subtask-row .story-subtask-sp').first()).toBeHidden();
 });
 
 // Below 761px the row folds to "pri name" / "status status updated". The status control is

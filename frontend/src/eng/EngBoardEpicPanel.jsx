@@ -8,7 +8,7 @@ import ProjectTrackTransitionMenu from '../issues/ProjectTrackTransitionMenu.jsx
 import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
-import { epicStatusName, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
+import { epicStatusName, formatStoryPointsFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { computeEpicStoryProgress } from './engBoardCardModel.js';
 import { loadEpicDescription } from './engEpicDescriptionCache.js';
@@ -484,6 +484,7 @@ export default function EngBoardEpicPanel({
                             {loading && <div aria-hidden="true"><span className="board-loading-bar" /><span className="board-loading-bar" /><span className="board-loading-bar" /></div>}
                         </div>}
                         <div className="story-subtasks-rows">
+                            <div className="story-subtask-head" aria-hidden="true"><span className="story-subtask-sp">SP</span></div>
                             {rows.map((task) => (
                                 <div
                                     key={task.key}
@@ -508,6 +509,7 @@ export default function EngBoardEpicPanel({
                                     ) : (
                                         <span className="story-subtask-updated">No update</span>
                                     )}
+                                    <span className="story-subtask-sp">{formatStoryPointsFixed(task)}</span>
                                 </div>
                             ))}
                         </div>

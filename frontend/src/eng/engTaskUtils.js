@@ -14,6 +14,12 @@ export function sumEpicStoryPoints(tasks = []) {
     }, 0);
 }
 
+// A Story's own points for display: always one decimal, null Jira points read as 0.0.
+export function formatStoryPointsFixed(task) {
+    const value = parseFloat(task?.fields?.customfield_10004 || 0);
+    return (Number.isNaN(value) ? 0 : value).toFixed(1);
+}
+
 export const PRIORITY_ORDER = {
     'Blocker': 0,
     'Highest': 1,

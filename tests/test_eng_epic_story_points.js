@@ -46,3 +46,15 @@ test('strict board view model excludes Killed story points from the Epic total',
     });
     assert.equal(model.epicGroups[0].storyPoints, 1);
 });
+
+test('formatStoryPointsFixed renders one decimal and treats null as 0.0', async () => {
+    const { formatStoryPointsFixed } = await import('../frontend/src/eng/engTaskUtils.js');
+    const sp = (value) => formatStoryPointsFixed({ fields: { customfield_10004: value } });
+    assert.equal(sp(3), '3.0');
+    assert.equal(sp(0.5), '0.5');
+    assert.equal(sp(2.25), '2.3');
+    assert.equal(sp(null), '0.0');
+    assert.equal(sp(undefined), '0.0');
+    assert.equal(sp('abc'), '0.0');
+    assert.equal(formatStoryPointsFixed({}), '0.0');
+});

@@ -28,7 +28,7 @@ def _inside(path: Path, base: Path) -> bool:
     return True
 
 
-def frontend_build_missing(repo_root: Path) -> str | None:
+def _check_missing(repo_root: Path) -> str | None:
     repo_root = Path(repo_root)
     dist = repo_root / _DIST
     html = repo_root / "jira-dashboard.html"
@@ -71,6 +71,13 @@ def frontend_build_missing(repo_root: Path) -> str | None:
     return None
 
 
+def frontend_build_missing(repo_root: Path) -> str | None:
+    try:
+        return _check_missing(repo_root)
+    except (OSError, ValueError) as error:
+        return _missing_message(f"the build check could not read the output ({type(error).__name__})")
+
+
 def _newest_input(files) -> float:
     newest = 0.0
     for path in files:
@@ -89,7 +96,7 @@ def _source_files(src: Path):
                 yield Path(current) / name
 
 
-def frontend_build_stale(repo_root: Path) -> str | None:
+def _check_stale(repo_root: Path) -> str | None:
     repo_root = Path(repo_root)
     src = repo_root / "frontend" / "src"
     lockfile = repo_root / "package-lock.json"
@@ -115,3 +122,10 @@ def frontend_build_stale(repo_root: Path) -> str | None:
         f"Frontend build may be stale ({', '.join(stale)} older than its sources, mtime heuristic): "
         f"{BUILD_HINT}."
     )
+
+
+def frontend_build_stale(repo_root: Path) -> str | None:
+    try:
+        return _check_stale(repo_root)
+    except OSError:
+        return None

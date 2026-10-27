@@ -97,6 +97,19 @@ class FrontendBuildTests(unittest.TestCase):
         (dist / MANIFEST).unlink()
         self.assertBuildHint(frontend_build_missing(self.root))
 
+    def test_manifest_with_an_outside_or_absolute_view_path_reports_instead_of_raising(self):
+        for bad in ("/nonexistent/x.js", "../../outside.js"):
+            with self.subTest(path=bad):
+                dist = _build_dist(self.root)
+                (dist / MANIFEST).write_text(json.dumps({"views": {"v": {"path": bad}}}), encoding="utf-8")
+                self.assertBuildHint(frontend_build_missing(self.root))
+                shutil.rmtree(self.root / "frontend")
+
+    def test_undecodable_html_reports_instead_of_raising(self):
+        _build_dist(self.root)
+        (self.root / "jira-dashboard.html").write_bytes(b"\xff\xfe\x00bad")
+        self.assertBuildHint(frontend_build_missing(self.root))
+
     def test_two_manifests_are_not_exactly_one(self):
         dist = _build_dist(self.root)
         _write(dist / ("lazy-views-" + "b" * 64 + ".json"), (dist / MANIFEST).read_text())

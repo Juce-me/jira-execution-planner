@@ -218,7 +218,7 @@ The repository provides container packaging for verification and image build. It
 
 Can prepare now:
 - Build the image with `docker build` and a commit-SHA tag, using the committed `Dockerfile`.
-- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the frontend unit tests. `frontend/dist` is not committed and CI does not diff it; the release workflow builds it before packaging the zip.
+- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build` and the frontend unit tests. `frontend/dist` is not committed and CI does not diff it; the release workflow builds it before packaging the zip.
 - Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
 
 Container env contract:

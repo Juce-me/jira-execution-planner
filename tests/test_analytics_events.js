@@ -152,6 +152,9 @@ test('analytics lazy-loads GTM only from enabled context and pushes only through
             event_type: 'pageview',
             event_name: 'page_view',
             page_name: 'dashboard',
+            page_title: 'Jira Delivery Planner',
+            page_path: '/dashboard',
+            page_location: 'http://127.0.0.1:5050/dashboard',
             dashboard_view: 'eng',
             eng_mode: 'scenario',
             auth_mode: 'oauth',
@@ -1679,7 +1682,9 @@ test('dashboard pageviews name each visible ENG mode and subview once', async ()
             assert.equal(entry.event_type, 'pageview');
             assert.equal(entry.event_name, 'page_view');
             assert.equal(entry.source_surface, 'dashboard');
-            assert.equal(entry.page_location, undefined);
+            assert.equal(entry.page_path, `/${entry.page_name}`);
+            assert.equal(entry.page_location, `http://127.0.0.1:5050/${entry.page_name}`);
+            assert.ok(entry.page_title);
         }
     } finally {
         runtime.unmount();
@@ -1813,4 +1818,41 @@ test('caller parameters cannot enable debug or restore a cleared identity', asyn
     trackEvent('settings_action', { feature_name: 'settings', ga4_user_id: 'caller-user', debug_mode: true });
     assert.equal(snapshots[0].ga4_user_id, null);
     assert.equal(snapshots[0].debug_mode, undefined);
+});
+
+
+test('virtual page metadata strips real URL context and rejects unapproved values', async () => {
+    const { initAnalytics, trackPageview } = await loadAnalytics();
+    resetDom();
+    global.window.location.href = 'https://example.invalid/real?find=private#secret';
+    await initAnalytics({ fetchContext: async () => ({ enabled: true }) });
+    trackPageview('eng/planning/table', {
+        page_title: 'Private project title', page_path: '/browse/TEST-123',
+        page_location: 'https://external.invalid/private',
+    });
+    const occurrence = global.window.dataLayer.at(-1);
+    assert.equal(occurrence.page_title, 'ENG / Planning / Table');
+    assert.equal(occurrence.page_path, '/eng/planning/table');
+    assert.equal(occurrence.page_location, 'https://example.invalid/eng/planning/table');
+    const { buildPageviewMetadata, sanitizeAnalyticsParams, isolateAnalyticsPayload } = await loadEvents();
+    assert.deepEqual(buildPageviewMetadata('eng/planning/table', 'https://example.invalid/real?find=private#secret'), {
+        page_title: 'ENG / Planning / Table', page_path: '/eng/planning/table',
+        page_location: 'https://example.invalid/eng/planning/table',
+    });
+    for (const params of [
+        { page_title: 'Private project title' }, { page_path: '/browse/TEST-123' },
+        { page_location: 'https://example.invalid/eng/board?find=private' },
+        { page_location: 'https://example.invalid/eng/board#private' },
+        { page_location: 'https://user:secret@example.invalid/eng/board' },
+        { page_location: 'https://example.invalid/browse/TEST-123' },
+        { page_location: 'file:///eng/board' },
+    ]) assert.throws(() => sanitizeAnalyticsParams(params, 'page_view'), /analytics value/);
+    assert.throws(() => buildPageviewMetadata('eng/private', 'https://example.invalid'), /analytics value/);
+    assert.throws(() => buildPageviewMetadata('epm', 'file:///private'), /page origin/);
+    assert.throws(() => sanitizeAnalyticsParams({ page_location: 'https://example.invalid/epm' }, 'settings_action'), /unsupported analytics parameter/);
+    const next = isolateAnalyticsPayload({ event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'settings_action', feature_name: 'settings' });
+    for (const key of ['page_title', 'page_path', 'page_location']) {
+        assert.ok(Object.hasOwn(next, key));
+        assert.equal(next[key], undefined, `${key} must clear the previous pageview DLV`);
+    }
 });

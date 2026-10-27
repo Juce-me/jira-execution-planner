@@ -66,6 +66,9 @@ const EVENT_PARAMS = new Set([
     'override_count',
     'override_count_bucket',
     'page_name',
+    'page_title',
+    'page_path',
+    'page_location',
     'pending_unsaved_state',
     'point_bucket',
     'previous_status',
@@ -121,18 +124,40 @@ const ADDRESS = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const RAW_TEXT = /\s|{|}|\[|\]|stack trace|returned|sprint \d+|team [a-z]|draft-\d+|rnd-project|rnd_project_|bearer\s+[a-z0-9._-]+/i;
 const RESERVED_PREFIX = /^(ga_|google_|firebase_|_|gtag\.)/;
 const BUCKETS = new Set(['0', '1_5', '6_10', '11_25', '26_50', '51_100', 'over_100', 'under_1s', '1_3s', '3_10s', 'over_10s', '2xx', '3xx', '4xx', '5xx']);
+const PAGE_TITLES = new Map([
+    ['dashboard', 'Jira Delivery Planner'],
+    ['epm', 'EPM'],
+    ['eng/catch_up', 'ENG / Catch Up'],
+    ['eng/board', 'ENG / Board'],
+    ['eng/scenario', 'ENG / Scenario'],
+    ['eng/planning/table', 'ENG / Planning / Table'],
+    ['eng/planning/list', 'ENG / Planning / List'],
+    ['eng/statistics/teams', 'ENG / Statistics / Teams'],
+    ['eng/statistics/priority', 'ENG / Statistics / Priority'],
+    ['eng/statistics/burndown', 'ENG / Statistics / Burndown'],
+    ['eng/statistics/lead_times', 'ENG / Statistics / Lead Times'],
+    ['eng/statistics/excluded_capacity', 'ENG / Statistics / Excluded Capacity'],
+    ['eng/statistics/mono_cross_share', 'ENG / Statistics / Mono vs Cross'],
+    ['eng/statistics/project_track', 'ENG / Statistics / Project Track'],
+]);
+const PAGE_PATHS = new Set([...PAGE_TITLES.keys()].map(name => `/${name}`));
 const EVENT_PARAM_VALUE_ALLOWLISTS = {
-    page_name: new Set([
-        'dashboard', 'epm', 'eng/catch_up', 'eng/board', 'eng/scenario',
-        'eng/planning/table', 'eng/planning/list',
-        'eng/statistics/teams', 'eng/statistics/priority', 'eng/statistics/burndown',
-        'eng/statistics/lead_times', 'eng/statistics/excluded_capacity',
-        'eng/statistics/mono_cross_share', 'eng/statistics/project_track',
-    ]),
+    page_name: new Set(PAGE_TITLES.keys()),
+    page_title: new Set(PAGE_TITLES.values()),
+    page_path: PAGE_PATHS,
     module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
     scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'sprint']),
     reason: new Set(['short', 'narrow', 'touch']),
 };
+
+// Only the browser origin survives; the real path, query and fragment never do.
+export function buildPageviewMetadata(pageName, href) {
+    if (!PAGE_TITLES.has(pageName)) throw new Error('unsupported analytics value for page_name');
+    const url = new URL(href);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported analytics page origin');
+    const pagePath = `/${pageName}`;
+    return { page_title: PAGE_TITLES.get(pageName), page_path: pagePath, page_location: `${url.origin}${pagePath}` };
+}
 
 function assertSafeName(name) {
     if (!EVENT_PARAMS.has(name) && !DATA_LAYER_FIELDS.has(name)) {
@@ -146,6 +171,14 @@ function assertSafeName(name) {
 function assertSafeValue(name, value) {
     if (value === undefined || value === null || value === '') return;
     if (DATA_LAYER_FIELDS.has(name)) return;
+    if (name === 'page_location') {
+        const url = new URL(value);
+        if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password
+            || url.search || url.hash || !PAGE_PATHS.has(url.pathname) || url.href !== value) {
+            throw new Error('unsafe analytics value for page_location');
+        }
+        return;
+    }
     const allowedValues = EVENT_PARAM_VALUE_ALLOWLISTS[name];
     if (allowedValues) {
         if (!allowedValues.has(value)) throw new Error(`unsupported analytics value for ${name}`);
@@ -195,6 +228,9 @@ export function sanitizeAnalyticsParams(params = {}, eventName = '') {
     const clean = {};
     for (const [name, value] of Object.entries(params || {})) {
         if (value === undefined || value === null || value === '') continue;
+        if (['page_title', 'page_path', 'page_location'].includes(name) && eventName !== 'page_view') {
+            throw new Error(`unsupported analytics parameter: ${name}`);
+        }
         assertSafeName(name);
         assertSafeValue(name, value);
         clean[name] = value;

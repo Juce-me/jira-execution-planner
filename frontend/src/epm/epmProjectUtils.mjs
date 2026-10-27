@@ -1,3 +1,5 @@
+import { sumEpicStoryPoints } from '../eng/engTaskUtils.js';
+
 export function shouldUseEpmSprint(tab) {
     return String(tab || '').trim().toLowerCase() === 'active';
 }
@@ -406,10 +408,7 @@ export function buildEpmEngEpicGroup(epicNode = {}) {
         key: epic.key || 'NO_EPIC',
         epic: toEpmEngEpicDetails(epic),
         tasks,
-        storyPoints: tasks.reduce((sum, task) => {
-            const value = parseFloat(task.fields.customfield_10004 || 0);
-            return Number.isNaN(value) ? sum : sum + value;
-        }, 0),
+        storyPoints: sumEpicStoryPoints(tasks),
         parentSummary: epic.summary || ''
     };
 }

@@ -3,7 +3,7 @@
 // from EngBoardEpicCard.jsx, a .jsx file the plain-Node test runner cannot import directly.
 
 import { buildStorySubtaskProgress } from '../issues/subtaskProgressUtils.js';
-import { getStatusPhaseRank } from './engTaskUtils.js';
+import { getStatusPhaseRank, isKilledStatusName } from './engTaskUtils.js';
 
 // D41: an epic carries no project classification of its own, so classification remains derived
 // from its children. Legacy callers inject their existing boolean `isTechTask` predicate. The
@@ -46,13 +46,12 @@ export function classifyEpicProjects(epicGroup, isTechTask) {
 // shared rank 4.
 const DONE_PHASE_RANK = 5;
 const IN_PROGRESS_PHASE_RANK = 4;
-const EXCLUDED_STATUS_NAMES = new Set(['killed']);
 const DONE_STATUS_NAMES = new Set(['incomplete']);
 const ABANDONED_STATUS_NAMES = new Set(['cancelled', 'canceled', 'rejected', "won't do"]);
 
 function classifyChildStatus(statusName) {
     const normalized = String(statusName || '').trim().toLowerCase();
-    if (EXCLUDED_STATUS_NAMES.has(normalized)) return 'excluded';
+    if (isKilledStatusName(normalized)) return 'excluded';
     if (ABANDONED_STATUS_NAMES.has(normalized)) return 'waiting';
     if (DONE_STATUS_NAMES.has(normalized)) return 'done';
     const rank = getStatusPhaseRank(statusName);

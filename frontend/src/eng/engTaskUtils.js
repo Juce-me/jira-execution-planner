@@ -1,5 +1,19 @@
 import { epicMatchesTeamAliases, normalizeTeamLabelAliases } from '../settings/groupConfigUtils.js';
 
+// Issue #311: Killed work is off an Epic's totals entirely (the same line the story-progress bar draws).
+export function isKilledStatusName(statusName) {
+    return String(statusName || '').trim().toLowerCase() === 'killed';
+}
+
+// The one Epic Story Points total: every child story's points except Killed ones.
+export function sumEpicStoryPoints(tasks = []) {
+    return (tasks || []).reduce((total, task) => {
+        if (isKilledStatusName(task?.fields?.status?.name)) return total;
+        const value = parseFloat(task?.fields?.customfield_10004 || 0);
+        return Number.isNaN(value) ? total : total + value;
+    }, 0);
+}
+
 export const PRIORITY_ORDER = {
     'Blocker': 0,
     'Highest': 1,

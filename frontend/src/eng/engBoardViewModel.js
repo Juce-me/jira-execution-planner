@@ -5,7 +5,7 @@
 
 import { computeEpicStatusCountProgress } from './engBoardCardModel.js';
 import { buildBoardColumns, resolveBoardColumnOwner, UNCONFIGURED_COLUMN_ID } from './engBoardColumns.js';
-import { epicStatusName } from './engTaskUtils.js';
+import { epicStatusName, sumEpicStoryPoints } from './engTaskUtils.js';
 
 function adaptColumn(column, savedById) {
     const saved = savedById.get(column.id) || {};
@@ -93,10 +93,7 @@ export function buildStrictEngBoardViewModel(
             key: epic.key,
             epic: adaptEpic({ ...epic, ...(issuePatchesByKey[epic.key] || {}) }),
             tasks,
-            storyPoints: tasks.reduce(
-                (total, task) => total + (Number(task.fields.customfield_10004) || 0),
-                0,
-            ),
+            storyPoints: sumEpicStoryPoints(tasks),
             parentSummary: epic.parent?.summary || null,
         };
     });

@@ -267,8 +267,8 @@
       "exports": [
         "EpmRollupPanel"
       ],
-      "lineCount": 787,
-      "lineCeiling": 787,
+      "lineCount": 782,
+      "lineCeiling": 782,
       "interfaces": [
         {
           "exportName": "EpmRollupPanel",
@@ -533,8 +533,8 @@
             "forwarded input epmRollupBoards"
           ],
           "inventory": {
-            "source": "frontend/src/epm/EpmRollupPanel.jsx:11",
-            "sourceDigest": "9a34fb0964c5103a7c45726537b595f09342830f737ece2b06d878f664b9c357",
+            "source": "frontend/src/epm/EpmRollupPanel.jsx:12",
+            "sourceDigest": "cc0617ce932353ddfbf3c641e0ce79710f4cdba89a8172f11e7c47adc12292af",
             "reviewed": true,
             "memberNames": [
               "InitiativeIcon",
@@ -1534,8 +1534,8 @@
         "toEpmEngEpicDetails",
         "toEpmEngTask"
       ],
-      "lineCount": 737,
-      "lineCeiling": 737,
+      "lineCount": 736,
+      "lineCeiling": 736,
       "interfaces": []
     },
     {
@@ -19151,8 +19151,8 @@
       "ceiling": 5767
     },
     "settings": {
-      "measured": 17002,
-      "ceiling": 17002
+      "measured": 16996,
+      "ceiling": 16996
     },
     "stats": {
       "measured": 2900,
@@ -19163,12 +19163,12 @@
       "ceiling": 1786
     },
     "uniqueOwners": {
-      "measured": 27149,
-      "ceiling": 27149
+      "measured": 27143,
+      "ceiling": 27143
     },
     "appPlusOwners": {
-      "measured": 34818,
-      "ceiling": 34818
+      "measured": 34812,
+      "ceiling": 34812
     }
   },
   "transfer": {

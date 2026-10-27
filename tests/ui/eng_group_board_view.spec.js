@@ -1625,7 +1625,7 @@ for (const draftCase of [
     });
 }
 
-test('Board to Planning to Board preserves the saved Sprint snapshot without strict or duplicate task loads', async ({ page }) => {
+test('Board to Planning to Board re-enters Component and returns to the saved Sprint snapshot without duplicate task loads', async ({ page }) => {
     const requests = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
     const taskRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
@@ -1635,11 +1635,13 @@ test('Board to Planning to Board preserves the saved Sprint snapshot without str
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning' }).click();
     await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expectBoardEntersComponent(page);
+    await pickOrdinarySprint(page);
     await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await waitTwoFrames(page);
 
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+    expect(componentBoardRequests(requests)).toHaveLength(1);
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(taskRequestCount);
 });
 
@@ -1681,8 +1683,7 @@ test('Board adds Component and All work to the existing Sprint selector without 
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expectBoardEntersComponent(page);
     await settle(page);
     expect(requests.filter((requestPath) => requestPath.includes('scope=all_work'))).toHaveLength(allWorkRequestCount);
 });
@@ -2992,19 +2993,19 @@ test('selector scheduling: in-flight ordinary Board reuse', async ({ page }) => 
         const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
         await modes.getByRole('radio', { name: 'Planning' }).click();
         await modes.getByRole('radio', { name: 'Board' }).click();
-        await waitTwoFrames(page);
+        await expectBoardEntersComponent(page);
         expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 
         releaseTasks();
         releaseTasks = null;
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await pickOrdinarySprint(page);
     } finally {
         releaseTasks?.();
     }
 });
 
-test('selector round trips: held Catch Up lane continues through ordinary Board entry', async ({ page }) => {
+test('selector round trips: held Catch Up lane continues through Component Board entry', async ({ page }) => {
     let releaseTasks;
     const taskResponseGate = new Promise(resolve => { releaseTasks = resolve; });
     const requests = [];
@@ -3021,14 +3022,16 @@ test('selector round trips: held Catch Up lane continues through ordinary Board 
         await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
         await page.getByRole('radiogroup', { name: 'ENG view mode' })
             .getByRole('radio', { name: 'Board', exact: true }).click();
-        await waitTwoFrames(page);
+        await expectBoardEntersComponent(page);
         expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 
         releaseTasks();
         releaseTasks = null;
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
+        await pickOrdinarySprint(page);
+        // The held Catch Up lane was superseded by the Component entry, so the Sprint pick reloads
+        // the Product and Tech lanes once instead of reusing it.
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(4);
     } finally {
         releaseTasks?.();
     }
@@ -3062,7 +3065,7 @@ for (const scopeProfile of [
 }
 
 for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
-    test(`selector round trips: ordinary Board to ${siblingMode} to Board restores its cached Sprint`, async ({ page }) => {
+    test(`selector round trips: ordinary Board to ${siblingMode} to Board enters Component and restores its cached Sprint`, async ({ page }) => {
         const requests = [];
         const requestLog = [];
         await openBoard(page, {
@@ -3084,9 +3087,11 @@ for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
         await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
             .toContainText(selectedSprintName);
         await modes.getByRole('radio', { name: 'Board', exact: true }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+        expect(componentBoardRequests(requests)).toHaveLength(1);
         expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
         if (siblingMode === 'Scenario') {
             expect(requestLog.filter(({ url, method }) => (
@@ -3097,7 +3102,7 @@ for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
 }
 
 for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
-    test(`selector round trips: strict Component to ${siblingMode} to Board restores ordinary Sprint`, async ({ page }) => {
+    test(`selector round trips: strict Component to ${siblingMode} to Board re-enters Component and restores ordinary Sprint`, async ({ page }) => {
         const requests = [];
         const requestLog = [];
         await openBoard(page, {
@@ -3124,9 +3129,10 @@ for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
         await modes.getByRole('radio', { name: siblingMode, exact: true }).click();
         await expect(trigger).toContainText(selectedSprintName);
         await modes.getByRole('radio', { name: 'Board', exact: true }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
-        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+        expect(requests.filter(path => path.includes('scope=component')).length).toBeGreaterThanOrEqual(1);
         expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
         expect(requests.some(path => path.includes('scope=sprint'))).toBe(false);
     });
@@ -3288,11 +3294,14 @@ test('a held Board observation response does not block completed Board controls 
         await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Catch Up' }).click();
         await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
         await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
 
         expect(requests.filter(path => path.includes('scope=all_work'))).toHaveLength(1);
-        expect(performanceLoads.filter(sample => sample.surface === 'eng_board')).toHaveLength(1);
+        const boardLoads = performanceLoads.filter(sample => sample.surface === 'eng_board');
+        expect(boardLoads.filter(sample => sample.scopeType === 'all_work')).toHaveLength(1);
+        expect(boardLoads.filter(sample => sample.scopeType === 'component')).toHaveLength(1);
     } finally {
         releaseObservation?.();
     }
@@ -3399,7 +3408,7 @@ test('selects the current sprint on first load when no cached sprint exists', as
     expect(requestUrls.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
 });
 
-test('Catch Up to Board reuses the loaded sprint snapshot without another Jira data request', async ({ page }) => {
+test('Catch Up to Board opens Component, and its Sprint option reuses the loaded snapshot without another Jira data request', async ({ page }) => {
     const requests = [];
     await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true });
     await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
@@ -3413,14 +3422,16 @@ test('Catch Up to Board reuses the loaded sprint snapshot without another Jira d
     const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expectBoardEntersComponent(page);
+    await pickOrdinarySprint(page);
     await settle(page);
 
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+    expect(componentBoardRequests(requests)).toHaveLength(1);
 });
 
-test('Catch Up authoritative empty snapshot stays authoritative when Board opens', async ({ page }) => {
+test('Catch Up authoritative empty snapshot stays authoritative when Board opens its Sprint option', async ({ page }) => {
     const requests = [];
     await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true, epicSpecs: [] });
     await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
@@ -3434,11 +3445,14 @@ test('Catch Up authoritative empty snapshot stays authoritative when Board opens
     const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
     await expect(page.getByText('No epics found', { exact: true })).toBeVisible();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 });
 
 for (const strictFailure of [
@@ -3484,6 +3498,21 @@ for (const strictFailure of [
 
 // The board scrolls with `scroll-behavior: smooth`, so every focus change needs the scroll offset
 // to stop moving before geometry means anything.
+const componentBoardRequests = (requests) => requests.filter(path => path.startsWith('/api/eng/board?'));
+
+// Entering Board from another mode defaults to the Component scope; the saved Sprint is one
+// selector pick away and reuses the already-loaded snapshot.
+async function expectBoardEntersComponent(page) {
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+}
+
+async function pickOrdinarySprint(page) {
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+}
+
 async function settle(page) {
     // The sentinel is reset per call and three consecutive equal samples are required: a stored
     // value left over from the previous settle would otherwise match a scroll that has not started

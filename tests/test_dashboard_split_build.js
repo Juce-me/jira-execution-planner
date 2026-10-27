@@ -14,10 +14,11 @@ function fixture(t) {
     const put = (name, body) => { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), body); };
     put('package.json', '{"private":true}'); put('package-lock.json', '{}');
     put('scripts/build_dashboard.mjs', fs.readFileSync(helper));
-    put('frontend/src/dashboard.jsx', `console.log(__JEP_DASHBOARD_BUILD_ID__); export const views = [() => import('./stats/StatsPanel.jsx'), () => import('./scenario/ScenarioView.jsx'), () => import('./settings/SettingsModalContainer.jsx')];`);
+    put('frontend/src/dashboard.jsx', `console.log(__JEP_DASHBOARD_BUILD_ID__); export const views = [() => import('./stats/StatsPanel.jsx'), () => import('./scenario/ScenarioView.jsx'), () => import('./settings/SettingsModalContainer.jsx'), () => import('./settings/AdminSettingsContainer.jsx')];`);
     put('frontend/src/stats/StatsPanel.jsx', 'export default "stats-one";');
     put('frontend/src/scenario/ScenarioView.jsx', 'export const ScenarioView = "scenario";');
     put('frontend/src/settings/SettingsModalContainer.jsx', 'export default "settings";');
+    put('frontend/src/settings/AdminSettingsContainer.jsx', 'export default "admin-one";');
     put('frontend/dist/auth-focus-refresh.js', 'auth'); put('frontend/dist/dashboard.css', 'css');
     return { root, put };
 }
@@ -34,8 +35,8 @@ test('split CLI is deterministic, fingerprints lazy edits, cleans stale files an
     assert.equal(cli(root).status, 0); assert.deepEqual(bytes(root), first);
     const manifestName = Object.keys(first).find(name => name.startsWith('lazy-views-'));
     const manifest = JSON.parse(Buffer.from(first[manifestName], 'base64'));
-    assert.deepEqual(Object.keys(manifest.views), ['stats', 'scenario', 'settings']);
-    assert.deepEqual(Object.values(manifest.views).map(v => v.exportName), ['default', 'ScenarioView', 'default']);
+    assert.deepEqual(Object.keys(manifest.views), ['stats', 'scenario', 'settings', 'adminSettings']);
+    assert.deepEqual(Object.values(manifest.views).map(v => v.exportName), ['default', 'ScenarioView', 'default', 'default']);
     for (const view of Object.values(manifest.views)) assert.ok(first[view.path]);
     put('frontend/src/stats/StatsPanel.jsx', 'export default "stats-two";');
     assert.equal(cli(root).status, 0);
@@ -48,6 +49,28 @@ test('split CLI is deterministic, fingerprints lazy edits, cleans stale files an
     assert.equal(second['dashboard.css'], first['dashboard.css']); assert.equal(second['auth-focus-refresh.js'], first['auth-focus-refresh.js']);
     put('frontend/src/stats/StatsPanel.jsx', 'export default !!!');
     assert.notEqual(cli(root).status, 0); assert.deepEqual(bytes(root), second);
+});
+test('editing only the admin module changes the build ID and its chunk path, and removes the old chunk', t => {
+    const { root, put } = fixture(t);
+    assert.equal(cli(root).status, 0);
+    const first = bytes(root);
+    const firstName = Object.keys(first).find(name => name.startsWith('lazy-views-'));
+    const manifest = JSON.parse(Buffer.from(first[firstName], 'base64'));
+    assert.match(manifest.views.adminSettings.path, /^chunks\/AdminSettingsContainer-[A-Z0-9]{8}\.js$/);
+    put('frontend/src/settings/AdminSettingsContainer.jsx', 'export default "admin-two";');
+    assert.equal(cli(root).status, 0);
+    const second = bytes(root);
+    const secondName = Object.keys(second).find(name => name.startsWith('lazy-views-'));
+    assert.notEqual(secondName, firstName);
+    assert.ok(!Object.hasOwn(second, firstName));
+    const next = JSON.parse(Buffer.from(second[secondName], 'base64'));
+    assert.notEqual(next.buildId, manifest.buildId);
+    assert.notEqual(next.views.adminSettings.path, manifest.views.adminSettings.path);
+    assert.ok(Object.hasOwn(second, next.views.adminSettings.path));
+    assert.ok(!Object.hasOwn(second, manifest.views.adminSettings.path));
+    assert.ok(!Object.hasOwn(second, manifest.views.adminSettings.path + '.map'));
+    for (const id of ['stats', 'scenario', 'settings']) assert.equal(next.views[id].path, manifest.views[id].path);
+    assert.notEqual(second['dashboard.js'], first['dashboard.js']);
 });
 test('build ID covers bundled sources only, not editor debris, hidden files or CSS', t => {
     const { root, put } = fixture(t);

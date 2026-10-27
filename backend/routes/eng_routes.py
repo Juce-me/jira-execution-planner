@@ -27,6 +27,7 @@ from backend.services.story_readiness import (
     InvalidCompleteReadinessInput,
     project_story_readiness,
 )
+from backend.services.jira_batches import JIRA_BATCH_CONCURRENCY, JiraBatchIncomplete, run_batches
 from backend.services.team_catalog import normalize_group_team_labels, normalize_team_catalog
 from backend.services.eng_subtasks import (
     SUBTASK_FIELDS,
@@ -93,6 +94,8 @@ _STORY_READINESS_CACHE_MAX_ENTRIES = 128
 _STORY_READINESS_MAX_EPICS = 2000
 _STORY_READINESS_MAX_CHILDREN = 20000
 _STORY_READINESS_DEADLINE_SECONDS = 25
+_STORY_READINESS_BATCH_CONCURRENCY = JIRA_BATCH_CONCURRENCY
+_DEPENDENCIES_DEADLINE_SECONDS = 25
 
 _STORY_READINESS_ERRORS = {
     'invalid_story_readiness_scope': (400, 'Story readiness scope is invalid.'),
@@ -433,16 +436,17 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
     else:
         raise RuntimeError('jira_unavailable')
 
-    child_started = time.monotonic()
-    children = []
     child_budget = eng_board.UniqueKeyBudget(_STORY_READINESS_MAX_CHILDREN)
     child_fields = ['status', 'parent', sprint_field, team_field]
     if epic_link_field:
         child_fields.append(epic_link_field)
-    for batch in eng_board.split_epic_batches(
-            epic_keys,
-            lambda keys: 'issuetype = Story AND parent in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
-            child_fields):
+    child_batches = eng_board.split_epic_batches(
+        epic_keys,
+        lambda keys: 'issuetype = Story AND parent in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
+        child_fields)
+
+    def read_children(batch):
+        children = []
         clauses = ['parent in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')']
         if epic_link_field:
             clauses.append(f'{epic_link_field} in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')')
@@ -461,16 +465,17 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 'sprintIds': _story_readiness_ids(fields.get(sprint_field)),
                 'teamIds': _story_readiness_ids(fields.get(team_field)),
             })
-    child_ms = (time.monotonic() - child_started) * 1000
+        return children
 
-    enrichment_started = time.monotonic()
-    epics = []
     enrichment_fields = ['summary', 'status', 'priority', 'assignee', 'labels', 'components', 'parent',
                          'project', track_field, team_field]
-    for batch in eng_board.split_epic_batches(
-            epic_keys,
-            lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
-            enrichment_fields):
+    enrichment_batches = eng_board.split_epic_batches(
+        epic_keys,
+        lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
+        enrichment_fields)
+
+    def read_epics(batch):
+        epics = []
         batch_set = set(batch)
         rows = _story_readiness_search(
             context, transport,
@@ -504,7 +509,34 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 'projectClass': project_map.get(project_key, ''),
                 'initiative': initiative,
             })
-    enrichment_ms = (time.monotonic() - enrichment_started) * 1000
+        return epics
+
+    # One queue, child batches first, through the bounded runner (cap 1 runs inline, as before). Each
+    # task records its own span: a group's Server-Timing segment is its first start to its last end.
+    reads = [(read_children, batch) for batch in child_batches] + [(read_epics, batch) for batch in enrichment_batches]
+    spans = [None] * len(reads)
+
+    def timed(index, read, batch):
+        def task():
+            task_started = time.monotonic()
+            try:
+                return read(batch)
+            finally:
+                spans[index] = (task_started, time.monotonic())
+        return task
+
+    outcome = run_batches(
+        [timed(index, read, batch) for index, (read, batch) in enumerate(reads)], lambda task: task(),
+        max_concurrency=_STORY_READINESS_BATCH_CONCURRENCY, cancel_check=transport.budget.check,
+    )
+    outcome.raise_if_failed()
+    split = len(child_batches)
+    children = [child for rows in outcome.results[:split] for child in rows]
+    epics = [epic for rows in outcome.results[split:] for epic in rows]
+    child_ms, enrichment_ms = (
+        (max(end for _start, end in group) - min(start for start, _end in group)) * 1000
+        for group in (spans[:split], spans[split:])
+    )
     result = project_story_readiness({
         'status': 'complete',
         'canonicalSprint': {'id': sprint_id, 'name': sprint_name, 'state': sprint_state},
@@ -867,6 +899,7 @@ def get_dependencies():
         force_refresh = payload.get('refresh') is True
 
         started_at = time.perf_counter()
+        deadline = time.monotonic() + _DEPENDENCIES_DEADLINE_SECONDS
         auth_context = current_request_auth_context()
         cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
@@ -881,14 +914,25 @@ def get_dependencies():
             return response
 
         collect_started_at = time.perf_counter()
-        dependencies = collect_dependencies(keys, context=auth_context)
+        incomplete = None
+        try:
+            dependencies = collect_dependencies(keys, context=auth_context, max_concurrency=JIRA_BATCH_CONCURRENCY,
+                                                strict=True, deadline=deadline)
+        except JiraBatchIncomplete as error:
+            # A failed, cut-short, rate-limited or late batch: answer with what completed, flagged, never cached.
+            incomplete = error
+            dependencies = error.partial or {}
+            log_warning(f'Dependencies incomplete: reason={error.reason}')
         collect_ms = round((time.perf_counter() - collect_started_at) * 1000, 1)
-        if cache_enabled:
+        if cache_enabled and incomplete is None:
             with _cache_lock:
                 if get_jira_issue_cache_generation() == cache_generation:
                     DEPENDENCIES_CACHE[cache_key] = {'timestamp': time.time(), 'data': dependencies}
         total_ms = round((time.perf_counter() - started_at) * 1000, 1)
-        response = jsonify({'dependencies': dependencies})
+        body = {'dependencies': dependencies}
+        if incomplete is not None:
+            body.update(incomplete=True, reason=incomplete.reason)
+        response = jsonify(body)
         response.headers['Server-Timing'] = f'collect;dur={collect_ms}, total;dur={total_ms}'
         return response
     except AuthError as error:

@@ -17,15 +17,21 @@ function manifest() {
         stats: { path: 'chunks/StatsPanel-ABC12345.js', exportName: 'default' },
         scenario: { path: 'chunks/ScenarioView-ABC12345.js', exportName: 'ScenarioView' },
         settings: { path: 'chunks/SettingsModalContainer-ABC12345.js', exportName: 'default' },
+        adminSettings: { path: 'chunks/AdminSettingsContainer-ABC12345.js', exportName: 'default' },
     } };
 }
 test('lazy manifests accept only the complete mounted graph and fixed exports', () => {
     const { validateLazyViewManifest } = load();
     const result = validateLazyViewManifest(manifest(), buildId);
     assert.equal(result.views.scenario.exportName, 'ScenarioView');
+    assert.deepEqual(Object.keys(result.views).sort(), ['adminSettings', 'scenario', 'settings', 'stats']);
+    assert.equal(result.views.adminSettings.exportName, 'default');
     for (const mutate of [
         m => { m.schemaVersion = 2; }, m => { m.extra = true; }, m => { m.views.stats.extra = true; }, m => { m.buildId = 'b'.repeat(64); },
         m => { delete m.views.settings; }, m => { m.views.extra = m.views.stats; },
+        m => { delete m.views.adminSettings; }, m => { m.views.adminSettings.extra = true; }, m => { m.views.adminSettings.exportName = 'AdminSettingsContainer'; },
+        m => { m.views.adminSettings.path = 'chunks/SettingsModalContainer-ABC12345.js'; }, m => { m.views.settings.path = 'chunks/AdminSettingsContainer-ABC12345.js'; },
+        m => { m.views.adminSettings.path = 'chunks/AdminSettingsContainer-abc12345.js'; }, m => { m.views.adminSettings.path = '../chunks/AdminSettingsContainer-ABC12345.js'; },
         m => { m.views.scenario.exportName = 'default'; },
         ...['../StatsPanel-ABC12345.js', '/chunks/StatsPanel-ABC12345.js', 'https://evil.example/chunks/StatsPanel-ABC12345.js', 'chunks/../StatsPanel-ABC12345.js', 'chunks/StatsPanel-ABC12345.js?q=1', 'chunks/StatsPanel-ABC12345.js#x', 'chunks/StatsPanel-%41BC12345.js', 'chunks\\StatsPanel-ABC12345.js', 'chunks/ScenarioView-ABC12345.js'].map(value => m => { m.views.stats.path = value; }),
     ]) {
@@ -38,6 +44,16 @@ test('lazy loader caches initial success across attempts and reopen', async () =
     let calls = 0;
     const module = { default() {} };
     const loader = createLazyViewLoader({ viewId: 'stats', initialLoad: async () => { calls += 1; return module; } });
+    assert.equal(await loader(0), module);
+    assert.equal(await loader(1), module);
+    assert.equal(await loader(0), module);
+    assert.equal(calls, 1);
+});
+test('the admin settings loader caches initial success across attempts and reopen', async () => {
+    const { createLazyViewLoader } = load();
+    let calls = 0;
+    const module = { default() {} };
+    const loader = createLazyViewLoader({ viewId: 'adminSettings', initialLoad: async () => { calls += 1; return module; } });
     assert.equal(await loader(0), module);
     assert.equal(await loader(1), module);
     assert.equal(await loader(0), module);
@@ -66,7 +82,7 @@ test('lazy retry caches only a validated mounted manifest and uses its versioned
         window: { location: { origin: 'https://app.example' } },
         fetch: async url => { requests.push(url); return { ok: true, json: async () => manifest() }; },
     }, buildId);
-    for (const viewId of ['stats', 'scenario']) {
+    for (const viewId of ['stats', 'scenario', 'adminSettings']) {
         const loader = createLazyViewLoader({ viewId, initialLoad: async () => { throw new Error('original failed'); } });
         // Native imports require the browser; in this VM they reject after manifest validation.
         await assert.rejects(loader(1), error => error.code !== 'JEP_STALE_LAZY_BUILD');
@@ -95,7 +111,7 @@ test('concurrent retries share one manifest read', async () => {
         window: { location: { origin: 'https://app.example' } },
         fetch: async () => { requests += 1; await new Promise(resolve => setTimeout(resolve, 0)); return { ok: true, json: async () => manifest() }; },
     }, buildId);
-    const loaders = ['stats', 'scenario', 'settings'].map(viewId => createLazyViewLoader({ viewId, initialLoad: async () => { throw new Error('original failed'); } }));
+    const loaders = ['stats', 'scenario', 'settings', 'adminSettings'].map(viewId => createLazyViewLoader({ viewId, initialLoad: async () => { throw new Error('original failed'); } }));
     await Promise.all(loaders.map(loader => loader(1).catch(() => null)));
     assert.equal(requests, 1);
 });

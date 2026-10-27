@@ -8,6 +8,7 @@ const views = {
     stats: ['frontend/src/stats/StatsPanel.jsx', 'default'],
     scenario: ['frontend/src/scenario/ScenarioView.jsx', 'ScenarioView'],
     settings: ['frontend/src/settings/SettingsModalContainer.jsx', 'default'],
+    adminSettings: ['frontend/src/settings/AdminSettingsContainer.jsx', 'default'],
 };
 const slash = value => value.split(path.sep).join('/');
 function effectiveOptions(mode) {

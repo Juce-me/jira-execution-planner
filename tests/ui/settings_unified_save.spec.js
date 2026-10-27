@@ -175,6 +175,7 @@ async function mockConfigSettings(page, {
     let adminUserRows = adminUsers ? adminUsers.map(user => ({ ...user })) : null;
     const epicsInScope = epicsFromCounts(fixture.REFERENCE_EPICS_BY_STATUS);
     let groupsPostCount = 0;
+    let appGroupGets = 0;
     let configGetCount = 0;
     let teamCatalogGetCount = 0;
     let teamsGetCount = 0;
@@ -292,7 +293,12 @@ async function mockConfigSettings(page, {
             if (groupsRetryAuthRequired && groupGets > 1) {
                 return json({ error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401);
             }
-            if (failFirstGroupsConnection && groupGets === 1) {
+            // The startup groups read cannot connect. The early startup script's request (the one
+            // read sent without a Referer) falls back to one request of the app's own on a network
+            // error, so the outage covers both, as it did the app's single read before.
+            const earlyRead = !(await request.allHeaders()).referer;
+            if (!earlyRead) appGroupGets += 1;
+            if (failFirstGroupsConnection && (earlyRead || appGroupGets === 1)) {
                 await new Promise(resolve => setTimeout(resolve, 300));
                 return route.abort('connectionrefused');
             }

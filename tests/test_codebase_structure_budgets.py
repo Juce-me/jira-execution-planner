@@ -67,7 +67,11 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # _normalize_cohort_issues tail, the full-changelog option, parse_epic_cohort_request and the
     # route branch (+128 over the line above; the query building and selection live in
     # backend/services/epic_cohort_closed.py).
-    "jira_server.py": 6615,
+    # Catch Up cold load speed Task 2a: collect_dependencies gains the cap/strict/deadline keywords, the explicit
+    # worker context and the per-round JiraBatchIncomplete capture that raises with the partial map; the batch
+    # runner, continuation and deadline logic live in backend/services/jira_batches.py and backend/jira_client.py
+    # (+15 over the line above; jira_search_request's pass-through got shorter).
+    "jira_server.py": 6630,
     # App decomposition ratchets the entrypoint to its exact measured size.
     # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
     # pass-through, status readout, projection calls and shared EPM availability,
@@ -86,7 +90,14 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Issue #209 Task 6 fix: Back to alerts reuses the block reveal, so it also expands the pinned category (-4).
     # Issue #209 follow-up 1: the pin's title handler, its comment and the EngView prop (+3); follow-up 2 replaced the locate handler
     # with the Story/Epic handler in the same lines (net 0).
-    "frontend/src/dashboard.jsx": 7659,
+    # Catch Up cold load speed Task 2a: the dependencyIncomplete state cell, its reset at the start of fetchDependencies and
+    # the two EngView notice props (+3 over the line above; the set/clear sites, including the resets in resetSprintScopedState,
+    # clearEngGroupScopeData and applyGroupState, share existing lines and the notice markup lives in EngView; the dependencies
+    # effect stays untouched, as tests/test_epic_refresh_source_guards.js pins it).
+    # Catch Up cold load speed Task 3: the admin settings panels become the fourth lazy view. The static import line
+    # leaves; the module-scope loader (2 lines) and loading fallback (1 line) and the LazyViewBoundary open and close lines
+    # around the unchanged 160 explicit props join (+4 over the line above).
+    "frontend/src/dashboard.jsx": 7666,
 }
 
 

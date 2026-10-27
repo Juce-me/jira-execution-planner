@@ -36,6 +36,11 @@ test('disabled analytics initializes dataLayer but does not request Google tags'
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
 
     await expect.poll(() => page.evaluate(() => Array.isArray(window.dataLayer))).toBe(true);
+    // The external early startup script runs under the same strict script policy and its two reads are adopted.
+    await expect.poll(() => page.evaluate(() => ['config', 'groups'].map(key => {
+        const entry = window.__JEP_EARLY_BOOTSTRAP__?.[key];
+        return entry ? `${entry.state}:${entry.claimed}` : 'missing';
+    }))).toEqual(['early:true', 'early:true']);
     expect(googleRequests).toEqual([]);
     expect(cspErrors).toEqual([]);
 });

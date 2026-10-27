@@ -5,6 +5,8 @@ import os
 from flask import Flask
 from flask_cors import CORS
 
+from backend.response_compression import register_response_compression
+
 
 def _allowed_cors_origins():
     raw = os.getenv('APP_ALLOWED_ORIGINS', 'http://localhost:5050,http://127.0.0.1:5050')
@@ -21,6 +23,9 @@ def create_app(import_name='jira_server'):
         SESSION_COOKIE_SAMESITE='Lax',
         SESSION_COOKIE_SECURE=os.getenv('SESSION_COOKIE_SECURE', '').strip().lower() in {'1', 'true', 'yes'},
     )
+    # Registered first: Flask runs after-request handlers in reverse registration order,
+    # so compression runs last and sees the final headers.
+    register_response_compression(flask_app)
     CORS(flask_app, origins=_allowed_cors_origins(), supports_credentials=True)
     from backend.security.guards import register_security_guards
     from backend.security.headers import register_security_headers

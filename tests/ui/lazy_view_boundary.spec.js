@@ -28,7 +28,7 @@ const buildProbe = viewId => esbuild.buildSync({
     define: { 'process.env.NODE_ENV': '"production"' },
 }).outputFiles[0].text;
 
-for (const viewId of ['stats', 'scenario', 'settings']) test(`a missing ${viewId} chunk settles during parent updates and stays failed on reopen`, async ({ page }) => {
+for (const viewId of ['stats', 'scenario', 'settings', 'adminSettings']) test(`a missing ${viewId} chunk settles during parent updates and stays failed on reopen`, async ({ page }) => {
     await page.route('http://lazy.example/', route => route.fulfill({ contentType: 'text/html', body: '<div id="root"></div>' }));
     await page.route('**/missing-StatsPanel.js', async route => {
         await new Promise(resolve => setTimeout(resolve, 50));

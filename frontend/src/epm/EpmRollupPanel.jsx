@@ -6,6 +6,7 @@ import IssueCard, { IssueCardContext } from '../issues/IssueCard.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
+import { sumEpicStoryPoints } from '../eng/engTaskUtils.js';
 import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
@@ -618,10 +619,7 @@ export function EpmRollupPanel({
                 assignee: epicIssue.assignee ? { displayName: epicIssue.assignee } : null,
             },
             tasks,
-            storyPoints: tasks.reduce((sum, task) => {
-                const value = parseFloat(task.fields.customfield_10004 || 0);
-                return Number.isNaN(value) ? sum : sum + value;
-            }, 0),
+            storyPoints: sumEpicStoryPoints(tasks),
             parentSummary: epicIssue.summary || '',
         });
     };
@@ -636,10 +634,7 @@ export function EpmRollupPanel({
             renderKey: key,
             epic: null,
             tasks,
-            storyPoints: tasks.reduce((sum, task) => {
-                const value = Number(task.fields?.customfield_10004 || 0);
-                return Number.isFinite(value) ? sum + value : sum;
-            }, 0),
+            storyPoints: sumEpicStoryPoints(tasks),
             parentSummary
         });
     };

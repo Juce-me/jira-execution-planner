@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { subscribeEngReading, getEngReadingPresentation, releaseEngReadingContext, installEngReadingEvents, markEngReadingDeparture } from './engReadingAnchor.js';
+import { sumEpicStoryPoints } from './engTaskUtils.js';
 import { buildEngWorkHierarchy } from './engWorkHierarchy.js';
 export { buildStoryReadinessAlertModel, storyReadinessStatusMessage } from './engWorkHierarchy.js';
 
@@ -17,12 +18,11 @@ export function groupTasksByEpic(taskList = [], epicDetails = {}) {
             };
         }
         grouped[epicKey].tasks.push(task);
-        const storyPoints = parseFloat(task.fields.customfield_10004 || 0);
-        if (!Number.isNaN(storyPoints)) grouped[epicKey].storyPoints += storyPoints;
         if (!grouped[epicKey].parentSummary && task.fields.parentSummary) {
             grouped[epicKey].parentSummary = task.fields.parentSummary;
         }
     });
+    Object.values(grouped).forEach((group) => { group.storyPoints = sumEpicStoryPoints(group.tasks); });
     return grouped;
 }
 

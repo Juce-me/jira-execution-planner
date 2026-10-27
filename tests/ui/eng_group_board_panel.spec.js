@@ -497,6 +497,39 @@ test('a loaded description is clamped to 11.5rem and Show full description expan
     await page.screenshot({ path: `${screenshotDir}/panel-expanded.png` });
 });
 
+test('Show full description widens the panel within the viewport and Show less restores it', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 1440, height: 900 });
+    await openPanel(page, 'PLAT-1');
+    const width = () => panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    const normal = await width();
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).toHaveClass(/is-description-expanded/);
+    const wide = await width();
+    expect(wide).toBeGreaterThan(normal + 100);
+    const box = await panel(page).evaluate((node) => {
+        const rect = node.getBoundingClientRect();
+        return { left: rect.left, right: rect.right, viewport: window.innerWidth };
+    });
+    expect(box.left).toBeGreaterThanOrEqual(0);
+    expect(box.right).toBeLessThanOrEqual(box.viewport);
+    await page.screenshot({ path: `${screenshotDir}/panel-expanded-wide.png` });
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).not.toHaveClass(/is-description-expanded/);
+    expect(Math.abs((await width()) - normal)).toBeLessThanOrEqual(1);
+});
+
+test('Show full description leaves the narrow-viewport panel width unchanged', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 375, height: 812 });
+    await openPanel(page, 'PLAT-1');
+    const before = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    await panel(page).locator('.m-desc-more').click();
+    await expect(panel(page)).toHaveClass(/is-description-expanded/);
+    const after = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
+    expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
+});
+
 test('a description H1 appears without an entrance animation', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls, { descriptionHtml: HEADING_DESCRIPTION_HTML });
@@ -679,11 +712,12 @@ test('every story control resolves to an existing app class, priority asserted a
     await expect(row.locator('a.story-subtask-name')).toHaveCount(1);
     await expect(row.locator('span.story-subtask-assignee')).toHaveCount(1);
     await expect(row.locator('time.story-subtask-updated')).toHaveCount(1);
-    // Exactly the five cells of the table, so story points stay absent from the row (§6.3).
-    expect(await row.evaluate((node) => node.children.length)).toBe(5);
+    // The five cells of the table plus the Story Points cell (#311).
+    expect(await row.evaluate((node) => node.children.length)).toBe(6);
+    await expect(row.locator('span.story-subtask-sp')).toHaveText('2.0');
 });
 
-test('the Board panel row computes five grid cells and Catch Up\'s computes four', async ({ page }) => {
+test('the Board panel row computes six grid cells and Catch Up\'s computes four', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
     await openPanel(page, 'PLAT-1');
@@ -692,7 +726,7 @@ test('the Board panel row computes five grid cells and Catch Up\'s computes four
     await expect(rows.first()).toHaveClass(/has-priority/);
     const templates = await rowTemplates(rows);
     expect(templates.length).toBe(5);
-    templates.forEach((row) => expect(row.cells).toBe(5));
+    templates.forEach((row) => expect(row.cells).toBe(6));
     // Column-aligned: every row computes the identical template.
     expect(new Set(templates.map((row) => row.template)).size).toBe(1);
 
@@ -705,6 +739,35 @@ test('the Board panel row computes five grid cells and Catch Up\'s computes four
         return cells;
     });
     expect(bare).toBe(4);
+});
+
+// #311: an SP header over a right-aligned one-decimal column, mirrored by every row.
+test('the panel shows an SP header aligned right over one-decimal Story Points', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await openPanel(page, 'PLAT-1');
+
+    const head = panel(page).locator('.story-subtask-head .story-subtask-sp');
+    await expect(head).toHaveText('SP');
+    const cells = panel(page).locator('.story-subtask-row .story-subtask-sp');
+    await expect(cells).toHaveCount(5);
+    for (const text of await cells.allTextContents()) expect(text).toMatch(/^\d+\.\d$/);
+    const rights = await panel(page).evaluate((node) => [node.querySelector('.story-subtask-head .story-subtask-sp'), ...node.querySelectorAll('.story-subtask-row .story-subtask-sp')].map((el) => {
+        const box = el.getBoundingClientRect();
+        return { right: Math.round(box.right * 10) / 10, align: getComputedStyle(el).justifySelf, clipped: el.scrollWidth > el.clientWidth };
+    }));
+    expect(rights.map((entry) => entry.right)).toEqual(rights.map(() => rights[0].right));
+    rights.forEach((entry) => { expect(entry.align).toMatch(/end|right/); expect(entry.clipped).toBe(false); });
+    await page.waitForTimeout(500);
+    await panel(page).screenshot({ path: `${screenshotDir}/panel-sp.png` });
+});
+
+test('the SP header and cells are dropped below 761px', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { width: 375, height: 812 });
+    await openPanel(page, 'PLAT-1');
+    await expect(panel(page).locator('.story-subtask-head')).toBeHidden();
+    await expect(panel(page).locator('.story-subtask-row .story-subtask-sp').first()).toBeHidden();
 });
 
 // Below 761px the row folds to "pri name" / "status status updated". The status control is

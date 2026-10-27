@@ -5758,6 +5758,12 @@ button.toggle.applied-filter.active {
   box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
   text-align: left;
 }
+.eng-board .epic-panel.is-description-expanded {
+  width: min(1000px, 100%);
+}
+.eng-board .epic-panel.is-description-expanded .m-desc {
+  max-width: none;
+}
 .eng-board .m-head {
   padding: 1.1rem 1.25rem 1rem;
   border-bottom: 1px solid var(--border);
@@ -8152,6 +8158,17 @@ a.dependency-missing-item {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
+.story-subtask-sp {
+  grid-area: sp;
+  display: none;
+  justify-self: end;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.story-subtask-head {
+  display: none;
+}
 @media (min-width: 761px) {
   .story-subtasks-panel {
     width: min(100%, 48rem);
@@ -8164,8 +8181,22 @@ a.dependency-missing-item {
     padding: 0.18rem 0;
   }
   .story-subtask-row.has-priority {
-    grid-template-columns: 1.1rem minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem;
-    grid-template-areas: "pri name status assignee updated";
+    grid-template-columns: 1.1rem minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem 2rem;
+    grid-template-areas: "pri name status assignee updated sp";
+  }
+  .story-subtask-row.has-priority > .story-subtask-sp,
+  .story-subtask-head > .story-subtask-sp {
+    display: block;
+  }
+  .story-subtask-head {
+    display: grid;
+    grid-template-columns: 1.1rem minmax(12rem, 1fr) 5.8rem minmax(7rem, 9rem) 5.3rem 2rem;
+    grid-template-areas: "pri name status assignee updated sp";
+    gap: 0.55rem;
+    padding: 0.18rem 0;
+    border-bottom: 1px solid rgba(224, 221, 215, 0.38);
+    font-size: 0.6rem;
+    line-height: 1.25;
   }
   .story-subtask-assignee {
     display: block;

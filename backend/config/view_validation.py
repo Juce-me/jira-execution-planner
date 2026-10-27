@@ -42,6 +42,8 @@ FORBIDDEN_VIEW_PAYLOAD_KEYS = (
 
 USER_EPM_SETTINGS_KEYS = frozenset({'version', 'labelPrefix', 'scope', 'issueTypes', 'projects'})
 PERSONAL_EPM_KEYS = frozenset({'tab', 'selectedSprint'})
+# Owner-private boolean preference inside the private view's `epm` object (not part of the five-key config).
+EPM_VIEW_ENABLED_KEY = 'viewEnabled'
 
 
 class ViewPayloadValidationError(ValueError):
@@ -204,11 +206,15 @@ def normalize_user_view_payload(payload):
         return result
     if not isinstance(epm, dict):
         _invalid('epm')
-    _reject_unknown(epm, USER_EPM_SETTINGS_KEYS | PERSONAL_EPM_KEYS, 'epm')
+    _reject_unknown(epm, USER_EPM_SETTINGS_KEYS | PERSONAL_EPM_KEYS | {EPM_VIEW_ENABLED_KEY}, 'epm')
     settings = {key: epm[key] for key in USER_EPM_SETTINGS_KEYS if key in epm}
     personal = {key: deepcopy(epm[key]) for key in PERSONAL_EPM_KEYS if key in epm}
     for key, value in personal.items():
         _require_text(value, f'epm.{key}')
+    if EPM_VIEW_ENABLED_KEY in epm:
+        if not isinstance(epm[EPM_VIEW_ENABLED_KEY], bool):
+            _invalid(f'epm.{EPM_VIEW_ENABLED_KEY}')
+        personal[EPM_VIEW_ENABLED_KEY] = epm[EPM_VIEW_ENABLED_KEY]
     if settings:
         settings = normalize_epm_settings_payload(settings)
     result['epm'] = {**settings, **personal}

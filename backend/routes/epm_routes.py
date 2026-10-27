@@ -2,6 +2,7 @@
 
 from flask import Blueprint
 
+from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 from backend.config.view_validation import ViewPayloadValidationError, normalize_epm_settings_payload
@@ -313,6 +314,23 @@ def get_epm_project_rollup_endpoint(project_id):
     for key, value in headers.items():
         response.headers[key] = value
     return response, status
+
+
+@bp.route('/api/epm/preferences', methods=['POST'])
+def save_epm_preferences_endpoint():
+    """Owner-private Enable EPM view checkbox; exactly {viewEnabled: boolean}, nothing else is accepted."""
+    payload = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(payload, dict) or set(payload) != {'viewEnabled'} or not isinstance(payload['viewEnabled'], bool):
+        return jsonify({
+            'error': 'invalid_epm_preferences',
+            'message': 'EPM preferences are invalid.',
+        }), 400
+    context = _cache_policy_context()
+    if not config_storage_db_enabled() or not is_db_auth_context(context):
+        return _epm_storage_unavailable_response()
+    result = build_db_config_repository().set_user_epm_view_enabled(context, payload['viewEnabled'])
+    saved = (result.view.get('epm') or {}).get('viewEnabled')
+    return jsonify({'epmViewEnabled': saved is True})
 
 
 @bp.route('/api/epm/config', methods=['POST'])

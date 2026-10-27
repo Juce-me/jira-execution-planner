@@ -6,14 +6,14 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 from typing import Callable, Mapping
 
 from sqlalchemy import func, select, text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from backend.config.shared_config import sanitize_private_view_payload, validate_private_view_ownership
-from backend.config.view_validation import normalize_epm_settings_payload
+from backend.config.view_validation import EPM_VIEW_ENABLED_KEY, normalize_epm_settings_payload
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.epm.config import normalize_epm_config
@@ -220,6 +220,30 @@ def _sanitized_payload(payload):
     return sanitize_private_view_payload(deepcopy(payload or {}))
 
 
+def _has_view_enabled(payload):
+    epm = payload.get('epm') if isinstance(payload, dict) else None
+    return isinstance(epm, dict) and EPM_VIEW_ENABLED_KEY in epm
+
+
+def _payload_view_enabled(payload):
+    """The saved owner preference: True/False, or None when the payload holds none."""
+    epm = payload.get('epm') if isinstance(payload, dict) else None
+    value = epm.get(EPM_VIEW_ENABLED_KEY) if isinstance(epm, dict) else None
+    return value if isinstance(value, bool) else None
+
+
+def _with_view_enabled(payload, enabled):
+    """Copy of `payload` whose `epm.viewEnabled` is `enabled` (None removes it); nothing else changes."""
+    result = deepcopy(payload) if isinstance(payload, dict) else {}
+    epm = result.get('epm')
+    if enabled is None:
+        if isinstance(epm, dict) and EPM_VIEW_ENABLED_KEY in epm:
+            result['epm'] = {key: value for key, value in epm.items() if key != EPM_VIEW_ENABLED_KEY}
+        return result
+    result['epm'] = {**(epm if isinstance(epm, dict) else {}), EPM_VIEW_ENABLED_KEY: enabled}
+    return result
+
+
 def _run_mutation_once(context, database_url, operation, before_commit=None):
     with db_engine.session_scope(database_url) as session:
         dialect_name = _begin_serialized(session, context)
@@ -275,10 +299,16 @@ def create_user_view(
         raise ValueError('viewType must be eng, epm, or mixed')
 
     def operation(session, dialect_name):
+        view_payload = payload
         if is_default:
-            for existing in session.execute(_locked(
+            existing_defaults = session.execute(_locked(
                 _active_statement(context).where(models.ViewConfig.is_default.is_(True)), dialect_name,
-            )).scalars().all():
+            )).scalars().all()
+            # The owner's enablement is never adopted from, or reset by, the incoming view.
+            view_payload = _with_view_enabled(
+                payload, _payload_view_enabled(existing_defaults[0].payload) if existing_defaults else None,
+            )
+            for existing in existing_defaults:
                 existing.is_default = False
             session.flush()
         view = models.ViewConfig(
@@ -287,7 +317,7 @@ def create_user_view(
             name=(str(name or 'Saved view').strip() or 'Saved view')[:255],
             view_type=view_type,
             payload_version=int(payload.get('version') or 1),
-            payload=deepcopy(payload),
+            payload=deepcopy(view_payload),
             visibility='private',
             is_default=bool(is_default),
         )
@@ -338,6 +368,8 @@ def mutate_user_view(
                 _effective_epm(session, context, dialect_name), current_version,
             )
             raise UserViewConfigConflict(current)
+        owner_default = _default_view(session, context, dialect_name)
+        owner_enabled = _payload_view_enabled(owner_default.payload) if owner_default is not None else None
         if name is not _UNSET:
             normalized_name = str(name or '').strip()
             if normalized_name:
@@ -364,6 +396,9 @@ def mutate_user_view(
                     existing.is_default = False
                 session.flush()
             view.is_default = make_default
+        if view.is_default and not archive and (payload is not _UNSET or is_default is not _UNSET):
+            # Replacement or promotion keeps the owner's enablement; it is never adopted or reset.
+            view.payload = _with_view_enabled(view.payload, owner_enabled)
         session.flush()
         return view, _append_version(session, view, context, 'user update')
 
@@ -399,7 +434,7 @@ def save_user_epm_config(
             session.flush()
         current_payload = deepcopy(view.payload or {})
         current_epm = deepcopy(current_payload.get('epm') or {}) if isinstance(current_payload.get('epm'), dict) else {}
-        personal = {key: current_epm[key] for key in ('tab', 'selectedSprint') if key in current_epm}
+        personal = {key: current_epm[key] for key in ('tab', 'selectedSprint', EPM_VIEW_ENABLED_KEY) if key in current_epm}
         current_payload['epm'] = {**deepcopy(normalized), **personal}
         view.payload = current_payload
         view.view_type = _infer_view_type(current_payload)
@@ -409,6 +444,95 @@ def save_user_epm_config(
     return _run_transaction(
         context, database_url, operation, post_commit=post_commit, before_commit=_before_commit,
     )
+
+
+def set_user_epm_view_enabled(
+    context,
+    enabled,
+    *,
+    database_url=None,
+    post_commit: Callable[[UserViewMutationResult], None] | None = None,
+    _before_commit=None,
+):
+    """Patch only the owner's private `epm.viewEnabled` inside the serialized default-view transaction."""
+    if not isinstance(enabled, bool):
+        raise ValueError('viewEnabled must be a boolean')
+
+    def operation(session, dialect_name):
+        view = _default_view(session, context, dialect_name)
+        if view is None:
+            view = models.ViewConfig(
+                workspace_id=context.workspace_id,
+                owner_user_id=context.user_id,
+                name='Default view',
+                view_type='epm',
+                payload_version=1,
+                payload={},
+                visibility='private',
+                is_default=True,
+            )
+            session.add(view)
+            session.flush()
+        elif _payload_view_enabled(view.payload) is enabled:
+            return view, _latest_version(session, view.id)
+        view.payload = _with_view_enabled(view.payload, enabled)
+        session.flush()
+        return view, _append_version(session, view, context, 'user EPM preference update')
+
+    return _run_transaction(
+        context, database_url, operation, post_commit=post_commit, before_commit=_before_commit,
+    )
+
+
+def load_user_epm_view_enabled(context, *, database_url=None):
+    """The owner's saved enablement; false when there is no default view or no saved boolean."""
+    try:
+        with db_engine.session_scope(database_url) as session:
+            view = _default_view(session, context, session.get_bind().dialect.name)
+            return view is not None and _payload_view_enabled(view.payload) is True
+    except SQLAlchemyError as error:
+        raise UserViewConfigStorageError('user EPM preference read failed') from error
+
+
+def strip_epm_view_enabled(*, database_url=None, context=None):
+    """Operator downgrade step: remove only `epm.viewEnabled` from private views and their saved versions.
+
+    Every other field, view, version number, user and credential is left as is. Runs one serialized
+    transaction per owner; `context` limits it to that owner. Returns the number of views changed.
+    """
+    try:
+        with db_engine.session_scope(database_url) as session:
+            statement = select(models.ViewConfig.workspace_id, models.ViewConfig.owner_user_id).distinct()
+            if context is not None:
+                statement = statement.where(
+                    models.ViewConfig.workspace_id == context.workspace_id,
+                    models.ViewConfig.owner_user_id == context.user_id,
+                )
+            owners = [tuple(row) for row in session.execute(statement).all()]
+    except SQLAlchemyError as error:
+        raise UserViewConfigStorageError('private view storage unavailable') from error
+    changed = 0
+    for workspace_id, owner_user_id in owners:
+        scope = SimpleNamespace(workspace_id=workspace_id, user_id=owner_user_id)
+        try:
+            with db_engine.session_scope(database_url) as session:
+                dialect_name = _begin_serialized(session, scope)
+                views = session.execute(_locked(select(models.ViewConfig).where(
+                    models.ViewConfig.workspace_id == workspace_id,
+                    models.ViewConfig.owner_user_id == owner_user_id,
+                ), dialect_name)).scalars().all()
+                for view in views:
+                    if _has_view_enabled(view.payload):
+                        view.payload = _with_view_enabled(view.payload, None)
+                        changed += 1
+                    for version in session.execute(select(models.ViewConfigVersion).where(
+                        models.ViewConfigVersion.view_config_id == view.id,
+                    )).scalars():
+                        if _has_view_enabled(version.payload):
+                            version.payload = _with_view_enabled(version.payload, None)
+        except SQLAlchemyError as error:
+            raise UserViewConfigStorageError('private view storage unavailable') from error
+    return changed
 
 
 def save_imported_user_view(
@@ -462,6 +586,9 @@ def save_imported_user_view(
         if duplicate is not None:
             return duplicate, _latest_version(session, duplicate.id)
         view = _default_view(session, context, dialect_name)
+        owner_payload = _with_view_enabled(
+            normalized, _payload_view_enabled(view.payload) if view is not None else None,
+        )
         if view is None:
             view = models.ViewConfig(
                 workspace_id=context.workspace_id,
@@ -469,7 +596,7 @@ def save_imported_user_view(
                 name='Default view',
                 view_type=_infer_view_type(normalized),
                 payload_version=int(normalized.get('version') or 1),
-                payload=deepcopy(normalized),
+                payload=deepcopy(owner_payload),
                 visibility='private',
                 is_default=True,
             )
@@ -479,7 +606,7 @@ def save_imported_user_view(
         else:
             view.view_type = _infer_view_type(normalized)
             view.payload_version = int(normalized.get('version') or view.payload_version or 1)
-            view.payload = deepcopy(normalized)
+            view.payload = deepcopy(owner_payload)
             attempt_state['imported'] = True
         view.source_path = str(source_path)
         view.source_hash = str(source_hash)

@@ -43,6 +43,7 @@ SECURITY_SAMPLES = {
         ("POST", "/api/me/views"),
         ("POST", "/api/me/onboarding"),
         ("POST", "/api/epm/config"),
+        ("POST", "/api/epm/preferences"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),

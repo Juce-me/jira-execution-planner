@@ -545,12 +545,13 @@ class ProfileSelectionTests(unittest.TestCase):
 
     def test_public_read_requires_db_oauth_and_every_verified_home_scope(self):
         select = epm_home.select_epm_home_read_profile
-        self.assertEqual(select(self.ctx()), 'public-read-v1')
-        self.assertEqual(select(self.ctx(granted_scopes=tuple(HOME_SCOPES[:3]))), 'legacy')
-        self.assertEqual(select(self.ctx(granted_scopes_verified=False)), 'legacy')
-        self.assertEqual(select(self.ctx(auth_connection_id='local-oauth-connection:x')), 'legacy')
-        self.assertEqual(select(self.ctx(auth_mode='basic')), 'legacy')
-        self.assertEqual(select(None), 'legacy')
+        self.assertEqual(select(self.ctx(), view_enabled=True), 'public-read-v1')
+        self.assertEqual(select(self.ctx(), view_enabled=False), 'legacy')
+        self.assertEqual(select(self.ctx(granted_scopes=tuple(HOME_SCOPES[:3])), view_enabled=True), 'epm-scope-required')
+        self.assertEqual(select(self.ctx(granted_scopes_verified=False), view_enabled=True), 'epm-scope-required')
+        self.assertEqual(select(self.ctx(auth_connection_id='local-oauth-connection:x'), view_enabled=True), 'legacy')
+        self.assertEqual(select(self.ctx(auth_mode='basic'), view_enabled=True), 'legacy')
+        self.assertEqual(select(None, view_enabled=True), 'legacy')
 
     def test_a_legacy_snapshot_does_no_io(self):
         snapshot = HomeReadAuth('legacy', self.ctx())

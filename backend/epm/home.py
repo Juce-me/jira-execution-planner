@@ -397,22 +397,26 @@ EPM_HOME_READ_SCOPES = (
 )
 HOME_READ_PROFILE_LEGACY = "legacy"
 HOME_READ_PROFILE_PUBLIC_READ_V1 = "public-read-v1"
+HOME_READ_PROFILE_SCOPE_REQUIRED = "epm-scope-required"
 HOME_AUTH_LEASE_SECONDS = 5
 GOAL_LOOKUP_CACHE_MAX_ENTRIES = 512
 GOAL_LOOKUP_CACHE_TTL_SECONDS = 300
 
 
-def select_epm_home_read_profile(context) -> str:
-    """public-read-v1 only for a DB OAuth actor whose provider-confirmed grant has every Home read scope."""
-    if getattr(context, "auth_mode", "") != AUTH_MODE_ATLASSIAN_OAUTH:
+def select_epm_home_read_profile(context, *, view_enabled) -> str:
+    """Home OAuth reads only for a DB OAuth actor who enabled the EPM view AND whose provider-confirmed
+    grant has every Home read scope. An enabled actor without the full grant gets the fail-closed
+    profile (never the API-token path); a disabled actor, Basic and local-store contexts stay legacy."""
+    if not view_enabled or getattr(context, "auth_mode", "") != AUTH_MODE_ATLASSIAN_OAUTH:
         return HOME_READ_PROFILE_LEGACY
     connection_id = str(getattr(context, "auth_connection_id", "") or "")
     if not connection_id or connection_id.startswith("local-"):
         return HOME_READ_PROFILE_LEGACY
-    if not getattr(context, "granted_scopes_verified", False):
-        return HOME_READ_PROFILE_LEGACY
-    if not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(getattr(context, "granted_scopes", ())):
-        return HOME_READ_PROFILE_LEGACY
+    if (
+        not getattr(context, "granted_scopes_verified", False)
+        or not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(getattr(context, "granted_scopes", ()))
+    ):
+        return HOME_READ_PROFILE_SCOPE_REQUIRED
     return HOME_READ_PROFILE_PUBLIC_READ_V1
 
 
@@ -449,7 +453,7 @@ class HomeReadAuth:
 
     @property
     def strict(self) -> bool:
-        return self.profile == HOME_READ_PROFILE_PUBLIC_READ_V1
+        return self.profile in (HOME_READ_PROFILE_PUBLIC_READ_V1, HOME_READ_PROFILE_SCOPE_REQUIRED)
 
     @property
     def context(self):
@@ -460,6 +464,8 @@ class HomeReadAuth:
         """Forced direct status/authority check; returns the context to use for keys and admission."""
         if not self.strict:
             return self._context
+        if self.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
         with self._lock:
             current = self._revalidate(self._context)
             self.revalidation_count += 1
@@ -473,6 +479,8 @@ class HomeReadAuth:
         """Validated context; re-checks only when the five-second lease has lapsed."""
         if not self.strict:
             return self._context
+        if self.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
         with self._lock:
             if self._validated_at is None or self._monotonic() - self._validated_at >= self._lease_seconds:
                 return self.revalidate()

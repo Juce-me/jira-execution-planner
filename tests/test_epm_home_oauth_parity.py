@@ -483,6 +483,8 @@ class DbOAuthPublicReadRunner:
                 token_version=str(connection.token_version), account_status='active', is_admin=False,
             )
         self.transports = transports
+        from backend.services.user_view_config import set_user_epm_view_enabled
+        set_user_epm_view_enabled(self.context, True, database_url=helper.database_url)
 
         def urlopen(request, timeout=None):
             headers = {str(k).lower(): v for k, v in request.header_items()}

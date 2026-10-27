@@ -777,6 +777,13 @@ def memoize_epm_guard_context():
     resolve_epm_home_read_auth()
 
 
+def epm_view_enabled_for_context(context):
+    """The owner's private Enable EPM view flag; false without a DB OAuth context and DB config storage."""
+    if context is None or not is_db_auth_context(context) or not config_storage_db_enabled():
+        return False
+    return build_db_config_repository().load_user_epm_view_enabled(context) is True
+
+
 def resolve_epm_home_read_auth(context=None):
     """The request's single Home read snapshot (memoized on `g`; workers get the captured object)."""
     in_request = has_request_context()
@@ -788,7 +795,7 @@ def resolve_epm_home_read_auth(context=None):
         return memo
     auth_context = context if context is not None else _cache_policy_context()
     snapshot = epm_home.HomeReadAuth(
-        epm_home.select_epm_home_read_profile(auth_context),
+        epm_home.select_epm_home_read_profile(auth_context, view_enabled=epm_view_enabled_for_context(auth_context)),
         auth_context,
         revalidate=lambda captured: revalidate_db_request_auth_context(captured, required_scopes=ATLASSIAN_SCOPES),
         load_session=db_oauth_session_data_for_auth_context,

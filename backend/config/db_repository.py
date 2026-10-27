@@ -141,6 +141,21 @@ class DbConfigRepository:
             post_commit=post_commit,
         )
 
+    def load_user_epm_view_enabled(self, context):
+        from backend.services.user_view_config import load_user_epm_view_enabled
+
+        return load_user_epm_view_enabled(context, database_url=self.database_url)
+
+    def set_user_epm_view_enabled(self, context, enabled, *, post_commit=None):
+        from backend.services.user_view_config import set_user_epm_view_enabled
+
+        return set_user_epm_view_enabled(
+            context,
+            enabled,
+            database_url=self.database_url,
+            post_commit=post_commit,
+        )
+
     def save_dashboard_config(self, context, payload, **kwargs):
         del context, payload, kwargs
         raise RuntimeError('full workspace dashboard replacement is forbidden in DB mode')

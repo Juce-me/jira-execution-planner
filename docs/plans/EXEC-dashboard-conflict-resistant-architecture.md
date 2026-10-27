@@ -14,6 +14,12 @@
 
 **Spec:** this document. [Evidence](#evidence) is the rationale. Supporting analyses were five independent read-only reports on 2026-10-26 (merge simulation, `App()` structure map, choke-point inventory, Track A specification, Track B design), two review reports on R1 and four on R2 (dist and startup; registries, docs and sync; the conflict evidence; Track B and render cost); scratch output is outside the repository and every figure used here is reproduced in this file.
 
+## Local Home plan integration (2026-10-27)
+
+The operator requested merging the Home OAuth planning package (`5d6416d5`) into this branch at `fe6dae4d`. The [Home execution plan](EXEC-home-oauth-public-reads.md) and [design/DoD](SUPPORT-home-oauth-public-read-design.md) remain separate feature contracts; no Track A/B or Home implementation started. Preserve this plan's behavior-preserving boundaries and four-group publication decisions. Home execution re-locates its file map/checks if Track A/B changes them first.
+
+This local integration adds the Home plan/support/gate/instruction documents to the branch's existing history. Task A0 Step 0's earlier six-commit/eight-path landing inventory is historical after this authorized merge: before any future publication, fetch main and recapture the exact complete commit/path inventory for operator review. Do not publish using that old count, infer new push/PR permission, or mix Home feature implementation into an architecture refactor group.
+
 ## Global Constraints
 
 - Behavior-preserving. No API request, response, route, storage or analytics change. Analytics allowlist reason: Track A is tooling, configuration and docs; Track B is a pure refactor with unchanged canonical events and typed params. The one behavior change is isolated in Task B0a, a separate bugfix PR before Track B that closes two latent save-trigger gaps (D-9c); every refactor PR after it preserves behavior.

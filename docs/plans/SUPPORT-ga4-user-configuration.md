@@ -109,7 +109,7 @@ This is an internal employee product. Analytics collection is governed by employ
 
 Operator check:
 - With `GA4_ENABLED=false`, open the app in a fresh browser profile and verify no requests are sent to `googletagmanager.com` or `google-analytics.com`.
-- With `GA4_ENABLED=true`, perform a view switch and verify the app pushes `event=pageview` to `dataLayer` and GTM sends a GA4 `page_view` with only the configured pageview parameters. Verify the Google tag has `send_page_view=false` and Enhanced Measurement browser-history page changes are disabled so GA4 does not emit duplicate automatic `page_view` events. GA4 default page URL/title metadata is allowed when analytics is enabled, but app-owned custom parameters must not contain OAuth callback markers, Jira/Home URLs, tokens, issue keys, full IP addresses, local file paths, or config payloads.
+- With `GA4_ENABLED=true`, perform a view switch and verify the app pushes `event=pageview` to `dataLayer` and GTM sends a GA4 `page_view` with only the configured pageview parameters. Verify the Google tag has `send_page_view=false` and Enhanced Measurement browser-history page changes are disabled so GA4 does not emit duplicate automatic `page_view` events. App-owned pageviews use the fixed virtual URL/title mapping, but app-owned custom parameters must not contain OAuth callback markers, Jira/Home URLs, tokens, issue keys, full IP addresses, local file paths, or config payloads.
 - With `GA4_ENABLED=true`, verify enabled Enhanced Measurement interactions can appear as GA4-managed events: 90% scroll (`scroll`), file link click (`file_download`), form submit (`form_submit`), and URL-query-driven site search (`view_search_results`) only when the managed-metadata safety gate below passes and the test environment exposes those interactions. Verify Jira/Home outbound links are counted only by app-owned `external_link_opened` events unless operator configuration and tests prove those `link_url` values cannot be sent through managed `click` collection.
 
 ### Enhanced Measurement Safety Gate
@@ -134,7 +134,7 @@ window.dataLayer = window.dataLayer || [];
 
 App-owned analytics events must use `dataLayer.push({ event: 'pageview', ... })` or `dataLayer.push({ event: 'userevent', ... })`. Do not use direct `gtag('event', ...)` calls.
 
-Do not override `page_location` or `page_title` in app code. GA4 defaults are accepted when analytics is enabled for the web stream. App-owned `pageview` and `userevent` payloads still must not pass raw URLs or titles as custom event parameters.
+Pageviews override `page_title` with a fixed product label and `page_location` with the current origin plus an allowlisted virtual path. Never copy the real browser path, query, hash, document title or user text. `page_path` is included in dataLayer for inspection; GA4 derives its standard path from `page_location`, so do not send or register `page_path` as a custom parameter.
 
 ---
 
@@ -206,6 +206,9 @@ Create these Data Layer Variables and map them as GA4 event parameters on that t
 | Data layer key | GA4 parameter | Notes |
 | --- | --- | --- |
 | `page_name` | `page_name` | Fixed logical hierarchy, for example `eng/planning/table` or `eng/statistics/lead_times`; EPM uses `epm`. See [Logical Page Names](../README_ANALYTICS.md#logical-page-names). |
+| `page_title` | `page_title` | DLV v2, no default; fixed title, e.g. `ENG / Planning / Table`. |
+| `page_location` | `page_location` | DLV v2, no default; current origin plus virtual path. |
+| `page_path` | Not sent | dataLayer inspection only; no GTM variable required. Derived from the fixed `page_name`. |
 | `dashboard_view` | `dashboard_view` | `eng` or `epm`. |
 | `eng_mode` | `eng_mode` | `catch_up`, `planning`, `board`, `statistics`, or `scenario` when applicable. |
 | `auth_mode` | `auth_mode` | Low-cardinality auth mode. |
@@ -477,7 +480,7 @@ Start with Explore reports or standard custom reports:
    - Rows: `page_name`, `dashboard_view`, `eng_mode`, `auth_mode`, `source_surface`
    - Metrics: event count, active users
    - Events: `page_view`
-   - Use the existing **Page Name** custom dimension for the logical hierarchy. Since 2026-10-26, Statistics subview and Planning Table/List changes each emit one new pageview; rerenders, hidden subviews and filters do not. Older `dashboard` values remain historical. Keep the existing pageview parameter mapping; no new GTM or GA4 admin configuration is required. Standard URL/title dimensions retain GA4-managed metadata.
+   - Use the existing **Page Name** custom dimension for the logical hierarchy. Since 2026-10-26, Statistics subview and Planning Table/List changes each emit one new pageview; rerenders, hidden subviews and filters do not. Older `dashboard` values remain historical. Since 2026-10-27, add `page_title={{DLV - page_title}}` and `page_location={{DLV - page_location}}` to the existing pageview tag. These populate the standard title/path dimensions. Keep the Page Name mapping; no new GA4 custom definitions, tags or triggers. Verify each view switch produces exactly one `page_view` with its fixed title and virtual URL, without query/hash. Keep `send_page_view=false` and Enhanced Measurement browser-history pageviews disabled.
 
 3. **Search And Filter Friction**
    - Rows: `search_scope`, `query_length_bucket`, `result_count_bucket`, `filter_type`, `selection_count_bucket`, `source_surface`

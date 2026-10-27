@@ -175,7 +175,9 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
         expect(['pageview', 'userevent']).toContain(push.event);
         expect(push.trigger).toBe(push.event);
         expect(Object.entries(push).filter(([key, value]) => value !== undefined && value !== null && !['event', 'trigger', 'event_type', 'event_name', 'ga4_user_id'].includes(key)).length).toBeLessThanOrEqual(25);
-        expect(JSON.stringify(push)).not.toMatch(/https?:|jql=|ABC-\d+|@|Bearer|token|raw/i);
+        const { page_location: pageLocation, ...privateSafeParams } = push;
+        expect(JSON.stringify(privateSafeParams)).not.toMatch(/https?:|jql=|ABC-\d+|@|Bearer|token|raw/i);
+        if (pageLocation) expect(pageLocation).toBe(`${new URL(appBaseUrl).origin}/${push.page_name}`);
         if (push.event === 'pageview') {
             expect(push.page_name).toBeTruthy();
             expect(push.event_name).toBe('page_view');
@@ -333,4 +335,10 @@ test('logical navigation emits one page_view occurrence for each accepted view c
     await page.getByRole('button', { name: 'Show Planning list', exact: true }).click();
     await expect.poll(async () => (await views()).at(-1).page_name).toBe('eng/planning/list');
     expect((await views()).length).toBe(count + 1);
+    for (const entry of await views()) {
+        expect(entry.page_path).toBe(`/${entry.page_name}`);
+        expect(entry.page_location).toBe(`${new URL(appBaseUrl).origin}/${entry.page_name}`);
+        expect(entry.page_title).toBeTruthy();
+    }
+    expect((await views()).at(-1).page_title).toBe('ENG / Planning / List');
 });

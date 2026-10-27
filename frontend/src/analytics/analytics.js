@@ -1,6 +1,7 @@
 import {
     bucketCount,
     bucketDuration,
+    buildPageviewMetadata,
     sanitizeAnalyticsParams,
     isolateAnalyticsPayload
 } from './events.js';
@@ -172,7 +173,11 @@ function withContext(params) {
 }
 
 export function trackPageview(pageName, params = {}) {
-    const clean = sanitizeAnalyticsParams({ ...params, page_name: pageName }, 'page_view');
+    const clean = sanitizeAnalyticsParams({
+        ...params,
+        page_name: pageName,
+        ...buildPageviewMetadata(pageName, getWindow()?.location?.href),
+    }, 'page_view');
     pushDataLayer(withContext({
         event: 'pageview',
         trigger: 'pageview',

@@ -149,6 +149,8 @@ gtm_web:
     - { name: "DLV - module_id", data_layer_variable_name: "module_id", version: 2, purpose: "approved onboarding event parameter; intentionally unregistered without a named report" }
     - { name: "DLV - override_count", data_layer_variable_name: "override_count", version: 2, purpose: "approved event metric" }
     - { name: "DLV - override_count_bucket", data_layer_variable_name: "override_count_bucket", version: 2, purpose: "approved event parameter" }
+    - { name: "DLV - page_title", data_layer_variable_name: "page_title", version: 2, purpose: "approved virtual page metadata" }
+    - { name: "DLV - page_location", data_layer_variable_name: "page_location", version: 2, purpose: "approved virtual page metadata" }
     - { name: "DLV - page_name", data_layer_variable_name: "page_name", version: 2, purpose: "approved page parameter" }
     - { name: "DLV - pending_unsaved_state", data_layer_variable_name: "pending_unsaved_state", version: 2, purpose: "approved event parameter" }
     - { name: "DLV - point_bucket", data_layer_variable_name: "point_bucket", version: 2, purpose: "approved event parameter" }
@@ -211,6 +213,8 @@ gtm_web:
       trigger: "CE - pageview"
       params:
         page_name: "{{DLV - page_name}}"
+        page_title: "{{DLV - page_title}}"
+        page_location: "{{DLV - page_location}}"
         dashboard_view: "{{DLV - dashboard_view}}"
         eng_mode: "{{DLV - eng_mode}}"
         auth_mode: "{{DLV - auth_mode}}"

@@ -174,6 +174,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - Config keys in `.env` are `UPPER_SNAKE_CASE`
 - No formatter or linter is enforced; match existing style in touched files
 - Tests use `unittest` in `tests/test_*.py` with `test_*` methods
+- Sync a feature branch with `make sync` (`scripts/sync_main.sh`; `make sync ARGS=--continue` after resolving conflicts): it requires `SYNC_GIT_NAME` and `SYNC_GIT_EMAIL`, commits only with that identity, rebuilds `frontend/dist` when needed and runs the structure-budgets test.
 - `frontend/dist/` is untracked build output: never commit or hand-edit it; rebuild it from `frontend/src/` with `npm run build` after any pull that touches `frontend/src` or `package-lock.json`. `backend/frontend_build.py` reports a missing or stale build in preflight and at startup (staleness is an mtime heuristic and only warns).
 - Reusable rules and design guidance belong at the highest applicable `AGENTS.md`; subfolder `AGENTS.md` files are for local constraints only.
 - Look up an element's kind in `docs/design-system.md` and reuse its component and registered class hook; a new class for an existing kind is a review-stop.

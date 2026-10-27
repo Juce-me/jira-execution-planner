@@ -30,3 +30,7 @@ preflight:
 
 run:
 	.venv/bin/python jira_server.py
+
+.PHONY: sync
+sync:
+	scripts/sync_main.sh $(ARGS)

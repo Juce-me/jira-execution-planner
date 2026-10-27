@@ -251,7 +251,7 @@ Optional during development:
 npm run watch
 ```
 
-Startup preflight (`.venv/bin/python scripts/check_startup_preflight.py`) fails when the build is missing and the server warns when it looks stale (sources newer than the output). To update a branch, run `make sync` (`scripts/sync_main.sh`): it untracks any previously committed `frontend/dist` on the first sync past this change and rebuilds. We precompile JSX so production does not transform JSX in the browser.
+Startup preflight (`.venv/bin/python scripts/check_startup_preflight.py`) fails when the build is missing and the server warns when it looks stale (sources newer than the output). To update a branch, run `make sync` (`scripts/sync_main.sh`): it untracks any previously committed `frontend/dist` on the first sync past this change and rebuilds. Set `SYNC_GIT_NAME` and `SYNC_GIT_EMAIL` first (the merge commit uses only that identity); after resolving a reported conflict and `git add`-ing the files, run `make sync ARGS=--continue`. We precompile JSX so production does not transform JSX in the browser.
 
 Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design. The UI suite and `npm run test:frontend:unit` read `frontend/dist`, so build first (`npm run build && npx playwright test tests/ui --browser=chromium --workers=4` for the UI suite alone):
 

@@ -8,6 +8,7 @@ This directory contains automated tests for the Jira Delivery Planner.
 - `test_scheduler_active_sprint_anchor.py` - Regression test for the Active Sprint anchor behavior
 - `test_date_parsing.py` - Unit tests for date parsing utilities
 - `test_measure_merge_conflicts.py` - Read-only checks of `scripts/measure_merge_conflicts.py` on synthetic repos under `tmp/a0/` (output lines, classes, hunks, `--attrs`, object count unchanged); skips when git is older than 2.43
+- `test_epm_home_oauth_parity.py` - Raw-boundary EPM Home/Jira parity oracle (synthetic `tests/fixtures/epm_home_oauth_parity-example-sanitized.json`; Basic and DB user-token modes today, the OAuth candidate runner plugs in through `register_mode`)
 - `test_agents_md_learnings.py` - Guards the union-merged docs: duplicate `AGENTS.md` bullets, duplicate plan links in `docs/plans/README.md`, duplicate analytics rows, conflict markers and the anchored `.gitattributes` lines
 - `fixtures/` - Test data files (see `fixtures/README.md` for security policy)
 - `ui/` - UI/integration tests (Playwright or similar)

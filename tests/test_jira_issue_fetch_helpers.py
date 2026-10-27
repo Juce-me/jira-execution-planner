@@ -327,19 +327,22 @@ class FetchIssuesByKeysModesTests(unittest.TestCase):
                 admission = jira_batches._ProcessAdmission()
                 with patch.object(jira_batches, '_ADMISSION', admission), \
                         patch.object(jira_batches, '_monotonic', lambda: clock['now']), \
-                        patch.object(jira_client, 'time', SimpleNamespace(monotonic=lambda: clock['now'])), \
-                        self.assertRaises(JiraBatchIncomplete) as raised:
-                    jira_client.fetch_issues_by_keys(
-                        keys, ['summary'], search_request=search_request, strict=True,
-                        max_concurrency=cap, deadline=deadline)
-                slots_back = 0
-                give_up = time.monotonic() + 2         # workers left behind finish and release their slot
-                while slots_back < 6 and time.monotonic() < give_up:
-                    if admission.slots.acquire(blocking=False):
-                        slots_back += 1
-                    else:
-                        time.sleep(0.01)
-                time.sleep(0.05)                       # a worker that wrongly went on would have called by now
+                        patch.object(jira_client, 'time', SimpleNamespace(monotonic=lambda: clock['now'])):
+                    with self.assertRaises(JiraBatchIncomplete) as raised:
+                        jira_client.fetch_issues_by_keys(
+                            keys, ['summary'], search_request=search_request, strict=True,
+                            max_concurrency=cap, deadline=deadline)
+                    # The fake clock stays installed until the workers left behind are done: with the real clock
+                    # back, a late worker compares the fake deadline (100.5) with the machine's uptime, which is
+                    # below it on a freshly booted CI runner, and wrongly starts a continuation page.
+                    slots_back = 0
+                    give_up = time.monotonic() + 2     # workers left behind finish and release their slot
+                    while slots_back < 6 and time.monotonic() < give_up:
+                        if admission.slots.acquire(blocking=False):
+                            slots_back += 1
+                        else:
+                            time.sleep(0.01)
+                    time.sleep(0.05)                   # a worker that wrongly went on would have called by now
 
                 self.assertEqual(raised.exception.reason, 'deadline')
                 self.assertFalse(raised.exception.rate_limited)

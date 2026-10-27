@@ -152,7 +152,7 @@ Project Track remains an Epic-owned field even in these Story-oriented modes. It
 
 Board search is separate and Epic-only. It matches Epic key, summary, assignee, and Delivery Owner, then combines that result with Board's own facet filters. There is no single global search predicate shared by Board and Catch Up/Planning.
 
-The header does not move when you change modes or focus the find field. The page keeps its scrollbar gutter reserved in every mode from 601px up, so Board (which does not scroll) and the other modes sit at the same left edge; Scenario keeps the empty slot of the Share button; and the focused find field widens over the free space to its left instead of squeezing the title block, so the rows below stay put.
+The header does not move when you change modes or focus the find field. The page keeps its scrollbar gutter reserved in every mode from 601px up, so Board (which does not scroll) and the other modes sit at the same left edge; Scenario keeps the empty slot of the Share button; and the focused find field widens over the free space to its left instead of squeezing the title block, so the rows below stay put. The ENG/EPM switch sits left of the field, so it slides left by the same amount instead of being covered. From 1060px up the container is at its maximum width and that space no longer shrinks; below it the field keeps its width while the switch is shown, rather than cover the switch or the title.
 
 ## Share a view
 

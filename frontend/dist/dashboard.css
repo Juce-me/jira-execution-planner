@@ -407,6 +407,7 @@ h1 {
   flex-wrap: nowrap;
 }
 .header-actions-row {
+  --control-search-grow: 140px;
   max-inline-size: 100%;
   display: flex;
   align-items: flex-end;
@@ -563,7 +564,6 @@ h1 {
 }
 .control-search {
   --control-search-width: 220px;
-  --control-search-grow: 140px;
   min-width: var(--control-search-width);
   width: var(--control-search-width);
   transition: width 0.2s ease, margin-left 0.2s ease;
@@ -574,6 +574,18 @@ h1 {
 @media (min-width: 601px) {
   .header-actions-row .control-search:focus-within {
     margin-left: calc(-1 * var(--control-search-grow));
+  }
+  .header-actions-row > .view-mode-control {
+    transition: margin 0.2s ease;
+  }
+  .header-actions-row:has(.control-search:focus-within) > .view-mode-control {
+    margin-left: calc(-1 * var(--control-search-grow));
+    margin-right: var(--control-search-grow);
+  }
+}
+@media (min-width: 601px) and (max-width: 1059px) {
+  .header-actions-row:has(.view-mode-control) {
+    --control-search-grow: 0px;
   }
 }
 .refresh-icon {

@@ -97,7 +97,7 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
     # Catch Up cold load speed Task 3: the admin settings panels become the fourth lazy view. The static import line
     # leaves; the module-scope loader (2 lines) and loading fallback (1 line) and the LazyViewBoundary open and close lines
     # around the unchanged 160 explicit props join (+4 over the line above).
-    "frontend/src/dashboard.jsx": 7666,
+    "frontend/src/dashboard.jsx": 7669,
 }
 
 

@@ -1,16 +1,24 @@
 """EPM API route blueprint."""
 
-from flask import Blueprint
+from flask import Blueprint, g
 
 from backend.auth.db_context import is_db_auth_context
-from backend.auth.jira_auth import AuthError
+from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.repository import ConfigStorageError
 from backend.config.view_validation import ViewPayloadValidationError, normalize_epm_settings_payload
 from backend.db.engine import DatabaseConfigurationError
+from backend.epm import access as epm_access
 from backend.epm import issues as epm_issues
+from backend.epm import jira_strict
+from backend.epm.home import HOME_READ_PROFILE_SCOPE_REQUIRED, HomeReadError
 from backend.services.user_view_config import UserViewConfigStorageError
 
-from . import bind_server_globals
+from . import bind_server_globals, get_jira_server
+from .epm_errors import (
+    auth_error_to_response,
+    home_read_error_to_response,
+    jira_read_error_to_response,
+)
 
 
 bp = Blueprint("epm_routes", __name__)
@@ -23,6 +31,30 @@ HOME_USER_TOKEN_CONNECT_URL = '/settings/connections/home-token'
 def _epm_storage_error_handler(error):
     logger.error('EPM route storage failed errorClass=%s', type(error).__name__)
     return _epm_storage_unavailable_response()
+
+
+@bp.errorhandler(AuthError)
+def _epm_auth_error_handler(error):
+    if _is_home_user_token_required(error):
+        return _home_user_token_required_response(error)
+    server = get_jira_server()
+    if getattr(server, 'JIRA_AUTH_MODE', '') != AUTH_MODE_ATLASSIAN_OAUTH:
+        raise error  # Basic/JSON keep their current behavior
+    return auth_error_to_response(server, error)
+
+
+@bp.errorhandler(HomeReadError)
+def _epm_home_read_error_handler(error):
+    try:
+        return home_read_error_to_response(get_jira_server(), error, g.get('epm_home_read_auth'))
+    except (ConfigStorageError, DatabaseConfigurationError) as storage_error:
+        logger.error('EPM Home revalidation storage failed errorClass=%s', type(storage_error).__name__)
+        return _epm_storage_unavailable_response()
+
+
+@bp.errorhandler(jira_strict.JiraReadError)
+def _epm_jira_read_error_handler(error):
+    return jira_read_error_to_response(error)
 
 
 @bp.before_request
@@ -129,7 +161,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         add_clause_to_jql=add_clause_to_jql,
         fetch_issues_by_jql=(
             lambda jql, fields_list, context=None:
-            fetch_issues_by_jql(jql, fields_list, context=auth_context)
+            fetch_epm_issues_by_jql(jql, fields_list, context=auth_context)
         ),
         build_epm_fields_list=build_epm_fields_list,
         shape_epm_issue_payload=shape_epm_issue_payload,
@@ -139,7 +171,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
         context=auth_context,
         config_generation=build_epm_config_generation(epm_config_snapshot),
-        authorize_cache=home_auth.revalidate if home_auth.strict else None,
+        authorize_cache=home_auth.cache_authorizer() if home_auth.strict else None,
     )
     return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
@@ -158,7 +190,14 @@ def get_epm_scope_endpoint():
     auth_context = _cache_policy_context()
     scope = (get_epm_config(context=auth_context).get('scope') or {})
     try:
-        cloud_id = fetch_home_site_cloud_id(context=auth_context)
+        home_auth = resolve_epm_home_read_auth(auth_context)
+        if home_auth.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            # The site id comes from the validated context; this route needs no Home scope.
+            cloud_id = str(getattr(auth_context, 'cloud_id', '') or '').strip()
+            if not cloud_id:
+                raise HomeReadError('invalid_target')
+        else:
+            cloud_id = fetch_home_site_cloud_id(context=auth_context, home_auth=home_auth)
         error = ''
     except RuntimeError as exc:
         cloud_id = ''
@@ -171,6 +210,24 @@ def get_epm_scope_endpoint():
             'subGoalKeys': normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey')),
         },
     })
+
+
+@bp.route('/api/epm/access', methods=['GET'])
+def get_epm_access_endpoint():
+    """Categorized EPM Home access state; every non-auth outcome is a 200 state, never a login loop."""
+    auth_context = _cache_policy_context()
+    home_auth = resolve_epm_home_read_auth(auth_context)
+    root_goal_key = ''
+    config_generation = ''
+    if home_auth.strict and home_auth.profile != HOME_READ_PROFILE_SCOPE_REQUIRED:
+        epm_config = get_epm_config(context=auth_context)
+        root_goal_key = normalize_epm_upper_text((epm_config.get('scope') or {}).get('rootGoalKey'))
+        config_generation = build_epm_config_generation(epm_config)
+    refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
+    return jsonify(epm_access.resolve_epm_access(
+        auth_context, home_auth,
+        root_goal_key=root_goal_key, config_generation=config_generation, refresh=refresh,
+    ))
 
 
 @bp.route('/api/epm/goals', methods=['GET'])

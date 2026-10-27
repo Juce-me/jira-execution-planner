@@ -42,6 +42,7 @@ from unittest.mock import patch
 
 import jira_server
 from backend.auth.context import RequestAuthContext
+from backend.epm import access as epm_access
 from backend.epm import home as epm_home
 from backend.epm import issues as epm_issues_module
 from backend.epm import projects as epm_projects_module
@@ -335,7 +336,7 @@ def frozen_epm_time(frozen):
 KNOWN_EPM_CACHES = {
     ('jira_server', 'EPM_PROJECTS_CACHE'), ('jira_server', 'EPM_ISSUES_CACHE'), ('jira_server', 'EPM_ROLLUP_CACHE'),
     ('backend.epm.home', '_CLOUD_ID_CACHE'), ('backend.epm.home', '_GOAL_BY_KEY_CACHE'),
-    ('backend.epm.home', '_STRICT_GOAL_LOOKUP_CACHE'),
+    ('backend.epm.home', '_STRICT_GOAL_LOOKUP_CACHE'), ('backend.epm.access', '_ACCESS_CACHE'),
 }
 
 
@@ -346,6 +347,7 @@ def reset_epm_caches():
     epm_home._CLOUD_ID_CACHE.clear()
     epm_home._GOAL_BY_KEY_CACHE.clear()
     epm_home._STRICT_GOAL_LOOKUP_CACHE.clear()
+    epm_access._ACCESS_CACHE.clear()
 
 
 # --------------------------------------------------------------------------
@@ -580,6 +582,14 @@ def _step_result(runner, scenario, step, log, comparison, clock):
     }
 
 
+def settle_epm_workers(timeout=10):
+    """A failed aggregate returns without waiting for already-running workers; let them finish before teardown."""
+    import threading
+    for thread in list(threading.enumerate()):
+        if thread.name.startswith('ThreadPoolExecutor') and thread is not threading.current_thread():
+            thread.join(timeout)
+
+
 def run_mode(mode_name, fixture=None, scenarios=None):
     fixture = fixture if fixture is not None else load_fixture()
     wanted = set(scenarios) if scenarios else None
@@ -601,12 +611,13 @@ def run_mode(mode_name, fixture=None, scenarios=None):
         stack.enter_context(patch.object(jira_server, 'get_story_points_field_id', lambda: ids['storyPoints']))
         stack.enter_context(patch.object(jira_server, 'get_team_field_id', lambda: ids['team']))
         stack.enter_context(patch.object(
-            jira_server, 'resolve_epic_link_field_id', lambda headers, names_map=None, context=None: ids['epicLink']))
+            jira_server, 'resolve_epic_link_field_id', lambda headers, names_map=None, context=None, **_strict: ids['epicLink']))
         stack.enter_context(patch.object(jira_server, 'jira_search_request', transports.jira.search))
         reset_epm_caches()
         stack.callback(reset_epm_caches)
         runner = MODE_FACTORIES[mode_name]()
         runner.enter(stack, fixture, transports)
+        stack.callback(settle_epm_workers)  # runs before the runner's teardown (LIFO)
         for scenario in fixture['scenarios']:
             if wanted is not None and scenario['name'] not in wanted:
                 continue

@@ -325,23 +325,28 @@ class EpmRouteStateTests(DbJourneyMixin, unittest.TestCase):
         with self.helper._db_route_mode():
             return self.client.get(path)
 
-    def test_enabled_without_confirmed_scopes_raises_the_typed_error_with_no_home_io_and_no_token_fallback(self):
+    def test_enabled_without_confirmed_scopes_is_a_409_feature_error_with_no_home_io_and_no_token_fallback(self):
         self.enable(True)
         self.set_grant(self.helper_base_scopes())
         for path in self.ROUTES:
             with self.subTest(path=path), patch.object(epm_home, '_read_metadata_credential',
                                                         side_effect=AssertionError('API-token fallback')):
-                with self.assertRaises(AuthError) as raised:
-                    self.get(path)
-                self.assertEqual(raised.exception.code, 'epm_scope_required')
+                response = self.get(path)
+                if path == '/api/epm/scope':
+                    # The scope route needs no Home scope: the site id comes from the validated context.
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.get_json()['error'], '')
+                    continue
+                self.assertEqual(response.status_code, 409)
+                self.assertEqual(response.get_json()['error'], 'epm_scope_required')
+                self.assertEqual(response.get_json()['loginUrl'], '/login?reason=missing_scope')
         self.assertEqual(self.home_calls, [])
 
     def test_enabled_with_a_partial_grant_is_the_same_as_missing(self):
         self.enable(True)
         self.set_grant(self.helper_base_scopes() + list(HOME[:3]))
-        with self.assertRaises(AuthError) as raised:
-            self.get('/api/epm/goals')
-        self.assertEqual(raised.exception.code, 'epm_scope_required')
+        response = self.get('/api/epm/goals')
+        self.assertEqual((response.status_code, response.get_json()['error']), (409, 'epm_scope_required'))
         self.assertEqual(self.home_calls, [])
 
     def test_enabled_with_unverified_provenance_is_treated_as_missing(self):

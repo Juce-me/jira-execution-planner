@@ -141,6 +141,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("epm-config-read", "/api/epm/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-config-write", "/api/epm/config", frozenset({"POST"}), "user_write"),
     EndpointPolicy("epm-preferences-write", "/api/epm/preferences", frozenset({"POST"}), "user_write"),
+    EndpointPolicy("epm-access", "/api/epm/access", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-scope", "/api/epm/scope", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-goals", "/api/epm/goals", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-projects", "/api/epm/projects", PUBLIC_METHODS, "authenticated_read"),

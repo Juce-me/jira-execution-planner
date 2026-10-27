@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Callable, MutableMapping
 import time
@@ -37,6 +39,8 @@ class EpmRollupDependencies:
     config_generation: str = ''
     # Strict Home reads: forced direct authority check returning the context for cache keys.
     authorize_cache: Callable | None = None
+    # Aggregate workers: true once a sibling failed, so nothing more is admitted to the cache.
+    is_cancelled: Callable | None = None
     now: Callable = time.time
 
 
@@ -155,7 +159,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
     cache_key = cache_key_for(key_context)
 
     def admit(value):
-        if not cache_enabled:
+        if not cache_enabled or (deps.is_cancelled is not None and deps.is_cancelled()):
             return
         admission_key = cache_key_for(deps.authorize_cache()) if deps.authorize_cache else cache_key
         with deps.cache_lock:

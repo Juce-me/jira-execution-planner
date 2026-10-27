@@ -5,6 +5,12 @@ from werkzeug.exceptions import BadRequest
 
 from backend.auth.admin_bootstrap import workspace_tool_admin_display_names
 from backend.auth.db_context import is_db_auth_context
+from backend.epm.access import SCOPE_LOGIN_URL
+from backend.epm.home import (
+    HOME_READ_PROFILE_PUBLIC_READ_V1,
+    HOME_READ_PROFILE_SCOPE_REQUIRED,
+    select_epm_home_read_profile,
+)
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
@@ -727,6 +733,11 @@ def get_config():
         'epm': epm_config,
         'epmViewEnabled': epm_view_enabled,
     }
+    # Readiness from the provider-confirmed grant only; bootstrap makes no Home call.
+    epm_home_profile = select_epm_home_read_profile(auth_context, view_enabled=epm_view_enabled)
+    payload['epmHomeReadAvailable'] = epm_home_profile == HOME_READ_PROFILE_PUBLIC_READ_V1
+    if epm_home_profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+        payload['epmHomeReadLoginUrl'] = SCOPE_LOGIN_URL
     if effective_catalog_config is not None:
         payload['sprintCatalogSource'] = {
             'backend': 'postgresql',

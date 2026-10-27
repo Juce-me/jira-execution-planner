@@ -37,6 +37,7 @@ from backend.epm import config as epm_config
 from backend.frontend_build import frontend_build_missing, frontend_build_stale
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
+from backend.epm import jira_strict as epm_jira_strict
 from backend.epm import payload as epm_payload
 from backend.epm.home import fetch_epm_home_projects, merge_epm_linkage
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
@@ -1360,8 +1361,8 @@ def resolve_team_field_id(headers, context=None):
         return None
 
 
-def resolve_epic_link_field_id(headers, names_map=None, context=None):
-    """Resolve the Jira custom field ID for Epic Link."""
+def resolve_epic_link_field_id(headers, names_map=None, context=None, strict=False):
+    """Resolve the Jira custom field ID for Epic Link; `strict` (EPM OAuth) raises typed failures instead of None."""
     global EPIC_LINK_FIELD_CACHE
     cache_enabled = jira_home_process_cache_enabled(_cache_policy_context(context))
     with _cache_lock:
@@ -1378,7 +1379,9 @@ def resolve_epic_link_field_id(headers, names_map=None, context=None):
 
         try:
             response = current_jira_get('/rest/api/3/field', timeout=20, context=context)
-            if response.status_code != 200:
+            if strict:
+                epm_jira_strict.raise_for_jira_status(response)
+            elif response.status_code != 200:
                 return None
 
             fields = response.json() or []
@@ -1390,7 +1393,13 @@ def resolve_epic_link_field_id(headers, names_map=None, context=None):
                         EPIC_LINK_FIELD_CACHE = field_id
                         return EPIC_LINK_FIELD_CACHE
                     return field_id
+        except (AuthError, epm_jira_strict.JiraReadError):
+            if strict:
+                raise
+            return None
         except Exception:
+            if strict:
+                raise epm_jira_strict.JiraReadError(epm_jira_strict.JIRA_READ_FAILED) from None
             return None
 
         return None
@@ -2246,12 +2255,31 @@ build_empty_epm_rollup_payload = epm_payload.build_empty_epm_rollup_payload
 build_epm_rollup_hierarchy = epm_payload.build_epm_rollup_hierarchy
 
 
-def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=None):
-    raw_issues = fetch_issues_by_jql(
+def epm_jira_reads_strict(context):
+    """Strict EPM Jira page checks apply to DB OAuth users only; Basic, JSON and local-store keep the shared helper."""
+    return (
+        context is not None
+        and is_db_auth_context(context)
+        and getattr(context, 'auth_mode', '') == AUTH_MODE_ATLASSIAN_OAUTH
+    )
+
+
+def fetch_epm_issues_by_jql(jql, fields_list, max_results=None, context=None, cancellation=None):
+    kwargs = {'context': context}
+    if max_results is not None:
+        kwargs['max_results'] = max_results
+    if epm_jira_reads_strict(context):
+        kwargs['search_request'] = epm_jira_strict.strict_search_request(jira_search_request, cancellation)
+    return fetch_issues_by_jql(jql, fields_list, **kwargs)
+
+
+def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=None, cancellation=None):
+    raw_issues = fetch_epm_issues_by_jql(
         jql,
         fields_list,
         max_results=EPM_ROLLUP_QUERY_MAX_RESULTS + 1,
         context=context,
+        cancellation=cancellation,
     )
     if len(raw_issues) > EPM_ROLLUP_QUERY_MAX_RESULTS:
         truncated_queries.append(query_name)
@@ -2259,7 +2287,7 @@ def fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_quer
     return raw_issues
 
 
-def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None, home_auth=None):
+def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_override=None, home_auth=None, cancellation=None):
     auth_context = context if context is not None else (_cache_policy_context() if has_request_context() else None)
     if home_auth is None and auth_context is not None:
         home_auth = resolve_epm_home_read_auth(auth_context)
@@ -2287,7 +2315,9 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
             else build_jira_headers
         ),
         resolve_epic_link_field_id=(
-            lambda headers: resolve_epic_link_field_id(headers, context=auth_context)
+            (lambda headers: resolve_epic_link_field_id(headers, context=auth_context, strict=True))
+            if epm_jira_reads_strict(auth_context)
+            else lambda headers: resolve_epic_link_field_id(headers, context=auth_context)
             if auth_context is not None
             else resolve_epic_link_field_id(headers)
         ),
@@ -2302,7 +2332,10 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
         normalize_epm_issue_type_sets=normalize_epm_issue_type_sets,
         fetch_epm_rollup_query=(
             lambda jql, query_name, headers, fields_list, truncated_queries:
-            fetch_epm_rollup_query(jql, query_name, headers, fields_list, truncated_queries, context=auth_context)
+            fetch_epm_rollup_query(
+                jql, query_name, headers, fields_list, truncated_queries, context=auth_context,
+                **({'cancellation': cancellation} if cancellation is not None else {}),
+            )
         ),
         shape_epm_rollup_issue_payload=lambda issues, epic_link_field_id=None, team_field_id=None: shape_epm_rollup_issue_payload(
             issues,
@@ -2318,7 +2351,8 @@ def build_epm_rollup_dependencies(sub_goal_keys=None, context=None, epm_config_o
         cache_ttl_seconds=EPM_ROLLUP_CACHE_TTL_SECONDS,
         context=auth_context,
         config_generation=build_epm_config_generation(epm_config_snapshot),
-        authorize_cache=strict_home.revalidate if strict_home is not None else None,
+        authorize_cache=strict_home.cache_authorizer() if strict_home is not None else None,
+        is_cancelled=cancellation.is_set if cancellation is not None else None,
     )
 
 
@@ -3749,13 +3783,13 @@ def fetch_issues_by_keys(keys, fields_list, context=None, max_concurrency=1, str
     )
 
 
-def fetch_issues_by_jql(jql, fields_list, max_results=500, context=None):
-    """Fetch issues by JQL with pagination."""
+def fetch_issues_by_jql(jql, fields_list, max_results=500, context=None, search_request=None):
+    """Fetch issues by JQL with pagination (`search_request` lets EPM pass its strict page adapter)."""
     return _jira_client.fetch_issues_by_jql(
         jql,
         fields_list,
         max_results=max_results,
-        search_request=jira_search_request,
+        search_request=search_request or jira_search_request,
         context=context,
         log_warning_fn=log_warning,
     )

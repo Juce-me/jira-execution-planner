@@ -518,8 +518,26 @@ class HomeReadAuth:
         self._token_expires = int(data.get("expires_at") or 0)
         self._token_version = str(context.token_version)
 
+    def cache_authorizer(self):
+        """Forced-validation hook for the rollup/issues caches. Only Home-OAuth reads carry one: an
+        owner-private custom row (no Home read) must stay O-only even for an enabled user without scopes."""
+        return self.revalidate if self.profile == HOME_READ_PROFILE_PUBLIC_READ_V1 else None
+
     def client(self):
         return LeasedHomeOAuthClient(self)
+
+    def recheck_after_rejection(self):
+        """After a raw provider 401: one direct authority check plus a forced token reload.
+
+        Raises the typed AuthError only for proven loss (revoked/disabled/expired-unrefreshable);
+        otherwise returns, and the caller reports a non-terminal read failure, never a re-login loop.
+        """
+        if self.profile != HOME_READ_PROFILE_PUBLIC_READ_V1:
+            return
+        with self._lock:
+            self._token = None
+            self.revalidate()
+            self.access_token()
 
     # -- immutable warmed index (request thread records, then freezes before any worker starts) --
     def begin_index(self) -> None:
@@ -2078,6 +2096,14 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
+
+
+def remember_strict_goal(goal: dict, container_id: str, goal_key: str, context) -> None:
+    """Seed the bounded public goal lookup under the key `resolve_goal_by_key` reads, so the access probe's
+    one goal read is reused by the metadata warm step instead of repeating it."""
+    cache_key = build_jira_home_process_cache_key(context, _goal_cache_key(container_id, goal_key))
+    if jira_home_partitioned_process_cache_enabled(context) and isinstance(cache_key, tuple):
+        _strict_goal_lookup_put(cache_key, goal)
 
 
 def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:

@@ -91,7 +91,7 @@ def _config_storage_unavailable(error):
     }, 503)
 
 
-def _auth_error_response(server, error):
+def format_auth_error_response(server, error):
     if error.code == "missing_oauth_scope":
         return _missing_scope_required()
     status = 401 if error.code in {
@@ -121,7 +121,7 @@ def _require_real_oauth_session(server, policy_class):
         try:
             context = server.current_request_auth_context()
         except AuthError as error:
-            return _auth_error_response(server, error)
+            return format_auth_error_response(server, error)
         except (ConfigStorageError, DatabaseConfigurationError) as error:
             return _config_storage_unavailable(error)
         if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
@@ -137,7 +137,7 @@ def _require_real_oauth_session(server, policy_class):
     try:
         context = server.current_request_auth_context()
     except AuthError as error:
-        return _auth_error_response(server, error)
+        return format_auth_error_response(server, error)
     except (ConfigStorageError, DatabaseConfigurationError) as error:
         return _config_storage_unavailable(error)
     if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
@@ -152,7 +152,7 @@ def _require_token_bound_csrf(server):
         else:
             data = server.oauth_session_data()
     except AuthError as error:
-        return _auth_error_response(server, error)
+        return format_auth_error_response(server, error)
     except (ConfigStorageError, DatabaseConfigurationError) as error:
         return _config_storage_unavailable(error)
     if validate_csrf_token(session, data, request.headers.get("X-CSRF-Token")):
@@ -165,7 +165,7 @@ def _require_admin(server):
     try:
         context = server.current_request_auth_context()
     except AuthError as error:
-        return _auth_error_response(server, error)
+        return format_auth_error_response(server, error)
     except (ConfigStorageError, DatabaseConfigurationError) as error:
         return _config_storage_unavailable(error)
     if getattr(context, "is_admin", False):
@@ -197,7 +197,7 @@ def _require_strict_db_oauth_session(server):
             return _auth_required(server)
         context = server.current_request_auth_context()
     except AuthError as error:
-        return _auth_error_response(server, error)
+        return format_auth_error_response(server, error)
     except (ConfigStorageError, DatabaseConfigurationError) as error:
         return _config_storage_unavailable(error)
     if not getattr(context, 'browser_session_id', ''):

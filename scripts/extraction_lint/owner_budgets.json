@@ -19,7 +19,6 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCount": 7666,
     "lineCeiling": 7666
   },
   "modules": [
@@ -32,8 +31,7 @@
       "exports": [
         "EpmControls"
       ],
-      "lineCount": 297,
-      "lineCeiling": 297,
+      "lineCeiling": 330,
       "interfaces": [
         {
           "exportName": "EpmControls",
@@ -141,8 +139,7 @@
             "bag epmSubGoalFilterDropdownRefs dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/epm/EpmControls.jsx:21",
-            "sourceDigest": "d1b10780c11ca73e5f6d985f96d7f75c6f1a84b2da43a90448604918d85a118a",
+            "sourceDigest": "16e0204adb9322893fbbfda9c5c46ff86f66532e02788bc2278f52e53088300e",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -215,8 +212,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 41,
-      "lineCeiling": 41,
+      "lineCeiling": 50,
       "interfaces": [
         {
           "exportName": "default",
@@ -241,10 +237,7 @@
           "returnCeiling": 0,
           "propCeiling": 3,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/epm/EpmProjectCollapseAllButton.jsx:3",
-            "sourceDigest": "309429bdae69a66ce62d65d8c4ce813799e91c19b28e297a8bd7b15e3dfd24c2"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -267,8 +260,7 @@
       "exports": [
         "EpmRollupPanel"
       ],
-      "lineCount": 787,
-      "lineCeiling": 787,
+      "lineCeiling": 870,
       "interfaces": [
         {
           "exportName": "EpmRollupPanel",
@@ -533,8 +525,7 @@
             "forwarded input epmRollupBoards"
           ],
           "inventory": {
-            "source": "frontend/src/epm/EpmRollupPanel.jsx:11",
-            "sourceDigest": "9a34fb0964c5103a7c45726537b595f09342830f737ece2b06d878f664b9c357",
+            "sourceDigest": "eebf59c3e29191f7f37574bed566b43ea54e621fbce4239f3f3d620c0e7c505f",
             "reviewed": true,
             "memberNames": [
               "InitiativeIcon",
@@ -789,8 +780,7 @@
         "EpmProjectRemainder",
         "EpmRollupIssue"
       ],
-      "lineCount": 137,
-      "lineCeiling": 137,
+      "lineCeiling": 160,
       "interfaces": [
         {
           "exportName": "EpmEpicNode",
@@ -818,10 +808,7 @@
           "returnCeiling": 0,
           "propCeiling": 2,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/epm/EpmRollupTree.jsx:62",
-            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/epm/EpmRollupTree.jsx",
@@ -869,10 +856,7 @@
           "returnCeiling": 0,
           "propCeiling": 3,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/epm/EpmRollupTree.jsx:77",
-            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
-          },
+          "inventory": {},
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -912,8 +896,7 @@
             "forwarded input project"
           ],
           "inventory": {
-            "source": "frontend/src/epm/EpmRollupTree.jsx:111",
-            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301",
+            "sourceDigest": "bfe03bba96a1e26382c33db5821932f28e0fdcab55c8af1a104702de9d1da4b5",
             "reviewed": true,
             "memberNames": [
               "jiraUrl",
@@ -963,10 +946,7 @@
           "returnCeiling": 0,
           "propCeiling": 3,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/epm/EpmRollupTree.jsx:6",
-            "sourceDigest": "0c95222adf1384a9d4525940973c448e852ac56e5462ab30a024a683b9239301"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/epm/EpmRollupTree.jsx",
@@ -1007,8 +987,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 673,
-      "lineCeiling": 673,
+      "lineCeiling": 750,
       "interfaces": [
         {
           "exportName": "default",
@@ -1240,8 +1219,7 @@
             "bag labelSearchOpen dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/epm/EpmSettings.jsx:8",
-            "sourceDigest": "3530670711654ca0e2e69483a19cd3113f72e3f0b55e30402cada519de584426",
+            "sourceDigest": "f11625a91edeac00874076e44ee3eed7174da5e29a866772b688798a5ac3b973",
             "reviewed": true,
             "memberNames": [
               "DEFAULT_EPM_LABEL_PREFIX",
@@ -1385,8 +1363,7 @@
       "exports": [
         "EpmView"
       ],
-      "lineCount": 78,
-      "lineCeiling": 78,
+      "lineCeiling": 90,
       "interfaces": [
         {
           "exportName": "EpmView",
@@ -1452,8 +1429,6 @@
           "propCeiling": 23,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/epm/EpmView.jsx:6",
-            "sourceDigest": "fe67fc4bd9f0aa0d2201ea128ffff591eda681fa2c38c7cd9eab774c563d0e55",
             "memberNames": [
               "InitiativeIcon",
               "collapsedProjectIds",
@@ -1534,8 +1509,7 @@
         "toEpmEngEpicDetails",
         "toEpmEngTask"
       ],
-      "lineCount": 737,
-      "lineCeiling": 737,
+      "lineCeiling": 820,
       "interfaces": []
     },
     {
@@ -1547,8 +1521,7 @@
       "exports": [
         "useEpmViewData"
       ],
-      "lineCount": 517,
-      "lineCeiling": 517,
+      "lineCeiling": 570,
       "interfaces": [
         {
           "exportName": "useEpmViewData",
@@ -1628,8 +1601,7 @@
             "forwarded input searchQuery"
           ],
           "inventory": {
-            "source": "frontend/src/epm/useEpmViewData.js:39",
-            "sourceDigest": "684784f352702156b2f3fe90f357e10507247007edac86e9455ec68602b9193f",
+            "sourceDigest": "d0dcdba0f5a3da32829cab2ec891ce3b0233694ed5f8970326f75adb5da67a84",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -1861,8 +1833,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 34,
-      "lineCeiling": 34,
+      "lineCeiling": 40,
       "interfaces": []
     },
     {
@@ -1874,8 +1845,7 @@
       "exports": [
         "ScenarioView"
       ],
-      "lineCount": 988,
-      "lineCeiling": 988,
+      "lineCeiling": 1090,
       "interfaces": [
         {
           "exportName": "ScenarioView",
@@ -2001,8 +1971,6 @@
           "propCeiling": 5,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/scenario/ScenarioView.jsx:5",
-            "sourceDigest": "2328cf99565e795c64b58c4d78b3b0d7193d9b6984bdaad807653b346ab7d7b3",
             "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
           },
           "callers": [],
@@ -2021,8 +1989,7 @@
         "applyScenarioConnectionRecovery",
         "useConnectionScenarioRecovery"
       ],
-      "lineCount": 156,
-      "lineCeiling": 156,
+      "lineCeiling": 180,
       "interfaces": [
         {
           "exportName": "useConnectionScenarioRecovery",
@@ -2099,8 +2066,7 @@
             "bag pendingRecoveryRef member alias recovery"
           ],
           "inventory": {
-            "source": "frontend/src/scenario/connectionScenarioRecovery.js:78",
-            "sourceDigest": "75485b73ff61606a348ee16efacd2f7fb3f9dc94de91c2ddba5bb7a4e52d8887",
+            "sourceDigest": "5427bfeed08489591b1d642ca9c1f4cf2bd8bbb0d4b6167937a738901107a766",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
@@ -2169,8 +2135,7 @@
         "overlayScenarioDraftDelta",
         "scenarioDraftOverridesSignature"
       ],
-      "lineCount": 44,
-      "lineCeiling": 44,
+      "lineCeiling": 50,
       "interfaces": []
     },
     {
@@ -2185,8 +2150,7 @@
         "buildDefaultScenarioGroupState",
         "resetScenarioTransientRefs"
       ],
-      "lineCount": 95,
-      "lineCeiling": 95,
+      "lineCeiling": 110,
       "interfaces": []
     },
     {
@@ -2199,8 +2163,7 @@
         "buildCapacityPlaceholderRows",
         "buildLaneIssues"
       ],
-      "lineCount": 69,
-      "lineCeiling": 69,
+      "lineCeiling": 80,
       "interfaces": []
     },
     {
@@ -2247,8 +2210,7 @@
         "buildScenarioVisibleExportIssues",
         "buildScenarioVisibleLanes"
       ],
-      "lineCount": 768,
-      "lineCeiling": 768,
+      "lineCeiling": 850,
       "interfaces": []
     },
     {
@@ -2274,8 +2236,7 @@
         "splitAtSprintBoundaries",
         "validateDependencies"
       ],
-      "lineCount": 172,
-      "lineCeiling": 172,
+      "lineCeiling": 190,
       "interfaces": []
     },
     {
@@ -2287,8 +2248,7 @@
       "exports": [
         "useScenarioDerived"
       ],
-      "lineCount": 145,
-      "lineCeiling": 145,
+      "lineCeiling": 160,
       "interfaces": [
         {
           "exportName": "useScenarioDerived",
@@ -2351,8 +2311,6 @@
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioDerived.js:5",
-            "sourceDigest": "4033424c850b644ecc05442feab3a2e447a09c8baf461fb2ed64adc8777c4de4",
             "rationale": "SC3 H3 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit)."
           },
           "callers": [
@@ -2377,8 +2335,7 @@
       "exports": [
         "useScenarioDraft"
       ],
-      "lineCount": 441,
-      "lineCeiling": 441,
+      "lineCeiling": 490,
       "interfaces": [
         {
           "exportName": "useScenarioDraft",
@@ -2513,8 +2470,7 @@
             "forwarded input excludedEpicSet"
           ],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioDraft.js:11",
-            "sourceDigest": "d5aa050d7ce22dbe8ab8e0fa52e51fc7692f8583e3f0c6e64ecd10063bc786da",
+            "sourceDigest": "6778731d3fb23b575a5ac34777848ec62461deca37d1e75aa495ad3dcd6fa9de",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -2608,8 +2564,7 @@
       "exports": [
         "useScenarioDrag"
       ],
-      "lineCount": 218,
-      "lineCeiling": 218,
+      "lineCeiling": 240,
       "interfaces": [
         {
           "exportName": "useScenarioDrag",
@@ -2664,8 +2619,6 @@
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioDrag.js:5",
-            "sourceDigest": "98cb83aa6cf35b3c6c43a4e7f19277f9f78d3f1d0a6152f99d145611f383d70c",
             "rationale": "SC3 H4 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit)."
           },
           "callers": [
@@ -2690,8 +2643,7 @@
       "exports": [
         "useScenarioHistory"
       ],
-      "lineCount": 654,
-      "lineCeiling": 654,
+      "lineCeiling": 720,
       "interfaces": [
         {
           "exportName": "useScenarioHistory",
@@ -2764,8 +2716,6 @@
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioHistory.js:6",
-            "sourceDigest": "0f0edf15da2d6f655d821abd19fc1bef4bd8b03b6a85e1e2d83ffc61b3126b40",
             "rationale": "SC3 H5 checkpoint (frozen from the current-base scratch dry run before R4; reported to the operator with the R4 commit)."
           },
           "callers": [
@@ -2790,8 +2740,7 @@
       "exports": [
         "useScenarioLayout"
       ],
-      "lineCount": 909,
-      "lineCeiling": 909,
+      "lineCeiling": 1000,
       "interfaces": [
         {
           "exportName": "useScenarioLayout",
@@ -2985,8 +2934,7 @@
             "forwarded input scenarioTimelineWithSegments"
           ],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioLayout.js:9",
-            "sourceDigest": "84780fb73806d98d76c101c15ffd86d463e9c8413b7bba04293d5ff55728aaaa",
+            "sourceDigest": "deccde329713d320a91539800f0b251f74d86cfb76638280b5b94d6088d36de9",
             "reviewed": true,
             "memberNames": [
               "excludedEpicSet",
@@ -3128,8 +3076,7 @@
       "exports": [
         "useScenarioPlanner"
       ],
-      "lineCount": 320,
-      "lineCeiling": 320,
+      "lineCeiling": 360,
       "interfaces": [
         {
           "exportName": "useScenarioPlanner",
@@ -3285,8 +3232,6 @@
           "propCeiling": 0,
           "unresolved": [],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioPlanner.js:14",
-            "sourceDigest": "8ed78e51dee2a34bb137528f8e8189f80a096b7180130492e0667f14d27de955",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -3357,8 +3302,7 @@
       "exports": [
         "useScenarioRealtime"
       ],
-      "lineCount": 391,
-      "lineCeiling": 391,
+      "lineCeiling": 440,
       "interfaces": [
         {
           "exportName": "useScenarioRealtime",
@@ -3431,8 +3375,7 @@
             "forwarded input scenarioActiveDraftId"
           ],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioRealtime.js:5",
-            "sourceDigest": "afe5c11ec43f15af6054d8964258eb127174d7bbd33568f53f1178474ceff866",
+            "sourceDigest": "8bcab5194f8cb7be7cccf3a10877f5404237a040810401c4438e69a17bbe743c",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -3496,8 +3439,7 @@
       "exports": [
         "useScenarioState"
       ],
-      "lineCount": 210,
-      "lineCeiling": 210,
+      "lineCeiling": 240,
       "interfaces": [
         {
           "exportName": "useScenarioState",
@@ -3608,8 +3550,7 @@
             "forwarded input initialLaneMode"
           ],
           "inventory": {
-            "source": "frontend/src/scenario/useScenarioState.js:4",
-            "sourceDigest": "8a5c29f0815a10d6985fa7ac6ab94da1b8d646a4e1817da8d0e4aeac403530fb",
+            "sourceDigest": "3bd1057028f7acebf0aac22886e79ca50ba15afc4c2f2a1dff58cfdc27938ebc",
             "reviewed": true,
             "complete": true,
             "memberNames": [
@@ -3649,8 +3590,7 @@
         "default",
         "useAdminAccessSettings"
       ],
-      "lineCount": 148,
-      "lineCeiling": 148,
+      "lineCeiling": 170,
       "interfaces": [
         {
           "exportName": "default",
@@ -3685,10 +3625,7 @@
           "returnCeiling": 0,
           "propCeiling": 7,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/AdminAccessSettings.jsx:67",
-            "sourceDigest": "2dc2eb272e795faa805e8736e89e6955930ed8f80e0c9a2d411a1060139fa09b"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
@@ -3734,8 +3671,7 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/AdminAccessSettings.jsx:5",
-            "sourceDigest": "2dc2eb272e795faa805e8736e89e6955930ed8f80e0c9a2d411a1060139fa09b",
+            "sourceDigest": "35c256648dfd93f3cc7fa17a9655d5569f5dd66b412cb15c855508606037f5f6",
             "reviewed": true,
             "memberNames": [
               "active",
@@ -3766,8 +3702,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 35,
-      "lineCeiling": 35,
+      "lineCeiling": 40,
       "interfaces": [
         {
           "exportName": "default",
@@ -3796,10 +3731,7 @@
           "returnCeiling": 0,
           "propCeiling": 5,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/AdminSettingsTabs.jsx:13",
-            "sourceDigest": "1cff40967190964e05e6708fc1b07791ac16208f7568abf1ce02d39338fac900"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
@@ -3832,8 +3764,7 @@
         "validateFirstRunPendingGroup",
         "verifyFirstRunGroupsSaveSnapshot"
       ],
-      "lineCount": 440,
-      "lineCeiling": 440,
+      "lineCeiling": 490,
       "interfaces": [
         {
           "exportName": "default",
@@ -3887,8 +3818,7 @@
             "forwarded input groups"
           ],
           "inventory": {
-            "source": "frontend/src/settings/FirstRunGroupConfigurationGuide.jsx:255",
-            "sourceDigest": "ffb67aae56352464cede3dac25d259fafff99d0f46c25c8d2fb3afe06c7a12f5",
+            "sourceDigest": "d7cbbba2fa33b87d824bf771846eacea371f3fa7f8aec3d4dfab02e6cdae9920",
             "reviewed": true,
             "memberNames": [
               "busy",
@@ -3934,8 +3864,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 158,
-      "lineCeiling": 158,
+      "lineCeiling": 180,
       "interfaces": [
         {
           "exportName": "default",
@@ -3982,8 +3911,7 @@
             "spread input groups"
           ],
           "inventory": {
-            "source": "frontend/src/settings/FirstRunGroupSelectionModal.jsx:6",
-            "sourceDigest": "0ee7daf9fac773394fa4bfc3c5f58f33e0002864837ccd905888db5ef420fcbe",
+            "sourceDigest": "9b2bce278795510a963c430c4724307f6ec0c8bd781e4762f03ef442e659029d",
             "reviewed": true,
             "memberNames": [
               "error",
@@ -4026,8 +3954,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 98,
-      "lineCeiling": 98,
+      "lineCeiling": 110,
       "interfaces": [
         {
           "exportName": "default",
@@ -4065,8 +3992,7 @@
             "spread input value"
           ],
           "inventory": {
-            "source": "frontend/src/settings/FirstRunGroupSetupChoice.jsx:5",
-            "sourceDigest": "f2aac94743e778d0a2c76159c660faa79ba674aee69d2f076e18e498a8d0267e",
+            "sourceDigest": "51edcdc8e0ff6b381d78d3a8d1ac36f68ad6f931029ee8620c2e7803f7b918e7",
             "reviewed": true,
             "memberNames": [
               "groups",
@@ -4105,8 +4031,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 1199,
-      "lineCeiling": 1199,
+      "lineCeiling": 1320,
       "interfaces": [
         {
           "exportName": "default",
@@ -4155,7 +4080,6 @@
             "forwarded input epicsByStatus"
           ],
           "inventory": {
-            "source": "frontend/src/settings/GroupBoardSettings.jsx:111",
             "sourceDigest": "5894b54457d0999f95c2fe66b4a0e1d8987090e5f0018bb713020d147e094aef",
             "reviewed": true,
             "memberNames": [
@@ -4201,8 +4125,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 101,
-      "lineCeiling": 101,
+      "lineCeiling": 120,
       "interfaces": [
         {
           "exportName": "default",
@@ -4255,10 +4178,7 @@
           "returnCeiling": 0,
           "propCeiling": 16,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/GroupBoardsTab.jsx:9",
-            "sourceDigest": "3b8837bc1ee8eb4b10759d59c59c53b90946966243ad45025413d124f8492ad7"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
@@ -4281,8 +4201,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 76,
-      "lineCeiling": 76,
+      "lineCeiling": 90,
       "interfaces": [
         {
           "exportName": "default",
@@ -4337,8 +4256,7 @@
             "forwarded input selectedEpics"
           ],
           "inventory": {
-            "source": "frontend/src/settings/GroupEpicSelector.jsx:3",
-            "sourceDigest": "f128b99f68dc07a4dbca7fc4ea0079d15b9748c5b6ce59a6199b73585a974563",
+            "sourceDigest": "3c84292c65ee0c8c256cca747c6653cc28c6eefe0207b50e5dd3ca704c410334",
             "reviewed": true,
             "memberNames": [
               "chipLastRef",
@@ -4390,8 +4308,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 840,
-      "lineCeiling": 840,
+      "lineCeiling": 930,
       "interfaces": [
         {
           "exportName": "default",
@@ -4747,8 +4664,7 @@
             "forwarded input capacityProjectDraft"
           ],
           "inventory": {
-            "source": "frontend/src/settings/JiraFieldSettings.jsx:5",
-            "sourceDigest": "6d8a269862ee3f25a9f8aff4e6e8ad597be1bed638a119707a42c135b1009681",
+            "sourceDigest": "29d57f0da856d7bdbe1bc39afc582aa9da67c543a49de79e0381d2bcec2462d5",
             "reviewed": true,
             "memberNames": [
               "addIssueType",
@@ -4959,8 +4875,7 @@
         "PerformanceTrend",
         "default"
       ],
-      "lineCount": 132,
-      "lineCeiling": 132,
+      "lineCeiling": 150,
       "interfaces": [
         {
           "exportName": "PerformanceTrend",
@@ -4982,10 +4897,7 @@
           "returnCeiling": 0,
           "propCeiling": 1,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:8",
-            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
@@ -5019,8 +4931,7 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/PerformanceSettings.jsx:56",
-            "sourceDigest": "1b9b4978b900426120e4fafec14fb962a4c75c3572ac502b8f06fd075f379bb2",
+            "sourceDigest": "1c2268ec913cb4d9e4fa4a8a982b3e1dc85e7a426a20c58a63a5a72eb9b36b52",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -5049,8 +4960,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 140,
-      "lineCeiling": 140,
+      "lineCeiling": 160,
       "interfaces": [
         {
           "exportName": "default",
@@ -5127,8 +5037,7 @@
             "forwarded input validationActions"
           ],
           "inventory": {
-            "source": "frontend/src/settings/SettingsModal.jsx:3",
-            "sourceDigest": "b5ddba78396c3fdbd1010a01d7715fe0b5385a982b111b56cdcbf7ff137d1f7d",
+            "sourceDigest": "b437935f7a6030b5fc9f500c83a1e2508ffd638c97feb3e75462812c1c445161",
             "reviewed": true,
             "memberNames": [
               "activeTab",
@@ -5185,8 +5094,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 619,
-      "lineCeiling": 619,
+      "lineCeiling": 690,
       "interfaces": [
         {
           "exportName": "default",
@@ -5422,8 +5330,7 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/settings/TeamGroupsSettings.jsx:5",
-            "sourceDigest": "a8e5d43bb9b8390c336c4f307366f32f023528021e7842d65244c8b08e130a7c",
+            "sourceDigest": "cc509f11ccc5cdcc9dea33dae691dd4ed0e9123b933af568a370d311a4368d8b",
             "reviewed": true,
             "memberNames": [
               "activeGroupDraft",
@@ -5569,8 +5476,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 26,
-      "lineCeiling": 26,
+      "lineCeiling": 30,
       "interfaces": [
         {
           "exportName": "default",
@@ -5597,10 +5503,7 @@
           "returnCeiling": 0,
           "propCeiling": 3,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/UnconfiguredWorkspaceNotice.jsx:4",
-            "sourceDigest": "7bbfffad53620cbb4c99ca06238880686e516c9a155e959a1415afd398d798c9"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -5623,8 +5526,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 210,
-      "lineCeiling": 210,
+      "lineCeiling": 240,
       "interfaces": [
         {
           "exportName": "default",
@@ -5650,8 +5552,7 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/UserConnectionsSettings.jsx:40",
-            "sourceDigest": "44bf44cd5ead9143ec0d12c10022e0a93fe88c42171c14be564e7ac5057d2d71",
+            "sourceDigest": "7b599ab5c35e872b182adeb2ac54c3891339db8c20ac97ab06caf04ea181e2a5",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -5684,8 +5585,7 @@
         "resolveAdminSettingsGate",
         "useAdminSettingsGate"
       ],
-      "lineCount": 40,
-      "lineCeiling": 40,
+      "lineCeiling": 50,
       "interfaces": [
         {
           "exportName": "useAdminSettingsGate",
@@ -5712,10 +5612,7 @@
           "returnCeiling": 3,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/adminSettingsGate.js:22",
-            "sourceDigest": "0d64eebd6983d050484e5d3da334427ce5ad4cc2aeea0b8c63169286082b1bc9"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -5778,8 +5675,7 @@
         "clearBoardStatusCatalogCache",
         "loadBoardStatusCatalog"
       ],
-      "lineCount": 34,
-      "lineCeiling": 34,
+      "lineCeiling": 40,
       "interfaces": []
     },
     {
@@ -5794,8 +5690,7 @@
         "buildPendingFirstRunGroupPreferencesDraft",
         "shouldShowFirstRunGroupSearch"
       ],
-      "lineCount": 73,
-      "lineCeiling": 73,
+      "lineCeiling": 90,
       "interfaces": []
     },
     {
@@ -5841,8 +5736,7 @@
         "validateComposerBoard",
         "validatePresentGroupBoards"
       ],
-      "lineCount": 439,
-      "lineCeiling": 439,
+      "lineCeiling": 490,
       "interfaces": []
     },
     {
@@ -5871,8 +5765,7 @@
         "validateImportedTeamLabels",
         "validateTeamLabelAliases"
       ],
-      "lineCount": 346,
-      "lineCeiling": 346,
+      "lineCeiling": 390,
       "interfaces": []
     },
     {
@@ -5891,8 +5784,7 @@
         "resolveVisibleActiveGroupId",
         "visibleGroupsForControls"
       ],
-      "lineCount": 104,
-      "lineCeiling": 104,
+      "lineCeiling": 120,
       "interfaces": []
     },
     {
@@ -5910,8 +5802,7 @@
         "pendingSectionLabels",
         "rebaseSharedGroupsPayload"
       ],
-      "lineCount": 76,
-      "lineCeiling": 76,
+      "lineCeiling": 90,
       "interfaces": []
     },
     {
@@ -5925,8 +5816,7 @@
         "createSettingsDraftReadGuard",
         "useSettingsConfigBaselineRevision"
       ],
-      "lineCount": 35,
-      "lineCeiling": 35,
+      "lineCeiling": 40,
       "interfaces": [
         {
           "exportName": "useSettingsConfigBaselineRevision",
@@ -5946,10 +5836,7 @@
           "returnCeiling": 2,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/settingsConfigReadState.js:24",
-            "sourceDigest": "78cfe7b531801415edd263a027bb04ede2775958d05d91342d006b6df78c8551"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -5989,8 +5876,7 @@
       "exports": [
         "saveSharedExcludedCapacityToggle"
       ],
-      "lineCount": 96,
-      "lineCeiling": 96,
+      "lineCeiling": 110,
       "interfaces": []
     },
     {
@@ -6006,8 +5892,7 @@
         "shouldForceAfterOrdinaryTeamRead",
         "shouldRetainTeamMembershipAfterFailure"
       ],
-      "lineCount": 84,
-      "lineCeiling": 84,
+      "lineCeiling": 100,
       "interfaces": []
     },
     {
@@ -6019,8 +5904,7 @@
       "exports": [
         "useGroupVisibilityPreferences"
       ],
-      "lineCount": 330,
-      "lineCeiling": 330,
+      "lineCeiling": 370,
       "interfaces": [
         {
           "exportName": "useGroupVisibilityPreferences",
@@ -6095,8 +5979,7 @@
             "forwarded input activeGroupId"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useGroupVisibilityPreferences.js:30",
-            "sourceDigest": "4ff602ba244ddd42a2834a32f07adc02cd6d8b8fd089e5168679d796e6c51e48",
+            "sourceDigest": "392296d38292e0a9b8bb614de7d946d581b46fcbb1d2d9016bcf169473bef8e3",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
@@ -6144,8 +6027,7 @@
         "makeFieldSearchResults",
         "useJiraFieldPickers"
       ],
-      "lineCount": 303,
-      "lineCeiling": 303,
+      "lineCeiling": 340,
       "interfaces": [
         {
           "exportName": "useJiraFieldPickers",
@@ -6259,8 +6141,7 @@
             "forwarded input jiraFields"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useJiraFieldPickers.js:116",
-            "sourceDigest": "c920b9038a4dff9bc2c38a857c1eaa2db68fb18f6321304b22fd3ed247b4f23e",
+            "sourceDigest": "048d25abd6f7e123b77e8cc2cf658562219c8ad0db97638c0393b8092a821760",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -6837,8 +6718,7 @@
       "exports": [
         "usePriorityWeightsSettings"
       ],
-      "lineCount": 119,
-      "lineCeiling": 119,
+      "lineCeiling": 140,
       "interfaces": [
         {
           "exportName": "usePriorityWeightsSettings",
@@ -6892,8 +6772,7 @@
             "forwarded input BACKEND_URL"
           ],
           "inventory": {
-            "source": "frontend/src/settings/usePriorityWeightsSettings.js:10",
-            "sourceDigest": "7a1d02af43a3590989148cec8963724f042750f24345cc53b61b66ae11bb6c8f",
+            "sourceDigest": "cca4e68411df840dd50ea1e0b7ab20b40a7b728d4e374493ff8d6648598b6865",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -7015,8 +6894,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 464,
-      "lineCeiling": 464,
+      "lineCeiling": 520,
       "interfaces": [
         {
           "exportName": "default",
@@ -7065,7 +6943,6 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamCatalogLifecycle.js:30",
             "sourceDigest": "f3adc4df2f061a142679fb64ff99516d2058bcbb69687dc623cc2615e27a76de",
             "reviewed": true,
             "memberNames": [
@@ -7144,8 +7021,7 @@
         "rebaseWorkspaceConfigSave",
         "workspaceConfigConflictMessages"
       ],
-      "lineCount": 28,
-      "lineCeiling": 28,
+      "lineCeiling": 40,
       "interfaces": []
     },
     {
@@ -7159,8 +7035,7 @@
         "useJiraProjectSearchEffects",
         "useJiraProjectSettings"
       ],
-      "lineCount": 590,
-      "lineCeiling": 590,
+      "lineCeiling": 650,
       "interfaces": [
         {
           "exportName": "useJiraProjectCatalogEffects",
@@ -7204,10 +7079,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useJiraProjectSettings.js:557",
-            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -7261,8 +7133,7 @@
             "forwarded input BACKEND_URL"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useJiraProjectSettings.js:476",
-            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65",
+            "sourceDigest": "bbbb5eb983520ac859de7e87e5329ca41ab512115198ab77a088bc2c6b00dc3e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -7409,8 +7280,7 @@
             "bag boardConfigSaveReadFenceRef member alias saveReadFence"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useJiraProjectSettings.js:22",
-            "sourceDigest": "5a2cbfcac9329647e0c293fd352dd561e799202ec0031eeedf405489657c6b65",
+            "sourceDigest": "26124098cf18bc5c858a027ae81262d846c754441aaea505c09e892a8bf14ebf",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -7918,8 +7788,7 @@
         "useCapacityMappingEffects",
         "useCapacityMappingSettings"
       ],
-      "lineCount": 207,
-      "lineCeiling": 207,
+      "lineCeiling": 230,
       "interfaces": [
         {
           "exportName": "useCapacityMappingEffects",
@@ -7952,10 +7821,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useCapacityMappingSettings.js:192",
-            "sourceDigest": "ec13c0bb8baa76387ffc0bea2f885fba83ddfca0978d5fe6d4ce811a8505898c"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -8042,8 +7908,7 @@
             "forwarded input jiraFields"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useCapacityMappingSettings.js:11",
-            "sourceDigest": "ec13c0bb8baa76387ffc0bea2f885fba83ddfca0978d5fe6d4ce811a8505898c",
+            "sourceDigest": "01b4315f4a62d35b94e9538ec951e9186ef79b530841279cd9ab216d01e3de6d",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -8291,8 +8156,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 359,
-      "lineCeiling": 359,
+      "lineCeiling": 400,
       "interfaces": [
         {
           "exportName": "default",
@@ -8636,10 +8500,7 @@
           "returnCeiling": 0,
           "propCeiling": 160,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/AdminSettingsContainer.jsx:8",
-            "sourceDigest": "a2d1f91aee76a8841ac75e21788bb260545d3da3dc16fb91d8315f11df8c3f2a"
-          },
+          "inventory": {},
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -8656,8 +8517,7 @@
         "DEFAULT_EPM_LABEL_PREFIX",
         "createEmptyEpmConfigDraft"
       ],
-      "lineCount": 8,
-      "lineCeiling": 8,
+      "lineCeiling": 10,
       "interfaces": []
     },
     {
@@ -8669,8 +8529,7 @@
       "exports": [
         "getLabelRowKey"
       ],
-      "lineCount": 1,
-      "lineCeiling": 1,
+      "lineCeiling": 10,
       "interfaces": []
     },
     {
@@ -8686,8 +8545,7 @@
         "useEpmSettingsLoadEffect",
         "useEpmSettingsProjectsEffects"
       ],
-      "lineCount": 1208,
-      "lineCeiling": 1208,
+      "lineCeiling": 1330,
       "interfaces": [
         {
           "exportName": "useEpmLabelMenuEffects",
@@ -8725,8 +8583,7 @@
             "bag epmLabelMenuInputRef member alias inputNode"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useEpmSettings.js:984",
-            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "sourceDigest": "593a033179584501fcbddd46c099f6c09ce13e717f7e28a336b7cb6d6accf3ef",
             "reviewed": true,
             "memberNames": [
               "epmLabelMenuAnchor",
@@ -8785,8 +8642,7 @@
             "forwarded input savedEpmRootGoalKey"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useEpmSettings.js:1156",
-            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "sourceDigest": "5be894e2711306bc772e58f85ca09cd396df3489759271afe9e39fd1ff2e6b15",
             "reviewed": true,
             "memberNames": [
               "epmConfigLoaded",
@@ -8978,8 +8834,7 @@
             "bag labelSearchResults dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useEpmSettings.js:27",
-            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "sourceDigest": "af18928cefe493385477a3f2ea06954088b1f4e41fff554489535b7b1e16a94d",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -9740,10 +9595,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useEpmSettings.js:1028",
-            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -9802,8 +9654,7 @@
             "forwarded input epmSettingsProjectsCacheKey"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useEpmSettings.js:1170",
-            "sourceDigest": "99bf382198323c044eb4d994b9434895d3e968f5e45a10b499e8b0815f2bbcc3",
+            "sourceDigest": "c2474f1675f86675bae72e0c622adc6fc396e531874a95997a416a7d6972efe5",
             "reviewed": true,
             "memberNames": [
               "canLoadEpmProjects",
@@ -9845,8 +9696,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 189,
-      "lineCeiling": 189,
+      "lineCeiling": 210,
       "interfaces": [
         {
           "exportName": "default",
@@ -10027,10 +9877,7 @@
           "returnCeiling": 0,
           "propCeiling": 80,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/epm/EpmSettingsTab.jsx:8",
-            "sourceDigest": "39c3be5449b7194ae5280798cdc352450b3d2ce73cd4cf86ebdb0584077004dc"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -10056,8 +9903,7 @@
         "useTeamGroupSelectionEffect",
         "useTeamGroupSettings"
       ],
-      "lineCount": 1482,
-      "lineCeiling": 1482,
+      "lineCeiling": 1640,
       "interfaces": [
         {
           "exportName": "useTeamGroupLabelEffects",
@@ -10094,7 +9940,6 @@
             "bag activeTeamResultsLimited dynamic member"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1456",
             "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
@@ -10189,7 +10034,6 @@
             "forwarded input BACKEND_URL"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1313",
             "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
@@ -10264,10 +10108,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:1288",
-            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -10501,7 +10342,6 @@
             "forwarded input selectedSprintInfo"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useTeamGroupSettings.js:32",
             "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
             "reviewed": true,
             "memberNames": [
@@ -11666,8 +11506,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 494,
-      "lineCeiling": 494,
+      "lineCeiling": 550,
       "interfaces": [
         {
           "exportName": "default",
@@ -11954,8 +11793,7 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/settings/DepartmentsSettingsTab.jsx:9",
-            "sourceDigest": "f1817eadf3cfba72df4a63c9da271abbd7de7d51eb23fd826d019a44593a77c2",
+            "sourceDigest": "74bc68a68e3d362a48016a6ca13aadf558d6cd3bff778cf3ad51df012ee75ee7",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -12115,8 +11953,7 @@
         "useFirstRunConfiguration",
         "useFirstRunConfigurationState"
       ],
-      "lineCount": 258,
-      "lineCeiling": 258,
+      "lineCeiling": 290,
       "interfaces": [
         {
           "exportName": "useFirstRunConfiguration",
@@ -12267,8 +12104,7 @@
             "spread input firstRunSetupChoice"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useFirstRunConfiguration.js:36",
-            "sourceDigest": "ad156bc36fe31e792f2c7b8f3e9407fa78d589351beae7c0f6ae86f744c47eb5",
+            "sourceDigest": "12cc40643eea3e7099f4f37e094c6ce8cfee23ef20ab1ded23f2fe44ce2c394c",
             "reviewed": true,
             "memberNames": [
               "activeGroupDraft",
@@ -12460,10 +12296,7 @@
           "returnCeiling": 9,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useFirstRunConfiguration.js:12",
-            "sourceDigest": "ad156bc36fe31e792f2c7b8f3e9407fa78d589351beae7c0f6ae86f744c47eb5"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -12561,8 +12394,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 46,
-      "lineCeiling": 46,
+      "lineCeiling": 60,
       "interfaces": [
         {
           "exportName": "default",
@@ -12612,8 +12444,7 @@
             "forwarded input firstRunSetupChoice"
           ],
           "inventory": {
-            "source": "frontend/src/settings/FirstRunConfigurationContainer.jsx:6",
-            "sourceDigest": "1384a5bc68fcfce8d2bb6940fb587e0b5ac085411609e44311792db7804277ff",
+            "sourceDigest": "0a0170ec077683eb901eb379e2070a32621c55f16c6b4588c0aa08062c2b1d39",
             "reviewed": true,
             "memberNames": [
               "closeFirstRunSetupChoice",
@@ -12656,8 +12487,7 @@
       "exports": [
         "useSettingsPermissions"
       ],
-      "lineCount": 58,
-      "lineCeiling": 58,
+      "lineCeiling": 70,
       "interfaces": [
         {
           "exportName": "useSettingsPermissions",
@@ -12694,10 +12524,7 @@
           "returnCeiling": 11,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useSettingsPermissions.js:8",
-            "sourceDigest": "f40fb68b3ddf4e7fcf42401d9076cf070d02354b94e59a66527e1356794e1ad9"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -12812,8 +12639,7 @@
         "DEPARTMENT_SETTINGS_TAB_IDS",
         "SHARED_CONFIGURATION_TAB_IDS"
       ],
-      "lineCount": 3,
-      "lineCeiling": 3,
+      "lineCeiling": 10,
       "interfaces": []
     },
     {
@@ -12826,8 +12652,7 @@
         "useSharedConfigSave",
         "useSharedConfigSaveState"
       ],
-      "lineCount": 958,
-      "lineCeiling": 958,
+      "lineCeiling": 1060,
       "interfaces": [
         {
           "exportName": "useSharedConfigSave",
@@ -13156,8 +12981,7 @@
             "forwarded input setTeamFieldNameDraft"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useSharedConfigSave.js:54",
-            "sourceDigest": "020f46d1cafd328a7c7e5481d961896d153cb2a6a57da76e1b7f0b34c6f4b321",
+            "sourceDigest": "22ffad80bac47362d26e94bba3f92fe1ae8420e2f4f2db09402c5eec7532150e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -13472,10 +13296,7 @@
           "returnCeiling": 12,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useSharedConfigSave.js:24",
-            "sourceDigest": "020f46d1cafd328a7c7e5481d961896d153cb2a6a57da76e1b7f0b34c6f4b321"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -13608,8 +13429,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 84,
-      "lineCeiling": 84,
+      "lineCeiling": 100,
       "interfaces": [
         {
           "exportName": "default",
@@ -13704,8 +13524,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "source": "frontend/src/settings/SettingsModalContainer.jsx:8",
-            "sourceDigest": "03047c71602565615d74cd332e19c8f31570f4176a05db71f3a8c1ae913b6873",
+            "sourceDigest": "4ec963d6c47ddf358f34078718a08f7abb5c66f9d9725973ff120a7a3b7a6631",
             "reviewed": true,
             "memberNames": [
               "activeSettingsModalTab",
@@ -13765,8 +13584,7 @@
         "useSettingsModalState",
         "useSettingsTabGuardEffects"
       ],
-      "lineCount": 435,
-      "lineCeiling": 435,
+      "lineCeiling": 480,
       "interfaces": [
         {
           "exportName": "useSettingsAutoOpenEffect",
@@ -13791,10 +13609,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useSettingsModalState.js:335",
-            "sourceDigest": "ec4b572ffd213904d95c27292b420f49d8612c43f86f5b9dc5f0b525b5048f60"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -13848,10 +13663,7 @@
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useSettingsModalState.js:352",
-            "sourceDigest": "ec4b572ffd213904d95c27292b420f49d8612c43f86f5b9dc5f0b525b5048f60"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -14023,8 +13835,7 @@
             "forwarded input saveBlockedReason"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useSettingsModalState.js:38",
-            "sourceDigest": "ec4b572ffd213904d95c27292b420f49d8612c43f86f5b9dc5f0b525b5048f60",
+            "sourceDigest": "8b1ab895adf72fcce9daddfe2f8e76d4957b5037bf76d9730dbc26a8542bced9",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -14263,10 +14074,7 @@
           "returnCeiling": 17,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/useSettingsModalState.js:7",
-            "sourceDigest": "ec4b572ffd213904d95c27292b420f49d8612c43f86f5b9dc5f0b525b5048f60"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -14480,8 +14288,7 @@
             "forwarded input groupManageTab"
           ],
           "inventory": {
-            "source": "frontend/src/settings/useSettingsModalState.js:406",
-            "sourceDigest": "ec4b572ffd213904d95c27292b420f49d8612c43f86f5b9dc5f0b525b5048f60",
+            "sourceDigest": "67a383d76732c1a2ae54a9af22f47cc81c0295b01da8653ba0030b57f0654bd7",
             "reviewed": true,
             "memberNames": [
               "canEditEpmConfiguration",
@@ -14520,8 +14327,7 @@
         "resetStatsTransientRefs",
         "snapshotStatsGroupState"
       ],
-      "lineCount": 126,
-      "lineCeiling": 126,
+      "lineCeiling": 140,
       "interfaces": []
     },
     {
@@ -14533,8 +14339,7 @@
       "exports": [
         "useStatsState"
       ],
-      "lineCount": 177,
-      "lineCeiling": 177,
+      "lineCeiling": 200,
       "interfaces": [
         {
           "exportName": "useStatsState",
@@ -14687,8 +14492,7 @@
             "bag savedPrefsRef member alias saved"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsState.js:4",
-            "sourceDigest": "caf66018dc1e228673dcaee848f868bdae866aa10ccdd0b2a41af012e7bb5de2",
+            "sourceDigest": "7e7cc77b0282202ec152346d9d243f1f88307807bd90f32d4e73cc6e3e343aed",
             "reviewed": true,
             "memberNames": [
               "resolveBurndownMetric",
@@ -15536,8 +15340,7 @@
         "useStatsDerivedB",
         "useStatsDerivedC"
       ],
-      "lineCount": 1424,
-      "lineCeiling": 1424,
+      "lineCeiling": 1570,
       "interfaces": [
         {
           "exportName": "useStatsDerivedA",
@@ -15655,8 +15458,7 @@
             "forwarded input issueEditStateRef"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:57",
-            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
+            "sourceDigest": "3e88d79d48a93321f2338beaecaad4d12a53f23d96031107a5c9f705cfb5f9bd",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16056,8 +15858,7 @@
             "bag projectTrackPhaseCacheRef dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:341",
-            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
+            "sourceDigest": "fc855a2feda2b397bbfd18d16885b2ed0bd01025680c73b20cb95e2408d294b4",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -16536,8 +16337,7 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/stats/useStatsData.js:1169",
-            "sourceDigest": "83906cf0acf9c1649c6c6e3f653330f9820db2724bd0f79b283a24fe9afacb5c",
+            "sourceDigest": "7716b7729cc59691b6809384fb963cc8bf1f6275416dc7b371ab5c7f09007d37",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -16676,8 +16476,7 @@
         "StatsPanel",
         "default"
       ],
-      "lineCount": 1020,
-      "lineCeiling": 1020,
+      "lineCeiling": 1130,
       "interfaces": [
         {
           "exportName": "StatsPanel",
@@ -16841,10 +16640,7 @@
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/stats/StatsPanel.jsx:27",
-            "sourceDigest": "78ab0846cbdb9963a3a7803e01ecf819aaf3db557d96477ddccaafa4507d4ff9"
-          },
+          "inventory": {},
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -17011,10 +16807,7 @@
           "returnCeiling": 0,
           "propCeiling": 9,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/stats/StatsPanel.jsx:27",
-            "sourceDigest": "78ab0846cbdb9963a3a7803e01ecf819aaf3db557d96477ddccaafa4507d4ff9"
-          },
+          "inventory": {},
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -17030,8 +16823,7 @@
       "exports": [
         "useEngAlerts"
       ],
-      "lineCount": 475,
-      "lineCeiling": 475,
+      "lineCeiling": 530,
       "interfaces": [
         {
           "exportName": "useEngAlerts",
@@ -17156,8 +16948,7 @@
             "forwarded input burnoutTaskFilter"
           ],
           "inventory": {
-            "source": "frontend/src/eng/useEngAlerts.js:9",
-            "sourceDigest": "97b85dd1062b4b0126d411fdcc80647a8f92564990920dee1ebfc4d31c59ec55",
+            "sourceDigest": "99319d1deddd0a1332da5fbf2ea0634351d5fc11b85998fabdcd6517bca656c2",
             "reviewed": true,
             "memberNames": [
               "activeGroupTeamLabels",
@@ -17372,8 +17163,7 @@
         "useEngCapacity",
         "useEngCapacityState"
       ],
-      "lineCount": 424,
-      "lineCeiling": 424,
+      "lineCeiling": 470,
       "interfaces": [
         {
           "exportName": "useEngCapacity",
@@ -17522,8 +17312,7 @@
             "bag capacityReadGuardRef member alias guard"
           ],
           "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:55",
-            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813",
+            "sourceDigest": "7550b328727bc53ad4382c7886f31cfc5b4be452df591ceddc9224c17bd91f4e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -17825,10 +17614,7 @@
           "returnCeiling": 22,
           "propCeiling": 0,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/eng/useEngCapacity.js:29",
-            "sourceDigest": "53c79dafe408428f73158ec64d42f917a14ec8a0163a1e4198a602b71cba4813"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -17996,8 +17782,7 @@
         "TeamControl",
         "ViewSwitch"
       ],
-      "lineCount": 472,
-      "lineCeiling": 472,
+      "lineCeiling": 520,
       "interfaces": [
         {
           "exportName": "GroupControl",
@@ -18064,8 +17849,7 @@
             "forwarded input showGroupDropdown"
           ],
           "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:267",
-            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
+            "sourceDigest": "6b0727cf25f2a81d4dbc265ad6f8be93e20aaae8e8d2fc6bdee219faa80c4a70",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18139,10 +17923,7 @@
           "returnCeiling": 0,
           "propCeiling": 7,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:9",
-            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -18236,8 +18017,7 @@
             "bag sprintTriggerRefs dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:73",
-            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
+            "sourceDigest": "bca702b55070d1105516db562dac26cd03e74e9c477d33a0dba22fff420bdef7",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18346,8 +18126,7 @@
             "forwarded input showTeamDropdown"
           ],
           "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:382",
-            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc",
+            "sourceDigest": "349c71e6f2fc0dc381f69a7b2bd9081c241ffb4e82362cdc7894a405ab582cda",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -18414,10 +18193,7 @@
           "returnCeiling": 0,
           "propCeiling": 5,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/eng/EngControls.jsx:48",
-            "sourceDigest": "d40b5b52e0587f1dc51ed8d9928c272a88ac0e14f50ae144f1f63fcaaacbd4cc"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
@@ -18440,8 +18216,7 @@
       "exports": [
         "EpicBlock"
       ],
-      "lineCount": 406,
-      "lineCeiling": 406,
+      "lineCeiling": 450,
       "interfaces": [
         {
           "exportName": "EpicBlock",
@@ -18653,8 +18428,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "source": "frontend/src/eng/EpicBlock.jsx:14",
-            "sourceDigest": "fa623383856a17f0f74f732ba15886a5553bd2ffc15c70f87ab0b442481121e6",
+            "sourceDigest": "cf66834cbdd3e0cc581b8075d195f4c7c87988fbfc3dc540361cabd6c97c9499",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18800,8 +18574,7 @@
       "exports": [
         "useEngScope"
       ],
-      "lineCount": 9,
-      "lineCeiling": 9,
+      "lineCeiling": 10,
       "interfaces": [
         {
           "exportName": "useEngScope",
@@ -18847,8 +18620,7 @@
             "return spread/dynamic"
           ],
           "inventory": {
-            "source": "frontend/src/eng/useEngScope.js:3",
-            "sourceDigest": "af2257e8171d647b69da1060e47b9e4c904ee221c37896c5b8596be9ffa750f7",
+            "sourceDigest": "084efe0d0f79f1c427f6288d35d71d84b22931059dfa34f7f6e9ece5c1670ab4",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
@@ -18929,8 +18701,7 @@
       "exports": [
         "default"
       ],
-      "lineCount": 56,
-      "lineCeiling": 56,
+      "lineCeiling": 70,
       "interfaces": [
         {
           "exportName": "default",
@@ -18958,8 +18729,7 @@
             "forwarded input load"
           ],
           "inventory": {
-            "source": "frontend/src/components/LazyViewBoundary.jsx:48",
-            "sourceDigest": "221c19a6554188d10fe0ca1e1fe533fe8e72884a27998e5375f5a7fb3515288d",
+            "sourceDigest": "2569d2d06324a5a32567ceea81075d06521b91ba039bad4a7b07a00e740d70b0",
             "reviewed": true,
             "memberNames": [
               "children",
@@ -19013,8 +18783,7 @@
         "isLazyLoadFailure",
         "validateLazyViewManifest"
       ],
-      "lineCount": 97,
-      "lineCeiling": 97,
+      "lineCeiling": 110,
       "interfaces": []
     },
     {
@@ -19030,8 +18799,7 @@
         "niceMaximum",
         "phaseTotal"
       ],
-      "lineCount": 205,
-      "lineCeiling": 205,
+      "lineCeiling": 230,
       "interfaces": [
         {
           "exportName": "default",
@@ -19056,10 +18824,7 @@
           "returnCeiling": 0,
           "propCeiling": 2,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/PerformanceBoardWeeks.jsx:191",
-            "sourceDigest": "75bc5f74b556041c2feb3cf51ed76d7d91db4bc4af0809d1cad2a18dec0eb4b8"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
@@ -19088,8 +18853,7 @@
         "weekLabel",
         "weekStartOf"
       ],
-      "lineCount": 33,
-      "lineCeiling": 33,
+      "lineCeiling": 40,
       "interfaces": []
     },
     {
@@ -19104,8 +18868,7 @@
         "SERIES",
         "default"
       ],
-      "lineCount": 171,
-      "lineCeiling": 171,
+      "lineCeiling": 190,
       "interfaces": [
         {
           "exportName": "default",
@@ -19127,10 +18890,7 @@
           "returnCeiling": 0,
           "propCeiling": 1,
           "unresolved": [],
-          "inventory": {
-            "source": "frontend/src/settings/PerformanceCatchUpWeeks.jsx:147",
-            "sourceDigest": "b7b1e6bd4b70146ebfe800373d23de1d1a9b17cf5411cdb43cf000d970ed7133"
-          },
+          "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/PerformanceSettings.jsx",
@@ -19145,32 +18905,6 @@
       ]
     }
   ],
-  "aggregates": {
-    "scenario": {
-      "measured": 5767,
-      "ceiling": 5767
-    },
-    "settings": {
-      "measured": 17002,
-      "ceiling": 17002
-    },
-    "stats": {
-      "measured": 2900,
-      "ceiling": 2900
-    },
-    "eng": {
-      "measured": 1786,
-      "ceiling": 1786
-    },
-    "uniqueOwners": {
-      "measured": 27149,
-      "ceiling": 27149
-    },
-    "appPlusOwners": {
-      "measured": 34815,
-      "ceiling": 34815
-    }
-  },
   "transfer": {
     "scaffoldingAllowance": 365,
     "netPhysicalLOC": {

@@ -15,7 +15,7 @@ const writeInventory = flag('--write-inventory');
 const repoRoot = path.resolve(flag('--repo-root') ?? '.');
 const printReturns = args.indexOf('--print-returns');
 const parse = (file) => espree.parse(fs.readFileSync(file, 'utf8'), {
-    ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true,
+    ecmaVersion: 'latest', sourceType: 'module', ecmaFeatures: { jsx: true }, loc: true, range: true,
 });
 const resolveImport = (from, spec) => {
     const base = path.resolve(path.dirname(from), spec);
@@ -386,14 +386,15 @@ function contractOf(file, exportName) {
     const propNames = jsx ? [...new Set(names)].sort() : [];
     const returnNames = [...returns.keys].sort();
     const expandedInputNames = [...new Set(expanded)].sort();
-    const source = fs.readFileSync(file, 'utf8');
+    // The digest covers only the reviewed hook's own source, so an edit elsewhere in the module leaves it alone.
+    const hookSource = fs.readFileSync(file, 'utf8').slice(...fn.range);
     return { exportName, inputNames, returnNames, propNames, expandedInputNames,
         outerParameterCount: fn.params.length, expandedInputCount: expandedInputNames.length,
         returnCount: returnNames.length, propCount: propNames.length,
         outerParameterCeiling: fn.params.length, expandedInputCeiling: expandedInputNames.length,
         returnCeiling: returnNames.length, propCeiling: propNames.length,
         unresolved: [...new Set(unresolved)],
-        inventory: { source: `${path.relative(repoRoot, file)}:${fn.loc.start.line}`, sourceDigest: crypto.createHash('sha256').update(source).digest('hex') },
+        inventory: unresolved.length ? { sourceDigest: crypto.createHash('sha256').update(hookSource).digest('hex') } : {},
         callers: [], remainingAppReaders: [], getters: [],
     };
 }
@@ -404,9 +405,8 @@ if (manifestPath || writeInventory) {
         const relative = path.relative(repoRoot, file).split(path.sep).join('/');
         const features = OWNER_DIRS.test(path.relative(sourceRoot, file)) ? (/^scenario\//.test(path.relative(sourceRoot, file)) ? ['scenario'] : ['settings']) : explicitModules.get(file).features;
         const exports = exportsOf(file);
-        const lineCount = fs.readFileSync(file, 'utf8').split('\n').length - (fs.readFileSync(file, 'utf8').endsWith('\n') ? 1 : 0);
         return { id: path.relative(sourceRoot, file).replace(/\.(jsx?|mjs)$/, '').replaceAll('/', '.'), path: relative, features,
-            exports, lineCount, lineCeiling: lineCount, interfaces: exports.map(name => contractOf(file, name)).filter(Boolean) };
+            exports, lineCeiling: fs.readFileSync(file, 'utf8').split('\n').length - (fs.readFileSync(file, 'utf8').endsWith('\n') ? 1 : 0), interfaces: exports.map(name => contractOf(file, name)).filter(Boolean) };
     });
     const ledgerScopes = new Map();
     const appIdentifierLines = new Map();
@@ -450,12 +450,10 @@ if (manifestPath || writeInventory) {
     }
     if (writeInventory) {
         const dashboardLines = fs.readFileSync(entry, 'utf8').split('\n').length - 1;
-        const totals = Object.fromEntries(['scenario','settings','stats','eng'].map(feature => [feature, measured.filter(m => m.features.includes(feature)).reduce((n,m) => n+m.lineCount,0)]));
-        totals.uniqueOwners = measured.reduce((n,m) => n+m.lineCount,0); totals.appPlusOwners = dashboardLines + totals.uniqueOwners;
         fs.writeFileSync(writeInventory, JSON.stringify({ schemaVersion: 1, baseSha: 'REQUIRES_VERIFIED_BASE', checkpointId: 'PR0-current-base', sourceRoot: path.relative(repoRoot, sourceRoot), ownerRoots: roots,
             exclusions: { generated: ['frontend/dist'], tests: ['tests'], sharedImports: 'Imported files outside owner roots excluded' },
-            dashboard: { path: path.relative(repoRoot, entry), lineCount: dashboardLines, lineCeiling: dashboardLines }, modules: measured,
-            aggregates: Object.fromEntries(Object.entries(totals).map(([key,value]) => [key,{ measured:value, ceiling:value }])), transfer: { incomingRanges: [], scaffoldingAllowance: 0 } }, null, 2)+'\n');
+            dashboard: { path: path.relative(repoRoot, entry), lineCeiling: dashboardLines }, modules: measured,
+            transfer: { incomingRanges: [], scaffoldingAllowance: 0 } }, null, 2)+'\n');
         console.log(`owner inventory written: ${measured.length} modules`);
     }
     if (manifest) {

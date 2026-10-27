@@ -90,12 +90,11 @@ const budgetManifestFile = path.join(budgetRoot, 'owner_budgets.json');
 const budgetManifest = () => ({
     schemaVersion: 1, baseSha: 'synthetic-base', checkpointId: 'synthetic-checkpoint', sourceRoot,
     ownerRoots: ['scenario', 'settings'], exclusions: { generated: ['frontend/dist'], tests: ['tests'], sharedImports: 'outside declared roots' },
-    dashboard: { path: `${sourceRoot}/dashboard.jsx`, lineCount: 3, lineCeiling: 3 },
+    dashboard: { path: `${sourceRoot}/dashboard.jsx`, lineCeiling: 3 },
     modules: [
-        { id: 'owner', path: `${sourceRoot}/scenario/useOwner.js`, features: ['scenario'], exports: ['useOwner'], lineCount: 3, lineCeiling: 3, interfaces: [] },
-        { id: 'helper', path: `${sourceRoot}/settings/helper.js`, features: ['scenario', 'settings'], exports: ['shared'], lineCount: 1, lineCeiling: 1, interfaces: [] },
+        { id: 'owner', path: `${sourceRoot}/scenario/useOwner.js`, features: ['scenario'], exports: ['useOwner'], lineCeiling: 3, interfaces: [] },
+        { id: 'helper', path: `${sourceRoot}/settings/helper.js`, features: ['scenario', 'settings'], exports: ['shared'], lineCeiling: 1, interfaces: [] },
     ],
-    aggregates: { stats: { measured: 0, ceiling: 0 }, eng: { measured: 0, ceiling: 0 }, scenario: { measured: 4, ceiling: 4 }, settings: { measured: 1, ceiling: 1 }, uniqueOwners: { measured: 4, ceiling: 4 }, appPlusOwners: { measured: 7, ceiling: 7 } },
     transfer: { incomingRanges: [], scaffoldingAllowance: 0 },
 });
 function budget(name, manifest, status, pattern) {
@@ -109,47 +108,24 @@ function budget(name, manifest, status, pattern) {
 budget('owner-budget-clean-shared-helper-unique', budgetManifest(), 0, /owner budgets: 0 problems/);
 for (const feature of ['stats', 'eng']) {
     const featureManifest = budgetManifest(); featureManifest.modules[0].features = [feature];
-    featureManifest.aggregates.scenario = { measured: 1, ceiling: 1 };
-    featureManifest.aggregates[feature] = { measured: 3, ceiling: 3 };
     budget(`${feature}-feature-budget-clean`, featureManifest, 0, /owner budgets: 0 problems/);
-    delete featureManifest.aggregates[feature];
-    budget(`${feature}-missing-aggregate-fails`, featureManifest, 1, new RegExp(`missing aggregate: ${feature}`));
 }
 let manifest = budgetManifest(); manifest.modules[0].lineCeiling = 2;
 budget('oversized-owner-fails', manifest, 1, /exceeds owner ceiling/);
 manifest = budgetManifest(); manifest.modules.pop();
 budget('unregistered-helper-fails', manifest, 1, /unregistered owner source/);
-manifest = budgetManifest(); manifest.aggregates.uniqueOwners.measured = 5; manifest.aggregates.appPlusOwners.measured = 8;
-budget('shared-helper-double-count-fails', manifest, 1, /differs from unique actual/);
 manifest = budgetManifest(); manifest.modules.push({ ...manifest.modules[1], id: 'alias', path: `${sourceRoot}/settings/./helper.js` });
 budget('physical-path-alias-fails', manifest, 1, /invalid repository-relative path/);
 manifest = budgetManifest(); manifest.modules.push({ ...manifest.modules[1] });
 budget('duplicate-registration-fails', manifest, 1, /duplicate module ID\/path/);
 manifest = budgetManifest(); manifest.schemaVersion = 99;
 budget('invalid-schema-fails', manifest, 1, /unsupported schemaVersion/);
-manifest = budgetManifest(); manifest.aggregates = [];
-budget('invalid-aggregate-schema-fails', manifest, 1, /invalid aggregates schema/);
 manifest = budgetManifest(); manifest.sourceRoot = '../frontend/src';
 budget('traversal-source-root-fails', manifest, 1, /invalid sourceRoot path/);
 manifest = budgetManifest(); manifest.ownerRoots = [];
 budget('empty-owner-roots-fails', manifest, 1, /invalid sourceRoot\/ownerRoots schema/);
 manifest = budgetManifest(); manifest.dashboard.path = '../dashboard.jsx';
 budget('traversal-dashboard-path-fails', manifest, 1, /invalid dashboard path/);
-// Simulate an authorized transfer: two App lines become owner lines, so combined cap stays 7.
-write('budgets/frontend/src/dashboard.jsx', 'function App() {}\n');
-write('budgets/frontend/src/scenario/useOwner.js', 'export function useOwner({ value }) {\n    const retained = value;\n    const moved = retained;\n    return { value: moved };\n}\n');
-manifest = budgetManifest(); manifest.dashboard.lineCount = 1; manifest.dashboard.lineCeiling = 1;
-manifest.modules[0].lineCount = 5; manifest.modules[0].lineCeiling = 5;
-manifest.aggregates.scenario = { measured: 6, ceiling: 6 }; manifest.aggregates.uniqueOwners = { measured: 6, ceiling: 6 };
-manifest.transfer.incomingRanges = [{ from: 'App', to: 'useOwner', startAnchor: 'retained', endAnchor: 'moved', lines: 2 }];
-budget('authorized-app-to-owner-transfer-clean', manifest, 0, /owner budgets: 0 problems/);
-write('budgets/frontend/src/settings/helper.js', 'export const shared = 1;\nexport const growth = 2;\n');
-manifest.modules[1].lineCount = 2; manifest.modules[1].lineCeiling = 2;
-manifest.aggregates.scenario = { measured: 7, ceiling: 7 }; manifest.aggregates.settings = { measured: 2, ceiling: 2 }; manifest.aggregates.uniqueOwners = { measured: 7, ceiling: 7 }; manifest.aggregates.appPlusOwners.measured = 8;
-budget('unaccounted-combined-growth-fails', manifest, 1, /appPlusOwners: 8 exceeds aggregate ceiling 7/);
-manifest.aggregates.appPlusOwners.ceiling = 8; manifest.aggregates.uniqueOwners.ceiling = 6;
-budget('aggregate-growth-despite-app-shrink-fails', manifest, 1, /uniqueOwners: 7 exceeds aggregate ceiling 6/);
-
 
 const contractRoot = path.join(root, 'contracts');
 const contractDashboard = write('contracts/frontend/src/dashboard.jsx', 'import { useOwner } from "./scenario/useOwner.js"; function App() { const { value } = useOwner({ bag: { value: 1 } }); return null; }\n');
@@ -203,6 +179,14 @@ fs.writeFileSync(contractManifest, JSON.stringify(opaque));
 contracts('reviewed-opaque-alias-clean', 0, [/owner budgets: 1 modules; problems: 0/]);
 fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { const inner = bag.inner; return { value: inner.changed }; }\n');
 contracts('reviewed-opaque-alias-source-change-fails', 1, [/unresolved inventory/]);
+// The digest covers the reviewed hook's own source: an edit inside it reopens review, an edit elsewhere does not,
+// and a new dynamic read from the same bag reopens it (a reason-string digest would not see that one).
+fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { /* reworded */ const inner = bag.inner; return { value: inner.hidden }; }\n');
+contracts('reviewed-hook-comment-edit-reopens-review', 1, [/unresolved inventory/]);
+fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { const inner = bag.inner; const key = inner.name; return { value: inner.hidden, other: bag[key] }; }\n');
+contracts('reviewed-hook-new-dynamic-read-reopens-review', 1, [/unresolved inventory/]);
+fs.writeFileSync(contractOwner, '// Unrelated header comment.\nconst unrelated = 1;\nexport function useOwner({ bag }) { const inner = bag.inner; return { value: inner.hidden }; }\nfunction later() { return unrelated; }\n');
+contracts('edit-outside-reviewed-hook-keeps-digest', 0, [/owner budgets: 1 modules; problems: 0/]);
 
 // Caller, reader and getter metadata must be complete and reviewed, never cosmetic.
 fs.writeFileSync(contractOwner, 'export function useOwner({ bag }) { return { value: bag.value }; }\n');
@@ -352,8 +336,6 @@ fs.writeFileSync(outsideManifest, JSON.stringify(seed));
 run('outside-root-inventory-generation', 'check_hook_interfaces.mjs', ['--repo-root', outsideRoot, '--manifest', outsideManifest, '--write-inventory', outsideManifest, outsideApp], 1, [/owner inventory written: 2 modules/, /unregistered owner interface/]);
 const outsideFrozen = JSON.parse(fs.readFileSync(outsideManifest, 'utf8'));
 assert.equal(outsideFrozen.modules.length, 2);
-assert.equal(outsideFrozen.aggregates.stats.measured, 1);
-assert.equal(outsideFrozen.aggregates.eng.measured, 1);
 assert.equal(outsideFrozen.modules.find(item => item.id === 'stats.useStats').interfaces[0].callers.length, 1);
 const outside = (name, status, patterns) => run(name, 'check_hook_interfaces.mjs', ['--repo-root', outsideRoot, '--manifest', outsideManifest, outsideApp], status, patterns);
 const resetOutside = () => fs.writeFileSync(outsideManifest, JSON.stringify(outsideFrozen));

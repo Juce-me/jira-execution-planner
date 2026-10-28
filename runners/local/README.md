@@ -1,10 +1,10 @@
 # Local PostgreSQL Runner
 
-This source-checkout-only runner starts PostgreSQL in Docker, applies Alembic migrations, runs startup preflight, and then runs Flask from `.venv`. It is localhost-only and is not part of the application image, release archive, or production startup path. The Alembic step also adopts legacy Planning review data automatically (revision `20261023_0020`; see `INSTALL.md`), so saved review columns survive a migrating start.
+This source-checkout-only runner builds the frontend (`npm run build`, before any container starts), starts PostgreSQL in Docker, applies Alembic migrations, runs startup preflight, and then runs Flask from `.venv`. It is localhost-only and is not part of the application image, release archive, or production startup path. The Alembic step also adopts legacy Planning review data automatically (revision `20261023_0020`; see `INSTALL.md`), so saved review columns survive a migrating start.
 
 ## Run
 
-Prerequisites: Docker Engine 28+ with a local Unix-socket context, Docker Compose with `--wait-timeout`, `.venv`, a built frontend (`npm ci && npm run build`; `frontend/dist` is not committed and preflight fails without it), and a valid local `.env` for the application's auth/encryption settings.
+Prerequisites: Docker Engine 28+ with a local Unix-socket context, Docker Compose with `--wait-timeout`, `.venv`, installed frontend dependencies (`npm ci`; the runner runs `npm run build` itself because `frontend/dist` is not committed and preflight fails without it), and a valid local `.env` for the application's auth/encryption settings.
 
 ```bash
 ./runners/local/run.sh

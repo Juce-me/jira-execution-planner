@@ -111,6 +111,12 @@ printf 'unexpected docker invocation: %s\n' "$*" >&2
 exit 98
 '''
 
+NPM_STUB = r'''#!/usr/bin/env bash
+set -u
+printf 'npm|%s\n' "$*" >> "$RUNNER_LOG"
+exit "${FAKE_BUILD_STATUS:-0}"
+'''
+
 PYTHON_STUB = r'''#!/usr/bin/env bash
 set -u
 printf 'python|%s|bind=%s|network=%s|basic=%s|debug=%s\n' \
@@ -224,6 +230,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.fake_bin = base / "fake-bin"
         self.fake_bin.mkdir()
         self._write_executable(self.fake_bin / "docker", DOCKER_STUB)
+        self._write_executable(self.fake_bin / "npm", NPM_STUB)
         self._write_executable(self.fake_bin / "ps", PS_STUB)
 
         self.log = base / "runner.log"
@@ -363,8 +370,10 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         launch = '  "$@" &\n  child_pid=$!'
         instrumented = (
             '  "$@" &\n'
-            '  : > "$FAKE_CHILD_LAUNCH_STARTED_FILE"\n'
-            '  while [[ ! -e "$FAKE_CHILD_LAUNCH_RELEASE_FILE" ]]; do sleep 0.05; done\n'
+            '  if [[ " $* " == *" up --detach --wait "* ]]; then\n'
+            '    : > "$FAKE_CHILD_LAUNCH_STARTED_FILE"\n'
+            '    while [[ ! -e "$FAKE_CHILD_LAUNCH_RELEASE_FILE" ]]; do sleep 0.05; done\n'
+            '  fi\n'
             '  child_pid=$!'
         )
         if source.count(launch) != 1:
@@ -399,6 +408,8 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         result = self._run()
         log = self._log_text()
         self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("npm|run build", log)
+        self.assertLess(log.index("npm|run build"), log.index(" up --detach --wait"))
         self.assertLess(log.index(" up --detach --wait"), log.index("python|-m alembic"))
         self.assertLess(log.index("python|-m alembic"), log.index("check_startup_preflight.py"))
         self.assertLess(log.index("check_startup_preflight.py"), log.index("jira_server.py"))
@@ -409,6 +420,16 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
                 self.assertIn("--project-name jira-planning-local", line)
                 self.assertIn(str(self.runner_dir / "compose.yaml"), line)
         self._assert_down_once(log)
+        self._assert_lock_released()
+
+    def test_build_failure_retains_51_and_starts_nothing(self):
+        result = self._run(FAKE_BUILD_STATUS=51)
+        log = self._log_text()
+        self.assertEqual(result.returncode, 51)
+        self.assertIn("npm|run build", log)
+        self.assertNotIn(" up --detach", log)
+        self.assertNotIn(" down --timeout", log)
+        self.assertNotIn("python|", log)
         self._assert_lock_released()
 
     def test_compose_failure_retains_17_and_prints_bounded_diagnostics(self):

@@ -308,6 +308,7 @@ runner_resources_form_exact_stack() {
 [[ -f "${repo_root}/jira_server.py" && -f "${repo_root}/backend/db/alembic.ini" ]] ||
   fail "runner path does not resolve to a source checkout."
 command -v docker >/dev/null 2>&1 || fail "Docker is not installed."
+command -v npm >/dev/null 2>&1 || fail "npm is not installed; install the pinned Node toolchain and run npm ci."
 
 if [[ -n "${DOCKER_HOST:-}" ]]; then
   docker_endpoint="$DOCKER_HOST"
@@ -408,6 +409,10 @@ export ALLOW_BASIC_AUTH_ON_NETWORK=false
 export DEBUG_MODE=false
 
 cd "$repo_root"
+
+# frontend/dist is untracked build output: build it before any container starts so a build failure leaves nothing to clean up.
+run_child npm run build
+
 cleanup_armed=1
 
 if run_child "${compose[@]}" up --detach --wait --wait-timeout 60 postgres; then

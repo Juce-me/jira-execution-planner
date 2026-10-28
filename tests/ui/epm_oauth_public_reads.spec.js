@@ -11,7 +11,7 @@ const {
     selectedSprintName,
 } = require('./epm_view_fixture');
 
-// OAuth public Home reads (EXEC-home-oauth-public-reads Task 4): the EPM view is gated by the private
+// OAuth public Home reads (DONE-home-oauth-public-reads Task 4): the EPM view is gated by the private
 // "Enable EPM view" checkbox, verified Home scopes and ONE bounded access read; Home is read only through OAuth and
 // no Home token endpoint exists. Every fixture below is synthetic (example.invalid, fake ids).
 

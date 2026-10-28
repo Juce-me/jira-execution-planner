@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "description": "Shrink-only baseline for check_app_metrics.mjs (handle-in-dependency guard, EXEC-dashboard-conflict-resistant-architecture Task B0b). A violation not listed here fails the gate; an entry whose violation no longer occurs also fails, so delete it when the code is fixed. Never add an entry to make a new violation pass: fix the dependency list instead. Key format: file|kind|handle|member|owner, where owner is the name the hook result is assigned to, or anon:<hook>:<digest of the dependency array> when it is not assigned.",
+  "description": "Shrink-only baseline for check_app_metrics.mjs (handle-in-dependency guard, DONE-dashboard-conflict-resistant-architecture Task B0b). A violation not listed here fails the gate; an entry whose violation no longer occurs also fails, so delete it when the code is fixed. Never add an entry to make a new violation pass: fix the dependency list instead. Key format: file|kind|handle|member|owner, where owner is the name the hook result is assigned to, or anon:<hook>:<digest of the dependency array> when it is not assigned.",
   "violations": [
     {
       "key": "frontend/src/dashboard.jsx|bare-handle-in-deps|strictBoard||applyLocalEngIssueField",

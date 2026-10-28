@@ -1,4 +1,4 @@
-"""Task 2 of docs/plans/EXEC-home-oauth-public-reads.md: one snapshot, bounded revalidation, warmed metadata.
+"""Task 2 of docs/plans/DONE-home-oauth-public-reads.md: one snapshot, bounded revalidation, warmed metadata.
 
 Synthetic data only (example.invalid, fake ids and tokens). DB mode uses the SQLite setup from
 tests/test_db_oauth_cutover.py; Home I/O is a fake `urlopen`. No live network.

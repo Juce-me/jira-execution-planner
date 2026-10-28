@@ -1,4 +1,4 @@
-// App() metrics table and the handle-in-dependency guard (EXEC-dashboard-conflict-resistant-architecture, Task B0b).
+// App() metrics table and the handle-in-dependency guard (DONE-dashboard-conflict-resistant-architecture, Task B0b).
 // Usage (after run.sh copied the tool to tmp/lint, which holds espree and eslint-scope):
 //   node tmp/lint/check_app_metrics.mjs [--src frontend/src] [--baseline FILE] [--manifest FILE] [--guard-only] [--json]
 // Metrics (definitions fixed by the plan; this script measures, nothing is hard-coded):

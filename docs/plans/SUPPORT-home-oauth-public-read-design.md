@@ -1,8 +1,8 @@
 # Home OAuth public reads: design and Definition of Done
 
-**Status:** Plan finalized; implementation authorized but not started. This document set is the current delivery. Tasks 0–6 in the [EXEC plan](EXEC-home-oauth-public-reads.md) run in a separate execution session; no application change is authorized by this plan-fix task.
+**Status:** Plan finalized; implementation authorized but not started. This document set is the current delivery. Tasks 0–6 in the [EXEC plan](DONE-home-oauth-public-reads.md) run in a separate execution session; no application change is authorized by this plan-fix task.
 
-**Source verification:** the validation round checked local `main` at `e99b7e2a` on 2026-10-27. The package originated at `e58d38f9`, was committed as `5d6416d5`, and was integrated into `improvement/conflict-resistant-architecture-plan` from `fe6dae4d` the same day. No rebase or application execution occurred. Refresh symbols, file maps and checks against the actual execution tip, especially after the [architecture plan](EXEC-dashboard-conflict-resistant-architecture.md) changes tooling/layout. The older [migration reference](SUPPORT-epm-home-oauth-migration.md) remains historical.
+**Source verification:** the validation round checked local `main` at `e99b7e2a` on 2026-10-27. The package originated at `e58d38f9`, was committed as `5d6416d5`, and was integrated into `improvement/conflict-resistant-architecture-plan` from `fe6dae4d` the same day. No rebase or application execution occurred. Refresh symbols, file maps and checks against the actual execution tip, especially after the [architecture plan](DONE-dashboard-conflict-resistant-architecture.md) changes tooling/layout. The older [migration reference](SUPPORT-epm-home-oauth-migration.md) remains historical.
 
 ## Outcome and decisions
 

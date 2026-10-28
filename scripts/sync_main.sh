@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync the current feature branch with origin/main (docs/plans/EXEC-dashboard-conflict-resistant-architecture.md, Task A4).
+# Sync the current feature branch with origin/main (docs/plans/DONE-dashboard-conflict-resistant-architecture.md, Task A4).
 #
 # Usage: scripts/sync_main.sh [--continue]
 # Requires SYNC_GIT_NAME and SYNC_GIT_EMAIL (identity for the merge commit).

@@ -1,6 +1,6 @@
 """Raw-boundary parity oracle for the EPM Home/Jira read path.
 
-Task 0 of docs/plans/EXEC-home-oauth-public-reads.md. It freezes TODAY's
+Task 0 of docs/plans/DONE-home-oauth-public-reads.md. It freezes TODAY's
 behavior before any Home transport change, through the REAL route ->
 discovery -> normalization -> exact-label -> Jira hierarchy path. Only external
 I/O is stubbed: the Home GraphQL transport (`urlopen` in backend.epm.home) and

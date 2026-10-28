@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'dashboard.jsx'), 'utf8');
+// B2 moved the pin state, `clearAlertPin`, `pinAlert` and the close/back/open closures into this owner module.
+const pinSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useAlertPin.js'), 'utf8');
 
 // The body of the first `useEffect(() => { ... }, [deps]);` that contains `marker`.
 function effectContaining(marker) {
@@ -35,16 +37,22 @@ test('pinHeight is derived in render from isCatchUpMode and the pin, never set b
 test('the pin is cleared in the effect that clears dismissed Story requirements, keyed on the pin scope and leaving Catch Up', () => {
     const { body, deps } = effectContaining('setDismissedStoryRequirementIds([]);');
     assert.match(body, /pinScopeKey\(\{ groupId: activeGroupId, sprintId: selectedSprint \}\)/);
-    assert.match(body, /setAlertPin\(null\)/);
+    // B2: the effect stays in App() with the same dependency array but calls the handle's stable clear instead of setAlertPin(null).
+    assert.match(body, /clearAlertPin\(\);\n\s+\}\n\s+storyRequirementScopeRef\.current = scopeKey;/);
+    assert.match(body, /if \(!isCatchUpMode\) clearAlertPin\(\);/);
+    assert.doesNotMatch(body, /setAlertPin/);
     assert.match(body, /isCatchUpMode/);
     assert.deepEqual([...deps].sort(), ['activeGroupId', 'isCatchUpMode', 'selectedSprint']);
     assert.ok(!deps.includes('selectedTeams'));
 });
 
 test('no other effect clears the pin, and the confetti-clearing effect does not touch it', () => {
-    const clears = source.match(/setAlertPin\(null\)/g) || [];
-    // One in the scope effect (scope change), one in the same effect (leaving Catch Up), one in closeAlertPin.
-    assert.equal(clears.length, 3);
+    // One in the scope effect (scope change), one in the same effect (leaving Catch Up): both through the handle's clear.
+    assert.equal((source.match(/clearAlertPin\(\)/g) || []).length, 2);
+    assert.doesNotMatch(source, /setAlertPin/, 'the setter is private to useAlertPinState');
+    // The third clear is closeAlertPin's, and the only raw setter call is the one inside the stable clear.
+    assert.equal((pinSource.match(/setAlertPin\(null\)/g) || []).length, 1);
+    assert.equal((pinSource.match(/\bclearAlertPin\(\);/g) || []).length, 1);
     const confetti = effectContaining('setAlertCelebrationPieces([]);\n            }, [selectedSprint, activeGroupId, selectedTeams]);');
     assert.doesNotMatch(confetti.body, /setAlertPin/);
 });
@@ -58,9 +66,11 @@ test('dismissAlertItem accepts an option that suppresses only its built-in celeb
 });
 
 test('closeAlertPin resolves from the rendered collections and the cohort settle state, and dismisses without a double burst', () => {
-    const start = source.indexOf('const closeAlertPin = () => {');
+    const start = pinSource.indexOf('const closeAlertPin = () => {');
     assert.ok(start >= 0, 'closeAlertPin not found');
-    const body = source.slice(start, source.indexOf('\n            };', start));
+    const body = pinSource.slice(start, pinSource.indexOf('\n    };', start));
+    // The inputs come from App(): the rendered collections and the settle state are passed to the behavior layer.
+    assert.match(source, /visibleAlertCollections: alerts\.visibleAlertCollections, alertCohortSettled/);
     assert.match(body, /resolvePinClose\(alertPin, alertIdentitiesBySection\(visibleAlertCollections\), \{ loading: !alertCohortSettled \}\)/);
     assert.match(body, /dismissAlertItem\(alertPin\.identity, \{ suppressCelebration: true \}\)/);
     assert.match(body, /dismissStoryRequirement\(/);
@@ -83,6 +93,6 @@ test('EngView receives the pin, its handlers and its sticky variables; the panel
     assert.match(source, /onPinClose=\{closeAlertPin\}/);
     assert.match(source, /'--alert-pin-top': `\$\{compactStickyTop \+ filterBarHeight\}px`/);
     assert.match(source, /'--alert-pin-height': `\$\{PIN_HEIGHT\}px`/);
-    const alertProps = source.slice(source.indexOf('alertProps={{'), source.indexOf('}}', source.indexOf('alertProps={{')));
-    assert.match(alertProps, /\bpinAlert,/);
+    assert.match(source, /alertProps=\{createAlertPanelProps\(\{[^}]*pinAlert: alertPinState\.pinAlert/);
+    assert.match(pinSource, /\n        pinAlert,\n/);
 });

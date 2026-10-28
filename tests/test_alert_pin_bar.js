@@ -121,7 +121,9 @@ test('EngView passes the open handler to the pin, and the dashboard opens the pi
     assert.match(engViewSource, /<AlertPinBar[^>]*onOpen=\{onPinOpen\}/);
     assert.doesNotMatch(engViewSource, /onLocate|onPinLocate/);
     const dashboard = fs.readFileSync(path.join(root, 'frontend', 'src', 'dashboard.jsx'), 'utf8');
-    const match = dashboard.match(/const openAlertPinTarget = \(\) => ([^;]+);/);
+    // B2 moved openAlertPinTarget into the owner module; the dashboard still passes it to the pin.
+    const owner = fs.readFileSync(path.join(root, 'frontend', 'src', 'eng', 'useAlertPin.js'), 'utf8');
+    const match = owner.match(/const openAlertPinTarget = \(\) => ([^;]+);/);
     assert.ok(match, 'openAlertPinTarget declaration');
     assert.match(match[1], /alertPin\?\.kind === 'requirement' \? handleStoryRequirementClick\(\{ id: alertPin\.identity \}\)/);
     assert.match(match[1], /handleAlertStoryClick\(alertPin\.key, false\)/);

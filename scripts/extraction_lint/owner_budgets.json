@@ -19,9 +19,9 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7427,
+    "lineCeiling": 7343,
     "hookCeilings": {
-      "useState": 118,
+      "useState": 117,
       "useEffect": 69,
       "useRef": 83,
       "useMemo": 71,
@@ -15888,147 +15888,72 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEngAlerts",
-              "line": 5723,
+              "line": 5219,
               "phase": "hook execution"
             }
           ],
           "remainingAppReaders": [
             {
-              "name": "visibleAlertCollections",
+              "name": "alerts",
               "lines": [
-                7888,
-                7890,
-                7893,
-                7896,
-                7898,
-                7899,
-                7900,
-                7911,
-                7913,
-                7914,
-                7915,
-                7919,
-                7940
+                5231,
+                5465,
+                6807,
+                6815
               ]
-            },
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "eng.useAlertPin",
+      "path": "frontend/src/eng/useAlertPin.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "createAlertPanelProps",
+        "createAlertPinActions",
+        "useAlertPinState"
+      ],
+      "lineCeiling": 130,
+      "interfaces": [
+        {
+          "exportName": "useAlertPinState",
+          "inputNames": [],
+          "returnNames": [
+            "alertPin",
+            "clearAlertPin",
+            "pinAlert"
+          ],
+          "propNames": [],
+          "expandedInputNames": [],
+          "outerParameterCount": 0,
+          "expandedInputCount": 0,
+          "returnCount": 3,
+          "propCount": 0,
+          "outerParameterCeiling": 0,
+          "expandedInputCeiling": 0,
+          "returnCeiling": 3,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {},
+          "callers": [
             {
-              "name": "missingAlertKeySet",
-              "lines": [
-                4716
-              ]
-            },
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useAlertPinState",
+              "line": 895,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
             {
-              "name": "blockedAlertKeySet",
+              "name": "alertPinState",
               "lines": [
-                4717
-              ]
-            },
-            {
-              "name": "postponedAlertKeySet",
-              "lines": [
-                4718
-              ]
-            },
-            {
-              "name": "needsStoriesAlertKeySet",
-              "lines": [
-                4719
-              ]
-            },
-            {
-              "name": "waitingAlertKeySet",
-              "lines": [
-                4720
-              ]
-            },
-            {
-              "name": "emptyAlertKeySet",
-              "lines": [
-                4721
-              ]
-            },
-            {
-              "name": "doneAlertKeySet",
-              "lines": [
-                4722
-              ]
-            },
-            {
-              "name": "alertCounts",
-              "lines": [
-                7880
-              ]
-            },
-            {
-              "name": "alertItemCount",
-              "lines": [
-                7879
-              ]
-            },
-            {
-              "name": "missingAlertTeams",
-              "lines": [
-                7909
-              ]
-            },
-            {
-              "name": "blockedAlertTeams",
-              "lines": [
-                7889
-              ]
-            },
-            {
-              "name": "doneEpicTeams",
-              "lines": [
-                7895
-              ]
-            },
-            {
-              "name": "postponedAlertTeams",
-              "lines": [
-                7917
-              ]
-            },
-            {
-              "name": "postponedEpicTeams",
-              "lines": [
-                7918
-              ]
-            },
-            {
-              "name": "emptyEpicTeams",
-              "lines": [
-                7897
-              ]
-            },
-            {
-              "name": "analysisEpicTeams",
-              "lines": [
-                7886
-              ]
-            },
-            {
-              "name": "backlogEpicTeams",
-              "lines": [
-                7887
-              ]
-            },
-            {
-              "name": "missingTeamEpicTeams",
-              "lines": [
-                7912
-              ]
-            },
-            {
-              "name": "missingLabelEpicTeams",
-              "lines": [
-                7910
-              ]
-            },
-            {
-              "name": "needsStoriesTeams",
-              "lines": [
-                7916
+                896,
+                6817
               ]
             }
           ],

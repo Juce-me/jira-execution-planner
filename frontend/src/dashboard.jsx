@@ -72,8 +72,8 @@ import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
-import { alertCardId } from './shareView/focusCapture.js';
+import { PIN_HEIGHT, alertLandingTop, clearCenteredTarget, pinScopeKey } from './eng/alertPin.js';
+import { createAlertPanelProps, createAlertPinActions, useAlertPinState } from './eng/useAlertPin.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
@@ -892,7 +892,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [dismissedStoryRequirementIds, setDismissedStoryRequirementIds] = useState([]);
             const [storyRequirementNavigationError, setStoryRequirementNavigationError] = useState('');
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
-            const [alertPin, setAlertPin] = useState(null);
+            const alertPinState = useAlertPinState();
+            const { alertPin, clearAlertPin } = alertPinState;
             const [alertCohortSettled, setAlertCohortSettled] = useState(false);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
             const alertDismissedRef = useRef(false);
@@ -5215,13 +5216,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const blockersDone = entries.every(dep => resolveDependencyStatus(dep) === 'done');
                 return blockersDone ? 'Unblocked' : baseLabel;
             };
-            const {
-                visibleAlertCollections, missingAlertKeySet, blockedAlertKeySet, postponedAlertKeySet,
-                needsStoriesAlertKeySet, waitingAlertKeySet, emptyAlertKeySet, doneAlertKeySet, alertCounts,
-                alertItemCount, missingAlertTeams, blockedAlertTeams, doneEpicTeams, postponedAlertTeams,
-                postponedEpicTeams, emptyEpicTeams, analysisEpicTeams, backlogEpicTeams, missingTeamEpicTeams,
-                missingLabelEpicTeams, needsStoriesTeams
-            } = useEngAlerts({
+            const alerts = useEngAlerts({
                 scope,
                 dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
                 missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
@@ -5231,6 +5226,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectionTasks, visibleTasksForList, searchQuery, epicDetails, engCatchUpFilters,
                 burnoutTaskFilter
             });
+            const {
+                missingAlertKeySet, blockedAlertKeySet, postponedAlertKeySet, needsStoriesAlertKeySet, waitingAlertKeySet, emptyAlertKeySet, doneAlertKeySet, alertCounts
+            } = alerts;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -5456,46 +5454,16 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (storyRequirementScopeRef.current && storyRequirementScopeRef.current !== scopeKey) {
                     setDismissedStoryRequirementIds([]);
                     setStoryRequirementNavigationError('');
-                    setAlertPin(null);
+                    clearAlertPin();
                 }
                 storyRequirementScopeRef.current = scopeKey;
-                if (!isCatchUpMode) setAlertPin(null);
+                if (!isCatchUpMode) clearAlertPin();
             }, [activeGroupId, selectedSprint, isCatchUpMode]);
-            const pinAlert = spec => setAlertPin(createAlertPin(spec));
-            // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
-            const revealAlertBlock = (sectionId, fallbackToTop, target = () => document.getElementById(sectionId)) => {
-                setShowAlertsPanel(true); // shareViewOptions is declared later in render: safe only from click handlers (temporal dead zone otherwise)
-                shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
-                afterTwoFrames(() => {
-                    if (!scrollToAlertTarget(target()) && fallbackToTop) scrollToTop();
-                });
-            };
-            // Runs outside triggerAlertCelebration, which returns early under reduced motion.
-            const scrollAfterPinClose = (outcome, sectionId) => {
-                if (outcome === 'top') scrollToTop();
-                else revealAlertBlock(sectionId, outcome === 'block-or-top');
-            };
-            // Back expands the pinned category too, then lands on the alert list's top.
-            const scrollBackToAlerts = () => revealAlertBlock(alertPin?.sectionId, true, () => document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'));
-            // The pin's title goes where its alert row's title goes: the Story or Epic, or the Story requirement, in the Catch Up list.
-            const openAlertPinTarget = () => (alertPin?.kind === 'requirement' ? handleStoryRequirementClick({ id: alertPin.identity }) : alertPin && handleAlertStoryClick(alertPin.key, false));
-            const closeAlertPin = () => {
-                if (!alertPin) return;
-                const outcome = resolvePinClose(alertPin, alertIdentitiesBySection(visibleAlertCollections), { loading: !alertCohortSettled });
-                if (outcome.dismiss) {
-                    if (alertPin.kind === 'requirement') dismissStoryRequirement({ id: alertPin.identity });
-                    else dismissAlertItem(alertPin.identity, { suppressCelebration: true });
-                }
-                setAlertPin(null);
-                if (outcome.celebrate) {
-                    const paletteType = {
-                        'eng-alert-missing': 'missing', 'eng-alert-blocked': 'blocked', 'eng-alert-followup': 'followup',
-                        'eng-alert-needs-stories': 'waiting', 'eng-alert-waiting': 'waiting', 'eng-alert-empty': 'empty', 'eng-alert-done': 'done'
-                    }[alertPin.sectionId];
-                    triggerAlertCelebration(paletteType ? { types: [paletteType] } : {});
-                }
-                scrollAfterPinClose(outcome.scroll, alertPin.sectionId);
-            };
+            const { scrollBackToAlerts, openAlertPinTarget, closeAlertPin } = createAlertPinActions({
+                alertPin, clearAlertPin, getAlertFlags: () => shareViewOptions.alertFlags, setShowAlertsPanel, afterTwoFrames, scrollToAlertTarget, scrollToTop,
+                handleStoryRequirementClick, handleAlertStoryClick, dismissStoryRequirement, dismissAlertItem, triggerAlertCelebration,
+                visibleAlertCollections: alerts.visibleAlertCollections, alertCohortSettled
+            });
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
@@ -6836,70 +6804,18 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
                                             selectedView={selectedView}
-                                            alertItemCount={alertItemCount}
+                                            alertItemCount={alerts.alertItemCount}
                                             alertCounts={alertCounts}
                                             alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
                                             renderAlertShareControl={renderAlertShareControl}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
-                                            alertProps={{
-                                                analysisEpicTeams,
-                                                backlogEpicTeams,
-                                                backlogEpics: visibleAlertCollections.backlogEpics,
-                                                blockedAlertTeams,
-                                                blockedTasks: visibleAlertCollections.blockedTasks,
-                                                buildKeyListLink,
-                                                consolidatedMissingStories: visibleAlertCollections.consolidatedMissingStories,
-                                                dismissAlertItem,
-                                                doneEpicTeams,
-                                                doneStoryEpics: visibleAlertCollections.doneStoryEpics,
-                                                emptyEpicTeams,
-                                                emptyEpics: visibleAlertCollections.emptyEpicsForAlert,
-                                                emptyEpicsForAlert: visibleAlertCollections.emptyEpicsForAlert,
-                                                futureRoutedEpics: visibleAlertCollections.futureRoutedEpics,
-                                                getBlockedAlertStatusLabel,
-                                                getFuturePlanningNeedsStoriesReasonText,
-                                                handleAlertStoryClick,
-                                                handleStoryRequirementClick,
-                                                dismissStoryRequirement,
-                                                isFutureSprintSelected,
-                                                storyReadinessSprintState: selectedSprintState,
-                                                jiraUrl,
-                                                missingAlertTeams,
-                                                missingLabelEpicTeams,
-                                                missingLabelEpics: visibleAlertCollections.missingLabelEpics,
-                                                missingTeamEpicTeams,
-                                                missingTeamEpics: visibleAlertCollections.missingTeamEpics,
-                                                needsStoriesEntries: visibleAlertCollections.needsStoriesEntries,
-                                                needsStoriesEpics: visibleAlertCollections.needsStoriesEpics,
-                                                needsStoriesTeams,
-                                                pinAlert,
-                                                postponedAlertTeams,
-                                                postponedEpicTeams,
-                                                postponedTasks: visibleAlertCollections.postponedTasks,
-                                                setShowBacklogAlert,
-                                                setShowBlockedAlert,
-                                                setShowDoneEpicAlert,
-                                                setShowEmptyEpicAlert,
-                                                setShowMissingAlert,
-                                                setShowMissingLabelsAlert,
-                                                setShowMissingTeamAlert,
-                                                setShowNeedsStoriesAlert,
-                                                setShowPostponedAlert,
-                                                setShowWaitingAlert,
-                                                showBacklogAlert,
-                                                showBlockedAlert,
-                                                showDoneEpicAlert,
-                                                showEmptyEpicAlert,
-                                                showMissingAlert,
-                                                showMissingLabelsAlert,
-                                                showMissingTeamAlert,
-                                                showNeedsStoriesAlert,
-                                                showPostponedAlert,
-                                                showWaitingAlert,
-                                                waitingForStoriesEpics: visibleAlertCollections.waitingForStoriesEpics,
-                                            }}
+                                            alertProps={createAlertPanelProps({
+                                                alerts, alertFlags: shareViewOptions.alertFlags, buildKeyListLink, dismissAlertItem, getBlockedAlertStatusLabel, getFuturePlanningNeedsStoriesReasonText,
+                                                handleAlertStoryClick, handleStoryRequirementClick, dismissStoryRequirement, isFutureSprintSelected, selectedSprintState, jiraUrl,
+                                                pinAlert: alertPinState.pinAlert
+                                            })}
                                         />
                                     ) : null}
                                     visibleTasksForList={visibleTasksForList}

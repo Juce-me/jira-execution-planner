@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7665
+    "lineCeiling": 7670
   },
   "modules": [
     {

@@ -174,7 +174,7 @@ test('state owner contains no effects getters or dashboard import and keeps inva
     assert.ok(source.includes("from '../cohort/cohortUtils.js'"));
     const app=fs.readFileSync(path.join(__dirname,'../frontend/src/dashboard.jsx'),'utf8');
     assert.match(app,/setIssuePeopleStatsRevision\(value => value \+ 1\)/);
-    assert.match(app,/useStatsState\(\{ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy \}\);\s*const isStatsSourceOnlyStatsView/);
+    assert.match(app,/const stats = useStatsState\(\{ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy \}\);\s*const \{[^}]*\} = stats;\s*const isStatsSourceOnlyStatsView/);
 });
 
 test('Stats state restores the Lead Times mode selections and falls back for invalid saved values',()=>{

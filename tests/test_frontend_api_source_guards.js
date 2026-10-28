@@ -2254,7 +2254,7 @@ test('dashboard delegates return events to the freshness hook and does not impor
     assert.ok(listenerSource.includes("listen(win, AUTH_LONG_ABSENCE_EVENT"), 'Replacement must register the actual return listener');
     assert.ok(!dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'App must not register a competing return scheduler');
     assert.ok(!dashboardSource.includes('longAbsenceRefreshRef'), 'Legacy refresh ref must be removed');
-    assert.ok(dashboardSource.indexOf('const freshness = useDashboardFreshness(') > -1 && dashboardSource.indexOf('const freshness = useDashboardFreshness(') < dashboardSource.indexOf('} = useStatsState('), 'Freshness hook must be installed before Stats hooks');
+    assert.ok(dashboardSource.indexOf('const freshness = useDashboardFreshness(') > -1 && dashboardSource.indexOf('const freshness = useDashboardFreshness(') < dashboardSource.indexOf('const stats = useStatsState('), 'Freshness hook must be installed before Stats hooks');
     assert.ok(dashboardSource.includes("if (operator) freshness.supersedeManual({ scope: 'all' })"), 'Explicit operator refresh must supersede automatic work');
     assert.ok(!dashboardSource.includes('authFocusRefresh'), 'dashboard.jsx must not import the self-installing auth focus refresh shell');
 });

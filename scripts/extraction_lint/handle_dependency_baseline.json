@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "description": "Shrink-only baseline for check_app_metrics.mjs (handle-in-dependency guard, EXEC-dashboard-conflict-resistant-architecture Task B0b). A violation not listed here fails the gate; an entry whose violation no longer occurs also fails, so delete it when the code is fixed. Never add an entry to make a new violation pass: fix the dependency list instead. Key format: file|kind|handle|member|owner, where owner is the name the hook result is assigned to, or anon:<hook>:<digest of the dependency array> when it is not assigned.",
+  "violations": [
+    {
+      "key": "frontend/src/dashboard.jsx|bare-handle-in-deps|strictBoard||applyLocalEngIssueField",
+      "reason": "strictBoard is the fresh literal returned by useStrictEngBoardOwner on every render, so listing it makes applyLocalEngIssueField a new callback each render. The callback only reads strictBoard.applyIssueField; fixing it edits dashboard.jsx and is outside the guard task."
+    },
+    {
+      "key": "frontend/src/eng/EngBoardView.jsx|bare-handle-in-deps|statusTransitions||releaseStatusTarget",
+      "reason": "statusTransitions arrives as a prop from useEngStatusTransitions, which returns a fresh object literal each render, so releaseStatusTarget is recreated every render; its body reads only closeSingleIssueStatusControl, a useCallback member."
+    },
+    {
+      "key": "frontend/src/settings/useSharedConfigSave.js|bare-handle-in-deps|adminAccess||restoreSettingsDraftsToCommittedBaselines",
+      "reason": "adminAccess comes from useAdminAccessSettings, which returns a fresh object literal each render, so restoreSettingsDraftsToCommittedBaselines is recreated every render."
+    },
+    {
+      "key": "frontend/src/dashboard.jsx|handle-read-in-narrow-deps|epicRefresh|shouldPreserveAutomaticSelection|anon:useEffect:f96ca475",
+      "reason": "Reviewed, benign: shouldPreserveAutomaticSelection is a per-render closure in useEpicRefresh, but it reads its inputs through the latest ref, so a stale copy still sees current values."
+    },
+    {
+      "key": "frontend/src/dashboard.jsx|handle-read-in-narrow-deps|issueFieldEdits|contextChanged|anon:useEffect:0392d11b",
+      "reason": "Reviewed, benign: contextChanged is the method of the memoized controller that useEngIssueFieldEdits spreads into its result, so it is identity-stable across renders."
+    }
+  ]
+}

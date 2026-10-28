@@ -300,6 +300,79 @@ fs.writeFileSync(pureApp, 'function App() { useEffect(() => tail(), []); useEffe
 fs.writeFileSync(pureBase, `function App() { const moved = 1; useEffect(() => head(), []); ${effect} useEffect(() => tail(), []); }\n`);
 named('retained-effect-reordering-fails', 1, [/effect order: DIFFERS/]);
 
+// Effect-edit allowance: an unlisted in-place edit still fails, a listed one passes, a relocation still needs --allow-effect-move.
+const digestOf = (code) => {
+    const ast = espree.parse(code, { ecmaVersion: 'latest', tokens: true, range: true });
+    return crypto.createHash('sha256').update(JSON.stringify(ast.tokens.map(token => [token.type, code.slice(...token.range)]))).digest('hex');
+};
+const editedEffect = 'useEffect(() => { reset(value); }, [other]);';
+const editBase = write('edit/base.jsx', `function App() { ${effect} useEffect(() => tail(), []); }\n`);
+const editApp = write('edit/dashboard.jsx', `function App() { ${editedEffect} useEffect(() => tail(), []); }\n`);
+const editArgs = ['--base-file', editBase, '--dashboard', editApp];
+const editAllowance = `${digestOf(effect)}=${digestOf(editedEffect)}`;
+run('unlisted-effect-edit-fails', 'check_move_conservation.mjs', editArgs, 1, [/effect order: DIFFERS/]);
+run('listed-effect-edit-passes', 'check_move_conservation.mjs', [...editArgs, '--allow-effect-edit', editAllowance], 0, [/approved effect edit:/, /effect order: identical/]);
+run('stale-effect-edit-allowance-fails', 'check_move_conservation.mjs', [...editArgs, '--allow-effect-edit', `${digestOf(effect)}=${'0'.repeat(64)}`], 2, [/invalid effect edit/]);
+run('malformed-effect-edit-allowance-fails', 'check_move_conservation.mjs', [...editArgs, '--allow-effect-edit', 'abc=def'], 2, [/invalid effect edit allowance/]);
+fs.writeFileSync(editApp, `function App() { useEffect(() => tail(), []); ${editedEffect} }\n`);
+run('effect-edit-at-another-position-fails', 'check_move_conservation.mjs', [...editArgs, '--allow-effect-edit', editAllowance], 1, [/effect order: DIFFERS/]);
+const editOwner = write('edit/owners.jsx', `export function Panel() { ${editedEffect} return null; }\n`);
+fs.writeFileSync(editApp, 'function App() { useEffect(() => tail(), []); }\n');
+const relocateArgs = [...editArgs, '--created-hook', editOwner, '--owner-function', `${editOwner}#Panel`];
+run('effect-edit-relocation-without-move-allowance-fails', 'check_move_conservation.mjs', [...relocateArgs, '--allow-effect-edit', editAllowance], 2, [/invalid effect edit/]);
+
+// App metrics and the handle-in-dependency guard: synthetic sources measured exactly, one that must fail, one that must pass.
+const bag = Array.from({ length: 25 }, (_, i) => `k${i}: ${i}`).join(', ');
+const metricsSrc = path.join(root, 'metrics/src');
+write('metrics/src/dashboard.jsx', [
+    'function App() {',
+    '  const [a, setA] = useState(1); const ref = useRef(null); const lone = 3; const used = 4;',
+    '  const memo = useMemo(() => a, [a, lone]); const cb = useCallback(() => used + 1, []);',
+    `  const big = { ${bag} };`,
+    '  saveUiPrefs({ a }); useEffect(() => { saveUiPrefs({ a, memo }); }, [a, memo]);',
+    '  return <Panel a={a} memo={memo} cohortMode={used} bag={{ a, memo }} />;',
+    '}',
+    'function Panel() { const [x] = useState(0); return x; }',
+].join('\n') + '\n');
+const metricsResult = spawnSync(process.execPath, [path.join(toolDir, 'check_app_metrics.mjs'), '--src', metricsSrc, '--json'], { encoding: 'utf8' });
+assert.equal(metricsResult.status, 0, metricsResult.stderr + metricsResult.stdout);
+const measured = JSON.parse(metricsResult.stdout).metrics;
+// Names: a setA ref lone used memo cb big. Couriers: memo (shorthand keys, bare prop, dependency entries) and lone (a dependency entry only);
+// a and used are read in a closure, and ref, setA, cb and big have no reference.
+assert.equal(measured.names, 8, `names ${measured.names}`);
+assert.equal(measured.couriers, 2, `couriers ${measured.couriers}`);
+assert.equal(measured.bags, 1);
+assert.deepEqual([measured.hooks.useState, measured.hooks.useRef, measured.hooks.useMemo, measured.hooks.useCallback, measured.hooks.useEffect], [2, 1, 1, 1, 1]);
+assert.equal(measured.canaries.cohortMode, 1);
+assert.deepEqual(measured.prefs, { keys: 2, deps: 2, line: 5 });
+console.log('ok    app-metrics-measures-synthetic-app'); passed += 1;
+
+const guardSrc = path.join(root, 'guard/src');
+const guard = (name, status, patterns, extra = []) => run(name, 'check_app_metrics.mjs', ['--src', guardSrc, '--guard-only', ...extra], status, patterns);
+write('guard/src/useThing.js', 'export function useThing() { return { value: 1 }; }\nexport function useStable() { const memo = React.useMemo(() => ({ value: 1 }), []); return memo; }\nexport function useStore() { return React.useSyncExternalStore(subscribe, read, read); }\n');
+const consumer = write('guard/src/consumer.jsx', 'import { useThing } from "./useThing.js";\nexport function View() { const thing = useThing(); const doubled = React.useMemo(() => thing.value * 2, [thing]); return doubled; }\n');
+guard('handle-bare-in-memo-dependencies-fails', 1, [/VIOLATION bare-handle-in-deps: thing in doubled/, /handle guard problems: 1/]);
+fs.writeFileSync(consumer, 'import { useThing } from "./useThing.js";\nexport function View() { const thing = useThing(); const doubled = React.useMemo(() => thing.value * 2, [thing.value]); return doubled; }\n');
+guard('handle-member-dependency-passes', 0, [/handle guard problems: 0/]);
+fs.writeFileSync(consumer, 'import { useThing } from "./useThing.js";\nexport function View() { const thing = useThing(); const read = React.useCallback(() => thing.value, []); return read; }\n');
+guard('handle-read-in-narrow-closure-fails', 1, [/VIOLATION handle-read-in-narrow-deps: thing\.value in read/]);
+fs.writeFileSync(consumer, 'import { useStable, useStore } from "./useThing.js";\nexport function View() { const stable = useStable(); const store = useStore(); const a = React.useMemo(() => stable.value + store.value, [stable, store]); const r = React.useRef(0); const b = React.useCallback(() => r.current, [r]); return [a, b]; }\n');
+guard('memoized-and-store-hooks-are-not-handles', 0, [/handle guard problems: 0/]);
+fs.writeFileSync(consumer, 'import { useThing } from "./useThing.js";\nexport function View() { const thing = useThing(); const doubled = React.useMemo(() => thing.value * 2, [thing]); return doubled; }\n');
+write('guard/src/received.jsx', 'export function useDerived({ thing }) { return React.useMemo(() => thing.value, [thing]); }\n');
+guard('handle-received-as-parameter-fails', 1, [/VIOLATION bare-handle-in-deps: thing in anon:useMemo/, /handle guard problems: 2/]);
+const guardRun = spawnSync(process.execPath, [path.join(toolDir, 'check_app_metrics.mjs'), '--src', guardSrc, '--guard-only'], { encoding: 'utf8' });
+const keys = [...guardRun.stdout.matchAll(/key: (\S+)/g)].map(match => match[1]);
+assert.equal(keys.length, 2);
+const baselineFile = write('guard/baseline.json', JSON.stringify({ schemaVersion: 1, violations: keys.map(key => ({ key, reason: 'synthetic control' })) }));
+guard('baselined-violations-pass', 0, [/baselined: 2/, /handle guard problems: 0/], ['--baseline', baselineFile]);
+fs.writeFileSync(baselineFile, JSON.stringify({ schemaVersion: 1, violations: [...keys, 'stale|bare-handle-in-deps|gone||x'].map(key => ({ key, reason: 'synthetic control' })) }));
+guard('stale-baseline-entry-fails', 1, [/STALE baseline entry/], ['--baseline', baselineFile]);
+fs.writeFileSync(baselineFile, JSON.stringify({ schemaVersion: 1, violations: keys.slice(0, 1).map(key => ({ key, reason: 'synthetic control' })) }));
+guard('unbaselined-violation-fails', 1, [/VIOLATION/], ['--baseline', baselineFile]);
+fs.writeFileSync(baselineFile, JSON.stringify({ schemaVersion: 1, violations: [{ key: 'x' }] }));
+guard('baseline-entry-without-reason-is-an-error', 2, [/invalid baseline/], ['--baseline', baselineFile]);
+
 const mixedBase = write('mixed/base.jsx', 'function App() { const moved = 1; }\n');
 const mixedApp = write('mixed/dashboard.jsx', 'import { useOwner } from "./owner.js"; function App() { useOwner(); }\n');
 const mixedOwner = write('mixed/owner.js', 'export function useOwner() { return {}; } export function movedHelper() { const moved = 1; }\n');

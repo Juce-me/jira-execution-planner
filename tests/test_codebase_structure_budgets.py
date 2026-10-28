@@ -18,6 +18,9 @@ LEGACY_ENTRYPOINT_LINE_BUDGETS = {
 }
 
 
+HOOK_CEILING_NAMES = {"useState", "useEffect", "useRef", "useMemo", "useCallback", "useReducer", "useLayoutEffect"}
+
+
 def _line_count(path):
     with path.open(encoding="utf-8") as handle:
         return sum(1 for _ in handle)
@@ -110,6 +113,14 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
     ceiling = dashboard["lineCeiling"]
     if not isinstance(ceiling, int) or isinstance(ceiling, bool) or actual > ceiling:
         failures.append(f"{dashboard['path']}: {actual} lines exceeds ceiling {ceiling}")
+    # Hook-count ceilings are exact occurrence counts enforced by tests/test_dashboard_regrowth_guard.js; only the shape is checked here.
+    hook_ceilings = dashboard.get("hookCeilings")
+    if hook_ceilings is not None:
+        if not isinstance(hook_ceilings, dict) or set(hook_ceilings) != HOOK_CEILING_NAMES:
+            failures.append(f"dashboard hookCeilings must name exactly {sorted(HOOK_CEILING_NAMES)}")
+        else:
+            failures.extend(f"dashboard hookCeilings.{name} must be a non-negative integer" for name, value in hook_ceilings.items()
+                            if not isinstance(value, int) or isinstance(value, bool) or value < 0)
     return failures
 
 
@@ -169,6 +180,17 @@ class OwnerBudgetValidatorTests(unittest.TestCase):
         self._write(self.DASHBOARD, 10)
         self._write(self.OWNER, 5)
         self.assertEqual(self._validate(self._manifest(dashboard_ceiling=20)), [])
+
+    def test_dashboard_hook_ceilings_shape_is_validated(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 5)
+        manifest = self._manifest()
+        manifest["dashboard"]["hookCeilings"] = {name: 1 for name in HOOK_CEILING_NAMES}
+        self.assertEqual(self._validate(manifest), [])
+        manifest["dashboard"]["hookCeilings"]["useState"] = -1
+        self.assertEqual(self._validate(manifest), ["dashboard hookCeilings.useState must be a non-negative integer"])
+        del manifest["dashboard"]["hookCeilings"]["useRef"]
+        self.assertIn("dashboard hookCeilings must name exactly", self._validate(manifest)[0])
 
     def test_owner_at_ceiling_passes_and_one_over_fails_naming_the_file(self):
         self._write(self.DASHBOARD, 5)

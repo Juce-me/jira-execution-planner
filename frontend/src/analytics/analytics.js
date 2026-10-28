@@ -22,7 +22,6 @@ const DEFAULT_CONTEXT_REFRESH_INTERVAL_MS = 60000;
 const API_SURFACES = new Set([
     'config_bootstrap',
     'auth_status',
-    'home_connection',
     'eng_tasks',
     'epic_refresh',
     'eng_story_readiness',

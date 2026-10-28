@@ -1,22 +1,19 @@
 const { test, expect } = require('@playwright/test');
 const {
     appBaseUrl,
-    activeHomeTokenConnection,
-    disconnectedHomeTokenConnection,
     enabledEpmOptions,
     epmAccessCalls,
     epmMetadataCalls,
     epmProject,
-    homeTokenStatusCalls,
     installDashboardFixture,
     openConnectionsSettings,
     selectedSprintId,
     selectedSprintName,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 // OAuth public Home reads (EXEC-home-oauth-public-reads Task 4): the EPM view is gated by the private
-// "Enable EPM view" checkbox, verified Home scopes and ONE bounded access read, never by the Home API-token
-// connection (a write-purpose credential). Every fixture below is synthetic (example.invalid, fake ids).
+// "Enable EPM view" checkbox, verified Home scopes and ONE bounded access read; Home is read only through OAuth and
+// no Home token endpoint exists. Every fixture below is synthetic (example.invalid, fake ids).
 
 const SCREENSHOT_DIR = 'tmp/h4c';
 const SCOPE_URL = '/login?reason=missing_scope';
@@ -129,7 +126,7 @@ async function openConnections(page) {
         await epmGear.click();
         const dialog = page.getByRole('dialog').first();
         await dialog.getByRole('button', { name: 'Connections' }).click();
-        await page.getByText('Jira Home write access').waitFor({ state: 'visible' });
+        await dialog.locator('.user-connections-settings').waitFor({ state: 'visible' });
         return dialog;
     }
     return openConnectionsSettings(page);
@@ -151,7 +148,7 @@ const closeAndDiscard = closeSettings;
 
 const startupContract = (calls) => sortedMultiset(calls, call => (
     call.pathname === '/api/config' || call.pathname === '/api/epm/access'
-    || call.pathname.startsWith('/api/epm/') || call.pathname === '/api/me/connections/home-token'
+    || call.pathname.startsWith('/api/epm/') || call.pathname.startsWith('/api/me/connections/')
 ));
 
 // ---------------------------------------------------------------------------------------------------------
@@ -188,10 +185,10 @@ test('an enabled OAuth user sees non-empty Home projects and Jira rows from one 
     await secondProgress.hover();
     await expect(secondProgress.locator('.epm-project-progress-tooltip')).toContainText('Completed 1.0 SP / Total 5.0 SP');
 
-    // One access read, no token status, and no per-project enriched fan-out.
+    // One access read, no Home token request, and no per-project enriched fan-out.
     expect(countOf(fixture.calls, 'GET', '/api/config')).toBe(1);
     expect(epmAccessCalls(fixture.calls)).toHaveLength(1);
-    expect(homeTokenStatusCalls(fixture.calls)).toEqual([]);
+    expect(fixture.calls.filter(call => call.pathname.startsWith('/api/me/connections/'))).toEqual([]);
     expect(fixture.calls.filter(call => /^\/api\/epm\/projects\/[^/]+\/rollup$/.test(call.pathname))).toEqual([]);
     expect(countOf(fixture.calls, 'GET', '/api/epm/projects/rollup/all')).toBe(1);
     expect(countOf(fixture.calls, 'GET', '/api/epm/projects')).toBe(1);
@@ -231,7 +228,7 @@ test('startup request multiset: config, one access read, warm metadata before on
         'GET /api/epm/projects': 1,
         'GET /api/epm/projects/rollup/all': 1,
     });
-    expect(Object.keys(multiset).filter(key => key.includes('home-token'))).toEqual([]);
+    expect(Object.keys(multiset).filter(key => key.includes('/api/me/connections/'))).toEqual([]);
     // Access resolves first, the metadata warm precedes the rollup that depends on it.
     const calls = fixture.calls;
     const access = indexOfCall(calls, 'GET', '/api/epm/access');
@@ -297,7 +294,7 @@ test('Enable EPM view: dirty badge, footer Save only while dirty, Discard, Save 
     expect(countOf(afterSave.slice(postIndex), 'GET', '/api/config')).toBe(1);
     expect(epmAccessCalls(afterSave)).toHaveLength(1);
     expect(indexOfCall(afterSave, 'GET', '/api/epm/access')).toBeGreaterThan(postIndex);
-    expect(afterSave.filter(call => call.pathname === '/api/me/connections/home-token' && call.method !== 'GET')).toEqual([]);
+    expect(afterSave.filter(call => call.pathname.startsWith('/api/me/connections/'))).toEqual([]);
 
     dialog = await openConnections(page);
     await expect(epmCheckbox(dialog)).toBeChecked();
@@ -375,84 +372,6 @@ test('Enable EPM view: the scope-update link appears only after the enabled valu
 });
 
 // ---------------------------------------------------------------------------------------------------------
-// Token equivalence: absent / connected / revoked change nothing about readiness or requests
-// ---------------------------------------------------------------------------------------------------------
-
-const tokenStates = [
-    ['absent', disconnectedHomeTokenConnection()],
-    ['connected', activeHomeTokenConnection()],
-    ['revoked', { connected: true, provider: 'atlassian_user_api_token', credentialSubject: 'profile@example.com', status: 'revoked', needsReconnect: true }],
-];
-
-test('absent, connected and revoked Home tokens give identical readiness and identical requests', async ({ page }) => {
-    const observed = {};
-    for (const [name, connection] of tokenStates) {
-        await page.unrouteAll({ behavior: 'ignoreErrors' });
-        await seedEpmView(page);
-        const fixture = await installDashboardFixture(page, epmFixtureOptions({ connection }));
-        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-        await waitForEpmBoards(page);
-        await expect(page.getByRole('radiogroup', { name: 'Dashboard view' }).getByRole('radio', { name: 'EPM' })).toBeChecked();
-        observed[name] = startupContract(fixture.calls);
-        expect(homeTokenStatusCalls(fixture.calls), name).toEqual([]);
-    }
-    expect(observed.connected).toEqual(observed.absent);
-    expect(observed.revoked).toEqual(observed.absent);
-    expect(observed.absent['GET /api/epm/access']).toBe(1);
-});
-
-test('the token status is requested exactly once per Connections open and never at startup', async ({ page }) => {
-    await seedEpmView(page);
-    const fixture = await installDashboardFixture(page, epmFixtureOptions());
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await waitForEpmBoards(page);
-    expect(homeTokenStatusCalls(fixture.calls)).toHaveLength(0);
-
-    const dialog = await openConnections(page);
-    await expect(dialog.getByText('Not connected')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    expect(homeTokenStatusCalls(fixture.calls)).toHaveLength(1);
-    // Switching tabs and back does not re-read it while the pane stays open elsewhere...
-    await dialog.getByRole('button', { name: 'Departments' }).click();
-    await expect(dialog.getByText('Jira Home write access')).toHaveCount(0);
-    await dialog.getByRole('button', { name: 'Connections' }).click();
-    await expect(dialog.getByText('Jira Home write access')).toBeVisible();
-    expect(homeTokenStatusCalls(fixture.calls)).toHaveLength(2);
-    expect(epmAccessCalls(fixture.calls)).toHaveLength(1);
-});
-
-test('rotating the token (connect, reconnect, revoke) adds no EPM or access request', async ({ page }) => {
-    await seedEpmView(page);
-    const fixture = await installDashboardFixture(page, epmFixtureOptions({ userCanEditEpmConfig: true }));
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await waitForEpmBoards(page);
-    const startup = startupContract(fixture.calls);
-
-    const dialog = await openConnections(page);
-    await page.waitForLoadState('networkidle');
-    // Opening Settings has its own reads (EPM settings data); the rotation itself starts after they settled.
-    const callsBefore = fixture.calls.length;
-    for (const [index, action] of ['Connect', 'Reconnect'].entries()) {
-        await dialog.getByLabel('Atlassian API token').fill(`synthetic-token-${index}-${Date.now()}`);
-        await dialog.getByRole('button', { name: action, exact: true }).click();
-        await expect(dialog.getByLabel('Atlassian API token')).toHaveValue('');
-    }
-    await dialog.getByRole('button', { name: 'Revoke' }).click();
-    await expect(dialog.getByText('Not connected')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-
-    // Same requests, none extra: only the token management calls (and their CSRF read) happened.
-    const rotation = fixture.calls.slice(callsBefore);
-    expect(rotation.filter(call => call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/me/connections/home-token')).toEqual([]);
-    expect(rotation.filter(call => call.pathname === '/api/me/connections/home-token').map(callKey)).toEqual([
-        'POST /api/me/connections/home-token', 'POST /api/me/connections/home-token', 'DELETE /api/me/connections/home-token',
-    ]);
-    expect(countOf(fixture.calls, 'GET', '/api/epm/access')).toBe(startup['GET /api/epm/access']);
-    await closeSettings(page, dialog);
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toBeVisible();
-});
-
-// ---------------------------------------------------------------------------------------------------------
 // Missing scopes, denied and empty Home visibility
 // ---------------------------------------------------------------------------------------------------------
 
@@ -469,7 +388,7 @@ test('enabled user without Home scopes: hidden navigation, Settings reachable wi
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     expect(epmAccessCalls(fixture.calls)).toEqual([]);
     expect(epmMetadataCalls(fixture.calls)).toEqual([]);
-    expect(homeTokenStatusCalls(fixture.calls)).toEqual([]);
+    expect(fixture.calls.filter(call => call.pathname.startsWith('/api/me/connections/'))).toEqual([]);
 
     const dialog = await openConnections(page);
     await expect(epmCheckbox(dialog)).toBeChecked();
@@ -731,7 +650,7 @@ test('a real API 401 on an EPM read locks the mounted app once and never replays
 
 // ---------------------------------------------------------------------------------------------------------
 // Geometry and settled synthetic screenshots of the registered checkbox card and the controls it moves
-// (the Connections token card sits one EPM card lower). Engine-neutral so the same spec runs headed in
+// (the EPM card is the only Connections card). Engine-neutral so the same spec runs headed in
 // Firefox/WebKit (`--browser=firefox|webkit --headed`) for the engines the app is reviewed in.
 // ---------------------------------------------------------------------------------------------------------
 
@@ -768,7 +687,6 @@ async function measureConnections(dialog) {
         const clip = (node) => (node ? { scroll: node.scrollWidth, client: node.clientWidth } : null);
         const style = (node, keys) => Object.fromEntries(keys.map(key => [key, getComputedStyle(node)[key]]));
         const epm = root.querySelector('section[aria-labelledby="epm-view-title"]');
-        const token = root.querySelector('section[aria-labelledby="home-token-title"]');
         const list = root.querySelector('.group-pane-list');
         const content = root.querySelector('.group-modal-content');
         const footer = root.querySelector('.group-modal-footer');
@@ -778,11 +696,9 @@ async function measureConnections(dialog) {
         const helper = epm.querySelector('.group-visible-helper');
         const checkbox = epm.querySelector('input[type="checkbox"]');
         const pill = epm.querySelector('.user-connection-status');
-        const tokenPill = token.querySelector('.user-connection-status');
         const title = epm.querySelector('#epm-view-title');
         const link = epm.querySelector('a');
         const copy = epm.querySelector('[role="status"]');
-        const connect = token.querySelector('.user-connection-actions button');
         const save = footer.querySelector('button:not([data-first-run-settings-cancel])');
         const badge = root.querySelector('.group-modal-dirty');
         const cardKeys = ['borderTopWidth', 'borderRadius', 'paddingTop', 'paddingLeft', 'backgroundColor', 'borderTopColor'];
@@ -791,15 +707,13 @@ async function measureConnections(dialog) {
             viewport: { width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth },
             modal: rect(modal), content: rect(content), contentClip: clip(content), list: rect(list), gap: parseFloat(getComputedStyle(list).rowGap) || 0,
             footer: rect(footer), save: rect(save), badge: rect(badge),
-            epm: rect(epm), epmClip: clip(epm), token: rect(token), tokenClip: clip(token),
-            epmStyle: style(epm, cardKeys), tokenStyle: style(token, cardKeys),
-            pill: rect(pill), pillStyle: style(pill, pillKeys), tokenPillStyle: style(tokenPill, pillKeys), pillClip: clip(pill),
+            epm: rect(epm), epmClip: clip(epm), cardCount: root.querySelectorAll('.user-connection-card').length,
+            pill: rect(pill), pillStyle: style(pill, pillKeys), pillClip: clip(pill),
             title: textRect(title), label: rect(label), labelText: textRect(labelText), labelClip: clip(labelText), labelHeight: label.getBoundingClientRect().height,
             helper: textRect(helper), helperClip: clip(helper), checkbox: rect(checkbox),
             link: rect(link), linkText: textRect(link), copy: textRect(copy), copyClip: clip(copy),
-            connect: rect(connect),
             checkboxCount: epm.querySelectorAll('input[type="checkbox"]').length,
-            labelClasses: label.className, cardClasses: epm.className, tokenCardClasses: token.className, pillClasses: pill.className,
+            labelClasses: label.className, cardClasses: epm.className, pillClasses: pill.className,
         };
     });
 }
@@ -809,7 +723,7 @@ for (const viewport of viewports) {
         test.use({ viewport: { width: viewport.width, height: viewport.height } });
 
         for (const [state, fixtureOptions, flags] of geometryStates) {
-            test(`Connections ${state}: card, checkbox, status pill and the moved token card stay inside their container`, async ({ page }, testInfo) => {
+            test(`Connections ${state}: card, checkbox, status pill and stay inside their container with the EPM card alone`, async ({ page }, testInfo) => {
                 const options = fixtureOptions.enabled ? enabledEpmOptions(fixtureOptions.epmAccess ? { epmAccess: fixtureOptions.epmAccess } : {}) : fixtureOptions;
                 await installDashboardFixture(page, options);
                 await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -822,19 +736,14 @@ for (const viewport of viewports) {
 
                 // One registered checkbox in the registered card/pill/label hooks; nothing bespoke.
                 expect(m.checkboxCount).toBe(1);
-                expect(m.cardClasses).toBe(m.tokenCardClasses);
+                expect(m.cardCount).toBe(1);
+                expect(m.cardClasses).toContain('user-connection-card');
                 expect(m.labelClasses).toContain('group-visible-control');
                 expect(m.pillClasses).toContain('user-connection-status');
-                // The EPM card is the same kind as the token card: identical box language and pill typography.
-                expect(m.epmStyle).toEqual(m.tokenStyle);
-                expect(m.pillStyle).toEqual(m.tokenPillStyle);
-                expect(Math.abs(m.epm.width - m.token.width)).toBeLessThanOrEqual(eps);
-                expect(Math.abs(m.epm.left - m.token.left)).toBeLessThanOrEqual(eps);
-
                 // No overflow or clipped text anywhere in the container, page or modal.
                 expect(m.viewport.scroll).toBeLessThanOrEqual(m.viewport.width);
                 expect(m.contentClip.scroll).toBeLessThanOrEqual(m.contentClip.client + 1);
-                for (const name of ['epmClip', 'tokenClip', 'pillClip', 'labelClip', 'helperClip', 'copyClip']) {
+                for (const name of ['epmClip', 'pillClip', 'labelClip', 'helperClip', 'copyClip']) {
                     if (m[name]) expect(m[name].scroll, name).toBeLessThanOrEqual(m[name].client + 1);
                 }
                 expect(m.epm.left).toBeGreaterThanOrEqual(m.content.left - eps);
@@ -866,17 +775,6 @@ for (const viewport of viewports) {
                     expect(m.linkText.top).toBeGreaterThanOrEqual((m.copy || m.helper).bottom - eps);
                 } else {
                     expect(m.link).toBeNull();
-                }
-
-                // The token card moved down by exactly one EPM card plus the list gap, and its controls moved with it.
-                expect(m.token.top).toBeGreaterThanOrEqual(m.epm.bottom - eps);
-                expect(Math.abs(m.token.top - (m.epm.bottom + m.gap))).toBeLessThanOrEqual(eps);
-                // Without the EPM card the token card would start where the EPM card starts.
-                expect(Math.abs((m.token.top - m.epm.top) - (m.epm.height + m.gap))).toBeLessThanOrEqual(eps);
-                if (m.connect) {
-                    expect(m.connect.top).toBeGreaterThanOrEqual(m.token.top - eps);
-                    expect(m.connect.bottom).toBeLessThanOrEqual(m.token.bottom + eps);
-                    expect(m.connect.right).toBeLessThanOrEqual(m.token.right + eps);
                 }
 
                 if (flags.dirty) {

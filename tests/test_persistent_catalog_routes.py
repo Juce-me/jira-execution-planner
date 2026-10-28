@@ -13,7 +13,7 @@ from sqlalchemy.exc import OperationalError
 import jira_server
 from backend.auth.context import RequestAuthContext
 from backend.auth import db_tokens as db_tokens_module
-from backend.auth import home_credentials as home_credentials_module
+from backend.epm import home as epm_home_module
 from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine
 from backend.db import models
@@ -165,12 +165,8 @@ class PersistentCatalogRouteTests(unittest.TestCase):
             )
             forbidden_patches.extend((
                 patch.object(
-                    home_credentials_module, 'resolve_home_credential',
+                    epm_home_module, '_read_metadata_credential',
                     side_effect=AssertionError('forbidden Home credential resolver reached'),
-                ),
-                patch.object(
-                    home_credentials_module, '_resolve_service_credential',
-                    side_effect=AssertionError('forbidden service credential resolver reached'),
                 ),
             ))
             for forbidden_patch in forbidden_patches:

@@ -498,10 +498,6 @@ export function createSprintCatalogController({
     };
 }
 
-export function isActiveHomeTokenConnection(connection) {
-    return Boolean(connection?.connected && connection.status === 'active' && !connection.needsReconnect);
-}
-
 const EPM_ACCESS_STATES = new Set(['available', 'disabled', 'scope_missing', 'empty', 'denied', 'unavailable']);
 
 // Same-tab scope-update link: only the app's own /login or /login?reason=missing_scope is accepted.
@@ -546,6 +542,7 @@ const EPM_RATE_LIMIT_CATEGORIES = new Set(['home_rate_limited', 'jira_rate_limit
 const EPM_DENIED_CATEGORIES = new Set(['home_access_denied', 'jira_access_denied']);
 
 // Shared by automatic and explicit EPM refresh paths. Real 401s never reach it (apiFetch owns them).
+// 409 epm_view_disabled (the user's private EPM view is off) is a disabled capability: it hides navigation and never retries.
 // retryAtMs is deliberately null: callers must not schedule retries from it.
 export function classifyEpmReadError(error) {
     const status = Number(error?.status) || 0;
@@ -556,13 +553,14 @@ export function classifyEpmReadError(error) {
     let outcome = 'failed';
     if (status === 429 || (status === 503 && EPM_RATE_LIMIT_CATEGORIES.has(category))) outcome = 'rate_limited';
     else if (status === 403 && EPM_DENIED_CATEGORIES.has(category)) outcome = 'denied';
+    else if (status === 409 && category === 'epm_view_disabled') outcome = 'disabled';
     return {
         outcome,
         status,
         category,
         retryAfterSeconds,
         retryAtMs: null,
-        invalidateHomeAvailability: outcome === 'denied' && category === 'home_access_denied',
+        invalidateHomeAvailability: (outcome === 'denied' && category === 'home_access_denied') || outcome === 'disabled',
     };
 }
 

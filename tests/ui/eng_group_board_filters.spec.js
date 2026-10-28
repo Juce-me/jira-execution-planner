@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { collectStickySnapshots } = require('./eng_sticky_stack_helpers');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // Task 13 — mounting the shared filter bar in Board with the Board's own facet set (§7.1, §7.2,
 // §7.3, §7.6, D13, D19-21, D33-35). The bar's own mechanics (popover fit, chip collapse math,
@@ -107,7 +107,6 @@ async function installBoardFixture(page, { analyticsContext = { enabled: false }
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',

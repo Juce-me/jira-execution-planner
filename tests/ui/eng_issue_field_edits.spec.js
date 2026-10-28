@@ -2,7 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const screenshotDir = path.join(repoRoot, 'tmp', 'eng-issue-field-edits');

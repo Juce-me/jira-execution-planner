@@ -280,7 +280,6 @@ class AccessForbiddenPathTests(AccessCase):
 
     def armed(self):
         from contextlib import ExitStack
-        from backend.auth import home_credentials
 
         def boom(name):
             def raiser(*_a, **_k):
@@ -290,9 +289,7 @@ class AccessForbiddenPathTests(AccessCase):
         stack = ExitStack()
         for target, name in (
                 (epm_home, '_home_basic_credentials'), (epm_home, 'build_teamwork_graph_client'),
-                (epm_home, 'build_home_graphql_client'), (epm_home, 'resolve_home_credential'),
-                (epm_home, '_read_metadata_credential'), (home_credentials, '_resolve_user_credential'),
-                (home_credentials, '_resolve_service_credential'), (home_credentials, 'resolve_home_credential'),
+                (epm_home, 'build_home_graphql_client'), (epm_home, '_read_metadata_credential'),
                 (jira_server, 'oauth_session_data'), (jira_server, 'save_oauth_session'),
                 (jira_server, 'oauth_refresh_lock')):
             stack.enter_context(patch.object(target, name, boom(name)))

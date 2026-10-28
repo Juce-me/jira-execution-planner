@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprint = { id: 3001, name: 'Synthetic sprint', state: 'future' };
 const columns = [{ id: 'doing', name: 'Doing', star: true, statuses: ['In Progress'], colour: '#597ef7' }, { id: 'ready', name: 'Ready', statuses: ['To Do'], colour: '#8c8c8c' }, { id: 'wrap', name: 'Wrap', statuses: ['Release'], colour: '#13c2c2' }];

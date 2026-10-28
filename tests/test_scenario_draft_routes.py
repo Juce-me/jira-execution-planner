@@ -957,7 +957,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             patch.object(jira_server, 'current_jira_get', side_effect=AssertionError('current_jira_get forbidden')),
             patch.object(jira_server, 'current_jira_search', side_effect=AssertionError('current_jira_search forbidden')),
             patch.object(jira_server, 'jira_search_request', side_effect=AssertionError('jira_search_request forbidden')),
-            patch('backend.auth.home_credentials.resolve_home_credential', side_effect=AssertionError('home credential forbidden')),
+            patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('home credential forbidden')),
             patch('backend.auth.service_integrations.get_service_integration_summary', side_effect=AssertionError('service integration forbidden')),
             patch('backend.auth.service_integrations.list_service_integration_summaries', side_effect=AssertionError('service integration list forbidden')),
         ]
@@ -1016,7 +1016,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             patch.object(jira_server, 'jira_get', side_effect=AssertionError('jira_get forbidden')),
             patch.object(jira_server, 'jira_post', side_effect=AssertionError('jira_post forbidden')),
             patch.object(jira_server, 'jira_request', side_effect=AssertionError('jira_request forbidden')),
-            patch('backend.auth.home_credentials.resolve_home_credential', side_effect=AssertionError('home credential forbidden')),
+            patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('home credential forbidden')),
             patch('backend.auth.service_integrations.get_service_integration_summary', side_effect=AssertionError('service integration forbidden')),
             patch('backend.auth.service_integrations.list_service_integration_summaries', side_effect=AssertionError('service integration list forbidden')),
         ]

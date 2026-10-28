@@ -162,32 +162,28 @@ test('preference follows the refreshed saved value from config', () => {
 function renderConnections(epmViewPreference) {
     const code = esbuild.buildSync({
         entryPoints: [path.join(root, 'settings', 'UserConnectionsSettings.jsx')], bundle: true, write: false, platform: 'node', format: 'cjs',
-        external: ['react', '../analytics/analytics.js', '../api/authRequired.js', '../api/authApi.js'], loader: { '.jsx': 'jsx' }, jsx: 'transform',
+        external: ['react'], loader: { '.jsx': 'jsx' }, jsx: 'transform',
     }).outputFiles[0].text;
     const module = { exports: {} };
-    const stubs = {
-        '../analytics/analytics.js': { trackEvent() {} },
-        '../api/authRequired.js': { isAuthenticationRequiredError: () => false },
-        '../api/authApi.js': {},
-    };
-    new Function('module', 'exports', 'require', code)(module, module.exports, (name) => stubs[name] || require(name));
+    new Function('module', 'exports', 'require', code)(module, module.exports, require);
     return renderToStaticMarkup(React.createElement(module.exports.default, { backendUrl: 'http://b', epmViewPreference }));
 }
 
-test('Connections: no preference prop renders only the existing token card', () => {
+test('Connections: no preference prop renders no EPM card and no Home token controls', () => {
     const html = renderConnections(null);
-    assert.ok(html.includes('home-token-title'));
     assert.equal(html.includes('Enable EPM view'), false);
+    assert.equal(/home-token|API token|type="password"/.test(html), false);
 });
 
-test('Connections: the registered checkbox reuses the private-preference hooks and keeps the token card', () => {
+test('Connections: the registered checkbox reuses the private-preference hooks and is the only Connections card', () => {
     const html = renderConnections({ checked: true, savedEnabled: false, onChange() {}, saving: false, error: '', access: null, loginUrl: '' });
     assert.ok(html.includes('class="group-visible-control"'));
     assert.ok(html.includes('class="group-preference-row"'));
     assert.ok(html.includes('class="group-visible-helper"'));
     assert.match(html, /<input[^>]*type="checkbox"[^>]*checked=""/);
     assert.ok(html.includes('Enable EPM view'));
-    assert.ok(html.includes('home-token-title'), 'the token-management card stays');
+    assert.equal((html.match(/user-connection-card/g) || []).length, 1, 'the EPM card is alone');
+    assert.equal(/home-token|API token|type="password"|type="email"/.test(html), false);
     assert.equal(html.includes('Update Atlassian permissions'), false, 'checking the box is not evidence of consent or access');
     assert.ok(html.includes('user-connection-status muted">Off<'));
 });
@@ -220,12 +216,11 @@ test('source guard: the preference path never touches token fields or sends the 
     const hook = fs.readFileSync(path.join(root, 'settings', 'useEpmViewPreference.js'), 'utf8');
     const api = fs.readFileSync(path.join(root, 'api', 'epmApi.js'), 'utf8');
     const connections = fs.readFileSync(path.join(root, 'settings', 'UserConnectionsSettings.jsx'), 'utf8');
-    assert.equal(/apiToken|credentialSubject|connectHomeTokenConnection|home-token/i.test(hook), false);
+    assert.equal(/apiToken|credentialSubject|HomeTokenConnection|home-token/i.test(hook), false);
     const saveBody = api.slice(api.indexOf('export async function saveEpmPreferences'), api.indexOf('export const fetchEpmAccess'));
     assert.ok(saveBody.includes('JSON.stringify({ viewEnabled: viewEnabled === true })'));
     assert.equal(/apiToken|email/i.test(saveBody), false);
     for (const call of hook.match(/trackSettingsAction\?\.\([^)]*\)/g) || []) assert.equal(/viewEnabled|draft|saved/.test(call), false, call);
     assert.ok(connections.includes('epmViewPreference.onChange(event.target.checked)'));
-    const tokenConnect = connections.slice(connections.indexOf('const connect = async'), connections.indexOf('const revoke = async'));
-    assert.equal(/epmViewPreference/.test(tokenConnect), false, 'the token save path never reads the preference');
+    assert.equal(/authApi|trackEvent|fetch|apiToken|home-token/i.test(connections), false, 'the card has no request, token field or analytics call');
 });

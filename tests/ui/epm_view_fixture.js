@@ -21,23 +21,7 @@ const epmConfig = {
     },
 };
 
-function activeHomeTokenConnection(subject = 'profile@example.com') {
-    return {
-        connected: true,
-        provider: 'atlassian_user_api_token',
-        credentialSubject: subject,
-        status: 'active',
-        lastValidatedAt: '2026-05-11T09:00:00Z',
-        needsReconnect: false,
-    };
-}
-
-function disconnectedHomeTokenConnection() {
-    return { connected: false };
-}
-
-// EPM read readiness is the private checkbox + verified Home scopes + the access decision; the Home token
-// connection (write purpose) never gates reads. An ENABLED OAuth fixture says so explicitly; production-like
+// EPM read readiness is the private checkbox + verified Home scopes + the access decision. An ENABLED OAuth fixture says so explicitly; production-like
 // missing fields fail closed, so the fixture defaults are off.
 function enabledEpmOptions(extra = {}) {
     return {
@@ -109,7 +93,6 @@ function requestBody(request) {
 async function installDashboardFixture(page, options = {}) {
     const calls = [];
     const authMode = options.authMode || 'atlassian_oauth';
-    let currentConnection = options.connection || disconnectedHomeTokenConnection();
     const epmState = {
         viewEnabled: options.epmViewEnabled === true,
         homeReadAvailable: options.epmHomeReadAvailable === true,
@@ -153,17 +136,6 @@ async function installDashboardFixture(page, options = {}) {
             return json({ authMode, authenticated: true, email: 'profile@example.com', profile: { email: 'profile@example.com' } });
         }
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token' && request.method() === 'GET') {
-            return json(currentConnection);
-        }
-        if (url.pathname === '/api/me/connections/home-token' && request.method() === 'POST') {
-            currentConnection = activeHomeTokenConnection('profile@example.com');
-            return json(currentConnection);
-        }
-        if (url.pathname === '/api/me/connections/home-token' && request.method() === 'DELETE') {
-            currentConnection = disconnectedHomeTokenConnection();
-            return json(currentConnection);
-        }
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',
@@ -259,8 +231,6 @@ async function installDashboardFixture(page, options = {}) {
     return {
         appBaseUrl,
         calls,
-        getConnection: () => currentConnection,
-        setConnection: (connection) => { currentConnection = connection || disconnectedHomeTokenConnection(); },
         epmState,
         setEpmAccess: (access) => { epmState.access = access; },
         setEpmFailure: (failure) => { epmState.failure = failure; },
@@ -343,10 +313,6 @@ function epmAccessCalls(calls) {
     return calls.filter(call => call.pathname === '/api/epm/access');
 }
 
-function homeTokenStatusCalls(calls) {
-    return calls.filter(call => call.pathname === '/api/me/connections/home-token' && call.method === 'GET');
-}
-
 // The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
 // Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
 async function expectConfigBootstrapHoldsJiraWork(page, paths) {
@@ -366,20 +332,17 @@ async function openConnectionsSettings(page) {
     await page.getByRole('button', { name: /manage team groups/i }).click();
     const dialog = page.getByRole('dialog').first();
     await dialog.getByRole('button', { name: 'Connections' }).click();
-    await page.getByText('Jira Home write access').waitFor({ state: 'visible' });
+    await dialog.locator('.user-connections-settings').waitFor({ state: 'visible' });
     return dialog;
 }
 
 module.exports = {
     appBaseUrl,
-    activeHomeTokenConnection,
-    disconnectedHomeTokenConnection,
     enabledEpmOptions,
     epmAccessCalls,
     epmMetadataCalls,
     epmProject,
     emptyRollup,
-    homeTokenStatusCalls,
     expectConfigBootstrapHoldsJiraWork,
     installDashboardFixture,
     installDashboardShell,

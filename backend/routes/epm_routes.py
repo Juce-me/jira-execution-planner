@@ -22,7 +22,6 @@ from .epm_errors import (
 
 
 bp = Blueprint("epm_routes", __name__)
-HOME_USER_TOKEN_CONNECT_URL = '/settings/connections/home-token'
 
 
 @bp.errorhandler(ConfigStorageError)
@@ -35,8 +34,6 @@ def _epm_storage_error_handler(error):
 
 @bp.errorhandler(AuthError)
 def _epm_auth_error_handler(error):
-    if _is_home_user_token_required(error):
-        return _home_user_token_required_response(error)
     server = get_jira_server()
     if getattr(server, 'JIRA_AUTH_MODE', '') != AUTH_MODE_ATLASSIAN_OAUTH:
         raise error  # Basic/JSON keep their current behavior
@@ -70,26 +67,6 @@ def _memoize_epm_guard_context():
         memoize_epm_guard_context()
     except (AuthError, ConfigStorageError, DatabaseConfigurationError):
         pass
-
-
-def _is_home_user_token_required(error):
-    return isinstance(error, AuthError) and error.code == 'home_user_token_required'
-
-
-def _home_user_token_message(error):
-    return str(error) or 'Connect your Atlassian API token to load EPM Home projects.'
-
-
-def _home_user_token_required_payload(error):
-    return {
-        'error': 'home_user_token_required',
-        'message': _home_user_token_message(error),
-        'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
-    }
-
-
-def _home_user_token_required_response(error):
-    return jsonify(_home_user_token_required_payload(error)), 409
 
 
 def _invalid_epm_config_response():
@@ -245,13 +222,6 @@ def get_epm_goals_endpoint():
         goals = []
         error = str(exc)
     except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return jsonify({
-                'goals': [],
-                'error': _home_user_token_message(exc),
-                'errorCode': exc.code,
-                'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
-            })
         if exc.code == 'auth_required':
             payload, status = oauth_auth_required_payload()
             return jsonify(payload), status
@@ -267,18 +237,13 @@ def get_epm_projects_endpoint():
     tab = normalize_epm_text(request.args.get('tab'))
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     started = time.perf_counter()
-    try:
-        payload = build_epm_projects_payload(
-            epm_config,
-            force_refresh=force_refresh,
-            tab=tab,
-            sub_goal_keys=sub_goal_keys,
-            context=auth_context,
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload = build_epm_projects_payload(
+        epm_config,
+        force_refresh=force_refresh,
+        tab=tab,
+        sub_goal_keys=sub_goal_keys,
+        context=auth_context,
+    )
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -293,12 +258,7 @@ def configure_epm_projects_endpoint():
         return _invalid_epm_config_response()
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     started = time.perf_counter()
-    try:
-        projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(projects_payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -315,12 +275,7 @@ def get_all_epm_projects_rollup_endpoint():
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    try:
-        payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -332,17 +287,12 @@ def get_epm_project_issues_endpoint(home_project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    try:
-        payload, status, headers = build_epm_project_issues_response(
-            home_project_id,
-            tab,
-            sprint,
-            sub_goal_keys=sub_goal_keys,
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_epm_project_issues_response(
+        home_project_id,
+        tab,
+        sprint,
+        sub_goal_keys=sub_goal_keys,
+    )
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -353,20 +303,15 @@ def get_epm_project_issues_endpoint(home_project_id):
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    try:
-        payload, status, headers = build_per_project_rollup(
-            project_id,
-            tab,
-            sprint,
-            build_epm_rollup_dependencies(
-                sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
-                context=_cache_policy_context(),
-            ),
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_per_project_rollup(
+        project_id,
+        tab,
+        sprint,
+        build_epm_rollup_dependencies(
+            sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
+            context=_cache_policy_context(),
+        ),
+    )
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value

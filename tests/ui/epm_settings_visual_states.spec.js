@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_view_fixture');
 
 const viewports = [
     { name: 'desktop', width: 1440, height: 1000 },

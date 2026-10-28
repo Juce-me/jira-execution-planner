@@ -157,12 +157,12 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
                     oauth_context(token_version='2'),
                     cache,
                     lambda _scope: (_ for _ in ()).throw(
-                        AuthError('home_user_token_required', 'Connect your Atlassian API token to load EPM Home projects.')
+                        AuthError('epm_view_disabled', 'Enable the EPM view in your settings to load EPM Home data.')
                     ),
                 ),
             )
 
-        self.assertEqual(raised.exception.code, 'home_user_token_required')
+        self.assertEqual(raised.exception.code, 'epm_view_disabled')
         self.assertEqual(len(cache), 1)
 
     def test_goal_lookup_bypasses_process_cache_for_oauth_context(self):

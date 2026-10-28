@@ -4,7 +4,7 @@ const {
     installDashboardFixture,
     selectedSprintId: epmSprintId,
     selectedSprintName: epmSprintName,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 // Per-Epic refresh (issue #213), Catch Up and Planning. Shared synthetic fixtures live in
 // eng_epic_refresh_fixture.js. This spec serves frontend/dist/*; run npm run build first.

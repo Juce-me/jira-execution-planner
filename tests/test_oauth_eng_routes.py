@@ -716,7 +716,6 @@ class OAuthEngRouteTests(unittest.TestCase):
         patches = self._missing_info_patches(calls)
         with patches[0], patches[1], patches[2], patches[3], patches[4], \
              patch.dict(jira_server.MISSING_INFO_CACHE, {}, clear=True), \
-             patch("backend.auth.user_api_tokens._basic_auth_header", side_effect=forbidden), \
              patch("backend.auth.jira_auth.jira_request", side_effect=forbidden), \
              patch("backend.auth.jira_auth.jira_post", side_effect=forbidden), \
              patch.object(jira_server, "current_jira_request", side_effect=forbidden), \

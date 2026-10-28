@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { enabledEpmOptions, installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_home_token_fixture');
+const { enabledEpmOptions, installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
@@ -112,13 +112,6 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
             selected_count: 3,
             selected_story_points: 8,
             source_surface: 'planning'
-        });
-        window.JepAnalytics.trackEvent('connection_action', {
-            feature_name: 'connections',
-            connection_type: 'home_townsquare',
-            workflow_action: 'status',
-            previous_status: 'missing',
-            result: 'success'
         });
         window.JepAnalytics.trackEvent('scenario_action', {
             feature_name: 'scenario',

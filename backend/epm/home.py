@@ -23,7 +23,7 @@ from backend.auth.cache_policy import (
     build_jira_home_process_cache_key,
     jira_home_partitioned_process_cache_enabled,
 )
-from backend.auth.home_credentials import HomeCredential, resolve_home_credential
+from backend.auth.home_credentials import HomeCredential
 from backend.auth.jira_auth import AuthError, is_oauth_token_expired, oauth_scope_set
 from backend.db.engine import database_storage_enabled
 
@@ -1724,9 +1724,11 @@ def _require_home_credential_descriptor(credential: HomeCredential | None) -> No
 
 
 def _read_metadata_credential(context=None) -> HomeCredential | None:
+    """Basic/JSON mode keeps its service credentials (None here). DB mode never resolves a Home credential:
+    reaching this path means the actor is on the legacy profile (EPM view not enabled), which fails closed."""
     if context is None or not database_storage_enabled():
         return None
-    return resolve_home_credential(context, "read_metadata")
+    raise AuthError("epm_view_disabled", "Enable the EPM view in your settings to load EPM Home data.")
 
 
 def build_teamwork_graph_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:

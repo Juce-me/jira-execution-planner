@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { measure, contrast } = require('./design_system_hover_helpers');
 
 // The board's epic card (§6.2), its Tech/Product derivation (§4.4/D41 — unit-tested only, no
@@ -216,7 +216,6 @@ async function installBoardFixture(page, fieldCalls = [], {
         if (url.pathname === '/api/auth/status') {
             return json({ authMode, authenticated: true, email: 'profile@example.com' });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 authMode,

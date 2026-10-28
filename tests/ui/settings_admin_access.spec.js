@@ -1,6 +1,6 @@
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotPath = path.join(__dirname, '..', '..', 'test-results', 'settings-admin-access.png');
@@ -136,7 +136,6 @@ async function installSettingsFixture(page, {
             users = users.map(user => user.id === grantMatch[1] ? { ...user, accountType: 'user' } : user);
             return json({ user: users.find(user => user.id === grantMatch[1]) });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/sprints') return json({ sprints: [{ id: 42, name: 'Synthetic Sprint', state: 'active' }] });
         if (url.pathname === '/api/team-catalog') return json({
             catalog: { 'team-1': { id: 'team-1', name: 'Synthetic Team' } },

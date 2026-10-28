@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const screenshotDir = '/tmp/adhoc-visual-proof';
 const repoRoot = path.join(__dirname, '..', '..');
@@ -162,9 +162,6 @@ async function installApiMocks(page, calls) {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json(route, { connected: false, provider: 'atlassian_user_api_token', status: 'missing', needsReconnect: false });
-        }
         if (url.pathname === '/api/config') {
             return json(route, {
                 jiraUrl: 'https://jira.example',

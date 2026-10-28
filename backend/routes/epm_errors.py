@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 HOME_RETRY_AFTER_MIN_SECONDS = 1
 _MESSAGES = {
     "epm_scope_required": "Atlassian Home read permission is needed for the EPM view.",
+    "epm_view_disabled": "Enable the EPM view in your settings to load EPM Home data.",
     "home_access_denied": "Atlassian Home did not grant access to this EPM data.",
     "home_read_failed": "Atlassian Home data could not be read.",
     "home_rate_limited": "Atlassian Home is rate limiting requests. Try again shortly.",
@@ -53,10 +54,16 @@ def epm_scope_required_response():
     return _feature_error("epm_scope_required", 409, login_url=True)
 
 
+def epm_view_disabled_response():
+    return _feature_error("epm_view_disabled", 409)
+
+
 def auth_error_to_response(server, error):
     """A real base auth loss keeps the guard's own code/status/URL; Home-scope absence is feature-level."""
     if error.code == "epm_scope_required":
         return epm_scope_required_response()
+    if error.code == "epm_view_disabled":
+        return epm_view_disabled_response()
     return format_auth_error_response(server, error)
 
 

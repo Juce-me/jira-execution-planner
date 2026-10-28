@@ -7229,7 +7229,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         >
                                 {groupManageTab === 'connections' && (
                                 <UserConnectionsSettings
-                                    backendUrl={BACKEND_URL}
                                     epmViewPreference={{
                                         checked: epmViewPreference.checked,
                                         onChange: epmViewPreference.setChecked,

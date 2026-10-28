@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7666
+    "lineCeiling": 7665
   },
   "modules": [
     {
@@ -5532,11 +5532,9 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
-            "backendUrl",
             "epmViewPreference"
           ],
           "expandedInputNames": [
-            "backendUrl",
             "epmViewPreference",
             "epmViewPreference.access",
             "epmViewPreference.checked",
@@ -5547,22 +5545,17 @@
             "epmViewPreference.saving"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 9,
+          "expandedInputCount": 8,
           "returnCount": 0,
-          "propCount": 2,
+          "propCount": 1,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 9,
+          "expandedInputCeiling": 8,
           "returnCeiling": 0,
-          "propCeiling": 2,
-          "unresolved": [
-            "forwarded input backendUrl"
-          ],
+          "propCeiling": 1,
+          "unresolved": [],
           "inventory": {
             "sourceDigest": "6108397b7fa9f85d82da479ea89650cd7f163271e89ec915c2abab74622729c6",
             "reviewed": true,
-            "memberNames": [
-              "backendUrl"
-            ],
             "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
           },
           "callers": [

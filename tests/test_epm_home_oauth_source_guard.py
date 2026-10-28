@@ -13,14 +13,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 import jira_server
-from backend.auth import db_context, home_credentials
+from backend.auth import db_context
 from backend.epm import aggregate, home, issues, projects, rollup
 
 ROOT = Path(__file__).resolve().parents[1]
 
 FORBIDDEN_IN_STRICT = (
-    '_home_basic_credentials', 'build_teamwork_graph_client', 'build_home_graphql_client', 'resolve_home_credential',
-    '_resolve_user_credential', '_resolve_service_credential', 'oauth_session_data', 'save_oauth_session',
+    '_home_basic_credentials', 'build_teamwork_graph_client', 'build_home_graphql_client', '_read_metadata_credential',
+    'atlassian_user_api_token', 'oauth_session_data', 'save_oauth_session',
     'oauth_refresh_lock', 'OAUTH_TOKEN_STORE', '_LOCAL_OAUTH_STORE', 'HOME_PROJECT_UPDATE_MUTATION',
     'WRITE_AS_USER', 'tenant_info', '_CLOUD_ID_CACHE', 'current_app', 'flask',
 )
@@ -130,9 +130,7 @@ class ForbiddenPathBehaviorTests(unittest.TestCase):
     def test_every_epm_read_route_runs_with_all_forbidden_paths_patched_to_raise(self):
         patches = (
             (home, '_home_basic_credentials'), (home, 'build_teamwork_graph_client'),
-            (home, 'build_home_graphql_client'), (home, 'resolve_home_credential'),
-            (home, '_read_metadata_credential'), (home_credentials, '_resolve_user_credential'),
-            (home_credentials, '_resolve_service_credential'), (home_credentials, 'resolve_home_credential'),
+            (home, 'build_home_graphql_client'), (home, '_read_metadata_credential'),
             (jira_server, 'oauth_session_data'), (jira_server, 'save_oauth_session'),
             (jira_server, 'oauth_refresh_lock'), (jira_server, 'save_oauth_session_for_auth_context'),
             (jira_server, 'oauth_refresh_lock_for_auth_context'),

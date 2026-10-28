@@ -589,6 +589,11 @@ test('EPM read error classifier: rate_limited, denied, failed; only Home denial 
     assert.equal(jira.outcome, 'denied');
     assert.equal(jira.invalidateHomeAvailability, false, 'Jira-only denial must not invalidate the Home availability gate');
     assert.equal(classify({ status: 403, category: 'csrf_required' }).outcome, 'failed');
+    const disabled = classify({ status: 409, category: 'epm_view_disabled' });
+    assert.deepEqual(disabled, { outcome: 'disabled', status: 409, category: 'epm_view_disabled', retryAtMs: null, invalidateHomeAvailability: true });
+    assert.equal(classify({ status: 409, code: 'epm_view_disabled' }).outcome, 'disabled');
+    assert.equal(classify({ status: 409, category: 'epm_scope_required' }).outcome, 'failed');
+    assert.equal(classify({ status: 403, category: 'epm_view_disabled' }).outcome, 'failed');
     for (const error of [{ status: 502, category: 'home_read_failed' }, { status: 502, category: 'jira_read_failed' }, { status: 500 }, {}, null, undefined, new Error('offline')]) {
         const failed = classify(error);
         assert.equal(failed.outcome, 'failed');

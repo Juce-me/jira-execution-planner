@@ -74,7 +74,6 @@ async function epmJson(response, label) {
         error.payload = payload;
         error.code = payload?.error || payload?.errorCode || '';
         error.category = error.code;
-        error.connectUrl = payload?.connectUrl || '';
         error.loginUrl = typeof payload?.loginUrl === 'string' ? payload.loginUrl : '';
         error.retryAfterSeconds = parseRetryAfterSeconds(response.headers?.get?.('Retry-After'), payload?.retryAfterSeconds);
         throw error;

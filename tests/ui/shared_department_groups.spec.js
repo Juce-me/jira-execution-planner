@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -295,7 +295,6 @@ async function mockFirstRunDashboard(page, options = {}) {
             ga4UserId: 'synthetic-user',
             debugMode: false,
         } : { enabled: false });
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') {
             return json({

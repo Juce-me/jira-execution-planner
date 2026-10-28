@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -742,7 +742,7 @@ test('missing recovered task keys are pruned after exact-scope hydration', async
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
-test('Connections Settings reopens after recovery without retaining the token input', async ({ page }) => {
+test('Connections Settings reopens after recovery on the Connections tab', async ({ page }) => {
     await installPlanningFixture(page);
     await page.route('**/api/auth/status', route => json(route, {
         authMode: 'atlassian_oauth',
@@ -754,8 +754,7 @@ test('Connections Settings reopens after recovery without retaining the token in
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const settings = page.getByRole('dialog').first();
     await settings.getByRole('button', { name: 'Connections', exact: true }).click();
-    const tokenInput = settings.getByLabel('Atlassian API token');
-    await tokenInput.fill('transient-form-value');
+    await expect(settings.getByRole('button', { name: 'Connections', exact: true })).toHaveClass(/active/);
 
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:authentication-required')));
     await expect.poll(() => page.evaluate(() => {
@@ -764,13 +763,11 @@ test('Connections Settings reopens after recovery without retaining the token in
     })).toMatchObject({
         view: { settingsOpen: true, settingsTab: 'connections' },
     });
-    expect(await page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toContain('transient-form-value');
 
     await page.reload();
     const restoredSettings = page.getByRole('dialog').first();
     await expect(restoredSettings).toBeVisible();
     await expect(restoredSettings.getByRole('button', { name: 'Connections', exact: true })).toHaveClass(/active/);
-    await expect(restoredSettings.getByLabel('Atlassian API token')).toHaveValue('');
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 

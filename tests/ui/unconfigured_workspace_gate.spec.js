@@ -1,6 +1,6 @@
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = path.join(__dirname, '..', '..', 'test-results');
@@ -32,7 +32,6 @@ async function installGateFixture(page, { adminSettingsMissing, adminContacts, u
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
         if (url.pathname === '/api/version') return json({ enabled: false });
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             // Delay config so a sprint read racing it would be observable.
             await new Promise(resolve => setTimeout(resolve, 300));

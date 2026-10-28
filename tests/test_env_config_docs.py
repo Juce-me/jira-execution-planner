@@ -196,7 +196,6 @@ class EnvConfigDocsTests(unittest.TestCase):
         install_doc = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")
 
         self.assertIn("Settings -> Connections", install_doc)
-        self.assertIn("atlassian_user_api_token", install_doc)
         self.assertIn("auth_tokens", install_doc)
         self.assertIn("service_integration_tokens", install_doc)
         self.assertIn("user view config", install_doc)

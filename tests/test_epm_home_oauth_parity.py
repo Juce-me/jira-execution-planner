@@ -22,8 +22,9 @@ this small interface:
 
 `register_mode(name, factory)` adds a mode. Tasks 1-3 register the OAuth
 candidate (for example "db_oauth_public_read"), then compare its ModeRun with
-`compare_candidate(expected, actual, comparison)`. The two baseline modes use
-`compare_baseline`, which is exact.
+`compare_candidate(expected, actual, comparison)`. The Basic baseline mode uses
+`compare_baseline`, which is exact. The frozen `db_user_token` expected values in the fixture are the
+recorded pre-removal baseline for the candidate; that runner was removed with the API-token connection.
 """
 
 import base64
@@ -381,61 +382,6 @@ class BasicModeRunner:
         return self.client.get(path)
 
 
-class DbUserTokenModeRunner:
-    """Today's DB-mode path: SQLite DB, real browser session, private view config, the user's Home API token."""
-    name = 'db_user_token'
-
-    def enter(self, stack, fixture, transports):
-        from tests import test_db_oauth_cutover as cutover  # module import only; keeps its tests out of this module
-        from backend.auth.token_crypto import encrypt_token
-        from backend.db import models
-
-        env = fixture['environment']
-        self.home_email = env['dbHomeEmail']
-        helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
-        helper.setUp()
-        stack.callback(helper.tearDown)
-        self.helper = helper
-        callback = helper._store_callback_through_route(client=helper.client)
-        stack.enter_context(helper._db_route_mode())
-        with helper.factory() as session:
-            connection = session.get(models.AuthConnection, callback.connection_id)
-            self.context = RequestAuthContext(
-                auth_mode='atlassian_oauth', user_id=connection.user_id,
-                stable_subject='account-123', atlassian_account_id='account-123',
-                workspace_id=connection.workspace_id, auth_connection_id=connection.id,
-                cloud_id=connection.cloud_id, site_url='https://example.atlassian.net',
-                token_version=str(connection.token_version), account_status='active', is_admin=False,
-            )
-            token_connection = models.AuthConnection(
-                user_id=connection.user_id, workspace_id=connection.workspace_id,
-                provider='atlassian_user_api_token', site_url='https://example.atlassian.net',
-                cloud_id=connection.cloud_id, credential_subject=self.home_email,
-                capabilities=['home_townsquare_graphql'], status='active', token_version=1,
-            )
-            session.add(token_connection)
-            session.flush()
-            envelope = encrypt_token(
-                'db-token-fixture', workspace_id=connection.workspace_id, auth_connection_id=token_connection.id,
-                token_kind='api_token', key_provider=helper.key_provider,
-            )
-            session.add(models.AuthToken(
-                connection_id=token_connection.id, token_kind='api_token', algorithm=envelope.algorithm,
-                ciphertext=envelope.ciphertext, nonce=envelope.nonce, wrapped_dek=envelope.wrapped_dek,
-                key_id=envelope.key_id, aad_hash=envelope.aad_hash,
-            ))
-            session.commit()
-        stack.enter_context(patch.object(epm_home, 'urlopen', transports.home.urlopen))
-        self.client = helper.client
-
-    def install_config(self, config):
-        from backend.services.user_view_config import save_user_epm_config
-        save_user_epm_config(self.context, config)
-
-    def get(self, path):
-        return self.client.get(path)
-
-
 HOME_READ_SCOPES = ('read:goal:goals', 'read:access:goals', 'read:project:projects', 'read:access:projects')
 
 
@@ -510,7 +456,6 @@ class DbOAuthPublicReadRunner:
 
 MODE_FACTORIES = {
     BasicModeRunner.name: BasicModeRunner,
-    DbUserTokenModeRunner.name: DbUserTokenModeRunner,
     DbOAuthPublicReadRunner.name: DbOAuthPublicReadRunner,
 }
 
@@ -927,26 +872,6 @@ class BasicModeOracleTests(_ModeOracleMixin, unittest.TestCase):
     home_email_key = 'basicHomeEmail'
 
 
-class DbUserTokenModeOracleTests(_ModeOracleMixin, unittest.TestCase):
-    mode_name = 'db_user_token'
-    home_email_key = 'dbHomeEmail'
-
-    def test_db_mode_differs_from_basic_mode_only_in_home_site_detection_calls(self):
-        basic = run_mode('basic_json', self.fixture)
-        basic_core, basic_home = split_home(basic.results)
-        db_core, db_home = split_home(self.mode_run.results)
-        self.assertEqual(compare_baseline(basic_core, db_core), [])
-        for name in basic_home:
-            for basic_step, db_step in zip(basic_home[name], db_home[name]):
-                with self.subTest(scenario=name):
-                    kinds = lambda step: {k: v for k, v in step['kinds'].items() if k != 'site_detection'}
-                    self.assertEqual(kinds(basic_step), kinds(db_step))
-        # Basic always detects the cloud id; the DB user-token credential carries it, except where a route asks directly.
-        self.assertEqual(db_home['projects_active'][0]['kinds'].get('site_detection', 0), 0)
-        self.assertEqual(db_home['scope'][0]['kinds'], {'site_detection': 1})
-        self.assertEqual(basic_home['projects_active'][0]['kinds']['site_detection'], 1)
-
-
 class OracleCanFailTests(unittest.TestCase):
     """Meta-tests: the oracle must reject empty hierarchies, wrong labels and broad normalization."""
 
@@ -1129,7 +1054,7 @@ class DbOAuthPublicReadCandidateTests(unittest.TestCase):
 
 class CandidateSeamTests(unittest.TestCase):
     def test_registered_modes_expose_the_runner_interface(self):
-        self.assertEqual(sorted(MODE_FACTORIES), ['basic_json', 'db_oauth_public_read', 'db_user_token'])
+        self.assertEqual(sorted(MODE_FACTORIES), ['basic_json', 'db_oauth_public_read'])
         for factory in MODE_FACTORIES.values():
             for attribute in ('enter', 'install_config', 'get'):
                 self.assertTrue(callable(getattr(factory, attribute)))

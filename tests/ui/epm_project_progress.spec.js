@@ -5,7 +5,7 @@ const {
     installDashboardFixture,
     selectedSprintId,
     selectedSprintName,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 function progressRollup(project) {
     return {

@@ -2,7 +2,7 @@
 // An active Sprint yields seven alert categories; a future Sprint yields Backlog, Missing team and
 // Missing labels, so the ten categories need two loads.
 const { expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprintId = 34625;
@@ -140,7 +140,6 @@ async function installRingFixture(page, sprintState) {
             if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
             if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
             if (url.pathname === '/api/analytics/context') return json({ enabled: false });
-            if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
             if (url.pathname === '/api/config') return json({
                 jiraUrl: 'https://jira.example',
                 authMode: 'atlassian_oauth',

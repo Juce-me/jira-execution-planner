@@ -717,7 +717,7 @@ test('automatic Planning List owns return and keeps its primary/readiness/depend
     await evidence(testInfo, 'planning-list-request-ceilings', observed);
 });
 
-const { installDashboardFixture: installEpmFreshnessFixture, enabledEpmOptions } = require('./epm_home_token_fixture');
+const { installDashboardFixture: installEpmFreshnessFixture, enabledEpmOptions } = require('./epm_view_fixture');
 function epmFreshnessRollup(project, remote = false) {
     const rollup = { initiatives:{}, rootEpics:{'SYN-100':{ issue:{key:'SYN-100',summary:remote?'Synthetic remote Epic':'Synthetic held Epic',status:'In Progress',issueType:'Epic'},
         stories:[{key:'SYN-101',summary:remote?'Synthetic remote Story':'Synthetic held Story',status:remote?'Done':'In Progress',issueType:'Story',storyPoints:3,assignee:'Synthetic Owner'},

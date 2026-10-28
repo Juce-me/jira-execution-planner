@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // The Boards sub-tab and the Team groups "Configure board" pointer, mounted for real (unlike
 // tests/ui/group_board_composer.spec.js, which renders the composer through a standalone harness
@@ -112,13 +112,6 @@ async function mockConfigSettings(page, { groupsConfig = baseGroupsConfig() } = 
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         }
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
-        if (url.pathname === '/api/me/connections/home-token') return json({
-            connected: true,
-            provider: 'atlassian_user_api_token',
-            credentialSubject: 'profile@example.com',
-            status: 'active',
-            needsReconnect: false,
-        });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example',

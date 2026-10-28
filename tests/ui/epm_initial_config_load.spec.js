@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_view_fixture');
 
 const epmConfig = {
     version: 2,
@@ -105,7 +105,7 @@ test('EPM view loads saved config from initial user config without opening Setti
     expect(calls).toContain('GET /api/config');
     expect(calls).toContain('GET /api/epm/projects/rollup/all');
     expect(calls).not.toContain('POST /api/epm/projects/configuration');
-    // Reads are gated by the private checkbox + Home scopes + one access decision, never by the token status.
+    // Reads are gated by the private checkbox + Home scopes + one access decision, never by a Home token connection.
     expect(calls.filter(call => call === 'GET /api/epm/access')).toHaveLength(1);
     expect(calls).not.toContain('GET /api/me/connections/home-token');
     await page.screenshot({ path: 'tmp/h4c/epm-initial-load-from-user-config.png', fullPage: true, animations: 'disabled' });

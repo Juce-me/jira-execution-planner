@@ -3,7 +3,7 @@
 // Waiting, Empty epic, Ready to close); the future Sprint yields Backlog, Missing team and Missing
 // labels (those three exist only for a future Sprint, Empty and Waiting only for a current one).
 const { expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprintId = 34625;
@@ -234,7 +234,6 @@ async function installPinFixture(page, {
         if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/analytics/context') return json({ enabled: analyticsEnabled });
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         const fieldMatch = url.pathname.match(/^\/api\/issues\/([^/]+)\/(editable-fields|field)$/);
         if (fieldMatch && fieldMatch[2] === 'editable-fields') {
             return json({ issueKey: fieldMatch[1], field: 'storyPoints', editable: true, currentValue: state.storyPoints.get(fieldMatch[1]) ?? 3, baseUpdated: '2026-05-01T00:00:00.000+0000', mappingRevision: 'synthetic-story-points', me: null });

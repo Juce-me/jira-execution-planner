@@ -130,7 +130,7 @@ test('a disabled user after enablement drops the held access decision', async ()
 
 test('dashboard source: no Home token gating, no startup token status fetch, three ingestion call sites, one navigation owner', () => {
     assert.equal(/onHomeTokenRequired|markHomeTokenRequired|homeTokenConnection|fetchHomeTokenConnection|isActiveHomeTokenConnection/.test(dashboardSource), false);
-    assert.equal(/onHomeTokenRequired|home_user_token_required/.test(viewDataSource), false);
+    assert.equal(/onHomeTokenRequired|home_user_token_required|connectUrl/.test(viewDataSource), false);
     assert.ok(dashboardSource.includes('} = useEpmNavigationState({ backendUrl: BACKEND_URL });'));
     assert.equal(dashboardSource.includes('const showEpmNavigation ='), false, 'navigation comes only from the navigation hook');
     assert.ok(dashboardSource.includes('applyEpmCapabilityConfig(config);'), 'bootstrap/refresh ingestion');

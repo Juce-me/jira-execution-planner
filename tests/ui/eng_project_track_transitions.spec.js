@@ -6,7 +6,7 @@ const {
     enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -156,9 +156,6 @@ async function installEngProjectTrackFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json(route, { connected: false, provider: 'atlassian_user_api_token', status: 'missing', needsReconnect: false });
-        }
         if (url.pathname === '/api/config') {
             return json(route, {
                 jiraUrl: 'https://jira.example',

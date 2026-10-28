@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at

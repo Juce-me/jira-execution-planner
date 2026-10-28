@@ -580,7 +580,7 @@ class AuthConnection(Base):
     __tablename__ = 'auth_connections'
     __table_args__ = (
         CheckConstraint(
-            "provider in ('atlassian_oauth', 'jira_basic', 'atlassian_user_api_token', 'confluence_oauth')",
+            "provider in ('atlassian_oauth', 'jira_basic', 'confluence_oauth')",
             name='ck_auth_connections_provider',
         ),
         CheckConstraint("status in ('active', 'expired', 'revoked', 'error')", name='ck_auth_connections_status'),
@@ -607,15 +607,6 @@ class AuthConnection(Base):
             unique=True,
             sqlite_where=text('site_url IS NOT NULL'),
             postgresql_where=text('site_url IS NOT NULL'),
-        ),
-        Index(
-            'uq_auth_connections_user_api_token_cloud',
-            'user_id',
-            'workspace_id',
-            'cloud_id',
-            unique=True,
-            sqlite_where=text("provider = 'atlassian_user_api_token' AND cloud_id IS NOT NULL AND status != 'revoked'"),
-            postgresql_where=text("provider = 'atlassian_user_api_token' AND cloud_id IS NOT NULL AND status != 'revoked'"),
         ),
     )
 

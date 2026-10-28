@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { enabledEpmOptions, installDashboardFixture } = require('./epm_home_token_fixture');
+const { enabledEpmOptions, installDashboardFixture } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const repoRoot = path.join(__dirname, '..', '..');
@@ -354,8 +354,6 @@ test('Home access denial retains targeted semantics without locking', async ({ p
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const settings = page.getByRole('dialog').first();
     await settings.getByRole('button', { name: 'Connections', exact: true }).click();
-    await expect(settings.getByText('Not connected')).toBeVisible();
-    await expect(settings.getByRole('button', { name: 'Connect', exact: true })).toBeVisible();
     await expect(settings.getByText('No access')).toBeVisible();
 });
 
@@ -572,12 +570,6 @@ test('same-profile Planning tabs elect one OAuth leader and reload independently
     await expect(storyCheckbox(pageB, 'PLAN-1')).not.toBeChecked();
     await expect(storyCheckbox(pageB, 'PLAN-2')).toBeChecked();
     await expect(storyCheckbox(pageB, 'PLAN-3')).toBeChecked();
-
-    await follower.getByRole('button', { name: 'Manage team groups' }).click();
-    const settings = follower.getByRole('dialog').first();
-    await settings.getByRole('button', { name: 'Connections', exact: true }).click();
-    await expect.poll(() => followerState.authStatusCookies.length).toBeGreaterThan(0);
-    expect(followerState.authStatusCookies.at(-1)).toContain('jep_auth=shared');
 
     expect(stateA.authTriggerRequestIds).toEqual(['auth-trigger-A']);
     expect(stateB.authTriggerRequestIds).toEqual(['auth-trigger-B']);

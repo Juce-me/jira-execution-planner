@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_home_token_fixture');
+const { installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_view_fixture');
 
 const root = path.resolve(__dirname, '../..');
 const NOTICE_TEXT = 'Some dependencies could not be loaded.';

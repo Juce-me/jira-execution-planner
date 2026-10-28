@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const harnessUrl = 'http://onboarding-tour.test/';
@@ -1079,7 +1079,6 @@ async function installProductionOnboardingFixture(page, {
         if (url.pathname === '/api/eng/story-readiness') {
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/analytics/context') {
             return json({ enabled: true, gtmContainerId: 'GTM-SYNTHETIC', measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user' });
         }

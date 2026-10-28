@@ -502,7 +502,12 @@ test.describe('Share control: in the app', () => {
             event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'share_view_action', feature_name: 'share_view',
             workflow_action: 'copy_link', result: 'success', source_surface: 'catch_up',
         });
-        const serialised = JSON.stringify(await page.evaluate(() => window.dataLayer));
+        const analyticsPayloads = await page.evaluate(() => window.dataLayer);
+        for (const entry of analyticsPayloads.filter(entry => entry.page_location)) {
+            expect(entry.event).toBe('pageview');
+            expect(entry.page_location).toBe(`${new URL(appBaseUrl).origin}/${entry.page_name}`);
+        }
+        const serialised = JSON.stringify(analyticsPayloads.map(({ page_location, ...entry }) => entry));
         for (const fragment of ['http', '?v=', 'group-alpha', '3001']) expect(serialised, `no ${fragment} in any analytics payload`).not.toContain(fragment);
     });
 

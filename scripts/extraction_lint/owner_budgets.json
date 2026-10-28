@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7298,
+    "lineCeiling": 7301,
     "hookCeilings": {
       "useState": 117,
       "useEffect": 69,
@@ -534,7 +534,7 @@
             "forwarded input epmRollupBoards"
           ],
           "inventory": {
-            "sourceDigest": "eebf59c3e29191f7f37574bed566b43ea54e621fbce4239f3f3d620c0e7c505f",
+            "sourceDigest": "10781d1e065e4de608f009f90f58ef793d795b1e586fb8487804678fc9ca7369",
             "reviewed": true,
             "memberNames": [
               "InitiativeIcon",
@@ -768,7 +768,7 @@
             {
               "path": "frontend/src/epm/EpmView.jsx",
               "symbol": "EpmRollupPanel",
-              "line": 55,
+              "line": 56,
               "phase": "render"
             }
           ],

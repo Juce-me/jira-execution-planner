@@ -88,8 +88,6 @@ test('analytics event allowlist excludes forbidden parameter names and unsafe sn
         'user_id',
         'session_id',
         'link_url',
-        'page_location',
-        'page_title',
         'issue_key',
         'jql',
         'token',
@@ -151,6 +149,7 @@ test('GA4 MCP YAML dataLayer variables match the app analytics allowlist', () =>
     const appFields = jsSetValues(analyticsSource, 'DATA_LAYER_FIELDS');
     const appDataLayerKeys = new Set([...appParams, ...appFields]);
     appDataLayerKeys.delete('event');
+    appDataLayerKeys.delete('page_path'); // Inspection-only; GA4 derives path from page_location.
 
     const yamlDataLayerKeys = yamlValues(yamlSource, 'data_layer_variable_name');
     assert.deepEqual(
@@ -732,8 +731,15 @@ test('MCP core stays at 25 while native handoff covers every sparse app paramete
     const runbook = read('docs/plans/SUPPORT-ga4-user-configuration.md');
     const tagSections = yaml.split('  tags:')[1].split('  ecommerce:')[0].split('    - name:').slice(1);
     const counts = tagSections.map(section => [...section.matchAll(/^        [a-z_]+:/gm)].length);
-    assert.deepEqual(counts, [5, 25]);
+    assert.deepEqual(counts, [7, 25]);
+    for (const name of ['page_title', 'page_location']) {
+        assert.ok(tagSections[0].includes(`${name}: "{{DLV - ${name}}}"`));
+        assert.ok(runbook.includes(`| \`${name}\` | \`${name}\` |`));
+        assert.ok(!yamlValues(yaml, 'parameter_name').has(name), `${name} uses predefined GA4 dimensions`);
+    }
+    assert.doesNotMatch(yaml.split('  tags:')[1], /^        page_path:/m);
     for (const name of jsSetValues(source, 'EVENT_PARAMS')) {
+        if (['page_title', 'page_path', 'page_location'].includes(name)) continue;
         assert.ok(runbook.includes(`| \`${name}\` | \`{{DLV - ${name}}}\` |`), `Native mapping missing ${name}`);
     }
     assert.doesNotMatch(yaml.split('  tags:')[1], /^        (?:user_id|ga4_user_id):/m);

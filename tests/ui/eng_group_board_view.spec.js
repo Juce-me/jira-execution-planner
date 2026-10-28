@@ -108,7 +108,7 @@ async function installBoardFixture(page, {
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
-    userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null,
+    userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null, epmEnabled = false,
 } = {}) {
     let strictBoardRequestCount = 0;
     let acceptedSelectedProjects = selectedProjects;
@@ -208,6 +208,7 @@ async function installBoardFixture(page, {
                     teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
                 },
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+                ...(epmEnabled ? { epmViewEnabled: true, epmHomeReadAvailable: true } : {}),
                 ...(currentSprintCatalogSource ? { sprintCatalogSource: currentSprintCatalogSource } : {}),
             };
             const responseStatus = typeof configStatus === 'function'
@@ -221,6 +222,7 @@ async function installBoardFixture(page, {
             return responseStatus === 200 ? json(config) : json({ error: 'config_unavailable' }, responseStatus);
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/epm/access') return json({ state: 'available', epmHomeReadAvailable: true });
         if (url.pathname === '/api/groups-config') {
             groupsRequestCount += 1;
             const defaultPayload = {
@@ -390,7 +392,7 @@ async function openBoard(page, {
     selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
-    userCanEditSettings, settingsAdminOnly, sprintCatalogSource,
+    userCanEditSettings, settingsAdminOnly, sprintCatalogSource, epmEnabled,
     initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
@@ -429,6 +431,7 @@ async function openBoard(page, {
         ...(userCanEditSettings === undefined ? {} : { userCanEditSettings }),
         ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
         ...(sprintCatalogSource === undefined ? {} : { sprintCatalogSource }),
+        ...(epmEnabled === undefined ? {} : { epmEnabled }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -1614,7 +1617,7 @@ for (const draftCase of [
     });
 }
 
-test('Board to Planning to Board preserves the saved Sprint snapshot without strict or duplicate task loads', async ({ page }) => {
+test('Board to Planning to Board re-enters Component and returns to the saved Sprint snapshot without duplicate task loads', async ({ page }) => {
     const requests = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
     const taskRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
@@ -1624,11 +1627,13 @@ test('Board to Planning to Board preserves the saved Sprint snapshot without str
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning' }).click();
     await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expectBoardEntersComponent(page);
+    await pickOrdinarySprint(page);
     await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await waitTwoFrames(page);
 
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+    expect(componentBoardRequests(requests)).toHaveLength(1);
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(taskRequestCount);
 });
 
@@ -1670,8 +1675,7 @@ test('Board adds Component and All work to the existing Sprint selector without 
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expectBoardEntersComponent(page);
     await settle(page);
     expect(requests.filter((requestPath) => requestPath.includes('scope=all_work'))).toHaveLength(allWorkRequestCount);
 });
@@ -2988,19 +2992,19 @@ test('selector scheduling: in-flight ordinary Board reuse', async ({ page }) => 
         const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
         await modes.getByRole('radio', { name: 'Planning' }).click();
         await modes.getByRole('radio', { name: 'Board' }).click();
-        await waitTwoFrames(page);
+        await expectBoardEntersComponent(page);
         expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 
         releaseTasks();
         releaseTasks = null;
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await pickOrdinarySprint(page);
     } finally {
         releaseTasks?.();
     }
 });
 
-test('selector round trips: held Catch Up lane continues through ordinary Board entry', async ({ page }) => {
+test('selector round trips: held Catch Up lane continues through Component Board entry', async ({ page }) => {
     let releaseTasks;
     const taskResponseGate = new Promise(resolve => { releaseTasks = resolve; });
     const requests = [];
@@ -3017,14 +3021,16 @@ test('selector round trips: held Catch Up lane continues through ordinary Board 
         await expect.poll(() => requests.filter(path => path === '/api/tasks-with-team-name').length).toBe(2);
         await page.getByRole('radiogroup', { name: 'ENG view mode' })
             .getByRole('radio', { name: 'Board', exact: true }).click();
-        await waitTwoFrames(page);
+        await expectBoardEntersComponent(page);
         expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 
         releaseTasks();
         releaseTasks = null;
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(2);
+        await pickOrdinarySprint(page);
+        // The held Catch Up lane was superseded by the Component entry, so the Sprint pick reloads
+        // the Product and Tech lanes once instead of reusing it.
+        expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(4);
     } finally {
         releaseTasks?.();
     }
@@ -3058,7 +3064,7 @@ for (const scopeProfile of [
 }
 
 for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
-    test(`selector round trips: ordinary Board to ${siblingMode} to Board restores its cached Sprint`, async ({ page }) => {
+    test(`selector round trips: ordinary Board to ${siblingMode} to Board enters Component and restores its cached Sprint`, async ({ page }) => {
         const requests = [];
         const requestLog = [];
         await openBoard(page, {
@@ -3080,9 +3086,11 @@ for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
         await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
             .toContainText(selectedSprintName);
         await modes.getByRole('radio', { name: 'Board', exact: true }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
-        expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+        expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+        expect(componentBoardRequests(requests)).toHaveLength(1);
         expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
         if (siblingMode === 'Scenario') {
             expect(requestLog.filter(({ url, method }) => (
@@ -3093,7 +3101,7 @@ for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
 }
 
 for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
-    test(`selector round trips: strict Component to ${siblingMode} to Board restores ordinary Sprint`, async ({ page }) => {
+    test(`selector round trips: strict Component to ${siblingMode} to Board re-enters Component and restores ordinary Sprint`, async ({ page }) => {
         const requests = [];
         const requestLog = [];
         await openBoard(page, {
@@ -3120,9 +3128,10 @@ for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
         await modes.getByRole('radio', { name: siblingMode, exact: true }).click();
         await expect(trigger).toContainText(selectedSprintName);
         await modes.getByRole('radio', { name: 'Board', exact: true }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
-        expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
+        expect(requests.filter(path => path.includes('scope=component')).length).toBeGreaterThanOrEqual(1);
         expect(ordinaryLaneCount()).toBe(initialOrdinaryLaneCount);
         expect(requests.some(path => path.includes('scope=sprint'))).toBe(false);
     });
@@ -3284,11 +3293,14 @@ test('a held Board observation response does not block completed Board controls 
         await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Catch Up' }).click();
         await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
         await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-        await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+        await expectBoardEntersComponent(page);
+        await pickOrdinarySprint(page);
         await waitTwoFrames(page);
 
         expect(requests.filter(path => path.includes('scope=all_work'))).toHaveLength(1);
-        expect(performanceLoads.filter(sample => sample.surface === 'eng_board')).toHaveLength(1);
+        const boardLoads = performanceLoads.filter(sample => sample.surface === 'eng_board');
+        expect(boardLoads.filter(sample => sample.scopeType === 'all_work')).toHaveLength(1);
+        expect(boardLoads.filter(sample => sample.scopeType === 'component')).toHaveLength(1);
     } finally {
         releaseObservation?.();
     }
@@ -3395,7 +3407,7 @@ test('selects the current sprint on first load when no cached sprint exists', as
     expect(requestUrls.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
 });
 
-test('Catch Up to Board reuses the loaded sprint snapshot without another Jira data request', async ({ page }) => {
+test('Catch Up to Board opens Component, and its Sprint option reuses the loaded snapshot without another Jira data request', async ({ page }) => {
     const requests = [];
     await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true });
     await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
@@ -3409,14 +3421,16 @@ test('Catch Up to Board reuses the loaded sprint snapshot without another Jira d
     const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+    await expectBoardEntersComponent(page);
+    await pickOrdinarySprint(page);
     await settle(page);
 
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
+    expect(componentBoardRequests(requests)).toHaveLength(1);
 });
 
-test('Catch Up authoritative empty snapshot stays authoritative when Board opens', async ({ page }) => {
+test('Catch Up authoritative empty snapshot stays authoritative when Board opens its Sprint option', async ({ page }) => {
     const requests = [];
     await installBoardFixture(page, { strictBoard: true, requests, sourceBundle: true, epicSpecs: [] });
     await page.addInitScript(({ selectedSprintId, selectedSprintName }) => {
@@ -3430,11 +3444,14 @@ test('Catch Up authoritative empty snapshot stays authoritative when Board opens
     const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
     await expect(page.getByText('No epics found', { exact: true })).toBeVisible();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(loadedRequests);
-    expect(requests.filter(path => path.startsWith('/api/eng/board?'))).toHaveLength(0);
+    expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
 });
 
 for (const strictFailure of [
@@ -3480,6 +3497,21 @@ for (const strictFailure of [
 
 // The board scrolls with `scroll-behavior: smooth`, so every focus change needs the scroll offset
 // to stop moving before geometry means anything.
+const componentBoardRequests = (requests) => requests.filter(path => path.startsWith('/api/eng/board?'));
+
+// Entering Board from another mode defaults to the Component scope; the saved Sprint is one
+// selector pick away and reuses the already-loaded snapshot.
+async function expectBoardEntersComponent(page) {
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
+    await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
+}
+
+async function pickOrdinarySprint(page) {
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
+    await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
+}
+
 async function settle(page) {
     // The sentinel is reset per call and three consecutive equal samples are required: a stored
     // value left over from the previous settle would otherwise match a scroll that has not started
@@ -4264,6 +4296,75 @@ test('focusing the search field never moves the title block or the rows below th
         expect(focused.search.right, `${width}px: the focused field keeps its right edge`).toBe(idle.search.right);
         expect(focused.search.width, `${width}px: the focused field widens`).toBeGreaterThan(idle.search.width);
         expect(focused.title, `${width}px: the title block stays put while the search field is focused`).toEqual(idle.title);
+        expect(focused.below, `${width}px: the controls row stays put`).toEqual(idle.below);
+        expect(focused.header, `${width}px: the header keeps its box`).toEqual(idle.header);
+    }
+});
+
+test('focusing the search field never covers the ENG/EPM view switch or the title text', async ({ page }) => {
+    await openBoard(page, { width: 1280, height: 900, epmEnabled: true });
+    const frame = () => page.evaluate(() => {
+        // Firefox lays out in 1/60px units, so equal edges can differ in the fifth decimal.
+        const tenth = (value) => Math.round(value * 10) / 10;
+        const box = (element) => {
+            const { left, right, top, bottom, width } = element.getBoundingClientRect();
+            return { left: tenth(left), right: tenth(right), top: tenth(top), bottom: tenth(bottom), width: tenth(width) };
+        };
+        const viewSwitch = document.querySelector('.header-actions-row .view-mode-control');
+        const centre = viewSwitch.getBoundingClientRect();
+        const titleInkRight = (() => {
+            const walker = document.createTreeWalker(document.querySelector('.subtitle-main'), NodeFilter.SHOW_TEXT);
+            let right = 0;
+            for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+                if (!node.textContent.trim() || getComputedStyle(node.parentElement).visibility === 'hidden') continue;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                for (const rect of range.getClientRects()) right = Math.max(right, rect.right);
+            }
+            return tenth(right);
+        })();
+        return {
+            header: box(document.querySelector('header')),
+            below: box(document.querySelector('.view-selector')),
+            title: box(document.querySelector('.subtitle-main')),
+            titleInkRight,
+            viewSwitch: box(viewSwitch),
+            search: box(document.querySelector('.header-actions-row .control-search')),
+            switchHit: viewSwitch.contains(document.elementFromPoint(centre.left + centre.width / 2, centre.top + centre.height / 2)),
+        };
+    });
+    const settled = async () => {
+        await page.evaluate(async () => {
+            await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+            await Promise.all(document.getAnimations({ subtree: true })
+                .filter(animation => animation.effect.getComputedTiming().iterations !== Infinity)
+                .map(animation => animation.finished.catch(() => undefined)));
+        });
+        await page.waitForTimeout(400);
+    };
+    for (const width of [1440, 1280, 1100, 1060, 1059, 1028, 960, 800, 700, 620]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.locator('body').click({ position: { x: 2, y: 400 } });
+        await settled();
+        const idle = await frame();
+        await page.getByRole('textbox', { name: 'Find in view' }).first().focus();
+        await settled();
+        const focused = await frame();
+        const widens = width >= 1060;
+        if (width === 1280) {
+            await page.screenshot({ path: path.join(screenshotDir, 'header-search-focused-with-view-switch.png'), clip: { x: 0, y: 0, width: 1280, height: 140 }, animations: 'disabled' });
+        }
+        expect(focused.search.left, `${width}px: the focused field stays clear of the view switch`).toBeGreaterThanOrEqual(focused.viewSwitch.right);
+        expect(focused.switchHit, `${width}px: the view switch is what sits at its own centre`).toBe(true);
+        expect(focused.viewSwitch.left, `${width}px: the view switch stays on screen`).toBeGreaterThanOrEqual(0);
+        expect(focused.search.right, `${width}px: the focused field keeps its right edge`).toBe(idle.search.right);
+        expect(focused.search.left - focused.viewSwitch.right, `${width}px: the switch keeps its gap to the field`).toBeCloseTo(idle.search.left - idle.viewSwitch.right, 1);
+        expect(focused.search.width - idle.search.width, `${width}px: the field widens only where there is room for the switch to give way`).toBeCloseTo(widens ? 140 : 0, 1);
+        expect(idle.viewSwitch.left - focused.viewSwitch.left, `${width}px: the switch gives way by exactly the widening`).toBeCloseTo(widens ? 140 : 0, 1);
+        if (widens) {
+            expect(focused.viewSwitch.left, `${width}px: the switch does not cover the title text`).toBeGreaterThanOrEqual(idle.titleInkRight);
+        }
+        expect(focused.title, `${width}px: the title block stays put`).toEqual(idle.title);
         expect(focused.below, `${width}px: the controls row stays put`).toEqual(idle.below);
         expect(focused.header, `${width}px: the header keeps its box`).toEqual(idle.header);
     }

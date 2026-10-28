@@ -5509,6 +5509,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     isCompletedSprintSelected={isCompletedSprintSelected}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
+                        if (nextMode === 'board' && activeEngMode !== 'board' && engSprintSelectorState.componentReadiness === 'ready') {
+                            setBoardStrictScope('component');
+                        }
                         if (onboardingBootstrapReady && isEngOnboardingModuleSurface(nextMode)) {
                             onboarding.requestModule(nextMode);
                         }

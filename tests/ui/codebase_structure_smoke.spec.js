@@ -5620,7 +5620,10 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "eng/statistics/teams"
+            "page_name": "eng/statistics/teams",
+            "page_title": "ENG / Statistics / Teams",
+            "page_path": "/eng/statistics/teams",
+            "page_location": `${new URL(appBaseUrl).origin}/eng/statistics/teams`
         },
         {
             "event": "userevent",
@@ -5659,7 +5662,10 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "eng/statistics/teams"
+            "page_name": "eng/statistics/teams",
+            "page_title": "ENG / Statistics / Teams",
+            "page_path": "/eng/statistics/teams",
+            "page_location": `${new URL(appBaseUrl).origin}/eng/statistics/teams`
         },
         {
             "event": "userevent",
@@ -5706,7 +5712,10 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "eng/statistics/mono_cross_share"
+            "page_name": "eng/statistics/mono_cross_share",
+            "page_title": "ENG / Statistics / Mono vs Cross",
+            "page_path": "/eng/statistics/mono_cross_share",
+            "page_location": `${new URL(appBaseUrl).origin}/eng/statistics/mono_cross_share`
         },
         {
             "event": "userevent",
@@ -5752,7 +5761,10 @@ const statsAnalyticsBaseline = {
             "auth_mode": "basic",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
-            "page_name": "eng/statistics/project_track"
+            "page_name": "eng/statistics/project_track",
+            "page_title": "ENG / Statistics / Project Track",
+            "page_path": "/eng/statistics/project_track",
+            "page_location": `${new URL(appBaseUrl).origin}/eng/statistics/project_track`
         },
         {
             "event": "userevent",

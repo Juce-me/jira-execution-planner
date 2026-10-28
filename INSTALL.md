@@ -3,7 +3,7 @@
 This app has two local run modes:
 
 - JSON-file mode: starts with `python3 jira_server.py` after `.env` is configured.
-- DB mode: required for OAuth-backed users, encrypted OAuth tokens, service integrations, and the Home token connection flow.
+- DB mode: required for OAuth-backed users, encrypted OAuth tokens, service integrations, and the Home read access flow.
 
 `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations.
 
@@ -184,33 +184,27 @@ http://localhost:5050/login
 
 Sign in again after switching to DB mode. The OAuth callback creates the DB user, workspace, auth connection, and encrypted token rows.
 
-## 6. Home Token Connection Flow
+## 6. Home Read Access Flow
 
-The Home token connection stores a user-owned Atlassian API token in encrypted DB storage as provider `atlassian_user_api_token`. It requires:
+Home/Townsquare goals and projects are read with the signed-in user's Atlassian OAuth grant; the app stores no personal Atlassian API token. It requires:
 
 - `CONFIG_STORAGE_BACKEND=db`
 - `DATABASE_URL`
-- applied Alembic migrations
+- applied Alembic migrations (the latest one removes the retired `atlassian_user_api_token` connections and their encrypted tokens)
 - `TOKEN_ENCRYPTION_MASTER_KEY_B64` and `TOKEN_ENCRYPTION_KEY_ID`
-- an OAuth login after DB mode is enabled
+- the Atlassian app registration listing the four Home read scopes `read:goal:goals`, `read:access:goals`, `read:project:projects` and `read:access:projects` (an operator action in the Atlassian Developer Console; the app cannot check it)
 
-After sign-in, open `Settings -> Connections` and connect the current user's Home/Townsquare token. DB/OAuth EPM stays hidden until this connection is active. Jira REST reads continue to use the OAuth session; Home/Townsquare metadata reads use the connected token from `auth_tokens`.
-
-If any of those are missing, `/api/me/connections/home-token` returns:
-
-```json
-{"error":"credential_storage_unavailable"}
-```
+After sign-in, open `Settings -> Connections` and tick **Enable EPM view**, then Save. If the grant lacks the Home scopes, the card shows the missing-permission state with a same-tab link to grant them. EPM stays hidden until the preference is saved, the scopes are confirmed by the provider and Atlassian Home confirms access to the configured scope. Without database storage the toggle is unavailable and EPM follows the Basic/JSON compatibility behavior.
 
 ## 7. Storage Boundaries
 
 DB/OAuth EPM separates three storage concerns:
 
-- User Home token connection: encrypted `auth_tokens`, provider `atlassian_user_api_token`, created from `Settings -> Connections`.
+- User OAuth grants: encrypted `auth_tokens` for provider `atlassian_oauth`; the EPM view preference is a non-secret flag in the user's private saved view.
 - Operator/service integrations: encrypted `service_integration_tokens`, reserved for workflows that explicitly need shared operator credentials.
 - EPM saved view state: non-secret user view config only, such as root goal scope, selected sub-goals, label prefix, project label mappings, selected EPM tab, and selected sprint.
 
-Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user connects their own Home token.
+Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user enables the EPM view and the Home read scopes are granted.
 
 ## 8. Internal Hosting Pre-SRE Checklist
 
@@ -330,7 +324,7 @@ A second `--merge` is a no-op, with three exceptions: a column that was matched 
 
 Junk Sprint views: each group is capped at 500 Sprint views and the app has no delete action. An operator can purge rows by hand, after a backup and a review of the exact rows. In a one-off database session, first run `SELECT id, sprint_id, view_revision FROM group_sprint_review_views WHERE workspace_id = '<id>' AND group_id = '<group id>' AND sprint_id IN ('<sprint id>');`, check the result, then run the same `WHERE` clause with `DELETE FROM group_sprint_review_views` inside a transaction and commit only if the deleted count matches. Deleting a view makes that Sprint inherit again from earlier Sprints; it removes no cells or columns. Run it with application writers stopped or idle.
 
-OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads and the per-user Home token connection for Home/Townsquare EPM metadata.
+OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads with the Home read scopes for Home/Townsquare EPM metadata.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled.

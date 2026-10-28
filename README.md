@@ -43,7 +43,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 ## 📖 Technical Docs
 
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
-- Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
+- Local install, DB mode, and migrations are covered in [INSTALL.md](INSTALL.md)
 - Agent work artifact rules are defined in [docs/AGENTS.md](docs/AGENTS.md)
 - Product analytics rules are defined in [docs/README_ANALYTICS.md](docs/README_ANALYTICS.md)
 - Self-hosted data handling is described in the [privacy notice](docs/PRIVACY.md)
@@ -57,7 +57,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `docs/AGENTS.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
-- `INSTALL.md` - Local install, PostgreSQL, DB migration, and Home token setup flow
+- `INSTALL.md` - Local install, PostgreSQL, and DB migration flow
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
 - `AGENTS.md` - Contributor guide and workflow conventions
@@ -149,7 +149,7 @@ cp .env.example .env
 nano .env  # or use any text editor
 ```
 
-DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup, migrations, and Home token connection steps live in [INSTALL.md](INSTALL.md).
+DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup and migrations live in [INSTALL.md](INSTALL.md).
 
 Server-side API-token auth remains a legacy compatibility mode. Do not use legacy Jira/Home Basic credentials for the DB/OAuth EPM path.
 
@@ -180,7 +180,7 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) for user Jira access instea
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
 4. In `.env`, set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, the Atlassian OAuth client settings, `FLASK_SECRET_KEY`, DB storage settings, token-encryption settings, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` selects the matching Atlassian cloud site after login.
 5. Start the server and open `/login`. The `Sign in with Atlassian` action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, Atlassian redirects through Microsoft automatically before returning to the local callback.
-6. Confirm `/api/auth/status` reports `authenticated: true`, then use `/api/test` to verify Jira REST access. In DB/OAuth mode, EPM Home/Townsquare metadata becomes available after the signed-in user connects a Home token in `Settings -> Connections`.
+6. Confirm `/api/auth/status` reports `authenticated: true`, then use `/api/test` to verify Jira REST access. In DB/OAuth mode, EPM becomes available after the signed-in user ticks **Enable EPM view** in `Settings -> Connections` and the Atlassian sign-in grants the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`).
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
 
@@ -233,7 +233,7 @@ In DB/OAuth mode, administrator settings are shared once per workspace and use a
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.
 
-In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token`, represented in DB `auth_connections` and stored encrypted in `auth_tokens`.
+In DB/OAuth mode, EPM is hidden until the signed-in user enables it in `Settings -> Connections` (a private per-user preference), the provider has granted the Home read scopes and Atlassian Home confirms access. Jira REST and Home/Townsquare reads both use the user's OAuth session (Home through the fixed `public-read-v1` query set); the app stores no personal Atlassian API token, and there is no API-token fallback. Basic/JSON compatibility mode keeps its own server-side credentials.
 
 For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configuration rules, see [docs/features/epm-view.md](docs/features/epm-view.md).
 
@@ -380,7 +380,7 @@ Junk Sprint views: each group is capped at 500 Sprint views and the app has no d
 
 Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
 
-OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
+OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner container-build method, branch/tag policy, and when image push may be enabled.
@@ -472,7 +472,7 @@ See the full guide:
 - ✅ The `.env` file is already in `.gitignore`
 - ✅ Sprint cache file (`sprints_cache.json`) is also in `.gitignore`
 - ✅ Always use `.env.example` as a template for others
-- ✅ DB/OAuth EPM stores each user's Home token encrypted in DB `auth_tokens`; shared service credentials are not used as an EPM fallback
+- ✅ DB/OAuth EPM reads Home with the user's OAuth grant only; no personal API token is stored and shared service credentials are not used as an EPM fallback
 - ✅ All API requests are READ-ONLY (no modifications to Jira)
 - ✅ No hardcoded company-specific URLs or IDs in code
 

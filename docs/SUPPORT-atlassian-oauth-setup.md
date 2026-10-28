@@ -61,7 +61,7 @@ You do not add `offline_access` from the app's `Permissions` API list, and it do
 
 ## Local `.env`
 
-Copy `.env.example` to `.env` and use real OAuth values from the Atlassian Developer Console. DB storage, migrations, and Home token setup are covered in [INSTALL.md](../INSTALL.md); this section only shows the OAuth app values.
+Copy `.env.example` to `.env` and use real OAuth values from the Atlassian Developer Console. DB storage and migrations are covered in [INSTALL.md](../INSTALL.md); this section only shows the OAuth app values.
 
 ```env
 JIRA_URL=https://your-company.atlassian.net
@@ -114,7 +114,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes require the signed-in user's OAuth session for Jira REST reads and the same user's connected Home token for Home/Townsquare metadata. Connect that token in `Settings -> Connections`; it is stored encrypted as `atlassian_user_api_token` in DB `auth_tokens`.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes use the signed-in user's OAuth session for both Jira REST reads and Home/Townsquare metadata (the fixed `public-read-v1` query set). The user ticks **Enable EPM view** in `Settings -> Connections`; the app requests the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`) at authorize time for that user only, so the app registration must list them. The app stores no personal Atlassian API token; the earlier `atlassian_user_api_token` connections and their encrypted rows were removed by migration.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login?reason=missing_scope`. That path forces a new consent prompt so Atlassian issues a grant with the updated scopes.
 
@@ -151,7 +151,7 @@ Resolve runtime overrides before inspecting credentials: the local runner overri
 
 `GATE-05` applies only to posting Home project updates. Read-only OAuth verification requires no update text, disposable write target, or mutation probe.
 
-These Home/Townsquare-backed API routes are DB/OAuth-ready only after the signed-in user has an active Home token connection:
+These Home/Townsquare-backed API routes read Home with the signed-in user's OAuth grant once that user has enabled the EPM view and the provider confirmed the Home read scopes (the strict profile; a user without the scopes gets a typed `epm_scope_required` 409, a disabled view gets `epm_view_disabled` 409):
 
 ```text
 /api/epm/scope
@@ -164,19 +164,19 @@ These Home/Townsquare-backed API routes are DB/OAuth-ready only after the signed
 /api/epm/projects/<path:project_id>/rollup
 ```
 
-The implemented EPM routes continue to use the explicit user Home token connection until the approved query/client and route/UI cutover is implemented and verified. The successful core-read diagnostics and implementation authorization do not change that runtime contract by themselves. Local JSON-backed legacy runs may still have their own service credential path, but that is not the DB/OAuth EPM read path.
+The implemented EPM routes use the strict `public-read-v1` OAuth client in DB/OAuth mode; its format validator is `scripts/check_home_graphql_oauth.py --profile public-read-v1` (PASS reason `home_graphql_public_read_v1_supported`, which is not an attestation of live access: the product journey is the proof). Local JSON/Basic compatibility runs keep their own service credential path, which is not the DB/OAuth EPM read path. The legacy eight-query gate above is unchanged and still fails.
 
 ### Home/Townsquare Visibility Model
 
-Current implemented DB/OAuth EPM uses user-token authorization. The [accepted public-read design](plans/SUPPORT-home-oauth-public-read-design.md) replaces its Home credential prerequisite once implemented:
+DB/OAuth EPM uses OAuth authorization for Home. The [public-read design](plans/SUPPORT-home-oauth-public-read-design.md) records the contract:
 
 - Require a valid user Atlassian OAuth session before serving the route.
 - Use the user OAuth session for Jira REST reads, rollups, labels, issue search, and user-specific Jira data.
-- Use the current user's connected `atlassian_user_api_token` only for Home goals/projects metadata.
-- Return a structured prerequisite state when that Home token is missing, rather than empty EPM data.
+- Use the same OAuth session, through the strict Home client, only for Home goals/projects metadata.
+- Return a typed state (`epm_view_disabled`, `epm_scope_required`, `home_access_denied`, `home_rate_limited`, `home_read_failed`) when Home cannot be read, rather than empty EPM data.
 - Record Home 3LO capability per field: the live diagnostics verified core reads, while the existing identity selections and restricted Teamwork Graph fallback still prevent an unchanged migration.
 
-The intended internal policy is: each authenticated Atlassian user for the configured site views Home/Townsquare metadata through their own connected Home token, while Jira-backed data remains constrained by that user's Jira OAuth permissions.
+The intended internal policy is: each authenticated Atlassian user for the configured site views Home/Townsquare metadata through their own OAuth grant, while Jira-backed data remains constrained by that user's Jira OAuth permissions.
 
 ## Common Errors
 
@@ -205,7 +205,7 @@ Start again from `/login` in the same browser tab. Do not reuse an old callback 
 
 `route_not_oauth_ready`
 
-The login session is valid, but the requested API route is intentionally guarded because it has no supported OAuth boundary. The ENG dashboard, Jira REST catalog/statistics routes, and DB/OAuth EPM Home-token routes are migrated; do not fall back to process-global Basic credentials for guarded routes.
+The login session is valid, but the requested API route is intentionally guarded because it has no supported OAuth boundary. The ENG dashboard, Jira REST catalog/statistics routes, and DB/OAuth EPM routes read Home through the user's OAuth grant; do not fall back to process-global Basic credentials for guarded routes.
 
 `Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
 

@@ -1,6 +1,6 @@
 # GATE-05: Home Project Write Capability
 
-**Gate status:** Blocked. Checked on 2026-10-27. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
+**Gate status:** Blocked. Checked on 2026-10-28. Waiting for Jira Home/Townsquare API support or confirmed local capability for the project-update mutation.
 
 ## Purpose
 
@@ -15,8 +15,8 @@ Do not implement Home write routes, write buttons, retry UI, or write-route OAut
 | Field | Value |
 | --- | --- |
 | Status | Blocked |
-| Checked on | 2026-10-27 |
-| Last result | Not run: required inputs unavailable; no PASS evidence. Startup sweep on 2026-10-26 found 0 of 4 required inputs in the process environment and no approved disposable target (names checked, no values read). Previous FAIL insufficient_home_write_probe_input remains unresolved. The Catch Up cold load speed work has no dependency on Home writes. Plan-only recheck on 2026-10-27 found 0 of 4 process inputs and no approved write target; no mutation ran. This read-only public-read-v1 plan does not resolve FAIL insufficient_home_write_probe_input. |
+| Checked on | 2026-10-28 |
+| Last result | Not run: required inputs unavailable; no PASS evidence. Startup sweep on 2026-10-26 found 0 of 4 required inputs in the process environment and no approved disposable target (names checked, no values read). Previous FAIL insufficient_home_write_probe_input remains unresolved. The Catch Up cold load speed work has no dependency on Home writes. Plan-only recheck on 2026-10-27 found 0 of 4 process inputs and no approved write target; no mutation ran. This read-only public-read-v1 plan does not resolve FAIL insufficient_home_write_probe_input. Execution on 2026-10-28 removed the stored user API-token connection from the app; this gate's probe uses only its own HOME_WRITE_PROBE_* inputs (0 of 4 present, no approved target), no mutation ran, and FAIL insufficient_home_write_probe_input is unchanged. |
 | Next review | 2026-11-02 (Europe/Berlin) |
 | Blocker | Jira Home/Townsquare project update API capability is not confirmed locally |
 | Dependent work | Home project update route and UI from the deferred DONE-02 write scope |
@@ -130,6 +130,7 @@ Required tests after the gate passes:
 
 ## Last Check Notes
 
+- 2026-10-28: Public-read-v1 execution removed the stored user API-token connection, its routes and encrypted rows; no Home write path exists in the app and the probe never read that store. 0 of 4 required process inputs and no approved write target; no mutation probe ran. Keep blocked with `FAIL insufficient_home_write_probe_input`; next review stays 2026-11-02 (Europe/Berlin).
 - 2026-10-27: Read-only OAuth public-read cutover plan validation; no Home write path or approved write target, and 0 of 4 required process inputs. No mutation probe ran; keep blocked with `FAIL insufficient_home_write_probe_input`. Next review remains 2026-11-02 (Europe/Berlin).
 - 2026-10-13: Shareable view links (issue #194) design sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the design changes only the OAuth login return path and ENG view state, adds no Home/Townsquare route or mutation, and does not depend on this gate. Keep blocked with `FAIL insufficient_home_write_probe_input`; the next review stays 2026-10-19.
 - 2026-09-30: Per-epic refresh (issue #213) execution baseline sweep found none of the four required Home-write probe inputs and no approved disposable Home project. No mutation probe ran; the feature is read-only Jira epic and story refresh under the signed-in user's OAuth context and adds no Home/Townsquare write route or mutation. Keep blocked with `FAIL insufficient_home_write_probe_input`.

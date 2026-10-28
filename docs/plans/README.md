@@ -98,7 +98,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 3. `DONE-02-db-home-user-api-token-bridge.md`
    - Completed user-owned Atlassian API-token connection bridge. Use for audit and prerequisite evidence; do not execute as active work.
-   - Expected output: optional per-user Atlassian API-token connection for future explicit Home/Townsquare writes while Home user 3LO is unsupported.
+   - Expected output: optional per-user Atlassian API-token connection for future explicit Home/Townsquare writes while Home user 3LO is unsupported. Superseded: the connection, its routes and stored tokens were removed by the public-read-v1 execution; Home is read through the user's OAuth grant only.
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
@@ -106,7 +106,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
-   - Current implemented output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. The accepted [public-read cutover](EXEC-home-oauth-public-reads.md) replaces that prerequisite once implemented; do not reopen this DONE plan.
+   - Current implemented output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. Superseded by the [public-read cutover](EXEC-home-oauth-public-reads.md): the token prerequisite and stored tokens are removed and EPM Home reads use the user's OAuth grant; do not reopen this DONE plan.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.

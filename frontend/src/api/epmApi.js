@@ -51,6 +51,21 @@ function normalizeEpmSettingsPayload(draftConfig) {
     };
 }
 
+export const EPM_MAX_RETRY_AFTER_SECONDS = 30;
+
+// Retry-After arrives as whole seconds (header first, typed body second); anything else is no hint.
+export function parseRetryAfterSeconds(headerValue, bodyValue) {
+    const candidates = [headerValue, bodyValue];
+    for (const candidate of candidates) {
+        if (candidate === null || candidate === undefined) continue;
+        const text = String(candidate).trim();
+        if (!/^\d+$/.test(text)) continue;
+        const seconds = Number(text);
+        if (seconds > 0) return Math.min(seconds, EPM_MAX_RETRY_AFTER_SECONDS);
+    }
+    return undefined;
+}
+
 async function epmJson(response, label) {
     const payload = await response.json().catch(() => null);
     if (!response.ok) {
@@ -58,7 +73,9 @@ async function epmJson(response, label) {
         error.status = response.status;
         error.payload = payload;
         error.code = payload?.error || payload?.errorCode || '';
-        error.connectUrl = payload?.connectUrl || '';
+        error.category = error.code;
+        error.loginUrl = typeof payload?.loginUrl === 'string' ? payload.loginUrl : '';
+        error.retryAfterSeconds = parseRetryAfterSeconds(response.headers?.get?.('Retry-After'), payload?.retryAfterSeconds);
         throw error;
     }
     return payload;
@@ -89,15 +106,32 @@ export async function saveEpmConfig(backendUrl, draftConfig) {
     return epmJson(response, 'Failed to save EPM config');
 }
 
+export async function saveEpmPreferences(backendUrl, { viewEnabled }) {
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
+    const response = await trackedFetch('settings_save', `${backendUrl}/api/epm/preferences`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-Requested-With': 'jira-execution-planner',
+            'X-CSRF-Token': csrfToken || ''
+        },
+        body: JSON.stringify({ viewEnabled: viewEnabled === true })
+    }, { featureName: 'settings' });
+    return epmJson(response, 'Failed to save EPM preference');
+}
+
+export const fetchEpmAccess = (backendUrl) =>
+    getEpmJson(`${backendUrl}/api/epm/access`, 'EPM access', { cache: 'no-cache' });
+
 export const fetchEpmScope = (backendUrl) =>
-    getJson(`${backendUrl}/api/epm/scope`, 'EPM scope', { cache: 'no-cache' });
+    getEpmJson(`${backendUrl}/api/epm/scope`, 'EPM scope', { cache: 'no-cache' });
 
 export const fetchEpmGoals = (backendUrl, rootGoalKey = '') => {
     const key = String(rootGoalKey || '').trim();
     const url = key
         ? `${backendUrl}/api/epm/goals?rootGoalKey=${encodeURIComponent(key)}`
         : `${backendUrl}/api/epm/goals`;
-    return getJson(url, 'EPM goals', { cache: 'no-cache' });
+    return getEpmJson(url, 'EPM goals', { cache: 'no-cache' });
 };
 
 const normalizeEpmSubGoalKeysParam = (subGoalKeys) => {

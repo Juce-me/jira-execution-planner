@@ -1,7 +1,7 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const esbuild = require('esbuild');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
@@ -58,7 +58,6 @@ async function installEngBoardDashboardFixture(page, {
         });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example', capacityProject: '', groupQueryTemplateEnabled: false,
             settingsAdminOnly: false, userCanEditSettings: true, boardAllWorkAvailable: true,

@@ -1,5 +1,7 @@
 # Lead Times Modes Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done. Implemented, verified and accepted by the operator on 2026-10-22. Executed on `feature/lead-times-modes` in the layered commits `b39b307c` (backend), `9dd0c6ac` (frontend model, state and UI), `ecc5c4c9` (share links and the regenerated `frontend/dist`) and `0e11579c` (tests, registry and docs); not pushed or merged at the time of this note. The Execution status table and its numbered rulings are the record of what ran and where it diverged (ruling 9: layered commits instead of one per task); the task checkboxes below were not ticked. Kept for audit context only; shipped code, tests and `docs/features/statistics.md` are the source of truth.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

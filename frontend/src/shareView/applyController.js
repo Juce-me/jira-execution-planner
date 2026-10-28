@@ -156,7 +156,7 @@ function readGate(o) {
         onboardingRequired: Boolean(o.onboardingRequired), adminGate: o.adminSettingsGate.status,
         catalog: validated ? ((catalog.availableSprints || []).length ? 'validated' : 'failed') : unrecoverable ? 'failed' : 'pending',
         capsulesPending: Boolean(o.pendingShellAuthResumeRef.current || o.pendingPlanningAuthResumeRef.current),
-        homeTokenReady: !o.savedViewIsEpm || Boolean(o.homeTokenConnectionLoaded),
+        epmHomeReadReady: !o.savedViewIsEpm || Boolean(o.epmHomeReadReady),
     };
 }
 

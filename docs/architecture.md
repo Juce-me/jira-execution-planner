@@ -61,7 +61,10 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
     Scenario and Settings are lazy chunks under `frontend/dist/chunks/`, and a
     `lazy-views-<buildId>.json` manifest supports the one bounded retry of a failed chunk.
   - No Babel runtime.
-  - `frontend/dist/` is committed output; rebuild it from `frontend/src/`.
+  - `frontend/dist/` is gitignored build output, not committed; build it with
+    `npm ci && npm run build`. `backend/frontend_build.py` detects a missing
+    (preflight FAIL) or stale (warning) build. Release zips and the container
+    image ship their own built dist.
 
 ## Core Data Flows
 
@@ -151,7 +154,7 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
   `total`.
 - No new Jira fan-out without strict limits, caching behavior, and timing
   verification.
-- Keep `/frontend/dist/` generated from source; do not hand-edit dist files.
+- Keep `/frontend/dist/` generated from source and uncommitted; do not hand-edit dist files.
 - Preserve DB/OAuth and legacy Basic auth paths unless a task explicitly narrows
   auth scope.
 - Treat Home/Townsquare-backed and Jira-project-backed EPM surfaces as
@@ -163,7 +166,7 @@ state scoped to the selected sprint, team group, view, and EPM project scope.
 
 - Read both the feature module and its caller before editing.
 - For frontend changes, update `frontend/src/` first, then run `npm run build`
-  when dist output is required.
+  when dist output is required. Tests that read dist need a build first.
 - For backend route or startup changes, verify the Flask startup path and
   `/api/test`.
 - For UI changes, verify with browser screenshots and account for CSS

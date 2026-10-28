@@ -1,6 +1,5 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const childProcess = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 const { readOwnerSource } = require('./frontend_source_helpers');
@@ -97,23 +96,6 @@ test('scenario realtime self filtering learns identity from collaboration respon
     assert.equal(scenarioSource.includes('setScenarioOverrides(overrides);') && scenarioSource.indexOf('const openScenarioDraftHistory') < scenarioSource.indexOf('setScenarioOverrides(overrides);'), false, 'History refresh must not apply remote overrides over local edits.');
     assert.ok(dragEffectMatch, 'Drag mouse effect must be keyed by dragged issue, not every drag state update.');
     assert.equal(dragEffectMatch[0].includes('[scenarioDragState,'), false, 'Drag effect dependencies must not include mutable scenarioDragState.');
-});
-
-test('generated frontend dist changes require frontend source changes', () => {
-    const distResult = childProcess.spawnSync('git', ['status', '--short', 'frontend/dist'], {
-        cwd: repoRoot,
-        encoding: 'utf8',
-    });
-    const sourceResult = childProcess.spawnSync('git', ['status', '--short', 'frontend/src'], {
-        cwd: repoRoot,
-        encoding: 'utf8',
-    });
-
-    assert.equal(distResult.status, 0, distResult.stderr);
-    assert.equal(sourceResult.status, 0, sourceResult.stderr);
-    if (distResult.stdout.trim()) {
-        assert.notEqual(sourceResult.stdout.trim(), '', 'frontend/dist changed without matching frontend/src changes');
-    }
 });
 
 test('dirty scenario draft reruns are blocked before loading new scenario data', () => {

@@ -1,5 +1,7 @@
 # Design system Part 2: global hover fix
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Active. Implemented and locally verified 2026-10-13; stays EXEC until acceptance or merge. The final combined Part 2/3 work is committed as `1960753e`. One combined design-system PR with the existing five-commit history and Planning follow-up is authorized 2026-10-14; final full verification has passed; committed-revision and remote publication checks follow the approved transaction. Secondary worktrees remain unauthorized.
 > **Execution:** Superpowers planning and task execution, with repository location/publication overrides.
 

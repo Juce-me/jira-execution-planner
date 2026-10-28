@@ -1,5 +1,5 @@
 const { expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
@@ -192,7 +192,6 @@ function defaultResponse(route, call, json, scenario) {
     if (pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
     if (pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
     if (pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
-    if (pathname === '/api/me/connections/home-token') return json({ connected: false, provider: 'atlassian_user_api_token', status: 'missing', needsReconnect: false });
     if (pathname === '/api/config') {
         return json({
             jiraUrl: 'https://jira.example',

@@ -43,6 +43,7 @@ SECURITY_SAMPLES = {
         ("POST", "/api/me/views"),
         ("POST", "/api/me/onboarding"),
         ("POST", "/api/epm/config"),
+        ("POST", "/api/epm/preferences"),
         ("POST", "/api/groups-preferences"),
         ("POST", "/api/export-excel"),
         ("POST", "/api/issues/priorities"),
@@ -249,11 +250,11 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
 
         install_oauth_session(self.client, account_id='regular-user')
         for path in aliases:
-            with self.subTest(path=path, case='home_token'), self._oauth_mode(), \
+            with self.subTest(path=path, case='epm_view_disabled'), self._oauth_mode(), \
                  patch.object(
                      jira_server,
                      'build_epm_projects_payload',
-                     side_effect=jira_server.AuthError('home_user_token_required', 'Connect token'),
+                     side_effect=jira_server.AuthError('epm_view_disabled', 'Enable the EPM view'),
                  ):
                 csrf_token = self._csrf_token()
                 response = self.client.post(path, json=payload, headers={
@@ -261,7 +262,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
                     'X-CSRF-Token': csrf_token,
                 })
                 self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-                self.assertEqual(response.get_json()['error'], 'home_user_token_required')
+                self.assertEqual(response.get_json()['error'], 'epm_view_disabled')
+                self.assertNotIn('connectUrl', response.get_json())
 
     def test_unsafe_oauth_requests_require_x_requested_with_before_route_code(self):
         install_oauth_session(self.client, account_id="tool-admin-account")

@@ -32,6 +32,8 @@ class EpmIssuesDependencies:
     cache_ttl_seconds: int
     context: object = None
     config_generation: str = ''
+    # Strict Home reads: forced direct authority check returning the context for cache keys.
+    authorize_cache: Callable | None = None
     now: Callable = time.time
     timer: Callable = time.perf_counter
 
@@ -51,12 +53,14 @@ def build_epm_project_issues_payload(home_project_id, tab, sprint, deps: EpmIssu
         return {'project': project, 'issues': [], 'epics': {}, 'metadataOnly': True}, 200, {}
 
     base_jql = deps.build_base_jql()
-    cache_enabled = jira_home_partitioned_process_cache_enabled(deps.context)
-    cache_key = build_jira_home_process_cache_key(
-        deps.context,
-        f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}",
-        deps.config_generation,
-    )
+    key_part = f"{home_project_id}::{tab}::{sprint}::{base_jql}::{json.dumps(linkage, sort_keys=True)}"
+
+    def cache_key_for(context):
+        return build_jira_home_process_cache_key(context, key_part, deps.config_generation)
+
+    key_context = deps.authorize_cache() if deps.authorize_cache else deps.context
+    cache_enabled = jira_home_partitioned_process_cache_enabled(key_context)
+    cache_key = cache_key_for(key_context)
     cached = None
     if cache_enabled:
         with deps.cache_lock:
@@ -77,6 +81,8 @@ def build_epm_project_issues_payload(home_project_id, tab, sprint, deps: EpmIssu
         'metadataOnly': False,
     }
     if cache_enabled:
+        if deps.authorize_cache:
+            cache_key = cache_key_for(deps.authorize_cache())  # rejects admission if authority failed
         with deps.cache_lock:
             deps.cache[cache_key] = {'timestamp': deps.now(), 'data': payload}
     return payload, 200, {'Server-Timing': f'jira-search;dur={round((deps.timer() - started) * 1000, 1)}'}

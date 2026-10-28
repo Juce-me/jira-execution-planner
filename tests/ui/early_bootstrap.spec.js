@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardFixture } = require('./epm_home_token_fixture');
+const { installDashboardFixture } = require('./epm_view_fixture');
 
 // The early startup script (frontend/dist/early-bootstrap.js, built from frontend/src/api/earlyBootstrap.js)
 // starts /api/config and /api/groups-config at HTML parse; the app adopts each response once through the

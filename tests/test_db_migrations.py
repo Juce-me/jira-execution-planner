@@ -157,7 +157,7 @@ class DbMigrationTests(unittest.TestCase):
             columns, indexes = self._auth_connection_schema(database_url)
             self.assertIn('credential_subject', columns)
             self.assertIn('capabilities', columns)
-            self.assertIn('uq_auth_connections_user_api_token_cloud', indexes)
+            self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
 
             command.upgrade(config, 'head')
             self.assertTrue(self._has_auth_tables(database_url))

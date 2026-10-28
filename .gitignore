@@ -19,8 +19,6 @@ venv/
 ENV/
 build/
 dist/
-!frontend/dist/
-!frontend/dist/**
 *.egg-info/
 
 # Claude Code (local settings/skills)

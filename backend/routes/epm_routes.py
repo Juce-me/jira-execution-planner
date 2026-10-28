@@ -1,19 +1,27 @@
 """EPM API route blueprint."""
 
-from flask import Blueprint
+from flask import Blueprint, g
 
-from backend.auth.jira_auth import AuthError
+from backend.auth.db_context import is_db_auth_context
+from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.repository import ConfigStorageError
 from backend.config.view_validation import ViewPayloadValidationError, normalize_epm_settings_payload
 from backend.db.engine import DatabaseConfigurationError
+from backend.epm import access as epm_access
 from backend.epm import issues as epm_issues
+from backend.epm import jira_strict
+from backend.epm.home import HOME_READ_PROFILE_SCOPE_REQUIRED, HomeReadError
 from backend.services.user_view_config import UserViewConfigStorageError
 
-from . import bind_server_globals
+from . import bind_server_globals, get_jira_server
+from .epm_errors import (
+    auth_error_to_response,
+    home_read_error_to_response,
+    jira_read_error_to_response,
+)
 
 
 bp = Blueprint("epm_routes", __name__)
-HOME_USER_TOKEN_CONNECT_URL = '/settings/connections/home-token'
 
 
 @bp.errorhandler(ConfigStorageError)
@@ -24,29 +32,41 @@ def _epm_storage_error_handler(error):
     return _epm_storage_unavailable_response()
 
 
+@bp.errorhandler(AuthError)
+def _epm_auth_error_handler(error):
+    server = get_jira_server()
+    if getattr(server, 'JIRA_AUTH_MODE', '') != AUTH_MODE_ATLASSIAN_OAUTH:
+        raise error  # Basic/JSON keep their current behavior
+    return auth_error_to_response(server, error)
+
+
+@bp.errorhandler(HomeReadError)
+def _epm_home_read_error_handler(error):
+    try:
+        return home_read_error_to_response(get_jira_server(), error, g.get('epm_home_read_auth'))
+    except (ConfigStorageError, DatabaseConfigurationError) as storage_error:
+        logger.error('EPM Home revalidation storage failed errorClass=%s', type(storage_error).__name__)
+        return _epm_storage_unavailable_response()
+
+
+@bp.errorhandler(jira_strict.JiraReadError)
+def _epm_jira_read_error_handler(error):
+    return jira_read_error_to_response(error)
+
+
 @bp.before_request
 def _sync_server_globals():
     bind_server_globals(globals())
 
 
-def _is_home_user_token_required(error):
-    return isinstance(error, AuthError) and error.code == 'home_user_token_required'
-
-
-def _home_user_token_message(error):
-    return str(error) or 'Connect your Atlassian API token to load EPM Home projects.'
-
-
-def _home_user_token_required_payload(error):
-    return {
-        'error': 'home_user_token_required',
-        'message': _home_user_token_message(error),
-        'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
-    }
-
-
-def _home_user_token_required_response(error):
-    return jsonify(_home_user_token_required_payload(error)), 409
+@bp.before_request
+def _memoize_epm_guard_context():
+    # One snapshot per request; creation never requires Home scopes (config and preference
+    # routes must stay reachable). A failure here is re-raised by the handler's own call.
+    try:
+        memoize_epm_guard_context()
+    except (AuthError, ConfigStorageError, DatabaseConfigurationError):
+        pass
 
 
 def _invalid_epm_config_response():
@@ -101,7 +121,8 @@ def _strict_epm_request_payload(*, rekey_custom_projects=False):
 
 
 def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None):
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
+    home_auth = resolve_epm_home_read_auth(auth_context)
     epm_config_snapshot = get_epm_config(context=auth_context)
     deps = epm_issues.EpmIssuesDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
@@ -109,6 +130,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
             sub_goal_keys=sub_goal_keys,
             context=auth_context,
             epm_config_override=epm_config_snapshot,
+            home_auth=home_auth,
         ),
         validate_epm_tab_sprint=validate_epm_tab_sprint,
         build_epm_scope_clause=build_epm_scope_clause,
@@ -116,7 +138,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         add_clause_to_jql=add_clause_to_jql,
         fetch_issues_by_jql=(
             lambda jql, fields_list, context=None:
-            fetch_issues_by_jql(jql, fields_list, context=auth_context)
+            fetch_epm_issues_by_jql(jql, fields_list, context=auth_context)
         ),
         build_epm_fields_list=build_epm_fields_list,
         shape_epm_issue_payload=shape_epm_issue_payload,
@@ -126,6 +148,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
         cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
         context=auth_context,
         config_generation=build_epm_config_generation(epm_config_snapshot),
+        authorize_cache=home_auth.cache_authorizer() if home_auth.strict else None,
     )
     return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
@@ -133,7 +156,7 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
 @bp.route('/api/epm/config', methods=['GET'])
 def get_epm_config_endpoint():
     try:
-        return jsonify(get_epm_config(context=current_request_auth_context()))
+        return jsonify(get_epm_config(context=_cache_policy_context()))
     except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
         logger.error('EPM config read failed errorClass=%s', type(error).__name__)
         return _epm_storage_unavailable_response()
@@ -141,10 +164,17 @@ def get_epm_config_endpoint():
 
 @bp.route('/api/epm/scope', methods=['GET'])
 def get_epm_scope_endpoint():
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
     scope = (get_epm_config(context=auth_context).get('scope') or {})
     try:
-        cloud_id = fetch_home_site_cloud_id(context=auth_context)
+        home_auth = resolve_epm_home_read_auth(auth_context)
+        if home_auth.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            # The site id comes from the validated context; this route needs no Home scope.
+            cloud_id = str(getattr(auth_context, 'cloud_id', '') or '').strip()
+            if not cloud_id:
+                raise HomeReadError('invalid_target')
+        else:
+            cloud_id = fetch_home_site_cloud_id(context=auth_context, home_auth=home_auth)
         error = ''
     except RuntimeError as exc:
         cloud_id = ''
@@ -157,6 +187,24 @@ def get_epm_scope_endpoint():
             'subGoalKeys': normalize_epm_sub_goal_keys(scope.get('subGoalKeys') or scope.get('subGoalKey')),
         },
     })
+
+
+@bp.route('/api/epm/access', methods=['GET'])
+def get_epm_access_endpoint():
+    """Categorized EPM Home access state; every non-auth outcome is a 200 state, never a login loop."""
+    auth_context = _cache_policy_context()
+    home_auth = resolve_epm_home_read_auth(auth_context)
+    root_goal_key = ''
+    config_generation = ''
+    if home_auth.strict and home_auth.profile != HOME_READ_PROFILE_SCOPE_REQUIRED:
+        epm_config = get_epm_config(context=auth_context)
+        root_goal_key = normalize_epm_upper_text((epm_config.get('scope') or {}).get('rootGoalKey'))
+        config_generation = build_epm_config_generation(epm_config)
+    refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
+    return jsonify(epm_access.resolve_epm_access(
+        auth_context, home_auth,
+        root_goal_key=root_goal_key, config_generation=config_generation, refresh=refresh,
+    ))
 
 
 @bp.route('/api/epm/goals', methods=['GET'])
@@ -174,13 +222,6 @@ def get_epm_goals_endpoint():
         goals = []
         error = str(exc)
     except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return jsonify({
-                'goals': [],
-                'error': _home_user_token_message(exc),
-                'errorCode': exc.code,
-                'connectUrl': HOME_USER_TOKEN_CONNECT_URL,
-            })
         if exc.code == 'auth_required':
             payload, status = oauth_auth_required_payload()
             return jsonify(payload), status
@@ -190,24 +231,19 @@ def get_epm_goals_endpoint():
 
 @bp.route('/api/epm/projects', methods=['GET'])
 def get_epm_projects_endpoint():
-    auth_context = current_request_auth_context()
+    auth_context = _cache_policy_context()
     epm_config = get_epm_config(context=auth_context)
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     tab = normalize_epm_text(request.args.get('tab'))
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
     started = time.perf_counter()
-    try:
-        payload = build_epm_projects_payload(
-            epm_config,
-            force_refresh=force_refresh,
-            tab=tab,
-            sub_goal_keys=sub_goal_keys,
-            context=auth_context,
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload = build_epm_projects_payload(
+        epm_config,
+        force_refresh=force_refresh,
+        tab=tab,
+        sub_goal_keys=sub_goal_keys,
+        context=auth_context,
+    )
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -222,12 +258,7 @@ def configure_epm_projects_endpoint():
         return _invalid_epm_config_response()
     force_refresh = str(request.args.get('refresh') or '').strip().lower() in {'1', 'true', 'yes'}
     started = time.perf_counter()
-    try:
-        projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    projects_payload = build_epm_projects_payload(payload, force_refresh=force_refresh)
     total_ms = round((time.perf_counter() - started) * 1000, 1)
     response = jsonify(projects_payload)
     response.headers['Server-Timing'] = f'home-projects;dur={total_ms}, total;dur={total_ms}'
@@ -244,12 +275,7 @@ def get_all_epm_projects_rollup_endpoint():
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    try:
-        payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -261,17 +287,12 @@ def get_epm_project_issues_endpoint(home_project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    try:
-        payload, status, headers = build_epm_project_issues_response(
-            home_project_id,
-            tab,
-            sprint,
-            sub_goal_keys=sub_goal_keys,
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_epm_project_issues_response(
+        home_project_id,
+        tab,
+        sprint,
+        sub_goal_keys=sub_goal_keys,
+    )
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -282,24 +303,36 @@ def get_epm_project_issues_endpoint(home_project_id):
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
-    try:
-        payload, status, headers = build_per_project_rollup(
-            project_id,
-            tab,
-            sprint,
-            build_epm_rollup_dependencies(
-                sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
-                context=current_request_auth_context(),
-            ),
-        )
-    except AuthError as exc:
-        if _is_home_user_token_required(exc):
-            return _home_user_token_required_response(exc)
-        raise
+    payload, status, headers = build_per_project_rollup(
+        project_id,
+        tab,
+        sprint,
+        build_epm_rollup_dependencies(
+            sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
+            context=_cache_policy_context(),
+        ),
+    )
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
     return response, status
+
+
+@bp.route('/api/epm/preferences', methods=['POST'])
+def save_epm_preferences_endpoint():
+    """Owner-private Enable EPM view checkbox; exactly {viewEnabled: boolean}, nothing else is accepted."""
+    payload = request.get_json(silent=True) if request.is_json else None
+    if not isinstance(payload, dict) or set(payload) != {'viewEnabled'} or not isinstance(payload['viewEnabled'], bool):
+        return jsonify({
+            'error': 'invalid_epm_preferences',
+            'message': 'EPM preferences are invalid.',
+        }), 400
+    context = _cache_policy_context()
+    if not config_storage_db_enabled() or not is_db_auth_context(context):
+        return _epm_storage_unavailable_response()
+    result = build_db_config_repository().set_user_epm_view_enabled(context, payload['viewEnabled'])
+    saved = (result.view.get('epm') or {}).get('viewEnabled')
+    return jsonify({'epmViewEnabled': saved is True})
 
 
 @bp.route('/api/epm/config', methods=['POST'])
@@ -310,7 +343,7 @@ def save_epm_config_endpoint():
         return _invalid_epm_config_response()
     try:
         if config_storage_db_enabled():
-            context = current_request_auth_context()
+            context = _cache_policy_context()
             result = build_db_config_repository().save_user_epm_config(
                 context,
                 payload,

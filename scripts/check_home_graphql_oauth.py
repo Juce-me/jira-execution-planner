@@ -60,9 +60,17 @@ def main() -> int:
         "--input",
         help="Path to JSON saved from /api/auth/dev/home-graphql-oauth-probe.",
     )
+    parser.add_argument(
+        "--profile",
+        choices=("legacy", epm_home.PUBLIC_READ_V1_PROFILE),
+        default="legacy",
+        help="legacy: historical eight-operation gate. public-read-v1: bounded seven-operation read contract.",
+    )
     args = parser.parse_args()
 
     probe_url = f"{args.base_url.rstrip('/')}/api/auth/dev/home-graphql-oauth-probe"
+    if args.profile == epm_home.PUBLIC_READ_V1_PROFILE:
+        probe_url += f"?profile={epm_home.PUBLIC_READ_V1_PROFILE}"
     if not args.input:
         print(f"Open after OAuth login: {probe_url}")
         print("Then save the JSON response and rerun with --input /tmp/home-graphql-oauth-probe.json")
@@ -73,7 +81,13 @@ def main() -> int:
     if contains_token_material(payload):
         print("FAIL token_material_exposed")
         return 1
-    decision = classify_probe_payload(payload if isinstance(payload, dict) else {})
+    if args.profile == epm_home.PUBLIC_READ_V1_PROFILE:
+        # Format validator only: row values can be forged, so this is not an attestation.
+        decision = epm_home.classify_home_public_read_v1_probe(payload)
+    elif isinstance(payload, dict) and payload.get("profile") not in (None, "legacy"):
+        decision = {"decision": "fail", "reason": "probe_profile_mismatch"}
+    else:
+        decision = classify_probe_payload(payload if isinstance(payload, dict) else {})
     prefix = "PASS" if decision.get("decision") == "pass" else "FAIL"
     print(f"{prefix} {decision.get('reason', 'home_graphql_probe_failed')}")
     return 0 if prefix == "PASS" else 1

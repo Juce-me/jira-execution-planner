@@ -43,7 +43,7 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 ## 📖 Technical Docs
 
 - Scenario Planner technical rules are included in [Scenario Planner](docs/features/scenario-planner.md)
-- Local install, DB mode, migrations, and Home token setup are covered in [INSTALL.md](INSTALL.md)
+- Local install, DB mode, and migrations are covered in [INSTALL.md](INSTALL.md)
 - Agent work artifact rules are defined in [docs/AGENTS.md](docs/AGENTS.md)
 - Product analytics rules are defined in [docs/README_ANALYTICS.md](docs/README_ANALYTICS.md)
 - Self-hosted data handling is described in the [privacy notice](docs/PRIVACY.md)
@@ -52,12 +52,12 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 - `jira_server.py` - Python Flask backend server
 - `jira-dashboard.html` - Frontend dashboard page
-- `frontend/` - Frontend source (`src/`) and compiled bundle (`dist/`)
+- `frontend/` - Frontend source (`src/`) and generated bundle (`dist/`, gitignored build output)
 - `assets/` - Static assets (icons, images)
 - `docs/features/` - User-facing feature guides for alerts, statistics, and scenario planning
 - `docs/AGENTS.md` - Rules for agent-created work artifacts
 - `.env.example` - Template for environment variables
-- `INSTALL.md` - Local install, PostgreSQL, DB migration, and Home token setup flow
+- `INSTALL.md` - Local install, PostgreSQL, and DB migration flow
 - `.gitignore` - Git ignore file (keeps secrets safe)
 - `requirements.txt` - Python dependencies
 - `AGENTS.md` - Contributor guide and workflow conventions
@@ -77,11 +77,11 @@ For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version i
 6. Start the backend with `.venv/bin/python jira_server.py`.
 7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
 
-Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. Production and release startup paths are unchanged. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
+Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, builds the frontend first, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. Production and release startup paths are unchanged. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
 
 ## 📦 Prebuilt download (no Node required)
 
-If you want the fastest setup with no frontend build step:
+The release zip contains a built `frontend/dist`, so this path needs no Node and no frontend build step:
 1. Download the latest release asset (e.g. `jira-execution-planner-latest.zip`) from GitHub Releases.
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
@@ -149,7 +149,7 @@ cp .env.example .env
 nano .env  # or use any text editor
 ```
 
-DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup, migrations, and Home token connection steps live in [INSTALL.md](INSTALL.md).
+DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup and migrations live in [INSTALL.md](INSTALL.md).
 
 Server-side API-token auth remains a legacy compatibility mode. Do not use legacy Jira/Home Basic credentials for the DB/OAuth EPM path.
 
@@ -180,7 +180,7 @@ The dashboard can run with Atlassian OAuth 2.0 (3LO) for user Jira access instea
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
 4. In `.env`, set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, the Atlassian OAuth client settings, `FLASK_SECRET_KEY`, DB storage settings, token-encryption settings, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` selects the matching Atlassian cloud site after login.
 5. Start the server and open `/login`. The `Sign in with Atlassian` action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, Atlassian redirects through Microsoft automatically before returning to the local callback.
-6. Confirm `/api/auth/status` reports `authenticated: true`, then use `/api/test` to verify Jira REST access. In DB/OAuth mode, EPM Home/Townsquare metadata becomes available after the signed-in user connects a Home token in `Settings -> Connections`.
+6. Confirm `/api/auth/status` reports `authenticated: true`, then use `/api/test` to verify Jira REST access. In DB/OAuth mode, EPM becomes available after the signed-in user ticks **Enable EPM view** in `Settings -> Connections` and the Atlassian sign-in grants the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`).
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
 
@@ -233,14 +233,13 @@ In DB/OAuth mode, administrator settings are shared once per workspace and use a
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.
 
-In DB/OAuth mode, EPM is hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's OAuth session; Home/Townsquare metadata reads use only the connected `atlassian_user_api_token`, represented in DB `auth_connections` and stored encrypted in `auth_tokens`.
+In DB/OAuth mode, EPM is hidden until the signed-in user enables it in `Settings -> Connections` (a private per-user preference), the provider has granted the Home read scopes and Atlassian Home confirms access. Jira REST and Home/Townsquare reads both use the user's OAuth session (Home through the fixed `public-read-v1` query set); the app stores no personal Atlassian API token, and there is no API-token fallback. Basic/JSON compatibility mode keeps its own server-side credentials.
 
 For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configuration rules, see [docs/features/epm-view.md](docs/features/epm-view.md).
 
 ## 🧱 Frontend build (contributors)
 
-The repo commits the compiled frontend output so normal users don’t need Node.
-If you edit the UI, rebuild and commit `frontend/dist`:
+`frontend/dist` is generated build output and is not committed. A source checkout must build it before the server can serve the dashboard; people without Node use the release zip, which ships a built `frontend/dist`. Build after cloning and after every pull or branch switch that touches `frontend/src`:
 
 ```bash
 npm ci
@@ -252,9 +251,9 @@ Optional during development:
 npm run watch
 ```
 
-CI will fail if `frontend/dist` is out of sync. We precompile JSX so production does not transform JSX in the browser.
+Startup preflight (`.venv/bin/python scripts/check_startup_preflight.py`) fails when the build is missing and the server warns when it looks stale (sources newer than the output). To update a branch, run `make sync` (`scripts/sync_main.sh`): it untracks any previously committed `frontend/dist` on the first sync past this change and rebuilds. Set `SYNC_GIT_NAME` and `SYNC_GIT_EMAIL` first (the merge commit uses only that identity); after resolving a reported conflict and `git add`-ing the files, run `make sync ARGS=--continue`. We precompile JSX so production does not transform JSX in the browser.
 
-Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design:
+Run the local verification path before preparing a PR. It runs the CI checks plus the Playwright `tests/ui` suite (about 8 minutes), which has no CI job by design. The UI suite and `npm run test:frontend:unit` read `frontend/dist`, so build first (`npm run build && npx playwright test tests/ui --browser=chromium --workers=4` for the UI suite alone):
 
 ```bash
 make verify
@@ -265,7 +264,7 @@ make verify
 This repo ships container packaging for verification and image build only. It does not include production registry push, release, or deployment automation.
 
 Can prepare now:
-- Build the container from `Dockerfile`, keep `frontend/dist` current, run startup preflight, and expose `/health` as shallow liveness.
+- Build the container from `Dockerfile`, the image builds its own `frontend/dist` in a build stage, run startup preflight, and expose `/health` as shallow liveness.
 - Run CI verification that installs backend/frontend dependencies, runs tests/builds, and tags the image with the commit SHA.
 - Keep runtime env ownership explicit: app secrets, Atlassian OAuth settings, DB URL, token encryption, GA4 toggles, and local defaults remain outside the image.
 - Response compression is done by the app (gzip, `Vary: Accept-Encoding`; see Performance & Caching). An ingress or proxy that also compresses must leave a response that already has a `Content-Encoding` alone.
@@ -340,6 +339,8 @@ For migrations, use `RUN_DB_MIGRATIONS=true` only for a single-instance internal
 
 **Automatic adoption on upgrade (revision `20261023_0020`).** Upgrading to the new head adopts legacy review data by itself, once, so saved Planning review columns are available as soon as the new version serves: no operator step and no chart change. For every workspace with legacy review content and at least one configured Department group, it adopts the legacy columns, values and Sprint views into each group that holds no review row when its schema row is locked. A group that already holds review rows (a user saved after an earlier release, or an earlier manual adoption) is left alone and logged; restore it with `--merge` below. Legacy tables are never written. The step runs inside the upgrade's transaction, takes the same group schema-row lock every app save takes plus a share lock on the legacy tables until the transaction commits, and stops at a whole-run budget of 100,000 inserted rows (a workspace that does not fit is skipped whole and logged). Failure policy: any database error (lock timeout, deadlock, connection loss, missing tables, permission) fails the upgrade with only its SQLSTATE in the output, so nothing is stamped or written and a rerun is clean; a workspace the planner cannot plan (malformed legacy data, no configured group, over budget) is skipped with its id and reason in the log and left for the script. A workspace skipped for having no configured group is stamped with the revision and never retried, so configure its Department group first. The log goes to stderr at WARNING level (`backend/db/alembic.ini` drops INFO): one line per workspace and a summary. Job logs may not persist, so `--list` is the durable record. `REVIEW_ADOPTION_ON_UPGRADE` is read from the process environment only (Alembic does not load `.env`): unset or `true` runs, `false` skips adoption and logs how many workspaces hold legacy data, and any other value fails the upgrade; with it off, adopt by hand with the steps below. `downgrade 20261020_0019` is a no-op, and a later `upgrade head` adopts nothing new for groups that now hold rows; a downgrade below `20261020_0019` drops the group tables and the next upgrade adopts again from the untouched legacy tables. When upgrading from `20261001_0018` or earlier, keep the quiesce rule below for legacy writers: a legacy row an old pod writes after the revision commits is never adopted (check `--list` after the rollout). With `RUN_DB_MIGRATIONS=true` the adoption time counts against start probes, and two replicas migrating at once can make one of them fail once (rerun it). Open browser drafts receive a `schemaConflict` after an adoption.
 
+**Removal of stored personal Atlassian API tokens (revision `20261028_0021`, destructive).** Home reads now use only the signed-in user's OAuth grant, so the upgrade deletes every stored `atlassian_user_api_token` connection together with its encrypted tokens, browser sessions and Jira project access rows, clears the audit references to them, drops the partial unique index for that provider and narrows the provider CHECK. Nothing else changes and there is no setting to skip it. Back up the database first (step 2 of the cutover below already does). After the new version serves, each EPM user ticks Enable EPM view in Settings and signs in again to grant the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`); the Atlassian app registration must list them before anyone can consent. `downgrade 20261023_0020` restores the schema only (index and wider CHECK): deleted connections and tokens are never restored, so older code leaves EPM unavailable until each user re-enters a token in the old UI, and a restore from the backup is the only way to bring the tokens back. Verify with `python -m alembic -c backend/db/alembic.ini current`, which must print `20261028_0021 (head)`.
+
 **Review adoption cutover (#267).** Planning Sprint review columns are now shared per Department group instead of per workspace/Sprint. Migration `20261020_0019` creates empty group tables and does not move data; revision `20261023_0020` (above) adopts automatically, so the steps below are the manual path: environments that turned adoption off, workspaces it skipped, and any `--list` status other than `adopted` or `nothing to adopt`. Run the manual cutover with application writers quiesced, as for migration `20260827_0008`. The image's entrypoint ends in a fixed `exec gunicorn` and ignores arguments, so every one-off job below needs an entrypoint override (a command-only override still starts gunicorn), the same database URL and connection-mode variables the migration job uses, and a database identity with `UPDATE`, `DELETE` and `TRUNCATE` on `workspace_sprint_reviews` and `sprint_review_cells` (the script takes `LOCK ... IN SHARE MODE` on them) and `INSERT` on the new group review tables, plus `UPDATE`, `DELETE` or `TRUNCATE` on those too for the `EXCLUSIVE` table locks the fresh `--apply` takes. Use placeholders for `<id>` and `<digest>`; the script prints counts and column, Sprint and group ids only.
 
 1. Before the cutover, while the old app still serves: every workspace that holds legacy review rows must have a configured Department group. The script refuses a workspace with legacy rows and no group, and the quiesced app cannot create one. The automatic adoption skips such a workspace (logged) and does not retry it.
@@ -361,6 +362,7 @@ Rollback depends on how far the cutover got:
 | Dry run | Nothing written | Fix the input |
 | `--apply` | The single transaction rolls back; legacy rows untouched | Re-run |
 | Abort the release after the upgrade | The old image fails its startup preflight against the new head and cannot downgrade a revision it does not know | Run `python -m alembic -c backend/db/alembic.ini downgrade 20261001_0018` from the new image first, then restart the old image |
+| Roll back `20261028_0021` | The old image knows revisions up to `20261023_0020` and fails its preflight against the new head | Run `python -m alembic -c backend/db/alembic.ini downgrade 20261023_0020` from the new image; the stored personal tokens deleted by the upgrade are not restored (restore the backup if they are needed) |
 | After `--apply`, before the new app serves | Only adopted data exists | Clean redo from the new image: `downgrade 20261001_0018`, then `upgrade head`, which adopts again by itself; re-run the script only for a workspace it skipped |
 | After the new app served and users wrote | `--apply` refuses because group rows exist | Restore with `--merge` (below); a downgrade loses the entries made since |
 | After `--merge --apply` | Legacy data was added to the groups; nothing a user did was overwritten | Restore the pre-run backup (a point-in-time restore loses later writes), or keep the merge, which only adds rows |
@@ -381,7 +383,7 @@ Junk Sprint views: each group is capped at 500 Sprint views and the app has no d
 
 Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
 
-OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads require the user's connected Home token stored encrypted in DB.
+OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner container-build method, branch/tag policy, and when image push may be enabled.
@@ -473,7 +475,7 @@ See the full guide:
 - ✅ The `.env` file is already in `.gitignore`
 - ✅ Sprint cache file (`sprints_cache.json`) is also in `.gitignore`
 - ✅ Always use `.env.example` as a template for others
-- ✅ DB/OAuth EPM stores each user's Home token encrypted in DB `auth_tokens`; shared service credentials are not used as an EPM fallback
+- ✅ DB/OAuth EPM reads Home with the user's OAuth grant only; no personal API token is stored and shared service credentials are not used as an EPM fallback
 - ✅ All API requests are READ-ONLY (no modifications to Jira)
 - ✅ No hardcoded company-specific URLs or IDs in code
 
@@ -566,7 +568,7 @@ jira-dashboard/
 │   │   ├── stats/          # Statistics views and utilities
 │   │   ├── ui/             # Shared UI primitives
 │   │   └── dashboard.jsx   # App shell and remaining legacy wiring
-│   └── dist/               # Compiled JS + CSS output (committed)
+│   └── dist/               # Generated JS + CSS output (gitignored; run npm run build)
 ├── docs/                   # Documentation
 │   ├── plans/              # EXEC/DONE/FUTURE/SUPPORT/GATE plans
 │   ├── features/           # User-facing feature guides

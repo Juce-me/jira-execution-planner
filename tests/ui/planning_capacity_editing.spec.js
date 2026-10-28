@@ -2,7 +2,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
@@ -289,9 +289,6 @@ async function installCapacityFixture(page, options = {}) {
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-capacity' });
         if (url.pathname === '/api/analytics/context') {
             return json(route, { enabled: true, measurementId: 'G-SYNTHETIC' });
-        }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json(route, { connected: false, status: 'missing', needsReconnect: false });
         }
         if (url.pathname === '/api/config') {
             return json(route, {

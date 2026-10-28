@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import time
 from datetime import datetime
 
@@ -11,6 +12,7 @@ from backend.auth.db_browser_sessions import resolve_browser_session
 from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.auth.scope_policy import missing_context_oauth_scopes
+from backend.auth.jira_auth import oauth_scope_set
 from backend.db import engine as db_engine
 from backend.db import models
 
@@ -158,3 +160,69 @@ def resolve_db_request_auth_context(
         if missing_context_oauth_scopes(scope_context, required_scopes):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
         return scope_context
+
+
+def revalidate_db_request_auth_context(
+    captured,
+    *,
+    database_url: str | None = None,
+    required_scopes: str = '',
+) -> RequestAuthContext:
+    """Re-prove a captured DB request context with ONE direct SELECT.
+
+    Reads actor, browser session, connection and workspace status straight from the
+    database, never through `_STATUS_CACHE`, so a disable or revoke made by another
+    process is observed. It needs a real browser session id, so there is no
+    legacy-context fallback, and it does not catch `OperationalError`. Rotation of
+    the token version is allowed and reflected in the returned context; any change
+    of user, connection, workspace, site, cloud or a narrowing of scopes fails closed.
+    """
+    browser_session_id = str(getattr(captured, 'browser_session_id', '') or '').strip()
+    if not browser_session_id or not is_db_auth_context(captured):
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    statement = (
+        select(models.BrowserSession, models.AuthConnection, models.User, models.Workspace)
+        .join(models.AuthConnection, models.AuthConnection.id == models.BrowserSession.auth_connection_id)
+        .join(models.User, models.User.id == models.AuthConnection.user_id)
+        .join(models.Workspace, models.Workspace.id == models.AuthConnection.workspace_id)
+        .where(models.BrowserSession.id == browser_session_id)
+    )
+    with db_engine.session_factory(database_url)() as session:
+        row = session.execute(statement).first()
+        if row is None:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        browser_session, connection, user, workspace = row
+        if (
+            connection.provider != 'atlassian_oauth'
+            or browser_session.user_id != user.id
+            or browser_session.workspace_id != workspace.id
+            or connection.id != captured.auth_connection_id
+            or user.id != captured.user_id
+            or workspace.id != captured.workspace_id
+            or (connection.cloud_id or '') != (captured.cloud_id or '')
+            or (connection.site_url or workspace.jira_site_url or '') != (captured.site_url or '')
+        ):
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        if str(user.status or '') != 'active':
+            raise AuthError('account_disabled', 'Your account is disabled.')
+        if str(connection.status or '') != 'active':
+            raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+        scopes_verified = connection.scope_provenance == 'provider'
+        granted_scopes = tuple(connection.scopes or []) if scopes_verified else ()
+        token_version = str(connection.token_version)
+        account_status = str(user.status or '')
+    current = dataclasses.replace(
+        captured,
+        token_version=token_version,
+        account_status=account_status,
+        granted_scopes=granted_scopes,
+        granted_scopes_verified=scopes_verified,
+    )
+    if captured.granted_scopes_verified and (
+        not scopes_verified
+        or not oauth_scope_set(captured.granted_scopes) <= oauth_scope_set(granted_scopes)
+    ):
+        raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+    if missing_context_oauth_scopes(current, required_scopes):
+        raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
+    return current

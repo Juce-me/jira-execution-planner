@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 test('header has no release update UI or request while search is active', async ({ page }, testInfo) => {
@@ -29,6 +29,9 @@ test('header has no release update UI or request while search is active', async 
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: {
                     version: 2,
                     labelPrefix: 'rnd_project_',
@@ -44,14 +47,8 @@ test('header has no release update UI or request while search is active', async 
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: '2026Q2', state: 'active' }] });

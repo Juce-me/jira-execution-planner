@@ -717,7 +717,7 @@ test('automatic Planning List owns return and keeps its primary/readiness/depend
     await evidence(testInfo, 'planning-list-request-ceilings', observed);
 });
 
-const { installDashboardFixture: installEpmFreshnessFixture, activeHomeTokenConnection } = require('./epm_home_token_fixture');
+const { installDashboardFixture: installEpmFreshnessFixture, enabledEpmOptions } = require('./epm_view_fixture');
 function epmFreshnessRollup(project, remote = false) {
     const rollup = { initiatives:{}, rootEpics:{'SYN-100':{ issue:{key:'SYN-100',summary:remote?'Synthetic remote Epic':'Synthetic held Epic',status:'In Progress',issueType:'Epic'},
         stories:[{key:'SYN-101',summary:remote?'Synthetic remote Story':'Synthetic held Story',status:remote?'Done':'In Progress',issueType:'Story',storyPoints:3,assignee:'Synthetic Owner'},
@@ -726,7 +726,7 @@ function epmFreshnessRollup(project, remote = false) {
 }
 async function setupEpmFreshness(page) {
     const lifecycle=await installLifecycleControl(page);
-    const ctx=await installEpmFreshnessFixture(page,{connection:activeHomeTokenConnection(),allProjectsRollup:project=>epmFreshnessRollup(project)});
+    const ctx=await installEpmFreshnessFixture(page,{...enabledEpmOptions(),allProjectsRollup:project=>epmFreshnessRollup(project)});
     await page.route('**/frontend/dist/dashboard.js',route=>route.fulfill({status:200,contentType:'application/javascript',body:dashboardBundle}));
     await page.addInitScript(()=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify({selectedView:'epm',epmTab:'active',selectedSprint:34625})));
     await page.goto(ctx.appBaseUrl);await expect(page.locator('.epm-project-board-name')).toBeVisible();await settle(page);
@@ -745,7 +745,7 @@ for (const failure of [null,500,409,'null']) test(`automatic EPM ${failure || 's
     await page.route('**/api/epm/projects**',async route=>{
         const url=new URL(route.request().url());requests.push(url);if(url.pathname==='/api/epm/projects'){
             await gate.promise;
-            return route.fulfill({status:typeof failure==='number'?failure:200,contentType:'application/json',body:JSON.stringify(failure==='null'?null:failure===409?{error:'home_user_token_required'}:failure?{error:'upstream_failed'}:{projects:[{id:'home-1',homeProjectId:'home-1',name:'Connected Home Project',displayName:'Connected Home Project',label:'rnd_project_connected',tabBucket:'active',matchState:'home-linked',stateLabel:'On track',homeUrl:'https://home.example/project/home-1',latestUpdateDate:'2026-10-09',latestUpdateSnippet:'Synthetic remote Home metadata'}],cacheHit:false})});
+            return route.fulfill({status:typeof failure==='number'?failure:200,contentType:'application/json',body:JSON.stringify(failure==='null'?null:failure===409?{error:'epm_scope_required'}:failure?{error:'upstream_failed'}:{projects:[{id:'home-1',homeProjectId:'home-1',name:'Connected Home Project',displayName:'Connected Home Project',label:'rnd_project_connected',tabBucket:'active',matchState:'home-linked',stateLabel:'On track',homeUrl:'https://home.example/project/home-1',latestUpdateDate:'2026-10-09',latestUpdateSnippet:'Synthetic remote Home metadata'}],cacheHit:false})});
         }
         return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(epmFreshnessRollup({id:'home-1',name:'Connected Home Project',label:'rnd_project_connected',stateLabel:'On track',homeUrl:'https://home.example/project/home-1',latestUpdateDate:'2026-10-09',latestUpdateSnippet:'Synthetic remote Home metadata'},true))});
     });
@@ -978,7 +978,7 @@ test('Task9 display-only filter Team sort and Initiative grouping changes acquir
 
 
 test('saved EPM Project with failed initial metadata never claims Project unavailable', async ({ page }, testInfo) => {
-    const ctx = await installEpmFreshnessFixture(page, { connection: activeHomeTokenConnection() });
+    const ctx = await installEpmFreshnessFixture(page, { ...enabledEpmOptions() });
     const gate = deferred(); let metadataReads = 0;
     await page.route('**/api/epm/projects**', async route => {
         if (new URL(route.request().url()).pathname !== '/api/epm/projects') return route.fallback();

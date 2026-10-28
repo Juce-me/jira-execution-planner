@@ -28,7 +28,7 @@ test('the machine is pure: it imports nothing and reads no clock, timer, ref, DO
 const FULL_PLAN = { c: { teams: true, facets: true }, d: true };
 const READY_GATE = {
     configSettled: true, groupsLoading: false, groupsFailed: false, onboardingRequired: false,
-    adminGate: 'clear', catalog: 'validated', capsulesPending: false, homeTokenReady: true,
+    adminGate: 'clear', catalog: 'validated', capsulesPending: false, epmHomeReadReady: true,
 };
 
 // Nested groups merge one level deep so a test names only the fields it changes.
@@ -80,7 +80,7 @@ test('nothing is timed or applied before the shared config settles', () => {
 test('a missing readiness input keeps the link waiting', () => {
     for (const blocker of [
         { groupsLoading: true }, { onboardingRequired: true }, { adminGate: 'pending' },
-        { catalog: 'pending' }, { capsulesPending: true }, { homeTokenReady: false },
+        { catalog: 'pending' }, { capsulesPending: true }, { epmHomeReadReady: false },
     ]) {
         const sim = simulate();
         assert.deepEqual(sim.step({ gate: blocker }), [], JSON.stringify(blocker));

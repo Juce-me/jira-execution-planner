@@ -18,7 +18,7 @@ from sqlalchemy.exc import OperationalError
 import jira_server
 from backend.auth.context import RequestAuthContext
 from backend.auth import db_tokens as db_tokens_module
-from backend.auth import home_credentials as home_credentials_module
+from backend.epm import home as epm_home_module
 from backend.auth.db_tokens import store_oauth_callback_tokens
 from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine
@@ -61,12 +61,8 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
         )
         self._forbidden_patches.extend((
             patch.object(
-                home_credentials_module, 'resolve_home_credential',
+                epm_home_module, '_read_metadata_credential',
                 side_effect=AssertionError('forbidden Home credential resolver reached'),
-            ),
-            patch.object(
-                home_credentials_module, '_resolve_service_credential',
-                side_effect=AssertionError('forbidden service credential resolver reached'),
             ),
         ))
         for forbidden_patch in self._forbidden_patches:
@@ -505,7 +501,7 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
             'cleanup_expired_sessions', 'save_session', 'save_session_for_id',
             'refresh_lock', 'refresh_lock_for_id', 'session_data',
             'session_data_for_id', '_session_data_for_id',
-            'resolve_home_credential', '_resolve_service_credential',
+            '_read_metadata_credential',
         )
         for target in (
             catalog_refresh_runtime, workspace_catalog_cache,
@@ -1005,7 +1001,7 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
                         elif mutation == 'account':
                             session.get(models.User, self.context.user_id).external_subject = 'changed-account'
                         elif mutation == 'provider':
-                            session.get(models.AuthConnection, self.context.auth_connection_id).provider = 'atlassian_user_api_token'
+                            session.get(models.AuthConnection, self.context.auth_connection_id).provider = 'jira_basic'
                         elif mutation == 'scopes':
                             session.get(models.AuthConnection, self.context.auth_connection_id).scopes = []
                         elif mutation == 'scope_provenance':

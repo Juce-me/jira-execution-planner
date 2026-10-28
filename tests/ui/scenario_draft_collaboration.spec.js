@@ -220,7 +220,6 @@ async function installDashboard(page, options = {}) {
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/capacity') return json(route, { enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
-        if (url.pathname === '/api/me/connections/home-token') return json(route, { connected: false });
         if (url.pathname === '/api/scenario' && method === 'POST') return json(route, scenarioPayload());
         if (url.pathname === '/api/scenario/drafts' && method === 'GET') {
             const scopeKey = url.searchParams.get('scope_key') || `${selectedSprintId}:grp-default`;

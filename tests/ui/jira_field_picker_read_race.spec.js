@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { appBaseUrl, installDashboardShell } = require('./epm_home_token_fixture');
+const { appBaseUrl, installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const fieldPaths = [

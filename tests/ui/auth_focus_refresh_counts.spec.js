@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardFixture } = require('./epm_home_token_fixture');
+const { installDashboardFixture } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const repoRoot = path.join(__dirname, '..', '..');

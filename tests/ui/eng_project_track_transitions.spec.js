@@ -3,10 +3,10 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -156,9 +156,6 @@ async function installEngProjectTrackFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json(route, { connected: false, provider: 'atlassian_user_api_token', status: 'missing', needsReconnect: false });
-        }
         if (url.pathname === '/api/config') {
             return json(route, {
                 jiraUrl: 'https://jira.example',
@@ -501,7 +498,7 @@ test('Statistics, Scenario, and Settings-open ENG surfaces never call Project Tr
 test('EPM project boards render no interactive Project Track trigger and never call the Project Track API', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: (project) => ({
             projects: [{
                 project,

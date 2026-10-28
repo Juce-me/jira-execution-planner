@@ -11,6 +11,7 @@ export default function SettingsModalContainer({
     cancelFirstRunConfiguration,
     discardGroupDraftChanges,
     discardMineOnGroupsConfigConflict,
+    epmViewPreferenceDirty,
     firstRunConfigurationActive,
     firstRunHasCommittedSection,
     groupConfigValidationErrors,
@@ -47,8 +48,8 @@ export default function SettingsModalContainer({
             headerAction={settingsHeaderAction}
             activeTab={activeSettingsModalTab}
             tabs={settingsModalTabs}
-            isDirty={groupManageTab !== 'connections' && isGroupDraftDirty}
-            unsavedSectionsCount={groupManageTab !== 'connections' ? unsavedSectionsCount : 0}
+            isDirty={(groupManageTab !== 'connections' || epmViewPreferenceDirty === true) && isGroupDraftDirty}
+            unsavedSectionsCount={groupManageTab !== 'connections' || epmViewPreferenceDirty === true ? unsavedSectionsCount : 0}
             onRequestClose={firstRunConfigurationActive ? () => {} : requestCloseGroupManage}
             validationMessages={groupManageTab !== 'connections' ? [...workspaceConfigConflictMessages(workspaceConfigConflict), ...groupConfigConflictMessages(groupsConfigConflict, { isBoardDraftDirty: isGroupBoardDraftDirty, pending: { epm: canEditEpmConfiguration && isEpmConfigDirty, groupVisibility: isGroupVisibilityDraftDirty } }), ...((settingsSaveError || groupDraftError) && SHARED_CONFIGURATION_TAB_IDS.has(groupManageTab) && !workspaceConfigConflict && !groupsConfigConflict ? [settingsSaveError || groupDraftError] : []), ...groupConfigValidationErrors] : []}
             validationActions={groupManageTab !== 'connections' && workspaceConfigConflict && !firstRunHasCommittedSection ? (

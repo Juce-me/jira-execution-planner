@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { activeHomeTokenConnection, expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -100,7 +100,6 @@ async function installBoardFixture(page, {
     board = { columns: BOARD_COLUMNS }, groups = null, epicSpecs = EPIC_SPECS,
     strictBoard = false, requests = null, sourceBundle = false, configDelayMs = 0, configResponseGate = null,
     configStatus = 200, taskResponseGate = null, boardResponseGate = null, strictEpicKeyForRequest = null,
-    homeTokenDelayMs = 0, homeTokenFailureCount = 0, homeTokenConnection = { connected: false },
     groupsResponseGate = null, groupsStatus = 200, groupsSource = 'test', groupPreferences = null,
     groupPreferencesResponseGate = null,
     sprintResponseGate = null, sprintResponder = null, sprints = null, sprintsStatus = 200, requestUrls = null, requestLog = null,
@@ -109,7 +108,7 @@ async function installBoardFixture(page, {
     boardCapability = strictBoard, performanceLoads = null, performanceResponseGate = null,
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
-    userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null,
+    userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null, epmEnabled = false,
 } = {}) {
     let strictBoardRequestCount = 0;
     let acceptedSelectedProjects = selectedProjects;
@@ -132,7 +131,6 @@ async function installBoardFixture(page, {
         source: groupsSource,
     };
     let acceptedGroupPreferences = groupPreferences;
-    let homeTokenRequestCount = 0;
     let configRequestCount = 0;
     let groupsRequestCount = 0;
     let sprintRequestCount = 0;
@@ -178,12 +176,6 @@ async function installBoardFixture(page, {
             if (performanceStatus !== 201) return json({ error: 'performance_unavailable' }, performanceStatus);
             return json({ recorded: true }, 201);
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            homeTokenRequestCount += 1;
-            if (homeTokenDelayMs) await new Promise(resolve => setTimeout(resolve, homeTokenDelayMs));
-            if (homeTokenRequestCount <= homeTokenFailureCount) return route.abort('failed');
-            return json(homeTokenConnection);
-        }
         if (url.pathname === '/api/team-catalog') {
             return json({ catalog: { 'team-alpha': 'Alpha Team' }, meta: { source: 'test' } });
         }
@@ -216,6 +208,7 @@ async function installBoardFixture(page, {
                     teamField: { fieldId: 'customfield_10023', fieldName: 'Team' },
                 },
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
+                ...(epmEnabled ? { epmViewEnabled: true, epmHomeReadAvailable: true } : {}),
                 ...(currentSprintCatalogSource ? { sprintCatalogSource: currentSprintCatalogSource } : {}),
             };
             const responseStatus = typeof configStatus === 'function'
@@ -229,6 +222,7 @@ async function installBoardFixture(page, {
             return responseStatus === 200 ? json(config) : json({ error: 'config_unavailable' }, responseStatus);
         }
         if (url.pathname === '/api/version') return json({ enabled: false });
+        if (url.pathname === '/api/epm/access') return json({ state: 'available', epmHomeReadAvailable: true });
         if (url.pathname === '/api/groups-config') {
             groupsRequestCount += 1;
             const defaultPayload = {
@@ -394,11 +388,11 @@ async function installBoardFixture(page, {
 async function openBoard(page, {
     width = 1280, height = 900, board, groups, epicSpecs, reducedMotion, strictBoard, requests, sourceBundle, configDelayMs,
     configResponseGate, configStatus, taskResponseGate, boardResponseGate, strictEpicKeyForRequest,
-    homeTokenDelayMs, homeTokenFailureCount, homeTokenConnection, groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
+    groupsResponseGate, groupsStatus, groupsSource, groupPreferences, sprints, sprintResponder, requestUrls, requestLog,
     selectedProjects, savedBoardId, projectSaveResponseGate, boardConfigSaveResponseGate,
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
-    userCanEditSettings, settingsAdminOnly, sprintCatalogSource,
+    userCanEditSettings, settingsAdminOnly, sprintCatalogSource, epmEnabled,
     initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
@@ -417,9 +411,6 @@ async function openBoard(page, {
         ...(taskResponseGate === undefined ? {} : { taskResponseGate }),
         ...(boardResponseGate === undefined ? {} : { boardResponseGate }),
         ...(strictEpicKeyForRequest === undefined ? {} : { strictEpicKeyForRequest }),
-        ...(homeTokenDelayMs === undefined ? {} : { homeTokenDelayMs }),
-        ...(homeTokenFailureCount === undefined ? {} : { homeTokenFailureCount }),
-        ...(homeTokenConnection === undefined ? {} : { homeTokenConnection }),
         ...(groupsResponseGate === undefined ? {} : { groupsResponseGate }),
         ...(groupsStatus === undefined ? {} : { groupsStatus }),
         ...(groupsSource === undefined ? {} : { groupsSource }),
@@ -440,6 +431,7 @@ async function openBoard(page, {
         ...(userCanEditSettings === undefined ? {} : { userCanEditSettings }),
         ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
         ...(sprintCatalogSource === undefined ? {} : { sprintCatalogSource }),
+        ...(epmEnabled === undefined ? {} : { epmEnabled }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -2814,6 +2806,19 @@ test('selector scheduling: incrementally delivered retired frames cannot publish
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(ordinaryCountAtSelection);
 });
 
+// A non-automatic Sprint refresh is the one OAuth-mode read that reports an unreachable backend (the Home token status
+// read that used to do it at startup is gone), so the outage the Retry connection specs need starts from one aborted refresh.
+async function triggerConnectionOutage(page) {
+    let aborted = false;
+    await page.route('**/api/sprints**', route => {
+        if (aborted) return route.fallback();
+        aborted = true;
+        return route.abort('failed');
+    });
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+}
+
 test('selector scheduling: Retry connection probes config once and hard reloads instead of rereading in place', async ({ page }) => {
     const requests = [];
     let documents = 0;
@@ -2824,10 +2829,8 @@ test('selector scheduling: Retry connection probes config once and hard reloads 
         requests,
         sourceBundle: true,
         strictBoard: true,
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
     });
-    await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+    await triggerConnectionOutage(page);
     await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
@@ -2866,15 +2869,13 @@ test('selector scheduling: Retry waits for an in-flight Department save before r
             activeGroupId: 'grp-default',
         },
         groupsResponseGate: ({ requestIndex }) => requestIndex === 2 ? groupSaveGate : null,
-        homeTokenDelayMs: 1500,
-        homeTokenFailureCount: 1,
     });
     const groupSaves = () => requestLog.filter(entry => (
         entry.method === 'POST' && new URL(entry.url).pathname === '/api/groups-config'
     ));
 
     try {
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await triggerConnectionOutage(page);
         await page.getByRole('button', { name: 'Manage team groups', exact: true }).click();
         const dialog = page.getByRole('dialog').first();
         await dialog.getByRole('tab', { name: 'Boards', exact: true }).click();
@@ -2912,10 +2913,8 @@ for (const probeFailure of [
             sourceBundle: true,
             strictBoard: true,
             configStatus: ({ requestIndex }) => requestIndex === 2 ? probeFailure.status : 200,
-            homeTokenDelayMs: 1500,
-            homeTokenFailureCount: 1,
         });
-        await expect(page.getByRole('button', { name: 'Retry connection', exact: true })).toBeVisible();
+        await triggerConnectionOutage(page);
         await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
@@ -4303,7 +4302,7 @@ test('focusing the search field never moves the title block or the rows below th
 });
 
 test('focusing the search field never covers the ENG/EPM view switch or the title text', async ({ page }) => {
-    await openBoard(page, { width: 1280, height: 900, homeTokenConnection: activeHomeTokenConnection() });
+    await openBoard(page, { width: 1280, height: 900, epmEnabled: true });
     const frame = () => page.evaluate(() => {
         // Firefox lays out in 1/60px units, so equal edges can differ in the fifth decimal.
         const tenth = (value) => Math.round(value * 10) / 10;

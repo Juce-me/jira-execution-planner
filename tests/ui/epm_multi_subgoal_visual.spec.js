@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = '/tmp/epm-multi-subgoal-qa';
@@ -92,6 +92,9 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: {
                     version: 2,
                     labelPrefix: 'rnd_project_',
@@ -104,14 +107,8 @@ test('EPM multi sub-goal visual smoke', async ({ page }) => {
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: 'Sprint 42', state: 'active' }] });
@@ -178,6 +175,9 @@ test('EPM sub-goal filter resolves saved sibling names before narrowing', async 
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: {
                     version: 2,
                     labelPrefix: 'rnd_project_',
@@ -190,14 +190,8 @@ test('EPM sub-goal filter resolves saved sibling names before narrowing', async 
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/sprints') {
             return json({ sprints: [{ id: 42, name: 'Sprint 42', state: 'active' }] });
@@ -268,6 +262,9 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: {
                     version: 2,
                     labelPrefix: 'rnd_project_',
@@ -280,14 +277,8 @@ test('EPM control dropdowns size to short labels and long options', async ({ pag
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/sprints') {
             return json({
@@ -407,6 +398,9 @@ test('EPM compact sticky controls show project picker without settings or state 
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
+                authMode: 'atlassian_oauth',
+                epmViewEnabled: true,
+                epmHomeReadAvailable: true,
                 epm: {
                     version: 2,
                     labelPrefix: 'rnd_project_',
@@ -419,14 +413,8 @@ test('EPM compact sticky controls show project picker without settings or state 
         if (url.pathname === '/api/auth/refresh') {
             return route.fulfill({ status: 204, body: '' });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json({ state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/sprints') {
             return json({

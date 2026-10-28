@@ -115,26 +115,6 @@ class TestEpmScopeApi(unittest.TestCase):
         )
 
     @patch('jira_server.fetch_epm_goal_catalog')
-    def test_goals_endpoint_returns_home_token_prerequisite(self, mock_catalog):
-        mock_catalog.side_effect = AuthError(
-            'home_user_token_required',
-            'Connect your Atlassian API token to load EPM Home projects.',
-        )
-
-        response = self.client.get('/api/epm/goals')
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(
-            response.get_json(),
-            {
-                'goals': [],
-                'error': 'Connect your Atlassian API token to load EPM Home projects.',
-                'errorCode': 'home_user_token_required',
-                'connectUrl': '/settings/connections/home-token',
-            },
-        )
-
-    @patch('jira_server.fetch_epm_goal_catalog')
     def test_goals_endpoint_returns_oauth_auth_required(self, mock_catalog):
         mock_catalog.side_effect = AuthError(
             'auth_required',

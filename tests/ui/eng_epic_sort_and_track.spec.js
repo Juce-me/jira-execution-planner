@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const screenshotDir = path.join(__dirname, '..', '..', 'test-results', 'eng-epic-sort-and-track-qa');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -86,7 +86,6 @@ async function installTrackFixture(page, grouped = false) {
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',

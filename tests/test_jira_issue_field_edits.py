@@ -841,8 +841,7 @@ class CapturedOAuthFieldEditTests(unittest.TestCase):
              patch.object(jira_server, 'db_oauth_session_data_for_auth_context', return_value=session_data), \
              patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local token store forbidden')), \
              patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token store forbidden')), \
-             patch('backend.auth.home_credentials.resolve_home_credential', side_effect=AssertionError('Home credentials forbidden')), \
-             patch('backend.auth.home_credentials._active_service_token', side_effect=AssertionError('service token forbidden')), \
+             patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('Home credentials forbidden')), \
              patch.object(jira_server.HTTP_SESSION, 'request', side_effect=responses) as transport, \
              patch.object(jira_server, 'jira_request', wraps=jira_server.jira_request) as wrapper:
             result = update_issue_field('DEMO-1', {

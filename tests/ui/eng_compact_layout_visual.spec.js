@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { collectStickySnapshots, snapshotStickyStack } = require('./eng_sticky_stack_helpers');
 
 const screenshotDir = 'test-results/eng-compact-layout-qa';
@@ -204,7 +204,6 @@ async function installEngCompactFixture(page, options = {}) {
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',

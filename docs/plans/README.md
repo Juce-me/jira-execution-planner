@@ -8,16 +8,19 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - `EXEC-*`: implementation-ready execution plans. Run these in numeric order unless a plan says it is gated or explicitly independent of the previous `EXEC-*` plan.
 - `DONE-*`: completed and verified execution plans. Keep these for audit/history only; do not execute them as active plans.
-- `GATE-*`: blocked external capability gates. Check these at session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, then update `Checked on` and `Last result`.
+- `GATE-*`: blocked external capability gates. Check these at session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, then update `Checked on` and `Last result` only when the result changed or `Next review` has passed.
 - `SUPPORT-*`: review, handoff, or operator support documents. Do not execute them as implementation plans.
 - `FUTURE-*`: deferred scope. Do not pull these into the current implementation unless the scope is explicitly reopened.
 - Do not create new date-only docs in `docs/plans/`. Use one of the prefixes above so execution state is visible from the filename.
+- Index entries are one line each (`- [Title](PREFIX-name.md): one-sentence scope`); plan status lives only in the plan's top `> **Status:**`. The file merges with `merge=union` and each plan link must appear exactly once (`tests/test_agents_md_learnings.py`).
 
 ## Dashboard data freshness
 
 - [Data freshness implementation #251](EXEC-dashboard-data-freshness-251.md): Tasks 0–9 implemented; final publication verification in progress (2026-10-13). Persisted return retains loaded content and strict Board identity while waiting for catalog authority: 24/24 synthetic restoration cases pass. Full Node passes 2,475/2,475; configured Python 2,102 passed/29 skipped; endpoint/security 82/82; build and exact structure budgets pass with 104 existing extraction warnings. Full Chromium passes 1,510 cases/8 established skips/0 failures (1,518 total); both approved harness fixes are integrated. Headed Firefox and WebKit hover/glyph checks each pass 4/4; lifecycle matrix passes 240/240; all 17 synthetic cold/manual request multisets and cold byte totals match baseline. Main `19b331a5` is integrated. The user chose to retain the ten-commit history and approved metadata-only sanitization, both harness-map amendments and two synthetic PR screenshot assets. Metadata preservation was independently verified; the original history has a local backup. CLI-only GitHub publication, exact final-head verification and online CI remain in progress. Real OS lifecycle/live upstream evidence remains unverified, and the approved default-profile PostgreSQL exception and keyboard/hidden-tooltip Deferred dispositions remain recorded. See the [design](SUPPORT-dashboard-data-freshness-design-251.md) and [research](SUPPORT-data-freshness-research-251.md).
 
 ## Current Planning Work
+
+- [Home OAuth public reads](DONE-home-oauth-public-reads.md): Home reads through the signed-in user's OAuth grant only; the stored personal API-token connection was removed. The [design/DoD](SUPPORT-home-oauth-public-read-design.md) uses a self-controlled private Enable EPM view checkbox, EPM-only Home scopes and a bounded Home-access signal; no-access Goals/Projects navigation stays hidden. It preserves non-empty Goals -> Home projects -> exact-label Jira entities and documents rollback without a credential switch. Validation against main `e99b7e2a` records F-01–F-39 dispositions; historical 141/190 baseline counts are not current-main test evidence. GATE-05 remains write-only.
 
 - [Alerts pinned workflow #209](EXEC-alerts-pinned-workflow-209.md): implemented locally on `feature/209-alerts-pinned-workflow` (issue #209), awaiting publication and merge (kept `EXEC-`, not `DONE-`). Follow-up 2 was merged with the dismiss-ring and Epic-reveal fixes (`90bf6ad8`); the full gates at the merged head are being re-run. Verified before that merge (after follow-up 2): node 3038 pass, Python 2413 OK/50 skipped, design-system 60, Chromium `tests/ui` 1909 passed/12 skipped/0 failed, 82 pin specs; Tasks 5 and 6 each took one review fix round; the final whole-branch review found no Critical issues and its fixes are in. Clicking an ENG Catch Up alert pins it under the sticky header with a back-to-alerts button; the pinned `×` dismisses it and returns to the alert block, or fires confetti and scrolls to the top when the block is gone. Design: [revision 2](../agents/features/2026-10-24-planned-alerts-pinned-workflow-209-design.md), validated by three independent reviews. Follow-up 1 (operator review): the pin carries its category tone and icon. Follow-up 2: the pin is a rounded bordered card aligned with the filter bar, its title goes to the alert's Story or Epic (replacing follow-up 1's scroll to the alert row), and its tone labels read at 4.5:1. Frontend only; no endpoint, migration or analytics event.
 Publication update (2026-10-14): the operator approved one combined design-system PR with the existing five-commit history and 108 audited raw paths; fresh full verification passes (Chromium 1,600/eight skipped, Python 2,102/29 skipped, frontend unit 2,538); the committed-revision and remote publication gates are tracked in Part 3. The original three-PR delivery is superseded for this publication only.
@@ -39,7 +42,8 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 ## Dashboard decomposition
 
-- [App decomposition](EXEC-dashboard-app-decomposition.md): in progress (2026-10-08): Task 0 safety nets/tooling and all twelve positive browser baselines passed; hover isolation was deliberately red at Task 0 and now passes in Task 3. Operator approved preserving the original group-switch assignee reset. Task 0 committed at `7e18428c` with clean review/rebuild; Task 1 state/seam extraction committed at `13075f93` with full gates/review and clean rebuild; Task 2 data extraction committed at `3ccea324` with clean review/rebuild; Task 3 committed at `d754f1cb` with seven DOM pairs, eight screenshot pairs, positive hover isolation, full gates/review and clean rebuild; Task 4 committed at `2c7e4bb3` with full gates/review and clean rebuild; Task 5 committed at `a29d657f` with full gates/review and clean rebuild; Task 6 committed at `46aa831a` with full gates/review (2,057 Node, 2,128 Python, twelve smoke cases and 446 header cases/four skipped) and clean rebuild; Task 7 committed at `e745f601` with full gates/review and clean rebuild; Task 8 committed at `71fd5de5` with full gates/review (2,076 Node, 2,128 Python, 22 required browser cases and 1,310 full UI cases/eight skipped) and clean rebuild; Task 8 post-review corrections through `055d8bbf` are recorded in the plan; Task 9 local close-out verification passed (2,083 Node, 2,128 Python/29 skipped, 1,312 Chromium/eight skipped, 25 explicit browser probes); push/PR explicitly authorized on 2026-10-08; the operator-approved diagnostic conservation procedure and two narrow test corrections are recorded in the plan. Implementation-ready after the [2026-10-08 revision and three independent re-reviews](EXEC-dashboard-app-decomposition.md#implementation-readiness-review-2026-10-08). Task 0 must synchronize the base and pass baseline/tooling gates before extraction. Moves Statistics, composite Alerts derivation/filtering and Capacity state/lifecycle out of `App()` using the #220 container-plus-seam pattern, turns closure renderers into keyed components, hoists the verified shared scope, and lazy-loads Stats, Scenario and Settings with mounted-build retry manifests. This ends direct `file://` open of `jira-dashboard.html` (OAuth-only direction). One PR, separate authorized commits; final publication authorization recorded in the plan. Group bootstrap, Sprint catalog and task loading are out of scope.
+- [Conflict-resistant repository and dashboard architecture](DONE-dashboard-conflict-resistant-architecture.md): Track A removes the shared files that cause most merge conflicts (committed `frontend/dist`, exact budget counts, append-style docs, sync command); Track B reshapes `dashboard.jsx` so a feature edit stays local (handles, then group slices after a spike).
+- [App decomposition](DONE-dashboard-app-decomposition.md): implemented and merged in [PR #254](https://github.com/Juce-me/jira-execution-planner/pull/254) (2026-10-08); kept for audit. Moved Statistics, composite Alerts derivation/filtering and Capacity state/lifecycle out of `App()` using the #220 container-plus-seam pattern, turned closure renderers into keyed components, hoisted the verified shared scope, and lazy-loaded Stats, Scenario and Settings with mounted-build retry manifests. Ended direct `file://` open of `jira-dashboard.html` (OAuth-only direction). Task commits, verification counts and the review resolution map are in the plan header.
 - [Scenario Planner and Settings state extraction](DONE-dashboard-scenario-settings-state-extraction.md): implemented and merged (issue #220; PR-1 #219, PR0 #227, Scenario slices #228 to #232, Settings slices #233 to #238, 2026-10-06). `frontend/src/dashboard.jsx` went from 18,203 to 10,855 lines with Scenario and Settings state, effects and tab bodies in feature-owned hooks and containers; the only behavior change is the fail-closed Settings edit grant (#237). The per-rung records are historical; the Scenario history/save/rollback rebuild remains deferred (issue #230).
 
 ## Current Stats Work
@@ -94,7 +98,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 3. `DONE-02-db-home-user-api-token-bridge.md`
    - Completed user-owned Atlassian API-token connection bridge. Use for audit and prerequisite evidence; do not execute as active work.
-   - Expected output: optional per-user Atlassian API-token connection for future explicit Home/Townsquare writes while Home user 3LO is unsupported.
+   - Expected output: optional per-user Atlassian API-token connection for future explicit Home/Townsquare writes while Home user 3LO is unsupported. Superseded: the connection, its routes and stored tokens were removed by the public-read-v1 execution; Home is read through the user's OAuth grant only.
 
 4. `DONE-03-db-user-configuration.md`
    - Completed DB user-configuration plan. Use for audit and prerequisite evidence; do not execute as active work.
@@ -102,11 +106,11 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 5. `DONE-04-db-user-home-epm-read-token.md`
    - Completed per-user Home token requirement for DB/OAuth EPM reads. Use for audit and prerequisite evidence; do not execute as active work.
-   - Output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed.
+   - Current implemented output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. Superseded by the [public-read cutover](DONE-home-oauth-public-reads.md): the token prerequisite and stored tokens are removed and EPM Home reads use the user's OAuth grant; do not reopen this DONE plan.
 
 6. `GATE-05-home-write-capability.md`
    - Blocked external capability gate for Jira Home/Townsquare project update writes.
-   - Expected output while blocked: checked date and status only. If it passes, create or execute a separate Home write implementation plan.
+   - Expected output while blocked: checked date and status only. If it passes, create or execute a separate Home write implementation plan. It does not block the accepted [read-only implementation](DONE-home-oauth-public-reads.md).
 
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
@@ -677,12 +681,12 @@ Use this section to avoid treating missing historical artifacts as current work:
 ## Expectations
 
 - Before executing any `EXEC-*` plan, run the preflight commands named in that plan.
-- At session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, check every `GATE-*` doc and update `Checked on` plus `Last result`.
+- At session startup for relevant auth, DB, Home/Townsquare, EPM, or plan work, check every `GATE-*` doc; update `Checked on` plus `Last result` only when the result changed or `Next review` has passed.
 - Keep Home/Townsquare user 3LO blocked unless `scripts/check_home_graphql_oauth.py` records a real `PASS home_graphql_3lo_supported`.
 - Before the `DONE-04` commits, workspace Home/Townsquare reads were service-integration-backed while the Home 3LO gate failed.
 - `DONE-04` supersedes that earlier service-backed EPM read assumption for DB/OAuth mode: EPM Home reads use the current user's connected `atlassian_user_api_token`, and that token is never a shared service credential.
 - Commit each completed task with the commit message specified in the plan.
-- Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed, verified, and accepted or merged, then add a top status note with the execution commit or PR.
+- Rename an `EXEC-*` plan to `DONE-*` only after implementation is completed and verified, in the commit that completes the work and before the push or PR (merge is not required first; a plan executed across several PRs keeps `EXEC-*` until the PR that completes it), then add a top status note with the execution branch, commit or PR.
 
 ## Repo Hygiene
 

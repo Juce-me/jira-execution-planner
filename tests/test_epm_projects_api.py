@@ -187,27 +187,6 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertIn('total;dur=', server_timing)
 
     @patch('jira_server.get_epm_config')
-    @patch('jira_server.fetch_epm_home_projects', create=True)
-    def test_projects_endpoint_returns_home_token_prerequisite(self, mock_fetch_projects, mock_get_epm_config):
-        mock_fetch_projects.side_effect = AuthError(
-            'home_user_token_required',
-            'Connect your Atlassian API token to load EPM Home projects.',
-        )
-        mock_get_epm_config.return_value = self._mixed_config()
-
-        response = self.client.get('/api/epm/projects')
-
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(
-            response.get_json(),
-            {
-                'error': 'home_user_token_required',
-                'message': 'Connect your Atlassian API token to load EPM Home projects.',
-                'connectUrl': '/settings/connections/home-token',
-            },
-        )
-
-    @patch('jira_server.get_epm_config')
     @patch('jira_server.utc_now_iso')
     @patch('jira_server.fetch_epm_home_projects', create=True)
     def test_projects_endpoint_can_return_active_lifecycle_subset(self, mock_fetch_projects, mock_utc_now_iso, mock_get_epm_config):

@@ -153,7 +153,8 @@ class SprintReviewRouteTests(ReviewFixture, unittest.TestCase):
             self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_unavailable'}))
 
     def test_jira_search_only_inside_authorization_and_no_credential_helpers(self):
-        from backend.auth import home_credentials, token_crypto
+        from backend.auth import token_crypto
+        from backend.epm import home as epm_home
         install_oauth_session(self.client)
         inside = []
         real_authorize = review.authorize_issues
@@ -174,7 +175,7 @@ class SprintReviewRouteTests(ReviewFixture, unittest.TestCase):
                  patch.object(jira_server, 'current_jira_search', side_effect=search) as jira_search, \
                  patch.object(jira_server, 'jira_session_data', side_effect=AssertionError('Basic credentials forbidden')), \
                  patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local token store forbidden')), \
-                 patch.object(home_credentials, 'resolve_home_credential', side_effect=AssertionError('Home/service credential forbidden')), \
+                 patch.object(epm_home, '_read_metadata_credential', side_effect=AssertionError('Home/service credential forbidden')), \
                  patch.object(token_crypto, 'decrypt_token', side_effect=AssertionError('token decryption forbidden')):
                 self.assertEqual(self.client.get(self.path, query_string={'groupId': 'group-x'}).status_code, 200)
                 self.assertEqual(jira_search.call_count, 0)

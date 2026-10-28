@@ -835,11 +835,23 @@ test('auth API module owns current-user connection endpoint construction', () =>
     const dashboardSource = readSource(path.join(frontendSrcPath, 'dashboard.jsx'));
 
     assert.ok(authApiSource.includes("from './http.js'"), 'Expected auth API module to use shared HTTP helpers');
-    assert.ok(authApiSource.includes('/api/me/connections/home-token'), 'Expected Home token URL construction in authApi.js');
     assert.ok(authApiSource.includes('/api/auth/csrf'), 'Expected CSRF token URL construction in authApi.js');
-    assert.ok(connectionsSettingsSource.includes("from '../api/authApi.js'"), 'Expected Connections settings to import auth API wrappers');
+    assert.equal(connectionsSettingsSource.includes('authApi.js'), false, 'Connections settings reads no auth API: Home is read only through OAuth');
     assert.ok(dashboardSource.includes("from './settings/UserConnectionsSettings.jsx'"), 'Expected dashboard to import Connections settings');
     assert.ok(!dashboardSource.includes('/api/me/connections/home-token'), 'dashboard.jsx must not own Home token endpoint literals');
+});
+
+test('the user-owned Home API-token connection is gone from every frontend source file', () => {
+    const files = [];
+    const walk = (dir) => fs.readdirSync(dir, { withFileTypes: true }).forEach((entry) => {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (/\.(jsx?|css|html)$/.test(entry.name)) files.push(full);
+    });
+    walk(frontendSrcPath);
+    assert.ok(files.length > 50, 'the walk must see the frontend sources');
+    const removed = /connections\/home-token|home_user_token_required|connectUrl|HomeTokenConnection|isActiveHomeTokenConnection|Atlassian API token|Jira Home write access|home-token-/;
+    for (const file of files) assert.doesNotMatch(readSource(file), removed, path.relative(frontendSrcPath, file));
 });
 
 test('ENG API wrappers preserve task, backlog, dependency, and alert request details', async () => {
@@ -1547,58 +1559,32 @@ test('Team catalog reads use only contract query parameters and preserve signals
     });
 });
 
-test('auth API wrappers preserve Home token request details and CSRF use', async () => {
+test('auth API wrappers preserve status, refresh and CSRF request details', async () => {
     const { json, getJson, postJson } = loadHttpHelpers();
     const authApi = loadApiModule('authApi.js', [
-        'connectHomeTokenConnection',
-        'deleteHomeTokenConnection',
         'fetchAuthStatus',
-        'fetchHomeTokenConnection',
+        'fetchCsrfToken',
         'refreshAuthSession',
     ], { json, getJson, postJson });
+    assert.equal(Object.keys(authApi).sort().join(','), 'fetchAuthStatus,fetchCsrfToken,refreshAuthSession');
 
     await withMockFetch(async (calls) => {
         await authApi.fetchAuthStatus('http://backend');
-        await authApi.fetchHomeTokenConnection('http://backend');
         await authApi.refreshAuthSession('http://backend');
-        await authApi.connectHomeTokenConnection('http://backend', {
-            email: 'user@example.com',
-            apiToken: 'plain-user-token',
-        });
-        await authApi.deleteHomeTokenConnection('http://backend');
+        await authApi.fetchCsrfToken('http://backend');
 
         assert.equal(calls[0].url, 'http://backend/api/auth/status');
         assert.equal(calls[0].options.cache, 'no-cache');
 
-        assert.equal(calls[1].url, 'http://backend/api/me/connections/home-token');
-        assert.equal(calls[1].options.cache, 'no-cache');
+        assert.equal(calls[1].url, 'http://backend/api/auth/refresh');
+        assert.equal(calls[1].options.method, 'POST');
+        assert.equal(calls[1].options.credentials, 'same-origin');
+        assert.equal(new Headers(calls[1].options.headers).get('X-Requested-With'), 'jira-execution-planner');
 
-        assert.equal(calls[2].url, 'http://backend/api/auth/refresh');
-        assert.equal(calls[2].options.method, 'POST');
-        assert.equal(calls[2].options.credentials, 'same-origin');
-        assert.equal(new Headers(calls[2].options.headers).get('X-Requested-With'), 'jira-execution-planner');
-
-        assert.equal(calls[3].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[4].url, 'http://backend/api/me/connections/home-token');
-        assert.equal(calls[4].options.method, 'POST');
-        assert.equal(calls[4].options.body, JSON.stringify({
-            email: 'user@example.com',
-            apiToken: 'plain-user-token',
-        }));
-        assert.equal(new Headers(calls[4].options.headers).get('X-CSRF-Token'), 'csrf-token-3');
-        assertJsonHeader(calls[4].options);
-
-        assert.equal(calls[5].url, 'http://backend/api/auth/csrf');
-        assert.equal(calls[6].url, 'http://backend/api/me/connections/home-token');
-        assert.equal(calls[6].options.method, 'DELETE');
-        assert.equal(new Headers(calls[6].options.headers).get('X-CSRF-Token'), 'csrf-token-5');
-        assertJsonHeader(calls[6].options);
-    }, (url, _options, index) => {
-        if (String(url).endsWith('/api/auth/csrf')) {
-            return jsonResponse({ csrfToken: `csrf-token-${index}` });
-        }
-        return jsonResponse({ ok: true });
-    });
+        assert.equal(calls[2].url, 'http://backend/api/auth/csrf');
+        assert.equal(calls[2].options.cache, 'no-cache');
+        assert.equal(calls.length, 3);
+    }, () => jsonResponse({ csrfToken: 'csrf-token' }));
 });
 
 test('Scenario API module owns draft, realtime, and run endpoint construction', () => {
@@ -2268,7 +2254,7 @@ test('dashboard delegates return events to the freshness hook and does not impor
     assert.ok(listenerSource.includes("listen(win, AUTH_LONG_ABSENCE_EVENT"), 'Replacement must register the actual return listener');
     assert.ok(!dashboardSource.includes('AUTH_LONG_ABSENCE_EVENT'), 'App must not register a competing return scheduler');
     assert.ok(!dashboardSource.includes('longAbsenceRefreshRef'), 'Legacy refresh ref must be removed');
-    assert.ok(dashboardSource.indexOf('const freshness = useDashboardFreshness(') > -1 && dashboardSource.indexOf('const freshness = useDashboardFreshness(') < dashboardSource.indexOf('} = useStatsState('), 'Freshness hook must be installed before Stats hooks');
+    assert.ok(dashboardSource.indexOf('const freshness = useDashboardFreshness(') > -1 && dashboardSource.indexOf('const freshness = useDashboardFreshness(') < dashboardSource.indexOf('const stats = useStatsState('), 'Freshness hook must be installed before Stats hooks');
     assert.ok(dashboardSource.includes("if (operator) freshness.supersedeManual({ scope: 'all' })"), 'Explicit operator refresh must supersede automatic work');
     assert.ok(!dashboardSource.includes('authFocusRefresh'), 'dashboard.jsx must not import the self-installing auth focus refresh shell');
 });

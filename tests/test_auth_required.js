@@ -128,13 +128,13 @@ test('apiFetch locks on every 401 including malformed bodies', async () => {
     assert.equal(harness.events[0].detail.loginUrl, '/login?reason=session_expired');
 });
 
-test('apiFetch locks on exact structured auth_required but not distinct 403 and 409 errors', async () => {
+test('apiFetch locks on exact structured auth_required but not distinct 403, 409 and 503 EPM errors', async () => {
     const authHarness = createHarness(HTTP_PATH, async () => new Response(JSON.stringify({
         error: 'auth_required', loginUrl: 'https://planner.example.test/login?reason=missing_scope',
     }), { status: 500, headers: { 'Content-Type': 'application/json' } }));
     await assert.rejects(() => authHarness.exports.apiFetch('/api/config'), error => error.status === 500);
 
-    for (const [status, error] of [[403, 'admin_required'], [403, 'csrf_required'], [409, 'home_user_token_required']]) {
+    for (const [status, error] of [[403, 'admin_required'], [403, 'csrf_required'], [403, 'home_access_denied'], [409, 'epm_scope_required'], [503, 'home_rate_limited']]) {
         const harness = createHarness(HTTP_PATH, async () => new Response(JSON.stringify({ error }), {
             status, headers: { 'Content-Type': 'application/json' },
         }));

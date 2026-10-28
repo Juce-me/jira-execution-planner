@@ -147,27 +147,6 @@ class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
         self.assertEqual(fetch_calls, [])
         self.assertEqual(cache[raw_key]['data'], {'project': {'id': 'other-context'}})
 
-    def test_home_user_token_required_propagates_to_route_handler(self):
-        with patch.object(
-            jira_server,
-            'find_epm_project_or_404',
-            side_effect=AuthError(
-                'home_user_token_required',
-                'Connect your Atlassian API token to load EPM Home projects.',
-            ),
-        ):
-            response = jira_server.app.test_client().get('/api/epm/projects/hp-1/issues?tab=backlog')
-
-        self.assertEqual(response.status_code, 409)
-        self.assertEqual(
-            response.get_json(),
-            {
-                'error': 'home_user_token_required',
-                'message': 'Connect your Atlassian API token to load EPM Home projects.',
-                'connectUrl': '/settings/connections/home-token',
-            },
-        )
-
 
 class TestEpmIssuesEndpoint(unittest.TestCase):
     def setUp(self):

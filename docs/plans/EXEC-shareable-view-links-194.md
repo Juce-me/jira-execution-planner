@@ -1,5 +1,7 @@
 # Shareable View Links Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Implemented through Task 14 code and automated gates; operator live acceptance (signed-in and private-window journeys A and B) is pending and publication was authorized by the operator on 2026-10-16. One browser test, `cold alignment stops on trusted input or a changed scope`, is known red (see Outcome).
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Per-task status and commits are recorded in the Execution status table below, inside this committed file (see the recording rule there), not in a scratch ledger.

@@ -361,7 +361,7 @@ class CurrentJiraRequestCapturedContextTests(unittest.TestCase):
              }), \
              patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_request), \
              patch.object(jira_server, "oauth_session_data", side_effect=AssertionError("local OAuth fallback reached")), \
-             patch("backend.auth.home_credentials.resolve_home_credential", side_effect=AssertionError("Home fallback reached")):
+             patch("backend.epm.home._read_metadata_credential", side_effect=AssertionError("Home fallback reached")):
             response = jira_server.current_jira_request(
                 "GET", "/rest/api/3/issue/DEMO-1", context=context, timeout=10,
             )

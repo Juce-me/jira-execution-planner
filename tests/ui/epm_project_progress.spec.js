@@ -1,11 +1,11 @@
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     appBaseUrl,
     installDashboardFixture,
     selectedSprintId,
     selectedSprintName,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 function progressRollup(project) {
     return {
@@ -87,7 +87,7 @@ test('EPM project board shows progress beside Jira rollup with hover story-point
         sprintName: selectedSprintName,
     });
     await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: progressRollup,
     });
 

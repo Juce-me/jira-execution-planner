@@ -1,5 +1,7 @@
 # Board Killed and Incomplete Closed-Work Counting Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Status:** Implemented and committed locally 2026-10-08 (issue #253), unpushed; awaiting the operator's request to push and open the PR (Task 6 Step 4). Proposed and revised the same day after three independent reviews and the operator's answers to the open decisions (see Decisions and Plan validation). Branch: `feature/253-board-killed-incomplete-done`.

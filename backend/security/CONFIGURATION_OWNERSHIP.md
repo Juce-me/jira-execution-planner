@@ -14,6 +14,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
 | Personal connections and tokens | User-owned auth connection/token tables | Current user | `user_write` | Private credentials; never configuration payload fields |
+| EPM view enablement (`view.epm.viewEnabled`) | Current user's default private `view_configs` payload | Current user | `user_write` via `/api/epm/preferences` only | Private; defaults to off; never stored in workspace administrator configuration |
 | Derived Team name directory | `workspace_team_catalogs` | `authenticated_read` | Authenticated `user_write` for names only; catalog refresh may merge discovered names | One shared name directory per workspace; names do not grant Sprint membership or mutate administrator settings |
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
@@ -80,8 +81,11 @@ scope, label prefix, EPM issue-type grouping, and project-label mappings. `/api/
 and update only those settings in that user's view payload, preserve unrelated private view fields and
 any existing private EPM tab/sprint state, and never require tool-admin permission. Dashboard UI choices
 that remain in private browser preferences must never be promoted to workspace configuration. EPM
-Home/Townsquare reads continue to use that user's connected `atlassian_user_api_token`, represented by
-`auth_connections` and encrypted in `auth_tokens`; Jira REST continues to use the user's OAuth context.
+Home/Townsquare and Jira REST reads use the user's DB OAuth context only (Home through the fixed
+`public-read-v1` query set). The app stores no personal Atlassian API token and has no API-token fallback.
+Whether the EPM view is shown is the owner-private `view.epm.viewEnabled` boolean in the same default
+private view, written only by `POST /api/epm/preferences` (`user_write`, token-bound CSRF); it is never
+workspace or group configuration, and downgrade cleanup removes only that key.
 
 Every projects, issues, and rollup cache key includes a SHA-256 digest of the canonical normalized
 five-key EPM settings object. The digest, never raw configuration text, supplements the existing

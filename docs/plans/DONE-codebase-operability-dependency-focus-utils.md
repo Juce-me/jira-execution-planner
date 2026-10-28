@@ -1,5 +1,7 @@
 # Codebase Operability: Dependency Focus Utilities
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done. Executed in PR #54 (`879ad59`). Kept for audit context only.
 
 ## Goal

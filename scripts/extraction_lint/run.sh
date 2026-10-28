@@ -7,6 +7,7 @@ SRC="${1:-frontend/src}"
 LINT_DIR=tmp/lint
 MAX_WARNINGS="${EXTRACTION_LINT_MAX_WARNINGS:-106}"   # ratchet: lower it whenever a commit removes warnings
 BASELINE=scripts/extraction_lint/hook_interface_baseline.txt   # optional; absent means empty
+HANDLE_BASELINE=scripts/extraction_lint/handle_dependency_baseline.json   # shrink-only known handle-in-dependency violations
 mkdir -p "$LINT_DIR"
 # Verify every pinned package: a cached ESLint binary alone is insufficient.
 if ! node - "$LINT_DIR" <<'NODE'
@@ -25,6 +26,7 @@ fi
 cp scripts/extraction_lint/eslint.config.mjs "$LINT_DIR/eslint.config.mjs"
 cp scripts/extraction_lint/check_hook_interfaces.mjs "$LINT_DIR/check_hook_interfaces.mjs"
 cp scripts/extraction_lint/check_move_conservation.mjs "$LINT_DIR/check_move_conservation.mjs"
+cp scripts/extraction_lint/check_app_metrics.mjs "$LINT_DIR/check_app_metrics.mjs"
 status=0
 "$LINT_DIR/node_modules/.bin/eslint" --no-config-lookup -c "$LINT_DIR/eslint.config.mjs" \
     --max-warnings "$MAX_WARNINGS" "$SRC" || status=1
@@ -33,6 +35,7 @@ if [ "$SRC" = "frontend/src" ]; then
         --manifest scripts/extraction_lint/owner_budgets.json || status=1
     node "$LINT_DIR/check_hook_interfaces.mjs" --baseline "$BASELINE" \
         --manifest scripts/extraction_lint/owner_budgets.json "$SRC/dashboard.jsx" || status=1
+    node "$LINT_DIR/check_app_metrics.mjs" --src "$SRC" --baseline "$HANDLE_BASELINE" || status=1
 else
     node "$LINT_DIR/check_hook_interfaces.mjs" --baseline "$BASELINE" "$SRC/dashboard.jsx" || status=1
 fi

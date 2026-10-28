@@ -1,5 +1,7 @@
 # Planning review adoption merge mode Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done. Executed on `bugfix/299-review-adoption-merge-mode` for issue [#299](https://github.com/Juce-Me/jira-execution-planner/issues/299), accepted by the operator on 2026-10-22 and delivered by the pull request that closes it. Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

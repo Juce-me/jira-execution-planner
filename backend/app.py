@@ -53,13 +53,11 @@ def register_blueprints(flask_app):
     from backend.routes.settings_routes import bp as settings_bp
     from backend.routes.stats_routes import bp as stats_bp
     from backend.routes.scenario_draft_routes import bp as scenario_draft_bp
-    from backend.routes.user_connection_routes import bp as user_connection_bp
     from backend.routes.views_routes import bp as views_bp
 
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(analytics_bp)
     flask_app.register_blueprint(performance_bp)
-    flask_app.register_blueprint(user_connection_bp)
     flask_app.register_blueprint(views_bp)
     flask_app.register_blueprint(scenario_bp)
     flask_app.register_blueprint(scenario_draft_bp)

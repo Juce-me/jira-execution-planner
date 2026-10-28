@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { activeHomeTokenConnection, installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_home_token_fixture');
+const { enabledEpmOptions, installDashboardFixture, selectedSprintId, selectedSprintName } = require('./epm_view_fixture');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 
@@ -25,7 +25,7 @@ test('disabled analytics initializes dataLayer but does not request Google tags'
             googleRequests.push(url);
         }
     });
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, { ...enabledEpmOptions() });
     await installAnalyticsRoutes(page, { enabled: false });
     await page.route(appBaseUrl, route => route.fulfill({
         contentType: 'text/html',
@@ -47,7 +47,7 @@ test('disabled analytics initializes dataLayer but does not request Google tags'
 
 test('enabled analytics lazy-loads GTM from context and emits only app-owned triggers', async ({ page }) => {
     const googleRequests = [];
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, { ...enabledEpmOptions() });
     await installAnalyticsRoutes(page, {
         enabled: true,
         gtmContainerId: 'GTM-NZJW2CFN',
@@ -112,13 +112,6 @@ test('enabled analytics lazy-loads GTM from context and emits only app-owned tri
             selected_count: 3,
             selected_story_points: 8,
             source_surface: 'planning'
-        });
-        window.JepAnalytics.trackEvent('connection_action', {
-            feature_name: 'connections',
-            connection_type: 'home_townsquare',
-            workflow_action: 'status',
-            previous_status: 'missing',
-            result: 'success'
         });
         window.JepAnalytics.trackEvent('scenario_action', {
             feature_name: 'scenario',
@@ -195,7 +188,7 @@ test('analytics kill switch stops app-owned sends in an open tab', async ({ page
         measurementId: 'G-6QERX19WB0',
         ga4UserId: 'user-analytics-id'
     };
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, { ...enabledEpmOptions() });
     await installAnalyticsRoutes(page, () => analyticsContext);
     await page.route('https://www.googletagmanager.com/gtm.js?id=GTM-NZJW2CFN', route => route.fulfill({
         status: 200,
@@ -245,7 +238,7 @@ test('analytics kill switch stops app-owned sends in an open tab', async ({ page
 
 test('browser DLV sequence clears sparse fields, logout identity and debug context', async ({ page }) => {
     let context = { enabled: true, ga4UserId: 'synthetic-user', debugMode: true };
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, { ...enabledEpmOptions() });
     await installAnalyticsRoutes(page, () => context);
     await page.goto(appBaseUrl, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => page.evaluate(() => typeof window.JepAnalytics?.trackEvent)).toBe('function');
@@ -291,7 +284,7 @@ test('browser DLV sequence clears sparse fields, logout identity and debug conte
 });
 
 test('logical navigation emits one page_view occurrence for each accepted view change', async ({ page }) => {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection() });
+    await installDashboardFixture(page, { ...enabledEpmOptions() });
     await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ activeGroupId: 'analytics-group', selectedTeams: ['all'] })));
     await page.route('**/api/groups-config', route => route.fulfill({ json: {
         version: 1, groups: [{ id: 'analytics-group', name: 'Synthetic Department', teamIds: ['analytics-team'], teamLabels: {} }], defaultGroupId: 'analytics-group', source: 'test',

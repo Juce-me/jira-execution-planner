@@ -8,6 +8,8 @@ import logging
 import time
 from typing import Callable
 
+from backend.epm.jira_strict import RequestCancellation
+
 
 @dataclass
 class EpmAggregateDependencies:
@@ -22,6 +24,7 @@ class EpmAggregateDependencies:
     build_per_project_rollup: Callable
     logger: logging.Logger
     now: Callable = time.perf_counter
+    home_auth: object = None
 
 
 def _collection_values(collection):
@@ -71,10 +74,19 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
 
     epm_config = deps.get_epm_config()
     projects_started = deps.now()
-    projects_payload = deps.build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
+    home_auth = deps.home_auth if getattr(deps.home_auth, 'strict', False) else None
+    if home_auth is not None:
+        home_auth.begin_index()
+    try:
+        projects_payload = deps.build_epm_projects_payload(epm_config, tab=tab, sub_goal_keys=sub_goal_keys)
+    finally:
+        if home_auth is not None:
+            # Immutable before the eight workers start; they resolve Home projects from it, never from Home.
+            home_auth.freeze_index()
     projects_ms = round((deps.now() - projects_started) * 1000, 1)
     visible_projects = deps.filter_epm_projects_for_tab(projects_payload.get('projects') or [], tab)
-    rollup_dependencies = deps.build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys)
+    cancellation = RequestCancellation()
+    rollup_dependencies = deps.build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys, cancellation=cancellation)
     entries_by_project_id = {}
     issue_memberships = {}
 
@@ -99,11 +111,20 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
             entries_by_project_id[project_id] = entry
 
     rollups_started = deps.now()
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    executor = ThreadPoolExecutor(max_workers=8)
+    try:
         future_to_project = {executor.submit(build_entry, project): project for project in labeled_projects}
         for future in as_completed(future_to_project):
             project_id, entry = future.result()
             entries_by_project_id[project_id] = entry
+    except BaseException:
+        # First failure: stop queued work and further pages/cache admission, then surface that failure.
+        # Running HTTP calls finish under their existing timeouts; there is no hard cancellation.
+        cancellation.cancel()
+        executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    else:
+        executor.shutdown(wait=True)
     rollups_ms = round((deps.now() - rollups_started) * 1000, 1)
 
     ordered_entries = []

@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // The board's epic detail panel (§6.3, §9.2, §10.1, D12, D22, D32): how it opens and closes, the
 // focus contract, the four description states, the session cache, the story rows' inherited
@@ -158,7 +158,6 @@ async function installBoardFixture(page, calls, {
         if (url.pathname === '/api/auth/status') {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',

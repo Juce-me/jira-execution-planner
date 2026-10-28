@@ -11,10 +11,15 @@ const source = esbuild.buildSync({
 const sandbox = { module: { exports: {} }, exports: {}, console, AbortController };
 vm.runInContext(source, vm.createContext(sandbox));
 const {
+    classifyEpmReadError,
     createSprintCatalogController,
     createSprintCatalogState,
+    describeEpmReadError,
     isBackendConnectionFailure,
+    isEpmNavigationVisible,
     loadCachedSprintCatalog,
+    normalizeEpmAccess,
+    normalizeEpmCapabilities,
     reduceSprintCatalog,
     shouldReconcileSprintCatalogSource,
     sprintCatalogValidationKey,
@@ -525,4 +530,88 @@ test('catalog completion401 remains terminal at the hard deadline', async () => 
     assert.equal(fixture.controller.getState().authority, 'auth_locked');
     assert.equal(fixture.timers.size, 0);
     fixture.controller.dispose();
+});
+
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
+test('EPM capabilities fail closed in production: missing or mistyped fields are false/empty', () => {
+    const closed = { basicCompatibility: false, viewEnabled: false, homeReadAvailable: false, loginUrl: '' };
+    for (const config of [undefined, null, {}, 'x', { authMode: 'atlassian_oauth' }, { authMode: 'atlassian_oauth', epmViewEnabled: 'true', epmHomeReadAvailable: 1, epmHomeReadLoginUrl: 5 }]) {
+        assert.deepEqual(plain(normalizeEpmCapabilities(config)), closed, JSON.stringify(config));
+    }
+    assert.deepEqual(plain(normalizeEpmCapabilities({ authMode: 'atlassian_oauth', epmViewEnabled: true, epmHomeReadAvailable: true })), { ...closed, viewEnabled: true, homeReadAvailable: true });
+    assert.equal(normalizeEpmCapabilities({ authMode: 'basic' }).basicCompatibility, true);
+    assert.equal(normalizeEpmCapabilities({ epmViewEnabled: true }).basicCompatibility, false, 'a missing authMode is never Basic compatibility');
+});
+
+test('EPM scope-update link is only the same-tab app login URL', () => {
+    const url = (value) => normalizeEpmCapabilities({ epmHomeReadLoginUrl: value }).loginUrl;
+    assert.equal(url('/login?reason=missing_scope'), '/login?reason=missing_scope');
+    assert.equal(url('/login'), '/login');
+    for (const bad of ['https://evil.example/login', '//evil.example/login', '/login?reason=missing_scope&x=1', '/other', 'javascript:alert(1)', '']) assert.equal(url(bad), '', bad);
+});
+
+test('EPM access normalizer: unknown state is unavailable, null stays unresolved', () => {
+    assert.equal(normalizeEpmAccess(null), null);
+    assert.equal(normalizeEpmAccess('x'), null);
+    assert.equal(normalizeEpmAccess({ state: 'surprise' }).state, 'unavailable');
+    assert.deepEqual(plain(normalizeEpmAccess({ state: 'scope_missing', epmHomeReadAvailable: false, loginUrl: '/login?reason=missing_scope', message: 'm' })), {
+        state: 'scope_missing', homeReadAvailable: false, loginUrl: '/login?reason=missing_scope', message: 'm',
+    });
+    for (const state of ['available', 'disabled', 'scope_missing', 'empty', 'denied', 'unavailable']) assert.equal(normalizeEpmAccess({ state }).state, state);
+});
+
+test('EPM navigation: Basic compatibility, or enabled + available + access available; unresolved access hides it', () => {
+    const caps = (overrides = {}) => ({ basicCompatibility: false, viewEnabled: true, homeReadAvailable: true, loginUrl: '', ...overrides });
+    const access = (state) => ({ state });
+    assert.equal(isEpmNavigationVisible(caps(), access('available')), true);
+    assert.equal(isEpmNavigationVisible(caps(), null), false, 'unresolved access hides navigation');
+    for (const state of ['disabled', 'scope_missing', 'empty', 'denied', 'unavailable']) assert.equal(isEpmNavigationVisible(caps(), access(state)), false, state);
+    assert.equal(isEpmNavigationVisible(caps({ viewEnabled: false }), access('available')), false);
+    assert.equal(isEpmNavigationVisible(caps({ homeReadAvailable: false }), access('available')), false);
+    assert.equal(isEpmNavigationVisible(caps({ basicCompatibility: true, viewEnabled: false, homeReadAvailable: false }), null), true);
+    assert.equal(isEpmNavigationVisible(null, access('available')), false);
+    assert.equal(isEpmNavigationVisible(caps(), { state: 'available', homeReadAvailable: false }), true, 'config readiness plus access state decide, not a second flag');
+});
+
+test('EPM read error classifier: rate_limited, denied, failed; only Home denial invalidates the Home gate; retryAtMs stays null', () => {
+    const classify = (error) => plain(classifyEpmReadError(error));
+    const limited = classify({ status: 503, category: 'home_rate_limited', retryAfterSeconds: 12 });
+    assert.deepEqual(limited, { outcome: 'rate_limited', status: 503, category: 'home_rate_limited', retryAfterSeconds: 12, retryAtMs: null, invalidateHomeAvailability: false });
+    assert.equal(classify({ status: 503, code: 'jira_rate_limited' }).outcome, 'rate_limited');
+    assert.equal(classify({ status: 429 }).outcome, 'rate_limited');
+    assert.equal(classify({ status: 503, category: 'config_storage_unavailable' }).outcome, 'failed');
+    assert.equal(classify({ status: 503 }).outcome, 'failed');
+    const home = classify({ status: 403, category: 'home_access_denied' });
+    assert.equal(home.outcome, 'denied');
+    assert.equal(home.invalidateHomeAvailability, true);
+    const jira = classify({ status: 403, category: 'jira_access_denied' });
+    assert.equal(jira.outcome, 'denied');
+    assert.equal(jira.invalidateHomeAvailability, false, 'Jira-only denial must not invalidate the Home availability gate');
+    assert.equal(classify({ status: 403, category: 'csrf_required' }).outcome, 'failed');
+    const disabled = classify({ status: 409, category: 'epm_view_disabled' });
+    assert.deepEqual(disabled, { outcome: 'disabled', status: 409, category: 'epm_view_disabled', retryAtMs: null, invalidateHomeAvailability: true });
+    assert.equal(classify({ status: 409, code: 'epm_view_disabled' }).outcome, 'disabled');
+    assert.equal(classify({ status: 409, category: 'epm_scope_required' }).outcome, 'failed');
+    assert.equal(classify({ status: 403, category: 'epm_view_disabled' }).outcome, 'failed');
+    for (const error of [{ status: 502, category: 'home_read_failed' }, { status: 502, category: 'jira_read_failed' }, { status: 500 }, {}, null, undefined, new Error('offline')]) {
+        const failed = classify(error);
+        assert.equal(failed.outcome, 'failed');
+        assert.equal(failed.invalidateHomeAvailability, false);
+        assert.equal(failed.retryAtMs, null);
+    }
+    assert.equal(classify({ status: 503, category: 'home_rate_limited', retryAfterSeconds: 300 }).retryAfterSeconds, 30, 'capped');
+    for (const bad of [-1, 0, NaN, 'x']) assert.equal(classify({ status: 429, retryAfterSeconds: bad }).retryAfterSeconds, undefined);
+});
+
+test('EPM settings error copy is typed, useful and never echoes provider text', () => {
+    const scope = describeEpmReadError({ status: 409, category: 'epm_scope_required', message: 'RAW provider text' });
+    assert.match(scope, /read permission/);
+    assert.match(describeEpmReadError({ status: 403, code: 'home_access_denied', message: 'RAW' }), /did not grant access/);
+    assert.match(describeEpmReadError({ status: 502, code: 'home_read_failed', message: 'RAW' }), /could not be read/);
+    assert.match(describeEpmReadError({ status: 503, code: 'home_rate_limited', retryAfterSeconds: 7 }), /7s/);
+    assert.match(describeEpmReadError({ status: 503, code: 'home_rate_limited' }), /shortly/);
+    for (const text of [scope, describeEpmReadError({ status: 403, code: 'home_access_denied', message: 'RAW' })]) assert.equal(text.includes('RAW'), false);
+    assert.equal(describeEpmReadError(new Error('plain failure')), 'plain failure', 'untyped errors keep their message');
+    assert.equal(describeEpmReadError({}, 'fallback'), 'fallback');
 });

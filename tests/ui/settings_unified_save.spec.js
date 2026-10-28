@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -227,13 +227,6 @@ async function mockConfigSettings(page, {
             ga4UserId: 'synthetic-user',
             debugMode: false,
         } : { enabled: false });
-        if (url.pathname === '/api/me/connections/home-token') return json({
-            connected: true,
-            provider: 'atlassian_user_api_token',
-            credentialSubject: 'profile@example.com',
-            status: 'active',
-            needsReconnect: false,
-        });
         if (performanceAdminAvailable && url.pathname === '/api/admin/performance') return json({
             enabled: true,
             filters: { groups: ['platform'], sprints: ['42'], surfaces: ['eng_board'], scopeTypes: ['selected_group'], cacheStates: ['warm'], revisions: ['fixture'], scopeCohortDigests: [] },

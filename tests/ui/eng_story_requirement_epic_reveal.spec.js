@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // Clicking a Stories Required alert lands the requirement's Epic header just below the sticky stack.
 // Synthetic data only: many Epics with several Stories each so the list is several viewports long.
@@ -96,7 +96,6 @@ async function installFixture(page, { productIssues, productEpics, readinessEpic
         const json = body => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example',
             authMode: 'atlassian_oauth',

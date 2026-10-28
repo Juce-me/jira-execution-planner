@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell, activeHomeTokenConnection } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -112,7 +112,7 @@ async function installDocumentRoutes(page) {
 }
 
 async function installLinkFixture(page, {
-    groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, homeToken = { connected: false },
+    groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, epmEnabled = false,
     prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false, cohortIssues = null,
 } = {}) {
     const calls = [];
@@ -172,12 +172,13 @@ async function installLinkFixture(page, {
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return reply({ csrfToken: 'csrf-token' });
         if (url.pathname === '/api/auth/status') return reply({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
-        if (url.pathname === '/api/me/connections/home-token') return reply(homeToken);
+        if (url.pathname === '/api/epm/access') return reply({ state: epmEnabled ? 'available' : 'disabled', epmHomeReadAvailable: epmEnabled });
         if (url.pathname === '/api/analytics/context') return reply(analytics || { enabled: false });
         if (url.pathname === '/api/config') {
             return reply({
                 jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false, userCanEditSettings: true, projectsConfigured: true, environmentConfigExists: true,
+                epmViewEnabled: epmEnabled, epmHomeReadAvailable: epmEnabled,
                 ...(matrix ? { boardAllWorkAvailable: true, sharedConfig: { projects: { selected: ['SYN'] }, board: { boardId: '42' } }, sprintCatalogSource: MATRIX_SOURCE } : {}),
                 epm: { version: 2, labelPrefix: '', scope: {}, projects: {} },
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: { version: 2, labelPrefix: '', scope: {}, projects: {} } } },
@@ -437,8 +438,7 @@ test('a same-scope Planning recovery capsule reuses its completed load and appli
 });
 
 test('a recipient whose saved view is EPM ends in the link ENG view (V15, RF2)', async ({ page }) => {
-    const activeHomeToken = { connected: true, provider: 'atlassian_user_api_token', credentialSubject: 'profile@example.com', status: 'active', lastValidatedAt: '2026-05-11T09:00:00Z', needsReconnect: false };
-    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, homeToken: activeHomeToken, prefs: { selectedView: 'epm', showScenario: false } });
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, epmEnabled: true, prefs: { selectedView: 'epm', showScenario: false } });
     await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
     await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
     await expect(engMode(page, 'Catch Up')).toHaveAttribute('aria-checked', 'true');
@@ -951,10 +951,10 @@ test('a Lead Times link naming a Project the Epics do not have falls back to All
 });
 
 // Real dashboard cold-focus regression. Only synthetic API members are held; the controller/reveal run unchanged.
-async function coldFocus(page, { alerts = null, homeToken } = {}) {
+async function coldFocus(page, { alerts = null, epmEnabled } = {}) {
     const missing = deferred();
     const tasks = deferred();
-    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate: tasks, coldAlerts: { missing, alerts }, homeToken });
+    const calls = await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, taskGate: tasks, coldAlerts: { missing, alerts }, epmEnabled });
     await page.addInitScript(() => {
         if (window.__coldScrolls) return;
         const scrollTo = window.scrollTo.bind(window);
@@ -1031,9 +1031,9 @@ test('cold focus reached before the running bound succeeds and never scrolls aft
 
 for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode', 'surface', 'recovery', 'auth']) {
     test(`cold alignment stops on trusted input or a changed scope (${interruption})`, async ({ page }) => {
-        // A surface departure needs an available destination; disconnected EPM is restored to ENG by the App.
-        const homeToken = interruption === 'surface' ? activeHomeTokenConnection() : undefined;
-        const { missing, calls } = await coldFocus(page, { homeToken });
+        // A surface departure needs an available destination; unavailable EPM is restored to ENG by the App.
+        const epmEnabled = interruption === 'surface' ? true : undefined;
+        const { missing, calls } = await coldFocus(page, { epmEnabled });
         await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
         await expectColdLanding(page);
         await expect.poll(() => calls.some(call => call.pathname === '/api/missing-info')).toBe(true);

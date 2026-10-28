@@ -30,7 +30,7 @@ from scripts import adopt_legacy_sprint_reviews as adopt
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION_FILE = ROOT / 'backend' / 'db' / 'migrations' / 'versions' / '20261023_0020_adopt_legacy_sprint_reviews.py'
-PARENT, HEAD = '20261020_0019', '20261023_0020'
+PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261028_0021'
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
 SECRET_LABEL, SECRET_VALUE = 'Secret-Label-Zq', 'Secret-Value-4711'
 LOGGER = 'review_adoption'
@@ -351,7 +351,7 @@ class ReleasePathTests(RevisionCase):
         output = io.StringIO()
         config.output_buffer = output
         with patch.dict(os.environ, {'DATABASE_CONNECTION_MODE': 'url'}, clear=False):
-            command.upgrade(config, f'{PARENT}:{HEAD}', sql=True)
+            command.upgrade(config, f'{PARENT}:{ADOPTION}', sql=True)
         sql = output.getvalue()
         self.assertIn('adopt', sql.lower())
         self.assertNotIn('INSERT INTO group_review_cells', sql)

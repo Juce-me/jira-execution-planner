@@ -5,6 +5,12 @@ from werkzeug.exceptions import BadRequest
 
 from backend.auth.admin_bootstrap import workspace_tool_admin_display_names
 from backend.auth.db_context import is_db_auth_context
+from backend.epm.access import SCOPE_LOGIN_URL
+from backend.epm.home import (
+    HOME_READ_PROFILE_PUBLIC_READ_V1,
+    HOME_READ_PROFILE_SCOPE_REQUIRED,
+    select_epm_home_read_profile,
+)
 from backend.config.db_repository import ViewConfigNotFound
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled, db_repository
 from backend.config.shared_config import normalize_shared_admin_section
@@ -638,6 +644,15 @@ def get_sprints():
         return error_response, 500
 
 
+def epm_view_enabled_for_bootstrap(auth_context, view_config):
+    """Owner-private Enable EPM view flag; false for Basic/JSON/non-DB storage and when nothing is saved."""
+    if not config_storage_db_enabled() or not is_db_auth_context(auth_context):
+        return False
+    if view_config is not None:
+        return (((view_config.get('view') or {}).get('epm') or {}).get('viewEnabled')) is True
+    return db_repository().load_user_epm_view_enabled(auth_context) is True
+
+
 @bp.route('/api/config', methods=['GET'])
 def get_config():
     """Get public configuration"""
@@ -679,6 +694,7 @@ def get_config():
             )
         else:
             epm_config = get_epm_config(context=auth_context)
+        epm_view_enabled = epm_view_enabled_for_bootstrap(auth_context, view_config)
         capacity_config = load_request_capacity_config(auth_context)
     except (ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError) as error:
         logger.error('Dashboard bootstrap EPM config read failed errorClass=%s', type(error).__name__)
@@ -714,8 +730,14 @@ def get_config():
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
         'projectsConfigured': bool(get_selected_projects()),
         'environmentConfigExists': _environment_dashboard_config_exists(),
-        'epm': epm_config
+        'epm': epm_config,
+        'epmViewEnabled': epm_view_enabled,
     }
+    # Readiness from the provider-confirmed grant only; bootstrap makes no Home call.
+    epm_home_profile = select_epm_home_read_profile(auth_context, view_enabled=epm_view_enabled)
+    payload['epmHomeReadAvailable'] = epm_home_profile == HOME_READ_PROFILE_PUBLIC_READ_V1
+    if epm_home_profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+        payload['epmHomeReadLoginUrl'] = SCOPE_LOGIN_URL
     if effective_catalog_config is not None:
         payload['sprintCatalogSource'] = {
             'backend': 'postgresql',

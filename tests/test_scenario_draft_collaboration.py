@@ -292,7 +292,7 @@ class ScenarioDraftCollaborationServiceTests(unittest.TestCase):
                     side_effect=AssertionError(f'{name} forbidden'),
                 ))
             stack.enter_context(patch(
-                'backend.auth.home_credentials.resolve_home_credential',
+                'backend.epm.home._read_metadata_credential',
                 side_effect=AssertionError('home credential forbidden'),
             ))
             stack.enter_context(patch(

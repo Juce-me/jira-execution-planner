@@ -157,12 +157,12 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
                     oauth_context(token_version='2'),
                     cache,
                     lambda _scope: (_ for _ in ()).throw(
-                        AuthError('home_user_token_required', 'Connect your Atlassian API token to load EPM Home projects.')
+                        AuthError('epm_view_disabled', 'Enable the EPM view in your settings to load EPM Home data.')
                     ),
                 ),
             )
 
-        self.assertEqual(raised.exception.code, 'home_user_token_required')
+        self.assertEqual(raised.exception.code, 'epm_view_disabled')
         self.assertEqual(len(cache), 1)
 
     def test_goal_lookup_bypasses_process_cache_for_oauth_context(self):
@@ -578,6 +578,73 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
                 cache.clear()
             db_engine.dispose_engines()
             tmpdir.cleanup()
+
+
+class EpmHomeStrictCachePartitionTests(unittest.TestCase):
+    """public-read-v1: the profile is one extra key part inside the existing auth/config/version partition."""
+
+    SCOPE = {'rootGoalKey': 'ROOT', 'subGoalKeys': ['GOAL']}
+
+    def snapshot(self, context):
+        import dataclasses
+        scoped = dataclasses.replace(
+            context, granted_scopes=tuple(epm_home.EPM_HOME_READ_SCOPES), granted_scopes_verified=True)
+        return epm_home.HomeReadAuth('public-read-v1', scoped, revalidate=lambda captured: captured)
+
+    def strict_deps(self, context, cache, fetcher):
+        deps = project_deps(context, cache, fetcher)
+        deps.home_auth = self.snapshot(context)
+        return deps
+
+    def test_strict_keys_keep_the_partition_prefix_and_add_the_profile(self):
+        cache = {}
+        context = oauth_context()
+        build_epm_home_projects_state(self.SCOPE, self.strict_deps(context, cache, lambda _s: [{'homeProjectId': 'p'}]))
+        (key,) = cache
+        self.assertEqual(key[:4], ('workspace-1', 'connection-1', 'cloud-1', '1'))
+        self.assertEqual(key[-1], 'public-read-v1')
+
+    def test_users_and_token_versions_never_share_strict_entries(self):
+        cache = {}
+        for context, project in (
+            (oauth_context(user_id='a', connection_id='ca'), 'a'),
+            (oauth_context(user_id='b', connection_id='cb'), 'b'),
+            (oauth_context(token_version='2'), 'v2'),
+        ):
+            state = build_epm_home_projects_state(
+                self.SCOPE, self.strict_deps(context, cache, lambda _s, project=project: [{'homeProjectId': project}]))
+            self.assertFalse(state['cacheHit'])
+        self.assertEqual(len(cache), 3)
+
+    def test_a_strict_and_a_legacy_entry_for_the_same_actor_do_not_collide(self):
+        cache = {}
+        context = oauth_context()
+        build_epm_home_projects_state(self.SCOPE, project_deps(context, cache, lambda _s: [{'homeProjectId': 'legacy'}]))
+        state = build_epm_home_projects_state(
+            self.SCOPE, self.strict_deps(context, cache, lambda _s: [{'homeProjectId': 'strict'}]))
+        self.assertFalse(state['cacheHit'])
+        self.assertEqual(len(cache), 2)
+
+    def test_strict_goal_lookup_keeps_user_partitions_and_leaves_the_legacy_dict_empty(self):
+        epm_home._STRICT_GOAL_LOOKUP_CACHE.clear()
+        client = epm_home.build_home_oauth_graphql_client('fixture-token')
+
+        class Home:
+            calls = 0
+
+            def __call__(self, request, timeout=None):
+                Home.calls += 1
+                from tests.test_epm_home_oauth_client import FakeResponse
+                return FakeResponse({'data': {'goals_byKey': {'id': 'g', 'key': 'GOAL', 'name': 'G', 'url': 'u'}}})
+
+        with patch.object(epm_home, 'urlopen', Home()):
+            for context in (oauth_context(user_id='a', connection_id='ca'), oauth_context(user_id='b', connection_id='cb')):
+                epm_home.resolve_goal_by_key(client, 'GOAL', 'ari:cloud:townsquare::site/cloud-1', context=context)
+                epm_home.resolve_goal_by_key(client, 'GOAL', 'ari:cloud:townsquare::site/cloud-1', context=context)
+        self.assertEqual(Home.calls, 2)
+        self.assertEqual(len(epm_home._STRICT_GOAL_LOOKUP_CACHE), 2)
+        self.assertEqual(epm_home._GOAL_BY_KEY_CACHE, {})
+        epm_home._STRICT_GOAL_LOOKUP_CACHE.clear()
 
 
 if __name__ == '__main__':

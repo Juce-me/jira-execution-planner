@@ -1,104 +1,24 @@
 import argparse
 import json
+import shutil
+import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# jira_server.py keeps 10% headroom, rounded up to the next ten lines, over its measured size, so a PR
+# that grows it modestly needs no edit here. The dashboard and owner ceilings live in
+# scripts/extraction_lint/owner_budgets.json.
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    # feature/eng-epic-sort-and-track adds the read-only Project Track custom-field getters
-    # (get_project_track_field_config/get_project_track_field_id) and threads the field id
-    # into fetch_epic_details_bulk's fields list + parse.
-    # bugfix/jira-connect-timeout-retry-budget adds JIRA_HTTP_CONNECT_TIMEOUT_SECONDS and
-    # threads a bounded connect_timeout through the resilient_jira_get wrapper.
-    # feat/stats-epic-project-track-assignee enriches fetch_cached_excluded_capacity_epic_summaries
-    # and build_excluded_capacity_issue_payload with epicProjectTrack and epicAssignee.
-    # feature/stats-project-track-quarters adds the bounded epic Project Track phase-duration
-    # endpoint: parse_track_transitions + compute_track_phase_durations pure helpers, the
-    # ThreadPoolExecutor worker fetch with /changelog pagination, and the
-    # get_project_track_phase_durations handler.
-    # fix/stats-changelog-dedup adds id-based dedup in _fetch_full_issue_changelog to guard
-    # against boundary-record re-inclusion from the paged /changelog endpoint (+10 lines).
-    # feat/stats-expose-created-transitions adds created + transitions to _fetch_epic_track_phase
-    # return dict so the frontend can compute avg days-to-Committed (+2 lines).
-    # docs/eng-priority-edit-mode-plan adds the Epic's own priority to fetch_epic_details_bulk
-    # (fields list + shaped name) so the Epic priority menu can omit the Epic's own value (+1 line).
-    # bugfix/statistics-consistency-exec adds resolve_epic_cohort_range (bounds Lead Times
-    # cohorts by start+end quarter, capped at today) and the half-open end-exclusive JQL
-    # derivation in fetch_epic_cohort_data (+10 lines).
-    # improvement/auth-unfocused-refresh adds a temporary, anonymized after_request
-    # diagnostics hook (jep.static_diagnostics) scoped to document/frontend-dist requests,
-    # to identify the real owner of a reported repeated-request burst (+37 lines); remove
-    # once the navigation owner is identified, per the hook's own removal-criterion comment.
-    # feature/eng-group-board-design adds the Delivery Owner custom-field getters
-    # (DELIVERY_OWNER_FIELD_DEFAULT, get_delivery_owner_field_config/get_delivery_owner_field_id,
-    # mirroring the Project Track getters including the ConfigStorageError fallback guard) and
-    # threads the field id + the epic 'updated' field into fetch_epic_details_bulk's fields
-    # list and parsed payload (+19 lines).
-    # feature/eng-group-board-design Task 6 imports backend.services.group_board, adds the
-    # normalize_group_board wrapper, and threads normalize_group_board_fn through the
-    # validate_groups_config wrapper, mirroring normalize_group_team_labels (+6 lines).
-    # bugfix/ready-to-close-jql-414 batches the GET-backed child scan at 40 epic keys
-    # while retaining its existing global result cap and pagination behavior (+5 lines).
-    # bugfix/shared-admin-configuration adds the request-scoped immutable workspace config
-    # snapshot, route-owned section save wrapper, DB full-replacement guard, and revision-aware
-    # field-config compatibility handlers. Validation and persistence remain extracted (+57).
-    # bugfix/user-owned-epm-config Task 2 routes every runtime EPM consumer through one
-    # authenticated user's private-view config snapshot, threads its generation into cache
-    # dependencies, and scopes post-commit cache invalidation to that user's partition (+46).
-    # bugfix/review-multidevice-sessions-plan adds the persistent DB browser-session lifecycle
-    # entrypoint wiring for callback creation/replacement, failure-safe legacy-cookie upgrade,
-    # sanitized upgrade-failure logging, revocation, logout, and browser-bound CSRF/Scenario
-    # context propagation (+24).
-    # feature/planning-capacity-editing threads the workspace Capacity snapshot through reads,
-    # scenario sizing, verified OAuth scope context, and exact Jira issue mutations (+74).
-    # In-app load metrics: gated wrapper and worker observer wiring (+3).
-    # improvement/multiple-group-labels final-review round: find_comma_scalar_team_label_errors
-    # wrapper for the save-only comma-scalar Team-label guard (+2).
-    # Issue #217 preserves immutable Epic ID, own Team and project metadata (+7),
-    # and carries Components through the existing bulk metadata read (+1).
-    # feature/213-per-epic-refresh: epic-refresh purpose branch, cache skip and eviction (+11).
-    # feature/213-per-epic-refresh Task 9: epic-alerts purpose: epic_keys clause, failures list
-    # handling, import, the epic-alerts branch and the per-epic enrichment block moved to
-    # backend/services/epic_refresh.py (+24 added, -19 removed lines; net +5 over the line above).
-    # Merge of origin/main into feature/217-sprint-review-table: both lines above are additive; the merged file is 6487 lines.
-    # Lead Times modes Tasks 2-3: closed-mode adapter (fetch_closed_epic_cohort_data), the extracted
-    # _normalize_cohort_issues tail, the full-changelog option, parse_epic_cohort_request and the
-    # route branch (+128 over the line above; the query building and selection live in
-    # backend/services/epic_cohort_closed.py).
-    # Catch Up cold load speed Task 2a: collect_dependencies gains the cap/strict/deadline keywords, the explicit
-    # worker context and the per-round JiraBatchIncomplete capture that raises with the partial map; the batch
-    # runner, continuation and deadline logic live in backend/services/jira_batches.py and backend/jira_client.py
-    # (+15 over the line above; jira_search_request's pass-through got shorter).
-    "jira_server.py": 6630,
-    # App decomposition ratchets the entrypoint to its exact measured size.
-    # Issue #251 data freshness adds the lifecycle hook call, owner-ref assignment, handle
-    # pass-through, status readout, projection calls and shared EPM availability,
-    # net of the legacy listener removal (+48).
-    # Issue #267 C2 re-syncs to the measured size (the owner manifest held 7554) and adds the
-    # Planning review group-scope hook import and call, plus the Settings guard ref (+3).
-    # Issue #267 D3b passes the group name, Sprint-name resolver and hint dismissal props to the review table (+1).
-    # Team/Sprint selector fixes: dropdown-only Team options import and memo, shared sprintWorkLoaded flag, readout moved into the title block (+10).
-    # Lead Times modes Task 4: the Assignee filter leaves the dashboard (-8).
-    # Lead Times modes Task 6: mode, closed range and N thread through the per-group state, saved prefs and the stats hooks (+20).
-    # Lead Times modes Task 7: the new Mode, selection and notes props reach StatsPanel (+12).
-    # Issue #209 Task 2: pinned alert state, cohort settle flag, pin sticky tier, pin/close handlers and EngView pin props;
-    # re-synced to the measured size (the owner manifest held 7591) (+33 over the line above).
-    # Issue #209 Task 5: the alert scroll helpers (block, back to alerts, top) and the pin clearance check in scrollToTaskItem (+32).
-    # Issue #209 Task 5 fix round 1: the landing sticky-stack ref for alert target scrolls (+2).
-    # Issue #209 Task 6 fix: Back to alerts reuses the block reveal, so it also expands the pinned category (-4).
-    # Issue #209 follow-up 1: the pin's title handler, its comment and the EngView prop (+3); follow-up 2 replaced the locate handler
-    # with the Story/Epic handler in the same lines (net 0).
-    # Catch Up cold load speed Task 2a: the dependencyIncomplete state cell, its reset at the start of fetchDependencies and
-    # the two EngView notice props (+3 over the line above; the set/clear sites, including the resets in resetSprintScopedState,
-    # clearEngGroupScopeData and applyGroupState, share existing lines and the notice markup lives in EngView; the dependencies
-    # effect stays untouched, as tests/test_epic_refresh_source_guards.js pins it).
-    # Catch Up cold load speed Task 3: the admin settings panels become the fourth lazy view. The static import line
-    # leaves; the module-scope loader (2 lines) and loading fallback (1 line) and the LazyViewBoundary open and close lines
-    # around the unchanged 160 explicit props join (+4 over the line above).
-    "frontend/src/dashboard.jsx": 7669,
+    "jira_server.py": 7300,
 }
+
+
+HOOK_CEILING_NAMES = {"useState", "useEffect", "useRef", "useMemo", "useCallback", "useReducer", "useLayoutEffect"}
 
 
 def _line_count(path):
@@ -110,7 +30,7 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
     """Validate frozen physical-file and checkpoint totals without transfer credit."""
     failures = []
     required = {"schemaVersion", "baseSha", "checkpointId", "sourceRoot", "ownerRoots",
-                "exclusions", "dashboard", "modules", "aggregates", "transfer"}
+                "exclusions", "dashboard", "modules", "transfer"}
     if not isinstance(manifest, dict) or required - manifest.keys():
         return ["manifest missing required schema fields"]
     if manifest["schemaVersion"] != 1:
@@ -123,15 +43,12 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
         failures.append("missing transfer accounting")
     if not isinstance(manifest["sourceRoot"], str) or not isinstance(manifest["ownerRoots"], list) or not manifest["ownerRoots"] or not all(isinstance(value, str) and value for value in manifest["ownerRoots"]):
         return failures + ["invalid sourceRoot/ownerRoots schema"]
-    if not isinstance(manifest["aggregates"], dict):
-        return failures + ["invalid aggregates schema"]
     modules = manifest["modules"]
     if not isinstance(modules, list):
         return failures + ["modules must be an array"]
     ids, paths, physical_paths = set(), set(), set()
-    totals = {"scenario": 0, "settings": 0, "stats": 0, "eng": 0, "uniqueOwners": 0}
     for module in modules:
-        if not isinstance(module, dict) or not {"id", "path", "features", "exports", "lineCount", "lineCeiling", "interfaces"} <= module.keys():
+        if not isinstance(module, dict) or not {"id", "path", "features", "exports", "lineCeiling", "interfaces"} <= module.keys():
             failures.append("module missing required schema fields")
             continue
         name = module["path"]
@@ -168,11 +85,6 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
         actual = _line_count(file)
         if not isinstance(module["lineCeiling"], int) or isinstance(module["lineCeiling"], bool) or actual > module["lineCeiling"]:
             failures.append(f"{name}: {actual} lines exceeds owner ceiling {module['lineCeiling']}")
-        if actual != module["lineCount"]:
-            failures.append(f"{name}: measured lineCount {module['lineCount']} differs from actual {actual}")
-        totals["uniqueOwners"] += actual
-        for feature in set(module["features"]):
-            totals[feature] += actual
     if not manifest["sourceRoot"] or Path(manifest["sourceRoot"]).is_absolute() or ".." in Path(manifest["sourceRoot"]).parts or Path(manifest["sourceRoot"]).as_posix() != manifest["sourceRoot"]:
         return failures + ["invalid sourceRoot path"]
     source_root = repo_root / manifest["sourceRoot"]
@@ -190,7 +102,7 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
                 if relative not in paths:
                     failures.append(f"unregistered owner source: {relative}")
     dashboard = manifest["dashboard"]
-    if not isinstance(dashboard, dict) or not {"path", "lineCount", "lineCeiling"} <= dashboard.keys():
+    if not isinstance(dashboard, dict) or not {"path", "lineCeiling"} <= dashboard.keys():
         return failures + ["dashboard missing required schema fields"]
     if not isinstance(dashboard["path"], str) or not dashboard["path"] or Path(dashboard["path"]).is_absolute() or ".." in Path(dashboard["path"]).parts or Path(dashboard["path"]).as_posix() != dashboard["path"]:
         return failures + ["invalid dashboard path"]
@@ -198,20 +110,17 @@ def validate_owner_budgets(manifest, repo_root=REPO_ROOT):
     if not file.is_file():
         return failures + ["missing dashboard file"]
     actual = _line_count(file)
-    if actual != dashboard["lineCount"]:
-        failures.append("dashboard measured lineCount differs from actual")
-    if not isinstance(dashboard["lineCeiling"], int) or actual > dashboard["lineCeiling"]:
-        failures.append("dashboard exceeds ceiling")
-    totals["appPlusOwners"] = actual + totals["uniqueOwners"]
-    for name, actual in totals.items():
-        budget = manifest["aggregates"].get(name)
-        if not isinstance(budget, dict) or not {"measured", "ceiling"} <= budget.keys():
-            failures.append(f"missing aggregate: {name}")
-            continue
-        if budget["measured"] != actual:
-            failures.append(f"{name}: measured aggregate {budget['measured']} differs from unique actual {actual}")
-        if not isinstance(budget["ceiling"], int) or actual > budget["ceiling"]:
-            failures.append(f"{name}: {actual} exceeds aggregate ceiling {budget['ceiling']}")
+    ceiling = dashboard["lineCeiling"]
+    if not isinstance(ceiling, int) or isinstance(ceiling, bool) or actual > ceiling:
+        failures.append(f"{dashboard['path']}: {actual} lines exceeds ceiling {ceiling}")
+    # Hook-count ceilings are exact occurrence counts enforced by tests/test_dashboard_regrowth_guard.js; only the shape is checked here.
+    hook_ceilings = dashboard.get("hookCeilings")
+    if hook_ceilings is not None:
+        if not isinstance(hook_ceilings, dict) or set(hook_ceilings) != HOOK_CEILING_NAMES:
+            failures.append(f"dashboard hookCeilings must name exactly {sorted(HOOK_CEILING_NAMES)}")
+        else:
+            failures.extend(f"dashboard hookCeilings.{name} must be a non-negative integer" for name, value in hook_ceilings.items()
+                            if not isinstance(value, int) or isinstance(value, bool) or value < 0)
     return failures
 
 
@@ -229,6 +138,94 @@ class CodebaseStructureBudgetTests(unittest.TestCase):
                 failures.append(f"{relative_path}: {actual} lines exceeds budget {budget}")
 
         self.assertEqual(failures, [])
+
+
+class OwnerBudgetValidatorTests(unittest.TestCase):
+    """The validator against a temporary repo tree: ceilings fail when exceeded, nothing else needs a manifest edit."""
+
+    DASHBOARD = "frontend/src/dashboard.jsx"
+    OWNER = "frontend/src/scenario/useOwner.js"
+
+    def setUp(self):
+        scratch = REPO_ROOT / "tmp" / "a2"
+        scratch.mkdir(parents=True, exist_ok=True)
+        self.root = Path(tempfile.mkdtemp(dir=scratch))
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+
+    def _write(self, relative, lines):
+        file = self.root / relative
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("".join(f"// line {index}\n" for index in range(lines)))
+
+    def _manifest(self, dashboard_ceiling=10, owner_ceiling=10):
+        return {
+            "schemaVersion": 1, "baseSha": "synthetic", "checkpointId": "synthetic",
+            "sourceRoot": "frontend/src", "ownerRoots": ["scenario"],
+            "exclusions": {"generated": ["frontend/dist"]},
+            "dashboard": {"path": self.DASHBOARD, "lineCeiling": dashboard_ceiling},
+            "modules": [{"id": "scenario.useOwner", "path": self.OWNER, "features": ["scenario"],
+                         "exports": ["useOwner"], "lineCeiling": owner_ceiling, "interfaces": []}],
+            "transfer": {"incomingRanges": [], "scaffoldingAllowance": 0},
+        }
+
+    def _validate(self, manifest):
+        return validate_owner_budgets(manifest, self.root)
+
+    def test_dashboard_one_line_over_ceiling_fails_naming_the_file(self):
+        self._write(self.DASHBOARD, 11)
+        self._write(self.OWNER, 5)
+        self.assertEqual(self._validate(self._manifest()), [f"{self.DASHBOARD}: 11 lines exceeds ceiling 10"])
+
+    def test_dashboard_shrink_passes_without_manifest_edit(self):
+        self._write(self.DASHBOARD, 10)
+        self._write(self.OWNER, 5)
+        self.assertEqual(self._validate(self._manifest(dashboard_ceiling=20)), [])
+
+    def test_dashboard_hook_ceilings_shape_is_validated(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 5)
+        manifest = self._manifest()
+        manifest["dashboard"]["hookCeilings"] = {name: 1 for name in HOOK_CEILING_NAMES}
+        self.assertEqual(self._validate(manifest), [])
+        manifest["dashboard"]["hookCeilings"]["useState"] = -1
+        self.assertEqual(self._validate(manifest), ["dashboard hookCeilings.useState must be a non-negative integer"])
+        del manifest["dashboard"]["hookCeilings"]["useRef"]
+        self.assertIn("dashboard hookCeilings must name exactly", self._validate(manifest)[0])
+
+    def test_owner_at_ceiling_passes_and_one_over_fails_naming_the_file(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 10)
+        self.assertEqual(self._validate(self._manifest()), [])
+        self._write(self.OWNER, 11)
+        failures = self._validate(self._manifest())
+        self.assertEqual(len(failures), 1)
+        self.assertIn(self.OWNER, failures[0])
+        self.assertIn("exceeds owner ceiling 10", failures[0])
+
+    def test_owner_ceiling_of_ten_fails_for_a_longer_file(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 40)
+        failures = self._validate(self._manifest(owner_ceiling=10))
+        self.assertEqual(len(failures), 1)
+        self.assertIn("40 lines exceeds owner ceiling 10", failures[0])
+
+    def test_unregistered_owner_source_fails(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 5)
+        self._write("frontend/src/scenario/extra.js", 3)
+        self.assertEqual(self._validate(self._manifest()),
+                         ["unregistered owner source: frontend/src/scenario/extra.js"])
+
+    def test_manifest_cli_exits_zero_for_a_valid_tree(self):
+        self._write(self.DASHBOARD, 5)
+        self._write(self.OWNER, 5)
+        manifest = self.root / "owner_budgets.json"
+        manifest.write_text(json.dumps(self._manifest()))
+        result = subprocess.run(
+            [sys.executable, str(Path(__file__).resolve()), "--manifest", str(manifest), "--repo-root", str(self.root)],
+            capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("owner budgets: 0 problems", result.stdout)
 
 
 if __name__ == "__main__":

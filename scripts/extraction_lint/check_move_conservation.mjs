@@ -1,5 +1,7 @@
 // Compare App() plus registered hook and explicit pure/component bodies at BOTH revisions. Full residual statements need
 // human review; only effect-order divergence determines exit 1. Parse/coverage errors exit 2.
+// An effect edited in place (same owner, same position among its effects) needs --allow-effect-edit OLD_DIGEST=NEW_DIGEST;
+// a relocation still needs --allow-effect-move, and an effect edit that is not listed still exits 1.
 // Git: --base REF [--created-hook FILE] [--deleted-hook FILE] EXISTING_HOOK_FILES...
 // Scratch: --base-file DASHBOARD --dashboard DASHBOARD --base-hook CURRENT_FILE=BASE_FILE ...
 // Newly created/deleted files must be explicit; hook paths form the same union on both sides.
@@ -40,6 +42,12 @@ try {
         return { from: ownerKey(match[1]), to: ownerKey(match[2]), digest: match[3], value };
     });
     if (new Set(allowances.map(item => `${item.from}:${item.digest}`)).size !== allowances.length) throw new Error('duplicate effect move allowance');
+    const edits = many('--allow-effect-edit').map(value => {
+        const match = /^([a-f0-9]{64})=([a-f0-9]{64})$/.exec(value);
+        if (!match) throw new Error(`invalid effect edit allowance: ${value}`);
+        return { oldDigest: match[1], newDigest: match[2], value };
+    });
+    if (new Set(edits.map(item => item.oldDigest)).size !== edits.length) throw new Error('duplicate effect edit allowance');
     if (args.some((arg) => arg.startsWith('--'))) throw new Error(`unknown option: ${args.find((arg) => arg.startsWith('--'))}`);
     const hookFiles = [...new Set([...args.map((file) => path.resolve(file)), ...created, ...deleted, ...baselineHooks.keys(), ...[...ownerFunctions.keys()].map(key => key.slice(0, key.lastIndexOf(':')))])].filter(file => file !== path.resolve(dashboard));
     for (const file of hookFiles) if (created.has(file) && deleted.has(file)) throw new Error(`${file} cannot be both created and deleted`);
@@ -186,12 +194,23 @@ try {
         approvedBefore.add(sourceBefore[0]); approvedAfter.add(targetAfter[0]);
         console.log(`approved effect relocation: ${allowance.value}`);
     }
+    // An edited effect compares as its new form at the same position; anywhere else the edit still diverges.
+    const editedSignature = new Map();
+    for (const edit of edits) {
+        const find = (snapshot, wanted) => [...snapshot.occurrences].flatMap(([key, list]) => list.filter(statement => digest(statement) === wanted).map(statement => ({ key, statement })));
+        const [source, ...extraSource] = find(before, edit.oldDigest), [target, ...extraTarget] = find(after, edit.newDigest);
+        if (!source || extraSource.length || !target || extraTarget.length || find(after, edit.oldDigest).length || find(before, edit.newDigest).length || source.key !== target.key) throw new Error(`invalid effect edit: ${edit.value}; expected one old effect in the base and one new effect in the same owner, none vice versa`);
+        if (approvedBefore.has(source.statement) || approvedAfter.has(target.statement)) throw new Error(`effect edit occurrence reused: ${edit.value}`);
+        editedSignature.set(source.statement, target.statement.signature);
+        console.log(`approved effect edit: ${edit.value}`);
+    }
+    const comparable = statement => editedSignature.get(statement) ?? statement.signature;
     let identical = true;
     for (const key of new Set([...before.lifecycles.keys(), ...after.lifecycles.keys()])) {
         const prior = (before.lifecycles.get(key) ?? []).filter(statement => !approvedBefore.has(statement));
         const next = (after.lifecycles.get(key) ?? []).filter(statement => !approvedAfter.has(statement));
         let diverge = -1;
-        for (let i = 0; i < Math.max(prior.length, next.length); i += 1) if (prior[i]?.signature !== next[i]?.signature) { diverge = i; break; }
+        for (let i = 0; i < Math.max(prior.length, next.length); i += 1) if ((prior[i] ? comparable(prior[i]) : undefined) !== next[i]?.signature) { diverge = i; break; }
         if (diverge !== -1) {
             identical = false;
             console.log(`effect order: DIFFERS at effect ${diverge + 1} in ${key} (before ${prior.length}, after ${next.length})`);

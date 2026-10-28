@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -178,20 +178,16 @@ async function installPlanningFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            if (shellAuthDependency === 'home-token') {
+        if (url.pathname === '/api/epm/access') {
+            // The shell waits for this read when EPM is enabled: a late 401 lands after the groups loaded.
+            if (shellAuthDependency === 'epm-access') {
                 await shellAuthRelease;
                 return json(route, {
                     error: 'auth_required',
                     loginUrl: '/login?reason=session_expired',
                 }, 401);
             }
-            return json(route, {
-                connected: false,
-                provider: 'atlassian_user_api_token',
-                status: 'missing',
-                needsReconnect: false,
-            });
+            return json(route, { state: 'disabled', epmHomeReadAvailable: false });
         }
         if (url.pathname === '/api/config') {
             await configRelease;
@@ -199,6 +195,8 @@ async function installPlanningFixture(page, {
                 jiraUrl: 'https://jira.example',
                 capacityProject,
                 authMode,
+                epmViewEnabled: shellAuthDependency === 'epm-access',
+                epmHomeReadAvailable: shellAuthDependency === 'epm-access',
                 projectsConfigured: true,
                 userCanEditSettings: true,
                 environmentConfigExists: true,

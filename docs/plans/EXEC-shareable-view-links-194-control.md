@@ -1,5 +1,7 @@
 # Shareable View Links Implementation Plan: Analytics and Share control (Tasks 10 and 12)
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Proposed 2026-10-14. Slice of [EXEC-shareable-view-links-194.md](EXEC-shareable-view-links-194.md). Read the master's Global Constraints, Review Focus and Execution status before starting. Statuses and commit SHAs are recorded once, in the master's Task 14 Step 9; keep plan files unmodified between tasks so every Step 0 sees a clean tree. Slices are grouped by area, not by execution order; the master's table gives the order.
 >
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

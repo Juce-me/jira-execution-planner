@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // Moving an epic by dragging its card (§6.4, §9.5, §10.1, §10.2, §10.3, D37, D42) — a second
 // TRIGGER for the status transition the app already performs: same hook, same route, same menu,
@@ -166,7 +166,6 @@ async function installBoardFixture(page, calls, {
             return json({ authMode: 'atlassian_oauth', authenticated: true, email: 'profile@example.com' });
         }
         if (url.pathname === '/api/analytics/context') return json(analyticsContext);
-        if (url.pathname === '/api/me/connections/home-token') return json({ connected: false });
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',

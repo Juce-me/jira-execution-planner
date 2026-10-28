@@ -19,7 +19,10 @@ from backend.services.user_view_config import (
     mutate_user_view,
 )
 
-from . import bind_server_globals
+from backend.epm.home import HomeReadError
+
+from . import bind_server_globals, get_jira_server
+from .epm_errors import auth_error_to_response, home_read_error_to_response
 
 
 bp = Blueprint("views_routes", __name__)
@@ -205,7 +208,21 @@ def _validate_home_project_references(context, payload):
         return None
     epm = payload.get('epm') if isinstance(payload, dict) else {}
     scope = epm.get('scope') if isinstance(epm, dict) else {}
-    projects = fetch_epm_home_projects(scope, context=context)
+    try:
+        home_auth = resolve_epm_home_read_auth(context)
+    except (UserViewConfigStorageError, DatabaseConfigurationError) as error:
+        return _storage_error_response(error)
+    if home_auth.strict:
+        # Enabled users validate through the same explicit Home snapshot the EPM routes use.
+        server = get_jira_server()
+        try:
+            projects = fetch_epm_home_projects(scope, home_auth=home_auth)
+        except AuthError as error:
+            return auth_error_to_response(server, error)
+        except HomeReadError as error:
+            return home_read_error_to_response(server, error, home_auth)
+    else:
+        projects = fetch_epm_home_projects(scope, context=context)
     missing = sorted(referenced - _home_project_catalog_ids(projects))
     if missing:
         return jsonify({

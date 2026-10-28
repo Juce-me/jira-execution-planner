@@ -3,10 +3,10 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const {
-    activeHomeTokenConnection,
+    enabledEpmOptions,
     installDashboardShell,
     installDashboardFixture,
-} = require('./epm_home_token_fixture');
+} = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -197,9 +197,6 @@ async function installEngStatusFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json(route, { connected: false, provider: 'atlassian_user_api_token', status: 'missing', needsReconnect: false });
-        }
         if (url.pathname === '/api/config') {
             return json(route, {
                 jiraUrl: 'https://jira.example',
@@ -993,7 +990,7 @@ test('Opening the Settings modal makes ENG Catch Up status pills inert', async (
 test('EPM project boards render inert status pills, no triggers, and never call the transition API', async ({ page }) => {
     await setPrefs(page, { selectedView: 'epm', epmTab: 'active', epmSelectedProjectId: '', selectedSprint: 34625, sprintName: '2026Q2 Sprint 42' });
     const { calls } = await installDashboardFixture(page, {
-        connection: activeHomeTokenConnection(),
+        ...enabledEpmOptions(),
         allProjectsRollup: (project) => ({
             projects: [{
                 project,

@@ -918,62 +918,65 @@ class DbOauthCutoverTests(unittest.TestCase):
 
         self.assertEqual([row.id for row in remaining], [replacement_b.browser_session_id])
 
-    def test_dev_home_graphql_probe_uses_db_session_without_local_token_store(self):
-        result = self._store_callback()
-        with self.client.session_transaction() as session:
-            session['db_oauth_session'] = {
-                'db_auth_connection_id': result.connection_id,
-                'db_token_version': result.session_metadata['db_token_version'],
-            }
+    PROBE_PATH = '/api/auth/dev/home-graphql-oauth-probe'
+    PRIVATE_SCOPE = {'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKey': 'SUB-1'}}
 
-        with patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'db',
-            'DATABASE_URL': self.database_url,
-            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
-            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
-            'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true',
-        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'get_epm_config', return_value={
-                 'scope': {
-                     'rootGoalKey': 'ROOT-1',
-                     'subGoalKey': 'SUB-1',
-                 },
-             }) as get_config, patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe', return_value={
-                 'ok': True,
-             }) as run_probe:
-            response = self.client.get('/api/auth/dev/home-graphql-oauth-probe')
+    @contextmanager
+    def _probe_mode(self, *, config=None, local_store_forbidden=True):
+        """DB OAuth probe environment; the local token store and its helpers raise when touched."""
+        patches = [
+            patch.dict(os.environ, {
+                'CONFIG_STORAGE_BACKEND': 'db',
+                'DATABASE_URL': self.database_url,
+                'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
+                'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+                'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true',
+            }),
+            patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),
+            patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'),
+            patch.object(jira_server, 'get_epm_config', **(
+                {'return_value': self.PRIVATE_SCOPE} if config is None else config
+            )),
+        ]
+        if local_store_forbidden:
+            for name in ('oauth_session_data', 'save_oauth_session', 'oauth_refresh_lock',
+                         'oauth_session_data_for_auth_context'):
+                patches.append(patch.object(
+                    jira_server, name, side_effect=AssertionError(f'local token store helper {name} forbidden'),
+                ))
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            entered = [stack.enter_context(item) for item in patches]
+            yield entered[3]
+
+    def test_dev_home_graphql_probe_uses_db_session_without_local_token_store(self):
+        result = self._store_callback_through_route()
+
+        with self._probe_mode() as get_config, patch(
+            'backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe', return_value={'ok': True},
+        ) as run_probe:
+            response = self.client.get(self.PROBE_PATH)
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         run_probe.assert_called_once()
         self.assertEqual(run_probe.call_args.args[0], 'access-123')
         self.assertEqual(run_probe.call_args.args[1], 'cloud-123')
+        self.assertEqual(run_probe.call_args.kwargs['root_goal_key'], 'ROOT-1')
+        self.assertEqual(run_probe.call_args.kwargs['sub_goal_key'], 'SUB-1')
         self.assertEqual(get_config.call_count, 1)
-        self.assertEqual(get_config.call_args.kwargs['context'].user_id, result.user_id)
+        self.assertEqual(get_config.call_args.kwargs['context'].browser_session_id, result.browser_session_id)
         with self.client.session_transaction() as session:
-            self.assertIn('db_oauth_session', session)
+            self.assertEqual(session['db_oauth_session'], {'db_browser_session_id': result.browser_session_id})
             self.assertNotIn('atlassian_oauth_session_id', session)
         self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
 
     def test_dev_home_graphql_probe_fails_closed_when_private_epm_storage_is_unavailable(self):
-        result = self._store_callback()
-        with self.client.session_transaction() as session:
-            session['db_oauth_session'] = {
-                'db_auth_connection_id': result.connection_id,
-                'db_token_version': result.session_metadata['db_token_version'],
-            }
+        self._store_callback_through_route()
 
-        with patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'db',
-            'DATABASE_URL': self.database_url,
-            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
-            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
-            'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true',
-        }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'get_epm_config', side_effect=jira_server.ConfigStorageError('sensitive detail')), \
-             patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as run_probe:
-            response = self.client.get('/api/auth/dev/home-graphql-oauth-probe')
+        with self._probe_mode(config={'side_effect': jira_server.ConfigStorageError('sensitive detail')}), \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as run_probe, \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
+            response = self.client.get(self.PROBE_PATH + '?profile=public-read-v1')
 
         self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {
@@ -981,6 +984,98 @@ class DbOauthCutoverTests(unittest.TestCase):
             'message': 'EPM configuration storage is unavailable.',
         })
         run_probe.assert_not_called()
+        public_probe.assert_not_called()
+
+    def test_dev_home_graphql_public_probe_uses_private_scope_and_db_token_only(self):
+        self._store_callback_through_route()
+        document = {'version': 1, 'profile': 'public-read-v1', 'decision': 'fail',
+                    'reason': 'insufficient_home_fixture',
+                    'results': [{'operation': 'fixture', 'status': 0, 'ok': False, 'category': 'insufficient_home_fixture'}]}
+
+        with self._probe_mode() as get_config, \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe', return_value=document) as public_probe, \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as legacy_probe:
+            response = self.client.get(self.PROBE_PATH + '?profile=public-read-v1')
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), document)
+        legacy_probe.assert_not_called()
+        public_probe.assert_called_once_with('access-123', 'cloud-123', epm_scope=self.PRIVATE_SCOPE['scope'])
+        self.assertEqual(get_config.call_count, 1)
+
+    def test_dev_home_graphql_probe_rejects_unknown_profile_and_scope_overrides(self):
+        self._store_callback_through_route()
+        rejected = (
+            '?profile=bogus',
+            '?profile=public-read-v1&rootGoalKey=ROOT-1',
+            '?profile=public-read-v1&subGoalKey=SUB-1',
+            '?profile=public-read-v1&homeProjectId=proj-1',
+            '?profile=legacy&rootGoalKey=OTHER-1',
+            '?rootGoalKey=OTHER-1',
+            '?subGoalKey=OTHER-2',
+            '?homeProjectId=proj-1',
+        )
+        for query in rejected:
+            with self.subTest(query=query), self._probe_mode(), \
+                 patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as legacy_probe, \
+                 patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
+                response = self.client.get(self.PROBE_PATH + query)
+                self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
+                legacy_probe.assert_not_called()
+                public_probe.assert_not_called()
+
+        with self._probe_mode(), patch(
+            'backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe', return_value={'ok': True},
+        ) as legacy_probe:
+            response = self.client.get(self.PROBE_PATH + '?profile=legacy&rootGoalKey=root-1&subGoalKey=sub-1')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(legacy_probe.call_args.kwargs['root_goal_key'], 'ROOT-1')
+        self.assertEqual(legacy_probe.call_args.kwargs['home_project_id'], '')
+
+    def test_dev_home_graphql_probe_requires_a_valid_db_browser_session(self):
+        result = self._store_callback_through_route()
+        with self.factory() as db_session:
+            db_session.delete(db_session.get(models.BrowserSession, result.browser_session_id))
+            db_session.commit()
+        cases = {
+            'missing': None,
+            'forged': {'db_browser_session_id': 'forged-browser-session'},
+            'deleted-or-expired': dict(result.session_payload),
+            'empty-id': {'db_browser_session_id': ''},
+        }
+        for name, payload in cases.items():
+            for query in ('', '?profile=public-read-v1', '?profile=legacy'):
+                with self.subTest(case=name, query=query):
+                    client = jira_server.app.test_client()
+                    if payload is not None:
+                        with client.session_transaction() as session:
+                            session['db_oauth_session'] = payload
+                    with self._probe_mode(), \
+                         patch('backend.routes.auth_routes.epm_home.run_home_graphql_oauth_probe') as legacy_probe, \
+                         patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
+                        response = client.get(self.PROBE_PATH + query)
+                    self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
+                    self.assertEqual(response.get_json()['error'], 'auth_required')
+                    legacy_probe.assert_not_called()
+                    public_probe.assert_not_called()
+
+    def test_dev_home_graphql_probe_is_hidden_without_db_oauth_or_local_flags(self):
+        self._store_callback_through_route()
+        with self._probe_mode() as _, patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
+            response = self.client.get(self.PROBE_PATH + '?profile=public-read-v1')
+        self.assertEqual(response.status_code, 404)
+        public_probe.assert_not_called()
+        with self._probe_mode(), patch.dict(os.environ, {'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': ''}), \
+             patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
+            response = self.client.get(self.PROBE_PATH + '?profile=public-read-v1')
+        self.assertEqual(response.status_code, 404)
+        public_probe.assert_not_called()
+
+    def test_dev_home_graphql_probe_policy_is_dev_local_oauth_read(self):
+        from backend.security.policy import classify_request_rule
+        policy = classify_request_rule(self.PROBE_PATH, 'GET', 'auth_routes.api_dev_home_graphql_oauth_probe')
+        self.assertEqual(policy.policy_class, 'dev_local_oauth_read')
 
     SHARE_LINK = 'v=1&mode=board&group=default&sprint=4182&find=50%25%20off'
 

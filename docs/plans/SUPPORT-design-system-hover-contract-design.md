@@ -1,5 +1,7 @@
 # Design system map, write contract and hover system (design)
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 | Field | Value |
 | --- | --- |
 | Date | 2026-10-13 (revision 2) |

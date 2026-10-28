@@ -88,13 +88,22 @@ def build_pkce_challenge(verifier):
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 
 
-def build_authorize_url(config, state, code_challenge=None, force_consent=False):
+def merge_oauth_scopes(base_scopes, extra_scopes=()):
+    """Space-separated union of two scope sets: base order first, duplicates dropped."""
+    merged = []
+    for scope in (*str(base_scopes or "").split(), *(str(item).strip() for item in extra_scopes or ())):
+        if scope and scope not in merged:
+            merged.append(scope)
+    return " ".join(merged)
+
+
+def build_authorize_url(config, state, code_challenge=None, force_consent=False, extra_scopes=()):
     if not code_challenge:
         raise AuthError("missing_pkce_challenge", "PKCE code challenge is required.")
     params = {
         "audience": "api.atlassian.com",
         "client_id": config.client_id,
-        "scope": config.scopes,
+        "scope": merge_oauth_scopes(config.scopes, extra_scopes) if extra_scopes else config.scopes,
         "redirect_uri": config.redirect_uri,
         "state": state,
         "response_type": "code",

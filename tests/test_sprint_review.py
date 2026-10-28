@@ -638,14 +638,15 @@ class GroupReviewContractTests(ReviewFixture, unittest.TestCase):
 
     # Forbidden paths
     def test_review_code_never_writes_config_preferences_catalog_or_resolves_credentials(self):
-        from backend.auth import home_credentials, token_crypto
+        from backend.auth import token_crypto
+        from backend.epm import home as epm_home
         from backend.services import sprints, workspace_catalog_cache
         forbidden = [(shared_group_config, name) for name in ('save_shared_groups', 'ensure_workspace_group_config', 'load_shared_groups',
                                                              'save_group_preferences', 'complete_onboarding_module', 'set_onboarding_done',
                                                              'load_group_preferences')]
         forbidden += [(workspace_catalog_cache, name) for name in ('load_sprint_catalog', 'load_sprint_team_catalog', 'claim_catalog_refresh', 'publish_catalog')]
         forbidden += [(sprints, name) for name in ('load_sprints_cache', 'save_sprints_cache', 'invalidate_sprints_cache', 'fetch_sprints_from_jira')]
-        forbidden += [(home_credentials, 'resolve_home_credential'), (token_crypto, 'decrypt_token')]
+        forbidden += [(epm_home, '_read_metadata_credential'), (token_crypto, 'decrypt_token')]
         patchers = [patch.object(target, name, side_effect=AssertionError(name + ' forbidden')) for target, name in forbidden]
         for patcher in patchers:
             patcher.start()

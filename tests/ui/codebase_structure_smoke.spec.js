@@ -3,7 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle } = require('./runtime_probe_helpers');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
 
 const repoRoot = path.join(__dirname, '..', '..');
@@ -895,14 +895,8 @@ async function installApiMocks(page, calls, options = {}) {
         if (url.pathname === '/api/eng/story-readiness') {
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         }
-        if (url.pathname === '/api/me/connections/home-token') {
-            return json({
-                connected: true,
-                provider: 'atlassian_user_api_token',
-                credentialSubject: 'profile@example.com',
-                status: 'active',
-                needsReconnect: false,
-            });
+        if (url.pathname === '/api/epm/access') {
+            return json(options.epmAccess || { state: 'available', epmHomeReadAvailable: true });
         }
         if (url.pathname === '/api/analytics/context') {
             return json(options.analyticsContext || { enabled: false });
@@ -921,6 +915,8 @@ async function installApiMocks(page, calls, options = {}) {
                 userCanEditEpmConfig: true,
                 projectsConfigured: true,
                 epm: epmConfig,
+                // EPM navigation needs the private checkbox, verified Home scopes and an `available` access decision.
+                ...(options.epmEnabled ? { epmViewEnabled: true, epmHomeReadAvailable: true } : {}),
                 ...(options.configExtras || {}),
                 ...(options.sharedStartupSnapshot ? {
                     sharedConfigRevision: 1,
@@ -3673,6 +3669,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
         allowSettingsModalLookups: true,
+        epmEnabled: true,
         groups: [
             { id: 'grp-default', name: 'Default', teamIds: ['team-alpha', 'team-beta'] },
             { id: 'grp-platform', name: 'Platform Delivery', teamIds: ['team-beta'] },
@@ -3937,7 +3934,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
 
 test('EPM lifecycle tabs load after config with scoped rollup requests and sticky checks', async ({ page }) => {
     const calls = [];
-    const apiMocks = await installApiMocks(page, calls, { delayConfig: true });
+    const apiMocks = await installApiMocks(page, calls, { delayConfig: true, epmEnabled: true });
     await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -4005,7 +4002,7 @@ test('EPM lifecycle tabs load after config with scoped rollup requests and stick
 
 test('EPM Sprint selector native options keep readable stable shared styling', async ({ page }) => {
     const calls = [];
-    const apiMocks = await installApiMocks(page, calls);
+    const apiMocks = await installApiMocks(page, calls, { epmEnabled: true });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -4072,7 +4069,7 @@ test('EPM Sprint selector native options keep readable stable shared styling', a
 
 test('EPM all-project rollup retries after sprint selection arrives during project load', async ({ page }) => {
     const calls = [];
-    const apiMocks = await installApiMocks(page, calls, { delaySprintsUntilEpmProjects: true });
+    const apiMocks = await installApiMocks(page, calls, { delaySprintsUntilEpmProjects: true, epmEnabled: true });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -4095,7 +4092,7 @@ test('EPM all-project rollup retries after sprint selection arrives during proje
 
 test('EPM all-project board can collapse and expand all visible projects', async ({ page }) => {
     const calls = [];
-    const apiMocks = await installApiMocks(page, calls, { epmProjectCount: 3 });
+    const apiMocks = await installApiMocks(page, calls, { epmProjectCount: 3, epmEnabled: true });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -4661,14 +4658,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -4801,14 +4790,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -4921,14 +4902,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/groups-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/me/connections/home-token",
             "requestedWith": null
         },
         {
@@ -5055,14 +5028,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -5175,14 +5140,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/groups-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/me/connections/home-token",
             "requestedWith": null
         },
         {
@@ -5350,14 +5307,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -5463,14 +5412,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -5539,14 +5480,6 @@ const coldModeRequestContracts = {
             "csrf": "absent",
             "method": "GET",
             "params": {},
-            "pathname": "/api/me/connections/home-token",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
             "pathname": "/api/projects/selected",
             "requestedWith": null
         },
@@ -5608,14 +5541,6 @@ const coldModeRequestContracts = {
             "method": "GET",
             "params": {},
             "pathname": "/api/groups-config",
-            "requestedWith": null
-        },
-        {
-            "body": null,
-            "csrf": "absent",
-            "method": "GET",
-            "params": {},
-            "pathname": "/api/me/connections/home-token",
             "requestedWith": null
         },
         {
@@ -6520,7 +6445,11 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
     const { mockDashboard, openCatchUp, installLifecycleControl, taskPayload } = require('./eng_epic_refresh_fixture');
     test.setTimeout(120000);
     const lifecycle = await installLifecycleControl(page), ctx = await mockDashboard(page);
-    if (connected) { const { activeHomeTokenConnection } = require('./epm_home_token_fixture'); ctx.respond('/api/me/connections/home-token', ({json}) => json(activeHomeTokenConnection())); }
+    if (connected) {
+        // EPM navigation needs the private checkbox, verified Home scopes and an `available` access decision.
+        ctx.respond('/api/config', ({json}) => json({ jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true, epmViewEnabled: true, epmHomeReadAvailable: true }));
+        ctx.respond('/api/epm/access', ({json}) => json({ state: 'available', epmHomeReadAvailable: true }));
+    }
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
     await openCatchUp(page, ctx, { prefs: { groupByInitiativeChoice: false } });
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });

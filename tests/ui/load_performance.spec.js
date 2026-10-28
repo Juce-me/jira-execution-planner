@@ -2,7 +2,7 @@ const { test, expect } = require('@playwright/test');
 const { buildSync } = require('esbuild');
 const fs = require('node:fs');
 const path = require('node:path');
-const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture } = require('./epm_view_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
 
 const root = path.resolve(__dirname, '../..');

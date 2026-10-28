@@ -1,5 +1,7 @@
 # Planning review group columns and Sprint views (#267) Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done. Executed and merged in [PR #290](https://github.com/Juce-me/jira-execution-planner/pull/290) (2026-10-20). The gates this plan's record lists as open at that point (the Gate 7 cutover rehearsal, headed Firefox and WebKit marker geometry, a CI PostgreSQL run) were not formally closed here; the follow-up plan [DONE-planning-review-adoption-merge-mode.md](DONE-planning-review-adoption-merge-mode.md) (#299) records a rehearsal of the adoption restore and a run of the repository's CI PostgreSQL runner script. Kept for audit context only.
 
 > **Current accuracy (2026-10-23):** the adoption this plan describes as a manual, quiesced script is now also run automatically on upgrade by revision `20261023_0020` (see [EXEC-planning-review-automatic-adoption-on-release.md](EXEC-planning-review-automatic-adoption-on-release.md)); the cutover steps describe the manual path.

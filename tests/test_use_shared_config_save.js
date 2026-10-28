@@ -90,6 +90,7 @@ function makeHarness({ overrides = {}, net = {}, groupDraft, dirty = {}, committ
         anyFieldConfigDirty: false,
         applyAdminSettingsGateConfig: (config) => { log.push(['applyAdminSettingsGateConfig', config]); return { status: 'clear' }; },
         applyCapacityLoaded: rec('applyCapacityLoaded'),
+        applyEpmCapabilityConfig: rec('applyEpmCapabilityConfig'),
         applyJiraIssueTypesLoaded: rec('applyJiraIssueTypesLoaded'),
         applyJiraProjectsAndBoardLoaded: rec('applyJiraProjectsAndBoardLoaded'),
         applyPriorityWeightsLoaded: rec('applyPriorityWeightsLoaded'),
@@ -107,6 +108,7 @@ function makeHarness({ overrides = {}, net = {}, groupDraft, dirty = {}, committ
         dispatchFirstRunConfigurationSession: rec('dispatchFirstRunConfigurationSession'),
         epmConfigLoading: false,
         epmConfigSaving: false,
+        epmViewPreferenceDirty: false,
         favoriteGroupValidationError: '',
         firstRunConfigurationActive: false,
         firstRunConfigurationSession: { committedAdminSections: {}, committedSections: {}, capturedDrafts: null, pendingGroupId: null, guideComplete: true, status: 'idle' },
@@ -133,10 +135,12 @@ function makeHarness({ overrides = {}, net = {}, groupDraft, dirty = {}, committ
         parentNameFieldIdDraft: 'p', persistGroupPreferences: recAsync('persistGroupPreferences'),
         priorityWeightsValidationError: '',
         queueConfigSaveRefresh: rec('queueConfigSaveRefresh'),
+        refreshEpmAccess: rec('refreshEpmAccess'),
         saveBoardConfig: recAsync('saveBoardConfig'),
         saveCapacityConfig: recAsync('saveCapacityConfig'),
         saveDeliveryOwnerFieldConfig: recAsync('saveDeliveryOwnerFieldConfig', () => ({ configRevision: 10 })),
         saveEpmConfig: recAsync('saveEpmConfig', true),
+        saveEpmViewPreference: recAsync('saveEpmViewPreference', { ok: true }),
         saveFirstRunGroupPreferences: recAsync('saveFirstRunGroupPreferences', { ok: true }),
         saveIssueTypesConfig: recAsync('saveIssueTypesConfig'),
         saveParentNameFieldConfig: recAsync('saveParentNameFieldConfig', () => ({ configRevision: 7 })),
@@ -183,8 +187,8 @@ async function mount(options) {
 const sequence = (log) => log.map((entry) => entry[0]);
 const before = (log, first, second) => { const a = sequence(log).indexOf(first); const b = sequence(log).indexOf(second); return a !== -1 && b !== -1 && a < b; };
 
-test('interface: 123 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
-    assert.equal(INPUT_NAMES.length, 123);
+test('interface: 127 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
+    assert.equal(INPUT_NAMES.length, 127);
     for (const getter of GETTERS) assert.ok(INPUT_NAMES.includes(getter), getter);
     for (const forbidden of ['loadConfig', 'loadSprints', 'activeDepartmentSettingsTab', ...(CLOSE_VIA_GETTER ? ['closeGroupManage'] : ['getCloseGroupManage'])]) assert.equal(INPUT_NAMES.includes(forbidden), false, `${forbidden} is reached through a getter`);
     const mod = await load();
@@ -244,6 +248,7 @@ test('full save sequence: admin sections sequential, adminAccess fixed step, gro
     assert.equal(sequence(log).filter((name) => name === 'closeGroupManage').length, 1, 'the unified save closes the modal exactly once');
     // After the refresh the permission, gate, catalog and sprint reload follow in order, then close.
     const tail = sequence(log).slice(sequence(log).indexOf('GET /api/config'));
+    assert.ok(tail.indexOf('applyEpmCapabilityConfig') > tail.indexOf('GET /api/config'), 'the post-save refresh also ingests the EPM capability fields');
     assert.deepEqual(tail.filter((name) => ['GET /api/config', 'applySavePermissions', 'applyAdminSettingsGateConfig', 'sprintCatalog.acceptSource', 'loadSprints', 'invalidateSprintDataForConfigSave', 'queueConfigSaveRefresh', 'closeGroupManage'].includes(name)), [
         'GET /api/config', 'applySavePermissions', 'applyAdminSettingsGateConfig', 'sprintCatalog.acceptSource', 'loadSprints', 'invalidateSprintDataForConfigSave', 'queueConfigSaveRefresh', 'closeGroupManage',
     ]);
@@ -446,6 +451,40 @@ test('validation errors short-circuit the save: the error is set, the failure tr
     assert.ok(harness.log.some((entry) => entry[0] === 'setGroupDraftError' && entry[1] === 'Add at least one dashboard project before saving.'));
     assert.equal(sequence(harness.log).includes('saveBoardConfig'), false);
     assert.equal(sequence(harness.log).includes('POST /api/groups-config'), false);
+});
+
+test('EPM view preference: its own save after EPM config, then the config refresh ingests capabilities and access is refreshed; modal stays open when it is the only change', async () => {
+    const all = await mount({ overrides: { epmViewPreferenceDirty: true, isEpmConfigDirty: true, groupDraftSignature: 'baseline' } });
+    const outcome = await all.hook.saveAllSettings({});
+    assert.equal(outcome.ok, true);
+    const order = sequence(all.log);
+    assert.ok(order.indexOf('saveEpmConfig') < order.indexOf('saveEpmViewPreference'), 'the preference follows the EPM config save');
+    assert.ok(order.indexOf('saveEpmViewPreference') < order.indexOf('GET /api/config'));
+    assert.ok(order.indexOf('GET /api/config') < order.indexOf('applyEpmCapabilityConfig'));
+    assert.ok(order.indexOf('applyEpmCapabilityConfig') < order.indexOf('refreshEpmAccess'));
+    assert.equal(all.log.find((entry) => entry[0] === 'saveEpmViewPreference').length, 1, 'the save takes no payload from the shared save');
+    const only = await mount({ overrides: { groupManageTab: 'connections', epmViewPreferenceDirty: true, groupDraftSignature: 'baseline' } });
+    assert.equal((await only.hook.saveAllSettings({})).ok, true);
+    assert.deepEqual(sequence(only.log).filter((name) => /^save|^POST |^close/.test(name)), ['saveEpmViewPreference']);
+    assert.equal(only.hook.saveBlockedReason, '', 'a dirty preference alone is a saveable change');
+    const clean = await mount({ overrides: { groupDraftSignature: 'baseline' } });
+    assert.equal(clean.hook.saveBlockedReason, 'No changes to save');
+    assert.equal(clean.hook.isGroupDraftDirty, false);
+    assert.equal((await mount({ overrides: { groupDraftSignature: 'baseline', epmViewPreferenceDirty: true } })).hook.isGroupDraftDirty, true);
+    assert.equal((await mount({ overrides: { groupDraftSignature: 'baseline', epmViewPreferenceDirty: true } })).hook.unsavedSectionsCount, 1);
+});
+
+test('EPM view preference: a failed save reports its error, skips the refresh and keeps the modal open; an authentication loss stays with the shared save path', async () => {
+    const failing = await mount({ overrides: { groupDraftSignature: 'baseline', epmViewPreferenceDirty: true, saveEpmViewPreference: async () => ({ ok: false, error: 'Preference storage is unavailable.' }) } });
+    const outcome = await failing.hook.saveAllSettings({});
+    assert.equal(outcome.ok, false);
+    assert.equal(outcome.error, 'Preference storage is unavailable.');
+    assert.deepEqual(sequence(failing.log).filter((name) => /GET \/api\/config|applyEpmCapabilityConfig|refreshEpmAccess|closeGroupManage/.test(name)), []);
+    const lost = await mount({ overrides: { groupDraftSignature: 'baseline', epmViewPreferenceDirty: true, saveEpmViewPreference: async () => { throw Object.assign(new Error('locked'), { name: 'AuthenticationRequiredError', code: 'auth_required' }); } } });
+    const lostOutcome = await lost.hook.saveAllSettings({});
+    assert.equal(lostOutcome.ok, false);
+    assert.equal(lostOutcome.authRequired, true, 'an authentication loss is reported as authRequired, never as a preference failure');
+    assert.equal(lostOutcome.error, '');
 });
 
 test('saveAllSettings(connections tab) is a no-op and a missing group draft reports unavailability', async () => {

@@ -5,7 +5,7 @@ const { test: baseTest, expect } = require('@playwright/test');
 const test = baseTest.extend({
     deviceScaleFactor: async ({ browserName }, use) => use(browserName === 'chromium' ? 1 : 2),
 });
-const { installDashboardFixture, activeHomeTokenConnection, selectedSprintId, selectedSprintName } = require('./epm_home_token_fixture');
+const { installDashboardFixture, enabledEpmOptions, selectedSprintId, selectedSprintName } = require('./epm_view_fixture');
 const { hoverEvidence, evidenceDir, measure, measureDescendantText, contrast } = require('./design_system_hover_helpers');
 
 const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -14,7 +14,7 @@ const baseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 // Whole application stylesheets preserve every ancestor cascade override. The opt-in
 // baseline replay serves the exact Part 1 committed CSS for additional evidence only.
 async function installSurface(page, mode = 'catch-up', options = {}) {
-    await installDashboardFixture(page, { connection: activeHomeTokenConnection(), allProjectsRollup: options.allProjectsRollup, ...(options.fixtureOptions || {}) });
+    await installDashboardFixture(page, { ...enabledEpmOptions(), allProjectsRollup: options.allProjectsRollup, ...(options.fixtureOptions || {}) });
     if (process.env.JEP_HOVER_CSS_PATH) await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({ contentType: 'text/css', body: fs.readFileSync(process.env.JEP_HOVER_CSS_PATH, 'utf8') }));
     if (process.env.JEP_HOVER_BASELINE === '1') {
         const css = execFileSync('git', ['show', 'ce5911a96ab00e2284cb0f8c6bd0ede1584e7a69:frontend/dist/dashboard.css'], {
@@ -455,28 +455,6 @@ test('disabled Settings Add column retains its border and text at the twelve-col
     await expect(add).toBeDisabled();
     await expect(add).toHaveAttribute('title', 'A board can have at most 12 columns.');
     await surfaceHover(page, add, testInfo, 'settings-disabled-add-column', { disabled: true });
-});
-
-test('disabled connected Home Revoke retains its danger border during the real pending delete', async ({ page }, testInfo) => {
-    await installSurface(page);
-    const held = holdResponse();
-    await page.route('**/api/me/connections/home-token', async route => {
-        if (route.request().method() !== 'DELETE') return route.fallback();
-        await held.promise;
-        return route.fulfill({ json: { connected: false } });
-    });
-    try {
-        await page.getByRole('button', { name: /manage team groups/i }).click();
-        const dialog = page.getByRole('dialog');
-        await dialog.getByRole('button', { name: 'Connections', exact: true }).click();
-        const revoke = dialog.getByRole('button', { name: 'Revoke', exact: true });
-        await expect(revoke).toBeEnabled();
-        await revoke.click();
-        await expect(revoke).toBeDisabled();
-        await surfaceHover(page, revoke, testInfo, 'settings-disabled-revoke', { disabled: true });
-        held.release();
-        await expect(revoke).toBeHidden();
-    } finally { held.release(); }
 });
 
 test('disabled inactive Scenario History retains its resting fill while actual drafts load', async ({ page }, testInfo) => {

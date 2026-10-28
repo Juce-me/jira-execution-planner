@@ -1,5 +1,7 @@
 # Dashboard Data Freshness and Reading Continuity Implementation Plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development` when the user authorizes delegation (preferred by `docs/AGENTS.md`); otherwise use `superpowers:executing-plans`. Tasks 3–9 share `dashboard.jsx` and exact-count structure budgets, so run tasks strictly in order and delegate only file-disjoint work inside a task. Steps use checkbox (`- [ ]`) syntax for tracking. Work in the checkout the user is viewing; do not create another worktree.
 
 **Goal:** Check the active dashboard's data after a long focused return without background freshness work, lost refresh intent, or displacement of the item being read.

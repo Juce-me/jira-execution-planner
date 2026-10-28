@@ -1,11 +1,14 @@
 import base64
 import io
+import tempfile
 import unittest
+from pathlib import Path
 from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from backend.db import engine as db_engine
 from scripts.check_startup_preflight import run_preflight
+from tests.test_frontend_build import _add_sources, _build_dist, _write, HTML
 
 
 class StartupPreflightTests(unittest.TestCase):
@@ -17,6 +20,10 @@ class StartupPreflightTests(unittest.TestCase):
         with patch(
             "scripts.check_startup_preflight.validate_config_storage_startup",
             return_value=None,
+        ), patch(
+            "scripts.check_startup_preflight.frontend_build_missing", return_value=None,
+        ), patch(
+            "scripts.check_startup_preflight.frontend_build_stale", return_value=None,
         ), redirect_stdout(output):
             code = run_preflight(env)
         return code, output.getvalue()
@@ -216,6 +223,50 @@ class StartupPreflightTests(unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertNotIn(password, output)
+
+
+class StartupPreflightFrontendBuildTests(unittest.TestCase):
+    """The frontend_build item against a synthetic tree, with the build helpers unpatched."""
+
+    ENV = {
+        "JIRA_URL": "https://example.atlassian.net",
+        "JIRA_AUTH_MODE": "basic",
+        "JIRA_EMAIL": "user@example.com",
+        "JIRA_TOKEN": "secret-token",
+        "CONFIG_STORAGE_BACKEND": "jsonfile",
+    }
+
+    def tearDown(self):
+        db_engine.dispose_engines()
+
+    def _run(self, root):
+        output = io.StringIO()
+        with patch("scripts.check_startup_preflight.REPO_ROOT", Path(root)), redirect_stdout(output):
+            code = run_preflight(dict(self.ENV))
+        return code, output.getvalue()
+
+    def test_passes_with_a_complete_dist(self):
+        with tempfile.TemporaryDirectory() as root:
+            _build_dist(Path(root))
+            _add_sources(Path(root))
+            code, output = self._run(root)
+        self.assertEqual(code, 0)
+        self.assertIn("PASS frontend_build:", output)
+
+    def test_fails_with_a_missing_dist(self):
+        with tempfile.TemporaryDirectory() as root:
+            _write(Path(root) / "jira-dashboard.html", HTML)
+            code, output = self._run(root)
+        self.assertEqual(code, 1)
+        self.assertIn("FAIL frontend_build:", output)
+        self.assertIn("npm run build", output)
+
+    def test_passes_in_a_dist_only_layout(self):
+        with tempfile.TemporaryDirectory() as root:
+            _build_dist(Path(root))
+            code, output = self._run(root)
+        self.assertEqual(code, 0)
+        self.assertIn("PASS frontend_build: complete", output)
 
 
 if __name__ == "__main__":

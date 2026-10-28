@@ -1,7 +1,7 @@
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
-const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_home_token_fixture');
+const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -156,27 +156,25 @@ async function installPlanningFixture(page, {
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
-        if (url.pathname === '/api/me/connections/home-token') {
-            if (shellAuthDependency === 'home-token') {
+        if (url.pathname === '/api/epm/access') {
+            // The shell waits for this read when EPM is enabled: a late 401 lands after the groups loaded.
+            if (shellAuthDependency === 'epm-access') {
                 await shellAuthRelease;
                 return json(route, {
                     error: 'auth_required',
                     loginUrl: '/login?reason=session_expired',
                 }, 401);
             }
-            return json(route, {
-                connected: false,
-                provider: 'atlassian_user_api_token',
-                status: 'missing',
-                needsReconnect: false,
-            });
+            return json(route, { state: 'disabled', epmHomeReadAvailable: false });
         }
         if (url.pathname === '/api/config') {
             await configRelease;
             return json(route, {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
-                authMode: 'basic',
+                authMode: shellAuthDependency ? 'atlassian_oauth' : 'basic',
+                epmViewEnabled: shellAuthDependency === 'epm-access',
+                epmHomeReadAvailable: shellAuthDependency === 'epm-access',
                 projectsConfigured: true,
                 userCanEditSettings: true,
                 environmentConfigExists: true,
@@ -744,7 +742,7 @@ test('missing recovered task keys are pruned after exact-scope hydration', async
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
-test('Connections Settings reopens after recovery without retaining the token input', async ({ page }) => {
+test('Connections Settings reopens after recovery on the Connections tab', async ({ page }) => {
     await installPlanningFixture(page);
     await page.route('**/api/auth/status', route => json(route, {
         authMode: 'atlassian_oauth',
@@ -756,8 +754,7 @@ test('Connections Settings reopens after recovery without retaining the token in
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const settings = page.getByRole('dialog').first();
     await settings.getByRole('button', { name: 'Connections', exact: true }).click();
-    const tokenInput = settings.getByLabel('Atlassian API token');
-    await tokenInput.fill('transient-form-value');
+    await expect(settings.getByRole('button', { name: 'Connections', exact: true })).toHaveClass(/active/);
 
     await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:authentication-required')));
     await expect.poll(() => page.evaluate(() => {
@@ -766,13 +763,11 @@ test('Connections Settings reopens after recovery without retaining the token in
     })).toMatchObject({
         view: { settingsOpen: true, settingsTab: 'connections' },
     });
-    expect(await page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toContain('transient-form-value');
 
     await page.reload();
     const restoredSettings = page.getByRole('dialog').first();
     await expect(restoredSettings).toBeVisible();
     await expect(restoredSettings.getByRole('button', { name: 'Connections', exact: true })).toHaveClass(/active/);
-    await expect(restoredSettings.getByLabel('Atlassian API token')).toHaveValue('');
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
@@ -877,7 +872,7 @@ test('late authenticated config staging holds Jira work, then resumes shell and 
 
 test('typed auth during a shell dependency keeps the capsule for the next document', async ({ page }) => {
     await seedPlanningAuthResume(page, { engMode: 'catch-up' });
-    const fixture = await installPlanningFixture(page, { shellAuthDependency: 'home-token' });
+    const fixture = await installPlanningFixture(page, { shellAuthDependency: 'epm-access' });
     await page.goto(appBaseUrl);
 
     await expect.poll(() => fixture.calls.some(call => call.pathname === '/api/projects/selected')).toBe(true);
@@ -934,7 +929,7 @@ test('onboarding waits for delayed config and Home auth before deciding capsule 
     await seedPlanningAuthResume(page);
     const fixture = await installPlanningFixture(page, {
         delayConfig: true,
-        shellAuthDependency: 'home-token',
+        shellAuthDependency: 'epm-access',
         onboardingRequired: true,
     });
     await page.goto(appBaseUrl);

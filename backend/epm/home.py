@@ -4,12 +4,17 @@ from __future__ import annotations
 
 import base64
 import concurrent.futures
+import hashlib
 import html as html_module
 import json
 import logging
+import math
 import os
 import re
+import threading
 import time
+from dataclasses import dataclass
+from types import MappingProxyType
 from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -18,13 +23,20 @@ from backend.auth.cache_policy import (
     build_jira_home_process_cache_key,
     jira_home_partitioned_process_cache_enabled,
 )
-from backend.auth.home_credentials import HomeCredential, resolve_home_credential
-from backend.auth.jira_auth import AuthError
+from backend.auth.home_credentials import HomeCredential
+from backend.auth.jira_auth import AuthError, is_oauth_token_expired, oauth_scope_set
 from backend.db.engine import database_storage_enabled
 
 logger = logging.getLogger(__name__)
 
 HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
+# Single audience for the bounded public-read-v1 OAuth contract. The strict client and
+# the public probe accept exactly this URL; Basic keeps HOME_GRAPHQL_ENDPOINT above.
+HOME_OAUTH_GRAPHQL_ENDPOINT = "https://api.atlassian.com/graphql"
+HOME_MAX_RETRY_WAIT_SECONDS = 30
+PUBLIC_READ_V1_PROFILE = "public-read-v1"
+PUBLIC_READ_V1_PROBE_VERSION = 1
+PUBLIC_READ_V1_PASS_REASON = "home_graphql_public_read_v1_supported"
 HOME_TIMEOUT_SECONDS = 30
 HOME_MAX_RETRIES = 3
 HOME_PAGE_SIZE = 50
@@ -34,6 +46,8 @@ HOME_MAX_PROJECT_GOALS_PER_SCOPE = 100
 
 _CLOUD_ID_CACHE: dict[str, str] = {}
 _GOAL_BY_KEY_CACHE: dict[str, dict] = {}
+_STRICT_GOAL_LOOKUP_CACHE: dict[tuple, tuple[float, dict]] = {}
+_STRICT_GOAL_LOOKUP_LOCK = threading.Lock()
 
 PENDING_EPM_STATES = {"PENDING"}
 ACTIVE_EPM_STATES = PENDING_EPM_STATES | {"ON_TRACK", "AT_RISK", "OFF_TRACK"}
@@ -56,6 +70,118 @@ class HomeGraphQLError(Exception):
 
 class HomeRateLimitError(Exception):
     pass
+
+
+HOME_READ_ERROR_CATEGORIES = (
+    "invalid_target",
+    "invalid_credential",
+    "unregistered_operation",
+    "auth_rejected",
+    "access_denied",
+    "rate_limited",
+    "http_error",
+    "network",
+    "invalid_response",
+    "graphql_error",
+)
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9_]{1,64}$")
+_AUTH_CLASSIFICATIONS = {"UNAUTHORIZED", "FORBIDDEN", "UNAUTHENTICATED", "PERMISSION_DENIED"}
+
+
+class HomeReadError(Exception):
+    """Typed strict-profile failure. Never carries provider messages, bodies or credentials.
+
+    Deliberately not a subclass of the Basic-era errors, so the legacy swallow sites
+    (`except HomeGraphQLError ...`) cannot absorb a strict required failure.
+    """
+
+    def __init__(self, category, *, status=None, paths=(), retry_after=None, provider_classification=""):
+        super().__init__(f"Atlassian Home read failed ({category})")
+        self.category = category
+        self.status = status
+        self.paths = tuple(paths)
+        self.retry_after = retry_after
+        self.provider_classification = provider_classification
+
+
+@dataclass(frozen=True)
+class HomeGraphQLFailure:
+    """One GraphQL error reduced to validated, non-textual metadata."""
+
+    path: tuple | None
+    classification: str
+    auth: bool
+
+
+@dataclass(frozen=True)
+class HomeGraphQLResult:
+    """Strict-profile response: GraphQL `data` plus sanitised `errors`, kept until classified."""
+
+    data: dict
+    errors: tuple
+    status: int = 200
+
+    def fail(self):
+        category = "access_denied" if any(error.auth for error in self.errors) else "graphql_error"
+        classification = next((error.classification for error in self.errors if error.classification), "")
+        raise HomeReadError(
+            category,
+            status=self.status,
+            paths=tuple(error.path for error in self.errors if error.path),
+            provider_classification=classification,
+        )
+
+    def raise_for_errors(self):
+        if self.errors:
+            self.fail()
+
+
+def _validated_error_path(raw) -> tuple | None:
+    if not isinstance(raw, list) or not 0 < len(raw) <= 16:
+        return None
+    path = []
+    for segment in raw:
+        if isinstance(segment, bool):
+            return None
+        if isinstance(segment, int) and 0 <= segment < 100000:
+            path.append(segment)
+        elif isinstance(segment, str) and _SAFE_NAME.match(segment):
+            path.append(segment)
+        else:
+            return None
+    return tuple(path)
+
+
+def _sanitise_graphql_errors(errors) -> tuple:
+    sanitised = []
+    for error in errors or []:
+        if not isinstance(error, dict):
+            sanitised.append(HomeGraphQLFailure(None, "", False))
+            continue
+        extensions = error.get("extensions") if isinstance(error.get("extensions"), dict) else {}
+        classification = ""
+        for candidate in (extensions.get("classification"), extensions.get("code")):
+            if isinstance(candidate, str) and _SAFE_NAME.match(candidate):
+                classification = candidate
+                break
+        message = str(error.get("message") or "").lower()
+        auth = classification.upper() in _AUTH_CLASSIFICATIONS or any(
+            marker in message for marker in HOME_GRAPHQL_AUTH_ERROR_MARKERS
+        )
+        sanitised.append(HomeGraphQLFailure(_validated_error_path(error.get("path")), classification, auth))
+    return tuple(sanitised)
+
+
+def _strict_retry_wait(header_value, attempt: int) -> int:
+    """Retry wait for strict clients: invalid values fall back to backoff; all clamped to 1..30 s."""
+    wait = float(2 ** attempt)
+    try:
+        parsed = float(header_value) if header_value not in (None, "") else None
+    except (TypeError, ValueError):
+        parsed = None
+    if parsed is not None and math.isfinite(parsed):
+        wait = parsed
+    return int(max(1, min(HOME_MAX_RETRY_WAIT_SECONDS, math.ceil(wait))))
 
 
 class HomeGraphQLClient:
@@ -137,6 +263,317 @@ class HomeGraphQLClient:
                 page_variables["after"] = next_cursor
                 continue
             return all_nodes
+
+
+def _bearer_headers(access_token: str) -> dict:
+    return {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {access_token}",
+        "X-ExperimentalApi": "Townsquare",
+    }
+
+
+class HomeOAuthGraphQLClient:
+    """Strict public-read-v1 client: one fixed endpoint, registered read documents only."""
+
+    strict_public_read = True
+
+    def __init__(self, access_token: str, endpoint: str = HOME_OAUTH_GRAPHQL_ENDPOINT):
+        # Validate the target and credential shape before any Bearer header exists.
+        if not isinstance(endpoint, str) or endpoint != HOME_OAUTH_GRAPHQL_ENDPOINT:
+            raise HomeReadError("invalid_target")
+        if not isinstance(access_token, str) or not access_token or re.search(r"\s", access_token):
+            raise HomeReadError("invalid_credential")
+        self.endpoint = HOME_OAUTH_GRAPHQL_ENDPOINT
+        self._headers = _bearer_headers(access_token)
+
+    def __repr__(self) -> str:
+        return f"HomeOAuthGraphQLClient(endpoint={self.endpoint!r})"
+
+    def execute_operation(self, operation: str, variables: dict | None = None) -> HomeGraphQLResult:
+        entry = PUBLIC_READ_V1_REGISTRY.get(operation) if isinstance(operation, str) else None
+        if entry is None:
+            raise HomeReadError("unregistered_operation")
+        return self._post(entry["query"], entry["operationName"], variables)
+
+    def execute(self, query: str, variables: dict | None = None) -> HomeGraphQLResult:
+        key = _PUBLIC_DOCUMENT_KEYS.get(query) if isinstance(query, str) else None
+        if key is None:
+            raise HomeReadError("unregistered_operation")
+        return self.execute_operation(key, variables)
+
+    def _post(self, query: str, operation_name: str, variables: dict | None) -> HomeGraphQLResult:
+        payload: dict[str, Any] = {"query": query, "operationName": operation_name}
+        if variables:
+            payload["variables"] = variables
+        body = json.dumps(payload).encode("utf-8")
+        for attempt in range(HOME_MAX_RETRIES + 1):
+            request = Request(self.endpoint, data=body, headers=self._headers, method="POST")
+            try:
+                with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
+                    status = int(getattr(response, "status", None) or response.getcode())
+                    document = json.loads(response.read().decode("utf-8"))
+            except HTTPError as exc:
+                if exc.code == 429:
+                    wait = _strict_retry_wait(exc.headers.get("Retry-After") if exc.headers else None, attempt)
+                    if attempt < HOME_MAX_RETRIES:
+                        exc.close()
+                        time.sleep(wait)
+                        continue
+                    exc.close()
+                    raise HomeReadError("rate_limited", status=429, retry_after=wait) from None
+                category = {401: "auth_rejected", 403: "access_denied"}.get(exc.code, "http_error")
+                exc.close()
+                raise HomeReadError(category, status=int(exc.code)) from None
+            except OSError:
+                raise HomeReadError("network") from None
+            except ValueError:
+                raise HomeReadError("invalid_response", status=200) from None
+            if not isinstance(document, dict):
+                raise HomeReadError("invalid_response", status=status)
+            raw_errors = document.get("errors")
+            if raw_errors is not None and not isinstance(raw_errors, list):
+                raise HomeReadError("invalid_response", status=status)
+            data = document.get("data")
+            if data is None and not raw_errors:
+                raise HomeReadError("invalid_response", status=status)
+            if data is not None and not isinstance(data, dict):
+                raise HomeReadError("invalid_response", status=status)
+            return HomeGraphQLResult(data or {}, _sanitise_graphql_errors(raw_errors), status)
+        raise HomeReadError("rate_limited", status=429, retry_after=HOME_MAX_RETRY_WAIT_SECONDS)
+
+    def execute_paginated(self, query: str, variables: dict, path_to_connection: str) -> list[dict]:
+        all_nodes: list[dict] = []
+        page_variables = dict(variables)
+        page_variables["after"] = None
+        while True:
+            result = self.execute(query, page_variables)
+            result.raise_for_errors()
+            connection: Any = result.data
+            for key in path_to_connection.split("."):
+                connection = connection.get(key) if isinstance(connection, dict) else None
+            if not isinstance(connection, dict):
+                raise HomeReadError("invalid_response", status=result.status)
+            for edge in connection.get("edges", []) or []:
+                node = edge.get("node") if isinstance(edge, dict) else None
+                if node is not None:
+                    all_nodes.append(node)
+            page_info = connection.get("pageInfo", {}) or {}
+            if page_info.get("hasNextPage"):
+                next_cursor = page_info.get("endCursor")
+                if not next_cursor or next_cursor == page_variables.get("after"):
+                    logger.warning("Pagination stopped for %s because the cursor did not advance.", path_to_connection)
+                    return all_nodes
+                page_variables["after"] = next_cursor
+                continue
+            return all_nodes
+
+
+class LeasedHomeOAuthClient(HomeOAuthGraphQLClient):
+    """Strict client whose every page passes the snapshot's lease and picks up a rotated or refreshed token."""
+
+    def __init__(self, auth: "HomeReadAuth"):
+        self._auth = auth
+        super().__init__(auth.access_token())
+
+    def _post(self, query, operation_name, variables):
+        self._headers = _bearer_headers(self._auth.access_token())
+        return super()._post(query, operation_name, variables)
+
+
+def build_home_oauth_graphql_client(
+    access_token: str, endpoint: str = HOME_OAUTH_GRAPHQL_ENDPOINT
+) -> HomeOAuthGraphQLClient:
+    """Seam for Tasks 2-3: construct the strict client from the DB-resolved OAuth access token."""
+    return HomeOAuthGraphQLClient(access_token, endpoint)
+
+
+EPM_HOME_READ_SCOPES = (
+    "read:goal:goals",
+    "read:access:goals",
+    "read:project:projects",
+    "read:access:projects",
+)
+HOME_READ_PROFILE_LEGACY = "legacy"
+HOME_READ_PROFILE_PUBLIC_READ_V1 = "public-read-v1"
+HOME_READ_PROFILE_SCOPE_REQUIRED = "epm-scope-required"
+HOME_AUTH_LEASE_SECONDS = 5
+GOAL_LOOKUP_CACHE_MAX_ENTRIES = 512
+GOAL_LOOKUP_CACHE_TTL_SECONDS = 300
+
+
+def select_epm_home_read_profile(context, *, view_enabled) -> str:
+    """Home OAuth reads only for a DB OAuth actor who enabled the EPM view AND whose provider-confirmed
+    grant has every Home read scope. An enabled actor without the full grant gets the fail-closed
+    profile (never the API-token path); a disabled actor, Basic and local-store contexts stay legacy."""
+    if not view_enabled or getattr(context, "auth_mode", "") != AUTH_MODE_ATLASSIAN_OAUTH:
+        return HOME_READ_PROFILE_LEGACY
+    connection_id = str(getattr(context, "auth_connection_id", "") or "")
+    if not connection_id or connection_id.startswith("local-"):
+        return HOME_READ_PROFILE_LEGACY
+    if (
+        not getattr(context, "granted_scopes_verified", False)
+        or not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(getattr(context, "granted_scopes", ()))
+    ):
+        return HOME_READ_PROFILE_SCOPE_REQUIRED
+    return HOME_READ_PROFILE_PUBLIC_READ_V1
+
+
+class HomeReadAuth:
+    """One request's Home read authority: the validated context, a bounded lease and a warmed index.
+
+    Built once per request (never holds a DB session). `revalidate()` is a forced direct
+    check used before cache use and before cache admission; `lease()` re-checks at most
+    once per `lease_seconds` for long reads. `revalidate`/`load_session` are injected
+    (DB status check and the existing encrypted token loader with its locked refresh), so
+    this module has no Flask or server dependency and workers can share the object.
+    """
+
+    def __init__(self, profile, context, *, revalidate=None, load_session=None,
+                 monotonic=time.monotonic, lease_seconds=HOME_AUTH_LEASE_SECONDS):
+        self.profile = profile
+        self._context = context
+        self._revalidate = revalidate
+        self._load_session = load_session
+        self._monotonic = monotonic
+        self._lease_seconds = lease_seconds
+        self._lock = threading.RLock()
+        self._validated_at = None
+        self._token = None
+        self._token_version = None
+        self._token_expires = 0
+        self.revalidation_count = 0
+        self.token_load_count = 0
+        self._index_recording: dict | None = None
+        self._index: MappingProxyType | None = None
+
+    def __repr__(self) -> str:
+        return f"HomeReadAuth(profile={self.profile!r})"
+
+    @property
+    def strict(self) -> bool:
+        return self.profile in (HOME_READ_PROFILE_PUBLIC_READ_V1, HOME_READ_PROFILE_SCOPE_REQUIRED)
+
+    @property
+    def context(self):
+        """Context last proven by a direct check; no I/O."""
+        return self._context
+
+    def revalidate(self):
+        """Forced direct status/authority check; returns the context to use for keys and admission."""
+        if not self.strict:
+            return self._context
+        if self.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
+        with self._lock:
+            current = self._revalidate(self._context)
+            self.revalidation_count += 1
+            if not set(EPM_HOME_READ_SCOPES) <= oauth_scope_set(current.granted_scopes):
+                raise AuthError("epm_scope_required", "Home read scopes are required.")
+            self._context = current
+            self._validated_at = self._monotonic()
+            return current
+
+    def lease(self):
+        """Validated context; re-checks only when the five-second lease has lapsed."""
+        if not self.strict:
+            return self._context
+        if self.profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
+        with self._lock:
+            if self._validated_at is None or self._monotonic() - self._validated_at >= self._lease_seconds:
+                return self.revalidate()
+            return self._context
+
+    def cloud_id(self) -> str:
+        cloud_id = str(self.lease().cloud_id or "").strip()
+        if not cloud_id:
+            raise HomeReadError("invalid_target")
+        return cloud_id
+
+    def access_token(self) -> str:
+        with self._lock:
+            context = self.lease()
+            if (
+                self._token is None
+                or self._token_version != context.token_version
+                or is_oauth_token_expired({"expires_at": self._token_expires})
+            ):
+                self._reload_token(context)
+            return self._token
+
+    def _reload_token(self, context):
+        data = self._load_session(context) or {}
+        self.token_load_count += 1
+        if str(data.get("db_token_version") or "") != str(context.token_version):
+            context = self.revalidate()  # the loader refreshed or rotated the token
+        granted = oauth_scope_set(data.get("scope") or "")
+        if data.get("scope_provenance") != "provider" or not set(EPM_HOME_READ_SCOPES) <= granted:
+            raise AuthError("epm_scope_required", "Home read scopes are required.")
+        token = data.get("access_token")
+        if not isinstance(token, str) or not token:
+            raise AuthError("auth_required", "Atlassian authentication is required.")
+        self._token = token
+        self._token_expires = int(data.get("expires_at") or 0)
+        self._token_version = str(context.token_version)
+
+    def cache_authorizer(self):
+        """Forced-validation hook for the rollup/issues caches. Only Home-OAuth reads carry one: an
+        owner-private custom row (no Home read) must stay O-only even for an enabled user without scopes."""
+        return self.revalidate if self.profile == HOME_READ_PROFILE_PUBLIC_READ_V1 else None
+
+    def client(self):
+        return LeasedHomeOAuthClient(self)
+
+    def recheck_after_rejection(self):
+        """After a raw provider 401: one direct authority check plus a forced token reload.
+
+        Raises the typed AuthError only for proven loss (revoked/disabled/expired-unrefreshable);
+        otherwise returns, and the caller reports a non-terminal read failure, never a re-login loop.
+        """
+        if self.profile != HOME_READ_PROFILE_PUBLIC_READ_V1:
+            return
+        with self._lock:
+            self._token = None
+            self.revalidate()
+            self.access_token()
+
+    # -- immutable warmed index (request thread records, then freezes before any worker starts) --
+    def begin_index(self) -> None:
+        self._index_recording = {}
+
+    def record_home_state(self, scope_key, state) -> None:
+        if self._index_recording is not None:
+            self._index_recording[scope_key] = {**state, "homeProjects": tuple(state["homeProjects"])}
+
+    def freeze_index(self) -> None:
+        recorded, self._index_recording = self._index_recording or {}, None
+        self._index = MappingProxyType(recorded)
+
+    def indexed_home_state(self, scope_key):
+        state = self._index.get(scope_key) if self._index is not None else None
+        if state is None:
+            return None
+        return {**state, "homeProjects": list(state["homeProjects"]), "cacheHit": True}
+
+
+def _is_strict_client(client) -> bool:
+    return getattr(client, "strict_public_read", False) is True
+
+
+def _op_query(client, public_key: str, legacy_query: str) -> str:
+    """Strict clients send the registered public document; Basic keeps its legacy constant."""
+    return PUBLIC_READ_V1_REGISTRY[public_key]["query"] if _is_strict_client(client) else legacy_query
+
+
+def _execute_data(client, public_key: str, legacy_query: str, variables: dict) -> dict:
+    """Run one operation and return its `data`; strict clients reject any GraphQL error."""
+    if _is_strict_client(client):
+        result = client.execute_operation(public_key, variables)
+        result.raise_for_errors()
+        return result.data
+    return client.execute(legacy_query, variables).get("data") or {}
 
 
 def _home_basic_credentials() -> tuple[str, str]:
@@ -280,6 +717,79 @@ query EpmProjectTags($cypherQuery: String!, $params: CypherRequestParams) {
   }
 }
 """
+
+# --- public-read-v1: seven read-only documents shared by runtime and probe -------------
+# Goal/project `owner` and update `creator` are not selected (they need an identity scope the
+# bounded contract does not request); Teamwork Graph/Cypher is not part of the profile.
+PUBLIC_QUERY_GOALS_SEARCH = QUERY_GOALS_SEARCH
+PUBLIC_QUERY_GOAL_BY_KEY = QUERY_GOAL_BY_KEY
+PUBLIC_QUERY_PROJECT_TAGS = QUERY_PROJECT_TAGS
+
+PUBLIC_QUERY_SUB_GOALS = """
+query SubGoals($goalId: ID!, $first: Int!, $after: String) {
+  goals_byId(goalId: $goalId) {
+    subGoals(first: $first, after: $after, archived: false) @optIn(to: "Townsquare") {
+      pageInfo { hasNextPage endCursor }
+      edges { node { id key name url isArchived } }
+    }
+  }
+}
+"""
+
+PUBLIC_QUERY_GOAL_PROJECTS = """
+query GoalProjects($goalId: ID!, $first: Int!, $after: String) {
+  goals_byId(goalId: $goalId) {
+    projects(first: $first, after: $after) @optIn(to: "Townsquare") {
+      pageInfo { hasNextPage endCursor }
+      edges {
+        node {
+          id key name url
+          state { label value }
+          tags @optIn(to: "Townsquare") {
+            edges { node { id name url } }
+          }
+          updates(first: 5) @optIn(to: "Townsquare") {
+            edges { node { id url creationDate editDate summary updateType } }
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
+PUBLIC_QUERY_PROJECT_DETAILS = """
+query ProjectDetails($projectId: String!) {
+  projects_byId(projectId: $projectId) {
+    id key name url
+    state { label value }
+  }
+}
+"""
+
+PUBLIC_QUERY_PROJECT_UPDATES = """
+query ProjectUpdates($projectId: String!, $first: Int!, $after: String) {
+  projects_byId(projectId: $projectId) {
+    updates(first: $first, after: $after) @optIn(to: "Townsquare") {
+      pageInfo { hasNextPage endCursor }
+      edges { node { id url creationDate editDate summary updateType } }
+    }
+  }
+}
+"""
+
+PUBLIC_READ_V1_REGISTRY = {
+    "goals_search": {"operationName": "GoalsSearch", "query": PUBLIC_QUERY_GOALS_SEARCH},
+    "goals_byKey": {"operationName": "GoalByKey", "query": PUBLIC_QUERY_GOAL_BY_KEY},
+    "subGoals": {"operationName": "SubGoals", "query": PUBLIC_QUERY_SUB_GOALS},
+    "goalProjects": {"operationName": "GoalProjects", "query": PUBLIC_QUERY_GOAL_PROJECTS},
+    "projectDetails": {"operationName": "ProjectDetails", "query": PUBLIC_QUERY_PROJECT_DETAILS},
+    "projectUpdates": {"operationName": "ProjectUpdates", "query": PUBLIC_QUERY_PROJECT_UPDATES},
+    "projectTags": {"operationName": "ProjectTags", "query": PUBLIC_QUERY_PROJECT_TAGS},
+}
+PUBLIC_READ_V1_OPERATION_KEYS = tuple(PUBLIC_READ_V1_REGISTRY)
+# Exact-text allowlist (a dict lookup, not a substring test).
+_PUBLIC_DOCUMENT_KEYS = {entry["query"]: key for key, entry in PUBLIC_READ_V1_REGISTRY.items()}
 
 HOME_PROJECT_UPDATE_MUTATION = """
 mutation CreateProjectUpdateMutation($projectId: String!, $updateText: String!) {
@@ -739,6 +1249,160 @@ def run_home_graphql_oauth_probe(
     return {**decision, "results": redact_home_oauth_probe_payload(results)}
 
 
+def contains_probe_secret_material(value) -> bool:
+    """True when a probe payload carries credential-shaped keys or Authorization-style values."""
+    if isinstance(value, dict):
+        return any(
+            str(key).strip().lower() in HOME_GRAPHQL_PROBE_SENSITIVE_KEYS or contains_probe_secret_material(item)
+            for key, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(contains_probe_secret_material(item) for item in value)
+    if isinstance(value, str):
+        lowered = value.lower()
+        return "bearer " in lowered or "basic " in lowered
+    return False
+
+
+_PUBLIC_PROBE_ROW_KEYS = {"operation", "status", "ok", "category"}
+
+
+def classify_home_public_read_v1_probe(payload) -> dict:
+    """Validate a public-read-v1 probe document. A format validator only: never trusts a top-level decision."""
+
+    def fail(reason):
+        return {"decision": "fail", "reason": reason}
+
+    if not isinstance(payload, dict) or contains_probe_secret_material(payload):
+        return fail("invalid_probe_payload")
+    version = payload.get("version")
+    if (
+        payload.get("profile") != PUBLIC_READ_V1_PROFILE
+        or type(version) is not int
+        or version != PUBLIC_READ_V1_PROBE_VERSION
+    ):
+        return fail("invalid_probe_payload")
+    rows = payload.get("results")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        return fail("invalid_probe_payload")
+    operations = [row.get("operation") for row in rows]
+    known = set(PUBLIC_READ_V1_OPERATION_KEYS) | {"fixture"}
+    if any(operation not in known for operation in operations) or len(set(operations)) != len(operations):
+        return fail("invalid_probe_payload")
+    if any(set(row) - _PUBLIC_PROBE_ROW_KEYS for row in rows):
+        return fail("invalid_probe_payload")
+    if "fixture" in operations:
+        return fail("insufficient_home_fixture")
+    for row in rows:
+        status = row.get("status")
+        if type(status) is int and status in {401, 403} or row.get("category") in {"auth_rejected", "access_denied"}:
+            return fail("home_graphql_public_read_v1_unsupported")
+    for row in rows:
+        status = row.get("status")
+        if (
+            row.get("ok") is not True
+            or type(status) is not int
+            or not 200 <= status < 300
+            or row.get("category") != "ok"
+        ):
+            return fail("home_graphql_public_read_v1_failed")
+    if set(operations) != set(PUBLIC_READ_V1_OPERATION_KEYS):
+        return fail("insufficient_home_fixture")
+    return {"decision": "pass", "reason": PUBLIC_READ_V1_PASS_REASON}
+
+
+def _public_probe_fixture_row() -> dict:
+    return {"operation": "fixture", "status": 0, "ok": False, "category": "insufficient_home_fixture"}
+
+
+def _public_probe_operation(client, key: str, variables: dict) -> tuple[dict, HomeGraphQLResult | None]:
+    try:
+        result = client.execute_operation(key, variables)
+    except HomeReadError as exc:
+        return {"operation": key, "status": int(exc.status or 0), "ok": False, "category": exc.category}, None
+    if result.errors:
+        category = "access_denied" if any(error.auth for error in result.errors) else "graphql_error"
+        return {"operation": key, "status": result.status, "ok": False, "category": category}, result
+    return {"operation": key, "status": result.status, "ok": True, "category": "ok"}, result
+
+
+def run_home_graphql_public_read_probe(access_token: str, cloud_id: str, epm_scope: dict | None = None) -> dict:
+    """Run the seven registered public-read-v1 reads against the fixed OAuth endpoint.
+
+    The private EPM scope (root goal, first selected sub-goal) is the only fixture authority.
+    Every row must be error-free: an optional-tag error that runtime tolerates is not a probe PASS.
+    """
+    scope = epm_scope if isinstance(epm_scope, dict) else {}
+    root_key = _normalize_goal_key(scope.get("rootGoalKey"))
+    sub_keys = _epm_scope_sub_goal_keys(scope)
+    sub_key = sub_keys[0] if sub_keys else ""
+    results: list[dict] = []
+
+    def finish() -> dict:
+        document = {
+            "version": PUBLIC_READ_V1_PROBE_VERSION,
+            "profile": PUBLIC_READ_V1_PROFILE,
+            "results": results,
+        }
+        return {**document, **classify_home_public_read_v1_probe(document)}
+
+    def insufficient() -> dict:
+        results.append(_public_probe_fixture_row())
+        return finish()
+
+    if not cloud_id or not root_key or not sub_key:
+        return insufficient()
+    try:
+        client = build_home_oauth_graphql_client(access_token)
+    except HomeReadError:
+        return insufficient()
+
+    container_id = _container_id_from_cloud(cloud_id)
+
+    def step(key: str, variables: dict):
+        row, result = _public_probe_operation(client, key, variables)
+        results.append(row)
+        return result if row["ok"] else None
+
+    if step("goals_search", {"containerId": container_id, "first": HOME_PAGE_SIZE, "after": None}) is None:
+        return finish()
+    found = step("goals_byKey", {"containerId": container_id, "goalKey": root_key})
+    if found is None:
+        return finish()
+    root_goal = found.data.get("goals_byKey") or {}
+    if not root_goal.get("id"):
+        return insufficient()
+    found = step("subGoals", {"goalId": root_goal["id"], "first": HOME_PAGE_SIZE, "after": None})
+    if found is None:
+        return finish()
+    sub_goal = next(
+        (
+            goal for goal in _connection_nodes(((found.data.get("goals_byId") or {}).get("subGoals") or {}))
+            if _normalize_goal_key(goal.get("key")) == sub_key
+        ),
+        None,
+    )
+    if not sub_goal or not sub_goal.get("id"):
+        return insufficient()
+    found = step("goalProjects", {"goalId": sub_goal["id"], "first": HOME_PAGE_SIZE, "after": None})
+    if found is None:
+        return finish()
+    project = next(
+        iter(_connection_nodes(((found.data.get("goals_byId") or {}).get("projects") or {}))), None
+    )
+    project_id = str((project or {}).get("id") or "").strip()
+    if not project_id:
+        return insufficient()
+    for key, variables in (
+        ("projectDetails", {"projectId": project_id}),
+        ("projectUpdates", {"projectId": project_id, "first": 1, "after": None}),
+        ("projectTags", {"projectId": project_id}),
+    ):
+        if step(key, variables) is None:
+            break
+    return finish()
+
+
 def adf_to_text(value: Any) -> str:
     """Flatten Atlassian Document Format content to plain text."""
     if not value:
@@ -1060,9 +1724,11 @@ def _require_home_credential_descriptor(credential: HomeCredential | None) -> No
 
 
 def _read_metadata_credential(context=None) -> HomeCredential | None:
+    """Basic/JSON mode keeps its service credentials (None here). DB mode never resolves a Home credential:
+    reaching this path means the actor is on the legacy profile (EPM view not enabled), which fails closed."""
     if context is None or not database_storage_enabled():
         return None
-    return resolve_home_credential(context, "read_metadata")
+    raise AuthError("epm_view_disabled", "Enable the EPM view in your settings to load EPM Home data.")
 
 
 def build_teamwork_graph_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
@@ -1119,10 +1785,30 @@ def _extract_project_tags_from_twg_response(response: dict) -> list[str]:
     return extract_tag_names(connection.get("edges"))
 
 
+def _fetch_project_tags_strict(client, project_id: str) -> list[str] | None:
+    """public-read-v1 tags: direct Home read only. None means optional tags are unavailable."""
+    result = client.execute_operation("projectTags", {"projectId": project_id})
+    project = result.data.get("projects_byId")
+    if result.errors:
+        confined = isinstance(project, dict) and all(
+            not error.auth and error.path is not None and len(error.path) >= 2
+            and error.path[:2] == ("projects_byId", "tags")
+            for error in result.errors
+        )
+        if not confined:
+            result.fail()
+        return None
+    if not isinstance(project, dict):
+        raise HomeReadError("invalid_response", status=result.status)
+    return extract_tag_names(project.get("tags"))
+
+
 def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -> list[str] | None:
     project_id = str((project or {}).get("id") or "").strip()
     if not project_id:
         return []
+    if _is_strict_client(client):
+        return _fetch_project_tags_strict(client, project_id)
     direct_tags: list[str] | None = None
     try:
         response = client.execute(QUERY_PROJECT_TAGS, {"projectId": project_id})
@@ -1289,7 +1975,9 @@ def get_configured_jira_url(context=None) -> str:
     return str(os.environ.get("JIRA_URL") or "").rstrip("/")
 
 
-def fetch_home_site_cloud_id(context=None) -> str:
+def fetch_home_site_cloud_id(context=None, home_auth=None) -> str:
+    if home_auth is not None and home_auth.strict:
+        return home_auth.cloud_id()  # context cloud id; no tenant_info HTTP, no cache entry
     jira_url = get_configured_jira_url(context)
     if not jira_url:
         raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
@@ -1322,6 +2010,39 @@ def _goal_cache_key(container_id: str, goal_key: str) -> str:
     }, sort_keys=True)
 
 
+def _strict_goal_lookup_get(cache_key):
+    with _STRICT_GOAL_LOOKUP_LOCK:
+        entry = _STRICT_GOAL_LOOKUP_CACHE.get(cache_key)
+        if entry is None:
+            return None
+        if entry[0] <= time.time():
+            _STRICT_GOAL_LOOKUP_CACHE.pop(cache_key, None)
+            return None
+        return dict(entry[1])
+
+
+def _strict_goal_lookup_put(cache_key, goal):
+    """Bounded public-read goal cache: 512 entries, 300 s TTL; the key keeps its identity/version partition.
+
+    When full, expired entries go first, then the oldest entries of the inserting
+    partition, and only an empty partition falls back to the globally oldest entry,
+    so one user's lookups cannot flush another partition while it has its own to give up.
+    """
+    now = time.time()
+    partition = cache_key[:-1]
+    with _STRICT_GOAL_LOOKUP_LOCK:
+        _STRICT_GOAL_LOOKUP_CACHE.pop(cache_key, None)
+        for key in [key for key, entry in _STRICT_GOAL_LOOKUP_CACHE.items() if entry[0] <= now]:
+            del _STRICT_GOAL_LOOKUP_CACHE[key]
+        while len(_STRICT_GOAL_LOOKUP_CACHE) >= GOAL_LOOKUP_CACHE_MAX_ENTRIES:
+            victim = next(
+                (key for key in _STRICT_GOAL_LOOKUP_CACHE if key[:-1] == partition),
+                next(iter(_STRICT_GOAL_LOOKUP_CACHE)),
+            )
+            del _STRICT_GOAL_LOOKUP_CACHE[victim]
+        _STRICT_GOAL_LOOKUP_CACHE[cache_key] = (now + GOAL_LOOKUP_CACHE_TTL_SECONDS, dict(goal))
+
+
 def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
     expected_key = _normalize_goal_key(goal_key)
     if not expected_key:
@@ -1329,25 +2050,42 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
     cache_key = _goal_cache_key(container_id, expected_key)
     cache_enabled = jira_home_partitioned_process_cache_enabled(context)
     cache_key = build_jira_home_process_cache_key(context, cache_key)
-    cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
+    strict = _is_strict_client(client)
+    if strict:
+        # Only identity/version-partitioned (tuple) keys are ever cached for the public profile.
+        cache_enabled = cache_enabled and isinstance(cache_key, tuple)
+        cached = _strict_goal_lookup_get(cache_key) if cache_enabled else None
+    else:
+        cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
     if cache_enabled and cached:
         return dict(cached)
+
+    def remember(goal_value):
+        if not cache_enabled:
+            return
+        if strict:
+            _strict_goal_lookup_put(cache_key, goal_value)
+        else:
+            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal_value)
     try:
-        response = client.execute(
-            QUERY_GOAL_BY_KEY,
-            {"containerId": container_id, "goalKey": expected_key},
-        )
-        goal = ((response.get("data") or {}).get("goals_byKey") or {})
+        if _is_strict_client(client):
+            data = _execute_data(client, "goals_byKey", QUERY_GOAL_BY_KEY, {"containerId": container_id, "goalKey": expected_key})
+            goal = data.get("goals_byKey") or {}
+        else:
+            response = client.execute(
+                QUERY_GOAL_BY_KEY,
+                {"containerId": container_id, "goalKey": expected_key},
+            )
+            goal = ((response.get("data") or {}).get("goals_byKey") or {})
         if goal and _normalize_goal_key(goal.get("key")) == expected_key:
-            if cache_enabled:
-                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            remember(goal)
             return goal
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Goal by key lookup failed for %s: %s", expected_key, exc)
 
     try:
         goals = client.execute_paginated(
-            QUERY_GOALS_SEARCH,
+            _op_query(client, "goals_search", QUERY_GOALS_SEARCH),
             {"containerId": container_id, "first": HOME_PAGE_SIZE},
             "goals_search",
         )
@@ -1356,17 +2094,24 @@ def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: 
         return None
     for goal in goals:
         if _normalize_goal_key(goal.get("key")) == expected_key:
-            if cache_enabled:
-                _GOAL_BY_KEY_CACHE[cache_key] = dict(goal)
+            remember(goal)
             return goal
     logger.warning("Goal %s not found among %d goals", goal_key, len(goals))
     return None
 
 
+def remember_strict_goal(goal: dict, container_id: str, goal_key: str, context) -> None:
+    """Seed the bounded public goal lookup under the key `resolve_goal_by_key` reads, so the access probe's
+    one goal read is reused by the metadata warm step instead of repeating it."""
+    cache_key = build_jira_home_process_cache_key(context, _goal_cache_key(container_id, goal_key))
+    if jira_home_partitioned_process_cache_enabled(context) and isinstance(cache_key, tuple):
+        _strict_goal_lookup_put(cache_key, goal)
+
+
 def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
     try:
         nodes = client.execute_paginated(
-            QUERY_SUB_GOALS,
+            _op_query(client, "subGoals", QUERY_SUB_GOALS),
             {"goalId": root_goal_id, "first": HOME_PAGE_SIZE},
             "goals_byId.subGoals",
         )
@@ -1448,7 +2193,83 @@ def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, conta
     return goals[0] if goals else None
 
 
+def _valid_goal_project_core(node) -> bool:
+    return (
+        isinstance(node, dict)
+        and isinstance(node.get("id"), str)
+        and bool(node["id"].strip())
+        and isinstance(node.get("state"), dict)
+    )
+
+
+def _apply_confined_tag_errors(result: HomeGraphQLResult, edges: list) -> None:
+    """Keep partial goalProjects data only for non-auth errors under edges[i].node.tags."""
+    for error in result.errors:
+        path = error.path
+        if (
+            error.auth
+            or path is None
+            or len(path) < 6
+            or path[:3] != ("goals_byId", "projects", "edges")
+            or type(path[3]) is not int
+            or path[4] != "node"
+            or path[5] != "tags"
+            or path[3] >= len(edges)
+            or not isinstance(edges[path[3]], dict)
+            or not _valid_goal_project_core(edges[path[3]].get("node"))
+        ):
+            result.fail()
+    for error in result.errors:
+        node = edges[error.path[3]]["node"]
+        node["tags"] = None
+        node["_tagsUnavailable"] = True
+
+
+def _fetch_goal_project_links_strict(client, goal_id: str) -> list[dict]:
+    projects: list[dict] = []
+    after = None
+    while len(projects) < HOME_MAX_PROJECTS_PER_GOAL:
+        result = client.execute_operation(
+            "goalProjects", {"goalId": goal_id, "first": HOME_PAGE_SIZE, "after": after}
+        )
+        goal = result.data.get("goals_byId")
+        connection = goal.get("projects") if isinstance(goal, dict) else None
+        if not isinstance(connection, dict) or not isinstance(connection.get("pageInfo"), dict):
+            if result.errors:
+                result.fail()  # a denied or throttled goal reads as null data plus errors: keep the real category
+            raise HomeReadError("invalid_response", status=result.status)
+        edges = connection.get("edges")
+        edges = edges if isinstance(edges, list) else []
+        if result.errors:
+            _apply_confined_tag_errors(result, edges)
+        for edge in edges:
+            node = edge.get("node") if isinstance(edge, dict) else None
+            if not _valid_goal_project_core(node) or not _has_enriched_goal_project_fields(node):
+                raise HomeReadError("invalid_response", status=result.status)
+            projects.append(node)
+            if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
+                break
+        page_info = connection["pageInfo"]
+        has_next_page = page_info.get("hasNextPage")
+        if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
+            if has_next_page:
+                logger.warning(
+                    "Home goal %s project list truncated at %d projects.", goal_id, HOME_MAX_PROJECTS_PER_GOAL
+                )
+            return projects
+        if not has_next_page:
+            return projects
+        next_cursor = page_info.get("endCursor")
+        if not next_cursor or next_cursor == after:
+            logger.warning("Pagination stopped for goals_byId.projects because the cursor did not advance.")
+            return projects
+        after = next_cursor
+    return projects
+
+
 def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
+    if _is_strict_client(client):
+        return _fetch_goal_project_links_strict(client, goal_id)
     projects: list[dict] = []
     after = None
     while len(projects) < HOME_MAX_PROJECTS_PER_GOAL:
@@ -1488,8 +2309,8 @@ def _fetch_home_project_record(client: HomeGraphQLClient, row: dict, context=Non
     if not project_id:
         return None
     try:
-        detail = client.execute(QUERY_PROJECT_DETAILS, {"projectId": project_id})
-        payload = (detail.get("data") or {}).get("projects_byId") or {}
+        detail = _execute_data(client, "projectDetails", QUERY_PROJECT_DETAILS, {"projectId": project_id})
+        payload = detail.get("projects_byId") or {}
         project = _shape_project_detail(project_id, payload)
         updates = fetch_latest_project_update(client, project_id)
         home_tags = fetch_project_tags(client, project, context=context)
@@ -1517,12 +2338,17 @@ def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
     updates = _extract_project_updates(row)
     home_tags = normalize_project_tag_names(row.get("tags"))
     linkage = extract_home_jira_linkage(project)
-    return build_home_project_record(project, updates, linkage, home_tags)
+    return build_home_project_record(
+        project, updates, linkage, home_tags, tags_unavailable=bool(row.get("_tagsUnavailable"))
+    )
 
 
 def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
     if _has_enriched_goal_project_fields(row):
         return _build_home_project_record_from_goal_row(row)
+    if _is_strict_client(client):
+        # public-read-v1 reads project core/tags/updates in the goalProjects page; no per-project fan-out.
+        raise HomeReadError("invalid_response")
     return _fetch_home_project_record(client, row, context=context)
 
 
@@ -1566,11 +2392,13 @@ def fetch_project_goals_for_sub_goal(client: HomeGraphQLClient, sub_goal: dict) 
 
 def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> list[dict]:
     try:
-        response = client.execute(
+        data = _execute_data(
+            client,
+            "projectUpdates",
             QUERY_PROJECT_UPDATES,
             {"projectId": project_id, "first": HOME_UPDATE_PAGE_SIZE},
         )
-        connection = (((response.get("data") or {}).get("projects_byId") or {}).get("updates") or {})
+        connection = ((data.get("projects_byId") or {}).get("updates") or {})
         return _connection_nodes(connection)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
         logger.warning("Latest update fetch failed for %s: %s", project_id, exc)
@@ -1597,25 +2425,31 @@ def merge_epm_linkage(home_project, epm_config_row):
     return {"labels": labels, "epicKeys": epic_keys}, match_state
 
 
-def fetch_epm_home_projects(epm_scope, context=None):
+def fetch_epm_home_projects(epm_scope, context=None, home_auth=None):
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
         logger.warning("EPM home fetch skipped: subGoalKeys is required")
         return []
 
-    try:
-        credential = _read_metadata_credential(context)
-        client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
-        if credential is not None and credential.cloud_id:
-            cloud_id = credential.cloud_id
-        elif context is not None:
-            cloud_id = fetch_home_site_cloud_id(context=context)
-        else:
-            cloud_id = fetch_home_site_cloud_id()
-    except RuntimeError as exc:
-        logger.warning("EPM home fetch failed: %s", exc)
-        return []
+    if home_auth is not None and home_auth.strict:
+        # public-read-v1: typed failures (HomeReadError, AuthError) propagate; never an empty list.
+        client = home_auth.client()
+        cloud_id = home_auth.cloud_id()
+        context = home_auth.context
+    else:
+        try:
+            credential = _read_metadata_credential(context)
+            client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
+            if credential is not None and credential.cloud_id:
+                cloud_id = credential.cloud_id
+            elif context is not None:
+                cloud_id = fetch_home_site_cloud_id(context=context)
+            else:
+                cloud_id = fetch_home_site_cloud_id()
+        except RuntimeError as exc:
+            logger.warning("EPM home fetch failed: %s", exc)
+            return []
 
     container_id = _container_id_from_cloud(cloud_id)
     sub_goals = (

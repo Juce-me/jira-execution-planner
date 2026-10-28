@@ -1,5 +1,7 @@
 # Planning Team Capacity Editing Design
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Interaction design and the runnable UI reference were approved by the requester on 2026-09-01; technical ownership, security, concurrency, and responsive amendments were applied after independent plan review. This is the design source for `EXEC-planning-capacity-editing.md`, not an executable plan by itself.
 
 > **Current accuracy:** The approved interaction remains authoritative. The implemented storage differs from the standalone configuration architecture described below: Capacity is a revisioned section of the canonical `WorkspaceDashboardConfig`, with verification metadata, rather than a separate `WorkspaceCapacityConfig` row. Legacy private Capacity values are ignored/sanitized without read-time mutation, application `401` recovery is owned by the global auth gate, and Jira browse links normalize to the configured Atlassian origin plus `/browse/<issue-key>`. See the EXEC plan's `Outcome` and `Current Accuracy` sections for the as-built contract.

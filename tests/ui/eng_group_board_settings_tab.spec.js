@@ -1,8 +1,7 @@
 const fs = require('fs');
 const path = require('path');
-const { execFileSync } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
-const { installDashboardShell } = require('./epm_home_token_fixture');
+const { installDashboardShell } = require('./epm_view_fixture');
 
 // The Boards sub-tab and the Team groups "Configure board" pointer, mounted for real (unlike
 // tests/ui/group_board_composer.spec.js, which renders the composer through a standalone harness
@@ -113,13 +112,6 @@ async function mockConfigSettings(page, { groupsConfig = baseGroupsConfig() } = 
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
         }
         if (url.pathname === '/api/analytics/context') return json({ enabled: false });
-        if (url.pathname === '/api/me/connections/home-token') return json({
-            connected: true,
-            provider: 'atlassian_user_api_token',
-            credentialSubject: 'profile@example.com',
-            status: 'active',
-            needsReconnect: false,
-        });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/config') return json({
             jiraUrl: 'https://jira.example',
@@ -184,14 +176,6 @@ async function openBoardsTab(page, dialog) {
 
 test('a newly added column goes before Done and can move left after save and reload', async ({ page }) => {
     const calls = await mockConfigSettings(page);
-    if (process.env.JEP_BOARD_COLUMN_BASE_REF) {
-        await page.route('**/frontend/dist/**', route => {
-            const asset = new URL(route.request().url()).pathname.slice('/frontend/dist/'.length);
-            if (!/^(?:dashboard\.js|chunks\/[A-Za-z0-9_-]+\.js|lazy-views-[a-f0-9]{64}\.json)$/.test(asset)) return route.fallback();
-            const body = execFileSync('git', ['show', `${process.env.JEP_BOARD_COLUMN_BASE_REF}:frontend/dist/${asset}`], { cwd: path.join(__dirname, '../..'), maxBuffer: 16 * 1024 * 1024 });
-            return route.fulfill({ contentType: asset.endsWith('.json') ? 'application/json' : 'application/javascript', body });
-        });
-    }
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     let dialog = page.getByRole('dialog').first();

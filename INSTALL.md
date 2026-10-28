@@ -3,7 +3,7 @@
 This app has two local run modes:
 
 - JSON-file mode: starts with `python3 jira_server.py` after `.env` is configured.
-- DB mode: required for OAuth-backed users, encrypted OAuth tokens, service integrations, and the Home token connection flow.
+- DB mode: required for OAuth-backed users, encrypted OAuth tokens, service integrations, and the Home read access flow.
 
 `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations.
 
@@ -19,6 +19,15 @@ python3 -m venv .venv
 python -m pip install -r requirements.txt
 python -m pip install -e .
 ```
+
+Source checkouts also need the frontend build, because `frontend/dist` is gitignored build output (Node 20.x):
+
+```bash
+npm ci
+npm run build
+```
+
+`./scripts/install.sh` runs this when `frontend/src` exists and `frontend/dist/dashboard.js` is missing. Release zips already contain a built `frontend/dist` and need no Node. Rebuild after pulling changes that touch `frontend/src`; preflight fails on a missing build and warns on a stale one.
 
 ## 2. PostgreSQL
 
@@ -175,33 +184,27 @@ http://localhost:5050/login
 
 Sign in again after switching to DB mode. The OAuth callback creates the DB user, workspace, auth connection, and encrypted token rows.
 
-## 6. Home Token Connection Flow
+## 6. Home Read Access Flow
 
-The Home token connection stores a user-owned Atlassian API token in encrypted DB storage as provider `atlassian_user_api_token`. It requires:
+Home/Townsquare goals and projects are read with the signed-in user's Atlassian OAuth grant; the app stores no personal Atlassian API token. It requires:
 
 - `CONFIG_STORAGE_BACKEND=db`
 - `DATABASE_URL`
-- applied Alembic migrations
+- applied Alembic migrations (the latest one removes the retired `atlassian_user_api_token` connections and their encrypted tokens)
 - `TOKEN_ENCRYPTION_MASTER_KEY_B64` and `TOKEN_ENCRYPTION_KEY_ID`
-- an OAuth login after DB mode is enabled
+- the Atlassian app registration listing the four Home read scopes `read:goal:goals`, `read:access:goals`, `read:project:projects` and `read:access:projects` (an operator action in the Atlassian Developer Console; the app cannot check it)
 
-After sign-in, open `Settings -> Connections` and connect the current user's Home/Townsquare token. DB/OAuth EPM stays hidden until this connection is active. Jira REST reads continue to use the OAuth session; Home/Townsquare metadata reads use the connected token from `auth_tokens`.
-
-If any of those are missing, `/api/me/connections/home-token` returns:
-
-```json
-{"error":"credential_storage_unavailable"}
-```
+After sign-in, open `Settings -> Connections` and tick **Enable EPM view**, then Save. If the grant lacks the Home scopes, the card shows the missing-permission state with a same-tab link to grant them. EPM stays hidden until the preference is saved, the scopes are confirmed by the provider and Atlassian Home confirms access to the configured scope. Without database storage the toggle is unavailable and EPM follows the Basic/JSON compatibility behavior.
 
 ## 7. Storage Boundaries
 
 DB/OAuth EPM separates three storage concerns:
 
-- User Home token connection: encrypted `auth_tokens`, provider `atlassian_user_api_token`, created from `Settings -> Connections`.
+- User OAuth grants: encrypted `auth_tokens` for provider `atlassian_oauth`; the EPM view preference is a non-secret flag in the user's private saved view.
 - Operator/service integrations: encrypted `service_integration_tokens`, reserved for workflows that explicitly need shared operator credentials.
 - EPM saved view state: non-secret user view config only, such as root goal scope, selected sub-goals, label prefix, project label mappings, selected EPM tab, and selected sprint.
 
-Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user connects their own Home token.
+Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user enables the EPM view and the Home read scopes are granted.
 
 ## 8. Internal Hosting Pre-SRE Checklist
 
@@ -209,7 +212,7 @@ The repository provides container packaging for verification and image build. It
 
 Can prepare now:
 - Build the image with `docker build` and a commit-SHA tag, using the committed `Dockerfile`.
-- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build`, frontend unit tests, and the committed `frontend/dist` check.
+- Run backend/frontend verification in CI: Python dependencies, editable install, `python -m unittest discover -s tests`, `npm ci`, `npm run build` and the frontend unit tests. `frontend/dist` is not committed and CI does not diff it; the release workflow builds it before packaging the zip.
 - Keep hosted env values owned by the runtime platform: app secrets, Atlassian OAuth settings, token encryption, DB URL, allowed origins, and optional GA4 values.
 
 Container env contract:
@@ -282,6 +285,8 @@ Use `RUN_DB_MIGRATIONS=true` only when a single app container is the agreed migr
 
 **Automatic adoption on upgrade (revision `20261023_0020`).** Upgrading to the new head adopts legacy review data by itself, once, so saved Planning review columns are available as soon as the new version serves: no operator step and no chart change. For every workspace with legacy review content and at least one configured Department group, it adopts the legacy columns, values and Sprint views into each group that holds no review row when its schema row is locked. A group that already holds review rows (a user saved after an earlier release, or an earlier manual adoption) is left alone and logged; restore it with `--merge` below. Legacy tables are never written. The step runs inside the upgrade's transaction, takes the same group schema-row lock every app save takes plus a share lock on the legacy tables until the transaction commits, and stops at a whole-run budget of 100,000 inserted rows (a workspace that does not fit is skipped whole and logged). Failure policy: any database error (lock timeout, deadlock, connection loss, missing tables, permission) fails the upgrade with only its SQLSTATE in the output, so nothing is stamped or written and a rerun is clean; a workspace the planner cannot plan (malformed legacy data, no configured group, over budget) is skipped with its id and reason in the log and left for the script. A workspace skipped for having no configured group is stamped with the revision and never retried, so configure its Department group first. The log goes to stderr at WARNING level (`backend/db/alembic.ini` drops INFO): one line per workspace and a summary. Job logs may not persist, so `--list` is the durable record. `REVIEW_ADOPTION_ON_UPGRADE` is read from the process environment only (Alembic does not load `.env`): unset or `true` runs, `false` skips adoption and logs how many workspaces hold legacy data, and any other value fails the upgrade; with it off, adopt by hand with the steps below. `downgrade 20261020_0019` is a no-op, and a later `upgrade head` adopts nothing new for groups that now hold rows; a downgrade below `20261020_0019` drops the group tables and the next upgrade adopts again from the untouched legacy tables. When upgrading from `20261001_0018` or earlier, keep the quiesce rule below for legacy writers: a legacy row an old pod writes after the revision commits is never adopted (check `--list` after the rollout). With `RUN_DB_MIGRATIONS=true` the adoption time counts against start probes, and two replicas migrating at once can make one of them fail once (rerun it). Open browser drafts receive a `schemaConflict` after an adoption.
 
+**Removal of stored personal Atlassian API tokens (revision `20261028_0021`, destructive).** Home reads now use only the signed-in user's OAuth grant, so the upgrade deletes every stored `atlassian_user_api_token` connection together with its encrypted tokens, browser sessions and Jira project access rows, clears the audit references to them, drops the partial unique index for that provider and narrows the provider CHECK. Nothing else changes and there is no setting to skip it. Back up the database first (step 2 of the cutover below already does). After the new version serves, each EPM user ticks Enable EPM view in Settings and signs in again to grant the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`); the Atlassian app registration must list them before anyone can consent. `downgrade 20261023_0020` restores the schema only (index and wider CHECK): deleted connections and tokens are never restored, so older code leaves EPM unavailable until each user re-enters a token in the old UI, and a restore from the backup is the only way to bring the tokens back. Verify with `python -m alembic -c backend/db/alembic.ini current`, which must print `20261028_0021 (head)`.
+
 **Review adoption cutover (#267).** Planning Sprint review columns are now shared per Department group instead of per workspace/Sprint. Migration `20261020_0019` creates empty group tables and does not move data; revision `20261023_0020` (above) adopts automatically, so the steps below are the manual path: environments that turned adoption off, workspaces it skipped, and any `--list` status other than `adopted` or `nothing to adopt`. Run the manual cutover with application writers quiesced, as for migration `20260827_0008`. The image's entrypoint ends in a fixed `exec gunicorn` and ignores arguments, so every one-off job below needs an entrypoint override (a command-only override still starts gunicorn), the same database URL and connection-mode variables the migration job uses, and a database identity with `UPDATE`, `DELETE` and `TRUNCATE` on `workspace_sprint_reviews` and `sprint_review_cells` (the script takes `LOCK ... IN SHARE MODE` on them) and `INSERT` on the new group review tables, plus `UPDATE`, `DELETE` or `TRUNCATE` on those too for the `EXCLUSIVE` table locks the fresh `--apply` takes. Use placeholders for `<id>` and `<digest>`; the script prints counts and column, Sprint and group ids only.
 
 1. Before the cutover, while the old app still serves: every workspace that holds legacy review rows must have a configured Department group. The script refuses a workspace with legacy rows and no group, and the quiesced app cannot create one. The automatic adoption skips such a workspace (logged) and does not retry it.
@@ -303,6 +308,7 @@ Rollback depends on how far the cutover got:
 | Dry run | Nothing written | Fix the input |
 | `--apply` | The single transaction rolls back; legacy rows untouched | Re-run |
 | Abort the release after the upgrade | The old image fails its startup preflight against the new head and cannot downgrade a revision it does not know | Run `python -m alembic -c backend/db/alembic.ini downgrade 20261001_0018` from the new image first, then restart the old image |
+| Roll back `20261028_0021` | The old image knows revisions up to `20261023_0020` and fails its preflight against the new head | Run `python -m alembic -c backend/db/alembic.ini downgrade 20261023_0020` from the new image; the stored personal tokens deleted by the upgrade are not restored (restore the backup if they are needed) |
 | After `--apply`, before the new app serves | Only adopted data exists | Clean redo from the new image: `downgrade 20261001_0018`, then `upgrade head`, which adopts again by itself; re-run the script only for a workspace it skipped |
 | After the new app served and users wrote | `--apply` refuses because group rows exist | Restore with `--merge` (below); a downgrade loses the entries made since |
 | After `--merge --apply` | Legacy data was added to the groups; nothing a user did was overwritten | Restore the pre-run backup (a point-in-time restore loses later writes), or keep the merge, which only adds rows |
@@ -321,7 +327,7 @@ A second `--merge` is a no-op, with three exceptions: a column that was matched 
 
 Junk Sprint views: each group is capped at 500 Sprint views and the app has no delete action. An operator can purge rows by hand, after a backup and a review of the exact rows. In a one-off database session, first run `SELECT id, sprint_id, view_revision FROM group_sprint_review_views WHERE workspace_id = '<id>' AND group_id = '<group id>' AND sprint_id IN ('<sprint id>');`, check the result, then run the same `WHERE` clause with `DELETE FROM group_sprint_review_views` inside a transaction and commit only if the deleted count matches. Deleting a view makes that Sprint inherit again from earlier Sprints; it removes no cells or columns. Run it with application writers stopped or idle.
 
-OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads and the per-user Home token connection for Home/Townsquare EPM metadata.
+OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads with the Home read scopes for Home/Townsquare EPM metadata.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled.

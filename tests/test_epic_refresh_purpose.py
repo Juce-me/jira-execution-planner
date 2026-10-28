@@ -558,7 +558,6 @@ class EpicRefreshOAuthTests(unittest.TestCase):
     def test_oauth_refresh_uses_only_the_per_user_context(self):
         forbidden = AssertionError('a service-account or write credential path was touched')
         write_and_basic = (
-            patch('backend.auth.user_api_tokens._basic_auth_header', side_effect=forbidden),
             patch('backend.auth.jira_auth.jira_request', side_effect=forbidden),
             patch('backend.auth.jira_auth.jira_post', side_effect=forbidden),
             patch.object(jira_server, 'current_jira_request', side_effect=forbidden),

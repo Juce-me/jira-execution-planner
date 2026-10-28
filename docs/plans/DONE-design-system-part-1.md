@@ -1,5 +1,7 @@
 # Design system Part 1 implementation plan
 
+> **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
+
 > **Status:** Done — implemented, locally verified and accepted on 2026-10-13. The operator authorized a local commit on 2026-10-13; push and PR remain unauthorized. Execution commit: the first commit adding this DONE record.
 > **For implementers:** Implementation is complete. Only the accepted Part 1 local commit is authorized; no push, PR, secondary worktree, PR2, PR3 or spec #3 is authorized.
 

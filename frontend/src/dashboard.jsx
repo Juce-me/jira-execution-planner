@@ -22,7 +22,7 @@ import LoadingState from './ui/LoadingState.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, isActiveHomeTokenConnection, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
+import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey } from './dashboardRuntime.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
 import { deriveOnboardingEngReadiness, isOnboardingAvailable } from './onboarding/onboardingSteps.js';
@@ -72,8 +72,8 @@ import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
 import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
-import { PIN_HEIGHT, alertIdentitiesBySection, alertLandingTop, clearCenteredTarget, createAlertPin, pinScopeKey, resolvePinClose } from './eng/alertPin.js';
-import { alertCardId } from './shareView/focusCapture.js';
+import { PIN_HEIGHT, alertLandingTop, clearCenteredTarget, pinScopeKey } from './eng/alertPin.js';
+import { createAlertPanelProps, createAlertPinActions, useAlertPinState } from './eng/useAlertPin.js';
 import { useEngAlerts } from './eng/useEngAlerts.js';
 import { isStatusTransitionSurfaceEnabled, resolveSubtaskParentStoryKeys } from './eng/engStatusTransitionUtils.js';
 import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
@@ -157,7 +157,8 @@ import {
     useEpmSettingsProjectsEffects,
 } from './settings/useEpmSettings.js';
 import UserConnectionsSettings from './settings/UserConnectionsSettings.jsx';
-import { fetchHomeTokenConnection } from './api/authApi.js';
+import { useEpmNavigationState } from './epm/useEpmNavigationState.js';
+import { useEpmViewPreference } from './settings/useEpmViewPreference.js';
 import { useDashboardFreshness } from './useDashboardFreshness.js';
 import DashboardFreshnessStatus from './components/DashboardFreshnessStatus.jsx';
 import { analyticsToken, buildPlanningReviewAnalyticsParams, bucketCount, exposeAnalyticsForTests, useDashboardAnalytics } from './analytics/dashboardAnalytics.js';
@@ -338,8 +339,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
             const restoredInitialEpmViewRef = useRef(false);
             const [selectedView, setSelectedView] = useState(savedInitialViewRef.current === 'epm' ? 'eng' : savedInitialViewRef.current);
-            const [homeTokenConnection, setHomeTokenConnection] = useState({ connected: false });
-            const [homeTokenConnectionLoaded, setHomeTokenConnectionLoaded] = useState(false);
             const [authMode, setAuthMode] = useState('');
             const scenarioState = useScenarioState({ initialLaneMode: savedPrefsRef.current.scenarioLaneMode ?? 'team' });
             const {
@@ -376,11 +375,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 scenarioRefreshNonceRef,
                 scenarioGroupValues,
             } = scenarioState;
-            const hasActiveHomeTokenConnection = React.useMemo(
-                () => isActiveHomeTokenConnection(homeTokenConnection),
-                [homeTokenConnection]
-            );
-            const showEpmNavigation = authMode === 'basic' || hasActiveHomeTokenConnection;
+            const {
+                applyEpmCapabilityConfig, epmAccess, epmCapabilities, epmReadReady: epmHomeReadReady,
+                invalidateHomeAvailability: invalidateEpmHomeAvailability, refreshEpmAccess, showEpmNavigation,
+            } = useEpmNavigationState({ backendUrl: BACKEND_URL });
             const [sprintName, setSprintName] = useState(savedPrefsRef.current.sprintName || '');
             const selectedSprintRef = useRef(null);
             const planningReviewGuardRef = useRef(null), planningInteractionRef = useRef(false), capacityInteractionRef = useRef(false), planningAutomaticReadRef = useRef(0);
@@ -831,101 +829,21 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const resolveStatsGraphMode = (value) => (value === 'weighted' || value === 'absolute') ? value : 'weighted';
             const resolveBurndownMetric = (value) => (value === 'issueCount' || value === 'storyPoints') ? value : 'storyPoints';
             const resolveCohortGroupBy = (value) => (value === 'month' || value === 'quarter') ? value : 'quarter';
+            const stats = useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
             const {
-                statsView,
-                setStatsView,
-                statsGraphMode,
-                setStatsGraphMode,
-                burnoutData,
-                setBurnoutData,
-                burnoutLoading,
-                setBurnoutLoading,
-                burnoutError,
-                setBurnoutError,
-                burnoutAssigneeFilter,
-                setBurnoutAssigneeFilter,
-                burndownMetric,
-                setBurndownMetric,
-                cohortData,
-                setCohortData,
-                cohortLoading,
-                setCohortLoading,
-                cohortError,
-                setCohortError,
-                cohortStartQuarter,
-                setCohortStartQuarter,
-                cohortEndQuarter,
-                setCohortEndQuarter,
-                cohortMode,
-                setCohortMode,
-                cohortClosedStartQuarter,
-                setCohortClosedStartQuarter,
-                cohortClosedEndQuarter,
-                setCohortClosedEndQuarter,
-                cohortLastN,
-                setCohortLastN,
-                cohortGroupBy,
-                setCohortGroupBy,
-                cohortProjectFilter,
-                setCohortProjectFilter,
-                cohortExcludeAdHoc,
-                setCohortExcludeAdHoc,
-                cohortExcludeCapacity,
-                setCohortExcludeCapacity,
-                cohortStatusToggles,
-                setCohortStatusToggles,
-                cohortSelectedRow,
-                setCohortSelectedRow,
-                excludedCapacityData,
-                setExcludedCapacityData,
-                excludedCapacityLoading,
-                setExcludedCapacityLoading,
-                excludedCapacityError,
-                setExcludedCapacityError,
-                excludedCapacityStartSprintId,
-                setExcludedCapacityStartSprintId,
-                excludedCapacityEndSprintId,
-                setExcludedCapacityEndSprintId,
-                excludedCapacitySelectedEpicKeys,
-                setExcludedCapacitySelectedEpicKeys,
-                excludedCapacityChartMode,
-                setExcludedCapacityChartMode,
-                excludedCapacityMetric,
-                setExcludedCapacityMetric,
-                effortSplitVisibleBuckets,
-                setEffortSplitVisibleBuckets,
-                excludedCapacityIsolatedTeam,
-                setExcludedCapacityIsolatedTeam,
-                excludedCapacityEpicDropdownOpen,
-                setExcludedCapacityEpicDropdownOpen,
-                excludedCapacityRefreshNonce,
-                setExcludedCapacityRefreshNonce,
-                issuePeopleStatsRevision,
-                setIssuePeopleStatsRevision,
-                excludedCapacityEpicDropdownRef,
-                projectTrackCapacitySide,
-                setProjectTrackCapacitySide,
-                projectTrackMode,
-                setProjectTrackMode,
-                projectTrackExcludeAdHoc,
-                setProjectTrackExcludeAdHoc,
-                projectTrackExcludeExcludedCapacity,
-                setProjectTrackExcludeExcludedCapacity,
-                projectTrackPhaseData,
-                setProjectTrackPhaseData,
-                projectTrackPhaseLoading,
-                setProjectTrackPhaseLoading,
-                projectTrackPhaseError,
-                setProjectTrackPhaseError,
-                projectTrackPhaseCacheRef,
-                projectTrackPhaseAbortRef,
-                burnoutTaskFilter,
-                setBurnoutTaskFilter,
-                burnoutCacheRef,
-                cohortCacheRef,
-                excludedCapacityCacheRef,
-                excludedCapacityForceRefreshRef,
-            } = useStatsState({ savedPrefsRef, resolveStatsView, resolveStatsGraphMode, resolveBurndownMetric, resolveCohortGroupBy });
+                statsView, setStatsView, statsGraphMode, setStatsGraphMode, burnoutData, setBurnoutData, burnoutLoading, setBurnoutLoading,
+                burnoutError, setBurnoutError, burnoutAssigneeFilter, setBurnoutAssigneeFilter, burndownMetric, setBurndownMetric, cohortData,
+                setCohortData, cohortLoading, setCohortLoading, cohortError, setCohortError, cohortStartQuarter, setCohortStartQuarter,
+                cohortEndQuarter, setCohortEndQuarter, cohortMode, setCohortMode, cohortClosedStartQuarter, setCohortClosedStartQuarter,
+                cohortClosedEndQuarter, setCohortClosedEndQuarter, cohortLastN, setCohortLastN, cohortGroupBy, setCohortGroupBy, cohortProjectFilter,
+                setCohortProjectFilter, cohortExcludeAdHoc, setCohortExcludeAdHoc, cohortExcludeCapacity, setCohortExcludeCapacity,
+                cohortStatusToggles, setCohortStatusToggles, cohortSelectedRow, setCohortSelectedRow, setExcludedCapacityData,
+                excludedCapacityLoading, setExcludedCapacityLoading, setExcludedCapacityError, excludedCapacityStartSprintId,
+                setExcludedCapacityStartSprintId, excludedCapacityEndSprintId, setExcludedCapacityEndSprintId, excludedCapacitySelectedEpicKeys,
+                excludedCapacityChartMode, excludedCapacityMetric, setExcludedCapacityRefreshNonce, setIssuePeopleStatsRevision,
+                projectTrackCapacitySide, projectTrackMode, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity, burnoutTaskFilter,
+                setBurnoutTaskFilter, burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef, excludedCapacityForceRefreshRef
+            } = stats;
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
             const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;
@@ -974,7 +892,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [dismissedStoryRequirementIds, setDismissedStoryRequirementIds] = useState([]);
             const [storyRequirementNavigationError, setStoryRequirementNavigationError] = useState('');
             const [alertCelebrationPieces, setAlertCelebrationPieces] = useState([]);
-            const [alertPin, setAlertPin] = useState(null);
+            const alertPinState = useAlertPinState();
+            const { alertPin, clearAlertPin } = alertPinState;
             const [alertCohortSettled, setAlertCohortSettled] = useState(false);
             const [configRefreshNonce, setConfigRefreshNonce] = useState(0);
             const alertDismissedRef = useRef(false);
@@ -1039,40 +958,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 authResumeStagedRevision,
                 setGroupDraftError,
             });
-            const refreshHomeTokenConnectionStatus = React.useCallback(async () => {
-                try {
-                    const payload = await fetchHomeTokenConnection(BACKEND_URL);
-                    const nextConnection = payload || { connected: false };
-                    clearServerConnectionError();
-                    setHomeTokenConnection(nextConnection);
-                    return nextConnection;
-                } catch (err) {
-                    if (isAuthenticationRequiredError(err)) return null;
-                    reportServerConnectionError(err);
-                    setHomeTokenConnection({ connected: false });
-                    return { connected: false };
-                } finally {
-                    setHomeTokenConnectionLoaded(true);
-                }
-            }, [clearServerConnectionError, reportServerConnectionError]);
-            const markHomeTokenRequired = React.useCallback(() => {
-                setHomeTokenConnection({ connected: false });
-                setHomeTokenConnectionLoaded(true);
-                void refreshHomeTokenConnectionStatus();
-            }, [refreshHomeTokenConnectionStatus]);
-            const handleHomeTokenConnectionChange = React.useCallback((connection) => {
-                const nextConnection = connection || { connected: false };
-                setHomeTokenConnection(nextConnection);
-                setHomeTokenConnectionLoaded(true);
-            }, []);
-            useEffect(() => {
-                void refreshHomeTokenConnectionStatus();
-            }, [refreshHomeTokenConnectionStatus]);
             const {
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
             } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, serverConnectionError });
+            const epmViewPreference = useEpmViewPreference({ BACKEND_URL, savedViewEnabled: epmCapabilities?.viewEnabled, trackSettingsAction });
+            const epmViewPreferenceDirty = epmViewPreference.isDirty;
             const {
                 groupsConfig,
                 setGroupsConfig,
@@ -1438,7 +1330,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 workspaceConfigConflict,
             });
             useEffect(() => {
-                if (!homeTokenConnectionLoaded) return;
+                if (!epmHomeReadReady) return;
                 if (showEpmNavigation) {
                     if (!restoredInitialEpmViewRef.current && savedInitialViewRef.current === 'epm') {
                         restoredInitialEpmViewRef.current = true;
@@ -1449,7 +1341,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (selectedView === 'epm') {
                     setSelectedView('eng');
                 }
-            }, [homeTokenConnectionLoaded, showEpmNavigation, selectedView]);
+            }, [epmHomeReadReady, showEpmNavigation, selectedView]);
             useEpmLabelMenuEffects({
                 epmLabelMenuAnchor,
                 epmLabelMenuInputRef,
@@ -1947,6 +1839,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectedView,
                 showEpmNavigation,
             });
+            // A changed saved EPM root goal (after the first load) is a new scope: recheck access once.
+            const epmAccessScopeRef = useRef(null);
+            useEffect(() => {
+                if (!epmConfigLoaded) return;
+                const previous = epmAccessScopeRef.current;
+                epmAccessScopeRef.current = savedEpmRootGoalKey || '';
+                if (previous !== null && previous !== epmAccessScopeRef.current) refreshEpmAccess();
+            }, [epmConfigLoaded, savedEpmRootGoalKey, refreshEpmAccess]);
             const {
                 epmTab,
                 setEpmTab,
@@ -1984,7 +1884,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 epmProjectSearch,
                 epmProjectSort,
                 searchQuery,
-                onHomeTokenRequired: markHomeTokenRequired,
+                onHomeAccessDenied: invalidateEpmHomeAvailability,
                 onServerConnectionFailure: reportServerConnectionError,
             });
             const epmSeenProjectKeysRef = useRef(new Set());
@@ -2068,6 +1968,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 applyCapacityLoaded,
                 applyJiraIssueTypesLoaded,
                 applyJiraProjectsAndBoardLoaded,
+                applyEpmCapabilityConfig,
                 applyPriorityWeightsLoaded,
                 applySavePermissions,
                 applySavedEpmConfig,
@@ -2084,6 +1985,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 dispatchFirstRunConfigurationSession,
                 epmConfigLoading,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
                 favoriteGroupValidationError,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
@@ -2119,10 +2021,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 persistGroupPreferences,
                 priorityWeightsValidationError,
                 queueConfigSaveRefresh,
+                refreshEpmAccess,
                 saveBoardConfig,
                 saveCapacityConfig,
                 saveDeliveryOwnerFieldConfig,
                 saveEpmConfig,
+                saveEpmViewPreference: epmViewPreference.save,
                 saveFirstRunGroupPreferences,
                 saveIssueTypesConfig,
                 saveParentNameFieldConfig,
@@ -2210,8 +2114,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 canEditEpmConfiguration,
                 canEditSharedConfiguration,
                 departmentSettingsTab,
+                discardEpmViewPreference: epmViewPreference.discard,
                 epmConfigBaselineRef,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
+                epmViewPreferenceSaving: epmViewPreference.saving,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
                 groupDraft,
@@ -2315,6 +2222,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             useSettingsHotkeyEffect({
                 closeAllTeamSearchDropdowns,
                 epmConfigSaving,
+                epmViewPreferenceDirty,
+                epmViewPreferenceSaving: epmViewPreference.saving,
                 firstRunConfigurationActive,
                 firstRunConfigurationSession,
                 groupManageTab,
@@ -2878,6 +2787,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showWaitingAlert,
                 showEmptyEpicAlert,
                 showDoneEpicAlert,
+                showAlertsPanel,
                 dismissedAlertKeys,
                 dependencyData,
                 dependencyFocus,
@@ -2938,7 +2848,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const requestedSprint = availableSprints.find(sprint => String(sprint.id) === resume.selectedSprint);
                 if (requestedSprint && String(selectedSprint) !== resume.selectedSprint) return;
                 if (planningScopeKey && planningHydratedScopeRef.current !== planningScopeKey) return;
-                if (!sharedConfigReady || !homeTokenConnectionLoaded) return;
+                if (!sharedConfigReady || !epmHomeReadReady) return;
 
                 const nextView = resume.selectedView === 'epm' && showEpmNavigation ? 'epm' : 'eng';
                 const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
@@ -2956,7 +2866,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                 const settingsTabPermitted = resume.settingsTab === 'connections'
                     || DEPARTMENT_SETTINGS_TAB_IDS.has(resume.settingsTab)
-                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration && showEpmNavigation)
+                    || (resume.settingsTab === 'epm' && canEditEpmConfiguration)
                     || (ADMIN_SETTINGS_TAB_IDS.has(resume.settingsTab) && canEditSharedConfiguration);
                 if (resume.settingsOpen && settingsTabPermitted) {
                     setGroupManageTab(resume.settingsTab);
@@ -2969,7 +2879,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 clearAuthResumeWhenSettled();
             }, [
                 activeGroupId, selectedSprint, selectedSprintState, planningScopeKey, visibleControlGroups, availableSprints,
-                sharedConfigReady, homeTokenConnectionLoaded, showEpmNavigation,
+                sharedConfigReady, epmHomeReadReady, showEpmNavigation,
                 canEditEpmConfiguration, canEditSharedConfiguration, clearAuthResumeWhenSettled,
                 authResumeStagedRevision,
             ]);
@@ -3308,6 +3218,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 excludedCapacitySelectedEpicKeys,
                 excludedCapacityChartMode,
                 excludedCapacityMetric,
+                projectTrackCapacitySide,
+                projectTrackMode,
+                projectTrackExcludeAdHoc,
+                projectTrackExcludeExcludedCapacity,
                 scenarioLaneMode,
                 hideExcludedStats,
                 showMissingAlert,
@@ -3427,6 +3341,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
                     setAuthMode(config.authMode || '');
+                    applyEpmCapabilityConfig(config);
                     setCapacityEnabled(Boolean(config.capacityProject || config.capacityConfigRequiresResolution));
                     applyBootstrapPermissions(config);
                     applyAdminSettingsGateConfig(config);
@@ -3592,7 +3507,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     || !sharedConfigReady
                     || !principal?.workspaceId
                     || !principal?.viewConfigId
-                    || !homeTokenConnectionLoaded
+                    || !epmHomeReadReady
                 ) return;
                 if (!readPendingAuthenticationRequired()) {
                     pendingShellAuthResumeRef.current = null;
@@ -3602,7 +3517,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clearAuthResumeWhenSettled();
                 }
             }, [
-                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, homeTokenConnectionLoaded,
+                groupsLoading, groupPreferences.onboardingRequired, sharedConfigReady, epmHomeReadReady,
                 clearEngGroupScopeData, clearAuthResumeWhenSettled, authResumeStagedRevision,
                 markConnectionBootstrapHealthy,
             ]);
@@ -4204,52 +4119,19 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const scope = useEngScope({
                 activeGroupId, selectedSprint, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamNameById, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature
             });
-            const {
-                effectiveStatsData, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey,
-                burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortScopedTeamSignature, burnoutQueryKey,
-                cohortQueryKey
-            } = useStatsDerivedA({
-                scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
-                activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
-                cohortClosedEndQuarter, cohortClosedStartQuarter, cohortEndQuarter, cohortMode, cohortStartQuarter, getTeamInfo, groupPreferences,
-                isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
-                normalizeStatus, perfCountersRef, perfEnabled, setBurnoutAssigneeFilter,
-                setBurnoutData, setBurnoutError, setBurnoutLoading, showStats,
-                statsView, tasksFetched
+            const statsA = useStatsDerivedA({
+                ...stats, scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
+                activeGroupTeamSet, getTeamInfo, groupPreferences, isCompletedSprintSelected, issueEditStateRef, normalizeEpicKey,
+                normalizeStatus, perfCountersRef, perfEnabled, showStats, tasksFetched
             });
+            const { burnoutScopedTeamSignature } = statsA;
 
 
 
-            const {
-                cohortQuarterOptions, cohortProjectOptions, cohortSummary,
-                cohortWorkflowStatusTotal, cohortGridModel, cohortOpenBars, cohortCompletedBars,
-                cohortAverageLeadDays, cohortMedianLeadDays, cohortWarnings, cohortStatusControls,
-                cohortSelectedRowLabel, cohortScope, cohortFetchedCount, cohortAwaitingMode, cohortLastNShortfall, excludedCapacitySprintOptions, excludedCapacitySprintRange, effortSplitSprintLabel,
-                excludedCapacityEpicOptions, projectTrackSeries, projectTrackTotals, projectTrackBreakdown,
-                projectTrackColumnSplit, projectTrackSingleTeam, projectTrackRangeLabel, projectTrackPhaseEpics, projectTrackPhaseSummary,
-                excludedCapacityEpicCatalog, excludedCapacityEffectiveFilters, excludedCapacityFilterLabel, effortSplitRows,
-                excludedCapacityRows, excludedCapacityLineSeries, excludedCapacityModeOverall, excludedCapacityModeSprintRows,
-                excludedCapacityModeTeamLineSeries, effortSplitTotals, excludedCapacityWarnings, formatExcludedPoints,
-                toggleExcludedCapacityEpicKey, clearExcludedCapacityEpicSelection, selectAllExcludedCapacityEpics, toggleEffortSplitBucket
-            } = useStatsDerivedB({
-                scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
+            const statsB = useStatsDerivedB({
+                ...stats, ...statsA, scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
                 activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
-                adminSettingsGate, availableSprints, burnoutAssigneeFilter, burnoutQueryKey,
-                burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortCacheRef,
-                cohortClosedEndQuarter, cohortClosedStartQuarter, cohortData, cohortEndQuarter, cohortExcludeAdHoc, cohortExcludeCapacity, cohortLastN, cohortMode,
-                cohortGroupBy, cohortProjectFilter, cohortQueryKey, cohortScopedTeamSignature,
-                cohortSelectedRow, cohortStartQuarter, cohortStatusToggles, excludedCapacityCacheRef,
-                excludedCapacityChartMode, excludedCapacityData, excludedCapacityEndSprintId, excludedCapacityEpicDropdownOpen,
-                excludedCapacityEpicDropdownRef, excludedCapacityForceRefreshRef, excludedCapacityIsolatedTeam, excludedCapacityRefreshNonce,
-                excludedCapacitySelectedEpicKeys, excludedCapacityStartSprintId, groupPreferences, issueEditStateRef,
-                issuePeopleStatsRevision, projectTrackCapacitySide, projectTrackExcludeAdHoc, projectTrackExcludeExcludedCapacity,
-                projectTrackMode, projectTrackPhaseAbortRef, projectTrackPhaseCacheRef, projectTrackPhaseData,
-                setBurnoutTaskFilter, setCohortData, setCohortError,
-                setCohortLoading, setCohortProjectFilter, setCohortSelectedRow, setEffortSplitVisibleBuckets,
-                setExcludedCapacityData, setExcludedCapacityEndSprintId, setExcludedCapacityEpicDropdownOpen, setExcludedCapacityError,
-                setExcludedCapacityIsolatedTeam, setExcludedCapacityLoading, setExcludedCapacitySelectedEpicKeys, setExcludedCapacityStartSprintId,
-                setProjectTrackPhaseData, setProjectTrackPhaseError, setProjectTrackPhaseLoading, showStats,
-                statsView, trackApiResult
+                adminSettingsGate, availableSprints, groupPreferences, issueEditStateRef, showStats, trackApiResult
             });
 
             const scenario = useScenarioPlanner({
@@ -4357,18 +4239,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 });
                 return keys;
             }, [visibleTasks]);
-            const {
-                priorityTeamIds, priorityRows, priorityRadar, statsTeamRows,
-                statsBarColumns, statsTotals, burnoutAssigneeOptions, burnoutChartModel,
-                burnoutTotals, burndownMetricIsStoryPoints, formatBurndownValue,
-                buildBurnoutTaskFilter, canRenderStatsPanel, isLeadTimesFocusMode
-            } = useStatsDerivedC({
-                scope, burndownMetric, burnoutAssigneeFilter,
-                burnoutData, burnoutIssueWeightByKey, burnoutTaskStatusByIssueKey, burnoutTaskTeamByIssueKey,
-                effectivePriorityWeightMap, effectiveStatsData, isBurnoutClosedStatus, isCompletedSprintSelected,
-                priorityAxis, priorityOrder, resolveStatsTeamColor, showStats,
-                statsView
+            const statsC = useStatsDerivedC({
+                ...stats, ...statsA, scope, effectivePriorityWeightMap, isBurnoutClosedStatus, isCompletedSprintSelected,
+                priorityAxis, priorityOrder, resolveStatsTeamColor, showStats
             });
+            const { priorityTeamIds, isLeadTimesFocusMode } = statsC;
             // Catch Up is the all-false fallthrough of the ENG mode booleans, so Board has to opt
             // out here explicitly or the whole task list renders underneath the board.
             const engWorkspaceConfigured = adminSettingsGate.status !== 'missing';
@@ -4973,15 +4848,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),
             });
-            const {
-                activeSingleIssueTarget: statusTransitionActiveTarget,
-                openSingleIssueStatusControl, prefetchSingleIssueStatusOptions, closeSingleIssueStatusControl,
-                transitionOptions, transitionOptionsLoading,
-                transitionError, transitionErrorCode, transitionResult,
-                pendingIssueKeys: pendingStatusIssueKeys, submitStatusTransition,
-            } = statusTransitions;
+            const { closeSingleIssueStatusControl, submitStatusTransition } = statusTransitions;
 
-            const statusTransitionActiveKey = statusTransitionActiveTarget?.key || null;
+            const statusTransitionActiveKey = statusTransitions.activeSingleIssueTarget?.key || null;
 
             const priorityTransitionEnabled = statusTransitionEnabled;
             const priorityTransitions = useEngPriorityTransitions({
@@ -4999,13 +4868,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),
             });
-            const {
-                activePriorityTarget, openPriorityControl, closePriorityControl,
-                priorityOptions, priorityOptionsLoading, prioritySubmitting,
-                priorityError, priorityResult,
-                pendingIssueKeys: pendingPriorityIssueKeys, submitPriorityChange,
-            } = priorityTransitions;
-            const priorityTransitionActiveKey = activePriorityTarget?.key || null;
+            const { closePriorityControl, submitPriorityChange } = priorityTransitions;
+            const priorityTransitionActiveKey = priorityTransitions.activePriorityTarget?.key || null;
 
             const projectTrackTransitionEnabled = priorityTransitionEnabled;
             const projectTrackTransitions = useEngProjectTrackTransitions({
@@ -5018,13 +4882,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
             });
-            const {
-                activeProjectTrackTarget, openProjectTrackControl, closeProjectTrackControl,
-                projectTrackOptions, projectTrackOptionsLoading, projectTrackSubmitting,
-                projectTrackError, projectTrackResult,
-                pendingProjectTrackIssueKeys, submitProjectTrackChange,
-            } = projectTrackTransitions;
-            const projectTrackTransitionActiveKey = activeProjectTrackTarget?.key || null;
+            const { closeProjectTrackControl, submitProjectTrackChange } = projectTrackTransitions;
+            const projectTrackTransitionActiveKey = projectTrackTransitions.activeProjectTrackTarget?.key || null;
             const handleOnboardingPreviewCloseRequest = React.useCallback((descriptor, reason) => {
                 if (!onboardingPreviewDescriptorMatches(onboardingPreviewSession, descriptor)) return;
                 if (descriptor.fieldKind === 'priority') closePriorityControl();
@@ -5341,13 +5200,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const blockersDone = entries.every(dep => resolveDependencyStatus(dep) === 'done');
                 return blockersDone ? 'Unblocked' : baseLabel;
             };
-            const {
-                visibleAlertCollections, missingAlertKeySet, blockedAlertKeySet, postponedAlertKeySet,
-                needsStoriesAlertKeySet, waitingAlertKeySet, emptyAlertKeySet, doneAlertKeySet, alertCounts,
-                alertItemCount, missingAlertTeams, blockedAlertTeams, doneEpicTeams, postponedAlertTeams,
-                postponedEpicTeams, emptyEpicTeams, analysisEpicTeams, backlogEpicTeams, missingTeamEpicTeams,
-                missingLabelEpicTeams, needsStoriesTeams
-            } = useEngAlerts({
+            const alerts = useEngAlerts({
                 scope,
                 dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
                 missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
@@ -5357,6 +5210,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectionTasks, visibleTasksForList, searchQuery, epicDetails, engCatchUpFilters,
                 burnoutTaskFilter
             });
+            const {
+                missingAlertKeySet, blockedAlertKeySet, postponedAlertKeySet, needsStoriesAlertKeySet, waitingAlertKeySet, emptyAlertKeySet, doneAlertKeySet, alertCounts
+            } = alerts;
 
             const triggerAlertCelebration = React.useCallback((options = {}) => {
                 if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
@@ -5582,46 +5438,16 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (storyRequirementScopeRef.current && storyRequirementScopeRef.current !== scopeKey) {
                     setDismissedStoryRequirementIds([]);
                     setStoryRequirementNavigationError('');
-                    setAlertPin(null);
+                    clearAlertPin();
                 }
                 storyRequirementScopeRef.current = scopeKey;
-                if (!isCatchUpMode) setAlertPin(null);
+                if (!isCatchUpMode) clearAlertPin();
             }, [activeGroupId, selectedSprint, isCatchUpMode]);
-            const pinAlert = spec => setAlertPin(createAlertPin(spec));
-            // Opens the panel and the category (absent from the DOM while hidden or collapsed), then scrolls once they render.
-            const revealAlertBlock = (sectionId, fallbackToTop, target = () => document.getElementById(sectionId)) => {
-                setShowAlertsPanel(true); // shareViewOptions is declared later in render: safe only from click handlers (temporal dead zone otherwise)
-                shareViewOptions.alertFlags[Object.keys(shareViewOptions.alertFlags).find(key => alertCardId(key) === sectionId)]?.[1](true);
-                afterTwoFrames(() => {
-                    if (!scrollToAlertTarget(target()) && fallbackToTop) scrollToTop();
-                });
-            };
-            // Runs outside triggerAlertCelebration, which returns early under reduced motion.
-            const scrollAfterPinClose = (outcome, sectionId) => {
-                if (outcome === 'top') scrollToTop();
-                else revealAlertBlock(sectionId, outcome === 'block-or-top');
-            };
-            // Back expands the pinned category too, then lands on the alert list's top.
-            const scrollBackToAlerts = () => revealAlertBlock(alertPin?.sectionId, true, () => document.querySelector('.alerts-panel-shell') || document.querySelector('[id^="eng-alert-"]'));
-            // The pin's title goes where its alert row's title goes: the Story or Epic, or the Story requirement, in the Catch Up list.
-            const openAlertPinTarget = () => (alertPin?.kind === 'requirement' ? handleStoryRequirementClick({ id: alertPin.identity }) : alertPin && handleAlertStoryClick(alertPin.key, false));
-            const closeAlertPin = () => {
-                if (!alertPin) return;
-                const outcome = resolvePinClose(alertPin, alertIdentitiesBySection(visibleAlertCollections), { loading: !alertCohortSettled });
-                if (outcome.dismiss) {
-                    if (alertPin.kind === 'requirement') dismissStoryRequirement({ id: alertPin.identity });
-                    else dismissAlertItem(alertPin.identity, { suppressCelebration: true });
-                }
-                setAlertPin(null);
-                if (outcome.celebrate) {
-                    const paletteType = {
-                        'eng-alert-missing': 'missing', 'eng-alert-blocked': 'blocked', 'eng-alert-followup': 'followup',
-                        'eng-alert-needs-stories': 'waiting', 'eng-alert-waiting': 'waiting', 'eng-alert-empty': 'empty', 'eng-alert-done': 'done'
-                    }[alertPin.sectionId];
-                    triggerAlertCelebration(paletteType ? { types: [paletteType] } : {});
-                }
-                scrollAfterPinClose(outcome.scroll, alertPin.sectionId);
-            };
+            const { scrollBackToAlerts, openAlertPinTarget, closeAlertPin } = createAlertPinActions({
+                alertPin, clearAlertPin, getAlertFlags: () => shareViewOptions.alertFlags, setShowAlertsPanel, afterTwoFrames, scrollToAlertTarget, scrollToTop,
+                handleStoryRequirementClick, handleAlertStoryClick, dismissStoryRequirement, dismissAlertItem, triggerAlertCelebration,
+                visibleAlertCollections: alerts.visibleAlertCollections, alertCohortSettled
+            });
             const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
@@ -5656,7 +5482,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             });
             const shareViewOptions = {
                 sharedConfigReady, groupsLoading, groupsFailed: Boolean(groupsError || boardGroupsReadFailed), onboardingRequired: groupPreferences.onboardingRequired,
-                adminSettingsGate, sprintCatalogState, homeTokenConnectionLoaded, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
+                adminSettingsGate, sprintCatalogState, epmHomeReadReady, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
                 pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, pendingConnectionRecoveryRef, tourRunning: onboarding.run,
                 planningReviewBusy: Boolean(planningReview.dirty || planningReview.saving || planningReview.pendingScopeChange),
                 activeGroupId, selectedSprint, planningScopeKey, teamSelectionScopeKey, selectedView, selectedTeams, tasksFetched,
@@ -5862,22 +5688,22 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (field === 'inclusion' && capacityEpicKey) return <button type="button" className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? '' : 'active'}`} disabled={!canToggleSharedGroupExcludedCapacity}
                     onClick={() => toggleSharedGroupExcludedCapacityEpic(capacityEpicKey)}>{excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? 'Excluded' : 'Included'}</button>;
                 if (field === 'projectTrack' && row.rowKind === 'epic' && projectTrackTransitionEnabled) return <ProjectTrackTransitionMenu epicKey={row.key} currentTrack={row.projectTrack}
-                    isOpen={projectTrackTransitionActiveKey === row.key} options={projectTrackOptions} optionsLoading={projectTrackOptionsLoading}
-                    submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(row.key)} error={projectTrackError} result={projectTrackResult}
-                    onOpen={openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
+                    isOpen={projectTrackTransitionActiveKey === row.key} options={projectTrackTransitions.projectTrackOptions} optionsLoading={projectTrackTransitions.projectTrackOptionsLoading}
+                    submitting={projectTrackTransitions.projectTrackSubmitting || projectTrackTransitions.pendingProjectTrackIssueKeys.has(row.key)} error={projectTrackTransitions.projectTrackError} result={projectTrackTransitions.projectTrackResult}
+                    onOpen={projectTrackTransitions.openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
                 if (!issueFieldEditsEnabled) return null;
                 if (field === 'status') return <StatusTransitionMenu
                     issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
-                    options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
-                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
-                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
+                    options={statusTransitions.transitionOptions} optionsLoading={statusTransitions.transitionOptionsLoading} submitting={statusTransitionSubmitting || statusTransitions.pendingIssueKeys.has(row.key)}
+                    error={statusTransitions.transitionError} errorCode={statusTransitions.transitionErrorCode} result={statusTransitions.transitionResult}
+                    portalTarget={document.body} onOpen={statusTransitions.openSingleIssueStatusControl} onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
-                    isOpen={priorityTransitionActiveKey === row.key} options={priorityOptions} optionsLoading={priorityOptionsLoading}
-                    submitting={prioritySubmitting || pendingPriorityIssueKeys.has(row.key)} error={priorityError} result={priorityResult}
-                    portalTarget={document.body} onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
+                    isOpen={priorityTransitionActiveKey === row.key} options={priorityTransitions.priorityOptions} optionsLoading={priorityTransitions.priorityOptionsLoading}
+                    submitting={priorityTransitions.prioritySubmitting || priorityTransitions.pendingIssueKeys.has(row.key)} error={priorityTransitions.priorityError} result={priorityTransitions.priorityResult}
+                    portalTarget={document.body} onOpen={priorityTransitions.openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
                 const editorField = field === 'storyPoints' ? 'storyPoints' : field;
                 if (!['summary', 'team', 'assignee', 'storyPoints'].includes(editorField) || (editorField === 'storyPoints' && row.rowKind !== 'story')) return null;
                 const active = issueFieldEdits.activeEditor?.issueKey === row.key && issueFieldEdits.activeEditor?.field === editorField;
@@ -6044,7 +5870,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         || alertCohortRef.current !== null || boardScopeRequested || !isEpicRefreshMode || epicInteractionActiveFor(epicKey),
                     reason: '', epoch: loadEpochRef.current, version: groupLoadVersionRef.current, scopeKey: `${activeGroupId}|${selectedSprint}`,
                 }),
-                getProtectedKeys: () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys,
+                getProtectedKeys: () => new Set([...statusTransitions.pendingIssueKeys, ...priorityTransitions.pendingIssueKeys, ...projectTrackTransitions.pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys,
                     statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, issueFieldEdits.activeEditor?.issueKey].filter(Boolean)),
                 getRecentEditKeys: () => new Set([...recentEditKeysRef.current].filter(([, at]) => Date.now() - at < 10000).map(([key]) => key)),
                 getViewport: () => ({ top: epicStickyTop + (document.querySelector('.epic-block .epic-header')?.offsetHeight || 0), bottom: window.innerHeight }),
@@ -6063,14 +5889,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             });
 
             boardFreshnessRef.current.getViewport = epicRefresh.getViewport;
-            boardFreshnessRef.current.pendingKeys = () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
+            boardFreshnessRef.current.pendingKeys = () => new Set([...statusTransitions.pendingIssueKeys, ...priorityTransitions.pendingIssueKeys, ...projectTrackTransitions.pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
             freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
                 scenarioHasUnsavedChanges, scenarioEditMode, scenarioDraftMeta, scenarioDragState: scenarioState.scenarioDragState, scenarioDragStateRef: scenarioState.scenarioDragStateRef, scenarioLoading: scenarioState.scenarioLoading,
                 showGroupManage, isGroupDraftDirty, groupSaving, epmConfigSaving, groupVisibilitySaving, workspaceConfigConflict, groupsConfigConflict, onboardingActive: onboarding.run || onboarding.pending,
                 sharedConfigReady, acceptedBoardConfigRef, engWorkspaceConfigured, connectionRecoveryBlocksRefresh, connectionUnavailableRef, terminalAuth: readPendingAuthenticationRequired(),
                 authResumePrincipalRef, connectionRecoveryPrincipalRef, jiraUrl, authResumeStagedRevision, sharedConfigRevision, groupsConfig, activeGroupId, selectedSprint, activeGroupTeamIds,
                 loadEpochRef, groupLoadVersionRef, alertCohortRef, loading, productTasksLoading, techTasksLoading, groupsLoading, catalogLoading: catalogAcquiring, isSprintCatalogValidated: () => sprintCatalogControllerRef.current.getState().authority === 'validated', onboardingRequired: groupPreferences.onboardingRequired,
-                statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys, pendingPriorityIssueKeys, pendingProjectTrackIssueKeys, issueFieldEdits,
+                statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys: statusTransitions.pendingIssueKeys, pendingPriorityIssueKeys: priorityTransitions.pendingIssueKeys, pendingProjectTrackIssueKeys: projectTrackTransitions.pendingProjectTrackIssueKeys, issueFieldEdits,
                 issueEditState: issueEditStateRef.current, isHeld, epicRefresh, collectGroupRefresh, loadAlertEpics, fetchMissingPlanningInfo, loadReadyToCloseProductTasks, loadReadyToCloseTechTasks,
                 refreshDueSprintCatalog: job => sprintCatalogControllerRef.current.readDue({ selectedSprintId: selectedSprintRef.current, signal: job.signal, shouldApply: job.shouldApply }),
                 statsView, statsQueryScope: [burnoutScopedTeamSignature, cohortMode, cohortMode === 'closed' ? cohortClosedStartQuarter : cohortMode === 'last_n' ? '' : cohortStartQuarter, cohortMode === 'closed' ? cohortClosedEndQuarter : cohortMode === 'last_n' ? '' : cohortEndQuarter, excludedCapacityStartSprintId, excludedCapacityEndSprintId], statsLoading: burnoutLoading || cohortLoading || excludedCapacityLoading,
@@ -6188,9 +6014,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             onOpenSelectedInJira={openSelectedInJira}
                             planningLayout={planningLayout}
                             onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
-                            statusTransitionError={transitionError}
-                            statusTransitionErrorCode={transitionErrorCode}
-                            statusTransitionResult={transitionResult}
+                            statusTransitionError={statusTransitions.transitionError}
+                            statusTransitionErrorCode={statusTransitions.transitionErrorCode}
+                            statusTransitionResult={statusTransitions.transitionResult}
                         />}
                         capacity={<PlanningCapacityBar compact={compactPlanningPanel}
                             capacityEnabled={capacityEnabled}
@@ -6233,9 +6059,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             );
             const epicBlockProps = {
                 renderEpicShareControl,
-                statusTransitionActiveKey,
-                priorityTransitionActiveKey,
-                projectTrackTransitionActiveKey,
+                statusTransitions,
+                priorityTransitions,
+                projectTrackTransitions,
                 issueFieldEdits,
                 issueFieldEditsEnabled,
                 jiraUrl,
@@ -6244,29 +6070,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 normalizeEpicKey,
                 stickyEpicFocusKey,
                 epicRefMap,
-                priorityTransitionEnabled,
                 renderPriorityIcon,
-                priorityOptions,
-                priorityOptionsLoading,
-                prioritySubmitting,
-                pendingPriorityIssueKeys,
-                priorityError,
-                priorityResult,
-                openPriorityControl,
-                closePriorityControl,
-                submitPriorityChange,
                 onboardingPreviewSession,
                 handleOnboardingPreviewLifecycleChange,
-                projectTrackTransitionEnabled,
-                projectTrackOptions,
-                projectTrackOptionsLoading,
-                projectTrackSubmitting,
-                pendingProjectTrackIssueKeys,
-                projectTrackError,
-                projectTrackResult,
-                openProjectTrackControl,
-                closeProjectTrackControl,
-                submitProjectTrackChange,
                 showStats,
                 showPlanning,
                 toggleSharedGroupExcludedCapacityEpic,
@@ -6275,16 +6081,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showGroupManage,
                 isGroupDraftDirty,
                 statusTransitionEnabled,
-                transitionOptions,
-                transitionOptionsLoading,
                 statusTransitionSubmitting,
-                pendingStatusIssueKeys,
-                transitionError,
-                transitionErrorCode,
-                transitionResult,
-                openSingleIssueStatusControl,
-                prefetchSingleIssueStatusOptions,
-                closeSingleIssueStatusControl,
                 handleSubmitStatusTransition,
                 isEpicRefreshMode,
                 epicRefresh,
@@ -6871,130 +6668,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     {selectedView === 'eng' && showStats && engWorkspaceConfigured && (
                     <LazyViewBoundary load={loadStatsView} fallback={statsLoadingFallback}>
                     {StatsPanel => <StatsPanel
-                        stats={{
-                            canRenderStatsPanel,
-                            statsView,
-                            setStatsView,
-                            statsGraphMode,
-                            setStatsGraphMode,
-                            statsTotals,
-                            statsTeamRows,
-                            statsBarColumns,
-                            priorityRadar,
-                            priorityRows,
-                            burnoutAssigneeFilter,
-                            setBurnoutAssigneeFilter,
-                            burnoutAssigneeOptions,
-                            burndownMetric,
-                            setBurndownMetric,
-                            burndownMetricIsStoryPoints,
-                            burnoutTotals,
-                            burnoutLoading,
-                            burnoutError,
-                            burnoutChartModel,
-                            burnoutTaskFilter,
-                            formatBurndownValue,
-                            buildBurnoutTaskFilter,
-                            excludedCapacitySprintOptions,
-                            excludedCapacityStartSprintId,
-                            excludedCapacityEndSprintId,
-                            setExcludedCapacityStartSprintId,
-                            setExcludedCapacityEndSprintId,
-                            excludedCapacityEpicDropdownRef,
-                            excludedCapacityEpicDropdownOpen,
-                            setExcludedCapacityEpicDropdownOpen,
-                            excludedCapacityFilterLabel,
-                            selectAllExcludedCapacityEpics,
-                            clearExcludedCapacityEpicSelection,
-                            excludedCapacityEpicCatalog,
-                            excludedCapacityEffectiveFilters,
-                            toggleExcludedCapacityEpicKey,
-                            excludedCapacityChartMode,
-                            setExcludedCapacityChartMode,
-                            excludedCapacityMetric,
-                            setExcludedCapacityMetric,
-                            formatExcludedPoints,
-                            effortSplitTotals,
-                            excludedCapacityLoading,
-                            excludedCapacityData,
-                            excludedCapacityError,
-                            excludedCapacityWarnings,
-                            effortSplitSprintLabel,
-                            effortSplitRows,
-                            effortSplitVisibleBuckets,
-                            toggleEffortSplitBucket,
-                            excludedCapacityEpicOptions,
-                            excludedCapacityRows,
-                            excludedCapacityLineSeries,
-                            excludedCapacityIsolatedTeam,
-                            setExcludedCapacityIsolatedTeam,
-                            excludedCapacitySprintRange,
-                            excludedCapacityModeOverall,
-                            excludedCapacityModeSprintRows,
-                            excludedCapacityModeTeamLineSeries,
-                            projectTrackCapacitySide,
-                            setProjectTrackCapacitySide,
-                            projectTrackExcludeAdHoc,
-                            setProjectTrackExcludeAdHoc,
-                            projectTrackExcludeExcludedCapacity,
-                            setProjectTrackExcludeExcludedCapacity,
-                            projectTrackMode,
-                            setProjectTrackMode,
-                            projectTrackTotals,
-                            projectTrackSeries,
-                            projectTrackRangeLabel,
-                            projectTrackColumnSplit, projectTrackSingleTeam,
-                            projectTrackBreakdown,
-                            projectTrackPhaseLoading,
-                            projectTrackPhaseError,
-                            projectTrackPhaseData,
-                            projectTrackPhaseSummary,
-                            projectTrackPhaseEpics,
-                            cohortQuarterOptions,
-                            cohortStartQuarter,
-                            cohortEndQuarter,
-                            setCohortStartQuarter,
-                            setCohortEndQuarter,
-                            cohortMode,
-                            setCohortMode,
-                            cohortClosedStartQuarter,
-                            setCohortClosedStartQuarter,
-                            cohortClosedEndQuarter,
-                            setCohortClosedEndQuarter,
-                            cohortLastN,
-                            setCohortLastN,
-                            setCohortSelectedRow,
-                            cohortGroupBy,
-                            setCohortGroupBy,
-                            cohortProjectFilter,
-                            setCohortProjectFilter,
-                            cohortProjectOptions,
-                            cohortExcludeAdHoc,
-                            setCohortExcludeAdHoc,
-                            cohortExcludeCapacity,
-                            setCohortExcludeCapacity,
-                            cohortStatusControls,
-                            cohortStatusToggles,
-                            setCohortStatusToggles,
-                            cohortSummary,
-                            cohortWorkflowStatusTotal,
-                            cohortAverageLeadDays,
-                            cohortMedianLeadDays,
-                            cohortLoading,
-                            cohortError,
-                            cohortWarnings,
-                            cohortSelectedRowLabel,
-                            cohortGridModel,
-                            cohortSelectedRow,
-                            cohortOpenBars,
-                            cohortCompletedBars,
-                            cohortScope,
-                            cohortFetchedCount,
-                            cohortAwaitingMode,
-                            cohortLastNShortfall,
-                            burnoutScopedTeamIds,
-                            burnoutData,
-                        }}
+                        stats={{ ...stats, ...statsA, ...statsB, ...statsC }}
                         links={{ buildStatLink, buildPriorityStatLink }}
                         analytics={{ trackStatsAction, trackStatsAnalyticsAction }}
                         onSelectBurnoutTask={setBurnoutTaskFilter}
@@ -7088,70 +6762,18 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
                                             selectedView={selectedView}
-                                            alertItemCount={alertItemCount}
+                                            alertItemCount={alerts.alertItemCount}
                                             alertCounts={alertCounts}
                                             alertScopeTooLarge={alertScopeTooLarge}
                                             showAlertsPanel={showAlertsPanel}
                                             setShowAlertsPanel={setShowAlertsPanel}
                                             renderAlertShareControl={renderAlertShareControl}
                                             collapsed={!showMissingAlert && !showBlockedAlert && !showPostponedAlert && !showBacklogAlert && !showMissingTeamAlert && !showMissingLabelsAlert && !showNeedsStoriesAlert && !showWaitingAlert && !showEmptyEpicAlert && !showDoneEpicAlert}
-                                            alertProps={{
-                                                analysisEpicTeams,
-                                                backlogEpicTeams,
-                                                backlogEpics: visibleAlertCollections.backlogEpics,
-                                                blockedAlertTeams,
-                                                blockedTasks: visibleAlertCollections.blockedTasks,
-                                                buildKeyListLink,
-                                                consolidatedMissingStories: visibleAlertCollections.consolidatedMissingStories,
-                                                dismissAlertItem,
-                                                doneEpicTeams,
-                                                doneStoryEpics: visibleAlertCollections.doneStoryEpics,
-                                                emptyEpicTeams,
-                                                emptyEpics: visibleAlertCollections.emptyEpicsForAlert,
-                                                emptyEpicsForAlert: visibleAlertCollections.emptyEpicsForAlert,
-                                                futureRoutedEpics: visibleAlertCollections.futureRoutedEpics,
-                                                getBlockedAlertStatusLabel,
-                                                getFuturePlanningNeedsStoriesReasonText,
-                                                handleAlertStoryClick,
-                                                handleStoryRequirementClick,
-                                                dismissStoryRequirement,
-                                                isFutureSprintSelected,
-                                                storyReadinessSprintState: selectedSprintState,
-                                                jiraUrl,
-                                                missingAlertTeams,
-                                                missingLabelEpicTeams,
-                                                missingLabelEpics: visibleAlertCollections.missingLabelEpics,
-                                                missingTeamEpicTeams,
-                                                missingTeamEpics: visibleAlertCollections.missingTeamEpics,
-                                                needsStoriesEntries: visibleAlertCollections.needsStoriesEntries,
-                                                needsStoriesEpics: visibleAlertCollections.needsStoriesEpics,
-                                                needsStoriesTeams,
-                                                pinAlert,
-                                                postponedAlertTeams,
-                                                postponedEpicTeams,
-                                                postponedTasks: visibleAlertCollections.postponedTasks,
-                                                setShowBacklogAlert,
-                                                setShowBlockedAlert,
-                                                setShowDoneEpicAlert,
-                                                setShowEmptyEpicAlert,
-                                                setShowMissingAlert,
-                                                setShowMissingLabelsAlert,
-                                                setShowMissingTeamAlert,
-                                                setShowNeedsStoriesAlert,
-                                                setShowPostponedAlert,
-                                                setShowWaitingAlert,
-                                                showBacklogAlert,
-                                                showBlockedAlert,
-                                                showDoneEpicAlert,
-                                                showEmptyEpicAlert,
-                                                showMissingAlert,
-                                                showMissingLabelsAlert,
-                                                showMissingTeamAlert,
-                                                showNeedsStoriesAlert,
-                                                showPostponedAlert,
-                                                showWaitingAlert,
-                                                waitingForStoriesEpics: visibleAlertCollections.waitingForStoriesEpics,
-                                            }}
+                                            alertProps={createAlertPanelProps({
+                                                alerts, alertFlags: shareViewOptions.alertFlags, buildKeyListLink, dismissAlertItem, getBlockedAlertStatusLabel, getFuturePlanningNeedsStoriesReasonText,
+                                                handleAlertStoryClick, handleStoryRequirementClick, dismissStoryRequirement, isFutureSprintSelected, selectedSprintState, jiraUrl,
+                                                pinAlert: alertPinState.pinAlert
+                                            })}
                                         />
                                     ) : null}
                                     visibleTasksForList={visibleTasksForList}
@@ -7210,6 +6832,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             cancelFirstRunConfiguration={cancelFirstRunConfiguration}
                             discardGroupDraftChanges={discardGroupDraftChanges}
                             discardMineOnGroupsConfigConflict={discardMineOnGroupsConfigConflict}
+                            epmViewPreferenceDirty={epmViewPreferenceDirty}
                             firstRunConfigurationActive={firstRunConfigurationActive}
                             firstRunHasCommittedSection={firstRunHasCommittedSection}
                             groupConfigValidationErrors={groupConfigValidationErrors}
@@ -7242,8 +6865,17 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         >
                                 {groupManageTab === 'connections' && (
                                 <UserConnectionsSettings
-                                    backendUrl={BACKEND_URL}
-                                    onConnectionChange={handleHomeTokenConnectionChange}
+                                    epmViewPreference={{
+                                        checked: epmViewPreference.checked,
+                                        onChange: epmViewPreference.setChecked,
+                                        saving: epmViewPreference.saving,
+                                        error: epmViewPreference.error,
+                                        savedEnabled: epmViewPreference.savedEnabled,
+                                        access: epmAccess || (epmCapabilities?.viewEnabled && !epmCapabilities?.homeReadAvailable
+                                            ? { state: 'scope_missing', loginUrl: epmCapabilities?.loginUrl || '' }
+                                            : null),
+                                        loginUrl: epmCapabilities?.loginUrl || '',
+                                    }}
                                 />
                                 )}
                                 {ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && (

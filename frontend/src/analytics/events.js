@@ -6,7 +6,6 @@ const EVENT_NAMES = new Set([
     'app_search',
     'filter_changed',
     'settings_action',
-    'connection_action',
     'planning_action',
     'scenario_action',
     'sort_changed',

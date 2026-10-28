@@ -4848,15 +4848,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'status' }),
             });
-            const {
-                activeSingleIssueTarget: statusTransitionActiveTarget,
-                openSingleIssueStatusControl, prefetchSingleIssueStatusOptions, closeSingleIssueStatusControl,
-                transitionOptions, transitionOptionsLoading,
-                transitionError, transitionErrorCode, transitionResult,
-                pendingIssueKeys: pendingStatusIssueKeys, submitStatusTransition,
-            } = statusTransitions;
+            const { closeSingleIssueStatusControl, submitStatusTransition } = statusTransitions;
 
-            const statusTransitionActiveKey = statusTransitionActiveTarget?.key || null;
+            const statusTransitionActiveKey = statusTransitions.activeSingleIssueTarget?.key || null;
 
             const priorityTransitionEnabled = statusTransitionEnabled;
             const priorityTransitions = useEngPriorityTransitions({
@@ -4874,13 +4868,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 },
                 onAlertDataInvalidated: ({ keys } = {}) => invalidateAlertsAfterEdit({ keys, field: 'priority' }),
             });
-            const {
-                activePriorityTarget, openPriorityControl, closePriorityControl,
-                priorityOptions, priorityOptionsLoading, prioritySubmitting,
-                priorityError, priorityResult,
-                pendingIssueKeys: pendingPriorityIssueKeys, submitPriorityChange,
-            } = priorityTransitions;
-            const priorityTransitionActiveKey = activePriorityTarget?.key || null;
+            const { closePriorityControl, submitPriorityChange } = priorityTransitions;
+            const priorityTransitionActiveKey = priorityTransitions.activePriorityTarget?.key || null;
 
             const projectTrackTransitionEnabled = priorityTransitionEnabled;
             const projectTrackTransitions = useEngProjectTrackTransitions({
@@ -4893,13 +4882,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
             });
-            const {
-                activeProjectTrackTarget, openProjectTrackControl, closeProjectTrackControl,
-                projectTrackOptions, projectTrackOptionsLoading, projectTrackSubmitting,
-                projectTrackError, projectTrackResult,
-                pendingProjectTrackIssueKeys, submitProjectTrackChange,
-            } = projectTrackTransitions;
-            const projectTrackTransitionActiveKey = activeProjectTrackTarget?.key || null;
+            const { closeProjectTrackControl, submitProjectTrackChange } = projectTrackTransitions;
+            const projectTrackTransitionActiveKey = projectTrackTransitions.activeProjectTrackTarget?.key || null;
             const handleOnboardingPreviewCloseRequest = React.useCallback((descriptor, reason) => {
                 if (!onboardingPreviewDescriptorMatches(onboardingPreviewSession, descriptor)) return;
                 if (descriptor.fieldKind === 'priority') closePriorityControl();
@@ -5701,22 +5685,22 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (field === 'inclusion' && capacityEpicKey) return <button type="button" className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? '' : 'active'}`} disabled={!canToggleSharedGroupExcludedCapacity}
                     onClick={() => toggleSharedGroupExcludedCapacityEpic(capacityEpicKey)}>{excludedEpicSet.has(normalizeEpicKey(capacityEpicKey)) ? 'Excluded' : 'Included'}</button>;
                 if (field === 'projectTrack' && row.rowKind === 'epic' && projectTrackTransitionEnabled) return <ProjectTrackTransitionMenu epicKey={row.key} currentTrack={row.projectTrack}
-                    isOpen={projectTrackTransitionActiveKey === row.key} options={projectTrackOptions} optionsLoading={projectTrackOptionsLoading}
-                    submitting={projectTrackSubmitting || pendingProjectTrackIssueKeys.has(row.key)} error={projectTrackError} result={projectTrackResult}
-                    onOpen={openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
+                    isOpen={projectTrackTransitionActiveKey === row.key} options={projectTrackTransitions.projectTrackOptions} optionsLoading={projectTrackTransitions.projectTrackOptionsLoading}
+                    submitting={projectTrackTransitions.projectTrackSubmitting || projectTrackTransitions.pendingProjectTrackIssueKeys.has(row.key)} error={projectTrackTransitions.projectTrackError} result={projectTrackTransitions.projectTrackResult}
+                    onOpen={projectTrackTransitions.openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
                 if (!issueFieldEditsEnabled) return null;
                 if (field === 'status') return <StatusTransitionMenu
                     issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
-                    options={transitionOptions} optionsLoading={transitionOptionsLoading} submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(row.key)}
-                    error={transitionError} errorCode={transitionErrorCode} result={transitionResult}
-                    portalTarget={document.body} onOpen={openSingleIssueStatusControl} onPrefetch={prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
+                    options={statusTransitions.transitionOptions} optionsLoading={statusTransitions.transitionOptionsLoading} submitting={statusTransitionSubmitting || statusTransitions.pendingIssueKeys.has(row.key)}
+                    error={statusTransitions.transitionError} errorCode={statusTransitions.transitionErrorCode} result={statusTransitions.transitionResult}
+                    portalTarget={document.body} onOpen={statusTransitions.openSingleIssueStatusControl} onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
                     issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
-                    isOpen={priorityTransitionActiveKey === row.key} options={priorityOptions} optionsLoading={priorityOptionsLoading}
-                    submitting={prioritySubmitting || pendingPriorityIssueKeys.has(row.key)} error={priorityError} result={priorityResult}
-                    portalTarget={document.body} onOpen={openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
+                    isOpen={priorityTransitionActiveKey === row.key} options={priorityTransitions.priorityOptions} optionsLoading={priorityTransitions.priorityOptionsLoading}
+                    submitting={priorityTransitions.prioritySubmitting || priorityTransitions.pendingIssueKeys.has(row.key)} error={priorityTransitions.priorityError} result={priorityTransitions.priorityResult}
+                    portalTarget={document.body} onOpen={priorityTransitions.openPriorityControl} onClose={closePriorityControl} onSubmit={submitPriorityChange} />;
                 const editorField = field === 'storyPoints' ? 'storyPoints' : field;
                 if (!['summary', 'team', 'assignee', 'storyPoints'].includes(editorField) || (editorField === 'storyPoints' && row.rowKind !== 'story')) return null;
                 const active = issueFieldEdits.activeEditor?.issueKey === row.key && issueFieldEdits.activeEditor?.field === editorField;
@@ -5883,7 +5867,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         || alertCohortRef.current !== null || boardScopeRequested || !isEpicRefreshMode || epicInteractionActiveFor(epicKey),
                     reason: '', epoch: loadEpochRef.current, version: groupLoadVersionRef.current, scopeKey: `${activeGroupId}|${selectedSprint}`,
                 }),
-                getProtectedKeys: () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys,
+                getProtectedKeys: () => new Set([...statusTransitions.pendingIssueKeys, ...priorityTransitions.pendingIssueKeys, ...projectTrackTransitions.pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys,
                     statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, issueFieldEdits.activeEditor?.issueKey].filter(Boolean)),
                 getRecentEditKeys: () => new Set([...recentEditKeysRef.current].filter(([, at]) => Date.now() - at < 10000).map(([key]) => key)),
                 getViewport: () => ({ top: epicStickyTop + (document.querySelector('.epic-block .epic-header')?.offsetHeight || 0), bottom: window.innerHeight }),
@@ -5902,14 +5886,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             });
 
             boardFreshnessRef.current.getViewport = epicRefresh.getViewport;
-            boardFreshnessRef.current.pendingKeys = () => new Set([...pendingStatusIssueKeys, ...pendingPriorityIssueKeys, ...pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
+            boardFreshnessRef.current.pendingKeys = () => new Set([...statusTransitions.pendingIssueKeys, ...priorityTransitions.pendingIssueKeys, ...projectTrackTransitions.pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
             freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
                 scenarioHasUnsavedChanges, scenarioEditMode, scenarioDraftMeta, scenarioDragState: scenarioState.scenarioDragState, scenarioDragStateRef: scenarioState.scenarioDragStateRef, scenarioLoading: scenarioState.scenarioLoading,
                 showGroupManage, isGroupDraftDirty, groupSaving, epmConfigSaving, groupVisibilitySaving, workspaceConfigConflict, groupsConfigConflict, onboardingActive: onboarding.run || onboarding.pending,
                 sharedConfigReady, acceptedBoardConfigRef, engWorkspaceConfigured, connectionRecoveryBlocksRefresh, connectionUnavailableRef, terminalAuth: readPendingAuthenticationRequired(),
                 authResumePrincipalRef, connectionRecoveryPrincipalRef, jiraUrl, authResumeStagedRevision, sharedConfigRevision, groupsConfig, activeGroupId, selectedSprint, activeGroupTeamIds,
                 loadEpochRef, groupLoadVersionRef, alertCohortRef, loading, productTasksLoading, techTasksLoading, groupsLoading, catalogLoading: catalogAcquiring, isSprintCatalogValidated: () => sprintCatalogControllerRef.current.getState().authority === 'validated', onboardingRequired: groupPreferences.onboardingRequired,
-                statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys, pendingPriorityIssueKeys, pendingProjectTrackIssueKeys, issueFieldEdits,
+                statusTransitionActiveKey, priorityTransitionActiveKey, projectTrackTransitionActiveKey, pendingStatusIssueKeys: statusTransitions.pendingIssueKeys, pendingPriorityIssueKeys: priorityTransitions.pendingIssueKeys, pendingProjectTrackIssueKeys: projectTrackTransitions.pendingProjectTrackIssueKeys, issueFieldEdits,
                 issueEditState: issueEditStateRef.current, isHeld, epicRefresh, collectGroupRefresh, loadAlertEpics, fetchMissingPlanningInfo, loadReadyToCloseProductTasks, loadReadyToCloseTechTasks,
                 refreshDueSprintCatalog: job => sprintCatalogControllerRef.current.readDue({ selectedSprintId: selectedSprintRef.current, signal: job.signal, shouldApply: job.shouldApply }),
                 statsView, statsQueryScope: [burnoutScopedTeamSignature, cohortMode, cohortMode === 'closed' ? cohortClosedStartQuarter : cohortMode === 'last_n' ? '' : cohortStartQuarter, cohortMode === 'closed' ? cohortClosedEndQuarter : cohortMode === 'last_n' ? '' : cohortEndQuarter, excludedCapacityStartSprintId, excludedCapacityEndSprintId], statsLoading: burnoutLoading || cohortLoading || excludedCapacityLoading,
@@ -6027,9 +6011,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             onOpenSelectedInJira={openSelectedInJira}
                             planningLayout={planningLayout}
                             onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
-                            statusTransitionError={transitionError}
-                            statusTransitionErrorCode={transitionErrorCode}
-                            statusTransitionResult={transitionResult}
+                            statusTransitionError={statusTransitions.transitionError}
+                            statusTransitionErrorCode={statusTransitions.transitionErrorCode}
+                            statusTransitionResult={statusTransitions.transitionResult}
                         />}
                         capacity={<PlanningCapacityBar compact={compactPlanningPanel}
                             capacityEnabled={capacityEnabled}
@@ -6072,9 +6056,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             );
             const epicBlockProps = {
                 renderEpicShareControl,
-                statusTransitionActiveKey,
-                priorityTransitionActiveKey,
-                projectTrackTransitionActiveKey,
+                statusTransitions,
+                priorityTransitions,
+                projectTrackTransitions,
                 issueFieldEdits,
                 issueFieldEditsEnabled,
                 jiraUrl,
@@ -6083,29 +6067,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 normalizeEpicKey,
                 stickyEpicFocusKey,
                 epicRefMap,
-                priorityTransitionEnabled,
                 renderPriorityIcon,
-                priorityOptions,
-                priorityOptionsLoading,
-                prioritySubmitting,
-                pendingPriorityIssueKeys,
-                priorityError,
-                priorityResult,
-                openPriorityControl,
-                closePriorityControl,
-                submitPriorityChange,
                 onboardingPreviewSession,
                 handleOnboardingPreviewLifecycleChange,
-                projectTrackTransitionEnabled,
-                projectTrackOptions,
-                projectTrackOptionsLoading,
-                projectTrackSubmitting,
-                pendingProjectTrackIssueKeys,
-                projectTrackError,
-                projectTrackResult,
-                openProjectTrackControl,
-                closeProjectTrackControl,
-                submitProjectTrackChange,
                 showStats,
                 showPlanning,
                 toggleSharedGroupExcludedCapacityEpic,
@@ -6114,16 +6078,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showGroupManage,
                 isGroupDraftDirty,
                 statusTransitionEnabled,
-                transitionOptions,
-                transitionOptionsLoading,
                 statusTransitionSubmitting,
-                pendingStatusIssueKeys,
-                transitionError,
-                transitionErrorCode,
-                transitionResult,
-                openSingleIssueStatusControl,
-                prefetchSingleIssueStatusOptions,
-                closeSingleIssueStatusControl,
                 handleSubmitStatusTransition,
                 isEpicRefreshMode,
                 epicRefresh,

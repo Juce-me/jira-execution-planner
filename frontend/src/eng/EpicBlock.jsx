@@ -14,9 +14,9 @@ import IssueCard from '../issues/IssueCard.jsx';
 export function EpicBlock({
     epicGroup,
     renderEpicShareControl,
-    statusTransitionActiveKey,
-    priorityTransitionActiveKey,
-    projectTrackTransitionActiveKey,
+    statusTransitions,
+    priorityTransitions,
+    projectTrackTransitions,
     issueFieldEdits,
     issueFieldEditsEnabled,
     jiraUrl,
@@ -25,29 +25,9 @@ export function EpicBlock({
     normalizeEpicKey,
     stickyEpicFocusKey,
     epicRefMap,
-    priorityTransitionEnabled,
     renderPriorityIcon,
-    priorityOptions,
-    priorityOptionsLoading,
-    prioritySubmitting,
-    pendingPriorityIssueKeys,
-    priorityError,
-    priorityResult,
-    openPriorityControl,
-    closePriorityControl,
-    submitPriorityChange,
     onboardingPreviewSession,
     handleOnboardingPreviewLifecycleChange,
-    projectTrackTransitionEnabled,
-    projectTrackOptions,
-    projectTrackOptionsLoading,
-    projectTrackSubmitting,
-    pendingProjectTrackIssueKeys,
-    projectTrackError,
-    projectTrackResult,
-    openProjectTrackControl,
-    closeProjectTrackControl,
-    submitProjectTrackChange,
     showStats,
     showPlanning,
     toggleSharedGroupExcludedCapacityEpic,
@@ -56,16 +36,7 @@ export function EpicBlock({
     showGroupManage,
     isGroupDraftDirty,
     statusTransitionEnabled,
-    transitionOptions,
-    transitionOptionsLoading,
     statusTransitionSubmitting,
-    pendingStatusIssueKeys,
-    transitionError,
-    transitionErrorCode,
-    transitionResult,
-    openSingleIssueStatusControl,
-    prefetchSingleIssueStatusOptions,
-    closeSingleIssueStatusControl,
     handleSubmitStatusTransition,
     isEpicRefreshMode,
     epicRefresh,
@@ -79,6 +50,26 @@ export function EpicBlock({
     toggleStorySubtasks,
     retryStorySubtasks,
 }) {
+    // The three transition handles are read here and mapped onto the flat menu and IssueCard props below;
+    // the Priority and Project Track write gates are the same flag as Status (statusTransitionEnabled).
+    const statusTransitionActiveKey = statusTransitions.activeSingleIssueTarget?.key || null;
+    const priorityTransitionActiveKey = priorityTransitions.activePriorityTarget?.key || null;
+    const projectTrackTransitionActiveKey = projectTrackTransitions.activeProjectTrackTarget?.key || null;
+    const priorityTransitionEnabled = statusTransitionEnabled;
+    const projectTrackTransitionEnabled = statusTransitionEnabled;
+    const {
+        openSingleIssueStatusControl, prefetchSingleIssueStatusOptions, closeSingleIssueStatusControl,
+        transitionOptions, transitionOptionsLoading, transitionError, transitionErrorCode, transitionResult,
+        pendingIssueKeys: pendingStatusIssueKeys,
+    } = statusTransitions;
+    const {
+        openPriorityControl, closePriorityControl, priorityOptions, priorityOptionsLoading,
+        prioritySubmitting, priorityError, priorityResult, pendingIssueKeys: pendingPriorityIssueKeys, submitPriorityChange,
+    } = priorityTransitions;
+    const {
+        openProjectTrackControl, closeProjectTrackControl, projectTrackOptions, projectTrackOptionsLoading,
+        projectTrackSubmitting, projectTrackError, projectTrackResult, pendingProjectTrackIssueKeys, submitProjectTrackChange,
+    } = projectTrackTransitions;
     const epicInfo = epicGroup.epic;
     const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
         (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);

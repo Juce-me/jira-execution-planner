@@ -97,7 +97,7 @@ async function installEngBoardDashboardFixture(page, {
 // Key-echoing, per-key-gated status transitions for Board specs. Registered after a spec's own
 // `**/api/**` route (Playwright runs the latest route first), it answers the options and
 // transitions endpoints and records each POST in `calls` before holding it. `calls.held` maps an
-// issue key to { release(), fail() } for the POST currently pending for that key.
+// issue key to { release(), fail(), reject() } for the POST currently pending for that key.
 async function installHeldTransitions(page, calls, {
     statuses = ['Done', 'To Do'], currentStatus = 'To Do',
 } = {}) {
@@ -128,12 +128,21 @@ async function installHeldTransitions(page, calls, {
         if (url.pathname !== '/api/issues/transitions') return route.fallback();
         const targetStatus = (body && body.targetStatus) || '';
         const outcome = await new Promise(resolve => {
-            const gate = { release: () => resolve('release'), fail: () => resolve('fail') };
+            const gate = {
+                release: () => resolve('release'), fail: () => resolve('fail'), reject: () => resolve('reject'),
+            };
             keys.forEach(key => calls.held.set(key, gate));
         });
         keys.forEach(key => calls.held.delete(key));
         if (outcome === 'fail') {
             return json({ error: 'issue_transition_failed', message: 'Jira rejected the transition.' }, 502);
+        }
+        // `reject()` answers with a definitive per-issue failure, which the hook classifies as
+        // 'rejected' (Jira refused it) rather than `fail()`'s 'unconfirmed'.
+        if (outcome === 'reject') {
+            return json({ targetStatus, results: keys.map(key => ({
+                key, result: 'failure', error: 'transition_not_available', currentStatus,
+            })) });
         }
         return json({ targetStatus, results: keys.map(key => ({ key, result: 'success', toStatus: targetStatus })) });
     });

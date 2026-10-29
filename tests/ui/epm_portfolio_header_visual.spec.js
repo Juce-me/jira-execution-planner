@@ -797,3 +797,84 @@ for (const viewport of [
         expect((await read(metas.first(), ['textTransform', 'fontFamily', 'letterSpacing'])).textTransform).toBe('uppercase');
     });
 }
+
+for (const viewport of [
+    { name: 'desktop', width: 1520, height: 900 },
+    { name: 'mobile', width: 390, height: 844 },
+]) {
+    test(`EPM project board text inherits the page body font and stays contained on ${viewport.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await loadHeaderFixture(page);
+        await page.waitForTimeout(450);
+
+        const firstBoard = page.locator('.epm-project-board').first();
+        const sixtyChars = 'Cross-department pricing guardrail rollout plan for Q3 launch!'.slice(0, 60);
+        expect(sixtyChars).toHaveLength(60);
+        await firstBoard.locator('.epm-project-board-name-link').evaluate((node, text) => { node.textContent = text; }, sixtyChars);
+        await firstBoard.locator('.epm-project-board-update-copy').evaluate((node) => {
+            node.innerHTML = `
+                <h3>Delivery milestones</h3>
+                <p><strong>RFP AI bot</strong> is progressing; see <a href="https://example.test/client-testing">client testing</a>.</p>
+                <ul><li>Build is ready</li><li>Rollout model defined</li></ul>
+                <div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">
+                    <table><tbody>
+                        <tr><th scope="col">Milestone</th><th scope="col">Owner</th><th scope="col">Dependency</th></tr>
+                        <tr><td>Private beta</td><td>Platform</td><td>DeterministicGatewayCompatibilityBoundary</td></tr>
+                    </tbody></table>
+                </div>`;
+        });
+        await page.waitForTimeout(450);
+
+        const bodyFont = await page.evaluate(() => getComputedStyle(document.body).fontFamily);
+        const boards = page.locator('.epm-project-board');
+        const boardCount = await boards.count();
+        expect(boardCount).toBe(4);
+
+        for (let i = 0; i < boardCount; i += 1) {
+            const board = boards.nth(i);
+            for (const selector of ['.epm-project-board-name', '.epm-project-board-update', '.epm-project-board-owner-avatar']) {
+                const style = await board.locator(selector).first().evaluate((node) => {
+                    const s = getComputedStyle(node);
+                    return { fontFamily: s.fontFamily, fontSize: s.fontSize, fontWeight: s.fontWeight };
+                });
+                // The avatar uses `font-family: inherit` from `.epm-project-board-owner` (IBM Plex Mono), not the body font.
+                const expectedFont = selector === '.epm-project-board-owner-avatar'
+                    ? await board.locator('.epm-project-board-owner').first().evaluate((node) => getComputedStyle(node).fontFamily)
+                    : bodyFont;
+                expect(style.fontFamily, `board ${i} ${selector} font-family`).toBe(expectedFont);
+                if (selector === '.epm-project-board-name') {
+                    expect(style.fontSize).toBe('17.6px');
+                    expect(style.fontWeight).toBe('600');
+                }
+                if (selector === '.epm-project-board-update') {
+                    expect(style.fontSize).toBe('16px');
+                }
+            }
+
+            const titleRow = await board.locator('.epm-project-board-title-row').evaluate((node) => ({
+                scrollWidth: node.scrollWidth,
+                clientWidth: node.clientWidth,
+            }));
+            expect(titleRow.scrollWidth, `board ${i} title row overflow`).toBeLessThanOrEqual(titleRow.clientWidth);
+
+            const boardBox = await board.boundingBox();
+            const updateBox = await board.locator('.epm-project-board-update').first().boundingBox();
+            expect(updateBox.x + updateBox.width, `board ${i} update inside board`).toBeLessThanOrEqual(boardBox.x + boardBox.width + 0.5);
+        }
+
+        const richFonts = await firstBoard.locator('.epm-project-board-update-copy').evaluate((copy) => {
+            const sel = 'h3, p, strong, a, ul, li, table, th, td';
+            return [...copy.querySelectorAll(sel)].map((node) => ({
+                tag: node.tagName,
+                fontFamily: getComputedStyle(node).fontFamily,
+            }));
+        });
+        expect(richFonts.length).toBeGreaterThanOrEqual(10);
+        richFonts.forEach(({ tag, fontFamily }) => {
+            expect(fontFamily, `rich text ${tag} font-family`).toBe(bodyFont);
+        });
+
+        const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(pageOverflow).toBeLessThanOrEqual(0);
+    });
+}

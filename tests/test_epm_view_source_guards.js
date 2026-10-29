@@ -1246,3 +1246,18 @@ test('EPM all-projects load records one observation with the project list time a
         assert.deepEqual(sample.lanes.map(lane => [lane.project, lane.name]), [['synthetic-a', 'Synthetic A']]);
     } finally { global.fetch = prior; }
 });
+
+test('EPM project name, update text and avatar use the app font, not a bespoke sans stack', () => {
+    const boardCss = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'styles', 'epm', 'project-board.css'), 'utf8');
+    assert.ok(!boardCss.includes('-apple-system'), 'Expected EPM project-board.css to drop the system sans stack used nowhere else in the app');
+    const ruleBody = (selector) => {
+        const start = boardCss.indexOf(`${selector} {`);
+        assert.ok(start >= 0, `Expected ${selector} rule`);
+        return boardCss.slice(start, boardCss.indexOf('}', start));
+    };
+    for (const selector of ['.epm-project-board-name', '.epm-project-board-update', '.epm-project-board-owner-avatar']) {
+        assert.ok(!/font-family:\s*(?!inherit)\S/.test(ruleBody(selector)), `Expected ${selector} not to set a font-family other than inherit`);
+    }
+    assert.match(ruleBody('.epm-project-board-name'), /font-size:\s*1\.1rem;[\s\S]*font-weight:\s*600;/, 'Expected the project name to match the ENG epic name size and weight');
+    assert.match(ruleBody('.epm-project-board-update'), /font-size:\s*1rem;/, 'Expected the update text to be 1rem');
+});

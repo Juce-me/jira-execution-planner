@@ -231,7 +231,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('background: var(--epm-project-surface);', board_block)
         update_block = _css_block(css, '.epm-project-board-update')
         self.assertIn('max-width: 72ch;', update_block)
-        self.assertIn('font-size: 0.9rem;', update_block)
+        self.assertIn('font-size: 1rem;', update_block)
         self.assertIn('background: #fbfcfe;', update_block)
         self.assertIn('border: 1px solid #e5ebf3;', update_block)
         self.assertIn('border-radius: 8px;', update_block)

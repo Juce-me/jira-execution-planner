@@ -105,6 +105,8 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `scenario-draft-rollback` | `POST` | `/api/scenario/drafts/<draft_id>/rollback` | `workspace_write` | `dynamic` |
 | `scenario-draft-writeback-preview` | `POST` | `/api/scenario/drafts/<draft_id>/writeback/preview` | `workspace_write` | `dynamic` |
 | `scenario-draft-writeback-blocked` | `POST` | `/api/scenario/drafts/<draft_id>/writeback` | `workspace_write` | `dynamic` |
+| `eng-assignee-capacity-read` | `GET` | `/api/eng/sprints/<sprint_id>/assignee-capacity` | `authenticated_read` | `dynamic` |
+| `eng-assignee-capacity-write` | `PATCH` | `/api/eng/sprints/<sprint_id>/assignee-capacity` | `user_write` | `dynamic` |
 | `scenario-overrides-read` | `GET` | `/api/scenario/overrides` | `authenticated_read` | `exact` |
 | `scenario-overrides-legacy-write` | `POST` | `/api/scenario/overrides` | `legacy_basic_local` | `exact` |
 | `stats-read` | `GET` | `/api/stats` | `authenticated_read` | `exact` |

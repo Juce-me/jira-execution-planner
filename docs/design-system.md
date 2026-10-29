@@ -1,6 +1,6 @@
 # Design system and own-issue write contract
 
-Verified on 2026-10-14. This map records Part 1 write boundaries, Part 2 foundation and the locally implemented Part 3 surface migration. The original integrated verification passed; current hover-refinement results and the resolved WebKit search-clear test race are recorded in the [execution plan](plans/EXEC-design-system-part-3.md). The [delivery design](plans/SUPPORT-design-system-hover-contract-design.md) keeps spec #3 scales/shared Button work separate.
+Verified on 2026-10-29. This map records Part 1 write boundaries, Part 2 foundation and the locally implemented Part 3 surface migration. The original integrated verification passed; current hover-refinement results and the resolved WebKit search-clear test race are recorded in the [execution plan](plans/EXEC-design-system-part-3.md). The [delivery design](plans/SUPPORT-design-system-hover-contract-design.md) keeps spec #3 scales/shared Button work separate.
 
 Reuse an existing kind, component and class before adding another. One kind should have one look and one hover language. Interactive hover communicates clickability; passive rows and cards should not acquire it. The hover system changes colour and borders without moving or resizing controls. Existing selectors consume foundation tokens; there are no new kind classes, grouped kind lists or cascade layers. Resting fills, dimensions, typography and mutation behavior remain unchanged. Three lifts and all ten transition-all declarations are removed; obsolete surface elevations and movement resets leave the shrink-only baseline as their ownership batch is verified.
 
@@ -8,7 +8,7 @@ Reuse an existing kind, component and class before adding another. One kind shou
 
 | Kind | Canonical component or entry point | Existing hooks / variants | Hover kind and write boundary | Deferred target |
 | --- | --- | --- | --- | --- |
-| Status pill | `ui/StatusPill.jsx`, `issues/StatusTransitionMenu.jsx` | `status-pill`, co-applied `task-status`; passive span / interactive button; compact `epic-status-pill` variant on the Board Epic card's progress row | Brightness and semantic tints with the shared ring; interactive menu writes its own issue only | Reuse existing StatusPill |
+| Status pill | `ui/StatusPill.jsx`, `issues/StatusTransitionMenu.jsx` | `status-pill`, co-applied `task-status`; passive span / interactive button; compact `epic-status-pill` variant on the Board Epic card's progress row and the EPM project board header (the Jira label there renders as `epic-key` text) | Brightness and semantic tints with the shared ring; interactive menu writes its own issue only | Reuse existing StatusPill |
 | Priority and Project Track controls | `issues/PriorityTransitionMenu.jsx`, `issues/ProjectTrackTransitionMenu.jsx` | `priority-transition`, `task-priority-icon` (`styles/eng/status-transitions.css`, `styles/eng/issues.css`), `epic-track-indicator` (`styles/eng/epics.css`) | Priority uses its issue; Project Track uses its displayed `epicKey`; never its children | Reuse existing issue controls |
 | Pill, chip, badge | Classes in the registry below | Semantic labels, filters, selected chips, remove actions | Passive labels write nothing; remove/select writes only the represented local selection | Ring only for interactive controls |
 | Buttons | Existing native buttons; no shared Button | Filled, secondary, transparent, light, pending / disabled | Enabled global foundation uses the 8% own-text-colour overlay and ring; action-specific authority | Button/scales in spec #3 |
@@ -102,8 +102,6 @@ The single JSON block is the machine-readable source for paths, symbols, imports
     "epic-status-pill",
     "epm-duplicates-fix-button",
     "epm-duplicates-project-chip",
-    "epm-project-board-label-pill",
-    "epm-project-board-status-pill",
     "epm-project-collapse-all-button",
     "epm-scope-chip",
     "group-gear-button",
@@ -566,18 +564,6 @@ The single JSON block is the machine-readable source for paths, symbols, imports
       "class": "epm-duplicates-project-chip",
       "paths": [
         "frontend/src/styles/epm/duplicates.css"
-      ]
-    },
-    {
-      "class": "epm-project-board-label-pill",
-      "paths": [
-        "frontend/src/styles/epm/project-board.css"
-      ]
-    },
-    {
-      "class": "epm-project-board-status-pill",
-      "paths": [
-        "frontend/src/styles/epm/project-board.css"
       ]
     },
     {

@@ -411,7 +411,8 @@ test('compact sticky header keeps search available for every dashboard view', ()
 
 test('EPM rollup panel shows Jira Home project status and epic status pills', () => {
     assert.ok(epmRollupPanelSource.includes("import { getIssueStatusClassName } from '../issues/issueViewUtils.js';"), 'Expected EPM rollup to use shared issue status classes');
-    assert.ok(epmRollupPanelSource.includes('epm-project-board-status-pill'), 'Expected EPM project board headers to render Jira Home status pills');
+    assert.ok(epmRollupPanelSource.includes("getIssueStatusClassName(getEpmProjectStatusSemanticClass(projectStatus"), 'Expected EPM project board headers to render Jira Home status through the shared task-status epic-status-pill classes');
+    assert.ok(!epmRollupPanelSource.includes('epm-project-board-status-pill'), 'Expected the bespoke EPM project status pill class to be removed');
     assert.ok(epmRollupPanelSource.includes('epic-status-pill'), 'Expected EPM epic headers to render epic status pills');
     assert.ok(epmRollupPanelSource.includes('label={epic.status}'), 'Expected EPM epic status label to come from Jira issue status');
 });
@@ -420,11 +421,10 @@ test('EPM status and label chips use the shared StatusPill primitive', () => {
     assert.ok(fs.existsSync(statusPillPath), 'Expected shared StatusPill primitive');
     assert.ok(statusPillSource.includes("['status-pill', className]"), 'Expected StatusPill to preserve a stable base class');
     assert.ok(statusPillSource.includes('title={title}') && !statusPillSource.includes('title || label'), 'Expected StatusPill to add no tooltip that merely repeats its label');
-    assert.ok(epmRollupPanelSource.includes('className="epm-project-board-label-pill" label={project.label} title={project.label}'), 'Expected clippable EPM label pills to pass their full text as an explicit title');
-    assert.ok(epmRollupPanelSource.includes('className="epm-duplicates-project-label" label={project.label} title={project.label}'), 'Expected clippable EPM duplicate labels to pass their full text as an explicit title');
+    assert.ok(epmRollupPanelSource.includes('<span className="epic-key" title={project.label}>{project.label}</span>'), 'Expected EPM project labels to render as the shared epic-key with their full text as an explicit title');
+    assert.ok(!epmRollupPanelSource.includes('epm-project-board-label-pill') && !epmRollupPanelSource.includes('epm-duplicates-project-label'), 'Expected the bespoke EPM label pill classes to be removed');
     assert.ok(epmRollupPanelSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmRollupPanel to import StatusPill');
-    assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-project-board-label-pill"'), 'Expected EPM project board labels to render through StatusPill');
-    assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes('className="epm-duplicates-project-label"'), 'Expected EPM duplicate project labels to render through StatusPill');
+    assert.ok(epmRollupPanelSource.includes('<StatusPill') && epmRollupPanelSource.includes("getEpmProjectStatusSemanticClass(projectStatus") && epmRollupPanelSource.includes("'epic-status-pill')"), 'Expected EPM project status to render through StatusPill with shared classes');
     assert.ok(epmSettingsSource.includes("import StatusPill from '../ui/StatusPill.jsx';"), 'Expected EpmSettings to import StatusPill for settings status chips');
     assert.ok(epmSettingsSource.includes('<StatusPill') && epmSettingsSource.includes('className="epm-home-status-pill"'), 'Expected EPM settings Home statuses to render through StatusPill');
 });
@@ -806,7 +806,7 @@ test('EPM portfolio project header separates collapse control from metadata', ()
     assert.ok(headerSource.includes('className="epm-project-board-title-meta"'), 'Expected right-side table-style metadata wrapper');
     assert.ok(headerSource.includes('className="epm-project-board-name-link"'), 'Expected project name to own the Home link');
     assert.ok(headerSource.includes('className="epm-project-board-home-icon"'), 'Expected project header to show the Home project icon');
-    assert.ok(headerSource.includes('className="epm-project-board-label-pill"'), 'Expected project label to stay outside the update and rollup toggle');
+    assert.ok(headerSource.includes('className="epic-key" title={project.label}'), 'Expected project label to stay outside the update and rollup toggle');
     assert.ok(headerSource.includes('Project status: ${projectStatus}'), 'Expected project status to be labeled as project-level metadata');
     assert.ok(headerSource.includes('renderProjectTargetDate(project)'), 'Expected project metadata to include target date support');
     assert.ok(headerSource.includes('renderProjectOwner(project)'), 'Expected project metadata to include owner support');
@@ -816,7 +816,7 @@ test('EPM portfolio project header separates collapse control from metadata', ()
         'className="epm-project-board-meta"'
     );
     assert.ok(titleMetaSource.indexOf('Project status: ${projectStatus}') < titleMetaSource.indexOf('{projectOwner}'), 'Expected owner to sit inline after the project status');
-    assert.ok(titleMetaSource.indexOf('{projectOwner}') < titleMetaSource.indexOf('className="epm-project-board-label-pill"'), 'Expected Jira label to stay after the right-side owner column');
+    assert.ok(titleMetaSource.indexOf('{projectOwner}') < titleMetaSource.indexOf('className="epic-key"'), 'Expected Jira label to stay after the right-side owner column');
     assert.ok(!headerSource.includes('className="epm-project-board-toggle"'), 'Project header must not contain the Jira rollup disclosure');
     assert.ok(toggleSource.includes('className="epm-project-board-rollup-control"'), 'Expected a dedicated rollup control row');
     assert.ok(toggleSource.includes('className="epm-project-board-toggle"'), 'Expected a dedicated project board toggle button');

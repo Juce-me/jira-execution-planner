@@ -32,12 +32,12 @@ async function loadHeaderFixture(page) {
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-324">AI for RFP creation</a>
                                     </h3>
                                     <div class="epm-project-board-title-meta" aria-label="Project status and owner">
-                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="status-pill task-status epic-status-pill done">On track</span>
                                         <span class="epm-project-board-owner" title="Owner: Ada Lovelace">
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
                                             <span class="epm-project-board-owner-name">Ada Lovelace</span>
                                         </span>
-                                        <span class="epm-project-board-label-pill">RnD_Project_RFP_AI</span>
+                                        <span class="epic-key" title="RnD_Project_RFP_AI">RnD_Project_RFP_AI</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -90,12 +90,12 @@ async function loadHeaderFixture(page) {
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-325">Data Partnership: Support Revenue Share Fee Model</a>
                                     </h3>
                                     <div class="epm-project-board-title-meta" aria-label="Project status and owner">
-                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="status-pill task-status epic-status-pill done">On track</span>
                                         <span class="epm-project-board-owner" title="Owner: Grace Hopper">
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">GH</span>
                                             <span class="epm-project-board-owner-name">Grace Hopper</span>
                                         </span>
-                                        <span class="epm-project-board-label-pill">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
+                                        <span class="epic-key" title="rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -151,12 +151,12 @@ async function loadHeaderFixture(page) {
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-326">Dynamic Floor Harness With Pricing Analysis Rollout Controls</a>
                                     </h3>
                                     <div class="epm-project-board-title-meta" aria-label="Project status and owner">
-                                        <span class="status-pill task-status epm-project-board-status-pill on-track">On track</span>
+                                        <span class="status-pill task-status epic-status-pill done">On track</span>
                                         <span class="epm-project-board-owner" title="Owner: Katherine Johnson">
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">KJ</span>
                                             <span class="epm-project-board-owner-name">Katherine Johnson</span>
                                         </span>
-                                        <span class="epm-project-board-label-pill">rnd_project_dynamic_floor_harness</span>
+                                        <span class="epic-key" title="rnd_project_dynamic_floor_harness">rnd_project_dynamic_floor_harness</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -206,12 +206,12 @@ async function loadHeaderFixture(page) {
                                         <a class="epm-project-board-name-link" href="https://home.atlassian.com/o/example/s/example/project/CRITE-327">Signal Quality Guardrail Pilot</a>
                                     </h3>
                                     <div class="epm-project-board-title-meta" aria-label="Project status and owner">
-                                        <span class="status-pill task-status epm-project-board-status-pill at-risk">At risk</span>
+                                        <span class="status-pill task-status epic-status-pill postponed">At risk</span>
                                         <span class="epm-project-board-owner" title="Owner: Dorothy Vaughan">
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">DV</span>
                                             <span class="epm-project-board-owner-name">Dorothy Vaughan</span>
                                         </span>
-                                        <span class="epm-project-board-label-pill">rnd_project_signal_quality_guardrail</span>
+                                        <span class="epic-key" title="rnd_project_signal_quality_guardrail">rnd_project_signal_quality_guardrail</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -276,8 +276,8 @@ for (const viewport of [
         const homeIcon = board.locator('.epm-project-board-home-icon');
         const title = board.locator('.epm-project-board-name');
         const nameLink = board.locator('.epm-project-board-name-link');
-        const statusPill = board.locator('.epm-project-board-status-pill');
-        const labelPill = board.locator('.epm-project-board-label-pill');
+        const statusPill = board.locator('.epm-project-board-title-meta .status-pill');
+        const labelPill = board.locator('.epm-project-board-title-meta .epic-key');
         const targetDate = board.locator('.epm-project-board-target-date');
         const owner = board.locator('.epm-project-board-owner');
         const ownerAvatar = board.locator('.epm-project-board-owner-avatar');
@@ -645,3 +645,170 @@ test('a wide ADF table in an EPM Home update scrolls locally without widening th
     expect(headingStyle.fontSize).toBeGreaterThanOrEqual(14);
     await page.screenshot({ path: '/tmp/epm-portfolio-header-qa/update-table-narrow.png', fullPage: true });
 });
+
+const LONG_LABEL = 'rnd_project_' + 'x'.repeat(48);
+const STATUS_CASES = [
+    { semantic: 'done', text: 'On track', background: 'rgb(82, 196, 26)' },
+    { semantic: 'postponed', text: 'At risk', background: 'rgb(250, 140, 22)' },
+    { semantic: 'blocked', text: 'Off track', background: 'rgb(255, 77, 79)' },
+    { semantic: 'waiting', text: 'Pending', background: 'rgb(140, 140, 140)' },
+];
+
+async function loadTokenFixture(page) {
+    const boards = STATUS_CASES.map((item, index) => `
+        <section class="epm-project-board">
+            <div class="epm-project-board-header">
+                <div class="epm-project-board-title-block">
+                    <div class="epm-project-board-title-row">
+                        <h3 class="epm-project-board-name"><a class="epm-project-board-name-link" href="https://example.test/${index}">Synthetic project ${index}</a></h3>
+                        <div class="epm-project-board-title-meta" aria-label="Project status and owner">
+                            <span class="status-pill task-status epic-status-pill ${item.semantic}">${item.text}</span>
+                            <span class="epm-project-board-owner" title="Owner: Ada Lovelace">
+                                <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
+                                <span class="epm-project-board-owner-name">Ada Lovelace</span>
+                            </span>
+                            <span class="epic-key" title="${index === 0 ? LONG_LABEL : 'rnd_project_short'}">${index === 0 ? LONG_LABEL : 'rnd_project_short'}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="epm-project-board-rollup-control">
+                <div class="epm-project-progress is-in-progress" role="img" tabindex="0" aria-label="Project progress">
+                    <span class="epm-project-progress-track" aria-hidden="true"></span>
+                    <span class="epm-project-progress-percent">40%</span>
+                    <span class="status-pill task-status in-progress epm-project-progress-status">In Progress</span>
+                </div>
+            </div>
+        </section>`).join('');
+    const engHeaders = STATUS_CASES.map((item) => `
+        <div class="epic-block"><div class="epic-header"><div class="epic-meta"><span class="status-pill task-status epic-status-pill ${item.semantic}">${item.text}</span></div></div></div>`).join('');
+    await page.setContent(`
+        <!doctype html>
+        <html><head><style>${dashboardCss}</style></head>
+        <body>
+            <main class="dashboard-shell">
+                <div class="task-list" id="eng-fixture">${engHeaders}</div>
+                <div class="task-list epm-issue-board epm-portfolio-board" id="epm-fixture">
+                    ${boards}
+                    <div class="epm-duplicates-callout" role="region" aria-label="Issues counted in multiple projects">
+                        <div class="epm-duplicates-rows"><div class="epm-duplicates-row"><div class="epm-duplicates-projects">
+                            <span class="epm-duplicates-project-chip">
+                                <span class="epm-duplicates-project-name">Synthetic project 0</span>
+                                <span class="epic-key" title="${LONG_LABEL}">${LONG_LABEL}</span>
+                            </span>
+                            <span class="epm-duplicates-project-chip">
+                                <span class="epm-duplicates-project-name">Synthetic project 1</span>
+                                <span class="epic-key" title="rnd_project_short">rnd_project_short</span>
+                            </span>
+                        </div></div></div>
+                    </div>
+                </div>
+            </main>
+        </body></html>
+    `);
+    await page.evaluate(() => document.fonts && document.fonts.ready);
+    await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
+}
+
+const PILL_PROPS = ['fontSize', 'fontFamily', 'fontWeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopLeftRadius', 'backgroundColor', 'color'];
+
+for (const viewport of [
+    { name: 'desktop', width: 1520, height: 900 },
+    { name: 'mobile 390px', width: 390, height: 800 },
+]) {
+    test(`EPM header pills and labels use ENG design-system tokens on ${viewport.name}`, async ({ page }) => {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await loadTokenFixture(page);
+
+        const read = (locator, props) => locator.evaluate((node, names) => {
+            const style = window.getComputedStyle(node);
+            return Object.fromEntries(names.map((name) => [name, style[name]]));
+        }, props);
+
+        // (1) + (4): every header status pill matches the ENG epic status pill of the same semantic class.
+        for (const item of STATUS_CASES) {
+            const header = page.locator(`#epm-fixture .epm-project-board-title-meta .status-pill.task-status.epic-status-pill.${item.semantic}`);
+            const eng = page.locator(`#eng-fixture .epic-header .epic-meta .status-pill.task-status.epic-status-pill.${item.semantic}`);
+            await expect(header, item.semantic).toHaveCount(1);
+            await expect(header).toHaveText(item.text);
+            const headerStyle = await read(header, PILL_PROPS);
+            const engStyle = await read(eng, PILL_PROPS);
+            // Only the primary family is compared: ENG's `.epic-meta` stack falls back to Arial, the EPM one to monospace.
+            const primaryFamily = (style) => ({ ...style, fontFamily: style.fontFamily.split(',')[0] });
+            expect(primaryFamily(headerStyle), `${item.semantic} pill equals ENG pill`).toEqual(primaryFamily(engStyle));
+            expect(headerStyle.borderTopLeftRadius).toBe('8px');
+            expect(headerStyle.backgroundColor).toBe(item.background);
+            const box = await header.boundingBox();
+            const ownerBox = await header.locator('xpath=following-sibling::*[1]').boundingBox();
+            expect(box.x + box.width, `${item.semantic} pill clear of owner`).toBeLessThanOrEqual(ownerBox.x + 0.5);
+        }
+        await expect(page.locator('#epm-fixture .epm-project-board-status-pill, #epm-fixture .epm-project-board-label-pill, #epm-fixture .epm-duplicates-project-label')).toHaveCount(0);
+
+        // (4): the progress In Progress pill still renders as a status pill.
+        const progressPills = page.locator('#epm-fixture .epm-project-progress-status.task-status.in-progress');
+        await expect(progressPills).toHaveCount(STATUS_CASES.length);
+        for (let i = 0; i < STATUS_CASES.length; i += 1) {
+            const pill = progressPills.nth(i);
+            await expect(pill).toBeVisible();
+            const style = await read(pill, ['backgroundColor', 'textTransform', 'borderTopLeftRadius']);
+            expect(style.backgroundColor).toBe('rgb(105, 192, 255)');
+            expect(style.textTransform).toBe('uppercase');
+            expect(style.borderTopLeftRadius).toBe('8px');
+        }
+
+        // (2) + (4): header labels and duplicates-callout labels are plain mono text, no chip.
+        const labelSelectors = [
+            '#epm-fixture .epm-project-board-title-meta .epic-key',
+            '#epm-fixture .epm-duplicates-project-chip .epic-key',
+        ];
+        for (const selector of labelSelectors) {
+            const labels = page.locator(selector);
+            const count = await labels.count();
+            expect(count, selector).toBeGreaterThan(0);
+            for (let i = 0; i < count; i += 1) {
+                const label = labels.nth(i);
+                const style = await read(label, ['fontFamily', 'color', 'borderTopWidth', 'borderTopStyle', 'backgroundColor', 'boxShadow']);
+                expect(style.fontFamily, selector).toContain('IBM Plex Mono');
+                expect(style.color, selector).toBe('rgb(102, 102, 102)');
+                expect(style.borderTopWidth === '0px' || style.borderTopStyle === 'none', selector).toBe(true);
+                expect(style.backgroundColor, selector).toBe('rgba(0, 0, 0, 0)');
+                expect(style.boxShadow, selector).toBe('none');
+            }
+        }
+
+        // Long (60-char) label ellipsizes inside its container and the title meta does not overflow.
+        expect(LONG_LABEL.length).toBe(60);
+        for (const selector of labelSelectors) {
+            const longLabel = page.locator(selector).first();
+            await expect(longLabel).toHaveText(LONG_LABEL);
+            const clip = await longLabel.evaluate((node) => {
+                const style = window.getComputedStyle(node);
+                return { textOverflow: style.textOverflow, overflow: style.overflow, whiteSpace: style.whiteSpace, clipped: node.scrollWidth > node.clientWidth };
+            });
+            if (selector.includes('title-meta')) {
+                expect(clip.textOverflow, selector).toBe('ellipsis');
+                expect(clip.overflow, selector).toBe('hidden');
+            }
+            expect(clip.whiteSpace, selector).toBe('nowrap');
+            const box = await longLabel.boundingBox();
+            expect(box.x + box.width, `${selector} stays in viewport`).toBeLessThanOrEqual(viewport.width + 0.5);
+        }
+        const metas = page.locator('#epm-fixture .epm-project-board-title-meta');
+        const metaCount = await metas.count();
+        for (let i = 0; i < metaCount; i += 1) {
+            const overflow = await metas.nth(i).evaluate((node) => ({ scrollWidth: node.scrollWidth, clientWidth: node.clientWidth }));
+            expect(overflow.scrollWidth, `title meta ${i}`).toBeLessThanOrEqual(overflow.clientWidth);
+        }
+        const documentOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+        expect(documentOverflow).toBeLessThanOrEqual(1);
+
+        // (3): owner name keeps its case while the surrounding meta is uppercase mono.
+        const ownerNames = page.locator('#epm-fixture .epm-project-board-owner-name');
+        for (let i = 0; i < await ownerNames.count(); i += 1) {
+            const style = await read(ownerNames.nth(i), ['textTransform']);
+            expect(style.textTransform).toBe('none');
+        }
+        await expect(ownerNames.first()).toHaveText('Ada Lovelace');
+        expect((await read(metas.first(), ['textTransform', 'fontFamily', 'letterSpacing'])).textTransform).toBe('uppercase');
+    });
+}

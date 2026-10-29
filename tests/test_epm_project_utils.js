@@ -722,3 +722,30 @@ test('empty custom EPM project rows are disposable before save', async () => {
         false
     );
 });
+
+test('getEpmProjectStatusSemanticClass maps Home statuses to shared task-status semantic classes', async () => {
+    const { getEpmProjectStatusSemanticClass } = await import(helperUrl);
+    const expected = {
+        'On track': 'done',
+        'Completed': 'done',
+        'Done': 'done',
+        'Release': 'done',
+        'Released': 'done',
+        'Completed 🎉': 'done',
+        'At risk': 'postponed',
+        'Off track': 'blocked',
+        'Pending': 'waiting',
+        'Paused': 'waiting',
+        'Cancelled': 'waiting',
+        'Archived': 'waiting',
+        'To do': 'waiting',
+        'Something unknown': 'waiting',
+        '': 'waiting',
+        undefined: 'waiting',
+    };
+    Object.entries(expected).forEach(([status, semanticClass]) => {
+        assert.strictEqual(getEpmProjectStatusSemanticClass(status === 'undefined' ? undefined : status), semanticClass, status);
+    });
+    assert.strictEqual(getEpmProjectStatusSemanticClass('At risk', { completed: true }), 'done');
+    assert.strictEqual(getEpmProjectStatusSemanticClass('', { completed: true }), 'done');
+});

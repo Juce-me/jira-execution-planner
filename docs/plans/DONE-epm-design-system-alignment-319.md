@@ -1,4 +1,5 @@
-> **Status:** Proposed (2026-10-29), awaiting operator go-ahead. Issue #319, branch `improvement/319-epm-design-system-pills`. Not started.
+> **Status:** Done. Executed on `improvement/319-epm-design-system-pills`. Kept for audit context only.
+
 
 # EPM view: align project status and label pills with the ENG design system (#319)
 
@@ -67,3 +68,13 @@ On track sharing ENG's Done green is accepted as the cost of the shared palette.
 - Uppercase mono in `title-meta` can crowd narrow widths; Task 6 checks 390px and the label cap.
 - Colour semantics: On track and Completed both read as Done green; revisit only if the operator objects.
 - Unmapped states change from "no fill" to grey; Task 0 confirms which states exist.
+
+## Outcome (2026-10-29)
+
+Implemented as planned. Deviation: the header pill's classes come from `getIssueStatusClassName(getEpmProjectStatusSemanticClass(...), 'epic-status-pill')` rather than a raw `'task-status'` literal, so `tests/test_status_column_colours_source_guards.js` pins for `EpmRollupPanel.jsx` change to 3 calls and 3 pills. The duplicates-callout label also ellipsizes (`min-width: 0`, `overflow: hidden`).
+
+Verification: `npm run test:frontend:unit` 3170 pass; full Python suite passed except two `test_local_postgresql_runner` SIGINT cases that pass alone (known load flake); full Chromium `tests/ui` 1998 passed, 3 failed in `dashboard_data_freshness.spec.js` (EPM automatic-refresh timing). That spec fails a varying subset on a stashed baseline without this change (4 failures there), so it is pre-existing and unrelated to pills; it was not fixed here. Headed Firefox/WebKit glyph checks were not run (no emoji or form-control geometry change).
+
+## Current accuracy
+
+Describes current behaviour: `epm-project-board-status-pill`, `epm-project-board-label-pill` and `epm-duplicates-project-label` no longer exist.

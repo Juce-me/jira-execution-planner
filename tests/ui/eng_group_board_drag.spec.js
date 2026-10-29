@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
-const { installHeldTransitions } = require('./eng_board_dashboard_fixture');
+const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // Moving an epic by dragging its card (§6.4, §9.5, §10.1, §10.2, §10.3, D37, D42) — a second
 // TRIGGER for the status transition the app already performs: same hook, same route, same menu,
@@ -283,51 +283,6 @@ const liveRegion = (page) => page.locator('.eng-board .board-say');
 
 const transitionCalls = (calls) => calls.filter((call) => call.pathname === '/api/issues/transitions' && call.method === 'POST');
 const optionCalls = (calls) => calls.filter((call) => call.pathname === '/api/issues/transitions/options');
-
-// Playwright's native drag interception picks the drag source from the pointer position AFTER its
-// synthetic move rather than from the element the press landed on, and `dragTo` can only express a
-// completed drop — not the three shapes this feature needs: a dragover that must NOT be accepted,
-// a dragend with no drop, and a drop whose clientX/clientY place a fixed menu. So the gesture is
-// driven the faithful way instead: the DragEvent sequence a browser raises, dispatched on the real
-// nodes with real coordinates read from the live target rect. Every handler, the resolution, the
-// gate, the React state and the DOM are the real ones; only the browser's own drag loop is stood
-// in for — and the last test in this file drives that loop end to end with `dragTo` as well.
-//
-// Task 7's composer helper additionally holds a real pointer press, because its chip drag is gated
-// on the grip the press lands on. An epic card has no such gate: a press here only risks starting
-// Chromium's OWN drag alongside the dispatched one (two drops, one of them deduped to a null
-// options response) and synthesising a click that opens the epic panel. It is deliberately absent.
-async function dragCard(page, epicKey, targetColumnId, { drop = true, end = true, at = null } = {}) {
-    return page.evaluate(({ key, columnId, doDrop, doEnd, point }) => {
-        const source = document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
-        const target = columnId ? document.querySelector(`.eng-board .col[data-column-id="${columnId}"]`) : null;
-        const dataTransfer = new DataTransfer();
-        const box = target ? target.getBoundingClientRect() : null;
-        const spot = point || (box
-            ? { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + Math.min(box.height / 2, 160)) }
-            : { x: 4, y: 4 });
-        const make = (type) => new DragEvent(type, {
-            bubbles: true, cancelable: true, dataTransfer, clientX: spot.x, clientY: spot.y,
-        });
-
-        const start = make('dragstart');
-        source.dispatchEvent(start);
-        if (start.defaultPrevented) {
-            source.dispatchEvent(make('dragend'));
-            return { started: false, spot };
-        }
-        let overAccepted = null;
-        if (target) {
-            target.dispatchEvent(make('dragenter'));
-            const over = make('dragover');
-            target.dispatchEvent(over);
-            overAccepted = over.defaultPrevented;
-            if (doDrop) target.dispatchEvent(make('drop'));
-        }
-        if (doEnd) source.dispatchEvent(make('dragend'));
-        return { started: true, overAccepted, spot };
-    }, { key: epicKey, columnId: targetColumnId, doDrop: drop, doEnd: end, point: at });
-}
 
 // The pointer leaving a column. `intoChild` is the case a naive handler gets wrong: dragleave also
 // fires on the column when the pointer moves onto one of its own descendants, and clearing there

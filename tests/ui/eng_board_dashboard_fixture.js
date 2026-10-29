@@ -139,4 +139,49 @@ async function installHeldTransitions(page, calls, {
     });
 }
 
-module.exports = { buildDashboardBundle, installHeldTransitions, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };
+// Playwright's native drag interception picks the drag source from the pointer position AFTER its
+// synthetic move rather than from the element the press landed on, and `dragTo` can only express a
+// completed drop — not the three shapes this feature needs: a dragover that must NOT be accepted,
+// a dragend with no drop, and a drop whose clientX/clientY place a fixed menu. So the gesture is
+// driven the faithful way instead: the DragEvent sequence a browser raises, dispatched on the real
+// nodes with real coordinates read from the live target rect. Every handler, the resolution, the
+// gate, the React state and the DOM are the real ones; only the browser's own drag loop is stood
+// in for — and the last test in this file drives that loop end to end with `dragTo` as well.
+//
+// Task 7's composer helper additionally holds a real pointer press, because its chip drag is gated
+// on the grip the press lands on. An epic card has no such gate: a press here only risks starting
+// Chromium's OWN drag alongside the dispatched one (two drops, one of them deduped to a null
+// options response) and synthesising a click that opens the epic panel. It is deliberately absent.
+async function dragCard(page, epicKey, targetColumnId, { drop = true, end = true, at = null } = {}) {
+    return page.evaluate(({ key, columnId, doDrop, doEnd, point }) => {
+        const source = document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
+        const target = columnId ? document.querySelector(`.eng-board .col[data-column-id="${columnId}"]`) : null;
+        const dataTransfer = new DataTransfer();
+        const box = target ? target.getBoundingClientRect() : null;
+        const spot = point || (box
+            ? { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + Math.min(box.height / 2, 160)) }
+            : { x: 4, y: 4 });
+        const make = (type) => new DragEvent(type, {
+            bubbles: true, cancelable: true, dataTransfer, clientX: spot.x, clientY: spot.y,
+        });
+
+        const start = make('dragstart');
+        source.dispatchEvent(start);
+        if (start.defaultPrevented) {
+            source.dispatchEvent(make('dragend'));
+            return { started: false, spot };
+        }
+        let overAccepted = null;
+        if (target) {
+            target.dispatchEvent(make('dragenter'));
+            const over = make('dragover');
+            target.dispatchEvent(over);
+            overAccepted = over.defaultPrevented;
+            if (doDrop) target.dispatchEvent(make('drop'));
+        }
+        if (doEnd) source.dispatchEvent(make('dragend'));
+        return { started: true, overAccepted, spot };
+    }, { key: epicKey, columnId: targetColumnId, doDrop: drop, doEnd: end, point: at });
+}
+
+module.exports = { buildDashboardBundle, dragCard, installHeldTransitions, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };

@@ -3,6 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
+const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -54,6 +55,14 @@ const EPIC_SPECS = [
     ['PLAT-8', 'In Progress', 'Blocker'],
     ['PLAT-9', 'Release', 'Major'],
     ['PLAT-10', 'Done', 'Minor'],
+];
+
+// Strict-fixture columns for the opt-in `strictEpics` option: a `strictEpics` entry is
+// { key, columnId, statusName, summary? }. `review` takes the status the Task 6 transition options
+// offer, so a successful move lands an Epic in a different column.
+const STRICT_COLUMNS = [
+    { id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'] },
+    { id: 'review', name: 'Review', color: '#13c2c2', statusNames: ['In Review'] },
 ];
 
 function epicPayload(specs = EPIC_SPECS) {
@@ -109,6 +118,7 @@ async function installBoardFixture(page, {
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
     userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null, epmEnabled = false,
+    strictEpics = null, heldTransitions = null,
 } = {}) {
     let strictBoardRequestCount = 0;
     let acceptedSelectedProjects = selectedProjects;
@@ -340,6 +350,46 @@ async function installBoardFixture(page, {
                 storyPoints: 3, team: null, project: { id: '10000', name: 'Platform' },
                 projectClassification: 'other', sprintIds: [selectedSprintId],
             };
+            if (strictEpics) {
+                // Opt-in multi-Epic shape: one column per distinct columnId (STRICT_COLUMNS order),
+                // each Epic carrying one child, with the same index/column/complete frames as below.
+                const strictColumnDefs = STRICT_COLUMNS.filter(({ id }) => strictEpics.some(def => def.columnId === id));
+                const multiEpics = strictEpics.map(({ key, columnId, statusName, summary }) => ({
+                    ...epic, key, columnId, summary: summary || `${key} Strict Board epic`,
+                    status: { id: columnId, name: statusName },
+                }));
+                const multiChildren = multiEpics.map(({ key }) => ({ ...child, key: `${key}-CHILD`, epicKey: key }));
+                const multiFrames = [
+                    base(0, {
+                        type: 'start', scope, scopeVersion: `scope-${scope}`,
+                        scopeCohortDigest: 'a'.repeat(64),
+                        columns: strictColumnDefs.map(({ id, name, color, statusNames }) => (
+                            { id, name, color, statusNames, terminal: false })),
+                    }),
+                    base(1, { type: 'index', epics: multiEpics, membership: scope === 'sprint' ? 'candidate' : 'authoritative' }),
+                    ...strictColumnDefs.map(({ id }, index) => base(2 + index, {
+                        type: 'column', columnId: id,
+                        epics: multiEpics.filter(entry => entry.columnId === id),
+                        children: multiChildren.filter(entry => multiEpics.some(
+                            candidate => candidate.key === entry.epicKey && candidate.columnId === id)),
+                        authoritative: true,
+                    })),
+                    base(2 + strictColumnDefs.length, {
+                        type: 'complete', outcome: 'success', authoritative: true,
+                        epicCount: multiEpics.length, childCount: multiChildren.length,
+                        diagnostics: {
+                            indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 2,
+                            jiraPages: 2, jiraRetries: 0, peakChildSearches: 1,
+                            cacheState: 'miss', completeness: 'complete',
+                        },
+                    }),
+                ];
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'application/x-ndjson',
+                    body: `${multiFrames.map((frame) => JSON.stringify(frame)).join('\n')}\n`,
+                });
+            }
             const frames = [
                 base(0, {
                     type: 'start', scope, scopeVersion: `scope-${scope}`,
@@ -383,6 +433,7 @@ async function installBoardFixture(page, {
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         return json({});
     });
+    if (heldTransitions) await installHeldTransitions(page, heldTransitions.calls, heldTransitions);
 }
 
 async function openBoard(page, {
@@ -393,6 +444,7 @@ async function openBoard(page, {
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
     userCanEditSettings, settingsAdminOnly, sprintCatalogSource, epmEnabled,
+    strictEpics, heldTransitions,
     initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
@@ -432,6 +484,8 @@ async function openBoard(page, {
         ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
         ...(sprintCatalogSource === undefined ? {} : { sprintCatalogSource }),
         ...(epmEnabled === undefined ? {} : { epmEnabled }),
+        ...(strictEpics === undefined ? {} : { strictEpics }),
+        ...(heldTransitions === undefined ? {} : { heldTransitions }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -1635,6 +1689,42 @@ test('Board to Planning to Board re-enters Component and returns to the saved Sp
     expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
     expect(componentBoardRequests(requests)).toHaveLength(1);
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(taskRequestCount);
+});
+
+test('strict fixture renders two Epics in two columns with transition routes', async ({ page }) => {
+    const requests = [];
+    const calls = [];
+    await openBoard(page, {
+        strictBoard: true, sourceBundle: true, requests,
+        strictEpics: [
+            { key: 'STRICT-A', columnId: 'active', statusName: 'In Progress' },
+            { key: 'STRICT-B', columnId: 'review', statusName: 'In Review' },
+        ],
+        heldTransitions: { calls, statuses: ['In Review'], currentStatus: 'In Progress' },
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    const cardIn = (columnId, key) => page.locator(
+        `.eng-board .col[data-column-id="${columnId}"] .ecard[data-epic-key="${key}"]`);
+    const columnCount = columnId => page.locator(`.eng-board .col[data-column-id="${columnId}"] .col-head .ct`);
+    // Only the focused column renders cards; the other stays a folded rail until it is focused.
+    await expect(cardIn('active', 'STRICT-A')).toBeVisible();
+    await expect(cardIn('active', 'STRICT-A')).toContainText(/1 work item/i);
+    await expect(columnCount('active')).toHaveText('1');
+    await expect(columnCount('review')).toHaveText('1');
+    await expect(cardIn('review', 'STRICT-B')).toHaveCount(0);
+    expect(requests.filter(entry => entry.startsWith('/api/eng/board?'))).toHaveLength(1);
+
+    await dragCard(page, 'STRICT-A', 'review');
+    await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+    const post = calls.find(call => call.pathname === '/api/issues/transitions' && call.method === 'POST');
+    expect(JSON.parse(post.body)).toEqual({ issueKeys: ['STRICT-A'], targetStatus: 'In Review' });
+    calls.held.get('STRICT-A').release();
+    await expect(columnCount('review')).toHaveText('2');
+
+    // A successful drop focuses the target column, so both Epics now render there.
+    await expect(cardIn('review', 'STRICT-B')).toBeVisible();
+    await expect(cardIn('review', 'STRICT-A')).toBeVisible();
 });
 
 test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {

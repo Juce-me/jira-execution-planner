@@ -230,6 +230,20 @@ test('an alert group target is shareable from Catch Up only, and carries the gro
     assert.deepEqual(planning.render().captureShareUrl({ kind: 'alertTeam', anchor: 'missing', id: 'team-1' }), { ok: false, reason: 'invalid_state' });
 }));
 
+test('a Story target is shareable from the Planning table only', () => withBrowser(() => {
+    const { doubles, modules } = createDoubles();
+    doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
+    doubles.rowsMode = 'story';
+    const planning = mountHook({ modules }, makeOptions({ activeEngMode: 'planning' }));
+    planning.render();
+    const { ok, url } = planning.render().captureShareUrl({ kind: 'story', key: 'PROJ-11' });
+    assert.equal(ok, true);
+    assert.match(url, /[?&]story=PROJ-11(&|$)/);
+    const catchUp = mountHook({ modules }, makeOptions());
+    catchUp.render();
+    assert.deepEqual(catchUp.render().captureShareUrl({ kind: 'story', key: 'PROJ-11' }), { ok: false, reason: 'invalid_state' });
+}));
+
 test('captureShareUrl refuses while disabled and passes an encoder failure through without a URL', () => withBrowser(() => {
     const { doubles, modules } = createDoubles();
     doubles.snapshot = { phase: PHASES.ABSENT, stage: null, entry: null, hold: false, terminal: true, notice: null };
@@ -261,7 +275,7 @@ test('explicit Epic copy targets the clicked Epic and refuses a dropped focus', 
         assert.equal(result.ok, true);
         assert.match(result.url, /&epic=PROJ-2$/);
         assert.equal(result.url.includes('PROJ-99'), false);
-        assert.deepEqual(hook.render().captureShareUrl({ kind: 'story', key: 'PROJ-2' }), { ok: false, reason: 'invalid_state' });
+        assert.equal(hook.render().captureShareUrl({ kind: 'story', key: 'PROJ-2' }).ok, mode === 'planning', 'a Story target is a Planning table row');
     }
     const teams = Array.from({ length: 12 }, (_, index) => `${index}${'x'.repeat(118)}`);
     const snapshot = { ...makeOptions().buildGroupStateSnapshot(), selectedTeams: teams };

@@ -7,10 +7,11 @@ const COPIED_MS = 2000;
 const KEY_SLOT_PX = 30;   // the gap the Epic key reserves on its left (epics.css) for the copy action
 const LABEL = 'Copy view link';
 
+// `epicKey` names the linked issue; `issueKind` is 'story' for a Planning table Story row.
 // An alert group passes `labelText`: its own count text is then the control, so the group has no second copy affordance.
 // The same Share control serves header view copies and explicit Epic copies. It copies the captured URL; when the
 // clipboard is unavailable or refuses the write, the notice shows the URL in a read-only field.
-export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, boardColumnId, alertTarget, scopeKey, labelText }) {
+export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, issueKind = 'epic', boardColumnId, alertTarget, scopeKey, labelText }) {
     const [copied, setCopied] = React.useState(false);
     const [local, setLocal] = React.useState(null);
     const wrapperRef = React.useRef(null);
@@ -22,10 +23,11 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
     const ownsFeedback = ownedGenerationRef.current === copyGeneration;
 
     const targeted = Boolean(epicKey || alertTarget);
-    const identity = JSON.stringify([surface, scopeKey, sourceSurface, epicKey, boardColumnId, alertTarget, share.shareDisabled]);
-    const destination = epicKey ? `Epic ${epicKey} link copied` : alertTarget ? 'Alert group link copied' : 'View link copied';
-    const label = epicKey ? `Copy link to Epic ${epicKey}` : alertTarget ? 'Copy link to this alert group' : LABEL;
-    const hint = epicKey ? 'Copy link to this Epic' : alertTarget ? 'Copy link to this alert group' : LABEL;
+    const identity = JSON.stringify([surface, scopeKey, sourceSurface, epicKey, issueKind, boardColumnId, alertTarget, share.shareDisabled]);
+    const kindLabel = issueKind === 'story' ? 'Story' : 'Epic';
+    const destination = epicKey ? `${kindLabel} ${epicKey} link copied` : alertTarget ? 'Alert group link copied' : 'View link copied';
+    const label = epicKey ? `Copy link to ${kindLabel} ${epicKey}` : alertTarget ? 'Copy link to this alert group' : LABEL;
+    const hint = epicKey ? `Copy link to this ${kindLabel}` : alertTarget ? 'Copy link to this alert group' : LABEL;
     const attemptRef = React.useRef({ generation: 0, active, identity, mounted: true });
     if (attemptRef.current.active !== active || attemptRef.current.identity !== identity) {
         attemptRef.current.identity = identity;
@@ -85,7 +87,7 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
         setLocal(null);
         const isCurrent = () => attemptRef.current.mounted && attemptRef.current.active
             && attemptRef.current.generation === generation && owner.getSnapshot() === ownerGeneration;
-        const captured = epicKey ? share.captureShareUrl(boardColumnId ? { kind: 'epic', key: epicKey, column: boardColumnId } : { kind: 'epic', key: epicKey })
+        const captured = epicKey ? share.captureShareUrl(boardColumnId ? { kind: issueKind, key: epicKey, column: boardColumnId } : { kind: issueKind, key: epicKey })
             : alertTarget ? share.captureShareUrl({ kind: 'alertTeam', anchor: alertTarget.anchor, id: alertTarget.id })
                 : share.captureShareUrl();
         if (!captured.ok) {

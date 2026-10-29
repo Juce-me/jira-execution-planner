@@ -136,7 +136,7 @@ for (const width of [1440, 430]) test(`EPM project actions and progress readout 
     await hoverEvidence(page,toggle,testInfo,`epm-toggle-expanded-${width}`,{foundation:true});
     await hoverEvidence(page,board.locator('.epm-project-board-name-link'),testInfo,`epm-name-link-${width}`,{underline:true});
     await hoverEvidence(page,board.locator('.epm-project-board-update-meta-link'),testInfo,`epm-update-link-${width}`,{underline:true});
-    for(const selector of ['.epm-project-board-title-meta .epic-key','.epm-project-board-title-meta .status-pill']) {
+    for(const selector of ['.epm-project-board-title-meta .status-pill']) {
         const evidence=await hoverEvidence(page,board.locator(selector),testInfo,`epm-passive-${selector}-${width}`);
         if(process.env.JEP_HOVER_CAPTURE_ONLY!=='1') expect(evidence.hover).toEqual(evidence.rest);
     }

@@ -324,7 +324,7 @@ export function EpmRollupPanel({
         const projectName = getEpmProjectDisplayName(project);
         const projectTargetDate = renderProjectTargetDate(project);
         const projectOwner = renderProjectOwner(project);
-        const hasTitleMeta = projectStatus || projectOwner || project?.label;
+        const hasTitleMeta = projectStatus || projectOwner;
         return (
             <>
                 <div
@@ -362,9 +362,6 @@ export function EpmRollupPanel({
                                         />
                                     )}
                                     {projectOwner}
-                                    {project?.label && (
-                                        <span className="epic-key" title={project.label}>{project.label}</span>
-                                    )}
                                 </div>
                             )}
                         </div>

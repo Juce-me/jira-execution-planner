@@ -75,6 +75,10 @@ Implemented as planned. Deviation: the header pill's classes come from `getIssue
 
 Verification: `npm run test:frontend:unit` 3170 pass; full Python suite passed except two `test_local_postgresql_runner` SIGINT cases that pass alone (known load flake); full Chromium `tests/ui` 1998 passed, 3 failed in `dashboard_data_freshness.spec.js` (EPM automatic-refresh timing). That spec fails a varying subset on a stashed baseline without this change (4 failures there), so it is pre-existing and unrelated to pills; it was not fixed here. Headed Firefox/WebKit glyph checks were not run (no emoji or form-control geometry change).
 
+## Amendment (2026-10-29, operator)
+
+The project board header no longer renders the Jira label at all; it was judged unnecessary. The status pill alignment stands. The label remains only in the duplicates callout, as `epic-key` text. Tasks 3 and 4 below describe the header label and its `.epic-key` cap in `.epm-project-board-title-meta`, which were removed in the follow-up commit.
+
 ## Current accuracy
 
 Describes current behaviour: `epm-project-board-status-pill`, `epm-project-board-label-pill` and `epm-duplicates-project-label` no longer exist.

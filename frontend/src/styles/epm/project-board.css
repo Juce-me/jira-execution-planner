@@ -274,14 +274,6 @@
             letter-spacing: 0;
         }
 
-        .epm-project-board-title-meta .epic-key {
-            font-size: 0.62rem;
-            max-width: min(22rem, 100%);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
         .epm-project-board-rollup-control {
             display: flex;
             align-items: center;

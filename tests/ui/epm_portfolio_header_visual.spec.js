@@ -37,7 +37,6 @@ async function loadHeaderFixture(page) {
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
                                             <span class="epm-project-board-owner-name">Ada Lovelace</span>
                                         </span>
-                                        <span class="epic-key" title="RnD_Project_RFP_AI">RnD_Project_RFP_AI</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -95,7 +94,6 @@ async function loadHeaderFixture(page) {
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">GH</span>
                                             <span class="epm-project-board-owner-name">Grace Hopper</span>
                                         </span>
-                                        <span class="epic-key" title="rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label">rnd_project_bsw_enriched_deals_revenue_share_fee_model_long_label</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -156,7 +154,6 @@ async function loadHeaderFixture(page) {
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">KJ</span>
                                             <span class="epm-project-board-owner-name">Katherine Johnson</span>
                                         </span>
-                                        <span class="epic-key" title="rnd_project_dynamic_floor_harness">rnd_project_dynamic_floor_harness</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -211,7 +208,6 @@ async function loadHeaderFixture(page) {
                                             <span class="epm-project-board-owner-avatar" aria-hidden="true">DV</span>
                                             <span class="epm-project-board-owner-name">Dorothy Vaughan</span>
                                         </span>
-                                        <span class="epic-key" title="rnd_project_signal_quality_guardrail">rnd_project_signal_quality_guardrail</span>
                                     </div>
                                 </div>
                                 <div class="epm-project-board-meta" aria-label="Project metadata">
@@ -277,7 +273,6 @@ for (const viewport of [
         const title = board.locator('.epm-project-board-name');
         const nameLink = board.locator('.epm-project-board-name-link');
         const statusPill = board.locator('.epm-project-board-title-meta .status-pill');
-        const labelPill = board.locator('.epm-project-board-title-meta .epic-key');
         const targetDate = board.locator('.epm-project-board-target-date');
         const owner = board.locator('.epm-project-board-owner');
         const ownerAvatar = board.locator('.epm-project-board-owner-avatar');
@@ -310,7 +305,6 @@ for (const viewport of [
         await expect(nameLink).toHaveAttribute('href', 'https://home.atlassian.com/o/example/s/example/project/CRITE-324');
         await expect(homeIcon).toHaveText('🤖');
         await expect(statusPill).toHaveText('On track');
-        await expect(labelPill).toHaveText('RnD_Project_RFP_AI');
         await expect(statusPill).toHaveClass(/task-status/);
         await expect(targetDate).toContainText('Apr-Jun');
         await expect(ownerAvatar).toHaveText('AL');
@@ -324,7 +318,6 @@ for (const viewport of [
         const homeIconBox = await homeIcon.boundingBox();
         const titleBox = await title.boundingBox();
         const statusBox = await statusPill.boundingBox();
-        const labelBox = await labelPill.boundingBox();
         const targetDateBox = await targetDate.boundingBox();
         const ownerBox = await owner.boundingBox();
         const ownerAvatarBox = await ownerAvatar.boundingBox();
@@ -346,7 +339,6 @@ for (const viewport of [
         expect(homeIconBox).toBeTruthy();
         expect(titleBox).toBeTruthy();
         expect(statusBox).toBeTruthy();
-        expect(labelBox).toBeTruthy();
         expect(targetDateBox).toBeTruthy();
         expect(ownerBox).toBeTruthy();
         expect(ownerAvatarBox).toBeTruthy();
@@ -368,13 +360,10 @@ for (const viewport of [
             expect(Math.abs((statusBox.y + statusBox.height / 2) - (titleBox.y + titleBox.height / 2))).toBeLessThanOrEqual(6);
             expect(statusBox.x).toBeGreaterThan(titleBox.x + titleBox.width);
             expect(ownerBox.x).toBeGreaterThan(statusBox.x + statusBox.width);
-            expect(labelBox.x).toBeGreaterThan(ownerBox.x + ownerBox.width);
-            expect(labelBox.x).toBeGreaterThan(titleBox.x + titleBox.width);
         } else {
             expect(titleMetaBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
             expect(boxesOverlap(statusBox, titleBox)).toBe(false);
             expect(boxesOverlap(ownerBox, titleBox)).toBe(false);
-            expect(boxesOverlap(labelBox, titleBox)).toBe(false);
         }
         expect(metaBox.y).toBeGreaterThanOrEqual(titleBox.y + titleBox.height - 0.5);
         expect(boxesOverlap(ownerBox, targetDateBox)).toBe(false);
@@ -667,7 +656,6 @@ async function loadTokenFixture(page) {
                                 <span class="epm-project-board-owner-avatar" aria-hidden="true">AL</span>
                                 <span class="epm-project-board-owner-name">Ada Lovelace</span>
                             </span>
-                            <span class="epic-key" title="${index === 0 ? LONG_LABEL : 'rnd_project_short'}">${index === 0 ? LONG_LABEL : 'rnd_project_short'}</span>
                         </div>
                     </div>
                 </div>
@@ -716,7 +704,7 @@ for (const viewport of [
     { name: 'desktop', width: 1520, height: 900 },
     { name: 'mobile 390px', width: 390, height: 800 },
 ]) {
-    test(`EPM header pills and labels use ENG design-system tokens on ${viewport.name}`, async ({ page }) => {
+    test(`EPM header pills and duplicates labels use ENG design-system tokens on ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await loadTokenFixture(page);
 
@@ -756,9 +744,8 @@ for (const viewport of [
             expect(style.borderTopLeftRadius).toBe('8px');
         }
 
-        // (2) + (4): header labels and duplicates-callout labels are plain mono text, no chip.
+        // (2) + (4): duplicates-callout labels are plain mono text, no chip.
         const labelSelectors = [
-            '#epm-fixture .epm-project-board-title-meta .epic-key',
             '#epm-fixture .epm-duplicates-project-chip .epic-key',
         ];
         for (const selector of labelSelectors) {
@@ -776,7 +763,7 @@ for (const viewport of [
             }
         }
 
-        // Long (60-char) label ellipsizes inside its container and the title meta does not overflow.
+        // Long (60-char) duplicates label ellipsizes inside its container and the title meta does not overflow.
         expect(LONG_LABEL.length).toBe(60);
         for (const selector of labelSelectors) {
             const longLabel = page.locator(selector).first();
@@ -785,10 +772,8 @@ for (const viewport of [
                 const style = window.getComputedStyle(node);
                 return { textOverflow: style.textOverflow, overflow: style.overflow, whiteSpace: style.whiteSpace, clipped: node.scrollWidth > node.clientWidth };
             });
-            if (selector.includes('title-meta')) {
-                expect(clip.textOverflow, selector).toBe('ellipsis');
-                expect(clip.overflow, selector).toBe('hidden');
-            }
+            expect(clip.textOverflow, selector).toBe('ellipsis');
+            expect(clip.overflow, selector).toBe('hidden');
             expect(clip.whiteSpace, selector).toBe('nowrap');
             const box = await longLabel.boundingBox();
             expect(box.x + box.width, `${selector} stays in viewport`).toBeLessThanOrEqual(viewport.width + 0.5);

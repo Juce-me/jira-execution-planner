@@ -480,6 +480,10 @@ The single JSON block is the machine-readable source for paths, symbols, imports
       "reason": "Sprint review snapshots write application storage, not Jira issue fields."
     },
     {
+      "path": "frontend/src/api/assigneeCapacityApi.js",
+      "reason": "Per-Sprint assignee capacity documents write application storage, not Jira issue fields."
+    },
+    {
       "path": "frontend/src/api/configApi.js",
       "reason": "Workspace configuration and private preferences are storage writes; their ownership and edit gates remain independent."
     },

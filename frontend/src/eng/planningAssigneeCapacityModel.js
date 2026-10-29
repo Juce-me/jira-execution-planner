@@ -67,7 +67,17 @@ export const UNASSIGNED_KEY = null;
 export const isUnassigned = task => !task?.fields?.assignee?.accountId;
 export const storyPointsHundredths = task => toHundredths(task?.fields?.customfield_10004);
 
+// Accumulations are memoised by list identity so a selection toggle never re-sums the (stable) Total list.
+const accumulated = new WeakMap();
 function accumulate(tasks) {
+    const cached = accumulated.get(tasks);
+    if (cached) return cached;
+    const result = accumulateTasks(tasks);
+    accumulated.set(tasks, result);
+    return result;
+}
+
+function accumulateTasks(tasks) {
     const byKey = new Map();
     const unassigned = { hundredths: 0, count: 0 };
     for (const task of tasks) {
@@ -242,4 +252,51 @@ export function chunkChanges(changes, size = MAX_CHANGES) {
     const chunks = [];
     for (let index = 0; index < changes.length; index += size) chunks.push(changes.slice(index, index + size));
     return chunks;
+}
+
+// ---- optimistic overlay ------------------------------------------------------
+
+const OVERLAY_FIELDS = ['capacity', 'vacations', 'notes', 'removed'];
+
+// Rows a first write would start from: the document's own rows, or (mirroring the server's materialisation)
+// the inherited source's non-removed people with their Capacity only.
+export function baseRowsOf(document) {
+    if (!document) return [];
+    if (document.revision > 0) return document.rows || [];
+    return (document.inherited?.rows || []).filter(row => !row.removed).map(row => ({
+        assigneeKey: row.assigneeKey, displayName: row.displayName, capacity: row.capacity ?? null, vacations: null, notes: null, removed: false,
+    }));
+}
+
+// The document as the server will hold it once `changes` are saved; used to show unsaved commits at once.
+export function applyChangesToDocument(document, changes) {
+    if (!document || !changes?.length) return document;
+    const rows = new Map(baseRowsOf(document).map(row => [row.assigneeKey, { ...row }]));
+    for (const change of changes) {
+        const row = rows.get(change.assigneeKey) || { assigneeKey: change.assigneeKey, displayName: change.displayName || change.assigneeKey, capacity: null, vacations: null, notes: null, removed: false };
+        if (change.displayName) row.displayName = change.displayName;
+        for (const field of OVERLAY_FIELDS) if (field in change) row[field] = field === 'removed' ? Boolean(change[field]) : change[field];
+        rows.set(change.assigneeKey, row);
+    }
+    return { ...document, revision: Math.max(1, document.revision), rows: [...rows.values()], inherited: null };
+}
+
+// What a document holds for one field, as the server would compare it (inherited rows hold Capacity only).
+export function documentFieldValue(document, key, field) {
+    const row = baseRowsOf(document).find(candidate => candidate.assigneeKey === key);
+    return field === 'removed' ? row?.removed === true : row?.[field] ?? null;
+}
+
+// Drops the fields of a change that the document already holds; null when nothing is left to send.
+export function pruneChange(change, document) {
+    const next = { assigneeKey: change.assigneeKey };
+    if (change.displayName) next.displayName = change.displayName;
+    let fields = 0;
+    for (const field of OVERLAY_FIELDS) {
+        if (!(field in change)) continue;
+        if (equalValue(field, documentFieldValue(document, change.assigneeKey, field), change[field])) continue;
+        next[field] = change[field];
+        fields += 1;
+    }
+    return fields ? next : null;
 }

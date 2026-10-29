@@ -284,6 +284,8 @@ async function installPlanningFixture(page, {
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
+        // The Assignee Capacity strip (#323) reads only after it is expanded; an unconfigured store answers empty rather than 404.
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return json(route, { teamId: url.searchParams.get('teamId'), sprintId: url.pathname.split('/')[4], revision: 0, rows: [], inherited: null, capabilities: { canRead: true, canSave: true } });
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
     return {

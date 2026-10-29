@@ -322,6 +322,9 @@ class TestEpmRollupApi(unittest.TestCase):
         metadata_rollup = payload['projects'][1]['rollup']
         self.assertTrue(metadata_rollup['metadataOnly'])
         self.assertFalse(metadata_rollup['emptyRollup'])
+        # Per-project server rollup time for the load measurement: labeled projects only, milliseconds.
+        self.assertEqual(sorted(payload['projectTimings']), ['active-one', 'custom-all'])
+        self.assertTrue(all(isinstance(value, (int, float)) and value >= 0 for value in payload['projectTimings'].values()))
 
     def test_all_projects_backlog_includes_paused_or_todo_projects(self):
         projects = [

@@ -6,6 +6,8 @@ import { seconds, weekLabel } from './performanceFormat.js';
 
 // Weekly view of Catch Up loads: average, median and p95 per week for two measurements (the server derives them, see
 // _catch_up_weekly in load_performance.py); legend, hover readout and positioning follow the Board weekly chart.
+// PerformanceWeeksView is shared with the EPM weekly view (PerformanceEpmWeeks.jsx), which passes its own config:
+// { label, metrics, notes, about, extras(week), table(weeks) }.
 
 export const SERIES = [
     { key: 'avgMs', slug: 'avg', label: 'Average' },
@@ -53,7 +55,7 @@ function marker(series, x, y, value, className) {
     return <rect key={series.key} x={x - 4} y={y - 4} width="8" height="8" transform={`rotate(45 ${x} ${y})`} {...props} />;
 }
 
-function PerformanceLineChart({ weeks, metric, isolated }) {
+export function PerformanceLineChart({ weeks, metric, isolated, config }) {
     const [hovered, setHovered] = React.useState(null);
     const values = weeks.flatMap(week => SERIES.map(series => valueOf(week, metric, series))).filter(value => value !== null);
     const maximum = niceMaximum(Math.max(...values));
@@ -88,12 +90,12 @@ function PerformanceLineChart({ weeks, metric, isolated }) {
             <i className={`burnout-color performance-phase is-${series.slug}`} />
             <span>{series.label}: <strong>{seconds(valueOf(hovered.week, metric, series))}</strong></span>
         </div>)}
-        <div className="burnout-hover-row muted performance-week-counts"><span>Errors {hovered.week.errors} · cancelled {hovered.week.cancelled} · capped {hovered.week.capped} · cache hit {share(hovered.week.cacheHitShare)}</span></div>
+        <div className="burnout-hover-row muted performance-week-counts"><span>{config.extras(hovered.week)}</span></div>
         {loads < PRELIMINARY_LOADS && <div className="burnout-hover-row muted"><span>Preliminary: fewer than {PRELIMINARY_LOADS} loads</span></div>}
     </div> : null;
     return <div className="performance-week-chart" onMouseLeave={() => setHovered(null)}>
         <svg className="performance-week-svg" viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`} data-chart={metric.key} role="img"
-            aria-label={`Weekly average, median and p95 of ${metric.title} time for Catch Up. Exact values follow in the table.`}>
+            aria-label={`Weekly average, median and p95 of ${metric.title} time for ${config.label}. Exact values follow in the table.`}>
             {ticks.map(tick => <g key={tick}>
                 <line x1={PADDING.left} x2={CHART_WIDTH - PADDING.right} y1={y(tick)} y2={y(tick)} className="performance-week-grid" />
                 <text x={PADDING.left - 8} y={y(tick) + 4} textAnchor="end" className="performance-week-tick">{`${tick / 1000}s`}</text>
@@ -144,11 +146,15 @@ function PerformanceCatchUpTable({ weeks }) {
     </details>;
 }
 
-export default function PerformanceCatchUpWeeks({ weekly }) {
-    const weeks = weekly?.weeks || [];
+const CATCH_UP_CONFIG = {
+    label: 'Catch Up', metrics: METRICS, notes: NOTES, about: ABOUT, table: weeks => <PerformanceCatchUpTable weeks={weeks} />,
+    extras: week => `Errors ${week.errors} · cancelled ${week.cancelled} · capped ${week.capped} · cache hit ${share(week.cacheHitShare)}`,
+};
+
+export function PerformanceWeeksView({ weeks, config }) {
     const [isolated, setIsolated] = React.useState(null);
-    if (!weeks.length) return <p role="status">No Catch Up loads in this selection yet.</p>;
-    return <section aria-label="Catch Up weekly load times">
+    if (!weeks.length) return <p role="status">No {config.label} loads in this selection yet.</p>;
+    return <section aria-label={`${config.label} weekly load times`}>
         <div className="burnout-legend performance-week-legend">
             {SERIES.map(series => <button type="button" key={series.key} aria-pressed={isolated === null || isolated === series.key}
                 className={`performance-week-legend-item${isolated && isolated !== series.key ? ' dimmed' : ''}`}
@@ -156,16 +162,20 @@ export default function PerformanceCatchUpWeeks({ weekly }) {
                 <i className={`burnout-color performance-phase is-${series.slug}`} />{series.label}
             </button>)}
         </div>
-        {METRICS.map(metric => <React.Fragment key={metric.key}>
+        {config.metrics.map(metric => <React.Fragment key={metric.key}>
             <h4>{metric.title}, by week</h4>
-            <p className="performance-note">{NOTES[metric.key]}</p>
+            <p className="performance-note">{config.notes[metric.key]}</p>
             {weeks.some(week => week[metric.countKey] > 0)
-                ? <PerformanceLineChart weeks={weeks} metric={metric} isolated={isolated} />
+                ? <PerformanceLineChart weeks={weeks} metric={metric} isolated={isolated} config={config} />
                 : <p role="status" className="performance-note">No loads in this selection reached this measurement yet.</p>}
         </React.Fragment>)}
-        <PerformanceCatchUpTable weeks={weeks} />
+        {config.table(weeks)}
         <details className="performance-methodology"><summary>About the weekly charts</summary>
-            {ABOUT.map(paragraph => <p key={paragraph}>{paragraph}</p>)}
+            {config.about.map(paragraph => <p key={paragraph}>{paragraph}</p>)}
         </details>
     </section>;
+}
+
+export default function PerformanceCatchUpWeeks({ weekly }) {
+    return <PerformanceWeeksView weeks={weekly?.weeks || []} config={CATCH_UP_CONFIG} />;
 }

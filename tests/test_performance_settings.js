@@ -293,3 +293,41 @@ test('the week contract is pinned and the component never fetches or emits analy
     const source = require('node:fs').readFileSync('frontend/src/settings/PerformanceCatchUpWeeks.jsx', 'utf8');
     assert.doesNotMatch(source, /dataLayer|analytics|fetch\(|api\//);
 });
+
+function loadEpm() {
+    const result = buildSync({ entryPoints: ['frontend/src/settings/PerformanceEpmWeeks.jsx'], bundle: true,
+        platform: 'node', format: 'cjs', write: false, external: ['react', 'react-dom'] });
+    const module = { exports: {} };
+    new Function('require', 'module', 'exports', result.outputFiles[0].text)(require, module, module.exports);
+    return module.exports;
+}
+const epmWeek = (weekStart, overrides = {}) => ({ weekStart, partial: false, loads: 12, listLoads: 14, errors: 1, cancelled: 2,
+    projectsListed: metric(600, 500, 900), rollupLoaded: metric(4000, 3500, 7000), ...overrides });
+const renderEpm = props => renderToStaticMarkup(React.createElement(loadEpm().default, props));
+
+test('EPM weekly view plots Projects listed and Rollup loaded with average, median and p95 like Catch Up', () => {
+    const html = renderEpm({ weekly: { weeks: [epmWeek('2026-10-12'), epmWeek('2026-10-19', { partial: true })] },
+        projects: [{ projectId: 'p-2', name: 'Synthetic Two', loads: 5, avgMs: 4000, medianMs: 3000, p95Ms: 8000 },
+            { projectId: 'p-1', name: 'Synthetic One', loads: 6, avgMs: 1000, medianMs: 900, p95Ms: 1200 }] });
+    assert.match(html, /aria-label="EPM weekly load times"/);
+    assert.match(html, /<h4>Projects listed, by week<\/h4>/);
+    assert.match(html, /<h4>Rollup loaded, by week<\/h4>/);
+    assert.deepEqual(seriesValues(chartOf(html, 'projectsListed'), 'p95Ms'), [900, 900]);
+    assert.deepEqual(seriesValues(chartOf(html, 'rollupLoaded'), 'medianMs'), [3500, 3500]);
+    assert.match(html, /<td>Oct 19\*<\/td>/);
+    assert.match(html, /aria-pressed="true"[^>]*>[\s\S]*?Average/);
+    assert.match(html, /<th scope="row">Synthetic Two<\/th><td class="num">5<\/td><td class="num">4\.00s<\/td><td class="num">3\.00s<\/td><td class="num">8\.00s<\/td>/);
+    assert.ok(html.indexOf('Synthetic Two') < html.indexOf('Synthetic One'), 'slowest p95 first, as the server ranks them');
+    assert.doesNotMatch(html, /title=|cache hit|capped/);
+});
+
+test('EPM weekly view names the selected project, tolerates empty data and never fetches', () => {
+    const filtered = renderEpm({ weekly: { weeks: [epmWeek('2026-10-12')] }, projectName: 'Synthetic One' });
+    assert.match(filtered, /Rollup time of Synthetic One/);
+    assert.doesNotMatch(filtered, /Rollup time by project/);
+    assert.match(renderEpm({ weekly: { weeks: [] } }), /No EPM loads in this selection yet/);
+    const noRollups = renderEpm({ weekly: { weeks: [epmWeek('2026-10-12', { loads: 0, rollupLoaded: metric(null, null, null) })] } });
+    assert.match(noRollups, /No loads in this selection reached this measurement yet/);
+    const source = require('node:fs').readFileSync('frontend/src/settings/PerformanceEpmWeeks.jsx', 'utf8');
+    assert.doesNotMatch(source, /dataLayer|analytics|fetch\(|api\//);
+});

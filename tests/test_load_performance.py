@@ -815,3 +815,115 @@ class LoadPerformanceSecurityTests(unittest.TestCase):
             self.assertEqual(report['samples'][0]['loadId'], payload['loadId'])
             self.assertEqual(report['samples'][0]['scopeType'], 'component')
             self.assertIsNone(report['samples'][0]['sprintId'])
+
+
+def epm_observation(duration=3000, index=500, tab='active', sprint='42', outcome='success', lanes=(), **overrides):
+    payload = dict(schemaVersion=1, loadId=str(uuid.uuid4()), groupId='epm', sprintId=sprint, surface='epm',
+                   scopeType=tab, outcome=outcome, durationMs=duration, indexMs=index,
+                   lanes=[dict(project=project, name=f'Name {project}', durationMs=ms) for project, ms in lanes])
+    payload.update(overrides)
+    return payload
+
+
+class EpmLoadPerformanceTests(unittest.TestCase):
+    NOW = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)   # a Wednesday
+
+    def setUp(self):
+        self.engine = create_engine('sqlite://')
+        Base.metadata.create_all(self.engine)
+        self.session = Session(self.engine)
+        self.addCleanup(self.engine.dispose)
+        self.addCleanup(self.session.close)
+
+    def save(self, value, workspace='workspace-a', days_ago=1):
+        return performance.record_load(self.session, workspace, value, environment='local', revision='abc123',
+                                       now=self.NOW - timedelta(days=days_ago))
+
+    def report(self, **filters):
+        return performance.load_report(self.session, 'workspace-a', filters, now=self.NOW)
+
+    def test_schema_accepts_an_epm_load_and_rejects_untrusted_or_unbounded_data(self):
+        performance.validate_load(epm_observation(lanes=[('p-1', 900), ('p-2', 1200)]))
+        performance.validate_load(epm_observation(tab='backlog', sprint=None))
+        performance.validate_load(epm_observation(outcome='error', index=None))
+        for field, value in [('userId', 'other'), ('scopeType', 'all_work'), ('groupId', ''), ('durationMs', True),
+                             ('indexMs', 9000), ('outcome', 'other'), ('schemaVersion', 2),
+                             ('lanes', [dict(project='p-1', name='n', durationMs=9000)]),
+                             ('lanes', [dict(project='p-1', name='n', durationMs=1), dict(project='p-1', name='n', durationMs=2)]),
+                             ('lanes', [dict(project='p-1', name='n', durationMs=1, issues=['PRIVATE-1'])]),
+                             ('lanes', [dict(project='', name='n', durationMs=1)]),
+                             ('lanes', [dict(project='p-1', name='x' * 121, durationMs=1)]),
+                             ('lanes', [dict(project=f'p-{i}', name='n', durationMs=1) for i in range(201)])]:
+            payload = epm_observation()
+            payload[field] = value
+            with self.subTest(field=field, value=str(value)[:30]), self.assertRaises(ValueError):
+                performance.validate_load(payload)
+        missing = epm_observation()
+        del missing['indexMs']
+        with self.assertRaises(ValueError):
+            performance.validate_load(missing)
+
+    def test_epm_load_is_stored_on_the_shared_table_with_its_scope(self):
+        self.assertTrue(self.save(epm_observation(index=700, lanes=[('p-1', 900)])))
+        row = self.session.query(LoadPerformance).one()
+        self.assertEqual(('epm', 'epm', 'active', '42', 3000, 700), (
+            row.surface, row.group_id, row.scope_type, row.sprint_id, row.duration_ms, row.index_ms))
+        self.assertEqual([dict(project='p-1', name='Name p-1', durationMs=900)], row.lanes)
+
+    def test_epm_weekly_reports_projects_listed_and_rollup_loaded_per_utc_week(self):
+        for days_ago, index, total in ((9, 400, 2000), (8, 600, 4000), (7, 800, 6000), (2, 300, 1000)):
+            self.save(epm_observation(total, index, lanes=[('p-1', total - 500)]), days_ago=days_ago)
+        self.save(epm_observation(1000, None), days_ago=1)                       # sprint change: no project list this time
+        self.save(epm_observation(5000, 100, outcome='error'), days_ago=1)
+        self.save(epm_observation(5000, None, outcome='cancelled'), days_ago=1)
+        self.save(epm_observation(60000, 60000), 'workspace-b', days_ago=1)
+        weeks = self.report(surface='epm')['epmWeekly']['weeks']
+        self.assertEqual(['2026-10-12', '2026-10-19'], [week['weekStart'] for week in weeks])
+        first, second = weeks
+        self.assertEqual(['cancelled', 'errors', 'listLoads', 'loads', 'partial', 'projectsListed', 'rollupLoaded', 'weekStart'],
+                         sorted(first))
+        self.assertEqual((3, 3, 0, 0, False), (first['loads'], first['listLoads'], first['errors'], first['cancelled'], first['partial']))
+        self.assertEqual({'avgMs': 600, 'medianMs': 600, 'p95Ms': 780}, first['projectsListed'])
+        self.assertEqual({'avgMs': 4000, 'medianMs': 4000, 'p95Ms': 5800}, first['rollupLoaded'])
+        # Errors still count a list that arrived; cancelled loads without one do not.
+        self.assertEqual((2, 2, 1, 1, True), (second['loads'], second['listLoads'], second['errors'], second['cancelled'], second['partial']))
+        self.assertEqual({'avgMs': 200, 'medianMs': 200, 'p95Ms': 290}, second['projectsListed'])
+        self.assertEqual({'avgMs': 1000, 'medianMs': 1000, 'p95Ms': 1000}, second['rollupLoaded'])
+
+    def test_project_filter_plots_that_projects_own_rollup_time(self):
+        self.save(epm_observation(3000, 500, lanes=[('p-1', 800), ('p-2', 2000)]), days_ago=2)
+        self.save(epm_observation(2500, 400, lanes=[('p-1', 1200)]), days_ago=1)
+        self.save(epm_observation(9000, 900, lanes=[('p-2', 8000)]), days_ago=1)
+        report = self.report(surface='epm', projectId='p-1')
+        week = report['epmWeekly']['weeks'][0]
+        self.assertEqual((2, 2), (week['loads'], week['listLoads']))
+        self.assertEqual({'avgMs': 1000, 'medianMs': 1000, 'p95Ms': 1180}, week['rollupLoaded'])
+        self.assertEqual({'avgMs': 450, 'medianMs': 450, 'p95Ms': 495}, week['projectsListed'])
+        self.assertEqual(['p-1', 'p-2'], report['filters']['projects'] and [p['id'] for p in report['filters']['projects']])
+        self.assertEqual(['p-1'], [row['projectId'] for row in report['epmProjects']])
+
+    def test_epm_projects_table_ranks_projects_by_p95_rollup_time(self):
+        for p1, p2 in ((800, 2000), (1200, 3000), (1000, 9000)):
+            self.save(epm_observation(10000, 500, lanes=[('p-1', p1), ('p-2', p2)]))
+        self.save(epm_observation(10000, 500, outcome='error'))
+        rows = self.report(surface='epm')['epmProjects']
+        self.assertEqual(['p-2', 'p-1'], [row['projectId'] for row in rows])
+        self.assertEqual(dict(projectId='p-1', name='Name p-1', loads=3, avgMs=1000, medianMs=1000, p95Ms=1180), rows[1])
+        self.assertEqual((3, 4666.67, 3000, 8400), (rows[0]['loads'], rows[0]['avgMs'], rows[0]['medianMs'], rows[0]['p95Ms']))
+
+    def test_epm_filters_and_other_surfaces_stay_isolated(self):
+        self.save(epm_observation(tab='backlog', sprint=None, lanes=[('p-1', 100)]))
+        self.save(epm_observation(tab='active', lanes=[('p-1', 200)]))
+        self.save(observation())
+        self.save(board_observation())
+        report = self.report(surface='epm', scopeType='backlog')
+        self.assertEqual(1, report['summary']['sampleCount'])
+        self.assertEqual(1, sum(week['loads'] for week in report['epmWeekly']['weeks']))
+        self.assertEqual([], self.report(surface='eng_sprint')['epmWeekly']['weeks'])
+        everything = self.report()
+        self.assertEqual(4, everything['summary']['sampleCount'])
+        self.assertEqual(2, sum(week['loads'] for week in everything['epmWeekly']['weeks']))
+        self.assertEqual(1, sum(week['loads'] for week in everything['catchUpWeekly']['weeks']))
+        for bad in ({'projectId': ''}, {'projectId': 'x' * 129}, {'scopeType': 'other'}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.report(**bad)

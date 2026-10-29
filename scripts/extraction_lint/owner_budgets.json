@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7301,
+    "lineCeiling": 7302,
     "hookCeilings": {
       "useState": 117,
       "useEffect": 69,
@@ -1544,6 +1544,7 @@
             "initialEpmTab",
             "onHomeAccessDenied",
             "onServerConnectionFailure",
+            "performanceGate",
             "savedEpmSubGoalKeys",
             "searchQuery",
             "selectedSprint",
@@ -1591,17 +1592,18 @@
             "initialEpmTab",
             "onHomeAccessDenied",
             "onServerConnectionFailure",
+            "performanceGate",
             "savedEpmSubGoalKeys",
             "searchQuery",
             "selectedSprint",
             "selectedView"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 14,
+          "expandedInputCount": 15,
           "returnCount": 28,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 14,
+          "expandedInputCeiling": 15,
           "returnCeiling": 28,
           "propCeiling": 0,
           "unresolved": [
@@ -1610,7 +1612,7 @@
             "forwarded input searchQuery"
           ],
           "inventory": {
-            "sourceDigest": "9e5166f60f11caa2c6dec026da043c8b62c532b596ecf9d1e55db162c28191db",
+            "sourceDigest": "41c063a73e68a1b3b78608487ea475c980d91114d5addca335594e741b428fd1",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -1622,6 +1624,7 @@
               "initialEpmSelectedProjectId",
               "initialEpmTab",
               "onServerConnectionFailure",
+              "performanceGate",
               "savedEpmSubGoalKeys",
               "searchQuery",
               "selectedSprint",
@@ -1633,7 +1636,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEpmViewData",
-              "line": 1954,
+              "line": 1875,
               "phase": "hook execution"
             }
           ],
@@ -4939,7 +4942,7 @@
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "sourceDigest": "1c2268ec913cb4d9e4fa4a8a982b3e1dc85e7a426a20c58a63a5a72eb9b36b52",
+            "sourceDigest": "a07e8103b87827864d2e8ff932e87df5782ccfe8f379c8a1fb7ea0f86270ab8d",
             "reviewed": true,
             "memberNames": [
               "backendUrl"
@@ -17610,6 +17613,8 @@
       "exports": [
         "METRICS",
         "PRELIMINARY_LOADS",
+        "PerformanceLineChart",
+        "PerformanceWeeksView",
         "SERIES",
         "default"
       ],
@@ -17641,6 +17646,135 @@
               "path": "frontend/src/settings/PerformanceSettings.jsx",
               "symbol": "PerformanceCatchUpWeeks",
               "line": 125,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "PerformanceLineChart",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "config",
+            "isolated",
+            "metric",
+            "weeks"
+          ],
+          "expandedInputNames": [
+            "config",
+            "config.extras",
+            "config.label",
+            "isolated",
+            "metric",
+            "metric.countKey",
+            "metric.key",
+            "metric.title",
+            "weeks",
+            "weeks.flatMap",
+            "weeks.length",
+            "weeks.map",
+            "weeks.reduce"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 13,
+          "returnCount": 0,
+          "propCount": 4,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 13,
+          "returnCeiling": 0,
+          "propCeiling": 4,
+          "unresolved": [
+            "bag weeks dynamic deep member",
+            "bag weeks dynamic member",
+            "forwarded input metric"
+          ],
+          "inventory": {
+            "sourceDigest": "41f17d75abeb25b6cb07f31e2dff118348e40f5792ba290979a3484291124450",
+            "reviewed": true,
+            "memberNames": [
+              "config",
+              "config.extras",
+              "config.label",
+              "isolated",
+              "metric",
+              "metric.countKey",
+              "metric.key",
+              "metric.title",
+              "weeks"
+            ],
+            "rationale": "weeks is the server-derived weekly array and metric one entry of config.metrics; config is the plain display description {label, metrics, notes, about, extras, table} passed by Catch Up and EPM. All statically read member names are inventoried; no callable protocol beyond config.extras(week)."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceCatchUpWeeks.jsx",
+              "symbol": "PerformanceLineChart",
+              "line": 169,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "PerformanceWeeksView",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "config",
+            "weeks"
+          ],
+          "expandedInputNames": [
+            "config",
+            "config.about",
+            "config.about.map",
+            "config.label",
+            "config.metrics",
+            "config.metrics.map",
+            "config.notes",
+            "config.table",
+            "weeks",
+            "weeks.length",
+            "weeks.some"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 11,
+          "returnCount": 0,
+          "propCount": 2,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 11,
+          "returnCeiling": 0,
+          "propCeiling": 2,
+          "unresolved": [
+            "forwarded input weeks",
+            "bag config dynamic deep member"
+          ],
+          "inventory": {
+            "sourceDigest": "c5cc42624c5783ab227f93fba001be10d3af81a1a1963784af5bb39655c36a48",
+            "reviewed": true,
+            "memberNames": [
+              "config",
+              "config.about",
+              "config.label",
+              "config.metrics",
+              "config.notes",
+              "config.table",
+              "weeks"
+            ],
+            "rationale": "weeks is the server-derived weekly array; config is the plain display description shared by Catch Up and EPM (label, metrics, notes, about, extras, table renderer). All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceCatchUpWeeks.jsx",
+              "symbol": "PerformanceWeeksView",
+              "line": 180,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/settings/PerformanceEpmWeeks.jsx",
+              "symbol": "PerformanceWeeksView",
+              "line": 75,
               "phase": "render"
             }
           ],
@@ -17847,6 +17981,80 @@
               ]
             }
           ],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "epm.epmLoadMeasurement",
+      "path": "frontend/src/epm/epmLoadMeasurement.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "createEpmLoadMeasurement",
+        "createEpmLoadReporter"
+      ],
+      "lineCeiling": 80,
+      "interfaces": []
+    },
+    {
+      "id": "settings.PerformanceEpmWeeks",
+      "path": "frontend/src/settings/PerformanceEpmWeeks.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default"
+      ],
+      "lineCeiling": 90,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "projectName",
+            "projects",
+            "weekly"
+          ],
+          "expandedInputNames": [
+            "projectName",
+            "projects",
+            "weekly",
+            "weekly.weeks"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 4,
+          "returnCount": 0,
+          "propCount": 3,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 4,
+          "returnCeiling": 0,
+          "propCeiling": 3,
+          "unresolved": [
+            "forwarded input projectName"
+          ],
+          "inventory": {
+            "sourceDigest": "57820b090e17b9c88416457ffe39f98d9e845022280ff3501efb34dec5812644",
+            "reviewed": true,
+            "memberNames": [
+              "projectName",
+              "projects",
+              "weekly",
+              "weekly.weeks"
+            ],
+            "rationale": "weekly is the server epmWeekly value, projects the epmProjects table and projectName the selected project display name; all are read-only data from the admin performance report. All statically read member names are inventoried."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/PerformanceSettings.jsx",
+              "symbol": "PerformanceEpmWeeks",
+              "line": 122,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
           "getters": []
         }
       ]

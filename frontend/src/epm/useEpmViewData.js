@@ -16,8 +16,21 @@ import {
     normalizeEpmScopeSubGoalKeys,
     sortEpmRollupBoards,
 } from './epmProjectUtils.mjs';
+import { createEpmLoadReporter } from './epmLoadMeasurement.js';
 
 const { useState, useEffect, useRef } = React;
+
+const epmRollupMilliseconds = () => globalThis.performance?.now?.() ?? Date.now();
+
+// The all-projects response carries each project's server rollup time; a project the server skipped has none.
+function recordAggregateProjectLanes(measurement, payload) {
+    if (!measurement) return;
+    const timings = payload?.projectTimings && typeof payload.projectTimings === 'object' ? payload.projectTimings : {};
+    (Array.isArray(payload?.projects) ? payload.projects : []).forEach(entry => {
+        const id = getEpmProjectIdentity(entry?.project);
+        if (id && Number.isFinite(timings[id])) measurement.lane(id, getEpmProjectDisplayName(entry.project), timings[id]);
+    });
+}
 
 function getRuntimeEpmSubGoalKeys(selectedSubGoalKeys, savedSubGoalKeys) {
     const savedKeys = normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedSubGoalKeys });
@@ -44,6 +57,7 @@ export function useEpmViewData({
     searchQuery,
     onHomeAccessDenied,
     onServerConnectionFailure,
+    performanceGate,
 }) {
     const [epmTab, setEpmTab] = useState(initialEpmTab ?? 'active');
     const [epmProjects, setEpmProjectsState] = useState([]);
@@ -70,6 +84,10 @@ export function useEpmViewData({
     const epmProjectsRequestIdRef = useRef(0);
     const epmRollupRequestIdRef = useRef(0);
     const epmRollupRetryAfterProjectsRef = useRef(false);
+    const epmLoadReporter = React.useMemo(() => createEpmLoadReporter(backendUrl, { gate: performanceGate }), [backendUrl, performanceGate]);
+    const epmPendingMeasurementRef = useRef(null);
+    const selectedSprintRef = useRef(selectedSprint);
+    selectedSprintRef.current = selectedSprint;
     const normalizedSavedEpmSubGoalKeys = React.useMemo(
         () => normalizeEpmScopeSubGoalKeys({ subGoalKeys: savedEpmSubGoalKeys }),
         [savedEpmSubGoalKeys]
@@ -122,6 +140,7 @@ export function useEpmViewData({
             }
             const nextProjects = Array.isArray(payload.projects) ? payload.projects : [];
             explicitChecksRef.current.push({ source: 'epm_projects', status: 'ok', checkKind: payload.cacheHit === false ? 'forced' : payload.cacheHit === true ? 'cached' : 'unknown', coverage: 'unknown', requestStartedAtMs: requestStartedAtMs });
+            if (!background) epmPendingMeasurementRef.current?.projectsListed();
             setEpmProjects(nextProjects);
             setEpmProjectsAcceptedScope(JSON.stringify([backendUrl, tab, normalizedSavedEpmSubGoalKeys, runtimeEpmSubGoalKeys]));
             return nextProjects;
@@ -194,7 +213,13 @@ export function useEpmViewData({
         epmRollupRequestIdRef.current += 1;
         const requestId = epmRollupRequestIdRef.current, requestStartedAtMs = Date.now();
         setEpmProjectRollupLoadingIds(new Set());
+        // Archived boards are metadata only, so there is no rollup to time.
+        const pendingMeasurement = epmPendingMeasurementRef.current;
+        epmPendingMeasurementRef.current = null;
+        const takeMeasurement = () => epmTab === 'archived' ? null
+            : pendingMeasurement || epmLoadReporter.start({ tab: epmTab, sprintId: selectedSprint });
         if (epmSelectedProjectId === '' && currentProjectId === '') {
+            const measurement = takeMeasurement();
             setEpmRollupLoading(true);
             try {
                 const payload = await fetchEpmAllProjectsRollup(backendUrl, {
@@ -203,6 +228,7 @@ export function useEpmViewData({
                     subGoalKeys: runtimeEpmSubGoalKeys,
                 });
                 if (epmRollupRequestIdRef.current !== requestId) {
+                    measurement?.cancel();
                     return;
                 }
                 explicitChecksRef.current.push({ source: 'epm_rollup', status: 'ok', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs });
@@ -212,11 +238,14 @@ export function useEpmViewData({
                 setEpmDuplicates(aggregate.duplicates);
                 setEpmAggregateTruncated(aggregate.truncated);
                 setEpmAggregateFallback(aggregate.fallback);
+                recordAggregateProjectLanes(measurement, payload);
+                void measurement?.finish();
             } catch (err) {
-                if (isAuthenticationRequiredError(err)) return;
-                if (epmRollupRequestIdRef.current !== requestId) {
+                if (isAuthenticationRequiredError(err) || epmRollupRequestIdRef.current !== requestId) {
+                    measurement?.cancel();
                     return;
                 }
+                measurement?.error();
                 const failure = classifyEpmReadError(err);
                 if (failure.invalidateHomeAvailability) onHomeAccessDenied?.(err);
                 const handledServerConnection = onServerConnectionFailure?.(err) === true;
@@ -254,6 +283,8 @@ export function useEpmViewData({
             setEpmRollupLoading(false);
             return;
         }
+        const measurement = takeMeasurement();
+        const projectStartedMs = epmRollupMilliseconds();
         setEpmRollupLoading(true);
         try {
             const payload = await fetchEpmProjectRollup(backendUrl, currentProjectId, {
@@ -262,6 +293,7 @@ export function useEpmViewData({
                 subGoalKeys: runtimeEpmSubGoalKeys,
             });
             if (epmRollupRequestIdRef.current !== requestId) {
+                measurement?.cancel();
                 return;
             }
             explicitChecksRef.current.push({ source: 'epm_rollup', status: 'ok', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs });
@@ -270,11 +302,14 @@ export function useEpmViewData({
             setEpmDuplicates({});
             setEpmAggregateTruncated(false);
             setEpmAggregateFallback(false);
+            measurement?.lane(currentProjectId, getEpmProjectDisplayName(currentProject), epmRollupMilliseconds() - projectStartedMs);
+            void measurement?.finish();
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return;
-            if (epmRollupRequestIdRef.current !== requestId) {
+            if (isAuthenticationRequiredError(err) || epmRollupRequestIdRef.current !== requestId) {
+                measurement?.cancel();
                 return;
             }
+            measurement?.error();
             const failure = classifyEpmReadError(err);
             if (failure.invalidateHomeAvailability) onHomeAccessDenied?.(err);
             const handledServerConnection = onServerConnectionFailure?.(err) === true;
@@ -287,7 +322,7 @@ export function useEpmViewData({
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, invalidateEpmRollupRequest, onHomeAccessDenied, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmLoadReporter, epmSelectedProjectId, epmTab, hasSavedEpmScope, invalidateEpmRollupRequest, onHomeAccessDenied, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;
@@ -410,28 +445,35 @@ export function useEpmViewData({
             setEpmRollupLoading(false);
             return;
         }
+        // One measurement spans the project list and the rollup it leads to; the rollup refresh takes it over.
+        epmPendingMeasurementRef.current = epmTab === 'archived' ? null
+            : epmLoadReporter.start({ tab: epmTab, sprintId: selectedSprintRef.current });
         if (epmSelectedProjectId === '') {
             try {
                 await refreshEpmProjects();
             } catch (err) {
+                epmPendingMeasurementRef.current = null;
                 if (isAuthenticationRequiredError(err)) return;
                 throw err;
             }
             await refreshEpmRollup(null, '');
+            epmPendingMeasurementRef.current = null;
             return explicitChecksRef.current;
         }
         let nextProjects;
         try {
             nextProjects = await refreshEpmProjects();
         } catch (err) {
+            epmPendingMeasurementRef.current = null;
             if (isAuthenticationRequiredError(err)) return;
             throw err;
         }
         const nextVisibleProjects = filterEpmProjectsForTab(nextProjects, epmTab);
         const nextSelectedProject = nextVisibleProjects.find((project) => getEpmProjectIdentity(project) === epmSelectedProjectId) || null;
         await refreshEpmRollup(nextSelectedProject, epmSelectedProjectId);
+        epmPendingMeasurementRef.current = null;
         return explicitChecksRef.current;
-    }, [backendUrl, epmProjects, epmConfigLoaded, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeAccessDenied, refreshEpmProjects, refreshEpmRollup, runtimeEpmSubGoalKeys]);
+    }, [backendUrl, epmProjects, epmConfigLoaded, epmLoadReporter, epmSelectedProjectId, epmTab, hasSavedEpmScope, onHomeAccessDenied, refreshEpmProjects, refreshEpmRollup, runtimeEpmSubGoalKeys]);
 
     useEffect(() => {
         setEpmSelectedSubGoalKeys((prev) => {

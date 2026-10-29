@@ -3,6 +3,7 @@ import { fetchAdminPerformance } from '../api/performanceApi.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import PerformanceBoardWeeks from './PerformanceBoardWeeks.jsx';
 import PerformanceCatchUpWeeks from './PerformanceCatchUpWeeks.jsx';
+import PerformanceEpmWeeks from './PerformanceEpmWeeks.jsx';
 import { count, seconds } from './performanceFormat.js';
 
 export function PerformanceTrend({ trend = [] }) {
@@ -55,10 +56,10 @@ function LoadDetails({ sample }) {
 
 export default function PerformanceSettings({ backendUrl }) {
     const [filters, setFilters] = React.useState({ groupId: '', sprintId: '', surface: '', scopeType: '',
-        cacheState: '', revision: '', scopeCohortDigest: '' });
+        cacheState: '', revision: '', scopeCohortDigest: '', projectId: '' });
     const [data, setData] = React.useState(null);
     const [options, setOptions] = React.useState({ groups: [], sprints: [], surfaces: [], scopeTypes: [],
-        cacheStates: [], revisions: [], scopeCohortDigests: [] });
+        cacheStates: [], revisions: [], scopeCohortDigests: [], projects: [] });
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState('');
     const [refresh, setRefresh] = React.useState(0);
@@ -79,18 +80,24 @@ export default function PerformanceSettings({ backendUrl }) {
     }, [backendUrl, filters, refresh]);
     const summary = data?.summary;
     const secondaryActive = ['sprintId', 'cacheState', 'revision', 'scopeCohortDigest'].filter(key => filters[key]).length;
+    const epmSurface = filters.surface === 'epm';
+    // Options are strings, or {id, name} pairs (EPM projects); the project filter only means something on the EPM surface.
     const renderFilter = ([key, label, values]) => <div className="stats-control-group" key={key}>
-        <label htmlFor={`performance-${key}`}>{label}</label><select id={`performance-${key}`} aria-label={`Performance ${label.toLowerCase()}`} value={filters[key]} onChange={event => setFilters(previous => ({ ...previous, [key]: event.target.value }))}>
-            <option value="">All</option>{(values || []).map(value => <option key={value} value={value}>{value}</option>)}
+        <label htmlFor={`performance-${key}`}>{label}</label><select id={`performance-${key}`} aria-label={`Performance ${label.toLowerCase()}`} value={filters[key]}
+            onChange={event => setFilters(previous => ({ ...previous, [key]: event.target.value, ...(key === 'surface' ? { projectId: '' } : {}) }))}>
+            <option value="">All</option>{(values || []).map(value => typeof value === 'object'
+                ? <option key={value.id} value={value.id}>{value.name}</option>
+                : <option key={value} value={value}>{value}</option>)}
         </select>
     </div>;
+    const selectedProject = (options.projects || []).find(project => project.id === filters.projectId);
     return <section className="performance-settings" aria-label="Load performance" aria-busy={loading}>
         <h3>Load performance</h3>
-        <p className="performance-intro">Selected group loads · 30-day history · 2s target · 4s p95 SLO</p>
+        <p className="performance-intro">{epmSurface ? 'EPM board loads' : 'Selected group loads'} · 30-day history · 2s target · 4s p95 SLO</p>
         <div className="stats-controls">
             {[
-                ['groupId', 'Group', options.groups], ['surface', 'Surface', options.surfaces],
-                ['scopeType', 'Scope', options.scopeTypes],
+                epmSurface ? ['projectId', 'Project', options.projects] : ['groupId', 'Group', options.groups],
+                ['surface', 'Surface', options.surfaces], ['scopeType', 'Scope', options.scopeTypes],
             ].map(renderFilter)}
             <button type="button" className="btn btn-secondary" disabled={loading} onClick={() => setRefresh(value => value + 1)}>Refresh</button>
         </div>
@@ -107,10 +114,12 @@ export default function PerformanceSettings({ backendUrl }) {
         {loading && <p role="status">Loading performance history…</p>}
         {error && <p role="alert">{error}</p>}
         {data?.enabled === false && <p role="status">Collection is paused or database storage is unavailable.</p>}
-        {data?.enabled && summary?.sampleCount === 0 && <p role="status">No loads recorded in this selection yet. Open ENG and refresh a group to collect a measurement.</p>}
+        {data?.enabled && summary?.sampleCount === 0 && <p role="status">No loads recorded in this selection yet. Open {epmSurface ? 'EPM' : 'ENG'} and refresh {epmSurface ? 'the board' : 'a group'} to collect a measurement.</p>}
         {data?.truncated && <p role="status">History reached the {data.queryLimit} observation limit. Narrow the filters before comparing trends.</p>}
         {summary?.sampleCount > 0 && (filters.surface === 'eng_board'
             ? <PerformanceBoardWeeks weekly={data.weekly} samples={data.samples || []} />
+            : epmSurface
+            ? <PerformanceEpmWeeks weekly={data.epmWeekly} projects={data.epmProjects || []} projectName={selectedProject?.name || filters.projectId} />
             : <>
             {filters.surface !== 'eng_sprint' && <p className="performance-summary">Average <strong>{seconds(summary.avgMs)}</strong> · p50 {seconds(summary.p50Ms)} · p95 <strong>{seconds(summary.p95Ms)}</strong> · {summary.eligibleCount} complete successful samples / {summary.sampleCount} observations</p>}
             <p>{summary.breachCount} loads above 4s · {summary.errorCount} errors · {summary.cancelledCount} cancelled · {summary.cappedCount} capped · {summary.unknownCount || 0} completeness unverified</p>

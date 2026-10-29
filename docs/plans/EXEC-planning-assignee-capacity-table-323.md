@@ -1,138 +1,140 @@
 # Planning Assignee Capacity Table (#323)
 
-> **Status:** Draft design (2026-10-29), reviewed by a cold-read builder check; awaiting operator approval. Nothing is implemented. Branch `feature/323-planning-assignee-capacity-table`.
+> **Status:** Design, revision 2 (2026-10-29), approved by the operator the same day (D1 to D4 resolved, deactivated-user names added). Revision 1 was committed as `430bed1c`; four independent read-only validations (flaws, API usage, load, redundancy) produced this revision. Nothing is implemented. Branch `feature/323-planning-assignee-capacity-table`.
 
 ## Intent
 
-Planners compare what a team can deliver with what the Sprint actually holds. Today Planning shows only a team-level Jira capacity number. With one team selected, the planner also needs the per-person picture: who has how much capacity, who is on vacation, how much work each person carries in total, and how much of it has been taken (checked) into the plan.
+The team lead plans the team's effort for a Sprint from one view: how much capacity each person has, how much work each carries, how much has been taken (checked) into the plan, and how much work still has no owner. Issue [#323](https://github.com/Juce-me/jira-execution-planner/issues/323). All numbers are Story Points. Anti-goal: a second source of truth for team capacity; Jira capacity stays the core number.
 
-Issue: [#323](https://github.com/Juce-me/jira-execution-planner/issues/323). All numbers are Story Points. **Who it is for.** The team lead plans the team's effort for a Sprint. This table, the capacity graph and the underbar form one dashboard for that team: how much capacity each person has, how much work each carries, how much has been taken into the plan, and how much work still has no owner. Anti-goal: a second source of truth for team capacity; Jira capacity stays the core number.
+## Operator decisions (resolved 2026-10-29)
+
+- **D1 Placement.** The table is a collapsible strip in normal page flow (the pattern of the Planned Teams Effort strip, expanded state persisted), not inside the pinned overview. Only a thin underbar (a 4 to 6 px strip inside the existing capacity track, adding no height) appears in the pinned panel, once the table has been expanded. Reason: the Table-layout pinned stack is `position: sticky` with a 173.5 px contract; a 15-person table would pin about 1,000 px.
+- **D2 First slice.** Add assignee, Cmd+Z/Undo and the stored planned team capacity with Push to Jira are deferred (see Deferred scope), as recommended; the operator accepted the rest of the plan as written. Without a planned number the underbar uses Jira capacity, else the sum of the people's Capacity.
+- **D3 Concurrent edits.** Per-field last-write-wins merge under a lock; no 409 and no per-row revisions.
+- **D4 Visibility.** Capacity, Vacations, Notes and stored names are readable and writable by any signed-in user of the workspace, as with shared group settings, with no per-issue Jira authorization.
+- **Names are stored.** Every row keeps a `displayName` snapshot so a person later deactivated in Jira still shows, as historic data (see Rows and inheritance).
 
 ## Behaviour
 
 ### Where it shows
 
-Exactly one team selected (`!isAllTeamsSelected && selectedTeamSet.size === 1`, dashboard.jsx). The table fills the `teams` slot of `PlanningOverviewPanel` (`.planning-panel-team-details`, hidden when the panel is compact). With several teams or All Teams, `PlanningTeamCapacityCards` is unchanged.
+Planning Table layout, exactly one team selected (`!isAllTeamsSelected && selectedTeamSet.size === 1`). Otherwise `PlanningTeamCapacityCards` is unchanged. The team capacity card stays as it is (Jira number, pencil editor, missing-ticket banner, Refresh capacity). The table is a new in-flow strip (D1) holding the table and the removed strip; its expanded state is a persisted preference like `planningTeamsEffortExpanded`.
 
 ### Columns
 
-Assignee, Capacity, Selected effort, Total effort, Vacations, Notes. There is no Total/available column.
+Assignee, Capacity, Selected effort, Total effort, Vacations, Notes. No Total/available column.
 
-- **Capacity, Vacations, Notes:** typed in; numbers are Story Points, 0 to 10 000, at most two decimals; Notes at most 500 characters. Blank means unset, which counts as 0 in sums.
-- **Selected effort:** sum of Story Points of the checked Planning Stories assigned to that person (`selectedPlanningTasksList`). Null Story Points count as 0.
-- **Total effort:** sum of Story Points of every non-Killed Story of the selected team in the Sprint assigned to that person, independent of Planning filters and checkboxes. Source: the unfiltered Sprint task set (`capacityTasks` or `scopedTasks`; Task 0 decides which, because the selection pool `baseFilteredTasks` drops filtered and closed work).
-- **Unassigned row:** Stories with no assignee get their own row, effort columns only, so the columns reconcile with the table below. It is highlighted with the existing warning tone (a reused class, not a new one) and sorts first, so the lead sees at once how many Story Points still need an owner. It is shown only while unassigned Stories exist, and it cannot be edited or deleted.
-- **Totals row:** sums of all five numeric columns. A subtle over-capacity cue on a row or the totals row where Selected effort exceeds Capacity.
+- **Capacity, Vacations, Notes:** typed in. Numbers are Story Points, 0 to 10 000, at most two decimals, JSON strings on the wire (`"10.25"`), blank means unset (counts as 0). Notes up to 500 characters, single line, control characters rejected. Vacations are informational (not subtracted from Capacity) and may exceed it; negative values are rejected. An invalid draft stays in its cell with an error and is not sent.
+- **Selected effort:** Story Points of the checked Stories of the selected team per assignee, taken from `selectedTasksList` (the set the capacity bar's `selectedSP` and the team card use), so its total equals the bar's Selected for the team. It excludes Stories hidden by active search or facet filters, as the bar does.
+- **Total effort:** every non-Killed Story of the selected team in the Sprint, independent of filters and checkboxes: `projectPlanningOriginals(capacityTasks, planningOriginals)` filtered by `getTeamInfo(task).id === teamId` and `normalizeStatus(status) !== 'killed'` (pending status edits count as the existing filters count them). Includes Stories under excluded Epics. Null Story Points count as 0.
+- **Unassigned:** `!task.fields.assignee?.accountId` (the loader returns an assignee object with null fields for unassigned work, so a truthiness test is wrong). It gets its own row, highlighted with the existing warning tone (a reused class), sorted first, shown only while unassigned Stories exist, not editable or removable.
+- **Totals row:** sums of Capacity, Selected, Total and Vacations (four numeric columns), including the Unassigned row's effort. The over-capacity cue reuses the existing thresholds (over above 120% and under below 90%, `planningCapacityUtils.js`) comparing Selected with Capacity, only for rows with Capacity set; the Totals cue compares the people's Selected (without Unassigned) with the sum of Capacity.
+- Sums and comparisons run in integer hundredths (no float drift); display is at most two decimals, trailing zeros trimmed. Rows sort by name then key and keep their position while one is being edited.
 
 ### Rows and inheritance
 
-- A row exists for each assignee that has Stories in this team and Sprint, plus saved rows added by hand. Rows are keyed on the Jira account id; the display name is a stored snapshot used only when no Story supplies one.
-- **One row per person.** Rows are merged by assignee key from three sources: Stories in scope, saved rows of this Sprint and inherited rows. Inheritance never creates a second row: an own row replaces the inherited one, a person with Stories and an inherited row appears once, and Add assignee skips (and scrolls to) a person who already has a row. Inherited rows are returned by the read and shown; they are not copied into this Sprint until the user edits one.
-- **Add assignee** uses the existing inline person-field search used for Planning assignee editing (Task 0 locates it), so a new row always has an account id. **Remove** takes a row out of this Sprint. A removed row is not hidden silently: it moves to a one-line strip under the table with a sad face, "Removed from this Sprint: name, name", and each name restores the row with one tap. The strip is absent when nothing is removed. A person who still has Stories in scope never shows as removed (their row stays, with blank Capacity).
-- **Inheritance (non-closed Sprints only):** for every assignee without an own row, the server returns the assignee and Capacity from the nearest earlier Sprint that has saved rows for this team (`sprint_order`, as in the review views). Inherited Capacity renders gray. Editing it saves an own row for this Sprint and the value turns black. Vacations and Notes are not inherited (my call: they are Sprint-specific). Inherited values count in sums. Closed Sprints show only their own rows.
+- Rows are merged by assignee key from: assignees with Stories in scope, rows of this Sprint's document, and inherited rows. One person is one row, always.
+- Inheritance is whole-document: for an active or future Sprint with no document of its own, the read returns the nearest earlier document for this team (`sprint_order <`) as `inherited`, a single source. Its non-removed people and their Capacity show gray, with one hint line "Inherited from Sprint X" (the existing hint pattern). Vacations and Notes are not inherited. Closed Sprints show only their own document.
+- **First write materialises.** The first save in a Sprint without a document creates it in one locked transaction: the server copies the source's non-removed people and Capacity, then applies the change. The Sprint becomes the complete source for the next one, so a partial edit never drops people downstream, and an edit to Vacations or Notes of a gray row cannot blank its Capacity. The client sends no inherited values. A no-op commit (value equals what is shown) sends nothing, so tabbing across gray rows creates no document.
+- **Names are stored.** Every row stores a `displayName` snapshot (and the account id, which Jira keeps for deactivated users). When a Story supplies the person's current name, a save refreshes the snapshot; a read never writes. A person with no Stories, including one later deactivated or removed from Jira, keeps appearing under the stored name as historic data, and is never dropped because Jira no longer lists them. A person with Stories shows the name from the Story.
+- **Remove / Restore.** Remove is offered only for a person with no Stories in scope. A removed person moves to a one-line strip under the table with a sad face, "Removed from this Sprint: name, name"; each name restores with one tap. Values are retained while removed. A person who has Stories is never removed. The strip is absent when nothing is removed.
 
-### Saving and undo
+### Saving
 
-- Each edit saves when the field commits (Enter or blur; Escape cancels). One PATCH per change, with the row's base revision. A 409 shows the current value, keeps the user's losing draft in the cell and reports the conflict. A 401 triggers the existing terminal sign-in lock.
-- **Undo:** a client-side stack of inverse changes (up to 50, this table, this page session). Cmd/Ctrl+Z undoes the last change while focus is inside the table and no text field is mid-edit (a field being edited keeps native text undo). A visible Undo control in the table header does the same for touch (named distinctly from the existing selection Undo). An undo is an ordinary save against the current revision; if the row changed since, it fails with the normal conflict message and drops that entry. Undo of a removal restores the row; undo of an add removes it.
+- Commits (Enter or blur; Escape cancels) go through one serial save queue per Sprint and team: one request in flight, commits within about 200 ms coalesced into one `changes[]`, no no-op requests. Last-write-wins makes a retry idempotent, so a lost response is handled by reloading and re-sending only differing fields.
+- The CSRF token is reused across the queue.
+- Scope change (Team or Sprint) flushes or guards through the same semantics as `guardScopeChange` in `usePlanningSprintReview.js`; late responses for another scope are dropped (scope key plus generation counter). Collapsing the strip or the panel commits any open edit first. A 401 keeps drafts and uses the existing terminal sign-in lock.
+- Basic or non-database mode: the read returns `capabilities {canRead, canSave, reason}` and the table is read-only or hidden accordingly.
+- States defined and tested: loading, empty (no Stories, no rows), read failure, saving, saved, failed.
 
-### Capacity graph and underbar
+### Underbar
 
-The existing capacity bar keeps reading Jira capacity. Under it sits a thin bar split into one segment per assignee, width proportional to that assignee's Capacity against the team number (Jira, else planned). Unassigned work has its own segment after the assignees, hatched in the same warning tone as the Unassigned row and sized by the unassigned Total effort, so the lead sees how many Story Points still have to be given to someone; its readout shows unassigned Total and Selected effort. The unallocated remainder shows as empty track; anything beyond the team number overflows with the existing over-scale treatment. Each assignee has one stable colour from one resolver, used by the segment and a swatch in the table row (`resolveProjectTrackColor` style, using `hashTeamId` and `RADAR_PALETTE`; Task 0 confirms reuse versus a sibling `resolveAssigneeColor` in the same module). Hover readouts are in-app (no native `title`), sized to content. Segments reuse `.capacity-bar-track`.
-
-### Team planned capacity and Jira sync
-
-- A team-level **planned capacity** (Story Points, per team and Sprint) is stored in the app database and edited from the team capacity card shown above the table. My call: with one team selected the table does not replace the card; the card stays as the header strip and keeps the Jira number, the editor, the "Jira capacity issues have not been created yet" banner and Refresh capacity. The card's team-level display is Jira capacity when a ticket exists, otherwise the planned number labelled "Planned".
-- When a Jira capacity ticket exists and the planned number differs, the card offers an explicit **Push planned to Jira** action. It runs through the existing capacity editor and `PATCH /api/capacity/<issue_key>`: the signed-in user's OAuth, the existing write-scope and configuration gates, expected-value conflict handling. It is never automatic. The planned number is kept after a push.
-- No new Jira write path: the push extends the existing `jira-team-capacity-write` registry entry in `docs/design-system.md`.
+A thin segmented strip inside the existing capacity track using `stats/StackedBar.jsx` (pointer-clamped in-app readout, no native `title`) and `buildTeamColorMap` / `resolveTeamColor` from `statsUtils.js` (sorted-index colours, so no collisions; the row swatch uses the same map). One segment per person, width proportional to Capacity against the denominator: raw Jira capacity (`rawCapacity`; the bar above shows the Product/Tech-adjusted value, so the table notes when they differ), else the sum of the people's Capacity; with no number at all, no underbar. Unassigned work is a trailing segment in the warning colour sized by unassigned Total effort; its readout says "Unassigned (effort)" with Total and Selected, and it overflows plainly rather than claiming over-allocation. Touch: tapping a segment shows the readout. It reads the same data as the table and renders only after the strip has been expanded once (D1).
 
 ## Data model
 
-Names avoid the existing `GET /api/planned-capacity` alias.
+One table, `planning_team_sprint_capacity`: `id` Uuid, `workspace_id` FK CASCADE, `sprint_id`, `sprint_order` (128-digit padded, `CHECK length = 128`, as `GroupSprintReviewView`), `team_id`, `rows` JSON (`assigneeKey`, `displayName`, `capacity`, `vacations`, `notes`, `removed`), `revision` int >= 1, timestamps. Unique on (workspace_id, sprint_id, team_id); index (workspace_id, team_id, sprint_order) serves the nearest-earlier lookup. Keyed by workspace + Sprint + Team, not Department group (Jira capacity is per team and Sprint; no group-id reattachment hazard). No user columns.
 
-- `planning_assignee_capacity_rows`: `id` Uuid, `workspace_id` FK CASCADE, `sprint_id`, `sprint_order` (128-digit padded as in `GroupSprintReviewView`), `team_id`, `assignee_key` (account id), `display_name`, `capacity` Numeric(9,2) null, `vacations` Numeric(9,2) null, `notes` String(500) null, `removed` bool (the row was taken out of this Sprint; inheritance and saved values are suppressed, and the UI lists it in the removed strip), `revision` int >= 1, timestamps. Unique on (workspace_id, sprint_id, team_id, assignee_key).
-- `planning_team_planned_capacity`: `workspace_id`, `sprint_id`, `team_id`, `planned_capacity` Numeric(9,2), `revision`; unique on the same three.
-- Scope decision (my call): keyed by workspace + Sprint + Team, not Department group. Jira capacity is per team and Sprint, and a team in two groups must not hold two diverging tables. The group-id reattachment hazard in the review store does not arise. This is shared workspace data: any signed-in user reads and writes; no user columns.
-- Alembic revision `20261029_0022`, `down_revision = '20261028_0021'`, precedent `20261020_0019_group_review_columns.py`.
-- Bounds: at most 200 rows per team and Sprint; request body at most 64 KiB; Sprint, team and assignee ids at most 128 characters.
+Bounds: at most 100 rows per document, 2,000 documents per workspace, body 64 KiB, response 256 KiB, ids 128 characters, `displayName` 200 characters without control characters. `assigneeKey` is the Jira account id and is not Jira-verified; `teamId` is validated by shape and length only.
+
+Alembic revision `20261029_0022`, `down_revision = '20261028_0021'` (precedent `20261020_0019_group_review_columns.py`). Tests that pin the current head must move to the new one: `tests/test_review_adoption_migration.py`, `tests/test_remove_user_api_token_migration.py`, `tests/test_sprint_review_postgresql.py`.
+
+Concurrency mechanism: insert the document row with `ON CONFLICT DO NOTHING`, then `SELECT … FOR UPDATE` (as `_locked_schema`, `sprint_review.py:418`); `SET LOCAL lock_timeout` about 3 s mapped to 503; no Jira or network call inside the lock; an empty PATCH takes no lock. SQLite ignores `FOR UPDATE`, so a PostgreSQL race test (two first-writers of one new document) is part of the DoD and runs with `REQUIRE_POSTGRES_REVIEW_CONCURRENCY=1` and an approved `TEST_DATABASE_URL`.
 
 ## API
 
-All under `/api/eng/sprints/<sprint_id>/assignee-capacity`, `no-store`.
+Routes are added to `backend/routes/sprint_review_routes.py` reusing its `_run`, `_response` and `_payload`; the service is a new `backend/services/assignee_capacity.py` reusing `sprint_order`, `sprint_identity`, `ReviewError` and `require_review_context` from `sprint_review.py`. Responses `Cache-Control: no-store`; identity from `RequestAuthContext` only; unknown or duplicate query args and unknown body keys are 400.
 
-- `GET ?teamId=`: own rows, inherited rows (with `inheritedFromSprintId`), planned capacity, revisions. Policy `authenticated_read`.
-- `PATCH`: body `{teamId, changes: [{assigneeKey, displayName, capacity?, vacations?, notes?, removed?, baseRevision}], planned?: {value, baseRevision}}`. Policy `user_write` (`X-CSRF-Token` plus `X-Requested-With`). 409 carries `code` and the current rows. Identity from `RequestAuthContext` only; browser-supplied workspace or user is rejected. Per-row revisions let disjoint rows save concurrently; a row fence serialises writers per (workspace, team, Sprint).
-- Register both routes in `backend/security/policy.py`, `tests/endpoint_security_samples.py`; update `backend/security/CONFIGURATION_OWNERSHIP.md` with a new matrix row (shared per workspace + Sprint + Team; the read and write policies above; Team is part of the key). Keep it out of `workspace_dashboard_configs` and `shared_capacity_config`.
+| | `GET /api/eng/sprints/<sprint_id>/assignee-capacity?teamId=` | `PATCH` (same path) |
+|---|---|---|
+| Policy | `eng-assignee-capacity-read`, `authenticated_read`, dynamic | `eng-assignee-capacity-write`, `user_write`: `X-CSRF-Token` and `X-Requested-With: jira-execution-planner` |
+| Body | none | `{teamId, changes:[{assigneeKey, displayName?, capacity?, vacations?, notes?, removed?}]}`; at most 50 changes; duplicate `assigneeKey` is 400; absent field means unchanged, `null` clears |
+| 200 | `{teamId, sprintId, revision, rows, inherited: {fromSprintId, rows} \| null, capabilities}`; closed Sprints ignore `inherited` client-side | the saved document (`rows`, `revision`) |
+| Errors | 400, 401 (global lock), 413, 503 (storage unavailable, lock timeout) | same; 403 `csrf_required` |
+
+Registration: policy rows in `backend/security/policy.py`, `ROUTE_SAMPLES` and `SECURITY_SAMPLES` (`tests/endpoint_security_samples.py`, `tests/test_endpoint_security_matrix.py`), `docs/security/endpoints.md`, and a new row in `backend/security/CONFIGURATION_OWNERSHIP.md`, reconciling its line "Team is a filter, never a storage key" and checklist item 1 (this store is shared per workspace, Sprint and Team). Keep it out of `workspace_dashboard_configs` and `shared_capacity_config`. The existing `GET /api/planned-capacity` alias does not collide; the user-facing term "Planned capacity" is avoided in this slice. Frontend call module `frontend/src/api/assigneeCapacityApi.js` (the source guard forbids raw `/api/` literals elsewhere) with a `docs/design-system.md` exemption row; reuse an existing analytics `API_SURFACES` entry if one fits, otherwise register one (README `api_result` row and tests), because an unregistered surface is silently dropped.
+
+## Load and freshness
+
+- **Fetch lazily.** Mount and fetch on first expansion of the strip, then keep it mounted (drafts and editors survive collapse). Gate on the review hook's flags (`showPlanning`, Table layout, not `shareViewHold`, `reviewGroupReady`). Abort on scope change, cache per (Sprint, team) for the page session with revalidation, settle about 250 ms after a team change. A user whose strip stays expanded pays one GET per Planning load; others pay none.
+- **Freshness (#251).** Add `planning_assignee_capacity` as a secondary source fetched in parallel with the capacity GET, only when mounted and expanded; blocked while a cell is focused, dirty, saving or failed; not part of `ownerBusy`; included in the header Refresh; the #251 ceiling table is amended ("+1 GET, only when mounted"). Row-count changes use the shared reading-position path; verify with the inherited-view hint present and dismissed.
+- **State placement.** The hook and the effort derivations live in a provider component that wraps the slot, not in `App` (no new `use*(` call in App; no edit to `useEngCapacity.js`). `totalEffortByAssignee` is keyed on `[capacityTasks, teamId]` only; `selectedEffortByAssignee` on the selected list. Table and underbar are memoised with stable props.
+- **Budgets.** `dashboard.jsx` is at its exact ceiling (7,302): net change must be 0 or less, achieved by moving the `capacity=`/`teams=` slot assembly into a new component. New owner modules are registered in `owner_budgets.json`. The table loads as a lazy chunk (existing `views` pattern) on first expansion; measure the bundle with the G3a method and record the delta.
+- **Test fixtures.** The Planning fixture answers unknown `/api/**` with 404; update it so one-team specs do not fall into the error state.
 
 ## Files
 
-Backend, new: `backend/services/assignee_capacity.py`, `backend/routes/assignee_capacity_routes.py`, models in `backend/db/models.py`, the migration. Frontend, new: `eng/PlanningAssigneeCapacityTable.jsx`, `eng/PlanningAssigneeCapacityBar.jsx`, `eng/usePlanningAssigneeCapacity.js` (state, autosave, undo stack), `eng/planningAssigneeCapacityModel.js` (effort sums, merge of own and inherited rows), `api/assigneeCapacityApi.js`, `styles/planning/assignee-capacity.css`. Existing, edited minimally: `dashboard.jsx` (slot wiring only; its `lineCeiling` is exactly its size, so a raise is likely), `PlanningTeamCapacityCards.jsx` (planned number, Push action), `PlanningOverviewPanel.jsx` only if the slot needs a second child. Register new owner modules in `scripts/extraction_lint/owner_budgets.json` (`ceil(lines * 1.10 / 10) * 10`).
-
-## Reuse
-
-Table inputs follow the `planning-review-input` held-row and Enter/Escape/blur pattern (`PlanningReviewTable.jsx`, `createPlanningSprintReviewController`). Buttons use `planning-action-button`; numeric cells align right and text left (existing Planning table rules). Every new element kind is looked up in `docs/design-system.md` first; a new class for an existing kind is a review-stop, and new classes are registered in the design-system map and ratchet allowlist.
+Backend new: `backend/services/assignee_capacity.py`, model and migration. Backend edited: `backend/routes/sprint_review_routes.py`, `backend/security/policy.py`. Frontend new: `eng/PlanningAssigneeCapacity.jsx` (provider, strip, table), `eng/PlanningAssigneeCapacityBar.jsx` (thin wrapper over `StackedBar`), `eng/planningAssigneeCapacityModel.js` (merge, Unassigned, hundredths sums, cues), `eng/usePlanningAssigneeCapacity.js` (state, queue), `api/assigneeCapacityApi.js`, `styles/planning/assignee-capacity.css`. Edited minimally: `dashboard.jsx` (slot extraction, net zero), `PlanningOverviewPanel.jsx` (underbar slot if needed). Reuse: `planning-review-input` cells, `planning-action-button`, existing warning-tone and hint classes; every element kind is looked up in `docs/design-system.md` first (a new class for an existing kind is a review-stop), new classes registered in the map and ratchet allowlist.
 
 ## Tasks
 
-0. **Verify assumptions before code.** (a) The Planning task payload carries the assignee account id (`shape_jira_person` in `jira_server.py` has it; confirm the `/api/tasks` path does, else add it to the shaped fields). (b) Which task set gives Total effort with Planning filters ignored and Killed excluded. (c) Locate the inline assignee picker. (d) Run the `GATE-*` sweep per `docs/plans/AGENTS.md` and read `CONFIGURATION_OWNERSHIP.md`. Output: findings in this plan.
-1. **Migration, models, service** with inheritance (one row per person), removal, bounds, revisions. Tests: service, migration offline SQL, PostgreSQL concurrency (`tests/test_sprint_review*.py` as templates).
-2. **Routes and policy.** Tests: two users in one workspace, two workspaces, 401, CSRF, 409, size limits, endpoint inventory and security matrix.
-3. **Client model and API**, pure functions first (effort sums, merge, over-capacity, undo inversion), Node tests.
-4. **Table UI and autosave/undo hook**, one-team gating, add, remove and restore rows (removed strip with the sad face), the highlighted Unassigned row, gray inherited values.
-5. **Underbar and colour resolver,** including the hatched Unassigned segment.
-6. **Card changes:** planned capacity and Push to Jira.
-7. **Docs and analytics:** `docs/features/planning-sprint-review.md`, `docs/ontology.md` (new entries, verification dates), `docs/design-system.md`, `docs/README_ANALYTICS.md` (typed `workflow_action` for the Jira push; the table edits are allowlisted no-event rows because they carry user text; no values, names or keys in params), `docs/plans/README.md` entry.
-8. **Verification gate.** `npm run build`, full Python and Node suites, structure budgets, and Playwright for the table, underbar and card. Element-level assertions for every control kind in the table (inputs, add, remove and Restore, Undo, swatches, Unassigned row and segment) plus headed Firefox and WebKit checks for hover and glyph geometry. Screenshots at a settled state, with and without gray values. Verify a real one-team journey in the running app on a non-5050 port.
-
-## Verification (acceptance)
-
-1. One team selected shows the table; two teams or All shows the old cards.
-2. Selected effort equals the sum of checked Stories per assignee; Total effort equals all non-Killed Stories regardless of filters; the Unassigned row balances the totals.
-3. A Future Sprint opens pre-filled with the nearest earlier Sprint's assignees and gray Capacity; editing turns it black and persists across reload and for a second user; deleting an inherited row keeps it gone.
-4. Cmd/Ctrl+Z and the Undo control revert the last edit, including removal and add; a stale undo reports a conflict.
-5. Two users editing different rows both save; the same cell yields a 409 that keeps the loser's draft.
-6. The underbar segments match Capacity and colours match the row swatches.
-7. Planned capacity shows as "Planned" with no Jira ticket and pushes to Jira only on the explicit action.
+1. **Backend store:** model, migration, service (materialise-on-first-write, whole-document inheritance, bounds, lock). Tests: service, migration offline SQL, moved head pins, PostgreSQL concurrency run recorded, EXPLAIN showing an index scan, a query-count assertion (at most 4 queries on GET).
+2. **Routes and policy:** contracts above; tests for two users in one workspace, two workspaces, 401 vs 403, CSRF, size limits, every error body, endpoint inventory and security matrix; `Server-Timing` on both routes.
+3. **Client model and API:** pure functions with Node tests (merge, Unassigned, hundredths sums, cues, Selected/Total sources, first-write behaviour, no-op commits); confirm during this task how many issues one load can return (`/api/tasks-with-team-name` collects at most 250 per request) and, if Total effort can be understated, show "may be incomplete".
+4. **Table and save queue:** strip, rows, Remove/Restore, gray inheritance, Unassigned row, scope-change guard, states.
+5. **Underbar** in the pinned track at no added height, Unassigned segment, touch readout.
+6. **Freshness and lazy loading:** secondary source, lazy chunk, ceilings, fixture update.
+7. **Docs and analytics:** `docs/features/planning-sprint-review.md` (one section), `docs/ontology.md`, `docs/design-system.md`, `docs/README_ANALYTICS.md` (a No-Event Allowlist row; edits carry user text; no names, ids or values in params), `CONFIGURATION_OWNERSHIP.md`, `docs/security/endpoints.md`, `owner_budgets.json`, plan README.
+8. **Verification gate** (below).
 
 ## Definition of Done
 
-The feature is done only when every item below is true and evidenced by a command output, test name or screenshot recorded in this plan's execution log.
+Evidence for each item (command output, test name or screenshot) is recorded in an Execution log section appended to this plan.
 
 **Behaviour**
-1. Acceptance items 1 to 7 above hold in the running app on a non-5050 port, in a one-team journey: open Planning, select one team, edit Capacity, Vacations and Notes, check Stories, reload, and confirm persistence and a second user's view.
-2. No person ever appears twice: an inherited row, a saved row and a person with Stories merge into one row; Add assignee refuses an existing person; verified by a model test and a UI test.
-3. Unassigned work has its own highlighted row and its own hatched underbar segment, and its Story Points equal the Stories with no assignee; the effort columns reconcile with the Stories table below.
-4. Removed rows appear in the removed strip with the sad face and restore with one tap; undo restores a removal.
-5. The team lead can read, from the one view, per-person Capacity, Vacations, Selected and Total effort, unassigned Story Points and the team number (Jira or planned), without opening Settings or another view.
+1. One team selected shows the strip; two teams or All shows the old cards.
+2. No person appears twice (inherited, saved and Stories rows merge); a model test and a UI test prove it.
+3. Total effort = every non-Killed Story of the team; identity tested: sum of rows plus Unassigned equals that sum. Selected effort totals equal the capacity bar's Selected for the team.
+4. Unassigned work has its own highlighted row and underbar segment equal to the Stories with no `accountId`.
+5. A Future Sprint opens pre-filled from the nearest earlier document; the first edit materialises it; the next Sprint still shows everyone; editing Vacations of a gray row keeps its Capacity.
+6. Remove is unavailable for people with Stories; removed people appear in the sad-face strip and restore with one tap.
+7. Three quick edits across one row produce at most two PATCHes and no error; a lost response is recovered without false failure.
+8. A person who no longer has Stories, or is deactivated in Jira, still appears in a Sprint's table under the stored name, in the Sprint they were saved in and in Sprints that inherit from it; a model test and a service test prove it, and a read performs no write.
+9. The lead reads per-person Capacity, Vacations, Selected, Total, unassigned Story Points and the team number from one view.
 
 **Quality**
-6. Backend: service, route, migration (offline SQL and PostgreSQL), endpoint policy inventory and security matrix tests pass, including two users in one workspace, two workspaces, 401, CSRF, 409 and size limits.
-7. Frontend: `npm run build`, the full Node suite, `python3 -m unittest discover -s tests` (including `tests.test_codebase_structure_budgets` and `tests.test_agents_md_learnings`) and the full Chromium `tests/ui` run pass; baseline failures, if any, are explained per the repository rule before being accepted.
-8. UI geometry: element-level Playwright assertions for every control kind in the table and underbar, headed Firefox and WebKit checks for hover and glyph geometry, and settled screenshots with and without gray values, with the Unassigned row and with the removed strip.
-9. Touch: every action (edit, add, remove, restore, Undo) works by tap; none needs dragging or a keyboard shortcut.
-10. The Jira push is the only Jira write, goes through the existing capacity editor under the signed-in user's OAuth, and has its `docs/design-system.md` registry entry and call-site pin; a negative test proves no other path writes to Jira.
+10. Backend, migration, endpoint-inventory, security-matrix tests pass; the PostgreSQL concurrency run (env-gated) is recorded as run, not skipped.
+11. `npm run build`, the full Node suite, `python3 -m unittest discover -s tests` (including structure budgets and `tests.test_agents_md_learnings`) and the full Chromium `tests/ui` run pass; any baseline failure is explained per repository rules.
+12. Request ledger (one-team Table): compact cold load 0 new requests; first expansion 1; collapse and re-expand 0; Sprint switch at most 1; team A to B at most 1; return after 13 minutes at most 1 and 0 when collapsed or blocked; no non-GET in an automatic window.
+13. Render and compute: App render counts unchanged on a Story toggle (3,000 Stories, strip expanded) and at most one App render per commit; the Total builder runs 0 times per toggle; toggle-to-paint p50/p95 at 500, 2,000 and 5,000 Stories compared with base.
+14. Geometry: compact panel under 64 px and pinned stack at most 175 px with one team selected at 1440x900 and 1280x720 (add one-team cases to `planning_review_integration.spec.js` `:672` and `:802`); element-level assertions for every control kind; headed Firefox and WebKit hover and glyph checks (manual; evidence recorded); settled screenshots with gray values, the Unassigned row and the removed strip.
+15. Touch: every action works by tap, including the segment readouts.
+16. Bundle delta measured by the G3a method and within the recorded budget, or the chunk is lazy with zero cold bytes.
 
 **Documentation and hygiene**
-11. Updated: `docs/features/planning-sprint-review.md`, `docs/ontology.md` (new entries, verification dates), `docs/design-system.md`, `docs/README_ANALYTICS.md` (typed events or No-Event Allowlist rows; no values, names, keys or notes in params), `backend/security/CONFIGURATION_OWNERSHIP.md`, `docs/plans/README.md`, and `owner_budgets.json` ceilings re-synced where needed.
-12. This plan has its Outcome, Current Accuracy and execution log filled in and is renamed to `DONE-` with its README entry and links updated in the completing commit.
-13. The branch has a clean, scoped history checked through the publication transaction in `AGENTS.md` section 10; push and PR happen only on the operator's explicit confirmation.
+17. Docs listed in Task 7 are updated; the plan has Outcome, Current Accuracy, an execution log and is renamed `DONE-` with README entry and links in the completing commit.
+18. Publication follows `AGENTS.md` section 10; push and PR only on the operator's explicit confirmation.
 
-## Decisions taken by the operator
+## Deferred scope (if kept in D2, these are the corrected designs)
 
-Storage in the app database; Capacity, Vacations and Notes user-entered, Notes per assignee; Story Points everywhere; Selected effort and Total effort as separate columns; Future Sprint inherits assignees and Capacity, shown gray; Jira capacity stays the core number, with a stored planned capacity and an explicit sync; edits save on commit; Undo.
+- **Add assignee.** Needs a new read-only OAuth user search (for example `POST /api/eng/assignee-capacity/user-options`, `user_write` like the issue one, no email, single page, active users only) feeding the presentational `IssuePersonEditor` (its data hook is Jira-write-registered and bound to an issue key, so it cannot be reused). Adding a removed person is Restore.
+- **Undo.** A client stack of full-row snapshots queued behind the save queue, cleared on scope change and on any failure; Cmd/Ctrl+Z only when focus is in the table and no field is mid-edit, plus a visible control for touch; ignore key auto-repeat. Undo of the first edit of an inherited row cannot restore "still inheriting"; document that.
+- **Planned team capacity and Push to Jira.** A nullable typed number on the document, shown as "Planned" only when no Jira ticket exists; Push opens the existing capacity editor prefilled with the planned value so the existing single call site and design-system pin are reused; conflicts surface as `capacity_conflict` (409, current value shown); the service is not an atomic compare-and-set, so the UI must not promise that nothing is written; the editor is available only where `capacityTargetState === 'matched'` and `capacityMutationEnabled`; the card needs the Sprint id and the planned value; a distinct analytics `workflow_action` is a README and test change.
 
-## Details settled after the builder check
+## Decisions taken by the operator (unchanged)
 
-Operator-confirmed: planned capacity is a typed-in team number, independent of the assignee rows (the operator asked for team-level planned capacity entry); the underbar shows Capacity.
+Storage in the app database, with a stored display-name snapshot per person; Capacity, Vacations and Notes user-entered, Notes per assignee; Story Points everywhere; separate Selected and Total effort; Future Sprint inherits assignees and Capacity, shown gray; Jira capacity stays the core number; edits save on commit; the team lead plans from this single view; removed rows are shown with a sad face, not hidden; Unassigned work gets its own highlighted row and underbar segment; no duplicate rows.
 
-My calls, to be checked when reading:
+## Validation record (revision 2)
 
-1. **Planned versus assignee sum.** Nothing is derived. The underbar shows allocation against the team number (Jira, else planned); the gap or overflow is the comparison. With neither number set there is no denominator, so no underbar renders.
-2. **Push to Jira.** It sends the planned number as `capacity` with `expectedCapacity` set to the Jira value the card last read, exactly as the card editor does today. If Jira changed meanwhile, the existing `jira_capacity_update_conflict` message appears and nothing is written. It is offered only where the card editor is already allowed (OAuth, write grant, verified configuration, unique capacity ticket). The call site is the existing editor path; Task 7 extends the existing registry entry and call-site pin before any code.
-3. **Add assignee.** Any Jira user the person search returns may be added (the team's membership list is not available to this table); the row is keyed by team, so it never leaks to another team.
-4. **Sprint state and order.** The client knows Sprint state and sends `inherit=true` only for active and future Sprints. The server derives `sprint_order` from the numeric Sprint id, so a Sprint with no saved rows still has an order and no Jira call is made on GET. The lookup is one indexed query.
-5. **Removed rows.** (My reading of "tombstone is too grimy, make a sad face": removed rows are shown, not hidden.) Removal suppresses inherited and saved values for that assignee in this Sprint, and the row appears in the removed strip with a sad face and a Restore tap. An assignee who has Stories always appears in the table (blank Capacity), so the effort columns still reconcile with the Unassigned row.
-6. **Inheritance source.** One source Sprint: the nearest earlier Sprint that has any rows for this team. From it, every non-removed assignee is inherited, even if their Capacity is blank, and an assignee with no current work still shows. A row removed in the source Sprint is not inherited.
-7. **Blank and inherited numbers.** Inherited Capacity counts in totals and the underbar. A row with blank Capacity gets no over-capacity cue. Vacations may exceed Capacity; negative values are rejected.
-8. **Team attribution of Stories.** Total and Selected effort use the Stories Planning already scopes to the selected team (its existing team matching). A person from another team who holds a scoped Story gets a row with blank Capacity.
-9. **Key by workspace + Sprint + Team**, not Department group. Vacations and Notes are not inherited. The team card stays above the table as the home of the planned-capacity editor and the Jira push.
+Four validators agreed on: the pinned-panel height problem (D1), no reusable person search, autosave self-conflicts and the inheritance chain break (both fixed by serial queue plus materialise-on-first-write), the wrong Selected source, and the missing index and lock row. Fixed without a decision: the effort sources, Unassigned detection, colour collisions (sorted-index map), hundredths arithmetic, API registration list, head-pinned tests, fetch laziness, freshness integration, `dashboard.jsx` budget, measurement gates. Left to the operator: D1 to D4.

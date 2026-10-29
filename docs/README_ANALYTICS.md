@@ -341,6 +341,7 @@ State-changing routes or user-visible surfaces without analytics must be documen
 | Surface | File/line anchor | Reason no event is emitted | Review date |
 | --- | --- | --- | --- |
 | Home/Townsquare writes | `docs/plans/GATE-05-home-write-capability.md` | Blocked external capability; no write route exists in this analytics slice. | 2026-05-26 |
+| Person avatars in the assignee glyph slot and EPM owner circle | `frontend/src/ui/PersonAvatar.jsx`, `jira_server.py`, `backend/security/avatar_urls.py` | Passive decoration that fills an existing slot from data already in the existing ENG and EPM payloads; no new action, no new request and no new event, and no person name, URL or account id is sent to GA4. | 2026-10-29 |
 | EPM project progress display | `frontend/src/epm/EpmRollupPanel.jsx` | Passive readout derived from already-loaded rollup Stories; existing EPM rollup load and expand/collapse analytics cover the surrounding workflow. | 2026-05-28 |
 | EPM nested Home goal project discovery | `backend/epm/home.py` | Backend broadens the existing selected sub-goal project catalog; existing EPM API result, rollup load, and sub-goal filter analytics cover the workflow without adding a new user action. | 2026-05-28 |
 | EPM Pending lifecycle tab correction | `backend/epm/projects.py`, `frontend/src/epm/epmProjectUtils.mjs` | Lifecycle bucket correction changes which existing EPM tab displays Pending projects; existing EPM API result and tab/filter analytics cover the workflow. | 2026-05-28 |

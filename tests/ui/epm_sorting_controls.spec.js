@@ -154,7 +154,7 @@ test('EPM sort control pins recently completed projects and reorders active boar
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.epm-project-board')).toHaveCount(3);
-    const completedPill = page.locator('.epm-project-board-status-pill.completed');
+    const completedPill = page.locator('.epm-project-board-title-meta .status-pill.task-status.epic-status-pill.done').filter({ hasText: 'Completed' });
     await expect(completedPill).toHaveText('Completed 🎉');
     await expect(completedPill).toHaveCSS('text-transform', 'uppercase');
     await expect(completedPill).toHaveCSS('background-color', 'rgb(82, 196, 26)');

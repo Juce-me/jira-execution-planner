@@ -29,7 +29,7 @@ const SITES = {
     'issues/StatusTransitionMenu.jsx': { kind: 'inherits', calls: 1, pills: 1, menus: 0, statusAttrs: 1, taskStatus: 0, hook: true },
     'settings/GroupBoardSettings.jsx': { kind: 'direct-style', calls: 1, pills: 1, menus: 0, statusAttrs: 0, taskStatus: 0 },
     'eng/EngFilterBar.jsx': { kind: 'excluded', reason: 'filter popover keeps its own soft tint', calls: 1, pills: 1, menus: 0, statusAttrs: 0, taskStatus: 0 },
-    'epm/EpmRollupPanel.jsx': { kind: 'excluded', reason: 'EPM', calls: 3, pills: 5, menus: 0, statusAttrs: 0, taskStatus: 0 },
+    'epm/EpmRollupPanel.jsx': { kind: 'excluded', reason: 'EPM', calls: 3, pills: 3, menus: 0, statusAttrs: 0, taskStatus: 0 },
     'epm/EpmRollupTree.jsx': { kind: 'excluded', reason: 'EPM', calls: 0, pills: 0, menus: 0, statusAttrs: 0, taskStatus: 1 },
     'epm/EpmSettings.jsx': { kind: 'excluded', reason: 'EPM', calls: 0, pills: 1, menus: 0, statusAttrs: 0, taskStatus: 0 },
     'settings/JiraFieldSettings.jsx': { kind: 'excluded', reason: 'Settings mapping preview, no Board column semantics', calls: 1, pills: 1, menus: 0, statusAttrs: 0, taskStatus: 0 },

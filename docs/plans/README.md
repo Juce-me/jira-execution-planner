@@ -41,6 +41,8 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 - [Board Epic card layout #271](EXEC-board-card-layout-271.md): implemented and committed locally 2026-10-14 on `improvement/271-board-card-layout` (issue #271), unpushed; awaiting the operator's request to publish. The status pill leaves the title row for a compact chip on the progress row after the stories count, titles and rows share one left edge, and the updated date moves to the people row. No Jira write path, class kind or analytics event is added. The chip placement was reversed from the plan's default during execution; see the plan's Execution ledger.
 
 - [Person avatars for ENG and EPM](DONE-person-avatars-eng-epm.md): profile photos in the existing assignee glyph slot and EPM owner circle, no new requests, allowlisted CDN hosts in the CSP.
+- [EPM design-system alignment #319](DONE-epm-design-system-alignment-319.md): project status pill and Jira label reuse the ENG epic pill and key text (Option A), deleting two bespoke pill hooks.
+- [EPM fonts alignment #319 follow-up](DONE-epm-fonts-alignment-319.md): project name and update text move from the system sans stack to the app font.
 
 ## Dashboard decomposition
 

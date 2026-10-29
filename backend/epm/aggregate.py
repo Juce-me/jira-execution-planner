@@ -88,6 +88,7 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
     cancellation = RequestCancellation()
     rollup_dependencies = deps.build_epm_rollup_dependencies(sub_goal_keys=sub_goal_keys, cancellation=cancellation)
     entries_by_project_id = {}
+    project_timings = {}
     issue_memberships = {}
 
     def build_entry(project):
@@ -97,7 +98,9 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
                 'project': project,
                 'rollup': deps.build_empty_epm_rollup_payload(project, metadata_only=True),
             }
+        project_started = deps.now()
         rollup, status, _headers = deps.build_per_project_rollup(project_id, tab, sprint, rollup_dependencies)
+        project_timings[project_id] = round((deps.now() - project_started) * 1000, 1)
         if status != 200:
             rollup = deps.build_empty_epm_rollup_payload(project, metadata_only=True)
         return project_id, {'project': project, 'rollup': rollup}
@@ -147,6 +150,7 @@ def build_all_epm_projects_rollup(tab, sprint, deps: EpmAggregateDependencies, s
         'duplicates': duplicates,
         'truncated': any(bool((entry.get('rollup') or {}).get('truncated')) for entry in ordered_entries),
         'fallback': True,
+        'projectTimings': project_timings,
     }
     total_ms = round((deps.now() - started) * 1000, 1)
     deps.logger.info(

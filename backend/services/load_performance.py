@@ -32,6 +32,13 @@ BOARD_KEYS = {
     'jiraPages', 'jiraRetries', 'completeness', 'cacheState', 'peakChildSearches',
     'scopeCohortDigest',
 }
+EPM_KEYS = {'schemaVersion', 'loadId', 'groupId', 'sprintId', 'surface', 'scopeType', 'outcome',
+            'durationMs', 'indexMs', 'lanes'}
+EPM_LANE_KEYS = {'project', 'name', 'durationMs'}
+EPM_GROUP_ID = 'epm'
+EPM_TABS = ('active', 'backlog', 'archived')
+EPM_MAX_LANES = 200
+SCOPE_TYPES = ('all_work', 'component', 'sprint') + EPM_TABS
 
 
 def collection_enabled(environ=None):
@@ -106,9 +113,42 @@ def _validate_board_load(payload):
     return payload
 
 
+def _validate_epm_load(payload):
+    """One EPM board load: whole-load milestones plus one lane (rollup time) per EPM project."""
+    if set(payload) != EPM_KEYS or payload.get('schemaVersion') != 1 or payload['groupId'] != EPM_GROUP_ID:
+        raise ValueError('Invalid EPM measurement fields')
+    try:
+        if str(uuid.UUID(payload['loadId'])) != payload['loadId']:
+            raise ValueError('Invalid load id')
+    except (TypeError, AttributeError):
+        raise ValueError('Invalid load id') from None
+    if payload['scopeType'] not in EPM_TABS or payload['outcome'] not in ('success', 'error', 'cancelled'):
+        raise ValueError('Invalid EPM scope or outcome')
+    if payload['sprintId'] is not None:
+        _scope(payload['sprintId'])
+    _number(payload['durationMs'], 3600000)
+    _optional_number(payload, 'indexMs', 3600000, duration_key='durationMs')
+    lanes = payload['lanes']
+    if not isinstance(lanes, list) or len(lanes) > EPM_MAX_LANES:
+        raise ValueError('Invalid EPM lanes')
+    projects = set()
+    for lane in lanes:
+        if not isinstance(lane, dict) or set(lane) != EPM_LANE_KEYS:
+            raise ValueError('Invalid EPM lane fields')
+        _scope(lane['project'])
+        if lane['project'] in projects or not isinstance(lane['name'], str) or len(lane['name']) > 120 \
+                or any(ord(character) < 32 for character in lane['name']):
+            raise ValueError('Invalid EPM lane project')
+        projects.add(lane['project'])
+        _number(lane['durationMs'], payload['durationMs'])
+    return payload
+
+
 def validate_load(payload):
     if isinstance(payload, dict) and payload.get('surface') == 'eng_board':
         return _validate_board_load(payload)
+    if isinstance(payload, dict) and payload.get('surface') == 'epm':
+        return _validate_epm_load(payload)
     if not isinstance(payload, dict) or set(payload) - {'dependencyDurationMs', 'firstContentMs'} != TOP_KEYS:
         raise ValueError('Invalid measurement fields')
     try:
@@ -203,6 +243,8 @@ def _percentile(values, percentile):
 
 
 def _complete(row):
+    if row.surface == 'epm':
+        return row.outcome == 'success'
     if row.surface == 'eng_board':
         return (row.schema_version == 1 and row.outcome == 'success' and row.completeness == 'complete'
                 and row.scope_cohort_digest is not None
@@ -212,7 +254,7 @@ def _complete(row):
 
 
 def _capped(row):
-    if row.surface == 'eng_board':
+    if row.surface in ('eng_board', 'epm'):
         return False
     return any(lane['completeness'] == 'capped' for lane in row.lanes)
 
@@ -342,7 +384,57 @@ def _catch_up_weekly(rows, now, truncated=False):
     return dict(weeks=weeks)
 
 
+def _epm_lanes(row):
+    return [lane for lane in _lane_dicts(row) if isinstance(lane.get('project'), str) and _finite(lane.get('durationMs'))]
+
+
+def _epm_weekly(rows, now, truncated=False, project_id=None):
+    """EPM load times per UTC week: Home project list arrived, and rollup loaded (one project's, or the whole load)."""
+    by_week = defaultdict(list)
+    for row in rows:
+        if row.surface == 'epm':
+            by_week[_week_start(row.recorded_at)].append(row)
+    window_start = (now - timedelta(days=RETENTION_DAYS)).date()
+    weeks = []
+    for start in sorted(by_week):
+        group = by_week[start]
+        listed = [row.index_ms for row in group if _finite(row.index_ms)]
+        rolled = []
+        for row in group:
+            if row.outcome != 'success' or not _finite(row.duration_ms):
+                continue
+            if project_id is None:
+                rolled.append(row.duration_ms)
+            else:
+                rolled.extend(lane['durationMs'] for lane in _epm_lanes(row) if lane['project'] == project_id)
+        weeks.append(dict(
+            weekStart=start.isoformat(), loads=len(rolled), listLoads=len(listed),
+            errors=sum(row.outcome == 'error' for row in group),
+            cancelled=sum(row.outcome == 'cancelled' for row in group),
+            projectsListed=_catch_up_metric(listed), rollupLoaded=_catch_up_metric(rolled),
+            partial=(start + timedelta(days=7) > now.date() or start <= window_start
+                     or (truncated and start == min(by_week)))))
+    return dict(weeks=weeks)
+
+
+def _epm_projects(rows, project_id=None):
+    """Per-project rollup time across successful EPM loads, slowest p95 first."""
+    times, names = defaultdict(list), {}
+    for row in sorted((row for row in rows if row.surface == 'epm' and row.outcome == 'success'),
+                      key=lambda row: row.recorded_at):
+        for lane in _epm_lanes(row):
+            if project_id is None or lane['project'] == project_id:
+                times[lane['project']].append(lane['durationMs'])
+                names[lane['project']] = lane.get('name') or lane['project']
+    table = [dict(projectId=project, name=names[project], loads=len(values), **_catch_up_metric(values))
+             for project, values in times.items()]
+    table.sort(key=lambda entry: (-entry['p95Ms'], entry['projectId']))
+    return table[:EPM_MAX_LANES]
+
+
 def _cohort_key(row):
+    if row.surface == 'epm':
+        return (row.surface, row.scope_type, None, row.revision, None)
     if row.surface == 'eng_board':
         return (row.surface, row.scope_type, row.cache_state, row.revision, row.scope_cohort_digest)
     lane_cache = tuple(sorted(lane.get('cacheState', 'unknown') for lane in (row.lanes or [])))
@@ -377,15 +469,15 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
     filters = filters or {}
     now = now or datetime.now(timezone.utc)
     if set(filters) - {'groupId', 'sprintId', 'surface', 'scopeType', 'cacheState', 'revision',
-                       'scopeCohortDigest'}:
+                       'scopeCohortDigest', 'projectId'}:
         raise ValueError('Invalid filters')
     for key, value in filters.items():
         _scope(value)
         if key == 'cacheState' and value not in ('hit', 'miss', 'mixed', 'unknown'):
             raise ValueError('Invalid cache state')
-        if key == 'surface' and value not in ('eng_sprint', 'eng_board'):
+        if key == 'surface' and value not in ('eng_sprint', 'eng_board', 'epm'):
             raise ValueError('Invalid surface')
-        if key == 'scopeType' and value not in ('all_work', 'component', 'sprint'):
+        if key == 'scopeType' and value not in SCOPE_TYPES:
             raise ValueError('Invalid scope type')
         if key == 'scopeCohortDigest' and (len(value) != 64
                                            or any(character not in '0123456789abcdef' for character in value)):
@@ -423,15 +515,25 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
         query = query.filter(or_(LoadPerformance.surface != 'eng_board',
                                  LoadPerformance.cache_state == cache_filter))
     ordered = query.order_by(LoadPerformance.recorded_at.desc(), LoadPerformance.load_id)
-    scan_limit = limit if not cache_filter or board_cache_filtered else QUERY_LIMIT
+    project_filter = filters.get('projectId')
+    # Lane-level predicates live inside JSON: scan the bounded report window, then apply them.
+    scan_limit = limit if (not cache_filter or board_cache_filtered) and not project_filter else QUERY_LIMIT
     rows = ordered.limit(scan_limit + 1).all()
     source_truncated = len(rows) > scan_limit
     rows = rows[:scan_limit]
     if cache_filter and not board_cache_filtered:
         rows = [row for row in rows if (
             row.cache_state == cache_filter if row.surface == 'eng_board'
-            else row.lanes and all(lane['cacheState'] == cache_filter for lane in row.lanes)
+            else row.surface != 'epm' and row.lanes and all(lane['cacheState'] == cache_filter for lane in row.lanes)
         )]
+    lane_names = {}
+    for row in rows:
+        for lane in (_epm_lanes(row) if row.surface == 'epm' else []):
+            lane_names.setdefault(lane['project'], lane.get('name') or lane['project'])
+    options['projects'] = [dict(id=project, name=lane_names[project]) for project in sorted(lane_names)[:200]]
+    if project_filter:
+        rows = [row for row in rows if row.surface == 'epm'
+                and any(lane['project'] == project_filter for lane in _epm_lanes(row))]
     truncated = source_truncated or len(rows) > limit
     rows = rows[:limit]
     days = defaultdict(list)
@@ -445,6 +547,8 @@ def load_report(session, workspace_id, filters=None, *, limit=QUERY_LIMIT, envir
                        p95FirstContentMs=None, breachCount=0, contextual=True, mixedCohorts=True)
     return dict(summary=summary, trend=trend, weekly=_weekly(rows, now),
                 catchUpWeekly=_catch_up_weekly(rows, now, truncated),
+                epmWeekly=_epm_weekly(rows, now, truncated, project_filter),
+                epmProjects=_epm_projects(rows, project_filter),
                 samples=[dict(loadId=row.load_id, groupId=row.group_id, sprintId=row.sprint_id,
                               surface=row.surface, outcome=row.outcome, durationMs=row.duration_ms,
                               dependencyDurationMs=row.dependency_duration_ms,

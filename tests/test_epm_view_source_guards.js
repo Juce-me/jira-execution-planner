@@ -1224,3 +1224,26 @@ for (const failure of explicitFailures) {
         } finally { global.fetch = prior; console.error = originalError; }
     });
 }
+
+test('EPM all-projects load records one observation with the project list time and each project rollup time', async () => {
+    const { useEpmViewData } = loadAutomaticEpmOwner(), prior = global.fetch, posted = [];
+    const projects = [{ id: 'synthetic-a', name: 'Synthetic A', tabBucket: 'active', label: 'synthetic_a' },
+        { id: 'synthetic-b', name: 'Synthetic B', tabBucket: 'active', label: '' }];
+    global.fetch = async (url, init = {}) => {
+        const path = String(url);
+        if (path.includes('/api/auth/csrf')) return new Response(JSON.stringify({ csrfToken: 'synthetic' }));
+        if (path.includes('/api/performance/loads')) { posted.push(JSON.parse(init.body)); return new Response('{}', { status: 201 }); }
+        if (path.includes('/rollup/all')) return new Response(JSON.stringify({ projects: projects.map(project => ({ project, rollup: {} })), duplicates: {}, projectTimings: { 'synthetic-a': 800 } }));
+        return new Response(JSON.stringify({ projects, cacheHit: false }));
+    };
+    try {
+        const owner = useEpmViewData({ backendUrl: 'http://synthetic', selectedView: 'epm', epmConfigLoaded: true, hasSavedEpmScope: true, selectedSprint: 'synthetic-sprint', epmProjectSearch: '', epmProjectSort: 'name', searchQuery: '', performanceGate: { enabled: true, ready: Promise.resolve() } });
+        await owner.refreshEpmView();
+        await new Promise(resolve => setTimeout(resolve, 20));
+        assert.equal(posted.length, 1);
+        const [sample] = posted;
+        assert.deepEqual([sample.surface, sample.groupId, sample.scopeType, sample.sprintId, sample.outcome], ['epm', 'epm', 'active', 'synthetic-sprint', 'success']);
+        assert.ok(Number.isFinite(sample.indexMs) && sample.indexMs <= sample.durationMs);
+        assert.deepEqual(sample.lanes.map(lane => [lane.project, lane.name]), [['synthetic-a', 'Synthetic A']]);
+    } finally { global.fetch = prior; }
+});

@@ -63,6 +63,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 ## Catch Up weekly load performance
 
+- [EPM load performance metrics #318](DONE-epm-load-performance-318.md): per-project load measurement and weekly Projects listed / Rollup loaded charts for the EPM surface.
 - [Catch Up weekly load performance](EXEC-catch-up-weekly-load-performance.md): planned and revised after four independent reviews, then executed locally on `feature/catch-up-weekly-load-performance` (2026-10-26; not pushed, awaiting review); Settings -> Admin -> Performance gains weekly average, median and p95 line charts of List loaded (slower of the Product and Tech lane) and Fully loaded for the Catch Up surface, computed server-side from existing stored observations with 30-day retention unchanged.
 
 ## Catch Up cold load speed

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBoardLoadMeasurement, createGroupLoadMeasurement,
+import { createEpmLoadMeasurement, createEpmLoadReporter } from '../frontend/src/epm/epmLoadMeasurement.js';
+import { createBoardLoadMeasurement, createGroupLoadMeasurement, createPerformanceGate,
     evaluateSelectedSprintRegression, isAcceptedBoardTerminalSample,
     laneMetrics } from '../frontend/src/eng/loadPerformance.js';
 
@@ -208,4 +209,69 @@ test('selected-sprint acceptance rejects regression even when both medians are u
     assert.equal(result.regressionPercent, 87.5);
     assert.equal(evaluateSelectedSprintRegression([], [900]).passed, false);
     assert.equal(evaluateSelectedSprintRegression([0], [900]).verified, false);
+});
+
+test('EPM measurement waits for paint, records the project list and per-project lanes, and emits once', async () => {
+    let now = 0;
+    let paint;
+    const samples = [];
+    const measurement = createEpmLoadMeasurement({ enabled: true, tab: 'active', sprintId: '42', now: () => now,
+        emit: sample => samples.push(sample), afterPaint: () => new Promise(resolve => { paint = resolve; }) });
+    now = 300;
+    measurement.projectsListed();
+    now = 900;
+    measurement.projectsListed();
+    measurement.lane('p-1', 'Project One', 600);
+    measurement.lane('p-2', 'Project Two', 5000);
+    measurement.lane('', 'Nameless', 10);
+    measurement.lane('p-3', 'Bad', Number.NaN);
+    const finishing = measurement.finish();
+    assert.equal(samples.length, 0);
+    now = 1000;
+    paint();
+    await finishing;
+    await measurement.finish();
+    measurement.cancel();
+    assert.equal(samples.length, 1);
+    const [sample] = samples;
+    assert.deepEqual({ ...sample, loadId: undefined }, { schemaVersion: 1, loadId: undefined, groupId: 'epm', sprintId: '42',
+        surface: 'epm', scopeType: 'active', outcome: 'success', durationMs: 1000, indexMs: 300,
+        lanes: [{ project: 'p-1', name: 'Project One', durationMs: 600 }, { project: 'p-2', name: 'Project Two', durationMs: 1000 }] });
+});
+
+test('EPM measurement covers error, cancellation, other tabs and disabled collection', async () => {
+    const samples = [];
+    const make = options => createEpmLoadMeasurement({ now: () => 50, emit: sample => samples.push(sample), afterPaint: async () => {}, ...options });
+    make({ enabled: true, tab: 'backlog', sprintId: '42' }).error();
+    const cancelled = make({ enabled: true, tab: 'active', sprintId: '42' });
+    cancelled.cancel();
+    await cancelled.finish();
+    const throwing = createEpmLoadMeasurement({ enabled: true, emit: () => { throw new Error('storage down'); }, afterPaint: async () => {} });
+    await assert.doesNotReject(throwing.finish());
+    const disabled = make({ enabled: false });
+    disabled.projectsListed();
+    await disabled.finish();
+    disabled.error();
+    assert.deepEqual(samples.map(sample => [sample.outcome, sample.scopeType, sample.sprintId, sample.indexMs]),
+        [['error', 'backlog', null, null], ['cancelled', 'active', '42', null]]);
+});
+
+test('EPM reporter follows the dashboard gate, never blocks, and records nothing without one', async () => {
+    const records = [];
+    const record = async (url, sample) => records.push([url, sample]);
+    const settle = () => new Promise(resolve => setTimeout(resolve, 0));
+    const off = createPerformanceGate();
+    const disabled = createEpmLoadReporter('http://backend', { gate: off, record });
+    const pending = disabled.start({ tab: 'active', sprintId: '42' });   // gate unresolved: collection is assumed on
+    off.resolve(false);
+    pending.error();
+    createEpmLoadReporter('http://backend', { record }).start({ tab: 'active', sprintId: '42' }).error();
+    await settle();
+    assert.deepEqual(records, []);
+    const on = createPerformanceGate();
+    on.resolve(true);
+    createEpmLoadReporter('http://backend', { gate: on, record }).start({ tab: 'active', sprintId: '42' }).error();
+    await settle();
+    assert.equal(records.length, 1);
+    assert.equal(records[0][1].surface, 'epm');
 });

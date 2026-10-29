@@ -687,3 +687,53 @@ test('Catch Up weekly view says so when the selection has no load', async ({ pag
     await expect(page.getByRole('status').filter({ hasText: 'No Catch Up loads in this selection yet.' })).toBeVisible();
     await expect(page.locator('.performance-week-svg[data-chart]')).toHaveCount(0);
 });
+
+const epmMetric = (median, spread) => ({ avgMs: Math.round(median * 1.1), medianMs: median, p95Ms: Math.round(median * spread) });
+const epmWeek = (weekStart, listed, rolled, extra = {}) => ({ weekStart, partial: false, loads: 9, listLoads: 11, errors: 1, cancelled: 1,
+    projectsListed: epmMetric(listed, 1.6), rollupLoaded: epmMetric(rolled, 1.8), ...extra });
+const epmPayload = { ...payload, summary: { ...payload.summary, avgMs: null, p50Ms: null, p95Ms: null, mixedCohorts: true },
+    filters: { ...payload.filters, surfaces: ['epm', 'eng_sprint'], scopeTypes: ['active', 'backlog'], projects: [
+        { id: 'synthetic-a', name: 'Synthetic Alpha' }, { id: 'synthetic-b', name: 'Synthetic Beta With A Rather Long Display Name' }] },
+    epmWeekly: { weeks: [epmWeek('2026-10-05', 700, 2600), epmWeek('2026-10-12', 900, 4100), epmWeek('2026-10-19', 800, 3300, { partial: true })] },
+    epmProjects: [{ projectId: 'synthetic-b', name: 'Synthetic Beta With A Rather Long Display Name', loads: 9, avgMs: 4400, medianMs: 3900, p95Ms: 7200 },
+        { projectId: 'synthetic-a', name: 'Synthetic Alpha', loads: 9, avgMs: 900, medianMs: 800, p95Ms: 1400 }] };
+
+test('EPM weekly view charts both measurements, filters by project and stays inside its chart at phone width', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 900 });
+    await openPanel(page, epmPayload);
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('epm');
+    await expect(page.getByLabel('Performance group', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Projects listed, by week' })).toBeVisible();
+    for (const chart of ['projectsListed', 'rollupLoaded']) {
+        const svg = page.locator(`.performance-week-svg[data-chart="${chart}"]`);
+        await expect(svg).toBeVisible();
+        await expect(svg.locator('.performance-line-path')).toHaveCount(3);
+        await expect(svg.locator('.performance-line-point')).toHaveCount(9);
+        const clipped = await svg.evaluate(node => {
+            const box = node.getBoundingClientRect();
+            return [...node.querySelectorAll('text')].filter(text => {
+                const rect = text.getBoundingClientRect();
+                return rect.left < box.left - 1 || rect.right > box.right + 1 || rect.top < box.top - 1 || rect.bottom > box.bottom + 1;
+            }).map(text => text.textContent);
+        });
+        expect(clipped, `${chart} text outside its chart`).toEqual([]);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    await expect(page.getByRole('heading', { name: 'Recent load evidence' })).toHaveCount(0);
+    const projectRows = page.locator('details:has(summary:text("Rollup time by project")) tbody tr');
+    await expect(projectRows).toHaveCount(2);
+    expect(await projectRows.nth(0).locator('th').textContent()).toContain('Synthetic Beta');
+    expect((await projectRows.nth(1).locator('td').allTextContents())).toEqual(['9', '0.90s', '0.80s', '1.40s']);
+
+    const filtered = page.waitForRequest(request => {
+        const url = new URL(request.url());
+        return url.pathname === '/api/admin/performance' && url.searchParams.get('projectId') === 'synthetic-a';
+    });
+    await page.getByLabel('Performance project', { exact: true }).selectOption('synthetic-a');
+    expect(new URL((await filtered).url()).searchParams.get('surface')).toBe('epm');
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('eng_sprint');
+    await expect(page.getByLabel('Performance group', { exact: true })).toBeVisible();
+    const cleared = page.waitForRequest(request => request.url().includes('/api/admin/performance') && !request.url().includes('projectId'));
+    await page.getByLabel('Performance surface', { exact: true }).selectOption('');
+    await cleared;
+});

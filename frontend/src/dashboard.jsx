@@ -1886,6 +1886,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 searchQuery,
                 onHomeAccessDenied: invalidateEpmHomeAvailability,
                 onServerConnectionFailure: reportServerConnectionError,
+                performanceGate,
             });
             const epmSeenProjectKeysRef = useRef(new Set());
             const [epmCollapsedProjectIds, setEpmCollapsedProjectIds] = useState(() => new Set());

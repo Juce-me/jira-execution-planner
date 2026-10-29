@@ -506,6 +506,10 @@ def _step_result(runner, scenario, step, log, comparison, clock):
         status, body = response.status_code, response.get_json(silent=True)
     except Exception as exc:  # noqa: BLE001 - recorded as part of the oracle
         status, body = 'exception', {'exception': type(exc).__name__}
+    if isinstance(body, dict):
+        # Per-project server timings are volatile diagnostics (like the Server-Timing header, which the oracle never
+        # records); the oracle freezes the data contract only.
+        body = {key: value for key, value in body.items() if key != 'projectTimings'}
     if scenario.get('summarize') and isinstance(body, dict):
         body = summarize_body(body)
     home_calls = [list(call) for call in log.home_calls[home_before:]]

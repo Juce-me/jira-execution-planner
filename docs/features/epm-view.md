@@ -19,6 +19,8 @@ The Home token is a credential connection, not EPM saved-view state. Token mater
 
 If `Active` has no sprint selected, the dashboard keeps the EPM project selected but does not request Jira issues until you choose a sprint.
 
+The EPM Epic assignee and the project owner circle show a profile photo in their existing slot when one is available (`ui/PersonAvatar.jsx`); otherwise the glyph or the initials stay. The Epic assignee photo comes from the optional `assigneeAvatarUrl` on the existing slim issue payload, taken from the 32x32 Jira avatar and kept only when it is on an Atlassian-hosted avatar host (`backend/security/avatar_urls.py`). Gravatar-hosted and generated-initials avatars are never loaded. The owner circle shows a photo only when the Home owner data already carries an allowlisted URL; the OAuth `public-read-v1` Home queries omit the owner, so OAuth-mode owners stay on initials. There is no new request.
+
 The EPM settings panel auto-detects the Atlassian site from Jira, then lets operators choose a root goal and one or more of its child sub-goals. EPM project discovery includes projects linked directly to the selected sub-goals and projects linked to their nested child goals.
 
 EPM Jira queries stay scoped to the Jira projects in `dashboard-config.json -> projects.selected`. If an Atlassian Home project maps to Jira work outside that set, add the Jira project in Settings first.

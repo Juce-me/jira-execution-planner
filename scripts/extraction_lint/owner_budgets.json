@@ -534,7 +534,7 @@
             "forwarded input epmRollupBoards"
           ],
           "inventory": {
-            "sourceDigest": "10781d1e065e4de608f009f90f58ef793d795b1e586fb8487804678fc9ca7369",
+            "sourceDigest": "a621f1d6a567d0faa9023bd9cb9aa84cffe5a6c6729ac970df962234fc4deaf1",
             "reviewed": true,
             "memberNames": [
               "InitiativeIcon",
@@ -17211,7 +17211,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "3b8e263e424cf4b22e12fe57282698f30c9f6c2546c52b00d069a9202032649f",
+            "sourceDigest": "5f036d4cecd29b66e57eda3f4a2a8864178439d384962c090b25ba90c1d42c84",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",

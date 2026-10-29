@@ -301,6 +301,20 @@ test('the shared control captures an explicit Epic synchronously and names its s
     } finally { rig.unmount(); rig.restore(); }
 });
 
+test('a Story row control captures a Story target and names it in its label and destination', async () => {
+    const rig = deferredControl();
+    let captured;
+    try {
+        const share = fakeShare({ captureShareUrl: focus => { captured = focus; return { ok: true, url: 'https://example.test/?v=1&story=PROJ-11', dropped: [] }; } });
+        const tree = rig.render({ surface: 'epic', activeControlSurface: 'epic', epicKey: 'PROJ-11', issueKind: 'story', share });
+        assert.equal(tree.props.children[0].props['aria-label'], 'Copy link to Story PROJ-11');
+        const click = tree.props.children[0].props.onClick();
+        assert.deepEqual(captured, { kind: 'story', key: 'PROJ-11' });
+        rig.pending[0].resolve(); await click;
+        assert.equal(rig.render().props.children[1].props.children, 'Story PROJ-11 link copied');
+    } finally { rig.unmount(); rig.restore(); }
+});
+
 test('ordinary clipboard success announces its destination without rendering a feedback surface', async () => {
     for (const epicKey of [undefined, 'PROJ-1']) {
         const rig = deferredControl();

@@ -5521,8 +5521,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             );
 
             const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint, planningLayout]);
-            const renderEpicShareControl = (epicKey) => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
-                <ShareViewButton surface="epic" epicKey={epicKey} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+            const renderEpicShareControl = (epicKey, issueKind = 'epic') => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
+                <ShareViewButton surface="epic" epicKey={epicKey} issueKind={issueKind} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             // A group named only by its display name has no stable id to share; the placeholders are the only name-ids a link may carry.
             const renderAlertShareControl = (anchor, group, labelText) => selectedView === 'eng' && activeEngMode === 'catch-up'

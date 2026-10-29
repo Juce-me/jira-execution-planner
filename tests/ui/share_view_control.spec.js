@@ -819,7 +819,12 @@ test('Epic Table discovery keeps row geometry and touch fallback operable with n
             await expect(page.locator('tr.planning-review-synthetic [data-share-view]')).toHaveCount(0);
             await page.getByRole('radio', { name: 'Stories', exact: true }).click();
             await expect(page.locator('tr[data-row-kind="story"]')).not.toHaveCount(0);
-            await expect(page.locator('tr[data-row-kind="story"] [data-share-view]')).toHaveCount(0);
+            const storyRow = page.locator('tr[data-row-kind="story"]:not(.planning-review-synthetic)').first();
+            await expect(storyRow.locator('[data-share-view]')).toHaveCount(1);
+            const storyKey = await storyRow.getAttribute('data-issue-key');
+            const storyAction = page.getByRole('button', { name: `Copy link to Story ${storyKey}`, exact: true });
+            await storyRow.hover();
+            await expect(storyAction).toHaveCSS('opacity', '1');
         } finally { await context.close(); }
     }
 });

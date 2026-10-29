@@ -10,6 +10,7 @@ import StatusPill from '../ui/StatusPill.jsx';
 import EpicRefreshButton from '../ui/EpicRefreshButton.jsx';
 import StoryRequirementCard from './StoryRequirementCard.jsx';
 import IssueCard from '../issues/IssueCard.jsx';
+import PersonAvatar from '../ui/PersonAvatar.jsx';
 
 export function EpicBlock({
     epicGroup,
@@ -314,10 +315,12 @@ export function EpicBlock({
                         {(epicInfo?.assignee?.displayName || (issueFieldEditsEnabled && epicGroup.key !== 'NO_EPIC' && epicInfo)) && (
                             <span className="task-assignee epic-assignee">
                                 <span className="task-assignee-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
-                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
+                                    <PersonAvatar avatarUrl={epicInfo?.assignee?.avatarUrl}>
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
+                                            <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    </PersonAvatar>
                                 </span>
                                 {renderEpicPersonEditor('assignee', 'Assignee', epicInfo?.assignee)}
                             </span>

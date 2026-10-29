@@ -34,6 +34,7 @@ from backend.services.request_performance import measure_task_load, mark_task_ca
 from backend.services.jira_batches import JiraBatchIncomplete
 from backend.services import epic_cohort_closed
 from backend.epm import config as epm_config
+from backend.security.avatar_urls import sanitize_avatar_url
 from backend.frontend_build import frontend_build_missing, frontend_build_stale
 from backend.epm import home as epm_home
 from backend.epm import aggregate as epm_aggregate
@@ -213,7 +214,7 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPI
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
-TASKS_CACHE_SCHEMA_VERSION = 'v3-team-label-aliases'
+TASKS_CACHE_SCHEMA_VERSION = 'v4-person-avatars'
 MISSING_INFO_CACHE = {}
 MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
 DEPENDENCIES_CACHE = {}
@@ -1456,8 +1457,18 @@ def extract_team_name(value):
                 return value.get(key)
         return value.get('id')
     return str(value)
-def shape_jira_person(value):
-    return {'accountId': value.get('accountId'), 'displayName': value.get('displayName')} if isinstance(value, dict) else None
+def jira_person_avatar_url(value):
+    """Allowlisted 32x32 avatar URL of a Jira user object, or None (generated initials and foreign hosts included)."""
+    avatar_urls = value.get('avatarUrls') if isinstance(value, dict) else None
+    return sanitize_avatar_url(avatar_urls.get('32x32')) if isinstance(avatar_urls, dict) else None
+def shape_jira_person(value, avatar=False):
+    if not isinstance(value, dict):
+        return None
+    person = {'accountId': value.get('accountId'), 'displayName': value.get('displayName')}
+    avatar_url = jira_person_avatar_url(value) if avatar else None
+    if avatar_url:
+        person['avatarUrl'] = avatar_url
+    return person
 def extract_team_ids(value):
     """Extract Team[Team] ids from Jira Team field values."""
     if value is None:
@@ -2217,6 +2228,9 @@ def shape_epm_issue_payload(issues, team_field_id=None, include_card_fields=Fals
             'parentKey': parent_key,
             'labels': list(fields.get('labels') or []),
         }
+        assignee_avatar_url = jira_person_avatar_url(fields.get('assignee'))
+        if assignee_avatar_url:
+            slim_issue['assigneeAvatarUrl'] = assignee_avatar_url
         if include_card_fields:
             slim_issue.update({
                 'id': issue.get('id'),
@@ -2909,7 +2923,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field):
                     'status': (fields.get('status') or {}).get('name') or '',
                     'priority': (fields.get('priority') or {}).get('name') or None,
                     'reporter': (fields.get('reporter') or {}).get('displayName'),
-                    'assignee': shape_jira_person(fields.get('assignee')),
+                    'assignee': shape_jira_person(fields.get('assignee'), avatar=True),
                     'projectTrack': (fields.get(project_track_field) or {}).get('value') if fields.get(project_track_field) else None,
                     'updated': fields.get('updated'),
                 }
@@ -3043,7 +3057,7 @@ def fetch_backlog_epics_for_alert(jql, headers, team_field_id, sprint_field_id, 
             'key': issue.get('key'),
             'summary': fields.get('summary'),
             'status': {'name': status.get('name')} if status else None,
-            'assignee': shape_jira_person(assignee),
+            'assignee': shape_jira_person(assignee, avatar=True),
             'components': [c.get('name') for c in (fields.get('components') or []) if c.get('name')],
             'labels': fields.get('labels') or [],
             'team': team_value,
@@ -3688,7 +3702,7 @@ def fetch_tasks(include_team_name=False):
                         'status': {'name': status.get('name')} if status else None,
                         'priority': {'name': priority.get('name')} if priority else None,
                         'issuetype': {'name': issuetype.get('name')} if issuetype else None,
-                        'assignee': shape_jira_person(assignee),
+                        'assignee': shape_jira_person(assignee, avatar=True),
                         'updated': fields.get('updated'),
                         'customfield_10004': fields.get(get_story_points_field_id()),
                         'team': fields.get('team'),

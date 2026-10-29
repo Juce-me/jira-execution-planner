@@ -2,6 +2,8 @@ import os
 
 from flask import request
 
+from backend.security.avatar_urls import AVATAR_HOSTS
+
 
 def _content_security_policy():
     return "; ".join([
@@ -9,7 +11,8 @@ def _content_security_policy():
         "script-src 'self' https://*.googletagmanager.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com data:",
-        "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com",
+        "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com"
+        + "".join(f" https://{host}" for host in sorted(AVATAR_HOSTS)),
         "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com",
         "frame-ancestors 'self'",
         "base-uri 'self'",

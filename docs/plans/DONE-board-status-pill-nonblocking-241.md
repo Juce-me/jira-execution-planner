@@ -1,6 +1,6 @@
 # Board Status Pill Non-Blocking Implementation Plan
 
-> **Status:** Planned. Validated on 2026-10-29 against `ca92b08b` (current `origin/main` merge of #325), revised after two independent reviews; not executed. Branch: `bugfix/241-board-status-pill-nonblocking`.
+> **Status:** Done. Executed in branch `bugfix/241-board-status-pill-nonblocking`. Kept for audit context only.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -169,7 +169,36 @@ Expected red until Task 2 (the "lock tests"): `other pills stay enabled` and `se
 **Files:**
 - Modify: `docs/README_ANALYTICS.md` (one allowlist row: Board status pill non-blocking, files, reason, date), `docs/ontology.md` (the Board write-path entries near lines 21 and 119: touched sections and their `Verified on` only, never line 3), `docs/design-system.md` (handler registry wording only if it mentions the Board path), `docs/plans/README.md` (the entry already exists once; keep it a one-line description with no status wording and fix the link on rename), this plan
 
-- [ ] **Step 1: Run the full gates** at the exact head: `npm run build`; `npm run test:frontend:unit`; `python3 -m unittest discover -s tests`; `.venv/bin/python -m unittest tests.test_agents_md_learnings tests.test_codebase_structure_budgets`; `bash scripts/extraction_lint/run.sh`; `npx playwright test tests/ui --browser=chromium --workers=4`. Rerun any known flaky spec alone before calling it flaky.
-- [ ] **Step 2: Verify visually** with an element-level screenshot of a pill change mid-flight (menu closed, other pills enabled, announcement visible), taken after animations settle, from synthetic fixtures only.
-- [ ] **Step 3: Update this plan** (Outcome, Current Accuracy, branch or head commit) and rename it to `DONE-board-status-pill-nonblocking-241.md`; fix the README link in the same commit.
+- [x] **Step 1: Run the full gates** at the exact head: `npm run build`; `npm run test:frontend:unit`; `python3 -m unittest discover -s tests`; `.venv/bin/python -m unittest tests.test_agents_md_learnings tests.test_codebase_structure_budgets`; `bash scripts/extraction_lint/run.sh`; `npx playwright test tests/ui --browser=chromium --workers=4`. Rerun any known flaky spec alone before calling it flaky.
+- [x] **Step 2: Verify visually** with an element-level screenshot of a pill change mid-flight (menu closed, other pills enabled, announcement visible), taken after animations settle, from synthetic fixtures only.
+- [x] **Step 3: Update this plan** (Outcome, Current Accuracy, branch or head commit) and rename it to `DONE-board-status-pill-nonblocking-241.md`; fix the README link in the same commit.
 - [ ] **Step 4: Follow the publication transaction** in root `AGENTS.md` section 10 and wait for explicit user confirmation before push.
+
+## Outcome
+
+Implemented with changes. A Board status pill (Epic header or Story row in the Epic panel) no longer locks the Board: the menu closes at once, only the pill's own key is protected, a second Epic's change is accepted while the first is pending, and the outcome is announced in the drag announcement slot. Strict Board writes keep one FIFO coordinator; a confirmed status move no longer reloads the Board, and `retainPendingBoardPatches` keeps pending patches across a Priority or Track refresh.
+
+Divergences from the plan as written:
+
+- Task 1: the held-transition mock lives in the shared `tests/ui/eng_board_dashboard_fixture.js` (`installHeldTransitions`) from the start, and the at-once test was split into separate Story and Epic tests.
+- Task 3: needed a fix round because `handleCardDragStart` still released the single-issue target unkeyed; drag cleanup is now key-aware.
+- Task 4: included a CSS change in `frontend/src/styles/eng/board.css` so the floating announcement toast layers above the Epic panel backdrop while the panel is open.
+- Task 5: the strict fixture gained `strictEpics` and `heldTransitions` options, and `dragCard` moved to the shared fixture.
+- Task 6: added a `reject()` mode to the held-transition mock to tell rejected from unconfirmed outcomes.
+- Task 8: the ontology entry for ENG status/priority mutations was rewritten (it still said Board edits refresh the Board once); the `Verified on` of its section was left at its baseline statement and the entry carries its own date.
+
+Gates at the documentation head: `npm run build` clean; `npm run test:frontend:unit` 3183 pass, 0 fail; full Python suite 2812 tests OK (50 skipped); `tests.test_agents_md_learnings` and `tests.test_codebase_structure_budgets` OK; `scripts/extraction_lint/run.sh` reports the same 10 owner-budget problems (EPM and Settings modules) on this branch and on `origin/main`; full Chromium `tests/ui` run: 2024 passed, 16 skipped, 5 failed, all in `dashboard_data_freshness.spec.js` (automatic EPM cases), which fail the same way alone on `origin/main`.
+
+Known follow-ups (deferred, not blocking):
+
+- `installHeldTransitions` shares one gate object across the keys of a multi-key POST; the same-Epic test's `.catch(() => {})` is loose.
+- `scripts/extraction_lint/owner_budgets.json` callers line for one entry is stale (harmless, matched by path and symbol).
+- Rejected versus unconfirmed pill copy is only unit-covered at the UI level beyond the `reject()` mode; the toast covers about 40px of the panel bottom at short viewports and takes clicks, wraps at phone width (50vw), and the non-pane announcement slot shifts when the panel opens; Chromium only.
+- `strictEpics` ignores `strictEpicKeyForRequest`, and its `status.id` uses the column id.
+- The D2 ordering check uses a fixed 300ms wait and `waitForTimeout(500)` settles (false-green risk under load), and D2 ordering was not RED-checked against removing the coordinator; one Task 5 smoke-test comment is wrong.
+- The Task 7 source-guard regex is a brittle full-line match, and there is no hook-level refresh test (`renderToString` limits it).
+- Pre-existing limitation: `handleColumnDrop` keeps a single `pendingDrop` slot, so a second drop abandons a still-loading first one, and a pending drop can resolve while a second drag is in flight.
+
+## Current Accuracy
+
+Accurate against `bugfix/241-board-status-pill-nonblocking` at the head above. The ontology entry "ENG status/priority mutations" and the allowlist row in `docs/README_ANALYTICS.md` describe the delivered behavior. Not yet pushed or opened as a PR; add the PR number after it exists.

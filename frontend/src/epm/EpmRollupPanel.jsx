@@ -7,7 +7,7 @@ import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { sumEpicStoryPoints } from '../eng/engTaskUtils.js';
-import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
+import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, getEpmProjectStatusSemanticClass, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -321,11 +321,10 @@ export function EpmRollupPanel({
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
         const projectStatus = getProjectStatusLabel(project);
-        const projectStatusClassValue = isRecentlyCompletedProject(project) ? 'completed' : projectStatus;
         const projectName = getEpmProjectDisplayName(project);
         const projectTargetDate = renderProjectTargetDate(project);
         const projectOwner = renderProjectOwner(project);
-        const hasTitleMeta = projectStatus || projectOwner || project?.label;
+        const hasTitleMeta = projectStatus || projectOwner;
         return (
             <>
                 <div
@@ -356,16 +355,13 @@ export function EpmRollupPanel({
                                 <div className="epm-project-board-title-meta" aria-label="Project status and owner">
                                     {projectStatus && (
                                         <StatusPill
-                                            className={getIssueStatusClassName(projectStatusClassValue, 'epm-project-board-status-pill')}
+                                            className={getIssueStatusClassName(getEpmProjectStatusSemanticClass(projectStatus, { completed: isRecentlyCompletedProject(project) }), 'epic-status-pill')}
                                             label={projectStatus}
                                             title={`Project status: ${projectStatus}`}
                                             aria-label={`Project status: ${projectStatus}`}
                                         />
                                     )}
                                     {projectOwner}
-                                    {project?.label && (
-                                        <StatusPill className="epm-project-board-label-pill" label={project.label} title={project.label} />
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -448,7 +444,7 @@ export function EpmRollupPanel({
                                     <span className="epm-duplicates-project-chip" key={project.id || getEpmProjectDisplayName(project)}>
                                         <span className="epm-duplicates-project-name">{getEpmProjectDisplayName(project)}</span>
                                         {project.label && (
-                                            <StatusPill className="epm-duplicates-project-label" label={project.label} title={project.label} />
+                                            <span className="epic-key" title={project.label}>{project.label}</span>
                                         )}
                                     </span>
                                 ))}

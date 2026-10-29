@@ -4,7 +4,7 @@ Use the header `ENG | EPM` switch to move between team delivery and project deli
 
 The Jira rollup toggle uses the shared button overlay and blue ring. Collapse all
 and the settings gear use tinted circles; project, update and duplicate-issue links
-underline. Passive project status and label chips keep their resting appearance.
+underline. Passive project status keeps its resting appearance. EPM project status reuses the ENG epic status pill; the project board header does not show the Jira label, and the duplicates callout shows it as Jira-key text. The project name, Home update text and owner avatar use the app font, like the rest of the dashboard.
 Hover feedback is limited to enabled controls on hover-capable devices. Desktop
 and narrow progress readouts retain their placement, reveal and focus behavior;
 the [design-system map](../design-system.md) records the shared control owners.

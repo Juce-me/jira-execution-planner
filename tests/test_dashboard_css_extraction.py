@@ -231,7 +231,7 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('background: var(--epm-project-surface);', board_block)
         update_block = _css_block(css, '.epm-project-board-update')
         self.assertIn('max-width: 72ch;', update_block)
-        self.assertIn('font-size: 0.9rem;', update_block)
+        self.assertIn('font-size: 1rem;', update_block)
         self.assertIn('background: #fbfcfe;', update_block)
         self.assertIn('border: 1px solid #e5ebf3;', update_block)
         self.assertIn('border-radius: 8px;', update_block)
@@ -243,9 +243,11 @@ class TestDashboardCssFileContract(unittest.TestCase):
         self.assertIn('.epm-project-board-home-icon', css)
         self.assertIn('.epm-project-board-target-date', css)
         self.assertIn('.epm-project-board-owner-avatar', css)
-        self.assertIn('.epm-project-board-status-pill.task-status', css)
+        for removed in ('.epm-project-board-status-pill', '.epm-project-board-label-pill', '.epm-duplicates-project-label'):
+            self.assertNotIn(removed, css)
         self.assertIn('.epm-project-board-title-meta', css)
         self.assertIn('justify-self: end;', _css_block(css, '.epm-project-board-title-meta'))
+        self.assertRegex(css, r'\.epm-project-board-title-meta \{[^}]*font-family: ["\']IBM Plex Mono["\'], monospace;[^}]*text-transform: uppercase;[^}]*letter-spacing: 0\.05em;')
         self.assertNotIn('background-image:', update_block)
         self.assertNotIn('rgba(190, 128, 71', update_block)
 

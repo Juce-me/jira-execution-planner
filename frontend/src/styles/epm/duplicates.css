@@ -83,15 +83,12 @@
             text-overflow: ellipsis;
         }
 
-        .epm-duplicates-project-label {
-            font-family: 'IBM Plex Mono', monospace;
+        .epm-duplicates-project-chip .epic-key {
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
             font-size: 0.58rem;
-            color: var(--text-secondary);
-            background: var(--epm-project-accent-surface);
-            border: 1px solid var(--epm-project-accent-soft);
-            color: var(--epm-project-accent);
-            padding: 0.05rem 0.35rem;
-            border-radius: 999px;
             white-space: nowrap;
         }
 

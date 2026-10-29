@@ -7,7 +7,6 @@
       "\"Crimson Pro\", serif",
       "\"IBM Plex Mono\", Arial, sans-serif",
       "\"IBM Plex Mono\", monospace",
-      "-apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif",
       "inherit"
     ],
     "font-size": [
@@ -125,8 +124,6 @@
     "epic-status-pill",
     "epm-duplicates-fix-button",
     "epm-duplicates-project-chip",
-    "epm-project-board-label-pill",
-    "epm-project-board-status-pill",
     "epm-project-collapse-all-button",
     "epm-scope-chip",
     "group-gear-button",

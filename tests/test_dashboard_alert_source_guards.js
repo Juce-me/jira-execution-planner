@@ -589,7 +589,7 @@ test('issue status CSS keeps waiting statuses gray, progress statuses blue, and 
     assert.ok(waitingRule.includes('.task-status.pending'));
     assert.ok(waitingRule.includes('background: #8c8c8c;'));
     assert.equal(taskStatusRules.includes('background: #597ef7;'), false);
-    assert.match(epmCss, /\.epm-project-board-status-pill\.task-status\.waiting,[\s\S]*\.epm-project-board-status-pill\.task-status\.pending[\s\S]*background: #8c8c8c;/);
+    assert.equal(epmCss.includes('epm-project-board-status-pill'), false, 'EPM project status must use the shared .task-status palette, not a bespoke class');
 });
 
 test('dashboard late writers use issue edit generations in addition to scope guards', () => {

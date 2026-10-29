@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // Moving an epic by dragging its card (§6.4, §9.5, §10.1, §10.2, §10.3, D37, D42) — a second
 // TRIGGER for the status transition the app already performs: same hook, same route, same menu,
@@ -937,4 +938,81 @@ test('the options request is the shared endpoint, asked once per dragged epic', 
     await dragCard(page, 'PLAT-1', 'col-done');
     await expect(dropMenu(page)).toBeVisible();
     expect(optionCalls(calls)).toHaveLength(1);
+});
+
+/* ── Concurrent drags: each releases only its own status target (#241) ──────────────────────── */
+
+// PLAT-1 -> Wrap up resolves straight to Release; CORE-2 -> Done offers Done and Incomplete, so it
+// opens the drop menu. The shared per-key mock holds each write until the test settles it.
+const HELD_STATUSES = ['Release', 'Done', 'Incomplete'];
+const heldPost = (calls, key) => calls.held.has(key);
+
+async function startHeldDragPair(page, calls) {
+    await openBoard(page, calls);
+    await installHeldTransitions(page, calls, { statuses: HELD_STATUSES });
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect.poll(() => heldPost(calls, 'PLAT-1')).toBe(true);
+    await dragCard(page, 'CORE-2', 'col-done');
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+}
+
+test('two drags back to back: the first completing does not disturb the second', async ({ page }) => {
+    const calls = [];
+    await startHeldDragPair(page, calls);
+
+    calls.held.get('PLAT-1').release();
+    await expect(liveRegion(page)).toContainText('PLAT-1 → Release');
+    // B's menu survives A's cleanup and still resolves to a write carrying B's own key.
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+    await menuOptions(page).filter({ hasText: 'Done' }).first().click();
+    await expect.poll(() => heldPost(calls, 'CORE-2')).toBe(true);
+    const posts = transitionCalls(calls).filter((call) => JSON.parse(call.body).issueKeys[0] === 'CORE-2');
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(posts[0].body)).toEqual({ issueKeys: ['CORE-2'], targetStatus: 'Done' });
+    calls.held.get('CORE-2').release();
+    await expect(columnCount(page, 'col-done')).toHaveText('2');
+});
+
+test('two drags back to back: a failed second write rolls back to its real prior status', async ({ page }) => {
+    const calls = [];
+    await startHeldDragPair(page, calls);
+
+    calls.held.get('PLAT-1').release();
+    await expect(liveRegion(page)).toContainText('PLAT-1 → Release');
+    await menuOptions(page).filter({ hasText: 'Done' }).first().click();
+    await expect.poll(() => heldPost(calls, 'CORE-2')).toBe(true);
+    calls.held.get('CORE-2').fail();
+    await expect(liveRegion(page)).toContainText('CORE-2 — the move to Done did not go through');
+    await expect(card(page, 'CORE-2')).toBeVisible();
+    await expect(column(page, 'col-doing').locator('.ecard[data-epic-key="CORE-2"]')).toHaveCount(1);
+    await expect(page.locator('.eng-board .col[data-column-id="board-unmapped"]')).toHaveCount(0);
+});
+
+test('a drop on another column closes an open drop menu for a different Epic', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await dragCard(page, 'CORE-2', 'col-done');
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect(dropMenu(page)).toHaveCount(0);
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body).toEqual({ issueKeys: ['PLAT-1'], targetStatus: 'Release' });
+});
+
+test('starting a second drag while the first drop is still loading its options does not lose the first drop', async ({ page }) => {
+    const calls = [];
+    const gate = deferred();
+    await openBoard(page, calls, { optionsGate: gate.promise });
+
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect.poll(() => optionCalls(calls).length).toBe(1);
+    // B starts dragging while A's options are still on the wire.
+    await dragCard(page, 'CORE-2', 'col-done', { drop: false, end: false });
+    gate.release();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body).toEqual({ issueKeys: ['PLAT-1'], targetStatus: 'Release' });
+    await endDrag(page, 'CORE-2');
+    expect(transitionCalls(calls)).toHaveLength(1);
 });

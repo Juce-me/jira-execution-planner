@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // The board's epic detail panel (§6.3, §9.2, §10.1, D12, D22, D32): how it opens and closes, the
 // focus contract, the four description states, the session cache, the story rows' inherited
@@ -259,6 +260,7 @@ async function loadDashboard(page, calls, options = {}) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.setViewportSize({ width: options.width || 1280, height: options.height || 900 });
     await installBoardFixture(page, calls, options);
+    if (options.holdTransitions) await installHeldTransitions(page, calls, { statuses: options.transitionStatuses });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -962,6 +964,170 @@ test('a status pill click in the panel performs a real transition rather than no
     expect(calls.filter((call) => call.pathname === '/api/tasks-with-team-name'
         && call.params.refresh === 'true')).toHaveLength(0);
 });
+
+/* ── A status pill change never holds the UI (#241) ─────────────────────────────────────────── */
+
+async function pickStatus(trigger, menu, label) {
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await menu.locator('.status-transition-option', { hasText: label }).first().click();
+}
+
+const transitionPosts = (calls) => calls.filter((call) => call.pathname === '/api/issues/transitions'
+    && call.method === 'POST');
+
+test('pill status change shows at once and closes the menu while Jira is pending', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const row = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-b"]');
+    await pickStatus(row.locator('button.status-pill.task-status'),
+        panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-b"]'), 'Done');
+    await expect(row.locator('button.status-pill.task-status')).toHaveText('Done');
+    await expect(panel(page).locator('.status-transition-menu')).toHaveCount(0);
+
+    await expect.poll(() => transitionPosts(calls).length).toBe(1);
+    expect([...calls.held.keys()]).toEqual(['PLAT-1-b']);
+});
+
+test('pill status change shows at once on the Epic header while Jira is pending', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const epicPill = panel(page).locator('.m-controls button.status-pill.task-status');
+    await pickStatus(epicPill, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+    await expect(epicPill).toHaveText('Done');
+    await expect(panel(page).locator('.status-transition-menu')).toHaveCount(0);
+    await expect.poll(() => transitionPosts(calls).length).toBe(1);
+    expect([...calls.held.keys()]).toEqual(['PLAT-1']);
+});
+
+test('other pills stay enabled while a status write is pending', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const rowB = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-b"]');
+    await pickStatus(rowB.locator('button.status-pill.task-status'),
+        panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-b"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1-b')).toBe(true);
+
+    await expect(rowB.locator('button.status-pill.task-status')).toBeDisabled();
+    const other = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-d"] button.status-pill.task-status');
+    await expect(other).toBeEnabled();
+    await other.click();
+    await expect(panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-d"]')).toBeVisible();
+});
+
+test('a second Epic status change is accepted while the first is pending', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+
+    await openPanel(page, 'PLAT-1');
+    await pickStatus(panel(page).locator('.m-controls button.status-pill.task-status'),
+        panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1')).toBe(true);
+    await panel(page).press('Escape');
+    await expect(panel(page)).toHaveCount(0);
+
+    await openPanel(page, 'PLAT-2');
+    const pillB = panel(page).locator('.m-controls button.status-pill.task-status');
+    await pickStatus(pillB, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-2"]'), 'Done');
+    await expect.poll(() => transitionPosts(calls).length).toBe(2);
+    const bodies = transitionPosts(calls).map((call) => JSON.parse(call.body));
+    expect(bodies.map((body) => body.issueKeys)).toEqual([['PLAT-1'], ['PLAT-2']]);
+
+    calls.held.get('PLAT-1').release();
+    calls.held.get('PLAT-2').release();
+    await expect(pillB).toHaveText('Done');
+    await panel(page).press('Escape');
+    await expect(page.getByRole('button', { name: /^Focus Done, 2 epics/ })).toBeVisible();
+});
+
+test('same Epic cannot be changed twice while pending', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const pill = panel(page).locator('.m-controls button.status-pill.task-status');
+    await pickStatus(pill, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1')).toBe(true);
+
+    await pill.click({ force: true, timeout: 1000 }).catch(() => {});
+    await page.waitForTimeout(300);
+    await expect(panel(page).locator('.status-transition-menu')).toHaveCount(0);
+    expect(transitionPosts(calls)).toHaveLength(1);
+});
+
+test('a failed pill status change rolls back and is announced', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const pill = panel(page).locator('.m-controls button.status-pill.task-status');
+    await pickStatus(pill, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1')).toBe(true);
+    calls.held.get('PLAT-1').fail();
+
+    await expect(pill).toHaveText('In Progress');
+    await expect(page.locator('.board-say.is-error')).toContainText('PLAT-1');
+});
+
+test('a successful pill status change is announced', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { holdTransitions: true });
+    await openPanel(page, 'PLAT-1');
+
+    const pill = panel(page).locator('.m-controls button.status-pill.task-status');
+    await pickStatus(pill, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1')).toBe(true);
+    calls.held.get('PLAT-1').release();
+    await expect(page.locator('.board-say.has-message')).toContainText('→ Done');
+
+    const row = panel(page).locator('.story-subtask-row[data-story-key="PLAT-1-b"]');
+    await pickStatus(row.locator('button.status-pill.task-status'),
+        panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1-b"]'), 'Done');
+    await expect.poll(() => calls.held.has('PLAT-1-b')).toBe(true);
+    calls.held.get('PLAT-1-b').release();
+    await expect(page.locator('.board-say.has-message')).toContainText('PLAT-1-b');
+});
+
+// D3: the pill outcome lands in the Board's one announcement slot; with the Epic panel open the
+// slot must be the element painted at its own centre, not the panel backdrop, in both layouts.
+for (const layout of [{ name: 'pane', width: 1280, height: 900, pane: true }, { name: 'non-pane', width: 800, height: 380, pane: false }]) {
+    test(`the Board announcement is not covered by the Epic panel backdrop (${layout.name})`, async ({ page }) => {
+        const calls = [];
+        await openBoard(page, calls, { holdTransitions: true, width: layout.width, height: layout.height });
+        await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(layout.pane ? 1 : 0);
+        await openPanel(page, 'PLAT-1');
+
+        const pill = panel(page).locator('.m-controls button.status-pill.task-status');
+        await pickStatus(pill, panel(page).locator('.status-transition-menu[data-issue-key="PLAT-1"]'), 'Done');
+        await expect.poll(() => calls.held.has('PLAT-1')).toBe(true);
+        calls.held.get('PLAT-1').fail();
+        const say = page.locator('.board-say.has-message');
+        await expect(say).toContainText('PLAT-1');
+        await expect(panel(page)).toBeVisible();
+
+        await page.screenshot({ path: `${screenshotDir}/announce-${layout.name}.png` });
+        const hit = await say.evaluate((node) => {
+            const rect = node.getBoundingClientRect();
+            const atCentre = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+            return {
+                width: rect.width, height: rect.height, isSelf: atCentre === node || node.contains(atCentre),
+                inViewport: rect.left >= 0 && rect.top >= 0 && rect.right <= window.innerWidth && rect.bottom <= window.innerHeight,
+                unclipped: node.scrollWidth <= node.clientWidth && node.scrollHeight <= node.clientHeight,
+            };
+        });
+        expect(hit.width).toBeGreaterThan(1);
+        expect(hit.height).toBeGreaterThan(1);
+        expect(hit.isSelf).toBe(true);
+        expect(hit.inViewport).toBe(true);
+        expect(hit.unclipped).toBe(true);
+    });
+}
 
 test('a priority change from a panel story row performs a real write', async ({ page }) => {
     const calls = [];

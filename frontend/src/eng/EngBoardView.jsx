@@ -103,7 +103,7 @@ export default function EngBoardView({
     engFilters, onFacetChange, jiraUrl = '', backendUrl = '', transitionsEnabled = false,
     statusTransitions = null, priorityTransitions = null, projectTrackTransitions = null,
     issueFieldEdits = null,
-    statusTransitionSubmitting = false, onSubmitStatusTransition, onFilterBarHeightChange,
+    onSubmitStatusTransition, onFilterBarHeightChange,
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
@@ -270,12 +270,13 @@ export default function EngBoardView({
     // currentStatus when it is missing, so a write that throws would roll the epic back to no
     // status at all. Released again at every terminal outcome, so a later panel open does not find
     // a pill menu already open.
-    const releaseStatusTarget = React.useCallback(() => {
-        statusTransitions?.closeSingleIssueStatusControl?.();
+    // Keyed: with two drags in flight, one finishing must not close the other's target.
+    const releaseStatusTarget = React.useCallback((epicKey) => {
+        statusTransitions?.closeSingleIssueStatusControl?.(epicKey);
     }, [statusTransitions]);
 
     const refuse = React.useCallback((epicKey, text) => {
-        releaseStatusTarget();
+        releaseStatusTarget(epicKey);
         setRejectedKey(epicKey);
         announce(text, true);
     }, [announce, releaseStatusTarget]);
@@ -288,12 +289,12 @@ export default function EngBoardView({
     }, []);
 
     const closeDropMenu = React.useCallback(() => {
-        releaseStatusTarget();
-        setDrop((previous) => {
-            if (previous) focusCard(previous.epicKey);
-            return null;
-        });
-    }, [focusCard, releaseStatusTarget, setDrop]);
+        if (drop) {
+            releaseStatusTarget(drop.epicKey);
+            focusCard(drop.epicKey);
+        }
+        setDrop(null);
+    }, [drop, focusCard, releaseStatusTarget, setDrop]);
 
     // The transition status catalog, loaded lazily on the FIRST drop and never on a plain board load —
     // initial load is performance-critical and a user who never drags never pays for it. Shared
@@ -336,10 +337,21 @@ export default function EngBoardView({
             }
             refuse(epicKey, `${epicKey} — the move to ${status} did not go through. Nothing moved.`);
         } finally {
-            releaseStatusTarget();
+            releaseStatusTarget(epicKey);
             setRefocusKey(epicKey);
         }
     }, [announce, onSubmitStatusTransition, refuse, releaseStatusTarget]);
+
+    // A status pill in the Epic panel announces its outcome in the same slot as a drag (one slot,
+    // the last outcome wins). Drag keeps its own announcement in submitMove, so it passes no options.
+    const submitPanelStatus = React.useCallback((status, issue) => onSubmitStatusTransition?.(status, issue, {
+        onSettled: (outcome) => {
+            const key = issue.key;
+            if (outcome === 'confirmed') announce(`${key} → ${status}`);
+            else if (outcome === 'rejected') announce(`${key} — the change to ${status} did not go through. Nothing changed.`, true);
+            else announce(`${key} — could not confirm the change to ${status}. Check Jira before trying again.`, true);
+        },
+    }), [announce, onSubmitStatusTransition]);
 
     // The gate lives HERE, inside the move path, so a single-status column reaches it too: it is a
     // property of the destination status, not of how the status was chosen (D42). It warns, it
@@ -386,7 +398,7 @@ export default function EngBoardView({
         setPendingDrop(null);
         if (!pendingColumn) {
             // The column went away under the drop (filter change, group switch, settings save).
-            releaseStatusTarget();
+            releaseStatusTarget(pendingDrop.epicKey);
             return;
         }
         if (!loadedOptions) {
@@ -419,7 +431,7 @@ export default function EngBoardView({
         }
         // 'no-op' — the drop resolved to nowhere after all. Nothing is open and nothing is in
         // flight, so the borrowed single-issue target is released here like every other end state.
-        releaseStatusTarget();
+        releaseStatusTarget(pendingDrop.epicKey);
     }, [
         pendingDrop, pendingColumn, optionsLoading, optionsTargetKey, loadedOptions,
         statusCategoryIndex, moveEpic, refuse, releaseStatusTarget,
@@ -429,8 +441,9 @@ export default function EngBoardView({
         const entry = epicGroupByKey.get(epicKey);
         dragRef.current = { key: epicKey, columnId: entry ? entry.columnId : null };
         setDraggingKey(epicKey);
+        // Only the menu being dismissed releases its target: a still-loading earlier drop owns it.
+        if (drop) releaseStatusTarget(drop.epicKey);
         setDrop(null);
-        releaseStatusTarget();
         event.dataTransfer.effectAllowed = 'move';
         event.dataTransfer.setData('text/plain', epicKey); // Firefox refuses a drag with no payload
     };
@@ -477,6 +490,9 @@ export default function EngBoardView({
         // hook's in-flight options request (which otherwise dedupes a repeat drag of the same epic
         // into a null response), and open sets the single-issue target the write is built from and
         // asks Jira for this epic's transitions.
+        // A stale menu for another Epic goes first, so a pick in it cannot build a target from the
+        // single-issue target this drop is about to take.
+        if (drop && drop.epicKey !== active.key) setDrop(null);
         statusTransitions?.closeSingleIssueStatusControl?.();
         statusTransitions?.openSingleIssueStatusControl?.(entry.group.epic, 'Epic');
         requestStatusCatalog();
@@ -1363,10 +1379,9 @@ export default function EngBoardView({
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
                     onSortChange={() => freshnessBridge?.current.release?.()}
-                    statusTransitionSubmitting={statusTransitionSubmitting}
                     workItemLabel={strictWorkItemLabel}
                     workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}
-                    onSubmitStatusTransition={onSubmitStatusTransition}
+                    onSubmitStatusTransition={submitPanelStatus}
                     onClose={closePanel}
                 />
             )}

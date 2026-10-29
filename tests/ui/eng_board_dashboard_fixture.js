@@ -94,4 +94,49 @@ async function installEngBoardDashboardFixture(page, {
     return diagnostics;
 }
 
-module.exports = { buildDashboardBundle, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };
+// Key-echoing, per-key-gated status transitions for Board specs. Registered after a spec's own
+// `**/api/**` route (Playwright runs the latest route first), it answers the options and
+// transitions endpoints and records each POST in `calls` before holding it. `calls.held` maps an
+// issue key to { release(), fail() } for the POST currently pending for that key.
+async function installHeldTransitions(page, calls, {
+    statuses = ['Done', 'To Do'], currentStatus = 'To Do',
+} = {}) {
+    calls.held = calls.held || new Map();
+    await page.route('**/api/issues/transitions**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        let body = null;
+        try { body = request.postData() ? JSON.parse(request.postData()) : null; } catch (error) { body = null; }
+        calls.push({
+            method: request.method(), pathname: url.pathname,
+            params: Object.fromEntries(url.searchParams.entries()),
+            body: request.postData() || '',
+        });
+        const json = (payload, status = 200) => route.fulfill({
+            status, contentType: 'application/json', body: JSON.stringify(payload),
+        });
+        const keys = (body && body.issueKeys) || [];
+        if (url.pathname === '/api/issues/transitions/options') {
+            return json({
+                issues: keys.map(key => ({
+                    key, issueType: 'Story', currentStatus,
+                    transitions: statuses.map(name => ({ name: `Go ${name}`, toStatus: name })),
+                })),
+                targetStatuses: statuses.map(name => ({ name, availableCount: keys.length || 1, blockedCount: 0 })),
+            });
+        }
+        if (url.pathname !== '/api/issues/transitions') return route.fallback();
+        const targetStatus = (body && body.targetStatus) || '';
+        const outcome = await new Promise(resolve => {
+            const gate = { release: () => resolve('release'), fail: () => resolve('fail') };
+            keys.forEach(key => calls.held.set(key, gate));
+        });
+        keys.forEach(key => calls.held.delete(key));
+        if (outcome === 'fail') {
+            return json({ error: 'issue_transition_failed', message: 'Jira rejected the transition.' }, 502);
+        }
+        return json({ targetStatus, results: keys.map(key => ({ key, result: 'success', toStatus: targetStatus })) });
+    });
+}
+
+module.exports = { buildDashboardBundle, installHeldTransitions, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };

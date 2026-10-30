@@ -25,6 +25,7 @@ from backend.auth.cache_policy import (
 )
 from backend.auth.home_credentials import HomeCredential
 from backend.auth.jira_auth import AuthError, is_oauth_token_expired, oauth_scope_set
+from backend.security.avatar_urls import sanitize_avatar_url
 from backend.db.engine import database_storage_enabled
 
 logger = logging.getLogger(__name__)
@@ -1924,7 +1925,7 @@ def _extract_project_owner(project: dict) -> dict:
     return {
         "accountId": _first_project_text(owner.get("accountId"), owner.get("id"), project.get("ownerAccountId")),
         "name": _first_project_text(owner.get("name"), owner.get("displayName"), project.get("ownerName")),
-        "avatarUrl": _first_project_text(owner.get("avatarUrl"), owner.get("picture"), project.get("ownerAvatarUrl")),
+        "avatarUrl": sanitize_avatar_url(_first_project_text(owner.get("avatarUrl"), owner.get("picture"), project.get("ownerAvatarUrl"))) or "",
     }
 
 

@@ -25,6 +25,10 @@ export function reconcileStrictBoardPatches(patches, data, pendingKeys = new Set
     }));
 }
 
+export function retainPendingBoardPatches(patches, pendingKeys) {
+    return Object.fromEntries(Object.entries(patches || {}).filter(([key]) => pendingKeys?.has(key)));
+}
+
 export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprintId, groupRevision, strictScope = null,
     resolvedFocusColumnId, performanceGate, trackApiResult, onAuthRequired, freshnessBridge }) {
     const [issuePatchesByKey, setIssuePatchesByKey] = React.useState({});
@@ -51,7 +55,7 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
         } });
     const refresh = React.useCallback(async options => {
         const outcome = await data.refresh(options);
-        if (outcome === 'success' && options?.source !== 'automatic') setIssuePatchesByKey({});
+        if (outcome === 'success' && options?.source !== 'automatic') setIssuePatchesByKey(previous => retainPendingBoardPatches(previous, freshnessBridge?.current?.pendingKeys?.() ?? new Set()));
         return outcome;
     }, [data.refresh]);
     React.useEffect(() => setIssuePatchesByKey({}),

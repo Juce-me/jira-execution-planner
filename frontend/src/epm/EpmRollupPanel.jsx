@@ -7,7 +7,8 @@ import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import LoadingState from '../ui/LoadingState.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { sumEpicStoryPoints } from '../eng/engTaskUtils.js';
-import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
+import PersonAvatar from '../ui/PersonAvatar.jsx';
+import { buildEpmProjectProgress, buildEpmProjectUpdateLine, getEpmProjectDisplayName, getEpmProjectStatusSemanticClass, isRecentlyCompletedEpmProject, toEpmEngTask } from './epmProjectUtils.mjs';
 
 export function EpmRollupPanel({
     selectedEpmProject,
@@ -297,11 +298,7 @@ export function EpmRollupPanel({
         return (
             <span className="epm-project-board-owner" title={ownerName ? `Owner: ${ownerName}` : 'Project owner'}>
                 <span className="epm-project-board-owner-avatar" aria-hidden="true">
-                    {avatarUrl ? (
-                        <img src={avatarUrl} alt="" />
-                    ) : (
-                        getOwnerInitials(ownerName)
-                    )}
+                    <PersonAvatar avatarUrl={avatarUrl}>{getOwnerInitials(ownerName)}</PersonAvatar>
                 </span>
                 {ownerName && <span className="epm-project-board-owner-name">{ownerName}</span>}
             </span>
@@ -321,11 +318,10 @@ export function EpmRollupPanel({
         const collapsed = isCollapsed(project);
         const updateLine = buildEpmProjectUpdateLine(project);
         const projectStatus = getProjectStatusLabel(project);
-        const projectStatusClassValue = isRecentlyCompletedProject(project) ? 'completed' : projectStatus;
         const projectName = getEpmProjectDisplayName(project);
         const projectTargetDate = renderProjectTargetDate(project);
         const projectOwner = renderProjectOwner(project);
-        const hasTitleMeta = projectStatus || projectOwner || project?.label;
+        const hasTitleMeta = projectStatus || projectOwner;
         return (
             <>
                 <div
@@ -356,16 +352,13 @@ export function EpmRollupPanel({
                                 <div className="epm-project-board-title-meta" aria-label="Project status and owner">
                                     {projectStatus && (
                                         <StatusPill
-                                            className={getIssueStatusClassName(projectStatusClassValue, 'epm-project-board-status-pill')}
+                                            className={getIssueStatusClassName(getEpmProjectStatusSemanticClass(projectStatus, { completed: isRecentlyCompletedProject(project) }), 'epic-status-pill')}
                                             label={projectStatus}
                                             title={`Project status: ${projectStatus}`}
                                             aria-label={`Project status: ${projectStatus}`}
                                         />
                                     )}
                                     {projectOwner}
-                                    {project?.label && (
-                                        <StatusPill className="epm-project-board-label-pill" label={project.label} title={project.label} />
-                                    )}
                                 </div>
                             )}
                         </div>
@@ -448,7 +441,7 @@ export function EpmRollupPanel({
                                     <span className="epm-duplicates-project-chip" key={project.id || getEpmProjectDisplayName(project)}>
                                         <span className="epm-duplicates-project-name">{getEpmProjectDisplayName(project)}</span>
                                         {project.label && (
-                                            <StatusPill className="epm-duplicates-project-label" label={project.label} title={project.label} />
+                                            <span className="epic-key" title={project.label}>{project.label}</span>
                                         )}
                                     </span>
                                 ))}
@@ -592,10 +585,12 @@ export function EpmRollupPanel({
                         {epic?.assignee?.displayName && (
                             <span className="task-assignee epic-assignee">
                                 <span className="task-assignee-icon" aria-hidden="true">
-                                    <svg viewBox="0 0 24 24" fill="none">
-                                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
-                                        <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                    </svg>
+                                    <PersonAvatar avatarUrl={epic.assignee.avatarUrl}>
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4z" stroke="currentColor" strokeWidth="2" />
+                                            <path d="M4 20c0-3.31 3.58-6 8-6s8 2.69 8 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                        </svg>
+                                    </PersonAvatar>
                                 </span>
                                 <span>{epic.assignee.displayName}</span>
                             </span>
@@ -616,7 +611,7 @@ export function EpmRollupPanel({
                 key: epicIssue.key,
                 summary: epicIssue.summary || epicIssue.key || '',
                 status: epicIssue.status || '',
-                assignee: epicIssue.assignee ? { displayName: epicIssue.assignee } : null,
+                assignee: epicIssue.assignee ? { displayName: epicIssue.assignee, avatarUrl: epicIssue.assigneeAvatarUrl } : null,
             },
             tasks,
             storyPoints: sumEpicStoryPoints(tasks),

@@ -6,6 +6,7 @@ import { getIssueStatusClassName, getIssueTeamLabel, normalizeIssueStatus } from
 import IssueDependencies, { buildIssueDependencyViewModel } from './IssueDependencies.jsx';
 import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskProgressUtils.js';
 import IssuePersonEditor from './IssuePersonEditor.jsx';
+import PersonAvatar from '../ui/PersonAvatar.jsx';
 import StoryPointsEditor from './StoryPointsEditor.jsx';
 
 export const IssueCardContext = React.createContext({});
@@ -36,7 +37,6 @@ export default function IssueCard({
     statusTransitionActiveKey = null,
     statusTransitionOptions = null,
     statusTransitionOptionsLoading = false,
-    statusTransitionSubmitting = false,
     statusTransitionError = '',
     statusTransitionErrorCode = '',
     statusTransitionResult = null,
@@ -282,7 +282,7 @@ export default function IssueCard({
                             isOpen={statusTransitionActiveKey === task.key}
                             options={statusTransitionOptions}
                             optionsLoading={statusTransitionOptionsLoading}
-                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(task.key)}
+                            submitting={!!statusTransitionPendingIssueKeys?.has(task.key)}
                             error={statusTransitionError}
                             errorCode={statusTransitionErrorCode}
                             result={statusTransitionResult}
@@ -304,10 +304,12 @@ export default function IssueCard({
                     {(task.fields.assignee || fieldEditingEnabled) && (
                         <span className="task-assignee">
                             <span className="task-assignee-icon" aria-hidden="true">
-                                <svg viewBox="0 0 24 24" fill="none">
-                                    <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
-                                    <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
-                                </svg>
+                                <PersonAvatar avatarUrl={task.fields.assignee?.avatarUrl}>
+                                    <svg viewBox="0 0 24 24" fill="none">
+                                        <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
+                                        <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                                    </svg>
+                                </PersonAvatar>
                             </span>
                             {fieldEditingEnabled ? (
                                 <IssuePersonEditor
@@ -389,7 +391,7 @@ export default function IssueCard({
                                             isOpen={statusTransitionActiveKey === subtask.key}
                                             options={statusTransitionOptions}
                                             optionsLoading={statusTransitionOptionsLoading}
-                                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(subtask.key)}
+                                            submitting={!!statusTransitionPendingIssueKeys?.has(subtask.key)}
                                             error={statusTransitionError}
                                             errorCode={statusTransitionErrorCode}
                                             result={statusTransitionResult}

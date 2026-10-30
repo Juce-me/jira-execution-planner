@@ -212,7 +212,7 @@
             border-radius: 999px;
             background: #2f2f2f;
             color: #fff;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-family: inherit;
             font-size: 0.55rem;
             font-weight: 700;
             overflow: hidden;
@@ -235,13 +235,13 @@
 
         .epm-project-board-name {
             margin: 0;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            font-size: 0.95rem;
+            font-family: inherit;
+            font-size: 1.1rem;
             line-height: 1.25;
             letter-spacing: 0;
             text-transform: none;
             color: var(--text-primary);
-            font-weight: 650;
+            font-weight: 600;
             white-space: normal;
             overflow-wrap: break-word;
             word-break: normal;
@@ -262,56 +262,16 @@
             }
         }
 
-        .epm-project-board-label-pill {
+        .epm-project-board-title-meta {
             font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.6rem;
-            padding: 0.1rem 0.4rem;
-            border: 1px solid var(--epm-project-accent-soft);
-            background: var(--epm-project-accent-surface);
-            color: var(--epm-project-accent);
-            border-radius: 999px;
-            white-space: nowrap;
-            max-width: min(22rem, 100%);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            flex: 0 1 auto;
-        }
-
-        .epm-project-board-status-pill.task-status {
-            font-size: 0.58rem;
-            padding: 0.18rem 0.48rem;
-            border-radius: 2px;
+            color: var(--text-secondary);
             text-transform: uppercase;
-            letter-spacing: 0.02em;
-            font-weight: 700;
-            white-space: nowrap;
-            flex: 0 0 auto;
+            letter-spacing: 0.05em;
         }
 
-        .epm-project-board-status-pill.task-status.on-track {
-            background: #52c41a;
-            color: white;
-        }
-
-        .epm-project-board-status-pill.task-status.at-risk {
-            background: #fa8c16;
-            color: white;
-        }
-
-        .epm-project-board-status-pill.task-status.off-track {
-            background: #ff4d4f;
-            color: white;
-        }
-
-        .epm-project-board-status-pill.task-status.waiting,
-        .epm-project-board-status-pill.task-status.pending {
-            background: #8c8c8c;
-            color: white;
-        }
-
-        .epm-project-board-status-pill.task-status.completed {
-            background: #52c41a;
-            color: white;
+        .epm-project-board-title-meta .epm-project-board-owner {
+            text-transform: none;
+            letter-spacing: 0;
         }
 
         .epm-project-board-rollup-control {
@@ -451,8 +411,8 @@
 
         .epm-project-board-update {
             max-width: 72ch;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            font-size: 0.9rem;
+            font-family: inherit;
+            font-size: 1rem;
             line-height: 1.42;
             color: var(--text-primary);
             white-space: normal;

@@ -609,6 +609,14 @@
             height: 14px;
         }
 
+        .task-assignee-icon img {
+            width: 14px;
+            height: 14px;
+            border-radius: 999px;
+            object-fit: cover;
+            display: block;
+        }
+
         .epic-block {
             border: 1px solid var(--border);
             margin-bottom: 1.1rem;
@@ -836,6 +844,11 @@
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon svg {
                 width: 21px;
                 height: 21px;
+            }
+
+            .task-list:not(.epm-issue-board) .epic-block > .epic-header .task-assignee-icon img {
+                width: 20px;
+                height: 20px;
             }
 
             .task-list:not(.epm-issue-board) .epic-block > .epic-header .epic-stat-toggle {

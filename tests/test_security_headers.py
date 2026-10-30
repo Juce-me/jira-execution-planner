@@ -31,7 +31,8 @@ class SecurityHeaderTests(unittest.TestCase):
         }
         self.assertEqual(
             directives.get("img-src"),
-            "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com",
+            "img-src 'self' data: https://*.google-analytics.com https://*.googletagmanager.com"
+            " https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net",
         )
         self.assertEqual(
             directives.get("connect-src"),

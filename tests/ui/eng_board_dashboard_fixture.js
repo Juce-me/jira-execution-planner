@@ -94,4 +94,103 @@ async function installEngBoardDashboardFixture(page, {
     return diagnostics;
 }
 
-module.exports = { buildDashboardBundle, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };
+// Key-echoing, per-key-gated status transitions for Board specs. Registered after a spec's own
+// `**/api/**` route (Playwright runs the latest route first), it answers the options and
+// transitions endpoints and records each POST in `calls` before holding it. `calls.held` maps an
+// issue key to { release(), fail(), reject() } for the POST currently pending for that key.
+async function installHeldTransitions(page, calls, {
+    statuses = ['Done', 'To Do'], currentStatus = 'To Do',
+} = {}) {
+    calls.held = calls.held || new Map();
+    await page.route('**/api/issues/transitions**', async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        let body = null;
+        try { body = request.postData() ? JSON.parse(request.postData()) : null; } catch (error) { body = null; }
+        calls.push({
+            method: request.method(), pathname: url.pathname,
+            params: Object.fromEntries(url.searchParams.entries()),
+            body: request.postData() || '',
+        });
+        const json = (payload, status = 200) => route.fulfill({
+            status, contentType: 'application/json', body: JSON.stringify(payload),
+        });
+        const keys = (body && body.issueKeys) || [];
+        if (url.pathname === '/api/issues/transitions/options') {
+            return json({
+                issues: keys.map(key => ({
+                    key, issueType: 'Story', currentStatus,
+                    transitions: statuses.map(name => ({ name: `Go ${name}`, toStatus: name })),
+                })),
+                targetStatuses: statuses.map(name => ({ name, availableCount: keys.length || 1, blockedCount: 0 })),
+            });
+        }
+        if (url.pathname !== '/api/issues/transitions') return route.fallback();
+        const targetStatus = (body && body.targetStatus) || '';
+        const outcome = await new Promise(resolve => {
+            const gate = {
+                release: () => resolve('release'), fail: () => resolve('fail'), reject: () => resolve('reject'),
+            };
+            keys.forEach(key => calls.held.set(key, gate));
+        });
+        keys.forEach(key => calls.held.delete(key));
+        if (outcome === 'fail') {
+            return json({ error: 'issue_transition_failed', message: 'Jira rejected the transition.' }, 502);
+        }
+        // `reject()` answers with a definitive per-issue failure, which the hook classifies as
+        // 'rejected' (Jira refused it) rather than `fail()`'s 'unconfirmed'.
+        if (outcome === 'reject') {
+            return json({ targetStatus, results: keys.map(key => ({
+                key, result: 'failure', error: 'transition_not_available', currentStatus,
+            })) });
+        }
+        return json({ targetStatus, results: keys.map(key => ({ key, result: 'success', toStatus: targetStatus })) });
+    });
+}
+
+// Playwright's native drag interception picks the drag source from the pointer position AFTER its
+// synthetic move rather than from the element the press landed on, and `dragTo` can only express a
+// completed drop — not the three shapes this feature needs: a dragover that must NOT be accepted,
+// a dragend with no drop, and a drop whose clientX/clientY place a fixed menu. So the gesture is
+// driven the faithful way instead: the DragEvent sequence a browser raises, dispatched on the real
+// nodes with real coordinates read from the live target rect. Every handler, the resolution, the
+// gate, the React state and the DOM are the real ones; only the browser's own drag loop is stood
+// in for — and the last test in this file drives that loop end to end with `dragTo` as well.
+//
+// Task 7's composer helper additionally holds a real pointer press, because its chip drag is gated
+// on the grip the press lands on. An epic card has no such gate: a press here only risks starting
+// Chromium's OWN drag alongside the dispatched one (two drops, one of them deduped to a null
+// options response) and synthesising a click that opens the epic panel. It is deliberately absent.
+async function dragCard(page, epicKey, targetColumnId, { drop = true, end = true, at = null } = {}) {
+    return page.evaluate(({ key, columnId, doDrop, doEnd, point }) => {
+        const source = document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
+        const target = columnId ? document.querySelector(`.eng-board .col[data-column-id="${columnId}"]`) : null;
+        const dataTransfer = new DataTransfer();
+        const box = target ? target.getBoundingClientRect() : null;
+        const spot = point || (box
+            ? { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + Math.min(box.height / 2, 160)) }
+            : { x: 4, y: 4 });
+        const make = (type) => new DragEvent(type, {
+            bubbles: true, cancelable: true, dataTransfer, clientX: spot.x, clientY: spot.y,
+        });
+
+        const start = make('dragstart');
+        source.dispatchEvent(start);
+        if (start.defaultPrevented) {
+            source.dispatchEvent(make('dragend'));
+            return { started: false, spot };
+        }
+        let overAccepted = null;
+        if (target) {
+            target.dispatchEvent(make('dragenter'));
+            const over = make('dragover');
+            target.dispatchEvent(over);
+            overAccepted = over.defaultPrevented;
+            if (doDrop) target.dispatchEvent(make('drop'));
+        }
+        if (doEnd) source.dispatchEvent(make('dragend'));
+        return { started: true, overAccepted, spot };
+    }, { key: epicKey, columnId: targetColumnId, doDrop: drop, doEnd: end, point: at });
+}
+
+module.exports = { buildDashboardBundle, dragCard, installHeldTransitions, installEngBoardDashboardFixture, selectedSprintId, selectedSprintName };

@@ -67,6 +67,21 @@ export function isRecentlyCompletedEpmProject(project, now = new Date()) {
     return ageDays !== null && ageDays >= 0 && ageDays < EPM_PROJECT_UPDATE_STALE_DAYS;
 }
 
+const EPM_PROJECT_STATUS_SEMANTIC_CLASSES = {
+    'on track': 'done',
+    'at risk': 'postponed',
+    'off track': 'blocked',
+    completed: 'done',
+    done: 'done',
+    release: 'done',
+    released: 'done',
+};
+
+export function getEpmProjectStatusSemanticClass(status, { completed = false } = {}) {
+    if (completed) return 'done';
+    return EPM_PROJECT_STATUS_SEMANTIC_CLASSES[normalizeEpmSettingsStatus(status)] || 'waiting';
+}
+
 export function filterEpmProjectsForTab(projects, tab, now = new Date()) {
     const normalizedTab = String(tab || 'active').trim().toLowerCase();
     return Array.isArray(projects)

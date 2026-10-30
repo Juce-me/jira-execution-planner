@@ -10,8 +10,8 @@ const path = require('node:path');
 //    site whose "issue" comes from a card rather than a menu argument) can never widen to issues
 //    the user did not touch. The refusal is fenced off at the call site and again in the hook.
 //
-// 2. The single-issue path remains serialized. Board may additionally request one strict-owner
-//    refresh after success; it must not introduce another Jira write path.
+// 2. Board may request one strict-owner refresh after success; it must not introduce another
+//    Jira write path.
 
 function read(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
@@ -21,14 +21,20 @@ test('a status submit without an issue key is refused before it reaches the hook
     const source = read('frontend/src/dashboard.jsx');
     assert.match(
         source,
-        /if \(!issue\?\.key\) return null;\s*if \(statusTransitionSourceSurface !== 'board'\) return submitStatusTransition\(targetStatus, issue\.key\);/,
+        /if \(!issue\?\.key\) return null;\s*return submitStatusTransition\(targetStatus, issue\.key(?:, options)?\);/,
         'handleSubmitStatusTransition must refuse a keyless submit on every surface',
     );
+});
+
+test('the App holds no global status-write lock', () => {
+    const source = read('frontend/src/dashboard.jsx');
+    assert.ok(!/setStatusTransitionSubmitting/.test(source), 'pills lock per issue key only, never globally');
 });
 
 test('the hook has no Planning-selection arm: a keyless submit writes nothing', () => {
     const source = read('frontend/src/eng/useEngStatusTransitions.js');
     assert.match(source, /if \(!explicitKey\) return null;/);
+    assert.equal((source.match(/\btransitionIssues\(/g) || []).length, 1, 'the per-call onSettled option adds no second write path');
     assert.ok(!/buildEngStatusTargets/.test(source), 'the selected-Stories batch must not return');
     assert.ok(!/isSingleIssueSurface/.test(source), 'every surface is single-issue; no flag remains');
     assert.ok(!/isCatchUp/.test(source));

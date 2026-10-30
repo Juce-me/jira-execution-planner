@@ -3,6 +3,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
+const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -54,6 +55,14 @@ const EPIC_SPECS = [
     ['PLAT-8', 'In Progress', 'Blocker'],
     ['PLAT-9', 'Release', 'Major'],
     ['PLAT-10', 'Done', 'Minor'],
+];
+
+// Strict-fixture columns for the opt-in `strictEpics` option: a `strictEpics` entry is
+// { key, columnId, statusName, summary? }. `review` takes the status the Task 6 transition options
+// offer, so a successful move lands an Epic in a different column.
+const STRICT_COLUMNS = [
+    { id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'] },
+    { id: 'review', name: 'Review', color: '#13c2c2', statusNames: ['In Review'] },
 ];
 
 function epicPayload(specs = EPIC_SPECS) {
@@ -109,6 +118,7 @@ async function installBoardFixture(page, {
     performanceStatus = 201, jiraProjects = [{ key: 'DRAFT', name: 'Draft Project' }],
     jiraBoards = [{ id: '99', name: 'Draft Board', type: 'scrum' }], analyticsEnabled = false,
     userCanEditSettings = true, settingsAdminOnly = false, sprintCatalogSource = null, epmEnabled = false,
+    strictEpics = null, heldTransitions = null,
 } = {}) {
     let strictBoardRequestCount = 0;
     let acceptedSelectedProjects = selectedProjects;
@@ -340,6 +350,46 @@ async function installBoardFixture(page, {
                 storyPoints: 3, team: null, project: { id: '10000', name: 'Platform' },
                 projectClassification: 'other', sprintIds: [selectedSprintId],
             };
+            if (strictEpics) {
+                // Opt-in multi-Epic shape: one column per distinct columnId (STRICT_COLUMNS order),
+                // each Epic carrying one child, with the same index/column/complete frames as below.
+                const strictColumnDefs = STRICT_COLUMNS.filter(({ id }) => strictEpics.some(def => def.columnId === id));
+                const multiEpics = strictEpics.map(({ key, columnId, statusName, summary }) => ({
+                    ...epic, key, columnId, summary: summary || `${key} Strict Board epic`,
+                    status: { id: columnId, name: statusName },
+                }));
+                const multiChildren = multiEpics.map(({ key }) => ({ ...child, key: `${key}-CHILD`, epicKey: key }));
+                const multiFrames = [
+                    base(0, {
+                        type: 'start', scope, scopeVersion: `scope-${scope}`,
+                        scopeCohortDigest: 'a'.repeat(64),
+                        columns: strictColumnDefs.map(({ id, name, color, statusNames }) => (
+                            { id, name, color, statusNames, terminal: false })),
+                    }),
+                    base(1, { type: 'index', epics: multiEpics, membership: scope === 'sprint' ? 'candidate' : 'authoritative' }),
+                    ...strictColumnDefs.map(({ id }, index) => base(2 + index, {
+                        type: 'column', columnId: id,
+                        epics: multiEpics.filter(entry => entry.columnId === id),
+                        children: multiChildren.filter(entry => multiEpics.some(
+                            candidate => candidate.key === entry.epicKey && candidate.columnId === id)),
+                        authoritative: true,
+                    })),
+                    base(2 + strictColumnDefs.length, {
+                        type: 'complete', outcome: 'success', authoritative: true,
+                        epicCount: multiEpics.length, childCount: multiChildren.length,
+                        diagnostics: {
+                            indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 2,
+                            jiraPages: 2, jiraRetries: 0, peakChildSearches: 1,
+                            cacheState: 'miss', completeness: 'complete',
+                        },
+                    }),
+                ];
+                return route.fulfill({
+                    status: 200,
+                    contentType: 'application/x-ndjson',
+                    body: `${multiFrames.map((frame) => JSON.stringify(frame)).join('\n')}\n`,
+                });
+            }
             const frames = [
                 base(0, {
                     type: 'start', scope, scopeVersion: `scope-${scope}`,
@@ -383,6 +433,7 @@ async function installBoardFixture(page, {
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         return json({});
     });
+    if (heldTransitions) await installHeldTransitions(page, heldTransitions.calls, heldTransitions);
 }
 
 async function openBoard(page, {
@@ -393,6 +444,7 @@ async function openBoard(page, {
     boardCapability, performanceLoads, performanceResponseGate, performanceStatus,
     analyticsEnabled,
     userCanEditSettings, settingsAdminOnly, sprintCatalogSource, epmEnabled,
+    strictEpics, heldTransitions,
     initialPrefs = {},
     expectBoardColumns = true,
 } = {}) {
@@ -432,6 +484,8 @@ async function openBoard(page, {
         ...(settingsAdminOnly === undefined ? {} : { settingsAdminOnly }),
         ...(sprintCatalogSource === undefined ? {} : { sprintCatalogSource }),
         ...(epmEnabled === undefined ? {} : { epmEnabled }),
+        ...(strictEpics === undefined ? {} : { strictEpics }),
+        ...(heldTransitions === undefined ? {} : { heldTransitions }),
     });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
@@ -1636,6 +1690,222 @@ test('Board to Planning to Board re-enters Component and returns to the saved Sp
     expect(componentBoardRequests(requests)).toHaveLength(1);
     expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(taskRequestCount);
 });
+
+test('strict fixture renders two Epics in two columns with transition routes', async ({ page }) => {
+    const requests = [];
+    const calls = [];
+    await openBoard(page, {
+        strictBoard: true, sourceBundle: true, requests,
+        strictEpics: [
+            { key: 'STRICT-A', columnId: 'active', statusName: 'In Progress' },
+            { key: 'STRICT-B', columnId: 'review', statusName: 'In Review' },
+        ],
+        heldTransitions: { calls, statuses: ['In Review'], currentStatus: 'In Progress' },
+    });
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: 'Component', exact: true }).click();
+    const cardIn = (columnId, key) => page.locator(
+        `.eng-board .col[data-column-id="${columnId}"] .ecard[data-epic-key="${key}"]`);
+    const columnCount = columnId => page.locator(`.eng-board .col[data-column-id="${columnId}"] .col-head .ct`);
+    // Only the focused column renders cards; the other stays a folded rail until it is focused.
+    await expect(cardIn('active', 'STRICT-A')).toBeVisible();
+    await expect(cardIn('active', 'STRICT-A')).toContainText(/1 work item/i);
+    await expect(columnCount('active')).toHaveText('1');
+    await expect(columnCount('review')).toHaveText('1');
+    await expect(cardIn('review', 'STRICT-B')).toHaveCount(0);
+    expect(requests.filter(entry => entry.startsWith('/api/eng/board?'))).toHaveLength(1);
+
+    await dragCard(page, 'STRICT-A', 'review');
+    await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+    const post = calls.find(call => call.pathname === '/api/issues/transitions' && call.method === 'POST');
+    expect(JSON.parse(post.body)).toEqual({ issueKeys: ['STRICT-A'], targetStatus: 'In Review' });
+    calls.held.get('STRICT-A').release();
+    await expect(columnCount('review')).toHaveText('2');
+
+    // A successful drop focuses the target column, so both Epics now render there.
+    await expect(cardIn('review', 'STRICT-B')).toBeVisible();
+    await expect(cardIn('review', 'STRICT-A')).toBeVisible();
+});
+
+// Issue #241 in the strict scopes: a status pill (through the Epic panel) or a drag patches the Epic
+// into its owning column at once, the strict mutation coordinator serializes writes (Epic B's POST
+// is sent only after A settles, D2), and success sends no Board reload. A and B start in `active`,
+// C keeps the `review` column present (a folded rail shows only its count).
+const STRICT_MUTATION_EPICS = [
+    { key: 'STRICT-A', columnId: 'active', statusName: 'In Progress' },
+    { key: 'STRICT-B', columnId: 'active', statusName: 'In Progress' },
+    { key: 'STRICT-C', columnId: 'review', statusName: 'In Review' },
+];
+const STRICT_MUTATION_SCOPES = [
+    { scope: 'component', label: 'Component', other: 'All work' },
+    { scope: 'all_work', label: 'All work', other: 'Component' },
+];
+
+async function openStrictMutationBoard(page, { scope, label }) {
+    const requests = [];
+    const calls = [];
+    await openBoard(page, {
+        strictBoard: true, sourceBundle: true, requests, reducedMotion: true,
+        strictEpics: STRICT_MUTATION_EPICS,
+        heldTransitions: { calls, statuses: ['In Review'], currentStatus: 'In Progress' },
+    });
+    await selectStrictScope(page, label);
+    const columnCount = columnId => page.locator(`.eng-board .col[data-column-id="${columnId}"] .col-head .ct`);
+    await expect(columnCount('active')).toHaveText('2');
+    await expect(columnCount('review')).toHaveText('1');
+    await settle(page);
+    const strictLoads = requests.filter(entry => entry.startsWith('/api/eng/board?'));
+    expect(new URLSearchParams(strictLoads.at(-1).split('?')[1]).get('scope')).toBe(scope);
+    const boardReloads = () => requests.filter(entry => entry.startsWith('/api/eng/board?')).length;
+    const posts = () => calls.filter(call => call.pathname === '/api/issues/transitions' && call.method === 'POST');
+    return { requests, calls, columnCount, boardReloads, posts };
+}
+
+async function selectStrictScope(page, label) {
+    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('option', { name: label, exact: true }).click();
+}
+
+const strictPanel = page => page.locator('.epic-panel');
+
+// Only the focused column renders cards. A column whose last Epic leaves hands focus to the next
+// one by itself, so the folded rail's Focus button is clicked only when that column is still folded.
+async function openStrictColumn(page, name) {
+    const rail = page.getByRole('button', { name: new RegExp(`^Focus ${name},`) });
+    if (await rail.count()) await rail.click();
+    await expect(page.getByRole('group', { name: `${name} column`, exact: true })).toBeVisible();
+}
+
+async function pickStrictPill(page, key, status) {
+    await page.locator(`.eng-board .ecard[data-epic-key="${key}"] .ecard-open`).click();
+    await expect(strictPanel(page)).toBeVisible();
+    await strictPanel(page).locator('.m-controls button.status-pill.task-status').click();
+    const menu = strictPanel(page).locator(`.status-transition-menu[data-issue-key="${key}"]`);
+    await expect(menu).toBeVisible();
+    await menu.locator('.status-transition-option', { hasText: status }).first().click();
+}
+
+// Waits out the announcement/settle window so a late reload or announcement would have landed.
+async function settleBoardAfterWrite(page) {
+    await settle(page);
+    await page.waitForTimeout(500);
+    await settle(page);
+}
+
+for (const { scope, label, other } of STRICT_MUTATION_SCOPES) {
+    test(`strict pill change moves the card to the owning column at once and sends no Board reload (${label})`, async ({ page }) => {
+        const { calls, columnCount, boardReloads, posts } = await openStrictMutationBoard(page, { scope, label });
+        const reloadsBefore = boardReloads();
+        expect(reloadsBefore).toBeGreaterThan(0);
+
+        await pickStrictPill(page, 'STRICT-A', 'In Review');
+        await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+        await expect(columnCount('review')).toHaveText('2');
+        await expect(columnCount('active')).toHaveText('1');
+        expect(JSON.parse(posts()[0].body)).toEqual({ issueKeys: ['STRICT-A'], targetStatus: 'In Review' });
+
+        calls.held.get('STRICT-A').release();
+        await expect(page.locator('.board-say.has-message')).toContainText('STRICT-A → In Review');
+        await settleBoardAfterWrite(page);
+        expect(boardReloads()).toBe(reloadsBefore);
+        await expect(columnCount('review')).toHaveText('2');
+        await expect(columnCount('active')).toHaveText('1');
+        await strictPanel(page).press('Escape');
+        await expect(strictPanel(page)).toHaveCount(0);
+        await openStrictColumn(page, 'Review');
+        await expect(page.locator('.eng-board .col[data-column-id="review"] .ecard[data-epic-key="STRICT-A"]')).toBeVisible();
+    });
+
+    for (const failure of [
+        { mode: 'fail', copy: 'could not confirm the change to In Review' },
+        { mode: 'reject', copy: 'the change to In Review did not go through' },
+    ]) {
+        test(`strict failed pill change returns the card and announces (${label}, ${failure.mode})`, async ({ page }) => {
+            const { calls, columnCount } = await openStrictMutationBoard(page, { scope, label });
+            await pickStrictPill(page, 'STRICT-A', 'In Review');
+            await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+            await expect(columnCount('review')).toHaveText('2');
+
+            calls.held.get('STRICT-A')[failure.mode]();
+            await expect(columnCount('active')).toHaveText('2');
+            await expect(columnCount('review')).toHaveText('1');
+            const say = page.locator('.board-say.is-error');
+            await expect(say).toBeVisible();
+            await expect(say).toContainText('STRICT-A');
+            await expect(say).toContainText(failure.copy);
+            await strictPanel(page).press('Escape');
+            await expect(page.locator('.eng-board .col[data-column-id="active"] .ecard[data-epic-key="STRICT-A"]')).toBeVisible();
+        });
+    }
+
+    test(`strict second Epic change is accepted while the first is pending (${label})`, async ({ page }) => {
+        const { calls, columnCount, posts } = await openStrictMutationBoard(page, { scope, label });
+        await pickStrictPill(page, 'STRICT-A', 'In Review');
+        await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+        await strictPanel(page).press('Escape');
+        await expect(strictPanel(page)).toHaveCount(0);
+
+        await pickStrictPill(page, 'STRICT-B', 'In Review');
+        await expect(columnCount('review')).toHaveText('3');
+        await expect(columnCount('active')).toHaveText('0');
+        // D2: the strict coordinator holds B's write until A settles.
+        await page.waitForTimeout(300);
+        expect(posts().map(call => JSON.parse(call.body).issueKeys)).toEqual([['STRICT-A']]);
+
+        calls.held.get('STRICT-A').release();
+        await expect.poll(() => calls.held.has('STRICT-B')).toBe(true);
+        expect(posts().map(call => JSON.parse(call.body).issueKeys)).toEqual([['STRICT-A'], ['STRICT-B']]);
+        calls.held.get('STRICT-B').release();
+        await expect(page.locator('.board-say.has-message')).toContainText('STRICT-B → In Review');
+        await settleBoardAfterWrite(page);
+        await expect(columnCount('review')).toHaveText('3');
+        await strictPanel(page).press('Escape');
+        await openStrictColumn(page, 'Review');
+        for (const key of ['STRICT-A', 'STRICT-B']) {
+            await expect(page.locator(`.eng-board .col[data-column-id="review"] .ecard[data-epic-key="${key}"]`)).toBeVisible();
+        }
+    });
+
+    test(`strict scope switch while B is queued behind A announces nothing into the new scope (${label})`, async ({ page }) => {
+        const { calls, boardReloads, posts } = await openStrictMutationBoard(page, { scope, label });
+        await pickStrictPill(page, 'STRICT-A', 'In Review');
+        await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+        await strictPanel(page).press('Escape');
+        await pickStrictPill(page, 'STRICT-B', 'In Review');
+        await strictPanel(page).press('Escape');
+        await expect(strictPanel(page)).toHaveCount(0);
+        expect(posts()).toHaveLength(1);
+
+        const reloadsBefore = boardReloads();
+        await selectStrictScope(page, other);
+        await expect.poll(boardReloads).toBe(reloadsBefore + 1);
+        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText(other);
+        await expect(page.locator('.eng-board .col').first()).toBeVisible();
+
+        calls.held.get('STRICT-A').release();
+        await settleBoardAfterWrite(page);
+        await expect(page.locator('.board-say.has-message')).toHaveCount(0);
+        expect(posts().map(call => JSON.parse(call.body).issueKeys)).not.toContainEqual(['STRICT-B']);
+    });
+
+    test(`strict drag moves the card to the owning column at once and sends no Board reload (${label})`, async ({ page }) => {
+        const { calls, columnCount, boardReloads, posts } = await openStrictMutationBoard(page, { scope, label });
+        const reloadsBefore = boardReloads();
+
+        await dragCard(page, 'STRICT-A', 'review');
+        await expect.poll(() => calls.held.has('STRICT-A')).toBe(true);
+        await expect(columnCount('review')).toHaveText('2');
+        await expect(columnCount('active')).toHaveText('1');
+        expect(JSON.parse(posts()[0].body)).toEqual({ issueKeys: ['STRICT-A'], targetStatus: 'In Review' });
+
+        calls.held.get('STRICT-A').release();
+        await expect(page.locator('.board-say.has-message')).toContainText('STRICT-A → In Review');
+        await settleBoardAfterWrite(page);
+        expect(boardReloads()).toBe(reloadsBefore);
+        await openStrictColumn(page, 'Review');
+        await expect(page.locator('.eng-board .col[data-column-id="review"] .ecard[data-epic-key="STRICT-A"]')).toBeVisible();
+    });
+}
 
 test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {
     const requests = [];

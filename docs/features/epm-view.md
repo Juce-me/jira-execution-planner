@@ -4,7 +4,7 @@ Use the header `ENG | EPM` switch to move between team delivery and project deli
 
 The Jira rollup toggle uses the shared button overlay and blue ring. Collapse all
 and the settings gear use tinted circles; project, update and duplicate-issue links
-underline. Passive project status and label chips keep their resting appearance.
+underline. Passive project status keeps its resting appearance. EPM project status reuses the ENG epic status pill; the project board header does not show the Jira label, and the duplicates callout shows it as Jira-key text. The project name, Home update text and owner avatar use the app font, like the rest of the dashboard.
 Hover feedback is limited to enabled controls on hover-capable devices. Desktop
 and narrow progress readouts retain their placement, reveal and focus behavior;
 the [design-system map](../design-system.md) records the shared control owners.
@@ -18,6 +18,8 @@ The Home token is a credential connection, not EPM saved-view state. Token mater
 - `Archived` ignores sprint and shows completed, cancelled, or archived project work.
 
 If `Active` has no sprint selected, the dashboard keeps the EPM project selected but does not request Jira issues until you choose a sprint.
+
+The EPM Epic assignee and the project owner circle show a profile photo in their existing slot when one is available (`ui/PersonAvatar.jsx`); otherwise the glyph or the initials stay. The Epic assignee photo comes from the optional `assigneeAvatarUrl` on the existing slim issue payload, taken from the 32x32 Jira avatar and kept only when it is on an Atlassian-hosted avatar host (`backend/security/avatar_urls.py`). Gravatar-hosted and generated-initials avatars are never loaded. The owner circle shows a photo only when the Home owner data already carries an allowlisted URL; the OAuth `public-read-v1` Home queries omit the owner, so OAuth-mode owners stay on initials. There is no new request.
 
 The EPM settings panel auto-detects the Atlassian site from Jira, then lets operators choose a root goal and one or more of its child sub-goals. EPM project discovery includes projects linked directly to the selected sub-goals and projects linked to their nested child goals.
 

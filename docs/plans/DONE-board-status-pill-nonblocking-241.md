@@ -187,7 +187,9 @@ Divergences from the plan as written:
 - Task 6: added a `reject()` mode to the held-transition mock to tell rejected from unconfirmed outcomes.
 - Task 8: the ontology entry for ENG status/priority mutations was rewritten (it still said Board edits refresh the Board once); the `Verified on` of its section was left at its baseline statement and the entry carries its own date.
 
-Gates at the documentation head: `npm run build` clean; `npm run test:frontend:unit` 3183 pass, 0 fail; full Python suite 2812 tests OK (50 skipped); `tests.test_agents_md_learnings` and `tests.test_codebase_structure_budgets` OK; `scripts/extraction_lint/run.sh` reports the same 10 owner-budget problems (EPM and Settings modules) on this branch and on `origin/main`; full Chromium `tests/ui` run: 2024 passed, 16 skipped, 5 failed, all in `dashboard_data_freshness.spec.js` (automatic EPM cases), which fail the same way alone on `origin/main`.
+Gates at the documentation head: `npm run build` clean; `npm run test:frontend:unit` 3183 pass, 0 fail; full Python suite 2825 tests OK (50 skipped, rerun on the rebased head with `JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile`); `tests.test_agents_md_learnings` and `tests.test_codebase_structure_budgets` OK; `scripts/extraction_lint/run.sh` reports the same 10 owner-budget problems (EPM and Settings modules) on this branch and on `origin/main`; full Chromium `tests/ui` run before the final rebase: 2024 passed, 16 skipped, 5 failed, all in `dashboard_data_freshness.spec.js` (automatic EPM cases), which fail the same way alone on `origin/main`.
+
+Live validation against the Jira sandbox (2026-10-30, sprint scope, real writes, all restored afterwards): a pill change showed at once with the menu closed and only its own pill disabled; a second Epic changed while the first write was held 8s was sent in parallel and both outcomes were announced in order; a simulated rejected write rolled back with the "did not go through" announcement and a simulated network failure with the "could not confirm" announcement; a drag announced once, and two drags back to back with the first response held did not disturb each other. Not exercised live: the strict scopes (Component, All work), a repeated change of the same Epic, Catch Up and Planning pills, a scope switch with a queued write, and Firefox or WebKit rendering of the toast.
 
 Known follow-ups (deferred, not blocking):
 
@@ -201,4 +203,4 @@ Known follow-ups (deferred, not blocking):
 
 ## Current Accuracy
 
-Accurate against `bugfix/241-board-status-pill-nonblocking` at the head above. The ontology entry "ENG status/priority mutations" and the allowlist row in `docs/README_ANALYTICS.md` describe the delivered behavior. Not yet pushed or opened as a PR; add the PR number after it exists.
+Accurate against `bugfix/241-board-status-pill-nonblocking` at the head above. The ontology entry "ENG status/priority mutations" and the allowlist row in `docs/README_ANALYTICS.md` describe the delivered behavior. Published as a pull request from this branch; the PR number is deliberately not recorded here.

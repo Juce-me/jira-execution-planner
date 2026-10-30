@@ -20,7 +20,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Planning Work
 
-- [Planning assignee capacity table #323](EXEC-planning-assignee-capacity-table-323.md): draft design 2026-10-29 awaiting operator approval; with one team selected, Planning shows a per-assignee table (Capacity, Selected and Total effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with an assignee underbar and a stored planned team capacity that can be pushed to the Jira capacity field.
+- [Planning assignee capacity table #323](EXEC-planning-assignee-capacity-table-323.md): with one team selected, Planning shows a per-assignee table (Capacity, Selected and Total effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with a per-assignee strip in the pinned capacity bar.
 
 - [Home OAuth public reads](DONE-home-oauth-public-reads.md): Home reads through the signed-in user's OAuth grant only; the stored personal API-token connection was removed. The [design/DoD](SUPPORT-home-oauth-public-read-design.md) uses a self-controlled private Enable EPM view checkbox, EPM-only Home scopes and a bounded Home-access signal; no-access Goals/Projects navigation stays hidden. It preserves non-empty Goals -> Home projects -> exact-label Jira entities and documents rollback without a credential switch. Validation against main `e99b7e2a` records F-01–F-39 dispositions; historical 141/190 baseline counts are not current-main test evidence. GATE-05 remains write-only.
 

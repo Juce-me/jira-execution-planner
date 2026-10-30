@@ -1174,3 +1174,67 @@ for (const kind of ['Stories', 'Epics']) test(`Planning Table ${kind} refreshes 
     expect(await page.evaluate(() => { window.__planningTeamObserver.disconnect(); return window.__planningOldValueFlashes; })).toBe(0);
     await evidence(testInfo, 'planning-selected-team-return', { calls: ctx.calls.slice(since).map(call => ({ pathname: call.pathname, purpose: call.params.purpose })), selectedTeam: await page.locator('.team-dropdown-selection-label:visible').innerText() });
 });
+
+// #323 Task 7: the assignee capacity strip is portaled above the sheet, outside its reading anchor.
+async function mountAssigneeReadingHarness(page, { dismissed }) {
+    const esbuild = require('esbuild'), fs = require('node:fs');
+    const code = esbuild.buildSync({ stdin: { resolveDir: path.resolve(__dirname, '../../frontend/src'), sourcefile: 'assignee-reading-harness.jsx', loader: 'jsx', contents: `
+        import * as React from 'react'; import {createRoot} from 'react-dom/client';
+        import PlanningReviewTable from './eng/PlanningReviewTable.jsx';
+        import PlanningAssigneeCapacity from './eng/PlanningAssigneeCapacity.jsx';
+        import {useEngWorkHierarchy} from './eng/useEngWorkHierarchy.js';
+        const stories = Array.from({length:40}, (_,i)=>({key:'STORY-'+(i+1),id:'s'+(i+1),fields:{epicKey:'EPIC-'+(i+1),summary:'Synthetic Story '+(i+1),priority:{name:'Medium'},status:{name:'To Do'},customfield_10004:3,teamId:'t',teamName:'Synthetic Team',assignee:{accountId:'acc-'+(i%6),displayName:'Synthetic Person '+(i%6)}}}));
+        const epics = Object.fromEntries(stories.map((s,i)=>[s.fields.epicKey,{key:s.fields.epicKey,id:'e'+(i+1),summary:'Synthetic Epic '+(i+1),priority:{name:'Medium'},status:{name:'To Do'}}]));
+        const review={groupId:'g',sprintId:'100',inheritedFrom:{sprintId:'90',viewRevision:0},columns:[],cells:{},drafts:{},layouts:{epic:{hidden:[]},story:{hidden:[]}},capabilities:{canSave:true},schemaLoaded:true,changeSchema:()=>true};
+        const dismissals=${dismissed ? `{'100:g':{sourceSprintId:'90',viewRevision:0}}` : '{}'};
+        const teams=new Set(['t']);
+        window.__assigneeRef={current:null};
+        function Harness(){
+            const hierarchy=useEngWorkHierarchy({visibleTasksForList:stories,epicDetails:epics,showPlanning:true,selectedSprint:1,activeGroupId:'g',groupByInitiativeChoice:false});
+            return <><div className="planning-review-sticky-stack" style={{height:90}}><strong>Synthetic Filters / capacity stack</strong></div>
+                <div id="planning-assignee-capacity-host" />
+                <PlanningAssigneeCapacity enabled selectedTeamIds={teams} allTeams={false} sprintId="100" sprintClosed={false} sprints={[]} backendUrl="" tasks={stories} originals={null} selectedTasks={[]} getTeamInfo={()=>({id:'t',name:'Synthetic Team'})} normalizeStatus={s=>s} laneCounts={[40,0]} automaticRefreshRef={window.__assigneeRef}>
+                    <PlanningReviewTable epicGroups={hierarchy.epicGroups} visibleTasks={stories} selectedStoryKeys={new Set()} review={review} getTeamInfo={()=>({id:'t',name:'Synthetic Team'})} admittedTeamCount={1} admittedProjectCount={1} resolveSprintName={()=>'Synthetic Sprint 90'} inheritedHintDismissals={dismissals} />
+                </PlanningAssigneeCapacity></>;
+        }
+        createRoot(document.getElementById('root')).render(<Harness/>);
+    ` }, bundle: true, write: false, format: 'iife', define: { 'process.env.NODE_ENV': '"test"' } }).outputFiles[0].text;
+    const person = (n, capacity) => ({ assigneeKey: 'saved-' + n, displayName: 'Saved Person ' + n, capacity, vacations: null, notes: null, removed: false });
+    const state = { document: { teamId: 't', sprintId: '100', revision: 1, rows: [person(1, '5')], inherited: null, capabilities: { canRead: true, canSave: true } }, gets: 0 };
+    state.grow = () => { state.document = { ...state.document, revision: 2, rows: Array.from({ length: 9 }, (_, n) => person(n + 1, '5')) }; };
+    await page.route('http://synthetic.test/**', route => {
+        const url = new URL(route.request().url());
+        if (url.pathname.endsWith('/assignee-capacity')) { state.gets += 1; return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(state.document) }); }
+        if (url.pathname.startsWith('/api/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+        return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><html><body></body></html>' });
+    });
+    await page.goto('http://synthetic.test/');
+    await page.setContent(`<!doctype html><style>${fs.readFileSync(path.resolve(__dirname, '../../frontend/dist/dashboard.css'), 'utf8')}</style><div id="root"></div>`);
+    await page.addScriptTag({ content: code });
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important} body{min-height:2400px} .planning-review-sticky-stack{position:sticky;top:0}' });
+    return state;
+}
+for (const dismissed of [false, true]) for (const native of ['auto', 'none']) test(`assignee strip automatic growth above the reading row keeps the row in place, hint ${dismissed ? 'dismissed' : 'present'}, native anchoring ${native}`, async ({ page }, testInfo) => {
+    const state = await mountAssigneeReadingHarness(page, { dismissed });
+    await page.addStyleTag({ content: `html,body,.planning-review-scroll{overflow-anchor:${native}}` });
+    await expect.poll(() => state.gets).toBe(1);
+    await page.locator('[data-assignee-capacity] .capacity-header-toggle').click();
+    await expect(page.locator('table.planning-assignee-table')).toBeVisible();
+    await expect(page.locator('.planning-review-hint')).toHaveCount(dismissed ? 0 : 1);
+    await expect.poll(() => page.evaluate(() => Boolean(window.__assigneeRef.assigneeCapacity))).toBe(true);
+    const anchor = page.locator('[data-planning-row-key="e20"]');
+    await anchor.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().top - 400));
+    await settle(page);
+    const before = await page.evaluate(() => ({ top: document.querySelector('[data-planning-row-key="e20"]').getBoundingClientRect().top,
+        strip: document.getElementById('planning-assignee-capacity-host').getBoundingClientRect().toJSON(), stack: document.querySelector('.planning-review-sticky-stack').getBoundingClientRect().bottom }));
+    expect(before.strip.bottom, 'the strip is scrolled away above the sticky stack').toBeLessThanOrEqual(before.stack);
+    state.grow();
+    expect(await page.evaluate(() => window.__assigneeRef.assigneeCapacity.refresh({ automatic: true }))).toEqual({ status: 'ok' });
+    await expect(page.locator('table.planning-assignee-table tbody tr[data-assignee-key="saved-9"]')).toHaveCount(1);
+    await settle(page);
+    const after = await page.evaluate(() => ({ top: document.querySelector('[data-planning-row-key="e20"]').getBoundingClientRect().top,
+        strip: document.getElementById('planning-assignee-capacity-host').getBoundingClientRect().toJSON() }));
+    expect(after.strip.height - before.strip.height, 'the strip grew').toBeGreaterThan(100);
+    expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
+    await evidence(testInfo, 'assignee-strip-reading-metrics', { dismissed, native, before, after });
+});

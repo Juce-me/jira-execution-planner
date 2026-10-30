@@ -962,3 +962,110 @@ test('settled screenshots: gray inherited values, the Unassigned row and the Rem
     await page.mouse.move(5, 5);
     await strip(page).screenshot({ path: 'tmp/slice1-shots/table-unassigned-removed.png', animations: 'disabled' });
 });
+
+// #251 freshness and DoD 12 request ledger.
+const assigneeCalls = (calls, since = 0) => calls.slice(since).filter(call => call.pathname.endsWith('/assignee-capacity'));
+async function pickTeam(page, name) {
+    await page.locator('.team-dropdown-toggle:visible').click();
+    await page.locator('.team-dropdown-panel:visible').getByText(name, { exact: true }).click();
+    await page.keyboard.press('Escape');
+}
+
+test('request ledger: a Sprint switch reads at most once and a change from Team A to Team B at most once', async ({ page }) => {
+    const server = capacityServer();
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await page.waitForLoadState('networkidle');
+    let since = calls.length;
+    const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await toggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: activeSprintName }).click();
+    await expect(strip(page)).toBeVisible();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    const sprintSwitch = assigneeCalls(calls, since);
+    expect(sprintSwitch.length, 'Sprint switch').toBeLessThanOrEqual(1);
+    expect(sprintSwitch.every(call => call.method === 'GET')).toBe(true);
+    since = calls.length;
+    await pickTeam(page, 'Beta Team');
+    await expect(strip(page)).toHaveCount(0);
+    await pickTeam(page, 'Alpha Team');
+    await expect(strip(page)).toBeVisible();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    const teamSwitch = assigneeCalls(calls, since);
+    expect(teamSwitch.length, 'Team A to Team B').toBeLessThanOrEqual(1);
+    expect(teamSwitch.every(call => call.method === 'GET')).toBe(true);
+});
+
+test('freshness: a return after more than 12 minutes re-reads the document once, shows the change and writes nothing', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('8');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    server.state.rows[0].capacity = '9'; server.state.revision += 1;
+    const since = calls.length;
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name').length, 'the Planning freshness job ran').toBeGreaterThan(0);
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('9');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    expect(assigneeCalls(calls, since).map(call => call.method)).toEqual(['GET']);
+    // The review's values read is a POST that carries issue ids and writes nothing; every other call is a GET.
+    expect(calls.slice(since).filter(call => call.method !== 'GET' && !/\/review\/values\/read$/.test(call.pathname)), 'no non-GET in the automatic window').toEqual([]);
+    await expect(strip(page).locator('[role="alert"]')).toHaveCount(0);
+});
+
+test('freshness: a busy strip is not re-read on return, and the edit in progress keeps its draft and focus', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = capacityServer({ delayPatch: 4000, rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('6'); await capacity.press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    const notes = rowOf(page, 'acc-bob').getByRole('textbox', { name: 'Notes for Bob Synthetic' });
+    await notes.click(); await notes.fill('typing');
+    const since = calls.length;
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name').length, 'the Planning freshness job ran').toBeGreaterThan(0);
+    await page.waitForTimeout(500);
+    expect(calls.slice(since).some(call => /\/review$/.test(call.pathname)), 'the Planning follow-up ran').toBe(true);
+    expect(assigneeCalls(calls, since).filter(call => call.method === 'GET'), 'no read while the save runs').toEqual([]);
+    await expect(notes).toBeFocused();
+    await expect(notes).toHaveValue('typing');
+    await expect(capacity).toHaveValue('6');
+});
+
+test('the header Refresh re-reads the assignee capacity document once', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    server.state.rows[0].capacity = '11'; server.state.revision += 1;
+    const since = calls.length;
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('11');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    expect(assigneeCalls(calls, since).map(call => call.method)).toEqual(['GET']);
+});
+
+test('a new auth session re-reads the document without a loading state', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    server.state.rows[0].capacity = '12'; server.state.revision += 1;
+    const since = calls.length;
+    await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:auth-session-refreshed')));
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('12');
+    expect(assigneeCalls(calls, since).filter(call => call.method === 'GET').length).toBeGreaterThanOrEqual(1);
+    await expect(strip(page).getByText('Loading assignee capacity…')).toHaveCount(0);
+});

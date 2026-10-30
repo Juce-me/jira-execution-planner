@@ -195,7 +195,11 @@ export function createPlanningFreshnessAdapter(readCurrent, stableOwner = {}) {
             catch (error) { entry.finish(true); throw error; }
             finally { entry.release(); }
         },
-        async followUp(job) { try { return await primary.followUp(job); } finally { holds.get(job)?.finish(); } },
+        async followUp(job) {
+            // The assignee capacity strip re-reads its own document beside the review and capacity follow-ups; it skips itself while busy.
+            const assignee = stableOwner.assigneeCapacity, read = assignee && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
+            try { return await primary.followUp(job); } finally { await read?.catch(() => {}); holds.get(job)?.finish(); }
+        },
     };
 }
 

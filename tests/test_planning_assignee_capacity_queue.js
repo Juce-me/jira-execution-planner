@@ -373,3 +373,112 @@ test('D6: the document is read once per one-Team scope whether or not the strip 
     await settle();
     assert.equal(calls.gets.length, 1, 'no scope (two Teams or All) reads nothing');
 });
+
+// #251 freshness: controller.refresh({ signal, shouldApply, automatic }).
+async function refreshFixture(options = {}) {
+    let next = doc();
+    const reads = [];
+    const f = await fixture({ ...options, fetch: async (...args) => { reads.push(args); const gate = options.gate?.(reads.length); if (gate) await gate; if (options.fail?.(reads.length)) throw Object.assign(new Error('boom'), { status: 503 }); return next; } });
+    let publishes = 0;
+    f.controller.subscribe(() => { publishes += 1; });
+    f.controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    return { ...f, reads, setNext: value => { next = value; }, publishes: () => publishes };
+}
+
+test('refresh is ignored without a scope, without a document, while loading and while busy', async () => {
+    const { createAssigneeCapacityController } = await loadController();
+    const idle = createAssigneeCapacityController({ fetchCapacity: async () => doc() });
+    assert.deepEqual(await idle.refresh({ automatic: true }), { status: 'ignored' }, 'no scope');
+    const hold = deferred();
+    const loading = createAssigneeCapacityController({ fetchCapacity: () => hold.promise, setTimer: () => 0, clearTimer: () => {} });
+    loading.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(loading.getState().load, 'loading');
+    assert.deepEqual(await loading.refresh({ automatic: true }), { status: 'ignored' }, 'no document while loading');
+    hold.resolve(doc()); await settle();
+    const busy = await refreshFixture();
+    busy.controller.commit({ key: 'u1', field: 'capacity', value: '6' }, busy.buildShown);
+    const before = busy.reads.length;
+    assert.deepEqual(await busy.controller.refresh({ automatic: true }), { status: 'ignored' }, 'pending drafts');
+    assert.equal(busy.reads.length, before, 'no read while busy');
+});
+
+test('refresh publishes a changed document once, marked automatic, and keeps no-op re-reads silent', async () => {
+    const f = await refreshFixture();
+    const start = f.publishes();
+    assert.deepEqual(await f.controller.refresh({ automatic: true }), { status: 'ok' });
+    assert.equal(f.publishes(), start, 'same revision, planned and inherited: no publish');
+    f.setNext(doc({ revision: 2, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '7', vacations: null, notes: null, removed: false }] }));
+    assert.deepEqual(await f.controller.refresh({ automatic: true }), { status: 'ok' });
+    assert.equal(f.publishes(), start + 1);
+    assert.equal(f.controller.getState().document.rows[0].capacity, '7');
+    assert.equal(f.controller.getState().origin, 'automatic');
+    f.setNext(doc({ revision: 2, planned: { value: '20', source: 'user' }, rows: [] }));
+    await f.controller.refresh({ automatic: false });
+    assert.equal(f.publishes(), start + 2, 'a changed planned value publishes');
+    assert.equal(f.controller.getState().origin, '', 'a manual refresh is not marked automatic');
+    f.setNext(doc({ revision: 2, planned: { value: '20', source: 'user' }, inherited: { fromSprintId: '90', rows: [], planned: null }, rows: [] }));
+    await f.controller.refresh({ automatic: true });
+    assert.equal(f.publishes(), start + 3, 'a changed inherited block publishes');
+});
+
+test('a failed refresh keeps the held document and raises no loading or error state', async () => {
+    const f = await refreshFixture({ fail: n => n > 1 });
+    const held = f.controller.getState();
+    assert.deepEqual(await f.controller.refresh({ automatic: true }), { status: 'failed' });
+    const after = f.controller.getState();
+    assert.equal(after.document, held.document);
+    assert.equal(after.load, 'ready');
+    assert.equal(after.error, '');
+    assert.equal(after.save, 'idle');
+});
+
+test('a refresh response is dropped when the scope changed, shouldApply turned false, the signal aborted or a write started', async () => {
+    for (const interrupt of ['scope', 'shouldApply', 'abort', 'edit']) {
+        const gate = deferred();
+        const f = await refreshFixture({ gate: n => (n === 2 ? gate.promise : null) });
+        f.setNext(doc({ revision: 5, rows: [] }));
+        let apply = true;
+        const abort = new AbortController();
+        const pending = f.controller.refresh({ automatic: true, signal: abort.signal, shouldApply: () => apply });
+        if (interrupt === 'scope') f.controller.setScope({ sprintId: '101', teamId: 't1', active: true });
+        if (interrupt === 'shouldApply') apply = false;
+        if (interrupt === 'abort') abort.abort();
+        if (interrupt === 'edit') f.controller.commit({ key: 'u1', field: 'notes', value: 'typing' }, f.buildShown);
+        gate.resolve();
+        assert.deepEqual(await pending, { status: 'ignored' }, interrupt);
+        if (interrupt !== 'scope') {
+            assert.equal(f.controller.getState().document.revision, 1, `${interrupt}: the held document stays`);
+        }
+        if (interrupt === 'edit') {
+            assert.deepEqual(f.controller.getState().changes.map(change => change.notes), ['typing'], 'the edit in progress is preserved');
+            assert.equal(f.controller.isBusy(), true);
+        }
+    }
+});
+
+test('only one refresh runs at a time', async () => {
+    const gate = deferred();
+    const f = await refreshFixture({ gate: n => (n === 2 ? gate.promise : null) });
+    const first = f.controller.refresh({ automatic: true });
+    assert.deepEqual(await f.controller.refresh({ automatic: true }), { status: 'ignored' });
+    gate.resolve();
+    assert.deepEqual(await first, { status: 'ok' });
+    assert.equal(f.reads.length, 2);
+});
+
+test('a new auth session clears the cache and re-reads the current scope, holding the shown document', async () => {
+    const f = await refreshFixture();
+    f.controller.setScope({ sprintId: '101', teamId: 't1', active: true });
+    f.timers.splice(0).forEach(timer => timer.fn?.());
+    await settle();
+    const reads = f.reads.length;
+    const held = f.controller.getState().document;
+    f.controller.resetSession();
+    assert.equal(f.controller.getState().load, 'ready', 'no loading state while re-reading');
+    assert.equal(f.controller.getState().document, held);
+    await settle();
+    assert.equal(f.reads.length, reads + 1, 'the current scope is re-read');
+    f.controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(f.controller.getState().document, null, 'a scope read under the old session is not reused from cache');
+});

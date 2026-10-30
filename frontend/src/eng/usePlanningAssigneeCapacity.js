@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { fetchAssigneeCapacity, saveAssigneeCapacity } from '../api/assigneeCapacityApi.js';
+import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
 import { applyChangesToDocument, buildChanges, chunkChanges, isValidDisplayName, pruneChange, sanitizeDisplayName } from './planningAssigneeCapacityModel.js';
 
 const SAVE_DELAY_MS = 200;
@@ -12,7 +13,10 @@ const isRejected = error => error?.status === 400 || error?.status === 413;
 // shows Not saved with Retry and the drafts.
 export const MAX_PARKED_SCOPES = 5;
 const scopeKeyOf = (sprintId, teamId) => (sprintId && teamId ? `${sprintId}|${teamId}` : '');
-const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', document: null, changes: [], capabilities: { canRead: false, canSave: false } });
+const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', origin: '', document: null, changes: [], capabilities: { canRead: false, canSave: false } });
+const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+// A re-read that changes none of these leaves the shown document as it is.
+const sameDocument = (a, b) => Boolean(a && b) && a.revision === b.revision && sameValue(a.planned, b.planned) && sameValue(a.inherited, b.inherited);
 
 // One queue per (Sprint, Team): the unsaved changes, at most one request in flight, and the last known document.
 // `failed` holds changes whose request failed (they ride along with the next commit); `rejected` holds changes the
@@ -57,16 +61,17 @@ function withValidName(change) {
 // Framework-free controller (as the sprint review controller): the React hook below only subscribes to it.
 export function createAssigneeCapacityController({ backendUrl = '', fetchCapacity = fetchAssigneeCapacity, saveCapacity = saveAssigneeCapacity, saveDelay = SAVE_DELAY_MS, settleDelay = SETTLE_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
     let state = EMPTY;
-    let current = null, active = false, generation = 0, disposed = false, loadAbort = null, loadTimer = null;
+    let current = null, active = false, generation = 0, disposed = false, loadAbort = null, loadTimer = null, refreshing = false;
     const cache = new Map();
     const parked = new Map();
     const csrf = { token: null };
     const listeners = new Set();
 
     const overlay = queue => (queue ? [...queue.rejected.values(), ...queue.failed.values(), ...queue.inFlight, ...queue.pending.values()] : []);
+    // `origin: 'automatic'` marks only the publish of an automatic refresh (the provider keeps the reading position for it).
     const publish = patch => {
         const queue = current;
-        state = { ...state, ...patch, changes: overlay(queue) };
+        state = { ...state, origin: '', ...patch, changes: overlay(queue) };
         if (queue) state.document = queue.document;
         listeners.forEach(listener => listener());
     };
@@ -247,6 +252,30 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         flush() { flush(current); },
         // Re-reads the document (e.g. after a manual refresh); never while drafts are unsaved.
         reload() { if (current && active) void load(current); },
+        // Freshness re-read of the shown document (#251): never while it loads or the queue is busy, and a response that
+        // arrives stale or busy is dropped. A failure keeps the held document and raises no loading or error state.
+        async refresh({ signal, shouldApply = () => true, automatic = true } = {}) {
+            const queue = current;
+            if (!queue || !active || !queue.document || state.load === 'loading' || loadAbort || refreshing || controller.isBusy() || signal?.aborted) return { status: 'ignored' };
+            const epoch = queue.writeEpoch, thisGeneration = generation;
+            const stale = () => !isCurrent(queue) || generation !== thisGeneration || queue.writeEpoch !== epoch || signal?.aborted || !shouldApply() || controller.isBusy();
+            refreshing = true;
+            let data;
+            try { data = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, { signal }); }
+            catch (error) { return { status: isAbort(error) || stale() ? 'ignored' : 'failed' }; }
+            finally { refreshing = false; }
+            if (stale()) return { status: 'ignored' };
+            cache.set(scopeKeyOf(queue.sprintId, queue.teamId), data);
+            if (sameDocument(queue.document, data)) return { status: 'ok' };
+            queue.document = data;
+            publish({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, ...(automatic ? { origin: 'automatic' } : {}) });
+            return { status: 'ok' };
+        },
+        // A new auth session: nothing read under the old one is reused; the shown document is held while it is re-read.
+        resetSession() {
+            cache.clear(); csrf.token = null;
+            if (current && active) void load(current);
+        },
         isBusy: () => Boolean(current && (current.running || hasDrafts(current))),
         dispose() { flush(current); disposed = true; loadAbort?.abort(); if (loadTimer != null) { clearTimer(loadTimer); loadTimer = null; } },
     };
@@ -258,5 +287,10 @@ export default function usePlanningAssigneeCapacity({ backendUrl = '', sprintId,
     const state = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
     React.useEffect(() => { controller.setScope({ sprintId, teamId, active }); }, [controller, sprintId, teamId, active]);
     React.useEffect(() => () => controller.dispose(), [controller]);
+    React.useEffect(() => {
+        const reset = () => controller.resetSession();
+        window.addEventListener(AUTH_SESSION_REFRESH_EVENT, reset);
+        return () => window.removeEventListener(AUTH_SESSION_REFRESH_EVENT, reset);
+    }, [controller]);
     return { state, controller };
 }

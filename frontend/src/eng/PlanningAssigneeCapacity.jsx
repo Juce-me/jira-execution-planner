@@ -143,7 +143,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, selectedKeys = null,
+    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, selectedKeys = null, automaticRefreshRef = null,
 }) {
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
@@ -182,6 +182,28 @@ export default function PlanningAssigneeCapacity({
     const incomplete = mayBeIncomplete({ laneIssueCounts: laneCounts || [] });
     const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
     const loaded = Boolean(state.document);
+    // The Planning freshness follow-up and the header Refresh re-read the shown document through this entry (#251).
+    React.useEffect(() => {
+        if (!automaticRefreshRef || !oneTeam || !loaded) return undefined;
+        const entry = { refresh: options => controller.refresh(options), blocked: () => controller.isBusy() };
+        automaticRefreshRef.assigneeCapacity = entry;
+        return () => { if (automaticRefreshRef.assigneeCapacity === entry) automaticRefreshRef.assigneeCapacity = null; };
+    }, [automaticRefreshRef, oneTeam, loaded, controller]);
+    // The strip sits above the sheet, outside its reading anchor: when an automatic re-read changes its height while it is
+    // scrolled away above the sticky stack, scroll by what the content below it actually moved (native scroll anchoring
+    // may already have moved it back). The strip's bottom is read when the controller publishes, before React commits.
+    const readingBottom = React.useRef(null);
+    React.useEffect(() => controller.subscribe(() => {
+        readingBottom.current = host && controller.getState().origin === 'automatic' ? host.getBoundingClientRect().bottom : null;
+    }), [controller, host]);
+    React.useLayoutEffect(() => {
+        const previous = readingBottom.current;
+        readingBottom.current = null;
+        if (!host || state.origin !== 'automatic' || previous == null) return;
+        const visibleTop = Math.max(0, document.querySelector('.planning-review-sticky-stack')?.getBoundingClientRect().bottom || 0);
+        const shift = host.getBoundingClientRect().bottom - previous;
+        if (previous <= visibleTop && Math.abs(shift) >= 1) window.scrollBy(0, shift);
+    }, [host, state]);
     // Only people with an underbar segment are tinted, and the strip exists only with a Jira team number.
     const tinted = Number(rawCapacity) > 0;
     const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity }), [oneTeam, teamId, view, state, loaded, rawCapacity]);

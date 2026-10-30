@@ -1,4 +1,5 @@
 import * as React from 'react';
+import PlanningAssigneeCapacityBar from './PlanningAssigneeCapacityBar.jsx';
 
 export default function PlanningCapacityBar({
     capacityEnabled,
@@ -40,6 +41,7 @@ export default function PlanningCapacityBar({
                         {!compact && <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>}
                     </div>
                     {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap</span>}
+                    <PlanningAssigneeCapacityBar barCapacity={totalCapacityAdjusted} />
                     {/* Planning marker */}
                     {showPlanningMarker && (
                         <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip={compact ? `Planning capacity: ${estimatedCapacityAdjusted.toFixed(1)} SP, after excluded activities.` : 'Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).'}>

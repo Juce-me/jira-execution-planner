@@ -60,7 +60,7 @@ function capacityServer({ inherited = null, rows = [], capabilities = caps, dela
     return { state, handler };
 }
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', ticket = true } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '' } = {}) {
     const calls = [];
     await installDashboardShell(page);
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
@@ -78,7 +78,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', version: 1, view: { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showScenario: false } },
             });
         }
-        if (url.pathname === '/api/capacity') return json(route, { enabled: true, mutationEnabled: false, sprint: url.searchParams.get('sprint'), capacities: ticket ? { 'Alpha Team': 20 } : {}, entries: ticket ? [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] : [] });
+        if (url.pathname === '/api/capacity') return json(route, { enabled: true, mutationEnabled: false, sprint: url.searchParams.get('sprint'), capacities: { 'Alpha Team': 20 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] });
         if (url.pathname === '/api/version') return json(route, { enabled: false });
         if (url.pathname === '/api/groups-config') {
             return json(route, {
@@ -353,17 +353,16 @@ test('a touch tap toggles the strip, removes and restores', async ({ browser }) 
     await context.close();
 });
 
-// ---- assignee capacity bar under the Team card's bar (#323) ---------------------------------------
+// ---- underbar (#323 Task 5) -------------------------------------------------------------------
 
-const barRows = [
+const underbarRows = [
     { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false },
     { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: '6', vacations: null, notes: null, removed: false },
     { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: null, vacations: null, notes: null, removed: false },
 ];
-const cardBar = page => page.locator('.planning-panel .planning-team-capacity-cards .team-stat-card [data-assignee-bar]');
-const segments = page => cardBar(page).locator('.stacked-bar-segment');
+const underbar = page => page.locator('.planning-panel [data-assignee-underbar]');
+const segments = page => underbar(page).locator('.stacked-bar-segment');
 const readout = page => page.locator('.stacked-bar-readout');
-const showPanel = page => page.locator('.planning-panel').getByRole('button', { name: 'Show panel', exact: true }).click();
 async function expectReadoutInViewport(page) {
     const viewport = page.viewportSize();
     await expect(readout(page)).toBeVisible();
@@ -373,89 +372,73 @@ async function expectReadoutInViewport(page) {
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
 }
 
-for (const ticket of [false, true]) test(`the bar is absent until the strip was expanded once, then sits under the team bar inside the card (${ticket ? 'with' : 'without'} a capacity ticket)`, async ({ page }) => {
-    const server = capacityServer({ rows: barRows });
-    await install(page, { server, capacityProject: 'CAP', ticket });
+test('the underbar is absent until the strip has been expanded once, then stays', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
-    await showPanel(page);
-    await expect(page.locator('.planning-panel .planning-team-capacity-cards .team-stat-card')).toHaveCount(1);
-    await expect(cardBar(page)).toHaveCount(0);
+    await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-track')).toBeVisible();
+    await expect(underbar(page)).toHaveCount(0);
     await expand(page);
-    await expect(cardBar(page)).toHaveCount(1);
-    await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-track')).toHaveCount(ticket ? 1 : 0);
-    // The amber capacity bar carries nothing from this feature.
-    await expect(page.locator('.planning-panel-capacity-graph [data-assignee-bar], .planning-panel-capacity-graph .stacked-bar')).toHaveCount(0);
-    const geometry = await page.evaluate(() => {
-        const card = document.querySelector('.planning-team-capacity-cards .team-stat-card').getBoundingClientRect();
-        const microbar = document.querySelector('.planning-team-capacity-cards .team-stat-card .microbar').getBoundingClientRect();
-        const bar = document.querySelector('.planning-team-capacity-cards [data-assignee-bar] .stacked-bar').getBoundingClientRect();
-        const track = document.querySelector('.planning-team-capacity-cards [data-assignee-bar] .stacked-bar-track').getBoundingClientRect();
-        return { card: [card.left, card.right, card.top, card.bottom], microbarBottom: microbar.bottom, bar: [bar.left, bar.right, bar.top, bar.bottom], trackHeight: track.height };
-    });
-    expect(geometry.bar[2]).toBeGreaterThanOrEqual(geometry.microbarBottom - 0.5);
-    expect(geometry.bar[0]).toBeGreaterThanOrEqual(geometry.card[0] - 0.5); expect(geometry.bar[1]).toBeLessThanOrEqual(geometry.card[1] + 0.5);
-    expect(geometry.bar[3]).toBeLessThanOrEqual(geometry.card[3] + 0.5);
-    expect(geometry.trackHeight).toBeGreaterThanOrEqual(24);
+    await expect(underbar(page)).toHaveCount(1);
     await stripToggle(page).click();
-    await expect(cardBar(page)).toHaveCount(1);
-    await page.mouse.move(5, 5);
-    await page.locator('.planning-panel').screenshot({ path: `tmp/323-ui/assignee-bar-${ticket ? 'with' : 'no'}-ticket.png`, animations: 'disabled' });
+    await expect(underbar(page)).toHaveCount(1);
 });
 
-for (const ticket of [false, true]) test(`${ticket ? 'with a capacity ticket the unallocated remainder is empty track' : 'without a capacity ticket the bar spans the segments'}`, async ({ page }) => {
-    {
-        const server = capacityServer({ rows: barRows });
-        await install(page, { server, capacityProject: 'CAP', ticket });
-        await openPlanning(page);
-        await showPanel(page);
-        await expand(page);
-        await expect(segments(page)).toHaveCount(3);
-        const unassignedTotal = Number((await rowOf(page, 'unassigned').locator('td').nth(3).textContent()).trim());
-        const measure = await page.evaluate(() => ({
-            trackWidth: document.querySelector('[data-assignee-bar] .stacked-bar-track').getBoundingClientRect().width,
-            segments: [...document.querySelectorAll('[data-assignee-bar] .stacked-bar-segment')].map(node => ({ label: node.getAttribute('aria-label'), width: node.getBoundingClientRect().width, color: getComputedStyle(node).backgroundColor })),
-            total: document.querySelector('[data-assignee-bar] .stacked-bar-row-total').textContent.trim(),
-        }));
-        const denominator = ticket ? 20 : 14 + unassignedTotal;
-        expect(measure.total).toBe(`${denominator} SP`);
-        expect(new Set(measure.segments.map(segment => segment.color)).size).toBe(3);
-        expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / denominator, 2);
-        expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / denominator, 2);
-        expect(measure.segments[2].label).toContain('Unassigned (effort)');
-        expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedTotal / denominator, 2);
-        const used = measure.segments.reduce((sum, segment) => sum + segment.width, 0);
-        if (ticket) expect(used / measure.trackWidth).toBeLessThan(0.99); else expect(used / measure.trackWidth).toBeCloseTo(1, 1);
-    }
-});
-
-test('segment readouts name the person, Capacity, Selected and Total, stay on screen and are not native titles', async ({ page }) => {
-    const server = capacityServer({ rows: barRows });
-    await install(page, { server, capacityProject: 'CAP', ticket: true });
+test('segments are one per person with Capacity plus Unassigned, distinct, proportional, and the readout stays on screen', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
-    await showPanel(page);
     await expand(page);
     await expect(segments(page)).toHaveCount(3);
     const unassignedTotal = Number((await rowOf(page, 'unassigned').locator('td').nth(3).textContent()).trim());
+    const measure = await page.evaluate(() => {
+        const track = document.querySelector('[data-assignee-underbar] .stacked-bar-track').getBoundingClientRect();
+        const outer = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+        return { trackWidth: track.width, trackHeight: track.height, outerBottom: outer.bottom, trackBottom: track.bottom, outerHeight: outer.height,
+            segments: [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => ({ label: node.getAttribute('aria-label'), width: node.getBoundingClientRect().width, color: getComputedStyle(node).backgroundColor })) };
+    });
+    expect(measure.trackHeight).toBeGreaterThanOrEqual(4); expect(measure.trackHeight).toBeLessThanOrEqual(6);
+    expect(measure.trackBottom).toBeLessThanOrEqual(measure.outerBottom + 0.5);
+    expect(new Set(measure.segments.map(segment => segment.color)).size).toBe(3);
+    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / 20, 2);
+    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / 20, 2);
+    expect(measure.segments[2].label).toContain('Unassigned (effort)');
+    expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedTotal / 20, 2);
+    const before = await page.locator('.planning-panel').boundingBox();
     await segments(page).nth(2).hover();
     await expect(readout(page)).toContainText('Unassigned (effort)');
     await expect(readout(page)).toContainText(`Total ${unassignedTotal}`);
-    await expect(readout(page)).toContainText('Selected');
     await expectReadoutInViewport(page);
+    expect(await page.locator('.planning-panel').boundingBox()).toEqual(before);
     expect(await readout(page).evaluate(node => node.hasAttribute('title') || node.closest('[title]') !== null)).toBe(false);
     await segments(page).nth(0).hover();
-    for (const text of ['Ann Synthetic', 'Capacity 8', 'Selected', 'Total']) await expect(readout(page)).toContainText(text);
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expect(readout(page)).toContainText('Capacity 8');
     await expectReadoutInViewport(page);
     await page.mouse.move(5, 400);
     await expect(readout(page)).toHaveCount(0);
 });
 
-test('a touch tap on a segment shows its readout', async ({ browser }) => {
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`the underbar adds no height to the compact panel or the pinned stack at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    const withoutBar = (await page.locator('.planning-panel').boundingBox()).height;
+    await expand(page);
+    await expect(underbar(page)).toHaveCount(1);
+    const panel = await page.locator('.planning-panel').boundingBox();
+    expect(panel.height).toBeLessThan(64);
+    expect(panel.height).toBeCloseTo(withoutBar, 0);
+    expect((await page.locator('.planning-review-sticky-stack').boundingBox()).height).toBeLessThanOrEqual(175);
+});
+
+test('tapping a segment shows its readout and a settled screenshot of the pinned panel is taken', async ({ browser }) => {
     const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 } });
     const page = await context.newPage();
-    const server = capacityServer({ rows: barRows });
-    await install(page, { server, capacityProject: 'CAP', ticket: false });
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
-    await page.locator('.planning-panel').getByRole('button', { name: 'Show panel', exact: true }).tap();
     await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
     await expect(segments(page)).toHaveCount(3);
     // Chromium's emulated tap moves its virtual mouse back to the last mouse position about 13 ms after the click,
@@ -466,51 +449,56 @@ test('a touch tap on a segment shows its readout', async ({ browser }) => {
     await segments(page).nth(1).tap();
     await expect(readout(page)).toContainText('Bob Synthetic');
     await expectReadoutInViewport(page);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/323-ui/underbar-pinned-panel.png' });
     await context.close();
 });
 
-for (const [width, height] of [[1440, 900], [1280, 720]]) test(`the bar leaves the compact panel and the pinned stack unchanged and only grows the expanded panel at ${width}x${height}`, async ({ page }) => {
-    await page.setViewportSize({ width, height });
-    const server = capacityServer({ rows: barRows });
-    await install(page, { server, capacityProject: 'CAP', ticket: false });
-    await openPlanning(page);
-    const panelHeight = async () => (await page.locator('.planning-panel').boundingBox()).height;
-    const stackHeight = async () => (await page.locator('.planning-review-sticky-stack').boundingBox()).height;
-    const compactBefore = await panelHeight();
-    expect(compactBefore).toBeLessThan(64);
-    await showPanel(page);
-    const expandedWithout = await panelHeight(), stackWithout = await stackHeight();
-    await page.locator('.planning-panel').getByRole('button', { name: 'Collapse panel', exact: true }).click();
-    expect(await panelHeight()).toBeCloseTo(compactBefore, 0);
-    await expand(page);
-    expect(await panelHeight()).toBeCloseTo(compactBefore, 0);
-    expect(await stackHeight()).toBeLessThanOrEqual(175);
-    await showPanel(page);
-    await expect(cardBar(page)).toHaveCount(1);
-    const barHeight = (await cardBar(page).boundingBox()).height;
-    const expandedWith = await panelHeight(), stackWith = await stackHeight();
-    console.log(`[${width}x${height}] compact ${compactBefore}; expanded panel ${expandedWithout} -> ${expandedWith} (bar ${barHeight}); expanded stack ${stackWithout} -> ${stackWith}`);
-    expect(barHeight).toBeGreaterThan(24);
-    expect(expandedWith - expandedWithout).toBeGreaterThanOrEqual(barHeight - 1);
-});
+// ---- strip pointer ownership, stacking and row tint (#323) ---------------------------------------
 
-test('two Teams and All Teams show no bar', async ({ page }) => {
-    for (const selectedTeams of [['team-alpha', 'team-beta'], ['all']]) {
-        const server = capacityServer({ rows: barRows });
-        await install(page, { server, selectedTeams, capacityProject: 'CAP' });
-        await openPlanning(page);
-        await showPanel(page);
-        await expect(page.locator('.planning-panel .planning-team-capacity-cards .team-stat-card').first()).toBeVisible();
-        await expect(page.locator('[data-assignee-bar]')).toHaveCount(0);
-        await page.unrouteAll({ behavior: 'ignoreErrors' });
+test('the strip never hides or blocks the capacity bar: fill and team-cap tooltips still work, the strip stays on top of a hovered fill, and segment hover shows the strip readout', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    const fill = page.locator('.planning-panel .capacity-bar-fill');
+    const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
+    const fillBox = await fill.boundingBox(), markerBox = await marker.boundingBox();
+    expect(fillBox.width).toBeGreaterThan(8);
+
+    // Fill tooltip: entered from the top and at the centre of the fill, above the strip's 5px.
+    for (const y of [fillBox.y + 2, fillBox.y + (fillBox.height - 5) / 2]) {
+        await page.mouse.move(5, 400);
+        await page.mouse.move(fillBox.x + fillBox.width / 2, y);
+        await expect.poll(() => fill.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Total story points');
+    }
+    // Hovering the fill raises it to z-index 40; the strip's segments stay the topmost element at their own pixels.
+    const topmost = await page.evaluate(() => [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === node;
+    }));
+    expect(topmost).toEqual([true, true, true]);
+    expect(await fill.evaluate(node => node.matches(':hover'))).toBe(true);
+
+    // Team-cap marker: tooltip from the top and the centre.
+    for (const y of [markerBox.y + 2, markerBox.y + (markerBox.height - 5) / 2]) {
+        await page.mouse.move(5, 400);
+        await page.mouse.move(markerBox.x + markerBox.width / 2, y);
+        await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    }
+    // Segment hover still shows the strip readout, including a segment lying under the fill.
+    for (const index of [0, 2]) {
+        await page.mouse.move(5, 400);
+        await segments(page).nth(index).hover();
+        await expect(readout(page)).toBeVisible();
     }
 });
 
-test('each person row is tinted with its bar segment colour; rows without Capacity and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {
-    const server = capacityServer({ rows: barRows });
-    await install(page, { server, capacityProject: 'CAP', ticket: false });
+test('each person row is tinted with its underbar segment colour; rows without Capacity and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
-    await showPanel(page);
     await expand(page);
     await expect(segments(page)).toHaveCount(3);
     const measure = () => page.evaluate(() => {
@@ -518,12 +506,12 @@ test('each person row is tinted with its bar segment colour; rows without Capaci
         document.body.appendChild(probe);
         const resolve = value => { probe.style.background = value; return getComputedStyle(probe).backgroundColor; };
         const surface = getComputedStyle(document.querySelector('[data-assignee-capacity]')).getPropertyValue('--bg-secondary').trim();
-        const segmentColors = Object.fromEntries([...document.querySelectorAll('[data-assignee-bar] .stacked-bar-segment')]
+        const segmentColors = Object.fromEntries([...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')]
             .map(node => [node.getAttribute('aria-label').replace(/^Assignee capacity /, '').split(': ')[0], getComputedStyle(node).backgroundColor]));
         const rows = Object.fromEntries([...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => {
             const box = node => { const r = node.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
             return [tr.dataset.assigneeKey, {
-                tinted: tr.classList.contains('planning-assignee-tinted'),
+                tinted: tr.classList.contains('planning-assignee-tinted'), colorVar: tr.style.getPropertyValue('--planning-assignee-color'),
                 cellBackgrounds: [...tr.children].map(td => getComputedStyle(td).backgroundColor), color: getComputedStyle(tr.children[2]).color,
                 boxes: [box(tr), ...[...tr.children].map(box)],
                 expectedMix: tr.style.getPropertyValue('--planning-assignee-color') ? resolve(`color-mix(in srgb, ${tr.style.getPropertyValue('--planning-assignee-color')} 12%, ${surface})`) : null,
@@ -547,10 +535,39 @@ test('each person row is tinted with its bar segment colour; rows without Capaci
     expect(withTint.rows['acc-cy'].tinted).toBe(false);
     expect(new Set(withTint.rows['acc-cy'].cellBackgrounds)).toEqual(new Set([withTint.rows['acc-cy'].plain]));
     expect(new Set(withTint.rows.unassigned.cellBackgrounds)).toEqual(new Set([withTint.rows.unassigned.unassignedPlain]));
+    await page.mouse.move(5, 400);
+    await strip(page).scrollIntoViewIfNeeded();
+    await strip(page).screenshot({ path: 'tmp/323-ui/assignee-tinted-rows.png', animations: 'disabled' });
+    await page.screenshot({ path: 'tmp/323-ui/assignee-tinted-rows-with-panel.png', animations: 'disabled' });
     // Geometry: removing the tint class changes only paint.
     await page.evaluate(() => document.querySelectorAll('.planning-assignee-tinted').forEach(tr => tr.classList.remove('planning-assignee-tinted')));
     const withoutTint = await measure();
     for (const key of Object.keys(withTint.rows)) expect(withoutTint.rows[key].boxes, key).toEqual(withTint.rows[key].boxes);
     expect(withoutTint.rows['acc-ann'].cellBackgrounds[0]).toBe(withTint.rows['acc-ann'].plain);
+    // Tinted text stays the inherited gray; the over/under cue colours are untouched.
     expect(withTint.rows['acc-ann'].color).toBe(withoutTint.rows['acc-ann'].color);
+});
+
+test('where the strip has no segment the team-cap marker stays hoverable down to the bottom edge of the track', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '2', vacations: null, notes: null, removed: false }] });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(underbar(page)).toHaveCount(1);
+    const gap = await page.evaluate(() => {
+        const bottom = document.querySelector('.planning-panel .capacity-bar-track').getBoundingClientRect().bottom - 2;
+        const lastSegment = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].pop().getBoundingClientRect();
+        const markerRect = document.querySelector('.planning-panel .capacity-bar-marker.teamcap').getBoundingClientRect();
+        const x = markerRect.left + markerRect.width / 2;
+        const hit = document.elementFromPoint(x, bottom);
+        return { x, segmentEnd: lastSegment.right, onMarker: Boolean(hit && hit.closest('.capacity-bar-marker.teamcap')) };
+    });
+    expect(gap.x).toBeGreaterThan(gap.segmentEnd + 1);
+    expect(gap.onMarker).toBe(true);
+
+    const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
+    const box = await marker.boundingBox();
+    await page.mouse.move(gap.x, box.y + box.height - 2);
+    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    expect(box.height).toBeGreaterThan(5);
 });

@@ -4,8 +4,6 @@ import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import { parseCapacityDraft } from './planningCapacityUtils.js';
-import PlanningAssigneeCapacityBar from './PlanningAssigneeCapacityBar.jsx';
-import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
 
 const CAPACITY_ERROR_MESSAGES = {
     invalid_capacity: 'Enter a valid capacity of 0 or more.',
@@ -141,7 +139,6 @@ export default function PlanningTeamCapacityCards({
     resolveTeamColor,
     getTeamCapacityMeta,
 }) {
-    const assigneeContext = usePlanningAssigneeCapacityView();
     const [editor, updateEditor] = React.useState(null);
     const [invalidTargets, setInvalidTargets] = React.useState(() => new Set());
     const [configEditingSuppressed, setConfigEditingSuppressed] = React.useState(false);
@@ -641,8 +638,6 @@ export default function PlanningTeamCapacityCards({
                                         )}
                                         <span className="microbar-label">{entry.storyPoints.toFixed(1)} SP</span>
                                     </div>
-                                    {assigneeContext?.oneTeam && entries.length === 1 && String(entry.id) === assigneeContext.teamId
-                                        && <PlanningAssigneeCapacityBar barCapacity={capacityValuePresent ? adjustedCapacity : null} />}
                                     {deltaLabel && (
                                         <div className={`microbar-meta ${capMeta?.status || ''}`}>{deltaLabel}</div>
                                     )}

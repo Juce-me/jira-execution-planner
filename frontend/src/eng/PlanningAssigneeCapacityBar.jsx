@@ -4,11 +4,10 @@ import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx'
 import { buildAssigneeColorMap, buildUnderbar, formatHundredths, resolveAssigneeColor, UNDERBAR_UNASSIGNED_KEY } from './planningAssigneeCapacityModel.js';
 
 const sp = hundredths => formatHundredths(hundredths);
-const formatValue = value => `${sp(Math.round(value * 100))} SP`;
+const formatValue = value => sp(Math.round(value * 100));
 
-// Per-person capacity bar under the one-Team card's bar: the shared StackedBar, unmodified, like ProjectTrackTotalsBar.
-// Reads the same view as the table (context) and appears only after the strip was expanded once. `barCapacity` is the
-// Product/Tech-adjusted capacity the card's bar uses (null without a capacity ticket).
+// The thin per-person strip inside the capacity track. Reads the same view as the table (context) and appears
+// only after the strip was expanded once. `barCapacity` is the Product/Tech-adjusted value the bar above shows.
 function PlanningAssigneeCapacityBar({ barCapacity }) {
     const context = usePlanningAssigneeCapacityView();
     const opened = context?.opened, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity;
@@ -19,11 +18,8 @@ function PlanningAssigneeCapacityBar({ barCapacity }) {
         const byKey = new Map(model.people.map(person => [person.key, person]));
         const segments = model.people.map(person => ({ key: person.key, value: person.capacityHundredths / 100 }));
         if (model.unassigned) segments.push({ key: UNDERBAR_UNASSIGNED_KEY, value: model.unassigned.totalHundredths / 100 });
-        let note = '';
-        if (model.source === 'jira') {
-            if (model.denominatorHundredths > model.rawHundredths) note = `Jira capacity ${sp(model.rawHundredths)}; the bar spans the allocated ${sp(model.denominatorHundredths)}.`;
-            else if (Number.isFinite(barCapacity) && Math.abs(barCapacity * 100 - model.rawHundredths) > 5) note = `Jira capacity ${sp(model.rawHundredths)}; the team bar shows ${sp(Math.round(barCapacity * 100))} after the Product/Tech split.`;
-        }
+        const differs = model.source === 'jira' && Number.isFinite(barCapacity) && Math.abs(barCapacity * 100 - model.denominatorHundredths) > 5;
+        const note = differs ? `Jira capacity ${sp(model.denominatorHundredths)}; the bar shows ${formatValue(barCapacity)} after the Product/Tech split.` : '';
         return {
             rows: [{ id: 'assignee-capacity', label: 'Assignee capacity', total: model.denominatorHundredths / 100, segments }],
             order: segments.map(segment => segment.key),
@@ -39,9 +35,9 @@ function PlanningAssigneeCapacityBar({ barCapacity }) {
         };
     }, [model, barCapacity]);
     if (!chart) return null;
-    return <div data-assignee-bar>
+    return <div className="planning-assignee-underbar" data-assignee-underbar>
         <StackedBar rows={chart.rows} segmentOrder={chart.order} resolveColor={chart.color} resolveLabel={chart.label}
-            formatValue={formatValue} formatReadout={chart.readout} ariaLabel="Assignee capacity by person" />
+            formatValue={formatValue} formatReadout={chart.readout} variant="strip" ariaLabel="Assignee capacity by person" />
     </div>;
 }
 

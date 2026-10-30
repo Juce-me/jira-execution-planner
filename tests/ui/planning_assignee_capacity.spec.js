@@ -365,6 +365,8 @@ const segments = page => underbar(page).locator('.stacked-bar-segment');
 const readout = page => page.locator('.stacked-bar-readout');
 async function expectReadoutInViewport(page) {
     const viewport = page.viewportSize();
+    await expect(readout(page)).toBeVisible();
+    await expect.poll(async () => (await readout(page).boundingBox()) !== null).toBe(true);
     const box = await readout(page).boundingBox();
     expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
@@ -439,9 +441,133 @@ test('tapping a segment shows its readout and a settled screenshot of the pinned
     await openPlanning(page);
     await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
     await expect(segments(page)).toHaveCount(3);
+    // Chromium's emulated tap moves its virtual mouse back to the last mouse position about 13 ms after the click,
+    // which fires mouseleave on the tapped segment and clears the readout; park the virtual mouse on the segment so
+    // the tap's readout is what stays (a real touch device has no mouse to move).
+    const bob = await segments(page).nth(1).boundingBox();
+    await page.mouse.move(bob.x + bob.width / 2, bob.y + bob.height / 2);
     await segments(page).nth(1).tap();
     await expect(readout(page)).toContainText('Bob Synthetic');
     await expectReadoutInViewport(page);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/323-ui/underbar-pinned-panel.png' });
     await context.close();
+});
+
+// ---- strip pointer ownership, stacking and row tint (#323) ---------------------------------------
+
+test('the strip never hides or blocks the capacity bar: fill and team-cap tooltips still work, the strip stays on top of a hovered fill, and segment hover shows the strip readout', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    const fill = page.locator('.planning-panel .capacity-bar-fill');
+    const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
+    const fillBox = await fill.boundingBox(), markerBox = await marker.boundingBox();
+    expect(fillBox.width).toBeGreaterThan(8);
+
+    // Fill tooltip: entered from the top and at the centre of the fill, above the strip's 5px.
+    for (const y of [fillBox.y + 2, fillBox.y + (fillBox.height - 5) / 2]) {
+        await page.mouse.move(5, 400);
+        await page.mouse.move(fillBox.x + fillBox.width / 2, y);
+        await expect.poll(() => fill.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Total story points');
+    }
+    // Hovering the fill raises it to z-index 40; the strip's segments stay the topmost element at their own pixels.
+    const topmost = await page.evaluate(() => [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
+        const rect = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        return hit === node;
+    }));
+    expect(topmost).toEqual([true, true, true]);
+    expect(await fill.evaluate(node => node.matches(':hover'))).toBe(true);
+
+    // Team-cap marker: tooltip from the top and the centre.
+    for (const y of [markerBox.y + 2, markerBox.y + (markerBox.height - 5) / 2]) {
+        await page.mouse.move(5, 400);
+        await page.mouse.move(markerBox.x + markerBox.width / 2, y);
+        await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    }
+    // Segment hover still shows the strip readout, including a segment lying under the fill.
+    for (const index of [0, 2]) {
+        await page.mouse.move(5, 400);
+        await segments(page).nth(index).hover();
+        await expect(readout(page)).toBeVisible();
+    }
+});
+
+test('each person row is tinted with its underbar segment colour; rows without Capacity and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    const measure = () => page.evaluate(() => {
+        const probe = document.createElement('i');
+        document.body.appendChild(probe);
+        const resolve = value => { probe.style.background = value; return getComputedStyle(probe).backgroundColor; };
+        const surface = getComputedStyle(document.querySelector('[data-assignee-capacity]')).getPropertyValue('--bg-secondary').trim();
+        const segmentColors = Object.fromEntries([...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')]
+            .map(node => [node.getAttribute('aria-label').replace(/^Assignee capacity /, '').split(': ')[0], getComputedStyle(node).backgroundColor]));
+        const rows = Object.fromEntries([...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => {
+            const box = node => { const r = node.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
+            return [tr.dataset.assigneeKey, {
+                tinted: tr.classList.contains('planning-assignee-tinted'), colorVar: tr.style.getPropertyValue('--planning-assignee-color'),
+                cellBackgrounds: [...tr.children].map(td => getComputedStyle(td).backgroundColor), color: getComputedStyle(tr.children[2]).color,
+                boxes: [box(tr), ...[...tr.children].map(box)],
+                expectedMix: tr.style.getPropertyValue('--planning-assignee-color') ? resolve(`color-mix(in srgb, ${tr.style.getPropertyValue('--planning-assignee-color')} 12%, ${surface})`) : null,
+                varColor: tr.style.getPropertyValue('--planning-assignee-color') ? resolve(tr.style.getPropertyValue('--planning-assignee-color')) : null,
+                plain: resolve(surface), unassignedPlain: resolve('#fff1f0'),
+            }];
+        }));
+        probe.remove();
+        return { rows, segmentColors };
+    });
+    const withTint = await measure();
+    expect(withTint.segmentColors['Ann Synthetic']).toBe(withTint.rows['acc-ann'].varColor);
+    expect(withTint.segmentColors['Bob Synthetic']).toBe(withTint.rows['acc-bob'].varColor);
+    for (const key of ['acc-ann', 'acc-bob']) {
+        expect(withTint.rows[key].tinted, key).toBe(true);
+        expect(new Set(withTint.rows[key].cellBackgrounds), key).toEqual(new Set([withTint.rows[key].expectedMix]));
+        expect(withTint.rows[key].expectedMix, key).not.toBe(withTint.rows[key].plain);
+    }
+    expect(withTint.rows['acc-ann'].expectedMix).not.toBe(withTint.rows['acc-bob'].expectedMix);
+    // No Capacity: no segment, no tint. Unassigned keeps its warning-tone row.
+    expect(withTint.rows['acc-cy'].tinted).toBe(false);
+    expect(new Set(withTint.rows['acc-cy'].cellBackgrounds)).toEqual(new Set([withTint.rows['acc-cy'].plain]));
+    expect(new Set(withTint.rows.unassigned.cellBackgrounds)).toEqual(new Set([withTint.rows.unassigned.unassignedPlain]));
+    await page.mouse.move(5, 400);
+    await strip(page).scrollIntoViewIfNeeded();
+    await strip(page).screenshot({ path: 'tmp/323-ui/assignee-tinted-rows.png', animations: 'disabled' });
+    await page.screenshot({ path: 'tmp/323-ui/assignee-tinted-rows-with-panel.png', animations: 'disabled' });
+    // Geometry: removing the tint class changes only paint.
+    await page.evaluate(() => document.querySelectorAll('.planning-assignee-tinted').forEach(tr => tr.classList.remove('planning-assignee-tinted')));
+    const withoutTint = await measure();
+    for (const key of Object.keys(withTint.rows)) expect(withoutTint.rows[key].boxes, key).toEqual(withTint.rows[key].boxes);
+    expect(withoutTint.rows['acc-ann'].cellBackgrounds[0]).toBe(withTint.rows['acc-ann'].plain);
+    // Tinted text stays the inherited gray; the over/under cue colours are untouched.
+    expect(withTint.rows['acc-ann'].color).toBe(withoutTint.rows['acc-ann'].color);
+});
+
+test('where the strip has no segment the team-cap marker stays hoverable down to the bottom edge of the track', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '2', vacations: null, notes: null, removed: false }] });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(underbar(page)).toHaveCount(1);
+    const gap = await page.evaluate(() => {
+        const bottom = document.querySelector('.planning-panel .capacity-bar-track').getBoundingClientRect().bottom - 2;
+        const lastSegment = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].pop().getBoundingClientRect();
+        const markerRect = document.querySelector('.planning-panel .capacity-bar-marker.teamcap').getBoundingClientRect();
+        const x = markerRect.left + markerRect.width / 2;
+        const hit = document.elementFromPoint(x, bottom);
+        return { x, segmentEnd: lastSegment.right, onMarker: Boolean(hit && hit.closest('.capacity-bar-marker.teamcap')) };
+    });
+    expect(gap.x).toBeGreaterThan(gap.segmentEnd + 1);
+    expect(gap.onMarker).toBe(true);
+
+    const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
+    const box = await marker.boundingBox();
+    await page.mouse.move(gap.x, box.y + box.height - 2);
+    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    expect(box.height).toBeGreaterThan(5);
 });

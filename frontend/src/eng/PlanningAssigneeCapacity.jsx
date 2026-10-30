@@ -5,7 +5,7 @@ import IconButton from '../ui/IconButton.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, buildAssigneeRows, formatHundredths, mayBeIncomplete, teamTasks, validateCellDraft,
+    applyChangesToDocument, assigneeRowColor, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, mayBeIncomplete, teamTasks, validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
@@ -66,9 +66,9 @@ function EffortCell({ hundredths, cue }) {
     return <td className={`planning-review-storyPoints${cueClass(cue)}`}>{fmt(hundredths)}{cue && <span className="planning-review-sr-only"> ({cueText(cue)})</span>}</td>;
 }
 
-function PersonRow({ row, readOnly, onCommit, editors }) {
+function PersonRow({ row, color, readOnly, onCommit, editors }) {
     const input = (field, label, maxLength) => <CapacityInput field={field} label={`${label} for ${row.name}`} value={row[field]} disabled={readOnly} maxLength={maxLength} editors={editors} onCommit={(name, value) => onCommit(row.key, name, value)} />;
-    return <tr data-assignee-key={row.key}>
+    return <tr data-assignee-key={row.key} className={color ? 'planning-assignee-tinted' : undefined} style={color ? { '--planning-assignee-color': color } : undefined}>
         <td className="planning-assignee-name"><div className="planning-assignee-person">
             <EpicHeaderValueReadout value={row.name}>{({ discoveryProps }) => <span {...discoveryProps} className="planning-review-truncated-value">{row.name}</span>}</EpicHeaderValueReadout>
             {row.removable && !readOnly && <IconButton size="sm" className="planning-review-column-action" aria-label={`Remove ${row.name}`} onClick={() => onCommit(row.key, 'removed', true)}>
@@ -90,6 +90,7 @@ function PersonRow({ row, readOnly, onCommit, editors }) {
 function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, editors, sprintName, incomplete }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
+    const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
     return <>
         {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}.</p>}
         {incomplete && <p className="planning-review-guidance">Total effort may be incomplete: one load returns at most 250 issues per request.</p>}
@@ -111,7 +112,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, ed
                     <td className="planning-review-storyPoints" />
                     <td className="planning-assignee-note" />
                 </tr>}
-                {rows.map(row => <PersonRow key={row.key} row={row} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
+                {rows.map(row => <PersonRow key={row.key} row={row} color={assigneeRowColor(row, colorMap)} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
             </tbody>
             <tfoot><tr>
                 <td className="planning-assignee-name">Total</td>

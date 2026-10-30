@@ -269,3 +269,22 @@ test('underbar: Unassigned is the unassigned Total effort and removed or capacit
     assert.equal(m.buildUnderbar(noNumber, null), null);
     assert.equal(m.buildUnderbar(noNumber, 10).unassigned.totalHundredths, 400);
 });
+
+test('a person row tint equals the underbar segment colour for every person, and people without Capacity get none', async () => {
+    const m = await load();
+    const { resolveTeamColor, buildTeamColorMap } = await import('../frontend/src/stats/statsUtils.js');
+    const row = (key, name, capacity) => ({ key, name, capacity, selectedHundredths: 0, totalHundredths: 0 });
+    const rows = [row('acc-b', 'Bob', '6'), row('acc-a', 'Ann', '8'), row('acc-c', 'Cy', null), row('acc-d', 'Di', '0')];
+    const map = m.buildAssigneeColorMap(rows);
+    assert.deepEqual(map, buildTeamColorMap(rows.map(entry => ({ id: entry.key, name: entry.name }))));
+    const bar = m.buildUnderbar({ rows, unassigned: null }, null);
+    assert.deepEqual(bar.people.map(person => person.key), ['acc-b', 'acc-a']);
+    for (const person of bar.people) {
+        const source = rows.find(entry => entry.key === person.key);
+        assert.equal(m.assigneeRowColor(source, map), resolveTeamColor(person.key, map));
+        assert.equal(m.assigneeRowColor(source, map), m.resolveAssigneeColor(person.key, map));
+    }
+    assert.equal(m.assigneeRowColor(rows[2], map), null);
+    assert.equal(m.assigneeRowColor(rows[3], map), null);
+    assert.notEqual(m.assigneeRowColor(rows[0], map), m.assigneeRowColor(rows[1], map));
+});

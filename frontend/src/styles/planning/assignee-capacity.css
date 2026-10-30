@@ -5,6 +5,8 @@
 .planning-assignee-table .planning-review-storyPoints .planning-review-input { text-align: right; }
 .planning-assignee-person { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .planning-assignee-table .planning-review-truncated-value { flex: 1 1 auto; width: auto; min-width: 0; max-width: none; }
+/* Row tint (#323): the person's underbar segment colour at 12% over the table surface; text, cues and geometry unchanged. */
+.planning-review-table.planning-assignee-table tbody tr.planning-assignee-tinted td { background: color-mix(in srgb, var(--planning-assignee-color) 12%, var(--bg-secondary)); }
 .planning-assignee-inherited { color: var(--text-secondary); }
 .planning-assignee-over { color: #b91c1c; font-weight: 600; }
 .planning-assignee-under { color: #a16207; font-weight: 600; }
@@ -12,10 +14,8 @@
 .planning-assignee-note .planning-review-input { text-overflow: ellipsis; }
 .planning-assignee-removed .planning-review-text-button { text-transform: none; }
 
-/* Underbar (#323): the thin per-person strip at the bottom of the capacity track; it adds no height. */
-.planning-assignee-underbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: 5px; overflow: hidden; z-index: 2; }
-.planning-assignee-underbar .stacked-bar, .planning-assignee-underbar .stacked-bar-rows, .planning-assignee-underbar .stacked-bar-row { display: block; }
-.planning-assignee-underbar .stacked-bar-meta { display: none; }
-.planning-assignee-underbar .stacked-bar-track { height: 5px; border-radius: 0; }
-.planning-assignee-underbar .stacked-bar-segment { height: 5px; }
-.planning-assignee-underbar .stacked-bar-segment span { display: none; }
+/* Underbar (#323): positioning wrapper for the shared StackedBar strip variant (its rules live in stats/project-track.css);
+   it adds no height. The strip owns the bottom 5px of the capacity track and paints above a hovered fill (z-index 40) and
+   markers. The wrapper takes no pointer; only the strip's segments do, so the fill tooltip and the team-cap marker stay
+   hoverable wherever the strip has no segment (past the people/Unassigned total). */
+.planning-assignee-underbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: 5px; overflow: hidden; z-index: 41; pointer-events: none; }

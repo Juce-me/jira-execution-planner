@@ -1,4 +1,5 @@
 import { getCapacityStatus } from './planningCapacityUtils.js';
+import { buildTeamColorMap, resolveTeamColor } from '../stats/statsUtils.js';
 
 // One ENG task-load request collects at most this many issues (jira_server.py fetch_tasks).
 export const TASK_LOAD_LIMIT = 250;
@@ -322,4 +323,14 @@ export function buildUnderbar(view, rawCapacity = null) {
         : null;
     if (!people.length && !unassigned) return null;
     return { denominatorHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
+}
+
+// One colour source for a person's underbar segment and tinted table row: the sorted-index map over every row of the view.
+export function buildAssigneeColorMap(rows) {
+    return buildTeamColorMap((rows || []).map(row => ({ id: row.key, name: row.name })));
+}
+export const resolveAssigneeColor = (key, colorMap) => resolveTeamColor(key, colorMap);
+// Only people with a Capacity have an underbar segment, so only they get a row tint (null otherwise).
+export function assigneeRowColor(row, colorMap) {
+    return numberStringToHundredths(row.capacity) > 0 ? resolveAssigneeColor(row.key, colorMap) : null;
 }

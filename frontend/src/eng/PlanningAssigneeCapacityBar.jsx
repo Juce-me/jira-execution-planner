@@ -1,8 +1,7 @@
 import * as React from 'react';
 import StackedBar from '../stats/StackedBar.jsx';
-import { buildTeamColorMap, resolveTeamColor } from '../stats/statsUtils.js';
 import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
-import { buildUnderbar, formatHundredths, UNDERBAR_UNASSIGNED_KEY } from './planningAssigneeCapacityModel.js';
+import { buildAssigneeColorMap, buildUnderbar, formatHundredths, resolveAssigneeColor, UNDERBAR_UNASSIGNED_KEY } from './planningAssigneeCapacityModel.js';
 
 const sp = hundredths => formatHundredths(hundredths);
 const formatValue = value => sp(Math.round(value * 100));
@@ -13,7 +12,7 @@ function PlanningAssigneeCapacityBar({ barCapacity }) {
     const context = usePlanningAssigneeCapacityView();
     const opened = context?.opened, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity;
     const model = React.useMemo(() => (opened && oneTeam ? buildUnderbar(view, rawCapacity) : null), [opened, oneTeam, view, rawCapacity]);
-    const colorMap = React.useMemo(() => buildTeamColorMap((view?.rows || []).map(row => ({ id: row.key, name: row.name }))), [view]);
+    const colorMap = React.useMemo(() => buildAssigneeColorMap(view?.rows), [view]);
     const chart = React.useMemo(() => {
         if (!model) return null;
         const byKey = new Map(model.people.map(person => [person.key, person]));
@@ -25,7 +24,7 @@ function PlanningAssigneeCapacityBar({ barCapacity }) {
             rows: [{ id: 'assignee-capacity', label: 'Assignee capacity', total: model.denominatorHundredths / 100, segments }],
             order: segments.map(segment => segment.key),
             label: key => (key === UNDERBAR_UNASSIGNED_KEY ? model.unassigned.name : byKey.get(key)?.name || key),
-            color: key => (key === UNDERBAR_UNASSIGNED_KEY ? 'var(--warn)' : resolveTeamColor(key, colorMap)),
+            color: key => (key === UNDERBAR_UNASSIGNED_KEY ? 'var(--warn)' : resolveAssigneeColor(key, colorMap)),
             readout: ({ segmentKey }) => {
                 const lines = segmentKey === UNDERBAR_UNASSIGNED_KEY
                     ? [model.unassigned.name, `Total ${sp(model.unassigned.totalHundredths)} · Selected ${sp(model.unassigned.selectedHundredths)}`]
@@ -38,7 +37,7 @@ function PlanningAssigneeCapacityBar({ barCapacity }) {
     if (!chart) return null;
     return <div className="planning-assignee-underbar" data-assignee-underbar>
         <StackedBar rows={chart.rows} segmentOrder={chart.order} resolveColor={chart.color} resolveLabel={chart.label}
-            formatValue={formatValue} formatReadout={chart.readout} ariaLabel="Assignee capacity by person" />
+            formatValue={formatValue} formatReadout={chart.readout} variant="strip" ariaLabel="Assignee capacity by person" />
     </div>;
 }
 

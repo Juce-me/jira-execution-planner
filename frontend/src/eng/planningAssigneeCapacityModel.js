@@ -277,6 +277,50 @@ export function chunkChanges(changes, size = MAX_CHANGES) {
     return chunks;
 }
 
+// ---- team capacity (not in Jira) ----------------------------------------------
+
+// The team-level stored number rides in the save queue as one pseudo-change under this reserved key (never an account id):
+// `{assigneeKey: PLANNED_SLOT, planned: {value, source}}`, sent as the PATCH body's `planned`, never in `changes[]`.
+export const PLANNED_SLOT = '\u0000planned';
+export const isPlannedChange = change => change?.assigneeKey === PLANNED_SLOT;
+
+// Half-up rounding to integer hundredths (the epsilon absorbs binary noise such as 1.005 * 100 = 100.49999…).
+export function roundHalfUpHundredths(value) {
+    if (value == null || value === '') return null;
+    const number = Number(value);
+    if (!Number.isFinite(number)) return null;
+    return Math.sign(number) * Math.round(Math.abs(number) * 100 + 1e-7);
+}
+
+// A Jira ticket value as the wire string the store accepts ("12.35"); null outside 0..10000 or when not a number.
+export function plannedWireValue(value) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+    const hundredths = roundHalfUpHundredths(value);
+    return hundredths < 0 || hundredths > MAX_NUMBER_HUNDREDTHS ? null : formatHundredths(hundredths);
+}
+
+const plannedHundredthsOf = planned => (planned?.value == null ? null : roundHalfUpHundredths(planned.value));
+// Equality after rounding both sides half-up to hundredths; absent equals absent only.
+export const samePlannedValue = (left, right) => plannedHundredthsOf(left) === plannedHundredthsOf(right);
+export const plannedNumber = planned => { const hundredths = plannedHundredthsOf(planned); return hundredths == null ? null : hundredths / 100; };
+
+// The stored number as shown: the Sprint's own, else the nearest earlier document's (gray, source `inherited`).
+export function effectivePlanned(document) {
+    if (!document) return null;
+    if (document.revision > 0) return document.planned ?? null;
+    return document.inherited?.planned ?? null;
+}
+
+const storedPlanned = planned => (planned?.value == null ? null : { value: planned.value, source: planned.source });
+
+// Whether writing `next` over the shown `current` changes nothing. A typed number (`user`) equal to the shown one is a
+// no-op whatever its source (tabbing over a gray number creates no document); a `jira` write also converts the source.
+export function isPlannedNoop(current, next) {
+    if (!samePlannedValue(current, next)) return false;
+    if (next?.value == null) return true;
+    return next.source === 'user' || (current?.source ?? null) === next.source;
+}
+
 // ---- optimistic overlay ------------------------------------------------------
 
 const OVERLAY_FIELDS = ['capacity', 'vacations', 'notes', 'removed'];
@@ -292,16 +336,19 @@ export function baseRowsOf(document) {
 }
 
 // The document as the server will hold it once `changes` are saved; used to show unsaved commits at once.
+// The stored team number is materialised too (source `inherited`), so a pending commit never drops the gray number.
 export function applyChangesToDocument(document, changes) {
     if (!document || !changes?.length) return document;
     const rows = new Map(baseRowsOf(document).map(row => [row.assigneeKey, { ...row }]));
+    let planned = effectivePlanned(document);
     for (const change of changes) {
+        if (isPlannedChange(change)) { planned = storedPlanned(change.planned); continue; }
         const row = rows.get(change.assigneeKey) || { assigneeKey: change.assigneeKey, displayName: change.displayName || change.assigneeKey, capacity: null, vacations: null, notes: null, removed: false };
         if (change.displayName) row.displayName = change.displayName;
         for (const field of OVERLAY_FIELDS) if (field in change) row[field] = field === 'removed' ? Boolean(change[field]) : change[field];
         rows.set(change.assigneeKey, row);
     }
-    return { ...document, revision: Math.max(1, document.revision), rows: [...rows.values()], inherited: null };
+    return { ...document, revision: Math.max(1, document.revision), rows: [...rows.values()], planned, inherited: null };
 }
 
 // What a document holds for one field, as the server would compare it (inherited rows hold Capacity only).
@@ -312,6 +359,7 @@ export function documentFieldValue(document, key, field) {
 
 // Drops the fields of a change that the document already holds; null when nothing is left to send.
 export function pruneChange(change, document) {
+    if (isPlannedChange(change)) return isPlannedNoop(effectivePlanned(document), change.planned) ? null : change;
     const next = { assigneeKey: change.assigneeKey };
     if (change.displayName) next.displayName = change.displayName;
     let fields = 0;

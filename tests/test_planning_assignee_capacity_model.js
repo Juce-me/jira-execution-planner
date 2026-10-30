@@ -353,3 +353,61 @@ test('underbar on the bar axis: people scale by the Product/Tech multiplier, Una
     assert.equal(m.underbarOnBarAxis(small, 20, 1).overflowHundredths, 0);
     assert.equal(m.underbarOnBarAxis(small, 20, 1).stacked, 18);
 });
+
+// ---- Team capacity (not in Jira), #323 Task 8 ----
+
+test('planned equality rounds both sides half-up to hundredths; absent equals absent only', async () => {
+    const m = await load();
+    assert.equal(m.roundHalfUpHundredths(1.005), 101);
+    assert.equal(m.roundHalfUpHundredths(12.345), 1235);
+    assert.equal(m.roundHalfUpHundredths('12.3'), 1230);
+    assert.equal(m.roundHalfUpHundredths(null), null);
+    assert.equal(m.samePlannedValue({ value: '12.35' }, { value: 12.345 }), true);
+    assert.equal(m.samePlannedValue({ value: '12.34' }, { value: 12.345 }), false);
+    assert.equal(m.samePlannedValue(null, null), true);
+    assert.equal(m.samePlannedValue(null, { value: '0' }), false);
+    assert.equal(m.plannedWireValue(12.345), '12.35');
+    assert.equal(m.plannedWireValue(20), '20');
+    assert.equal(m.plannedWireValue(10000.004), '10000');
+    assert.equal(m.plannedWireValue(10001), null);
+    assert.equal(m.plannedWireValue(-1), null);
+    assert.equal(m.plannedWireValue(null), null);
+});
+
+test('the shown stored number: own document, else the inherited one (gray, source inherited)', async () => {
+    const m = await load();
+    assert.deepEqual(m.effectivePlanned({ revision: 2, planned: { value: '14', source: 'user' }, inherited: null }), { value: '14', source: 'user' });
+    assert.deepEqual(m.effectivePlanned({ revision: 0, planned: null, inherited: { rows: [], planned: { value: '9', source: 'inherited' } } }), { value: '9', source: 'inherited' });
+    assert.equal(m.effectivePlanned({ revision: 0, planned: null, inherited: null }), null);
+    assert.equal(m.effectivePlanned(null), null);
+});
+
+test('a typed equal number is a no-op whatever its source; a jira write also converts the source', async () => {
+    const m = await load();
+    assert.equal(m.isPlannedNoop({ value: '9', source: 'inherited' }, { value: '9.00', source: 'user' }), true);
+    assert.equal(m.isPlannedNoop({ value: '9', source: 'user' }, { value: '9', source: 'jira' }), false);
+    assert.equal(m.isPlannedNoop({ value: '9', source: 'jira' }, { value: '9', source: 'jira' }), true);
+    assert.equal(m.isPlannedNoop(null, { value: null }), true);
+    assert.equal(m.isPlannedNoop({ value: '9', source: 'user' }, { value: null }), false);
+});
+
+test('the overlay keeps the gray number while a row commit is pending and applies a planned commit', async () => {
+    const m = await load();
+    const inheritedDoc = { revision: 0, rows: [], planned: null, inherited: { fromSprintId: '9', rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', removed: false }], planned: { value: '12', source: 'inherited' } } };
+    const rowPending = m.applyChangesToDocument(inheritedDoc, [{ assigneeKey: 'u1', vacations: '1' }]);
+    assert.deepEqual(rowPending.planned, { value: '12', source: 'inherited' }, 'a pending row commit does not drop the gray number');
+    assert.equal(rowPending.inherited, null);
+    const plannedPending = m.applyChangesToDocument(inheritedDoc, [{ assigneeKey: m.PLANNED_SLOT, planned: { value: '15', source: 'user' } }]);
+    assert.deepEqual(plannedPending.planned, { value: '15', source: 'user' });
+    assert.deepEqual(plannedPending.rows.map(row => row.assigneeKey), ['u1'], 'the planned slot is never a row');
+    const cleared = m.applyChangesToDocument({ revision: 1, rows: [], planned: { value: '15', source: 'user' } }, [{ assigneeKey: m.PLANNED_SLOT, planned: { value: null } }]);
+    assert.equal(cleared.planned, null);
+});
+
+test('pruneChange drops a planned change the document already holds (after rounding)', async () => {
+    const m = await load();
+    const document = { revision: 1, rows: [], planned: { value: '12.35', source: 'user' } };
+    assert.equal(m.pruneChange({ assigneeKey: m.PLANNED_SLOT, planned: { value: '12.35', source: 'user' } }, document), null);
+    const change = { assigneeKey: m.PLANNED_SLOT, planned: { value: '13', source: 'user' } };
+    assert.deepEqual(m.pruneChange(change, document), change);
+});

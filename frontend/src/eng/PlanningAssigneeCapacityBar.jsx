@@ -11,13 +11,13 @@ const formatValue = value => sp(Math.round(value * 100));
 // the Product/Tech multiplier, so the multiplier is derived here instead of threading it through the dashboard.
 export function useAssigneeUnderbar(barCapacity) {
     const context = usePlanningAssigneeCapacityView();
-    const loaded = context?.loaded, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity;
+    const loaded = context?.loaded, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity, capacitySource = context?.capacitySource;
     return React.useMemo(() => {
         const model = loaded && oneTeam ? buildUnderbar(view, rawCapacity) : null;
         if (!model) return null;
         const multiplier = Number(rawCapacity) > 0 && barCapacity > 0 ? barCapacity / Number(rawCapacity) : 1;
-        return { model, multiplier, colorMap: buildAssigneeColorMap(view?.rows), ...underbarOnBarAxis(model, barCapacity, multiplier) };
-    }, [loaded, oneTeam, view, rawCapacity, barCapacity]);
+        return { model, multiplier, capacitySource, colorMap: buildAssigneeColorMap(view?.rows), ...underbarOnBarAxis(model, barCapacity, multiplier) };
+    }, [loaded, oneTeam, view, rawCapacity, capacitySource, barCapacity]);
 }
 
 // The thin per-person strip inside the capacity track, on the bar's own `axis`: the wrapper covers the whole track and
@@ -25,13 +25,14 @@ export function useAssigneeUnderbar(barCapacity) {
 // segment). `showOverflow` is false while the bar draws its own over-capacity zone; compact mode draws no label.
 function PlanningAssigneeCapacityBar({ underbar, axis, teamCapPct, selectedCount, selectedSP, showOverflow, compact }) {
     const chart = React.useMemo(() => {
-        const { model, multiplier, colorMap, people, unassignedValue, overflowHundredths } = underbar;
+        const { model, multiplier, capacitySource, colorMap, people, unassignedValue, overflowHundredths } = underbar;
         const byKey = new Map(people.map(person => [person.key, person]));
         const segments = people.map(person => ({ key: person.key, value: person.value }));
         if (model.unassigned) segments.push({ key: UNDERBAR_UNASSIGNED_KEY, value: unassignedValue });
         const header = `Selected ${selectedCount} tasks · ${selectedSP.toFixed(1)} SP`;
         const split = Math.abs(multiplier - 1) > 0.001 ? ` · ${Math.round(multiplier * 100)}% share` : '';
-        const source = `Team capacity: Jira${split}`;
+        // The team number's source: the Jira ticket, or the stored "Team capacity (not in Jira)".
+        const source = `${capacitySource === 'planned' ? 'Team capacity (not in Jira)' : 'Team capacity: Jira'}${split}`;
         const overflowLine = showOverflow ? `+${sp(overflowHundredths)} SP over Team Cap` : '';
         const segmentLines = segmentKey => {
             if (segmentKey === null) return [header];

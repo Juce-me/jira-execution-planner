@@ -101,6 +101,39 @@ export function buildCapacityReadState(payload = {}) {
     };
 }
 
+// Team capacity (not in Jira), #323 B1 design A. The Jira read is trusted only when it settled for this scope (not
+// loading, failed or stale, `capacityIssueCount` known; the caller has already checked the scope signature). For each
+// displayed team: `noTicket` holds the "no ticket" predicate (no target, not ambiguous, no Jira number: the stored
+// number is editable); `fallback` also covers a matched ticket with a blank value. A fallback team gets its stored number
+// as a finite number under normalizeCapacityKey(team.name) in capacityByTeam only; targets, count and mutation stay Jira's.
+export function resolvePlannedCapacity({
+    capacityState, teamNames = [], plannedCapacityByTeam = null,
+    capacityEnabled = false, capacityLoading = false, capacityReadError = '', capacityDataStale = false,
+}) {
+    const noTicketKeys = new Set();
+    const fallbackKeys = new Set();
+    const capacityByTeam = {};
+    if (!capacityEnabled || capacityLoading || capacityReadError || capacityDataStale || capacityState?.capacityIssueCount == null) {
+        return { noTicketKeys, fallbackKeys, capacityByTeam };
+    }
+    for (const teamName of teamNames) {
+        const key = normalizeCapacityKey(teamName);
+        if (!key) continue;
+        const target = resolveUniqueCapacityTarget(capacityState.capacityTargetsByTeam, teamName);
+        const numeric = resolveUniqueCapacityValue(capacityState.capacityByTeam, teamName);
+        if (numeric.matched) continue;
+        const noTicket = target.state === 'missing';
+        if (noTicket) noTicketKeys.add(key);
+        const blankTicket = target.state === 'matched' && target.capacity == null;
+        const stored = plannedCapacityByTeam?.[key];
+        if ((noTicket || blankTicket) && typeof stored === 'number' && Number.isFinite(stored)) {
+            fallbackKeys.add(key);
+            capacityByTeam[key] = stored;
+        }
+    }
+    return { noTicketKeys, fallbackKeys, capacityByTeam };
+}
+
 export function applyCapacitySaveResult(state, result) {
     if (!state || !result || typeof result.issueKey !== 'string' || typeof result.teamName !== 'string') {
         return state;

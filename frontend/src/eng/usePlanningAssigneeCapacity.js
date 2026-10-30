@@ -1,7 +1,10 @@
 import * as React from 'react';
 import { fetchAssigneeCapacity, saveAssigneeCapacity } from '../api/assigneeCapacityApi.js';
 import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
-import { applyChangesToDocument, buildChanges, chunkChanges, isValidDisplayName, pruneChange, sanitizeDisplayName } from './planningAssigneeCapacityModel.js';
+import {
+    applyChangesToDocument, buildChanges, chunkChanges, effectivePlanned, isPlannedChange, isPlannedNoop, isValidDisplayName, PLANNED_SLOT, plannedNumber, plannedWireValue,
+    pruneChange, samePlannedValue, sanitizeDisplayName,
+} from './planningAssigneeCapacityModel.js';
 
 const SAVE_DELAY_MS = 200;
 const SETTLE_MS = 250;
@@ -13,7 +16,7 @@ const isRejected = error => error?.status === 400 || error?.status === 413;
 // shows Not saved with Retry and the drafts.
 export const MAX_PARKED_SCOPES = 5;
 const scopeKeyOf = (sprintId, teamId) => (sprintId && teamId ? `${sprintId}|${teamId}` : '');
-const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', origin: '', document: null, changes: [], capabilities: { canRead: false, canSave: false } });
+const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', origin: '', document: null, changes: [], plannedSave: '', capabilities: { canRead: false, canSave: false } });
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 // A re-read that changes none of these leaves the shown document as it is.
 const sameDocument = (a, b) => Boolean(a && b) && a.revision === b.revision && sameValue(a.planned, b.planned) && sameValue(a.inherited, b.inherited);
@@ -68,11 +71,23 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     const listeners = new Set();
 
     const overlay = queue => (queue ? [...queue.rejected.values(), ...queue.failed.values(), ...queue.inFlight, ...queue.pending.values()] : []);
+    const holdsPlanned = changes => [...changes].some(isPlannedChange);
+    // The stored team number as shown (own, inherited or pending) for App's capacity maths; a new object only when it changes.
+    let plannedSnapshot = null;
+    const updatePlannedSnapshot = () => {
+        const shown = current && state.document ? effectivePlanned(applyChangesToDocument(state.document, state.changes)) : null;
+        const value = plannedNumber(shown);
+        const next = value == null ? null : { sprintId: state.sprintId, teamId: state.teamId, value, source: shown.source ?? null };
+        if (JSON.stringify(next) !== JSON.stringify(plannedSnapshot)) plannedSnapshot = next;
+    };
     // `origin: 'automatic'` marks only the publish of an automatic refresh (the provider keeps the reading position for it).
     const publish = patch => {
         const queue = current;
         state = { ...state, origin: '', ...patch, changes: overlay(queue) };
         if (queue) state.document = queue.document;
+        // The card shows the stored number's own save state (the strip may be collapsed).
+        state.plannedSave = !queue ? '' : holdsPlanned(queue.rejected.values()) || holdsPlanned(queue.failed.values()) ? 'failed' : holdsPlanned(queue.inFlight) || holdsPlanned(queue.pending.values()) ? 'saving' : '';
+        updatePlannedSnapshot();
         listeners.forEach(listener => listener());
     };
     const isCurrent = queue => !disposed && queue === current;
@@ -111,8 +126,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     }
 
     // Sends one chunk; resolves to the saved document or throws. A 403 csrf_required refetches the token once.
-    async function send(queue, chunk) {
-        const call = () => saveCapacity(backendUrl, queue.sprintId, { teamId: queue.teamId, changes: chunk }, { csrf });
+    async function send(queue, chunk, planned) {
+        const call = () => saveCapacity(backendUrl, queue.sprintId, { teamId: queue.teamId, ...(planned ? { planned } : {}), changes: chunk }, { csrf });
         try { return await call(); }
         catch (error) {
             if (error.status === 403 && error.code === 'csrf_required') { csrf.token = null; return call(); }
@@ -120,15 +135,18 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         }
     }
 
-    const asDocument = (queue, data) => ({ ...queue.document, teamId: queue.teamId, sprintId: queue.sprintId, revision: data.revision, rows: data.rows || [], inherited: null });
+    // The saved document: an own one (no inherited part) that keeps the stored team number the server returned.
+    const asDocument = (queue, data) => ({ ...queue.document, teamId: queue.teamId, sprintId: queue.sprintId, revision: data.revision, rows: data.rows || [],
+        planned: data.planned !== undefined ? data.planned ?? null : effectivePlanned(queue.document), inherited: null });
 
     // An unconfirmed PATCH: read the document back and resend only the fields that differ.
-    async function recover(queue, chunk) {
+    async function recover(queue, chunk, planned) {
         const fresh = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, {});
         queue.document = { ...fresh };
         const remaining = chunk.map(change => pruneChange(change, fresh)).filter(Boolean);
-        if (!remaining.length) return;
-        queue.document = asDocument(queue, await send(queue, remaining));
+        const plannedLeft = planned && !isPlannedNoop(effectivePlanned(fresh), planned) ? planned : undefined;
+        if (!remaining.length && !plannedLeft) return;
+        queue.document = asDocument(queue, await send(queue, remaining, plannedLeft));
     }
 
     async function pump(queue) {
@@ -144,15 +162,20 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                 if (!changes.length) { queue.inFlight = []; if (isCurrent(queue)) publish(queue.pending.size ? {} : { save: hasFailures(queue) ? 'failed' : state.save === 'saving' ? 'saved' : state.save }); continue; }
                 queue.writeEpoch += 1;
                 if (isCurrent(queue)) publish({ save: 'saving', error: '' });
+                // The stored team number rides with the first chunk as the body's `planned` (a planned-only PATCH sends `changes: []`).
+                const planned = changes.find(isPlannedChange)?.planned;
+                const batches = chunkChanges(changes.filter(change => !isPlannedChange(change)));
+                if (!batches.length) batches.push([]);
                 let done = 0;
                 try {
-                    for (const chunk of chunkChanges(changes)) {
-                        try { queue.document = asDocument(queue, await send(queue, chunk)); }
+                    for (const [index, chunk] of batches.entries()) {
+                        const plannedPart = index === 0 ? planned : undefined;
+                        try { queue.document = asDocument(queue, await send(queue, chunk, plannedPart)); }
                         catch (error) {
                             if (!error.unconfirmed || isAuthError(error)) throw error;
-                            await recover(queue, chunk);
+                            await recover(queue, chunk, plannedPart);
                         }
-                        done += chunk.length;
+                        done += 1;
                     }
                     queue.inFlight = [];
                     queue.writeEpoch += 1;
@@ -161,7 +184,9 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                 } catch (error) {
                     queue.writeEpoch += 1;
                     // The failed batch stays visible as drafts and rides along with the next commit or retry.
-                    const unsent = queue.inFlight.filter(change => changes.slice(done).some(item => item.assigneeKey === change.assigneeKey));
+                    const unsentKeys = new Set(batches.slice(done).flat().map(item => item.assigneeKey));
+                    if (planned && done === 0) unsentKeys.add(PLANNED_SLOT);
+                    const unsent = queue.inFlight.filter(change => unsentKeys.has(change.assigneeKey));
                     queue.inFlight = [];
                     if (isAuthError(error)) { unsent.forEach(change => mergeInto(queue.pending, change)); queue.stopped = true; if (isCurrent(queue)) publish({ save: 'idle' }); }
                     else {
@@ -233,6 +258,50 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             schedule(queue);
             return true;
         },
+        // Records the stored team number ("Team capacity (not in Jira)"): `value` is a validated wire string or null to clear;
+        // `source` is `user` (typed) or `jira` (Use ticket value, or after the user's own Jira save). A no-op sends nothing.
+        commitPlanned(value, source = 'user') {
+            const queue = current;
+            if (!queue?.document || !state.capabilities.canSave || queue.stopped) return false;
+            const planned = value == null ? { value: null } : { value, source };
+            if (isPlannedNoop(effectivePlanned(applyChangesToDocument(queue.document, overlay(queue))), planned)) return true;
+            const change = { assigneeKey: PLANNED_SLOT, planned };
+            revive(queue);
+            supersede(queue, change); mergeInto(queue.pending, change);
+            const rejected = queue.rejected.size > 0;
+            publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
+            schedule(queue);
+            return true;
+        },
+        // Silent database-only mirror of the Jira ticket value after a user-initiated capacity read: only into an existing own
+        // document, only when the shown number differs after rounding and is not one the user typed, only while the queue is
+        // idle; computed from the post-queue document; a failure is dropped (never `failed`, never replayed). Returns whether sent.
+        mirrorPlanned(ticketValue) {
+            const queue = current;
+            const value = plannedWireValue(ticketValue);
+            if (!queue || !active || value == null || !queue.document || !(queue.document.revision > 0) || !state.capabilities.canSave || queue.stopped) return false;
+            // A read in flight meanwhile is dropped by its writeEpoch check; the PATCH response is the newer document.
+            if (controller.isBusy() || queue.timer != null) return false;
+            const stored = queue.document.planned ?? null;
+            if (stored?.source === 'user' || samePlannedValue(stored, { value })) return false;
+            queue.running = true;
+            queue.writeEpoch += 1;
+            void (async () => {
+                try {
+                    queue.document = asDocument(queue, await send(queue, [], { value, source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }));
+                    cache.set(scopeKeyOf(queue.sprintId, queue.teamId), queue.document);
+                    if (isCurrent(queue)) publish({});
+                } catch { /* dropped silently */ }
+                finally {
+                    queue.writeEpoch += 1;
+                    queue.running = false;
+                    if (queue.pending.size && !queue.stopped) schedule(queue);
+                    if (!isCurrent(queue)) park(queue);
+                }
+            })();
+            return true;
+        },
+        getPlannedSnapshot: () => plannedSnapshot,
         // Resends every failed and refused change.
         retry() {
             const queue = current;
@@ -277,13 +346,33 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (current && active) void load(current);
         },
         isBusy: () => Boolean(current && (current.running || hasDrafts(current))),
-        dispose() { flush(current); disposed = true; loadAbort?.abort(); if (loadTimer != null) { clearTimer(loadTimer); loadTimer = null; } },
+        // The provider unmounted: send what is unsaved, keep a busy queue parked, and show nothing (App's stored number too).
+        dispose() {
+            const queue = current;
+            flush(queue);
+            current = null;
+            if (queue) park(queue);
+            generation += 1;
+            loadAbort?.abort(); loadAbort = null;
+            if (loadTimer != null) { clearTimer(loadTimer); loadTimer = null; }
+            state = EMPTY;
+            publish({});
+            disposed = true;
+        },
     };
     return controller;
 }
 
+// One controller per backend, held above the provider (#323 B1 design A): the provider drives it and App reads only its
+// stored team number through one useSyncExternalStore, so App re-renders only when that number changes.
+const controllers = new Map();
+export function getAssigneeCapacityController(backendUrl = '') {
+    if (!controllers.has(backendUrl)) controllers.set(backendUrl, createAssigneeCapacityController({ backendUrl }));
+    return controllers.get(backendUrl);
+}
+
 export default function usePlanningAssigneeCapacity({ backendUrl = '', sprintId, teamId, active }) {
-    const controller = React.useMemo(() => createAssigneeCapacityController({ backendUrl }), [backendUrl]);
+    const controller = React.useMemo(() => getAssigneeCapacityController(backendUrl), [backendUrl]);
     const state = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
     React.useEffect(() => { controller.setScope({ sprintId, teamId, active }); }, [controller, sprintId, teamId, active]);
     React.useEffect(() => () => controller.dispose(), [controller]);

@@ -3,17 +3,18 @@ import { createPortal } from 'react-dom';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
+export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeRowColor, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, hiddenSelectedCount, mayBeIncomplete, teamTasks, validateCellDraft,
+    applyChangesToDocument, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, hiddenSelectedCount, mayBeIncomplete, teamTasks, validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
 // The strip's own preference (the UI-prefs object is rewritten from App state). The pre-release key
 // `jep.planningAssigneeCapacityExpanded` is not read: it never shipped, so the strip simply starts collapsed once.
 export const EXPANDED_KEY = 'jira_dashboard_planning_assignee_capacity_v1';
-const readExpanded = () => { try { return JSON.parse(window.localStorage.getItem(EXPANDED_KEY) || 'null')?.expanded === true; } catch (_error) { return false; } };
-const writeExpanded = expanded => { try { window.localStorage.setItem(EXPANDED_KEY, JSON.stringify({ expanded })); } catch (_error) { /* storage unavailable */ } };
+const readExpanded = () => { try { return JSON.parse(window.localStorage.getItem(EXPANDED_KEY) || 'null')?.expanded === true; } catch { return false; } };
+const writeExpanded = expanded => { try { window.localStorage.setItem(EXPANDED_KEY, JSON.stringify({ expanded })); } catch { /* storage unavailable */ } };
 
 export const PlanningAssigneeCapacityContext = React.createContext(null);
 export const usePlanningAssigneeCapacityView = () => React.useContext(PlanningAssigneeCapacityContext);
@@ -143,7 +144,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, selectedKeys = null, automaticRefreshRef = null,
+    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null,
 }) {
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
@@ -204,9 +205,11 @@ export default function PlanningAssigneeCapacity({
         const shift = host.getBoundingClientRect().bottom - previous;
         if (previous <= visibleTop && Math.abs(shift) >= 1) window.scrollBy(0, shift);
     }, [host, state]);
-    // Only people with an underbar segment are tinted, and the strip exists only with a Jira team number.
+    // Only people with an underbar segment are tinted, and the strip exists only with a team number (Jira or stored).
     const tinted = Number(rawCapacity) > 0;
-    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity }), [oneTeam, teamId, view, state, loaded, rawCapacity]);
+    // The stored team number as shown (own, gray inherited or pending), for the team card's editor and reconcile banner.
+    const planned = React.useMemo(() => effectivePlanned(effective), [effective]);
+    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller }), [oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller]);
 
     const readOnly = !state.capabilities.canSave;
     const hidden = state.load === 'ready' && !state.capabilities.canRead;

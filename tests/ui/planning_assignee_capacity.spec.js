@@ -66,25 +66,32 @@ function capacityServer({ inherited = null, rows = [], capabilities = caps, dela
     return { state, handler };
 }
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories } = {}) {
+const defaultCapacity = sprint => ({ enabled: true, mutationEnabled: false, sprint, capacities: { 'Alpha Team': 20 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] });
+
+// `capacity(sprintName)` answers GET /api/capacity; PATCH /api/capacity/<key> (the Jira write) is recorded and echoed.
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'basic', analytics = false } = {}) {
     const calls = [];
     await installDashboardShell(page);
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
-        calls.push({ method: request.method(), pathname: url.pathname });
+        calls.push({ method: request.method(), pathname: url.pathname, body: request.method() === 'GET' ? null : requestBody(request) });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
         if (url.pathname === '/api/epm/access') return json(route, { state: 'disabled', epmHomeReadAvailable: false });
         if (url.pathname === '/api/config') {
             return json(route, {
-                jiraUrl: 'https://jira.example', capacityProject, authMode: 'basic', epmViewEnabled: false, epmHomeReadAvailable: false,
+                jiraUrl: 'https://jira.example', capacityProject, authMode, epmViewEnabled: false, epmHomeReadAvailable: false,
                 projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true,
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', version: 1, view: { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showScenario: false } },
             });
         }
-        if (url.pathname === '/api/capacity') return json(route, { enabled: true, mutationEnabled: false, sprint: url.searchParams.get('sprint'), capacities: { 'Alpha Team': 20 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] });
+        if (url.pathname === '/api/capacity') return json(route, capacity(url.searchParams.get('sprint')));
+        if (url.pathname.startsWith('/api/capacity/') && request.method() === 'PATCH') {
+            const body = requestBody(request);
+            return json(route, { issueKey: decodeURIComponent(url.pathname.split('/').pop()), teamName: body.teamName, previousCapacity: body.expectedCapacity, capacity: body.capacity, result: 'success' });
+        }
         if (url.pathname === '/api/version') return json(route, { enabled: false });
         if (url.pathname === '/api/groups-config') {
             return json(route, {
@@ -112,7 +119,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
-        if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
+        if (url.pathname === '/api/analytics/context') return json(route, analytics ? { enabled: true, measurementId: 'G-SYNTHETIC' } : { enabled: false });
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
     return { calls };
@@ -1068,4 +1075,336 @@ test('a new auth session re-reads the document without a loading state', async (
     await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('12');
     expect(assigneeCalls(calls, since).filter(call => call.method === 'GET').length).toBeGreaterThanOrEqual(1);
     await expect(strip(page).getByText('Loading assignee capacity…')).toHaveCount(0);
+});
+
+// ---- Team capacity (not in Jira), #323 Task 8 ----
+
+const sprintOrder = ['1999', String(activeSprintId), String(futureSprintId)];
+// A per-Sprint synthetic store with the stored team number: whole-document inheritance from the nearest earlier Sprint,
+// first write materialises (source `inherited`), and a guarded (`onlyIfSource`) write only updates an existing own document.
+function plannedServer({ docs = {}, capabilities = caps } = {}) {
+    const state = { docs: JSON.parse(JSON.stringify(docs)), gets: 0, patches: [] };
+    const asInherited = planned => (planned ? { value: planned.value, source: 'inherited' } : null);
+    const earlier = sprintId => {
+        for (let index = sprintOrder.indexOf(sprintId) - 1; index >= 0; index -= 1) {
+            const doc = state.docs[sprintOrder[index]];
+            if (doc?.revision) return { fromSprintId: sprintOrder[index], rows: doc.rows.filter(row => !row.removed), planned: asInherited(doc.planned) };
+        }
+        return null;
+    };
+    const read = sprintId => {
+        const own = state.docs[sprintId];
+        return own?.revision
+            ? { teamId: 'team-alpha', sprintId, revision: own.revision, rows: own.rows, planned: own.planned || null, inherited: null, capabilities }
+            : { teamId: 'team-alpha', sprintId, revision: 0, rows: [], planned: null, inherited: earlier(sprintId), capabilities };
+    };
+    const handler = async route => {
+        const request = route.request();
+        const sprintId = decodeURIComponent(new URL(request.url()).pathname.split('/')[4]);
+        if (request.method() === 'GET') { state.gets += 1; return json(route, read(sprintId)); }
+        const body = requestBody(request);
+        state.patches.push({ sprintId, body });
+        let own = state.docs[sprintId];
+        let planned = body.planned;
+        if (planned?.onlyIfSource && !own?.revision) planned = undefined;
+        if (!body.changes.length && planned === undefined) return json(route, read(sprintId));
+        if (!own?.revision) {
+            const source = earlier(sprintId);
+            own = { revision: 0, rows: (source?.rows || []).map(row => ({ ...row, vacations: null, notes: null })), planned: source?.planned || null };
+            state.docs[sprintId] = own;
+        }
+        for (const change of body.changes) {
+            let row = own.rows.find(candidate => candidate.assigneeKey === change.assigneeKey);
+            if (!row) { row = { assigneeKey: change.assigneeKey, displayName: change.displayName || change.assigneeKey, capacity: null, vacations: null, notes: null, removed: false }; own.rows.push(row); }
+            for (const field of ['displayName', 'capacity', 'vacations', 'notes', 'removed']) if (field in change) row[field] = change[field];
+        }
+        if (planned && (!planned.onlyIfSource || planned.onlyIfSource.includes(own.planned?.source ?? null))) {
+            own.planned = planned.value == null ? null : { value: planned.value, source: planned.source };
+        }
+        own.revision += 1;
+        return json(route, read(sprintId));
+    };
+    return { state, handler };
+}
+
+const ownDoc = planned => ({ revision: 1, rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '6', vacations: null, notes: null, removed: false }], planned });
+const noTicket = sprint => ({ enabled: true, mutationEnabled: true, sprint, capacities: {}, entries: [] });
+const ticket = value => sprint => ({ enabled: true, mutationEnabled: true, sprint, capacities: value == null ? {} : { 'Alpha Team': value }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: value }] });
+const alphaCard = page => page.locator('.planning-team-capacity-cards .team-stat-card[data-capacity-team="team-alpha"]');
+const plannedPencil = page => alphaCard(page).getByRole('button', { name: 'Edit Alpha Team team capacity' });
+const reconcileBanner = page => page.locator('[data-capacity-reconcile]');
+const capacityTrack = page => page.locator('.planning-panel-capacity-graph .capacity-bar-track');
+const teamCap = page => page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label');
+const jiraWrites = calls => calls.filter(call => call.method !== 'GET' && call.pathname.startsWith('/api/capacity/'));
+const assigneeWrites = (calls, since = 0) => assigneeCalls(calls, since).filter(call => call.method === 'PATCH');
+const capacityEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => String(entry?.workflow_action || '').startsWith('capacity_')).map(entry => entry.workflow_action));
+
+async function openPlanningIn(page, sprintName) {
+    await page.goto(appBaseUrl);
+    const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await expect(toggle).toHaveAttribute('aria-disabled', 'false');
+    await toggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: sprintName }).click();
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning', exact: true }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+}
+async function switchSprint(page, sprintName) {
+    await page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle').click();
+    await page.locator('.sprint-dropdown-option', { hasText: sprintName }).click();
+}
+async function pinnedHeights(page) {
+    return { panel: (await page.locator('.planning-panel').boundingBox()).height, stack: (await page.locator('.planning-review-sticky-stack').boundingBox()).height };
+}
+async function hover(page, locator) { await locator.hover(); }
+// The Table overview starts compact; the team cards live in its details.
+async function showCards(page) {
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    if (await showPanel(page).count()) await showPanel(page).click();
+    await expect(page.locator('.planning-team-capacity-cards')).toBeVisible();
+}
+
+test('no ticket: the lead types a team number, it saves to the store only, the bar and underbar appear, and the next Sprint shows it gray', async ({ page }) => {
+    const server = plannedServer();
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth', analytics: true });
+    await openPlanningIn(page, activeSprintName);
+    await showCards(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await expect(capacityTrack(page)).toHaveCount(0);
+    await expect(underbar(page)).toHaveCount(0);
+    await expect(alphaCard(page)).not.toHaveAttribute('data-capacity-source', /./);
+    await hover(page, alphaCard(page));
+    await expect(plannedPencil(page)).toBeEnabled();
+    await expect(alphaCard(page).getByRole('link', { name: /capacity ticket in Jira/ })).toHaveCount(0);
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toBeFocused();
+    await expect(alphaCard(page).locator('.team-capacity-editor-context')).toHaveText('Team capacity (not in Jira)');
+    await alphaCard(page).screenshot({ path: 'tmp/slice3-shots/card-planned-editor-open.png', animations: 'disabled' });
+    await input.fill('14');
+    await input.press('Enter');
+    await expect.poll(() => assigneeWrites(calls).length).toBe(1);
+    expect(assigneeWrites(calls)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'user' }, changes: [] });
+    await expect(capacityTrack(page)).toBeVisible();
+    await expect(underbar(page)).toHaveCount(1);
+    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'planned');
+    await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'user');
+    await expect(alphaCard(page).locator('.microbar-meta')).toContainText('Cap 14.0');
+    await page.mouse.move(5, 600);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-no-ticket.png', animations: 'disabled' });
+    await underbar(page).hover({ position: { x: 4, y: 3 } });
+    await expect(readout(page)).toContainText('Team capacity (not in Jira)');
+    // The next Sprint has no document of its own: the number is inherited (gray) and still drives the bar.
+    await page.mouse.move(5, 600);
+    await switchSprint(page, futureSprintName);
+    await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'inherited');
+    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(page.locator('.team-capacity-read-status').filter({ hasText: 'have not been created yet for this future sprint' })).toContainText('Showing Team capacity (not in Jira) meanwhile.');
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    await expect(alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' })).toHaveValue('14');
+    await page.keyboard.press('Escape');
+    expect(assigneeWrites(calls)).toHaveLength(1);
+    expect(jiraWrites(calls), 'nothing is written to Jira').toEqual([]);
+    expect(await capacityEvents(page), 'the stored-number editor emits no capacity_* analytics').toEqual([]);
+});
+
+test('with a ticket Jira wins on screen: no stored-number pencil, the Jira number drives the bar, no banner for a jira source', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'jira' }) } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth' });
+    await openPlanning(page);
+    await showCards(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await expect(teamCap(page)).toHaveText(/Team Cap\s*20\.0/);
+    await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'jira');
+    await hover(page, alphaCard(page));
+    await expect(plannedPencil(page)).toHaveCount(0);
+    await expect(alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
+    await expect(reconcileBanner(page)).toHaveCount(0);
+    await underbar(page).hover({ position: { x: 4, y: 3 } });
+    await expect(readout(page)).toContainText('Team capacity: Jira');
+    await page.mouse.move(5, 600);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-with-ticket.png', animations: 'disabled' });
+    expect(jiraWrites(calls)).toEqual([]);
+});
+
+test('a typed number that differs from the ticket shows the banner with three actions; Write to ticket opens the prefilled Jira editor', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth', analytics: true });
+    await openPlanning(page);
+    await showCards(page);
+    await expect(reconcileBanner(page)).toBeVisible();
+    await expect(reconcileBanner(page)).toContainText('Alpha Team: Team capacity (not in Jira) is 14 SP; the Jira ticket says 20 SP.');
+    await expect(reconcileBanner(page).getByRole('button')).toHaveText(['Write to ticket', 'Use ticket value', 'Not now']);
+    await expect(teamCap(page), 'Jira wins on screen').toHaveText(/Team Cap\s*20\.0/);
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/slice3-shots/reconcile-banner.png', animations: 'disabled' });
+    await page.mouse.move(5, 600);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-differing.png', animations: 'disabled' });
+    expect(await capacityEvents(page)).toEqual([]);
+    await reconcileBanner(page).getByRole('button', { name: 'Write to ticket' }).click();
+    const jiraInput = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
+    await expect(jiraInput).toHaveValue('14');
+    expect(jiraWrites(calls), 'opening the editor writes nothing').toEqual([]);
+    await alphaCard(page).getByRole('button', { name: 'Save Alpha Team capacity' }).click();
+    await expect.poll(() => jiraWrites(calls).length).toBe(1);
+    expect(jiraWrites(calls)[0].body).toMatchObject({ capacity: 14, expectedCapacity: 20, teamName: 'Alpha Team' });
+    // The user's own Jira save settles the typed number: source user becomes {ticket value, jira}.
+    await expect.poll(() => assigneeWrites(calls).length).toBe(1);
+    expect(assigneeWrites(calls)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'jira' }, changes: [] });
+    await expect(reconcileBanner(page)).toHaveCount(0);
+    expect(await capacityEvents(page), 'only the existing Jira editor emits capacity_* events').toEqual(['capacity_edit_open', 'capacity_change_submit', 'capacity_change_result']);
+});
+
+test('Use ticket value stores the ticket number as jira and Not now suppresses the banner, neither writing Jira', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth', analytics: true });
+    await openPlanning(page);
+    await showCards(page);
+    await expect(reconcileBanner(page)).toBeVisible();
+    await reconcileBanner(page).getByRole('button', { name: 'Not now' }).click();
+    await expect(reconcileBanner(page)).toHaveCount(0);
+    await page.waitForTimeout(300);
+    expect(assigneeWrites(calls), 'Not now writes nothing').toEqual([]);
+    // Not now holds per (Sprint, Team) until either number changes: a changed stored number brings it back.
+    server.state.docs[String(futureSprintId)].planned = { value: '15', source: 'user' }; server.state.docs[String(futureSprintId)].revision += 1;
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+    await expect(reconcileBanner(page)).toContainText('is 15 SP');
+    await reconcileBanner(page).getByRole('button', { name: 'Use ticket value' }).click();
+    await expect.poll(() => assigneeWrites(calls).length).toBe(1);
+    expect(assigneeWrites(calls)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '20', source: 'jira' }, changes: [] });
+    await expect(reconcileBanner(page)).toHaveCount(0);
+    expect(jiraWrites(calls)).toEqual([]);
+    expect(await capacityEvents(page)).toEqual([]);
+});
+
+test('equal numbers, and jira or inherited sources, show no banner', async ({ page }) => {
+    for (const docs of [
+        { [String(futureSprintId)]: ownDoc({ value: '20.00', source: 'user' }) },
+        { [String(futureSprintId)]: ownDoc({ value: '14', source: 'jira' }) },
+        { [String(activeSprintId)]: ownDoc({ value: '14', source: 'user' }) },
+    ]) {
+        const server = plannedServer({ docs });
+        await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth' });
+        await openPlanning(page);
+        await showCards(page);
+        await expect.poll(() => server.state.gets).toBe(1);
+        await expect(teamCap(page)).toHaveText(/Team Cap\s*20\.0/);
+        await page.waitForTimeout(300);
+        await expect(reconcileBanner(page), JSON.stringify(docs)).toHaveCount(0);
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+});
+
+test('a matched ticket with a blank value falls back to the stored number; the pencil edits Jira and the banner offers Write to ticket only', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+    await install(page, { server, capacityProject: 'CAP', capacity: ticket(null), authMode: 'atlassian_oauth' });
+    await openPlanning(page);
+    await showCards(page);
+    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'planned');
+    await hover(page, alphaCard(page));
+    await expect(alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
+    await expect(plannedPencil(page)).toHaveCount(0);
+    await expect(reconcileBanner(page)).toContainText('the Jira ticket has no value');
+    await expect(reconcileBanner(page).getByRole('button')).toHaveText(['Write to ticket', 'Not now']);
+});
+
+test('read-only user: no stored-number pencil, no banner and no mirror', async ({ page }) => {
+    const readOnly = { canRead: true, canSave: false };
+    const server = plannedServer({ capabilities: readOnly, docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth' });
+    await openPlanning(page);
+    await showCards(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expect(reconcileBanner(page)).toHaveCount(0);
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(assigneeWrites(calls)).toEqual([]);
+    const server2 = plannedServer({ capabilities: readOnly });
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+    await install(page, { server: server2, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth' });
+    await openPlanning(page);
+    await showCards(page);
+    await expect.poll(() => server2.state.gets).toBe(1);
+    await hover(page, alphaCard(page));
+    await expect(plannedPencil(page)).toHaveCount(0);
+});
+
+for (const [label, options] of [['List layout', { prefs: { planningLayout: 'list' } }], ['two Teams', { selectedTeams: ['team-alpha', 'team-beta'] }]]) test(`${label}: the stored number is not available, a stated limitation`, async ({ page }) => {
+    {
+        const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+        await install(page, { server, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth', ...options });
+        await openPlanning(page);
+        await showCards(page);
+        await expect(alphaCard(page)).toBeVisible();
+        await page.waitForTimeout(400);
+        expect(server.state.gets, JSON.stringify(options)).toBe(0);
+        await expect(capacityTrack(page)).toHaveCount(0);
+        await expect(alphaCard(page)).not.toHaveAttribute('data-capacity-source', /./);
+        await hover(page, alphaCard(page));
+        await expect(plannedPencil(page)).toHaveCount(0);
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+});
+
+test('request ledger: the mirror sends at most one guarded PATCH per user-initiated load, only when the ticket differs, and none in an automatic window', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'jira' }) } });
+    let ticketValue = 20;
+    // Basic mode, as the other freshness tests here (with this fixture in OAuth mode the return triggered no re-read; not investigated).
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: sprint => ticket(ticketValue)(sprint), analytics: true });
+    await openPlanning(page);
+    await showCards(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    // The cold load is user-initiated: it mirrors when the document is already loaded when the capacity read ends.
+    const cold = assigneeWrites(calls);
+    expect(cold.length).toBeLessThanOrEqual(1);
+    cold.forEach(call => expect(call.body).toEqual({ teamId: 'team-alpha', planned: { value: '20', source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }, changes: [] }));
+    // Automatic window: the ticket changed, and a return after more than 12 minutes re-reads capacity without the loading flag.
+    ticketValue = 25;
+    let since = calls.length;
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => calls.slice(since).some(call => call.pathname === '/api/capacity'), 'the automatic window re-read capacity').toBe(true);
+    await expect(teamCap(page)).toHaveText(/Team Cap\s*25\.0/);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(600);
+    expect(assigneeWrites(calls, since), 'no non-GET in an automatic window').toEqual([]);
+    // A user-initiated load (header Refresh) mirrors the differing ticket value once.
+    since = calls.length;
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+    await expect.poll(() => assigneeWrites(calls, since).length).toBe(1);
+    expect(assigneeWrites(calls, since)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '25', source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }, changes: [] });
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    since = calls.length;
+    await page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(600);
+    expect(assigneeWrites(calls, since), 'equal after the mirror: nothing more').toEqual([]);
+    expect(jiraWrites(calls)).toEqual([]);
+    expect(await capacityEvents(page), 'the mirror emits no capacity_* analytics').toEqual([]);
+});
+
+test('the late arrival of the amber bar from the stored number keeps the pinned stack inside the DoD 14 bounds at 1440x900 and 1280x720', async ({ page }) => {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(viewport);
+        const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        const held = async route => { if (route.request().method() === 'GET') await gate; return server.handler(route); };
+        await install(page, { server: { handler: held }, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth' });
+        await openPlanning(page);
+        await expect(alphaCard(page)).toHaveCount(1);
+        await expect(capacityTrack(page)).toHaveCount(0);
+        const before = await pinnedHeights(page);
+        release();
+        await expect(capacityTrack(page)).toBeVisible();
+        const after = await pinnedHeights(page);
+        for (const [label, heights] of [['before', before], ['after', after]]) {
+            expect(heights.panel, `${label} ${viewport.width}`).toBeLessThan(64);
+            expect(heights.stack, `${label} ${viewport.width}`).toBeLessThanOrEqual(175);
+        }
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
 });

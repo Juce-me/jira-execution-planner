@@ -142,6 +142,25 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
             cleared = self.patch_doc([], planned={'value': None}).get_json()
             self.assertEqual((cleared['planned'], cleared['revision']), (None, 2))
 
+    def test_stored_team_capacity_paths_never_write_jira(self):
+        """#323 DoD 19: typing, Use ticket value and the mirror write only the store, never the Jira capacity write."""
+        from backend.routes import capacity_routes
+        from backend.services import capacity as capacity_service
+        forbidden = AssertionError('Jira capacity write reached from a stored-number path')
+
+        def jira_put(method, *args, **kwargs):
+            if str(method).upper() != 'GET':
+                raise forbidden
+
+        with self.auth(), patch.object(capacity_service, 'update_capacity_issue', side_effect=forbidden), \
+                patch.object(capacity_routes, 'update_capacity_issue', side_effect=forbidden), \
+                patch.object(jira_server, 'current_jira_request', side_effect=jira_put):
+            typed = self.patch_doc([], planned={'value': '14', 'source': 'user'})
+            used = self.patch_doc([], planned={'value': '20', 'source': 'jira'})
+            mirror = self.patch_doc([], planned={'value': '21', 'source': 'jira', 'onlyIfSource': [None, 'jira', 'inherited']})
+            self.assertEqual([r.status_code for r in (typed, used, mirror)], [200, 200, 200])
+            self.assertEqual(mirror.get_json()['planned'], {'value': '21', 'source': 'jira'})
+
     def test_planned_body_errors_are_codes_without_message(self):
         with self.auth():
             for planned in (None, 'x', {'value': '5', 'source': 'inherited'}, {'value': '5'}, {'value': '1.234', 'source': 'user'},

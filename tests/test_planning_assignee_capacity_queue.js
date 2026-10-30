@@ -482,3 +482,140 @@ test('a new auth session clears the cache and re-reads the current scope, holdin
     f.controller.setScope({ sprintId: '100', teamId: 't1', active: true });
     assert.equal(f.controller.getState().document, null, 'a scope read under the old session is not reused from cache');
 });
+
+// ---- Team capacity (not in Jira), #323 Task 8 ----
+
+test('a planned commit sends one planned-only PATCH with changes: [], and an equal number sends nothing', async () => {
+    const { controller, calls, fire } = await fixture({ document: doc({ planned: { value: '12', source: 'user' } }), save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); return { revision: 2, rows: [], planned: payload.planned.value == null ? null : { value: payload.planned.value, source: payload.planned.source } }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.commitPlanned('12.00', 'user'), true);
+    await fire();
+    assert.equal(calls.patches.length, 0, 'equal after rounding: nothing sent');
+    controller.commitPlanned('14.5', 'user');
+    assert.equal(controller.getState().plannedSave, 'saving');
+    await fire();
+    assert.deepEqual(calls.patches.map(call => call.payload), [{ teamId: 't1', planned: { value: '14.5', source: 'user' }, changes: [] }]);
+    assert.deepEqual(controller.getState().document.planned, { value: '14.5', source: 'user' });
+    assert.equal(controller.getState().plannedSave, '');
+    controller.commitPlanned(null);
+    await fire();
+    assert.deepEqual(calls.patches.at(-1).payload, { teamId: 't1', planned: { value: null }, changes: [] });
+});
+
+test('a planned commit rides with row changes in one PATCH; the gray number stays shown while it is pending', async () => {
+    const inherited = { fromSprintId: '90', rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', removed: false }], planned: { value: '12', source: 'inherited' } };
+    const save = deferred();
+    const { controller, calls, buildShown, fire, model } = await fixture({ document: doc({ revision: 0, rows: [], planned: null, inherited }), save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); return save.promise; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.deepEqual(controller.getPlannedSnapshot(), { sprintId: '100', teamId: 't1', value: 12, source: 'inherited' });
+    controller.commit({ key: 'u1', field: 'vacations', value: '1' }, buildShown);
+    const shown = model.applyChangesToDocument(controller.getState().document, controller.getState().changes);
+    assert.deepEqual(model.effectivePlanned(shown), { value: '12', source: 'inherited' }, 'a pending row commit keeps the gray number');
+    assert.equal(controller.getPlannedSnapshot().value, 12);
+    controller.commitPlanned('12', 'user');
+    assert.equal(controller.getState().changes.length, 1, 'typing the gray number creates nothing');
+    controller.commitPlanned('20', 'user');
+    await fire();
+    assert.deepEqual(calls.patches[0].payload, { teamId: 't1', planned: { value: '20', source: 'user' }, changes: [{ assigneeKey: 'u1', vacations: '1' }] });
+    save.resolve({ revision: 1, rows: [], planned: { value: '20', source: 'user' } });
+    await settle();
+    assert.deepEqual(controller.getPlannedSnapshot(), { sprintId: '100', teamId: 't1', value: 20, source: 'user' });
+});
+
+test('a failed planned commit is retained as failed and resent by Retry; an unconfirmed one is recovered', async () => {
+    let attempt = 0;
+    const { controller, calls, fire } = await fixture({
+        document: doc({ planned: null }),
+        save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); attempt += 1; if (attempt === 1) throw Object.assign(new Error('down'), { status: 503 }); if (attempt === 2) throw Object.assign(new Error('lost'), { unconfirmed: true }); return { revision: 3, rows: [], planned: { value: '8', source: 'user' } }; },
+        fetch: async () => doc({ planned: null }),
+    });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commitPlanned('8');
+    await fire();
+    assert.equal(controller.getState().save, 'failed');
+    assert.equal(controller.getState().plannedSave, 'failed');
+    assert.equal(controller.getPlannedSnapshot().value, 8, 'the failed draft stays shown');
+    controller.retry();
+    await settle();
+    assert.deepEqual(calls.patches.map(call => call.payload.planned), [{ value: '8', source: 'user' }, { value: '8', source: 'user' }, { value: '8', source: 'user' }], 'unconfirmed: re-read, then resent once');
+    assert.equal(controller.getState().save, 'saved');
+    assert.equal(controller.getState().plannedSave, '');
+});
+
+test('mirror: one guarded PATCH into an own document only when the ticket differs; never over a typed number, never while busy', async () => {
+    const { controller, calls, buildShown, fire } = await fixture({ document: doc({ planned: { value: '12', source: 'jira' } }), save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); return { revision: 2, rows: [], planned: { value: payload.planned?.value ?? '12', source: 'jira' } }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.mirrorPlanned(12.004), false, 'equal after rounding');
+    assert.equal(controller.mirrorPlanned(10001), false, 'outside 0..10000');
+    assert.equal(controller.mirrorPlanned(20.555), true);
+    await settle();
+    assert.deepEqual(calls.patches.map(call => call.payload), [{ teamId: 't1', planned: { value: '20.56', source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }, changes: [] }]);
+    assert.equal(controller.getState().save, 'idle', 'silent: no saving or saved state');
+    controller.commit({ key: 'u1', field: 'capacity', value: '9' }, buildShown);
+    assert.equal(controller.mirrorPlanned(30), false, 'a pending commit blocks it');
+    await fire();
+    assert.equal(calls.patches.length, 2);
+});
+
+test('mirror never creates a document, never runs read-only, never overwrites a user number, and a failure is dropped silently', async () => {
+    for (const [name, document] of [
+        ['no own document', doc({ revision: 0, rows: [], planned: null, inherited: { fromSprintId: '9', rows: [], planned: { value: '5', source: 'inherited' } } })],
+        ['read-only', doc({ capabilities: { canRead: true, canSave: false } })],
+        ['user number', doc({ planned: { value: '5', source: 'user' } })],
+    ]) {
+        const { controller, calls } = await fixture({ document });
+        controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+        await settle();
+        assert.equal(controller.mirrorPlanned(20), false, name);
+        assert.equal(calls.patches.length, 0, name);
+    }
+    const { controller, calls, buildShown, fire } = await fixture({ document: doc({ planned: null }), save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); if (payload.planned?.source === 'jira') throw Object.assign(new Error('down'), { status: 503 }); return { revision: 2, rows: [] }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.mirrorPlanned(20), true, 'an absent number in an own document counts as differing');
+    controller.commit({ key: 'u1', field: 'capacity', value: '9' }, buildShown);
+    await settle();
+    assert.notEqual(controller.getState().save, 'failed', 'a failed mirror never sets failed');
+    assert.deepEqual([controller.getState().error, controller.getState().plannedSave], ['', ''], 'a failed mirror sets no error and no planned state');
+    await fire();
+    assert.equal(controller.getState().save, 'saved', 'the commit made meanwhile is saved; no Not saved');
+    assert.deepEqual(calls.patches.map(call => Boolean(call.payload.planned)), [true, false], 'the commit made during the mirror follows it; the mirror is not replayed');
+});
+
+test('the planned snapshot keeps its identity until the number changes, and is null without a scope or after dispose', async () => {
+    const { controller, buildShown } = await fixture({ document: doc({ planned: { value: '7', source: 'user' } }) });
+    assert.equal(controller.getPlannedSnapshot(), null);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    const first = controller.getPlannedSnapshot();
+    assert.deepEqual(first, { sprintId: '100', teamId: 't1', value: 7, source: 'user' });
+    controller.commit({ key: 'u1', field: 'notes', value: 'x' }, buildShown);
+    assert.equal(controller.getPlannedSnapshot(), first, 'a row edit does not change the snapshot');
+    controller.dispose();
+    assert.equal(controller.getPlannedSnapshot(), null);
+    assert.equal(controller.getState().scopeKey, '');
+});
+
+test('the controller is held above the provider: one per backend', async () => {
+    const { getAssigneeCapacityController } = await loadController();
+    assert.equal(getAssigneeCapacityController('http://a'), getAssigneeCapacityController('http://a'));
+    assert.notEqual(getAssigneeCapacityController('http://a'), getAssigneeCapacityController('http://b'));
+});
+
+test('stored-number paths never import or reach the Jira capacity write', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    for (const file of ['usePlanningAssigneeCapacity.js', 'planningAssigneeCapacityModel.js', 'PlanningAssigneeCapacity.jsx']) {
+        const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng', file), 'utf8');
+        assert.doesNotMatch(source, /capacityApi|updateCapacity|updateCapacityRequest/, file);
+    }
+    const cards = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx'), 'utf8');
+    assert.equal((cards.match(/updateCapacityRequest\(/g) || []).length, 1, 'one Jira call site, the existing editor Save');
+    const planned = cards.slice(cards.indexOf('const openPlannedEditor'), cards.indexOf('const cancelEditor'))
+        + cards.slice(cards.indexOf('const submitPlannedEditor'), cards.indexOf('const submitEditor'));
+    assert.doesNotMatch(planned, /onAnalyticsAction|updateCapacityRequest/, 'the stored-number editor emits no capacity_* event and never writes Jira');
+});

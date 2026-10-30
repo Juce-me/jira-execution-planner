@@ -271,6 +271,18 @@ export function buildChanges(commits, shownRows, removedKeys = []) {
     return changes;
 }
 
+// Add assignee: what picking a person from the search means for the rows shown. `exists` focuses the row,
+// `restore` takes the person out of the removed strip, `add` sends a row with the result's name snapshot and no
+// Capacity; null when the result has no usable id or name.
+export function addAssigneeAction(person, shownRows, removedKeys = []) {
+    const key = typeof person?.accountId === 'string' ? person.accountId.trim() : '';
+    const name = sanitizeDisplayName(person?.displayName);
+    if (!key || !name) return null;
+    if ((shownRows || []).some(row => row.key === key)) return { type: 'exists', key };
+    if ((removedKeys || []).includes(key)) return { type: 'restore', key };
+    return { type: 'add', key, change: { assigneeKey: key, displayName: name.trim() } };
+}
+
 export function chunkChanges(changes, size = MAX_CHANGES) {
     const chunks = [];
     for (let index = 0; index < changes.length; index += size) chunks.push(changes.slice(index, index + size));
@@ -358,11 +370,12 @@ export function documentFieldValue(document, key, field) {
 }
 
 // Drops the fields of a change that the document already holds; null when nothing is left to send.
+// A named change for a person the document does not hold yet is an Add assignee and is kept.
 export function pruneChange(change, document) {
     if (isPlannedChange(change)) return isPlannedNoop(effectivePlanned(document), change.planned) ? null : change;
     const next = { assigneeKey: change.assigneeKey };
     if (change.displayName) next.displayName = change.displayName;
-    let fields = 0;
+    let fields = change.displayName && !baseRowsOf(document).some(row => row.assigneeKey === change.assigneeKey) ? 1 : 0;
     for (const field of OVERLAY_FIELDS) {
         if (!(field in change)) continue;
         if (equalValue(field, documentFieldValue(document, change.assigneeKey, field), change[field])) continue;

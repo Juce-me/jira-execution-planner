@@ -2,7 +2,7 @@ import * as React from 'react';
 import { fetchAssigneeCapacity, saveAssigneeCapacity } from '../api/assigneeCapacityApi.js';
 import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
 import {
-    applyChangesToDocument, buildChanges, chunkChanges, effectivePlanned, isPlannedChange, isPlannedNoop, isValidDisplayName, PLANNED_SLOT, plannedNumber, plannedWireValue,
+    addAssigneeAction, applyChangesToDocument, buildChanges, chunkChanges, effectivePlanned, isPlannedChange, isPlannedNoop, isValidDisplayName, PLANNED_SLOT, plannedNumber, plannedWireValue,
     pruneChange, samePlannedValue, sanitizeDisplayName,
 } from './planningAssigneeCapacityModel.js';
 
@@ -257,6 +257,23 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
             schedule(queue);
             return true;
+        },
+        // Add assignee: `person` is a search result {accountId, displayName}. Returns the action taken ('exists', 'restore',
+        // 'add') or false when it cannot be saved here. A restore is the ordinary `removed: false` commit.
+        addPerson(person, buildShown) {
+            const queue = current;
+            if (!queue?.document || !state.capabilities.canSave || queue.stopped) return false;
+            const shown = buildShown(applyChangesToDocument(queue.document, overlay(queue)));
+            const action = addAssigneeAction(person, shown.rows, shown.removedKeys);
+            if (!action) return false;
+            if (action.type === 'exists') return 'exists';
+            if (action.type === 'restore') return controller.commit({ key: action.key, field: 'removed', value: false }, buildShown) && 'restore';
+            revive(queue);
+            supersede(queue, action.change); mergeInto(queue.pending, action.change);
+            const rejected = queue.rejected.size > 0;
+            publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
+            schedule(queue);
+            return 'add';
         },
         // Records the stored team number ("Team capacity (not in Jira)"): `value` is a validated wire string or null to clear;
         // `source` is `user` (typed) or `jira` (Use ticket value, or after the user's own Jira save). A no-op sends nothing.

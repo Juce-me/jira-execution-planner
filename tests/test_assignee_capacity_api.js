@@ -41,3 +41,32 @@ test('assignee capacity API: error status and code surface; a dispatched PATCH f
         await assert.rejects(saveAssigneeCapacity('', '1', { teamId: 't', changes: [] }), error => error.unconfirmed === true);
     } finally { global.fetch = oldFetch; }
 });
+
+test('assignee capacity API: Add assignee search posts only the query with CSRF and keeps no email', async () => {
+    const oldFetch = global.fetch; const calls = [];
+    let mode = 'ok';
+    global.fetch = async (url, options = {}) => {
+        calls.push({ url, options });
+        if (url.endsWith('/api/auth/csrf')) return Response.json({ csrfToken: 'synthetic-csrf' });
+        if (mode === 'rate') return Response.json({ error: 'jira_rate_limited', retryAfterSeconds: 2 }, { status: 429 });
+        return Response.json({ users: [
+            { accountId: 'u1', displayName: ' Ann ', emailAddress: 'ann@example.test' },
+            { accountId: '', displayName: 'No id' },
+            { accountId: 'u2', displayName: '' },
+        ], reason: null });
+    };
+    try {
+        const { searchAssignableUsers } = await load();
+        const result = await searchAssignableUsers('', '  ann ');
+        const post = calls.find(call => call.url === '/api/eng/assignee-capacity/user-options');
+        assert.equal(post.options.method, 'POST');
+        assert.equal(post.options.headers['X-CSRF-Token'], 'synthetic-csrf');
+        assert.equal(post.options.headers['X-Requested-With'], 'jira-execution-planner');
+        assert.deepEqual(JSON.parse(post.options.body), { query: 'ann' });
+        assert.deepEqual(result, { users: [{ accountId: 'u1', displayName: 'Ann' }], reason: null });
+        mode = 'rate';
+        await assert.rejects(searchAssignableUsers('', 'ann'), error => error.status === 429 && error.code === 'jira_rate_limited');
+        const aborted = new AbortController(); aborted.abort();
+        await assert.rejects(searchAssignableUsers('', 'ann', { signal: aborted.signal }), error => error.name === 'AbortError');
+    } finally { global.fetch = oldFetch; }
+});

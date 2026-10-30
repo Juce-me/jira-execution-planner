@@ -69,7 +69,15 @@ function capacityServer({ inherited = null, rows = [], capabilities = caps, dela
 const defaultCapacity = sprint => ({ enabled: true, mutationEnabled: false, sprint, capacities: { 'Alpha Team': 20 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] });
 
 // `capacity(sprintName)` answers GET /api/capacity; PATCH /api/capacity/<key> (the Jira write) is recorded and echoed.
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'basic', analytics = false } = {}) {
+// Add assignee search (#323): synthetic people matched by name; the response carries no email, like the real route.
+const searchPeople = [
+    { accountId: 'acc-ann', displayName: 'Ann Synthetic' },
+    { accountId: 'acc-cy', displayName: 'Cy Former' },
+    { accountId: 'acc-new', displayName: 'Nora Newcomer' },
+];
+const defaultPeople = query => ({ users: searchPeople.filter(person => person.displayName.toLowerCase().includes(String(query || '').toLowerCase())), reason: null });
+
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'basic', analytics = false, people = defaultPeople } = {}) {
     const calls = [];
     await installDashboardShell(page);
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
@@ -114,6 +122,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
             return json(route, { issues: product ? issues : [], epics: { [epic.key]: epic }, epicsInScope: product ? [epic] : [], names: {} });
         }
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return server.handler(route);
+        if (url.pathname === '/api/eng/assignee-capacity/user-options' && request.method() === 'POST') return json(route, people(requestBody(request)?.query));
         if (/^\/api\/eng\/sprints\/[^/]+\/review$/.test(url.pathname)) return json(route, { schemaVersion: 1, sprintId: String(futureSprintId), schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: true } });
         if (/\/review\/values\/read$/.test(url.pathname)) return json(route, { cells: [], unavailableIssueIds: [] });
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
@@ -305,6 +314,7 @@ test('read-only capability disables the inputs; read failure shows a retry', asy
     await expand(page);
     await expect(strip(page).getByText('Assignee capacity is read-only here.')).toBeVisible();
     await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toBeDisabled();
+    await expect(strip(page).getByRole('combobox', { name: /Add assignee/ }), 'read-only hides Add assignee').toHaveCount(0);
 });
 
 test('geometry and a settled screenshot of every control kind', async ({ page }) => {
@@ -694,6 +704,15 @@ for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewp
         if (scrolled) {
             await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
             await expect.poll(() => page.locator('.planning-panel').evaluate(node => node.getBoundingClientRect().top)).toBeLessThan(200);
+            // The pinned stack settles after the scroll (its position changes for a few frames): read the track only once
+            // it is still across two frames and its top-left pixel hit-tests inside it, so the edge points are real.
+            await expect.poll(() => page.evaluate(async () => {
+                const track = () => document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+                const first = track();
+                await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+                const second = track();
+                return first.top === second.top && Boolean(document.elementFromPoint(second.left + 1, second.top + 1)?.closest('.capacity-bar-track'));
+            })).toBe(true);
         }
         const g = await page.evaluate(() => {
             const r = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
@@ -1407,4 +1426,101 @@ test('the late arrival of the amber bar from the stored number keeps the pinned 
         }
         await page.unrouteAll({ behavior: 'ignoreErrors' });
     }
+});
+
+// ---- Add assignee (#323 Task 9) ----------------------------------------------------------------------------------
+
+const addTrigger = page => strip(page).getByRole('combobox', { name: 'Assignee to add: Add assignee' });
+const peopleMenu = page => page.locator('.issue-person-editor-menu');
+const searchCalls = calls => calls.filter(call => call.pathname === '/api/eng/assignee-capacity/user-options');
+
+test('Add assignee: debounced search, select adds a row with the name snapshot and no Capacity, no email, and it survives reload', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server, people: query => ({ ...defaultPeople(query), users: defaultPeople(query).users.map(user => ({ ...user, emailAddress: 'leak@example.test' })) }) });
+    await openPlanning(page);
+    await expand(page);
+    await expect(addTrigger(page)).toHaveCount(1);
+    await addTrigger(page).click();
+    const search = page.getByRole('combobox', { name: 'Search Assignee to add' });
+    await expect(search).toBeFocused();
+    await expect(peopleMenu(page)).toContainText('Type at least 3 characters');
+    await search.pressSequentially('nor', { delay: 30 });
+    await expect(peopleMenu(page).getByRole('option', { name: 'Nora Newcomer' })).toBeVisible();
+    expect(searchCalls(calls), 'one debounced request for three keystrokes').toHaveLength(1);
+    expect(searchCalls(calls)[0].body).toEqual({ query: 'nor' });
+    await expect(peopleMenu(page)).not.toContainText('@');
+    await page.screenshot({ path: 'tmp/slice4-shots/add-assignee-picker-open.png' });
+    await peopleMenu(page).getByRole('option', { name: 'Nora Newcomer' }).click();
+    await expect(peopleMenu(page)).toHaveCount(0);
+    await expect(rowOf(page, 'acc-new')).toHaveCount(1);
+    await expect(rowOf(page, 'acc-new').getByRole('textbox', { name: 'Capacity for Nora Newcomer' })).toHaveValue('');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-new', displayName: 'Nora Newcomer' }]);
+    expect(JSON.stringify(server.state.patches[0].body)).not.toContain('@');
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await page.reload();
+    await openPlanning(page);
+    if (await stripToggle(page).getAttribute('aria-expanded') !== 'true') await expand(page);
+    await expect(rowOf(page, 'acc-new').locator('td.planning-assignee-name')).toHaveText('Nora Newcomer');
+    // A person with Stories is already a row: picking them sends nothing and focuses their Capacity.
+    await addTrigger(page).click();
+    await page.getByRole('combobox', { name: 'Search Assignee to add' }).fill('ann');
+    await peopleMenu(page).getByRole('option', { name: 'Ann Synthetic' }).click();
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toBeFocused();
+    await page.waitForTimeout(400);
+    expect(server.state.patches).toHaveLength(1);
+});
+
+test('Add assignee: picking a removed person restores them', async ({ page }) => {
+    const server = capacityServer({ rows: [
+        { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false },
+        { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: '3', vacations: null, notes: null, removed: true },
+    ] });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await expect(strip(page).locator('.planning-assignee-removed')).toContainText('Cy Former');
+    await addTrigger(page).click();
+    await page.getByRole('combobox', { name: 'Search Assignee to add' }).fill('cy f');
+    await peopleMenu(page).getByRole('option', { name: 'Cy Former' }).click();
+    await expect(rowOf(page, 'acc-cy').getByRole('textbox', { name: 'Capacity for Cy Former' })).toHaveValue('3');
+    await expect(strip(page).locator('.planning-assignee-removed')).toHaveCount(0);
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-cy', removed: false }]);
+});
+
+test('Add assignee: the empty state offers it and the added person becomes the first row', async ({ page }) => {
+    const server = capacityServer();
+    await install(page, { server, issues: stories.filter(entry => entry.fields.teamId !== 'team-alpha') });
+    await openPlanning(page);
+    await stripToggle(page).click();
+    const empty = strip(page).getByText('No Stories or saved people for this Team in this Sprint.');
+    await expect(empty).toBeVisible();
+    await expect(addTrigger(page)).toBeVisible();
+    await strip(page).screenshot({ path: 'tmp/slice4-shots/add-assignee-empty-state.png' });
+    await addTrigger(page).click();
+    await page.getByRole('combobox', { name: 'Search Assignee to add' }).fill('nora');
+    await peopleMenu(page).getByRole('option', { name: 'Nora Newcomer' }).click();
+    await expect(rowOf(page, 'acc-new')).toHaveCount(1);
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-new', displayName: 'Nora Newcomer' }]);
+});
+
+test('Add assignee: no selected projects and a failed search show a message, not people', async ({ page }) => {
+    let mode = 'none';
+    const server = capacityServer();
+    await install(page, { server, people: () => (mode === 'none' ? { users: [], reason: 'no_selected_projects' } : null) });
+    await page.route('**/api/eng/assignee-capacity/user-options', route => (mode === 'none'
+        ? json(route, { users: [], reason: 'no_selected_projects' })
+        : json(route, { error: 'jira_rate_limited', retryAfterSeconds: 2 }, 429)));
+    await openPlanning(page);
+    await expand(page);
+    await addTrigger(page).click();
+    const search = page.getByRole('combobox', { name: 'Search Assignee to add' });
+    await search.fill('ann');
+    await expect(peopleMenu(page)).toContainText('No Product or Tech projects are selected to search in.');
+    mode = 'rate';
+    await search.fill('anna');
+    await expect(peopleMenu(page).getByRole('alert')).toHaveText('Jira is busy. Try again in a moment.');
+    await expect(peopleMenu(page).getByRole('option')).toHaveCount(0);
 });

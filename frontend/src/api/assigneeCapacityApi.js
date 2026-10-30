@@ -51,3 +51,26 @@ async function request(backendUrl, sprintId, query, method, payload, { signal, c
 
 export const fetchAssigneeCapacity = (backendUrl, sprintId, teamId, options) => request(backendUrl, sprintId, `?teamId=${encodeURIComponent(teamId)}`, 'GET', null, options);
 export const saveAssigneeCapacity = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '', 'PATCH', payload, options);
+
+// Add assignee: active people assignable in the workspace's selected Product and Tech projects (no email).
+// Resolves to { users: [{ accountId, displayName }], reason }; `reason` is 'no_selected_projects' when there is nothing to search.
+export async function searchAssignableUsers(backendUrl, query, { signal } = {}) {
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
+    if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    const response = await trackedFetch('planning_review', `${backendUrl}/api/eng/assignee-capacity/user-options`, {
+        method: 'POST', signal, cache: 'no-cache',
+        headers: { 'X-Requested-With': 'jira-execution-planner', 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
+        body: JSON.stringify({ query: String(query || '').trim() }),
+    }, { featureName: 'planning_review', suppressAbortResult: true });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const error = new Error(data.error || 'People search failed.');
+        error.status = response.status;
+        error.code = data.error || 'jira_read_failed';
+        throw error;
+    }
+    const users = (Array.isArray(data.users) ? data.users : [])
+        .filter(user => typeof user?.accountId === 'string' && user.accountId && typeof user.displayName === 'string' && user.displayName.trim())
+        .map(user => ({ accountId: user.accountId, displayName: user.displayName.trim() }));
+    return { users, reason: typeof data.reason === 'string' ? data.reason : null };
+}

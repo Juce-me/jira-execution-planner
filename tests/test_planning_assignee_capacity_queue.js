@@ -619,3 +619,41 @@ test('stored-number paths never import or reach the Jira capacity write', () => 
         + cards.slice(cards.indexOf('const submitPlannedEditor'), cards.indexOf('const submitEditor'));
     assert.doesNotMatch(planned, /onAnalyticsAction|updateCapacityRequest/, 'the stored-number editor emits no capacity_* event and never writes Jira');
 });
+
+test('Add assignee: a new person is one PATCH with the name snapshot and no Capacity; existing is a no-op; removed is Restore', async () => {
+    const removedDoc = doc({ rows: [
+        { assigneeKey: 'u1', displayName: 'Ann', capacity: '5', vacations: null, notes: null, removed: false },
+        { assigneeKey: 'u9', displayName: 'Old', capacity: '2', vacations: null, notes: null, removed: true },
+    ] });
+    const { controller, calls, buildShown, fire } = await fixture({ document: removedDoc });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.addPerson({ accountId: 'u1', displayName: 'Ann' }, buildShown), 'exists');
+    assert.equal(controller.addPerson({ accountId: 'u2', displayName: 'Bob' }, buildShown), 'exists', 'a person with Stories is already a row');
+    assert.equal(controller.addPerson({ accountId: '', displayName: 'Nobody' }, buildShown), false);
+    assert.equal(controller.getState().changes.length, 0);
+    assert.equal(controller.addPerson({ accountId: 'u7', displayName: 'Cy' }, buildShown), 'add');
+    assert.equal(controller.addPerson({ accountId: 'u9', displayName: 'Old' }, buildShown), 'restore');
+    assert.equal(controller.addPerson({ accountId: 'u7', displayName: 'Cy' }, buildShown), 'exists', 'the pending row is shown at once');
+    await fire();
+    assert.equal(calls.patches.length, 1);
+    assert.deepEqual(calls.patches[0].payload, { teamId: 't1', changes: [{ assigneeKey: 'u7', displayName: 'Cy' }, { assigneeKey: 'u9', removed: false }] });
+});
+
+test('Add assignee into an inherited Sprint materialises it with the new person (one first write)', async () => {
+    const inheritedDoc = doc({ revision: 0, rows: [], inherited: { fromSprintId: '90', planned: null, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', removed: false }] } });
+    const { controller, calls, buildShown, fire } = await fixture({ document: inheritedDoc });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.addPerson({ accountId: 'u1', displayName: 'Ann' }, buildShown), 'exists', 'an inherited person is already a row');
+    assert.equal(controller.addPerson({ accountId: 'u7', displayName: 'Cy' }, buildShown), 'add');
+    await fire();
+    assert.deepEqual(calls.patches[0].payload.changes, [{ assigneeKey: 'u7', displayName: 'Cy' }]);
+});
+
+test('Add assignee is refused read-only', async () => {
+    const { controller, buildShown } = await fixture({ document: doc({ capabilities: { canRead: true, canSave: false } }) });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.addPerson({ accountId: 'u7', displayName: 'Cy' }, buildShown), false);
+});

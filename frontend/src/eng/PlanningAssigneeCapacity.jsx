@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import IconButton from '../ui/IconButton.jsx';
+import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
@@ -90,7 +91,7 @@ function PersonRow({ row, color, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, editors, sprintName, incomplete, hiddenSelected, tinted }) {
+function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
@@ -127,6 +128,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
                 <td className="planning-assignee-note" />
             </tr></tfoot>
         </table>
+        {addPicker && <p className="planning-review-guidance">{addPicker}</p>}
         {removed.length > 0 && !readOnly && <p className="planning-review-guidance planning-assignee-removed">
             Removed from this Sprint and later ones:{' '}
             {removed.map((person, index) => <span key={person.key}>
@@ -171,6 +173,11 @@ export default function PlanningAssigneeCapacity({
     };
     const onCommit = React.useCallback((key, field, value) => { controller.commit({ key, field, value }, document => shownRef.current(document)); }, [controller]);
     const onRestore = React.useCallback(key => onCommit(key, 'removed', false), [onCommit]);
+    // Add assignee: a new person is a row with the result's name snapshot; a removed one is restored; an existing row is focused.
+    const onAdd = React.useCallback(person => {
+        if (controller.addPerson(person, document => shownRef.current(document)) !== 'exists' || !host) return;
+        requestAnimationFrame(() => host.querySelector(`tr[data-assignee-key="${CSS.escape(person.accountId)}"] input`)?.focus());
+    }, [controller, host]);
     const onRetry = React.useCallback(() => controller.retry(), [controller]);
     const onDiscard = React.useCallback(() => controller.discard(), [controller]);
     const sprintName = React.useCallback(id => (sprints || []).find(sprint => String(sprint.id) === String(id))?.name, [sprints]);
@@ -215,14 +222,15 @@ export default function PlanningAssigneeCapacity({
     const hidden = state.load === 'ready' && !state.capabilities.canRead;
     const empty = !view.rows.length && !view.unassigned && !view.removed.length;
     const status = state.save === 'saving' ? 'Saving…' : state.save === 'saved' ? 'Saved' : state.save === 'failed' ? 'Not saved' : '';
+    const addPicker = readOnly ? null : <PlanningAssigneeAddPicker backendUrl={backendUrl} onAdd={onAdd} />;
     let body = null;
     if (opened) {
         if (state.load === 'error') body = <p className="planning-review-guidance" role="alert">Assignee capacity could not be loaded. <button type="button" className="planning-action-button" onClick={() => controller.reload()}>Retry</button></p>;
         else if (!state.document) body = <p className="planning-review-guidance" role="status">Loading assignee capacity…</p>;
-        else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.</p>;
+        else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} />
+            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
         </>;
     }
     const strip = oneTeam && !hidden && host ? createPortal(

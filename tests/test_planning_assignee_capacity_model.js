@@ -411,3 +411,31 @@ test('pruneChange drops a planned change the document already holds (after round
     const change = { assigneeKey: m.PLANNED_SLOT, planned: { value: '13', source: 'user' } };
     assert.deepEqual(m.pruneChange(change, document), change);
 });
+
+test('addAssigneeAction: existing row is a focus no-op, removed is Restore, new is a named change with no Capacity', async () => {
+    const m = await load();
+    const rows = [{ key: 'u1', name: 'Ann' }];
+    assert.deepEqual(m.addAssigneeAction({ accountId: 'u1', displayName: 'Ann' }, rows, []), { type: 'exists', key: 'u1' });
+    assert.deepEqual(m.addAssigneeAction({ accountId: 'u9', displayName: 'Old' }, rows, ['u9']), { type: 'restore', key: 'u9' });
+    assert.deepEqual(m.addAssigneeAction({ accountId: 'u7', displayName: ' Cy\u0007 ' }, rows, []), { type: 'add', key: 'u7', change: { assigneeKey: 'u7', displayName: 'Cy' } });
+    assert.equal(m.addAssigneeAction({ accountId: 'u7', displayName: '  ' }, rows, []), null);
+    assert.equal(m.addAssigneeAction({ displayName: 'No id' }, rows, []), null);
+});
+
+test('pruneChange keeps an Add assignee (a named change for a person not stored) and drops a name-only refresh', async () => {
+    const m = await load();
+    const document = { revision: 1, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', vacations: null, notes: null, removed: false }], inherited: null, planned: null };
+    assert.deepEqual(m.pruneChange({ assigneeKey: 'u7', displayName: 'Cy' }, document), { assigneeKey: 'u7', displayName: 'Cy' });
+    assert.equal(m.pruneChange({ assigneeKey: 'u1', displayName: 'Ann B' }, document), null);
+    const inherited = { revision: 0, rows: [], inherited: { fromSprintId: '9', rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5' }], planned: null }, planned: null };
+    assert.equal(m.pruneChange({ assigneeKey: 'u1', displayName: 'Ann' }, inherited), null);
+});
+
+test('a person added with no Stories stays a row under the stored name and is inherited by the next Sprint', async () => {
+    const m = await load();
+    const saved = { revision: 2, rows: [{ assigneeKey: 'u7', displayName: 'Cy', capacity: null, vacations: null, notes: null, removed: false }], inherited: null };
+    const view = m.buildAssigneeRows({ document: saved, teamTasksList: [], selectedTasks: [] });
+    assert.deepEqual(view.rows.map(row => [row.key, row.name, row.capacity, row.removable]), [['u7', 'Cy', null, true]]);
+    const next = { revision: 0, rows: [], inherited: { fromSprintId: '100', rows: saved.rows } };
+    assert.deepEqual(m.buildAssigneeRows({ document: next, teamTasksList: [], selectedTasks: [] }).rows.map(row => row.name), ['Cy']);
+});

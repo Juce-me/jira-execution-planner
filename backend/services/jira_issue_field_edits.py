@@ -543,6 +543,75 @@ def search_field_users(issue_key, payload, *, jira_request, context, field_ids):
     }
 
 
+ASSIGNABLE_PROJECT_KEYS_CAP = 10
+ASSIGNABLE_USERS_LIMIT = 10
+_PROJECT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{0,63}$")
+
+
+def _validate_assignable_query(payload):
+    if not isinstance(payload, dict):
+        raise FieldEditInputError("invalid_json")
+    if set(payload) != {"query"}:
+        raise FieldEditInputError("invalid_query")
+    query = payload.get("query")
+    if not isinstance(query, str):
+        raise FieldEditInputError("invalid_query")
+    query = query.strip()
+    if len(query) < 3 or len(query) > 200:
+        raise FieldEditInputError("invalid_query")
+    return query
+
+
+def search_assignable_project_users(payload, *, project_keys, jira_request, context):
+    """Active users assignable in any of `project_keys` (server-side keys), one page per project.
+
+    One `/user/assignable/search` call per project (capped), deduplicated by account id, first ten.
+    `multiProjectSearch` is not used: its any-versus-all semantics could not be verified (Task 9 probe).
+    The caller is kept and no email is returned.
+    """
+    query = _validate_assignable_query(payload)
+    keys = []
+    for raw in project_keys or []:
+        key = str(raw or "").strip().upper()
+        if _PROJECT_KEY_RE.fullmatch(key) and key not in keys:
+            keys.append(key)
+    if not keys:
+        return {"users": [], "reason": "no_selected_projects"}
+    users = []
+    seen = set()
+    for key in keys[:ASSIGNABLE_PROJECT_KEYS_CAP]:
+        try:
+            response = jira_request(
+                "GET", "/rest/api/3/user/assignable/search",
+                params={"project": key, "query": query, "maxResults": ASSIGNABLE_USERS_LIMIT},
+                timeout=10, context=context,
+            )
+        except AuthError:
+            raise
+        except Exception as error:
+            raise FieldEditServiceError("jira_read_failed", 502) from error
+        if response.status_code == 401:
+            raise AuthError("auth_required", "Jira authentication is required.")
+        if response.status_code == 429:
+            raise FieldEditServiceError(
+                "jira_rate_limited", 429,
+                details={"retryAfterSeconds": _retry_after_seconds(response)},
+            )
+        if response.status_code in (403, 404):
+            continue  # a project this user cannot browse adds nobody
+        if response.status_code != 200:
+            raise FieldEditServiceError("jira_read_failed", 502)
+        for raw in _person_records(response):
+            candidate = _active_person(raw)
+            if candidate is None or candidate["accountId"] in seen:
+                continue
+            seen.add(candidate["accountId"])
+            users.append(candidate)
+            if len(users) == ASSIGNABLE_USERS_LIMIT:
+                return {"users": users, "reason": None}
+    return {"users": users, "reason": None}
+
+
 def validate_story_points(value):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise FieldEditInputError("invalid_value")

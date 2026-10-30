@@ -40,6 +40,11 @@ export default function IssuePersonEditor({
     portalTarget,
     triggerClassName = '',
     useVisualViewport = true,
+    // Planning's Add assignee reuses the editor: a null matcher keeps the server's results (they carry no email),
+    // `emptyLabel` replaces the fixed "Unassigned"/"Not set" copy and `maxOptions` shows a full page of ten.
+    matchQuery = matchesIssueUserQuery,
+    emptyLabel = '',
+    maxOptions = 5,
 }) {
     const wrapperRef = React.useRef(null);
     const inputRef = React.useRef(null);
@@ -63,15 +68,15 @@ export default function IssuePersonEditor({
         const append = person => {
             const accountId = String(person?.accountId || '').trim();
             const displayName = String(person?.displayName || '').trim();
-            if (!accountId || !displayName || seen.has(accountId) || values.length >= 5) return;
-            if (editingStarted && !matchesIssueUserQuery(person, effectiveQuery)) return;
+            if (!accountId || !displayName || seen.has(accountId) || values.length >= maxOptions) return;
+            if (editingStarted && matchQuery && !matchQuery(person, effectiveQuery)) return;
             seen.add(accountId);
             values.push(person);
         };
         if (metadata) append(metadata.me);
         (Array.isArray(suggestions) ? suggestions : []).forEach(append);
         return values;
-    }, [effectiveQuery, editingStarted, metadata, suggestions]);
+    }, [effectiveQuery, editingStarted, metadata, suggestions, matchQuery, maxOptions]);
     const explicitIndex = options.findIndex(person => person.accountId === activeAccountId && !optionDisabled(person));
     const activeIndex = explicitIndex >= 0 ? explicitIndex : options.findIndex(person => !optionDisabled(person));
 
@@ -165,7 +170,7 @@ export default function IssuePersonEditor({
         }
     };
 
-    const displayName = String(currentValue?.displayName || '').trim() || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+    const displayName = String(currentValue?.displayName || '').trim() || emptyLabel || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
     const editor = isOpen ? (
         <div
             ref={panelRef}

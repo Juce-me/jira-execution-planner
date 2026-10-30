@@ -154,6 +154,13 @@ class AssigneeCapacityServiceTests(CapacityFixture):
         self.assertEqual(self.by_key(self.patch_rows([{'assigneeKey': 'a', 'capacity': '7'}]))['a']['displayName'], 'Ada L.')
         self.assert_error('invalid_review_request', 400, self.patch_rows, [{'assigneeKey': 'a', 'displayName': None}])
 
+    def test_add_assignee_name_only_change_creates_a_row_that_survives_reload_and_inheritance(self):
+        saved = self.patch_rows([{'assigneeKey': 'new', 'displayName': 'Added Person'}], sprint='10')
+        self.assertEqual(self.by_key(saved)['new'], {'assigneeKey': 'new', 'displayName': 'Added Person', 'capacity': None,
+                                                     'vacations': None, 'notes': None, 'removed': False})
+        self.assertEqual(self.by_key(self.get('10'))['new']['displayName'], 'Added Person')
+        self.assertEqual([row['displayName'] for row in self.get('14')['inherited']['rows']], ['Added Person'])
+
     def test_person_without_stories_stays_under_the_stored_name_and_reads_never_write(self):
         self.patch_rows([{'assigneeKey': 'gone', 'displayName': 'Deactivated Person', 'capacity': '5'}], sprint='10')
         statements = []

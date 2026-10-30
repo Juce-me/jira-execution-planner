@@ -177,6 +177,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("eng-review-write", "/api/eng/sprints/<sprint_id>/review", frozenset({"PATCH"}), "user_write", "dynamic"),
     EndpointPolicy("eng-assignee-capacity-read", "/api/eng/sprints/<sprint_id>/assignee-capacity", PUBLIC_METHODS, "authenticated_read", "dynamic"),
     EndpointPolicy("eng-assignee-capacity-write", "/api/eng/sprints/<sprint_id>/assignee-capacity", frozenset({"PATCH"}), "user_write", "dynamic"),
+    EndpointPolicy("eng-assignee-capacity-user-options", "/api/eng/assignee-capacity/user-options", frozenset({"POST"}), "user_write"),
     EndpointPolicy("eng-board-read", "/api/eng/board", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("eng-story-readiness", "/api/eng/story-readiness", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("export-excel", "/api/export-excel", frozenset({"POST"}), "user_write"),

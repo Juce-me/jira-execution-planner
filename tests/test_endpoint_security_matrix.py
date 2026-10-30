@@ -52,6 +52,7 @@ SECURITY_SAMPLES = {
         ("POST", "/api/issues/DEMO-1/user-options"),
         ("POST", "/api/issues/DEMO-1/field"),
         ("PATCH", "/api/eng/sprints/17/assignee-capacity"),
+        ("POST", "/api/eng/assignee-capacity/user-options"),
     ],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),

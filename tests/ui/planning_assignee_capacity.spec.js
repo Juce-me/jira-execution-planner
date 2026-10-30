@@ -360,6 +360,11 @@ const underbarRows = [
     { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: '6', vacations: null, notes: null, removed: false },
     { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: null, vacations: null, notes: null, removed: false },
 ];
+// 12 + 10 + Unassigned 4 = 26 against Team Cap 20: overflows by 6.
+const overflowRows = [
+    { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '12', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: '10', vacations: null, notes: null, removed: false },
+];
 const underbar = page => page.locator('.planning-panel [data-assignee-underbar]');
 const segments = page => underbar(page).locator('.stacked-bar-segment');
 const readout = page => page.locator('.stacked-bar-readout');
@@ -384,7 +389,7 @@ test('the underbar is absent until the strip has been expanded once, then stays'
     await expect(underbar(page)).toHaveCount(1);
 });
 
-test('segments are one per person with Capacity plus Unassigned, distinct, proportional, and the readout stays on screen', async ({ page }) => {
+test('segments are one per person with Capacity plus Unassigned, distinct, on the bar axis (lined up with Team Cap), and the readout stays on screen', async ({ page }) => {
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
@@ -394,16 +399,23 @@ test('segments are one per person with Capacity plus Unassigned, distinct, propo
     const measure = await page.evaluate(() => {
         const track = document.querySelector('[data-assignee-underbar] .stacked-bar-track').getBoundingClientRect();
         const outer = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+        const cap = document.querySelector('.planning-panel-capacity-graph .capacity-bar-marker.teamcap').getBoundingClientRect();
         return { trackWidth: track.width, trackHeight: track.height, outerBottom: outer.bottom, trackBottom: track.bottom, outerHeight: outer.height,
+            capX: cap.left + cap.width / 2 - track.left,
             segments: [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => ({ label: node.getAttribute('aria-label'), width: node.getBoundingClientRect().width, color: getComputedStyle(node).backgroundColor })) };
     });
     expect(measure.trackHeight).toBeGreaterThanOrEqual(4); expect(measure.trackHeight).toBeLessThanOrEqual(6);
     expect(measure.trackBottom).toBeLessThanOrEqual(measure.outerBottom + 0.5);
     expect(new Set(measure.segments.map(segment => segment.color)).size).toBe(3);
-    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / 20, 2);
-    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / 20, 2);
+    // Revision 4 axis: max(capacity 20, selected 14, people 8 + 6 + Unassigned 4) x 1.15 = 23 (revision 3 used 20 here),
+    // and the segments are on the Team Cap marker's scale: Ann ends at 8/20 of the marker's x.
+    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / 23, 2);
+    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / 23, 2);
     expect(measure.segments[2].label).toContain('Unassigned (effort)');
-    expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedTotal / 20, 2);
+    expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedTotal / 23, 2);
+    expect(measure.capX / measure.trackWidth).toBeCloseTo(20 / 23, 2);
+    expect(measure.segments[0].width / measure.capX).toBeCloseTo(8 / 20, 2);
+    await expect(underbar(page).locator('[data-assignee-overflow]')).toHaveCount(0);
     const before = await page.locator('.planning-panel').boundingBox();
     await segments(page).nth(2).hover();
     await expect(readout(page)).toContainText('Unassigned (effort)');
@@ -419,9 +431,9 @@ test('segments are one per person with Capacity plus Unassigned, distinct, propo
     await expect(readout(page)).toHaveCount(0);
 });
 
-for (const [width, height] of [[1440, 900], [1280, 720]]) test(`the underbar adds no height to the compact panel or the pinned stack at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1440, 900], [1280, 720]]) for (const [name, rows] of [['normal', underbarRows], ['overflow', overflowRows]]) test(`the underbar adds no height to the compact panel or the pinned stack at ${width}x${height} (${name})`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    const server = capacityServer({ rows: underbarRows });
+    const server = capacityServer({ rows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
     const withoutBar = (await page.locator('.planning-panel').boundingBox()).height;
@@ -450,12 +462,19 @@ test('tapping a segment shows its readout and a settled screenshot of the pinned
     await expect(readout(page)).toContainText('Bob Synthetic');
     await expectReadoutInViewport(page);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/323-ui/underbar-pinned-panel.png' });
+    // Whole track: a tap above the strip, at Ann's x, shows Ann's readout.
+    const ann = await segments(page).nth(0).boundingBox();
+    const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
+    await page.mouse.move(ann.x + ann.width / 2, track.y + 3);
+    await page.touchscreen.tap(ann.x + ann.width / 2, track.y + 3);
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expectReadoutInViewport(page);
     await context.close();
 });
 
 // ---- strip pointer ownership, stacking and row tint (#323) ---------------------------------------
 
-test('the strip never hides or blocks the capacity bar: fill and team-cap tooltips still work, the strip stays on top of a hovered fill, and segment hover shows the strip readout', async ({ page }) => {
+test('whole-track hover: any height resolves the segment under the pointer, past the segments a header-only readout, markers win and keep their tooltips, the fill tooltip is gone', async ({ page }) => {
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
@@ -463,36 +482,181 @@ test('the strip never hides or blocks the capacity bar: fill and team-cap toolti
     await expect(segments(page)).toHaveCount(3);
     const fill = page.locator('.planning-panel .capacity-bar-fill');
     const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
-    const fillBox = await fill.boundingBox(), markerBox = await marker.boundingBox();
-    expect(fillBox.width).toBeGreaterThan(8);
-
-    // Fill tooltip: entered from the top and at the centre of the fill, above the strip's 5px.
-    for (const y of [fillBox.y + 2, fillBox.y + (fillBox.height - 5) / 2]) {
-        await page.mouse.move(5, 400);
-        await page.mouse.move(fillBox.x + fillBox.width / 2, y);
-        await expect.poll(() => fill.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Total story points');
+    // The strip replaces the fill's CSS tooltip: no data-tooltip, so no ::after.
+    await expect(fill).not.toHaveAttribute('data-tooltip', /.*/);
+    const geometry = await page.evaluate(() => {
+        const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+        const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track');
+        const wrapper = document.querySelector('[data-assignee-underbar]');
+        return { track: rect(track), wrapper: rect(wrapper), segments: [...wrapper.querySelectorAll('.stacked-bar-segment')].map(rect),
+            marker: rect(document.querySelector('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-line')) };
+    });
+    // The wrapper covers the full track height.
+    expect(geometry.wrapper.top).toBeCloseTo(geometry.track.top, 0); expect(geometry.wrapper.bottom).toBeCloseTo(geometry.track.bottom, 0);
+    expect(geometry.wrapper.width).toBeCloseTo(geometry.track.width, 0);
+    const [ann, bob, unassigned] = geometry.segments;
+    // At the top, the middle and the strip pixels of each segment, the readout names that segment.
+    for (const [segment, name] of [[ann, 'Ann Synthetic'], [bob, 'Bob Synthetic'], [unassigned, 'Unassigned (effort)']]) {
+        for (const y of [geometry.track.top + 2, geometry.track.top + geometry.track.height / 2, geometry.track.bottom - 2]) {
+            await page.mouse.move(5, 400);
+            await page.mouse.move(segment.left + segment.width / 2, y);
+            await expect(readout(page)).toContainText(name);
+            await expect(readout(page)).toContainText('Selected 4 tasks · 14.0 SP');
+        }
     }
-    // Hovering the fill raises it to z-index 40; the strip's segments stay the topmost element at their own pixels.
+    await expect(readout(page)).toContainText('Total 4 · Selected 4');
+    await expect(readout(page)).toContainText('Team capacity: Jira');
+    // Past the last segment and off the marker: the header-only readout.
+    const pastX = (unassigned.right + geometry.marker.left) / 2;
+    expect(pastX).toBeGreaterThan(unassigned.right + 2);
+    await page.mouse.move(pastX, geometry.track.top + 3);
+    await expect(readout(page)).toHaveText('Selected 4 tasks · 14.0 SP');
+    await page.mouse.move(geometry.track.right - 3, geometry.track.top + 3);
+    await expect(readout(page)).toHaveText('Selected 4 tasks · 14.0 SP');
+    // At the marker the marker wins (z-order asserted by hit testing at the strip's pixels too) and shows its tooltip.
+    const markerX = geometry.marker.left + geometry.marker.width / 2;
+    const winners = await page.evaluate(({ x, ys }) => ys.map(y => {
+        const hit = document.elementFromPoint(x, y);
+        return { marker: Boolean(hit?.closest('.capacity-bar-marker.teamcap')), strip: Boolean(hit?.closest('[data-assignee-underbar]')) };
+    }), { x: markerX, ys: [geometry.track.top + 2, geometry.track.top + geometry.track.height / 2, geometry.track.bottom - 2] });
+    expect(winners).toEqual([{ marker: true, strip: false }, { marker: true, strip: false }, { marker: true, strip: false }]);
+    const zIndex = await page.evaluate(() => ({ marker: getComputedStyle(document.querySelector('.planning-panel .capacity-bar-marker.teamcap')).zIndex, strip: getComputedStyle(document.querySelector('[data-assignee-underbar]')).zIndex }));
+    expect(zIndex).toEqual({ marker: '42', strip: '41' });
+    await page.mouse.move(5, 400);
+    await page.mouse.move(markerX, geometry.track.top + 3);
+    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    await expect(readout(page)).toHaveCount(0);
+    // A segment's own pixels stay topmost under the strip (no fill above them).
     const topmost = await page.evaluate(() => [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
         const rect = node.getBoundingClientRect();
-        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        return hit === node;
+        return document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2) === node;
     }));
     expect(topmost).toEqual([true, true, true]);
-    expect(await fill.evaluate(node => node.matches(':hover'))).toBe(true);
+});
 
-    // Team-cap marker: tooltip from the top and the centre.
-    for (const y of [markerBox.y + 2, markerBox.y + (markerBox.height - 5) / 2]) {
+const overflowMark = page => underbar(page).locator('[data-assignee-overflow]');
+const showPanel = page => page.locator('.planning-panel').getByRole('button', { name: 'Show panel' });
+
+test('people plus Unassigned above Team Cap draw an overflow mark from the marker to the strip end, labelled "+6 SP over" in the expanded panel and in the compact readout', async ({ page }) => {
+    const server = capacityServer({ rows: overflowRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    // 12 + 10 + Unassigned 4 = 26 against Team Cap 20; selected 14 is under, so the bar has no over zone of its own.
+    await expect(overflowMark(page)).toHaveCount(1);
+    await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(0);
+    // Compact: no label, the compact readout carries the overflow.
+    await expect(overflowMark(page).locator('.capacity-bar-fill-label')).toHaveCount(0);
+    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 20.0 cap · +6 SP over');
+    expect(await page.locator('.planning-panel-capacity-graph .planning-compact-readout').evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    const measure = () => page.evaluate(() => {
+        const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width }; };
+        const segmentsList = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(rect);
+        const line = rect(document.querySelector('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-line'));
+        const capLabel = document.querySelector('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label');
+        const label = document.querySelector('[data-assignee-overflow] .capacity-bar-fill-label');
+        return { mark: rect(document.querySelector('[data-assignee-overflow]')), stripEnd: segmentsList[segmentsList.length - 1].right, capX: line.left + line.width / 2,
+            track: rect(document.querySelector('.planning-panel-capacity-graph .capacity-bar-track')),
+            capLabel: capLabel ? rect(capLabel) : null, label: label ? { ...rect(label), text: label.textContent, clipped: label.scrollWidth > label.clientWidth + 1 } : null };
+    });
+    for (const mode of ['compact', 'expanded']) {
+        if (mode === 'expanded') { await showPanel(page).click(); await page.evaluate(() => document.activeElement?.blur()); await expect(overflowMark(page).locator('.capacity-bar-fill-label')).toHaveCount(1); }
+        const m = await measure();
+        expect(m.mark.left, mode).toBeCloseTo(m.capX, 0);
+        expect(m.mark.right, mode).toBeCloseTo(m.stripEnd, 0);
+        expect((m.mark.right - m.mark.left) / m.track.width, mode).toBeCloseTo(6 / (26 * 1.15), 2);
+        if (mode === 'expanded') {
+            expect(m.label.text).toBe('+6 SP over');
+            // At the mark's end, inside the track, never overlapping the Team Cap label below the track.
+            expect(m.label.left).toBeGreaterThanOrEqual(m.mark.right); expect(m.label.left).toBeLessThan(m.mark.right + 8);
+            expect(m.label.top).toBeGreaterThanOrEqual(m.track.top - 0.5); expect(m.label.bottom).toBeLessThanOrEqual(m.track.bottom + 0.5);
+            expect(m.label.right).toBeLessThanOrEqual(m.track.right);
+            const overlaps = !(m.label.right <= m.capLabel.left || m.label.left >= m.capLabel.right || m.label.bottom <= m.capLabel.top || m.label.top >= m.capLabel.bottom);
+            expect(overlaps).toBe(false);
+            expect(m.label.clipped).toBe(false);
+        }
         await page.mouse.move(5, 400);
-        await page.mouse.move(markerBox.x + markerBox.width / 2, y);
-        await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
-    }
-    // Segment hover still shows the strip readout, including a segment lying under the fill.
-    for (const index of [0, 2]) {
+        await page.mouse.move(m.stripEnd - 3, m.track.top + 3);
+        await expect(readout(page)).toContainText('Unassigned (effort)');
+        await expect(readout(page)).toContainText('+6 SP over Team Cap');
+        await expectReadoutInViewport(page);
         await page.mouse.move(5, 400);
-        await segments(page).nth(index).hover();
-        await expect(readout(page)).toBeVisible();
+        await page.screenshot({ path: `tmp/slice1-shots/strip-overflow-${mode}.png`, clip: await page.locator('.planning-panel').boundingBox(), animations: 'disabled' });
     }
+});
+
+test('the overflow mark is hidden while the bar draws its own over-capacity zone', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    // Team Cap 10: selected 14 is above 120%, so the bar is over; people 8 + 6 + Unassigned 4 = 18 would overflow by 8.
+    await page.route('**/api/capacity?*', route => json(route, { enabled: true, mutationEnabled: false, sprint: new URL(route.request().url()).searchParams.get('sprint'), capacities: { 'Alpha Team': 10 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 10 }] }));
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(1);
+    await expect(overflowMark(page)).toHaveCount(0);
+    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 10.0 cap');
+    await segments(page).nth(0).hover();
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expect(readout(page)).not.toContainText('over Team Cap');
+    await showPanel(page).click();
+    await expect(overflowMark(page)).toHaveCount(0);
+    // The team card's bar on the shared scale: over capacity it no longer saturates (fill 14/(14 x 1.3), marker 10/(14 x 1.3)).
+    const card = await page.locator('.team-stat-card .microbar').evaluate(bar => {
+        const box = bar.getBoundingClientRect();
+        return { fill: bar.querySelector('.microbar-fill').getBoundingClientRect().width / box.width,
+            marker: (bar.querySelector('.microbar-marker').getBoundingClientRect().left + bar.querySelector('.microbar-marker').getBoundingClientRect().width / 2 - box.left) / box.width };
+    });
+    expect(card.fill).toBeCloseTo(1 / 1.3, 2);
+    expect(card.marker).toBeCloseTo(10 / (14 * 1.3), 1);
+    await page.mouse.move(5, 400);
+    await page.locator('.team-stat-card').first().screenshot({ path: 'tmp/slice1-shots/card-bar-over.png', animations: 'disabled' });
+});
+
+for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewport at the left, right and top edges (${mode} panel, pinned and unpinned)`, async ({ page }) => {
+    const server = capacityServer({ rows: overflowRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    if (mode === 'expanded') await showPanel(page).click();
+    await expect(segments(page)).toHaveCount(3);
+    for (const scrolled of [false, true]) {
+        if (scrolled) {
+            await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+            await expect.poll(() => page.locator('.planning-panel').evaluate(node => node.getBoundingClientRect().top)).toBeLessThan(200);
+        }
+        const g = await page.evaluate(() => {
+            const r = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+            const s = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
+            return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, stripEnd: s[s.length - 1].right };
+        });
+        // Left edge (first segment, 6 lines), the strip end near the right (6 lines), the track's right end (header only), top row pixels.
+        for (const [x, y, text] of [[g.left + 1, g.top + 1, 'Ann Synthetic'], [g.stripEnd - 1, g.top + 1, 'Unassigned (effort)'], [g.right - 1, g.top + 1, 'Selected 4 tasks'], [g.left + 1, g.bottom - 1, 'Ann Synthetic']]) {
+            await page.mouse.move(5, 5);
+            await page.mouse.move(x, y);
+            await expect(readout(page), `${mode} scrolled=${scrolled} x=${x}`).toContainText(text);
+            await expectReadoutInViewport(page);
+        }
+        if (!scrolled) {
+            await page.mouse.move(g.left + 1, g.top + 1);
+            await page.screenshot({ path: `tmp/slice1-shots/strip-readout-${mode}.png`, clip: { x: 0, y: 0, width: page.viewportSize().width, height: Math.min(page.viewportSize().height, g.bottom + 200) }, animations: 'disabled' });
+        }
+    }
+});
+
+test('settled screenshots of the strip in the normal case, compact and expanded, and the card bar', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    await page.mouse.move(5, 400);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice1-shots/strip-normal-compact.png', animations: 'disabled' });
+    await showPanel(page).click();
+    await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible();
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice1-shots/strip-normal-expanded.png', animations: 'disabled' });
+    await page.locator('.team-stat-card').first().screenshot({ path: 'tmp/slice1-shots/card-bar-normal.png', animations: 'disabled' });
 });
 
 test('each person row is tinted with its underbar segment colour; rows without Capacity and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {

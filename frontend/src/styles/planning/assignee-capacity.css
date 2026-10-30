@@ -15,7 +15,12 @@
 .planning-assignee-removed .planning-review-text-button { text-transform: none; }
 
 /* Underbar (#323): positioning wrapper for the shared StackedBar strip variant (its rules live in stats/project-track.css);
-   it adds no height. The strip owns the bottom 5px of the capacity track and paints above a hovered fill (z-index 40) and
-   markers. The wrapper takes no pointer; only the strip's segments do, so the fill tooltip and the team-cap marker stay
-   hoverable wherever the strip has no segment (past the people/Unassigned total). */
-.planning-assignee-underbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: 5px; overflow: hidden; z-index: 41; pointer-events: none; }
+   it adds no height. It covers the whole capacity track and takes the pointer there (StackedBar resolves the segment at
+   the pointer's x), painting above a hovered fill (z-index 40); the strip itself is the bottom 5px. The capacity markers
+   sit above it (42) and keep their own tooltips. */
+.planning-assignee-underbar { position: absolute; inset: 0; border-radius: 5px; overflow: hidden; z-index: 41; }
+.capacity-bar-track:has(> .planning-assignee-underbar) > .capacity-bar-marker { z-index: 42; }
+/* The part of the strip beyond the Team Cap marker, with its "+N SP over" label just past its end, above the strip and
+   inside the track (the Team Cap label sits below the track, so the two never meet). Paint only. */
+.planning-assignee-overflow { position: absolute; bottom: 0; height: 5px; background: repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.5) 0 2px, transparent 2px 4px); pointer-events: none; }
+.planning-assignee-overflow > .capacity-bar-fill-label { position: absolute; left: calc(100% + 4px); bottom: calc(100% + 1px); color: #d4380d; }

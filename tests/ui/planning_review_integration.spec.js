@@ -114,6 +114,7 @@ async function installPlanningFixture(page, {
     planningLayout = 'list',
     longTable = false,
     groups = 1,
+    selectedTeams = null,
 } = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
@@ -158,7 +159,7 @@ async function installPlanningFixture(page, {
     };
 
     await installDashboardShell(page);
-    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: value})), planningLayout);
+    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), {planningLayout, ...(selectedTeams ? {selectedTeams, activeGroupId: 'group-alpha'} : {})});
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -671,20 +672,22 @@ test('table keeps uncreated Stories through Story filters while List retains its
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
 });
 
-for(const scopeTeamIds of [['team-alpha'],['team-alpha','team-beta']]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope and expands without losing selection`,async({page})=>{
-    const fixture=await installPlanningFixture(page,{scopeTeamIds,capacityProject:'CAP'});
+for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
+    const fixture=await installPlanningFixture(page,{scopeTeamIds,selectedTeams,capacityProject:'CAP'});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
     await openPlanning(page);
     const panel=page.locator('.planning-panel');
     const selected=await page.locator('.task-list input.task-checkbox:checked').count();
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await expect(panel).toHaveClass(/planning-panel-compact/);await expect(panel.getByRole('button',{name:'Select All',exact:true})).toHaveCount(0);
+    // One Team selected: the collapsed assignee strip is in the stack (the strip itself is #323).
+    await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const row=await panel.boundingBox();expect(row.height).toBeLessThan(64);
     await expect(panel.locator('.capacity-bar-graph')).toHaveCount(1);
     for(const readout of await panel.locator('.planning-compact-readout').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
     for(const selector of ['.capacity-bar-fill','.project-bar-fill.product']) {
         const fill=panel.locator(selector).first();await fill.hover();
-        await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}-${selector.includes('product')?'project':'capacity'}.png`});
+        await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}${selectedTeams?'-one':''}-${selector.includes('product')?'project':'capacity'}.png`});
         const label=fill.locator('..').locator('.planning-compact-readout');
         expect(await label.evaluate(node=>{
             // Include the normally pointer-transparent label in paint-order hit testing.
@@ -801,14 +804,15 @@ for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row s
     await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
 });
 
-for (const [width,height] of [[1440,900],[1280,720]]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}`,async({page})=>{
+for (const [width,height] of [[1440,900],[1280,720]]) for (const selectedTeams of [null,['team-alpha']]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}${selectedTeams?' with one Team selected':''}`,async({page})=>{
     await page.setViewportSize({width,height});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta'],selectedTeams});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
     const docked=page.locator('.planning-review-docked-header');await expect(docked).toBeVisible();
     await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
     await expect.poll(async()=>{const d=await docked.boundingBox();return Math.round(d.y+d.height);}).toBeLessThanOrEqual(175);
+    await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const parts=await page.evaluate(()=>{const box=s=>{const n=document.querySelector(s);return n?Math.round(n.getBoundingClientRect().height*10)/10:null;};return {header:box('.compact-sticky-header.is-visible'),filters:box('.planning-review-sticky-stack .filterbar-wrap'),overview:box('.planning-review-sticky-stack .planning-panel'),docked:box('.planning-review-docked-header')};});
     const bottom=await docked.boundingBox();
     expect(bottom.y+bottom.height,JSON.stringify(parts)).toBeLessThanOrEqual(175);

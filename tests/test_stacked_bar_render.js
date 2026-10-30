@@ -95,3 +95,21 @@ test('variant="strip" only adds the stacked-bar--strip hook to the root', () => 
     assert.equal(strip, plain.replace('class="stacked-bar"', 'class="stacked-bar stacked-bar--strip"'));
     assert.notEqual(strip, plain);
 });
+
+test('segmentAtFraction resolves the strip segment under a track x on an axis wider than the segments', async () => {
+    const { segmentAtFraction } = await import('../frontend/src/stats/stackedBarHitTest.js');
+    const segments = [{ key: 'ann', value: 8 }, { key: 'zero', value: 0 }, { key: 'bob', value: 6 }, { key: 'un', value: 4 }];
+    const order = ['ann', 'zero', 'bob', 'un'];
+    const axis = 23; // 20 x 1.15: the segments end at 18 / 23 of the track
+    assert.equal(segmentAtFraction(segments, order, axis, 0), 'ann');
+    assert.equal(segmentAtFraction(segments, order, axis, 7.99 / axis), 'ann');
+    assert.equal(segmentAtFraction(segments, order, axis, 8 / axis), 'bob');
+    assert.equal(segmentAtFraction(segments, order, axis, 13.9 / axis), 'bob');
+    assert.equal(segmentAtFraction(segments, order, axis, 14.1 / axis), 'un');
+    assert.equal(segmentAtFraction(segments, order, axis, 18.01 / axis), null);
+    assert.equal(segmentAtFraction(segments, order, axis, 1), null);
+    assert.equal(segmentAtFraction(segments, order, axis, -0.01), null);
+    assert.equal(segmentAtFraction(segments, order, 0, 0.5), null);
+    // Order decides the layout, not the array order.
+    assert.equal(segmentAtFraction(segments, ['un', 'ann'], 12, 0.1), 'un');
+});

@@ -825,3 +825,23 @@ test('only an enabled successful read records that zero Capacity issues were fet
     });
     assert.equal(disabled.capacityState.capacityIssueCount, null);
 });
+
+test('capacityAxis is one scale for the amber bar (1.15) and the team card (1.3): the largest drawn value times headroom', async () => {
+    const { capacityAxis, CAPACITY_BAR_HEADROOM, TEAM_CARD_HEADROOM } = await loadUtils();
+    assert.equal(CAPACITY_BAR_HEADROOM, 1.15);
+    assert.equal(TEAM_CARD_HEADROOM, 1.3);
+    // Unchanged for the bar when the strip is absent: max(capacity, selected) x 1.15.
+    assert.equal(capacityAxis({ capacity: 20, selected: 12 }, CAPACITY_BAR_HEADROOM), 20 * 1.15);
+    assert.equal(capacityAxis({ capacity: 20, selected: 30 }, CAPACITY_BAR_HEADROOM), 30 * 1.15);
+    // People plus Unassigned widen the axis only when they are the largest term.
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 26 }, CAPACITY_BAR_HEADROOM), 26 * 1.15);
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: undefined }, CAPACITY_BAR_HEADROOM), 20 * 1.15);
+    // Card: over capacity no longer saturates; the fill ends at 1/1.3 of the bar and the marker moves left of it.
+    const axis = capacityAxis({ capacity: 10, selected: 15 }, TEAM_CARD_HEADROOM);
+    assert.ok(15 / axis < 1);
+    assert.ok(Math.abs(15 / axis - 1 / 1.3) < 1e-9);
+    assert.ok(10 / axis < 15 / axis);
+    // Card without capacity keeps its old selected x 1.3 scale.
+    assert.equal(capacityAxis({ capacity: 0, selected: 8 }, TEAM_CARD_HEADROOM), 8 * 1.3);
+    assert.equal(capacityAxis({}, TEAM_CARD_HEADROOM), 0);
+});

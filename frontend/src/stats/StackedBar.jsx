@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import { segmentAtFraction } from './stackedBarHitTest.js';
 
 // Generic horizontal stacked-bar primitive: N rows, each split into dynamic segments
 // sized by value share of the row total, with per-segment value labels (compact
@@ -32,14 +33,17 @@ function clampReadoutPoint(x, y, lineCount = 0) {
     });
 }
 
+// Extra lines beyond the two the base height covers: strip lines, or a formatted readout's declared line count.
+const extraLines = readout => readout.extraLines ?? (readout.lines?.length || 0);
+
 function readoutFromPointer(event, readout) {
-    const point = clampReadoutPoint(event.clientX, event.clientY, readout.lines?.length || 0);
+    const point = clampReadoutPoint(event.clientX, event.clientY, extraLines(readout));
     return { ...readout, ...point };
 }
 
 function readoutFromElement(event, readout) {
     const rect = event.currentTarget.getBoundingClientRect();
-    const point = clampReadoutPoint(rect.left + (rect.width / 2), rect.top, readout.lines?.length || 0);
+    const point = clampReadoutPoint(rect.left + (rect.width / 2), rect.top, extraLines(readout));
     return { ...readout, ...point };
 }
 
@@ -61,12 +65,36 @@ export default function StackedBar({
     resolveSegmentStrip,    // optional: ({ row, segmentKey, segment, value }) => { parts: [{ key, label, colour, value }] }
     ariaLabel,
     emptyText = 'No data in range.',
-    variant                 // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar
+    variant,                // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar
+    readoutLineCount        // optional: ({ segmentKey }) => lines of formatReadout's output, so the readout clamps inside the viewport
 }) {
     const rowList = Array.isArray(rows) ? rows : [];
     const order = Array.isArray(segmentOrder) ? segmentOrder : [];
     const [hovered, setHovered] = React.useState(null);
     const labelFor = (key) => (resolveLabel ? resolveLabel(key) : key);
+    const isStrip = variant === 'strip';
+    // Strip variant: the whole element (its wrapper sizes it to the host track) takes the pointer and resolves the
+    // segment at the pointer's x on the first row, `row.total` wide (an axis wider than the segments is allowed);
+    // past the last segment formatReadout gets `segmentKey: null`. A tap arrives as a click at the same x.
+    const trackReadout = (event) => {
+        const row = rowList[0];
+        const rect = event.currentTarget.getBoundingClientRect();
+        if (!row || !(rect.width > 0)) return null;
+        const segmentKey = segmentAtFraction(row.segments, order, row.total || 0, (event.clientX - rect.left) / rect.width);
+        if (segmentKey === null && !formatReadout) return null;
+        const value = segmentKey === null ? 0 : (row.segments.find((seg) => seg.key === segmentKey)?.value || 0);
+        const lineCount = readoutLineCount ? readoutLineCount({ segmentKey }) : 2;
+        return readoutFromPointer(event, {
+            rowLabel: row.label, segmentKey, value, segmentLabel: segmentKey === null ? '' : labelFor(segmentKey),
+            valueText: formatValue(value), extraLines: Math.max(0, lineCount - 2)
+        });
+    };
+    const stripHandlers = isStrip ? {
+        onMouseEnter: (event) => setHovered(trackReadout(event)),
+        onMouseMove: (event) => setHovered(trackReadout(event)),
+        onMouseLeave: () => setHovered(null),
+        onClick: (event) => setHovered(trackReadout(event))
+    } : {};
 
     const readout = hovered ? (
         <div
@@ -90,7 +118,7 @@ export default function StackedBar({
     ) : null;
 
     return (
-        <div className={variant === 'strip' ? 'stacked-bar stacked-bar--strip' : 'stacked-bar'} role="group" aria-label={ariaLabel}>
+        <div className={isStrip ? 'stacked-bar stacked-bar--strip' : 'stacked-bar'} role="group" aria-label={ariaLabel} {...stripHandlers}>
             {!rowList.length && <div className="stacked-bar-empty">{emptyText}</div>}
             {rowList.length > 0 && (
                 <div className="stacked-bar-rows">
@@ -111,7 +139,8 @@ export default function StackedBar({
                                     const valueText = formatValue(value);
                                     const segmentLabel = labelFor(key);
                                     const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
-                                    const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value };
+                                    const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value,
+                                        ...(readoutLineCount ? { extraLines: Math.max(0, readoutLineCount({ segmentKey: key }) - 2) } : {}) };
                                     const segmentLink = resolveSegmentLink
                                         ? resolveSegmentLink({ row, segmentKey: key, segment, value })
                                         : null;
@@ -167,12 +196,14 @@ export default function StackedBar({
                                                 '--stacked-bar-color': resolveColor ? resolveColor(key) : '#94a3b8'
                                             }}
                                             tabIndex={0}
-                                            onMouseEnter={(event) => setHovered(readoutFromPointer(event, readoutData))}
-                                            onMouseMove={(event) => setHovered(readoutFromPointer(event, readoutData))}
-                                            onMouseLeave={() => setHovered(null)}
+                                            {...(isStrip ? {} : {
+                                                onMouseEnter: (event) => setHovered(readoutFromPointer(event, readoutData)),
+                                                onMouseMove: (event) => setHovered(readoutFromPointer(event, readoutData)),
+                                                onMouseLeave: () => setHovered(null),
+                                                onClick: (event) => setHovered(readoutFromElement(event, readoutData))
+                                            })}
                                             onFocus={(event) => setHovered(readoutFromElement(event, readoutData))}
                                             onBlur={() => setHovered(null)}
-                                            onClick={(event) => setHovered(readoutFromElement(event, readoutData))}
                                             aria-label={segmentLink?.ariaLabel || `${row.label} ${segmentLabel}: ${valueText}`}
                                         >
                                             <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>

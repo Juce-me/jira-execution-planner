@@ -254,6 +254,20 @@
             display: block;
         }
 
+        /* The strip fills its host (the Planning underbar wrapper sizes it to the capacity track) and takes the pointer
+           there; its single row is the bottom 5px. */
+        .stacked-bar--strip {
+            position: relative;
+            height: 100%;
+        }
+
+        .stacked-bar--strip .stacked-bar-rows {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
         .stacked-bar--strip .stacked-bar-meta,
         .stacked-bar--strip .stacked-bar-segment span {
             display: none;

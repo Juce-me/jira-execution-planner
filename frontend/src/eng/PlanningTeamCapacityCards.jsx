@@ -3,7 +3,7 @@ import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
-import { parseCapacityDraft } from './planningCapacityUtils.js';
+import { capacityAxis, parseCapacityDraft, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
 
 const CAPACITY_ERROR_MESSAGES = {
     invalid_capacity: 'Enter a valid capacity of 0 or more.',
@@ -463,12 +463,8 @@ export default function PlanningTeamCapacityCards({
                         : null;
                     const barWidth = 116;
                     const hasPositiveCapacity = capacityValuePresent && adjustedCapacity > 0;
-                    const scale = hasPositiveCapacity
-                        ? adjustedCapacity * 1.3
-                        : entry.storyPoints * 1.3;
-                    const valueWidth = scale > 0
-                        ? Math.min(barWidth, (entry.storyPoints / scale) * barWidth)
-                        : 0;
+                    const scale = capacityAxis({ capacity: hasPositiveCapacity ? adjustedCapacity : 0, selected: entry.storyPoints }, TEAM_CARD_HEADROOM);
+                    const valueWidth = scale > 0 ? (entry.storyPoints / scale) * barWidth : 0;
                     const markerX = hasPositiveCapacity ? (adjustedCapacity / scale) * barWidth : null;
                     const deltaSp = capacityValuePresent ? entry.storyPoints - adjustedCapacity : null;
                     const deltaPct = hasPositiveCapacity ? ((entry.storyPoints / adjustedCapacity) - 1) * 100 : null;

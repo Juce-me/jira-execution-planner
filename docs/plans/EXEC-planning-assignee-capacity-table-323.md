@@ -200,7 +200,8 @@ Storage in the app database, with a stored display-name snapshot per person; Cap
 | 4 Table and save queue | `65223cc2` | Strip, table, queue, Removed strip; `dashboard.jsx` 7302 to 7299. |
 | 5 Underbar | `bc094d30`, `1ba54f55` | Strip, then `variant="strip"`, pointer/z-index fixes, row tint. `0e7c84bc` (card-embedded bar) reverted by `5c2617fc`. |
 | 5b Sync with `origin/main` | `673b7dc3` | Merged without conflicts; `dashboard.jsx` 7,288 lines (ceiling 7,291). |
-| 6 Strip rework and defect fixes | not started | Fixture already answers the assignee-capacity route. |
+| 6 Strip rework (6a) | this commit | Shared `capacityAxis`, overflow mark, whole-track hover, card bar on the shared scale; 95 Chromium tests in the three Planning specs. `capacityMultiplier` is derived in `useAssigneeUnderbar` as `totalCapacityAdjusted / rawCapacity` (Task 8 must keep `rawCapacity` equal to the merged value or pass it in). Re-baselined: Ann's segment 8/20 to 8/23 of the track; over-capacity card fill 1.0 to 0.769, marker 0.769 to 0.549. Integration specs needed only new one-team cases. |
+| 6b Defect fixes | not started | Fixture already answers the assignee-capacity route. |
 | 7 Freshness, reading position, budgets | not started | Enable gate and lazy fetch with abort, cache and settle exist today. |
 | 8 Planned team capacity | not started | |
 | 9 Add assignee | not started | |
@@ -229,6 +230,8 @@ The revision 3 review findings (F1 to F9) and open questions (O1 to O12) are res
 ## Execution log
 
 2026-10-29/30, local only: Tasks 1 to 5 as in Implementation state. Last full runs on the executing worktree: Python `unittest discover` 2,849 tests OK (51 skipped, before the final strip revert, which touched frontend only); `npm run test:frontend:unit` 3,206 pass; `planning_assignee_capacity` 21 passed in Chromium; related Planning, Project Track and hover-surface specs green; full Chromium `tests/ui` on `bc094d30`: 2,012 passed, 5 failed (two flaky under load and passing on rerun, three `dashboard_data_freshness` EPM timer tests that also fail on the merge-base). DoD 1, 2, 5 to 8 are implemented (DoD 4 is reopened by revision 4: shared scale and overflow) and covered (model, service, queue and Playwright tests; the Playwright specs run against a mock capacity server, not the real route); DoD 3 and 9 are partial (no test compares the table's Selected with the bar's; no assertion reads the team number); 10 (PostgreSQL), 12 to 16 (ledger, render counts, headed engines, bundle) and 17 are open. The Python run predates the final revert, which changed frontend files, `docs/design-system.md` and tests only; the full Chromium `tests/ui` run was on `bc094d30`. The three `dashboard_data_freshness` EPM timer failures also fail on the merge-base with a different subset each run; their cause, user impact and remedy are not yet explained, so they are not accepted as baseline.
+
+2026-10-30, Task 1b (read-only `select version_num from alembic_version` on each local server, equivalent to `alembic current`): Docker `jep_local` on `127.0.0.1:5432` (the app's database) is at `20261028_0021`; Homebrew `jep_local` is at `20261001_0018`. Neither has `planning_team_sprint_capacity`, so no database is stamped `20261029_0022`. Ruling: Task 8 amends `20261029_0022` in place (adds the planned columns and CHECKs) instead of adding `0023`; the head pins stay at `20261029_0022`. Cost if wrong: a database upgraded to the old `0022` by someone else's checkout would miss the columns (none known locally).
 
 ## Validation record (revision 2)
 

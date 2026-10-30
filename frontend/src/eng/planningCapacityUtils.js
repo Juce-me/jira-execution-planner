@@ -286,6 +286,14 @@ export function getCapacityStatus(selected, capacity) {
     };
 }
 
+// One scale for the pinned amber capacity bar and the team-card microbar (#323 D8): the largest drawn value
+// (capacity, selected, and the assignee underbar's stacked people plus Unassigned) times the caller's headroom.
+export const CAPACITY_BAR_HEADROOM = 1.15;
+export const TEAM_CARD_HEADROOM = 1.3;
+export function capacityAxis({ capacity = 0, selected = 0, stacked = 0 }, headroom) {
+    return Math.max(capacity || 0, selected || 0, stacked || 0) * headroom;
+}
+
 export function getTeamCapacityMeta(selected, capacity) {
     if (!capacity) return { text: '', status: '', title: '' };
     const delta = selected - capacity;

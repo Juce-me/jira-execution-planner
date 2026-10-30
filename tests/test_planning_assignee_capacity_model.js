@@ -288,3 +288,31 @@ test('a person row tint equals the underbar segment colour for every person, and
     assert.equal(m.assigneeRowColor(rows[3], map), null);
     assert.notEqual(m.assigneeRowColor(rows[0], map), m.assigneeRowColor(rows[1], map));
 });
+
+test('underbar on the bar axis: people scale by the Product/Tech multiplier, Unassigned does not, and overflow is past Team Cap', async () => {
+    const m = await load();
+    const row = (key, capacity) => ({ key, name: key, capacity, selectedHundredths: 0, totalHundredths: 0 });
+    // Product-only 0.7: raw people sum 10 against a marker of 10 x 0.7 = 7 is not an overflow.
+    const exact = m.buildUnderbar({ rows: [row('a', '3.3'), row('b', '3.3'), row('c', '3.4')], unassigned: null }, 10);
+    const scaled = m.underbarOnBarAxis(exact, 10 * 0.7, 0.7);
+    assert.equal(scaled.overflowHundredths, 0);
+    assert.equal(scaled.overflow, 0);
+    assert.ok(Math.abs(scaled.stacked - 7) < 1e-9);
+    assert.ok(Math.abs(scaled.people[0].value - 2.31) < 1e-9);
+    // Many people whose scaled values would each round up still do not draw a false mark.
+    const many = m.buildUnderbar({ rows: ['a', 'b', 'c', 'd', 'e'].map(key => row(key, '2.05')) , unassigned: null }, 10.25);
+    assert.equal(m.underbarOnBarAxis(many, 10.25 * 0.7, 0.7).overflowHundredths, 0);
+    // Unassigned is effort: added unscaled; the overflow is people x multiplier + Unassigned - capacity.
+    const withUnassigned = m.buildUnderbar({ rows: [row('a', '10')], unassigned: { totalHundredths: 300, selectedHundredths: 100 } }, 10);
+    const over = m.underbarOnBarAxis(withUnassigned, 7, 0.7);
+    assert.equal(over.unassignedValue, 3);
+    assert.equal(over.overflowHundredths, 300);
+    assert.equal(over.overflow, 3);
+    assert.ok(Math.abs(over.stacked - 10) < 1e-9);
+    // Multiplier 1: 12 + 10 + 4 against 20 overflows by 6; below capacity there is none.
+    const big = m.buildUnderbar({ rows: [row('a', '12'), row('b', '10')], unassigned: { totalHundredths: 400, selectedHundredths: 0 } }, 20);
+    assert.equal(m.underbarOnBarAxis(big, 20, 1).overflowHundredths, 600);
+    const small = m.buildUnderbar({ rows: [row('a', '8'), row('b', '6')], unassigned: { totalHundredths: 400, selectedHundredths: 0 } }, 20);
+    assert.equal(m.underbarOnBarAxis(small, 20, 1).overflowHundredths, 0);
+    assert.equal(m.underbarOnBarAxis(small, 20, 1).stacked, 18);
+});

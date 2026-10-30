@@ -325,6 +325,19 @@ export function buildUnderbar(view, rawCapacity = null) {
     return { denominatorHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
 }
 
+// The underbar on the amber bar's own axis (#323 D5). Person Capacity is raw Jira-scale while the bar is Product/Tech
+// adjusted, so people are scaled by `multiplier`; Unassigned is effort and is drawn unscaled. Values are SP; the
+// overflow (in hundredths, so float noise never draws a false mark) is what lies beyond the Team Cap marker.
+export function underbarOnBarAxis(model, barCapacity, multiplier = 1) {
+    const people = model.people.map(person => ({ ...person, value: (person.capacityHundredths * multiplier) / 100 }));
+    const unassignedValue = model.unassigned ? model.unassigned.totalHundredths / 100 : 0;
+    // Scale the raw sum once and round only the difference, so people equal to the raw team number never overflow.
+    const stackedHundredths = sumHundredths(model.people.map(person => person.capacityHundredths)) * multiplier
+        + (model.unassigned ? model.unassigned.totalHundredths : 0);
+    const overflowHundredths = Math.max(0, Math.round(stackedHundredths - (Number(barCapacity) || 0) * 100));
+    return { people, unassignedValue, stacked: stackedHundredths / 100, overflow: overflowHundredths / 100, overflowHundredths };
+}
+
 // One colour source for a person's underbar segment and tinted table row: the sorted-index map over every row of the view.
 export function buildAssigneeColorMap(rows) {
     return buildTeamColorMap((rows || []).map(row => ({ id: row.key, name: row.name })));

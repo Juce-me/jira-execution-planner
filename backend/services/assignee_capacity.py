@@ -4,6 +4,8 @@ One document belongs to workspace + Sprint + Team. A Sprint without a document r
 nearest earlier document of the same Team (whole-document inheritance, reads never write).
 The first write materialises the inherited people and Capacity into the Sprint's own
 document under a row lock, then merges the changes field by field (last write wins).
+The stored team capacity (`planned`, "Team capacity (not in Jira)") rides on the same
+document: inherited with it, materialised with source `inherited`, never written to Jira.
 """
 from copy import deepcopy
 from decimal import Decimal
@@ -32,6 +34,9 @@ RESPONSE_RESERVE_BYTES = 1024
 LOCK_TIMEOUT = '3s'
 CHANGE_KEYS = ('assigneeKey', 'displayName', 'capacity', 'vacations', 'notes', 'removed')
 FIELD_KEYS = CHANGE_KEYS[1:]
+PLANNED_KEYS = ('value', 'source', 'onlyIfSource')
+CLIENT_SOURCES = ('user', 'jira')
+STORED_SOURCES = ('user', 'jira', 'inherited')
 
 
 def _has_control(value):
@@ -104,6 +109,52 @@ def validate_changes(changes):
     return result
 
 
+def validate_planned(planned):
+    """`{value, source, onlyIfSource?}`; null value clears (source must then be null or absent).
+
+    `inherited` is server-only. `onlyIfSource` lists the stored sources the write may replace;
+    `None` in it stands for "no stored number". Returns None when `planned` is absent.
+    """
+    if planned is None:
+        return None
+    if not isinstance(planned, dict) or set(planned) - set(PLANNED_KEYS) or 'value' not in planned:
+        raise ReviewError()
+    value = _number(planned['value'])
+    source = planned.get('source')
+    if value is None:
+        if source is not None:
+            raise ReviewError()
+    elif source not in CLIENT_SOURCES:
+        raise ReviewError()
+    clean = {'value': value, 'source': source}
+    if 'onlyIfSource' in planned:
+        only = planned['onlyIfSource']
+        if (not isinstance(only, list) or not only or len(set(only)) != len(only)
+                or any(item is not None and item not in STORED_SOURCES for item in only)):
+            raise ReviewError()
+        clean['onlyIfSource'] = only
+    return clean
+
+
+def _stored_planned(row):
+    if row is None or row.planned_capacity is None:
+        return None
+    return {'value': row.planned_capacity, 'source': row.planned_source}
+
+
+def _inherit_planned(planned):
+    return None if planned is None else {'value': planned['value'], 'source': 'inherited'}
+
+
+def _planned_target(current, planned):
+    """The planned value after this request; `current` stays when the guard does not match."""
+    if planned is None:
+        return current
+    if 'onlyIfSource' in planned and (current['source'] if current else None) not in planned['onlyIfSource']:
+        return current
+    return None if planned['value'] is None else {'value': planned['value'], 'source': planned['source']}
+
+
 def _new_row(key):
     return {'assigneeKey': key, 'displayName': '', 'capacity': None, 'vacations': None, 'notes': None, 'removed': False}
 
@@ -150,9 +201,11 @@ def _nearest(session, workspace_id, sprint_id, team_id):
 def _document(sprint_id, team_id, row):
     """Serialise a lookup result; an earlier Sprint's document comes back as `inherited`."""
     if row is not None and row.sprint_id == sprint_id:
-        return {'teamId': team_id, 'sprintId': sprint_id, 'revision': row.revision, 'rows': deepcopy(row.rows), 'inherited': None}
-    inherited = None if row is None else {'fromSprintId': row.sprint_id, 'rows': _inherit(row.rows)}
-    return {'teamId': team_id, 'sprintId': sprint_id, 'revision': 0, 'rows': [], 'inherited': inherited}
+        return {'teamId': team_id, 'sprintId': sprint_id, 'revision': row.revision, 'rows': deepcopy(row.rows),
+                'planned': _stored_planned(row), 'inherited': None}
+    inherited = None if row is None else {
+        'fromSprintId': row.sprint_id, 'rows': _inherit(row.rows), 'planned': _inherit_planned(_stored_planned(row))}
+    return {'teamId': team_id, 'sprintId': sprint_id, 'revision': 0, 'rows': [], 'planned': None, 'inherited': inherited}
 
 
 def get_document(context, sprint_id, team_id, database_url=None):
@@ -175,27 +228,33 @@ def _unavailable(error):
     return code in {'55P03', '57014'}
 
 
-def apply_changes(context, sprint_id, team_id, changes, database_url=None):
+def apply_changes(context, sprint_id, team_id, changes, database_url=None, planned=None):
     require_review_context(context)
     sprint_identity(sprint_id)
     team_identity(team_id)
     changes = validate_changes(changes)
+    planned = validate_planned(planned)
     try:
         with db_engine.session_scope(database_url) as session:
-            return _apply(session, context, sprint_id, team_id, changes)
+            return _apply(session, context, sprint_id, team_id, changes, planned)
     except DBAPIError as error:
         if _unavailable(error):
             raise ReviewError('assignee_capacity_busy', 503) from None
         raise
 
 
-def _apply(session, context, sprint_id, team_id, changes):
+def _apply(session, context, sprint_id, team_id, changes, planned=None):
     workspace_id = context.workspace_id
-    # An empty or no-op request creates no document and takes no lock.
+    # A guarded (mirror) planned write only ever updates an existing own document.
     seen = _nearest(session, workspace_id, sprint_id, team_id)
     own = seen is not None and seen.sprint_id == sprint_id
+    if planned is not None and 'onlyIfSource' in planned and not own:
+        planned = None
+    # An empty or no-op request creates no document and takes no lock.
     base = seen.rows if own else _inherit(seen.rows) if seen is not None else []
-    if not changes or merge_changes(base, changes) == base:
+    base_planned = _stored_planned(seen) if own else _inherit_planned(_stored_planned(seen))
+    rows_change = bool(changes) and merge_changes(base, changes) != base
+    if not rows_change and _planned_target(base_planned, planned) == base_planned:
         return _document(sprint_id, team_id, seen)
     dialect = session.bind.dialect.name
     insert = postgres_insert if dialect == 'postgresql' else sqlite_insert if dialect == 'sqlite' else None
@@ -218,14 +277,22 @@ def _apply(session, context, sprint_id, team_id, changes):
             *_scope(workspace_id, team_id), models.PlanningTeamSprintCapacity.sprint_order < sprint_order(sprint_id),
         ).order_by(models.PlanningTeamSprintCapacity.sprint_order.desc()).limit(1)).first()
         current = _inherit(source.rows) if source is not None else []
+        current_planned = _inherit_planned(_stored_planned(source))
+        if planned is not None and 'onlyIfSource' in planned:
+            planned = None  # The Sprint had no own document when this request started.
     else:
         current = deepcopy(row.rows)
-    merged = merge_changes(current, changes)
+        current_planned = _stored_planned(row)
+    merged = merge_changes(current, changes) if changes else current
+    merged_planned = _planned_target(current_planned, planned)
     if not inserted:
-        if merged == current:
+        if merged == current and merged_planned == current_planned:
             return _document(sprint_id, team_id, row)
         row.revision += 1
-    _require_readable({'teamId': team_id, 'sprintId': sprint_id, 'revision': row.revision, 'rows': merged, 'inherited': None})
+    _require_readable({'teamId': team_id, 'sprintId': sprint_id, 'revision': row.revision, 'rows': merged,
+                       'planned': merged_planned, 'inherited': None})
     row.rows = merged
+    row.planned_capacity = merged_planned['value'] if merged_planned else None
+    row.planned_source = merged_planned['source'] if merged_planned else None
     session.flush()
     return _document(sprint_id, team_id, row)

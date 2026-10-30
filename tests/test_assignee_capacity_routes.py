@@ -64,7 +64,7 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.headers['Cache-Control'], 'no-store')
             self.assertIn('assignee-capacity-read;dur=', response.headers['Server-Timing'])
-            self.assertEqual(response.get_json(), {'teamId': 'team-a', 'sprintId': '17', 'revision': 0, 'rows': [], 'inherited': None,
+            self.assertEqual(response.get_json(), {'teamId': 'team-a', 'sprintId': '17', 'revision': 0, 'rows': [], 'planned': None, 'inherited': None,
                                                    'capabilities': {'canRead': True, 'canSave': True, 'reason': None}})
 
     def test_patch_contract_headers_and_roundtrip(self):
@@ -124,6 +124,46 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
             self.assertEqual(self.client.patch(self.path + '?teamId=a', json={'teamId': 'a', 'changes': []}, headers=self.headers()).status_code, 400)
             self.assertEqual(self.client.get(self.path + '?teamId=team-a').get_json()['revision'], 0)
 
+    def test_planned_contract_shapes_and_inheritance(self):
+        with self.auth():
+            response = self.patch_doc([], planned={'value': '20.5', 'source': 'user'})
+            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+            body = response.get_json()
+            self.assertEqual((body['revision'], body['planned'], body['inherited']), (1, {'value': '20.5', 'source': 'user'}, None))
+            self.assertEqual(body['capabilities'], {'canRead': True, 'canSave': True, 'reason': None})
+            self.assertEqual(self.client.get(self.path + '?teamId=team-a').get_json()['planned'], {'value': '20.5', 'source': 'user'})
+            later = self.client.get('/api/eng/sprints/18/assignee-capacity?teamId=team-a').get_json()
+            self.assertEqual((later['planned'], later['inherited']['planned']), (None, {'value': '20.5', 'source': 'inherited'}))
+            mirror = {'value': '19', 'source': 'jira', 'onlyIfSource': [None, 'jira', 'inherited']}
+            kept = self.patch_doc([], planned=mirror).get_json()
+            self.assertEqual((kept['planned'], kept['revision']), ({'value': '20.5', 'source': 'user'}, 1))
+            none_created = self.patch_doc([], planned=mirror, path='/api/eng/sprints/18/assignee-capacity').get_json()
+            self.assertEqual(none_created['revision'], 0)
+            cleared = self.patch_doc([], planned={'value': None}).get_json()
+            self.assertEqual((cleared['planned'], cleared['revision']), (None, 2))
+
+    def test_planned_body_errors_are_codes_without_message(self):
+        with self.auth():
+            for planned in (None, 'x', {'value': '5', 'source': 'inherited'}, {'value': '5'}, {'value': '1.234', 'source': 'user'},
+                            {'value': '5', 'source': 'user', 'extra': True}, {'value': '5', 'source': 'jira', 'onlyIfSource': []}):
+                with self.subTest(planned=planned):
+                    response = self.patch_doc([], planned=planned)
+                    self.assertEqual((response.status_code, response.get_json()), (400, {'error': 'invalid_review_request'}))
+            self.assertEqual(self.client.patch(self.path, json={'teamId': 'team-a', 'planned': {'value': '5', 'source': 'user'}},
+                                               headers=self.headers()).status_code, 400)
+            self.assertEqual(self.client.get(self.path + '?teamId=team-a').get_json()['revision'], 0)
+
+    def test_planned_requires_csrf_and_is_isolated_by_workspace(self):
+        foreign = replace(self.context, workspace_id=self.other_workspace)
+        with self.auth():
+            response = self.client.patch(self.path, json={'teamId': 'team-a', 'changes': [], 'planned': {'value': '5', 'source': 'user'}},
+                                         headers={'X-Requested-With': 'jira-execution-planner'})
+            self.assertEqual(response.status_code, 403)
+            self.assertEqual(self.patch_doc([], planned={'value': '5', 'source': 'user'}).status_code, 200)
+        with self.auth(foreign):
+            self.assertIsNone(self.client.get(self.path + '?teamId=team-a').get_json()['planned'])
+            self.assertIsNone(self.client.get('/api/eng/sprints/18/assignee-capacity?teamId=team-a').get_json()['inherited'])
+
     def test_request_limit_is_64_kib(self):
         with self.auth():
             response = self.client.patch(self.path, data=' ' * (capacity.MAX_REQUEST_BYTES + 1), content_type='application/json', headers=self.headers())
@@ -148,7 +188,7 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
                 self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_storage_unavailable'}))
                 document = self.client.get(self.path + '?teamId=team-a').get_json()
                 self.assertFalse(document['capabilities']['canRead'])
-                self.assertEqual(document['rows'], [])
+                self.assertEqual((document['rows'], document['planned']), ([], None))
             with patch.object(capacity, 'apply_changes', side_effect=RuntimeError('boom')):
                 response = self.patch_doc()
                 self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_unavailable'}))

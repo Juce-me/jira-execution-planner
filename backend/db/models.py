@@ -903,6 +903,8 @@ class PlanningTeamSprintCapacity(Base):
         UniqueConstraint('workspace_id', 'sprint_id', 'team_id', name='uq_planning_team_sprint_capacity'),
         CheckConstraint('length(sprint_order) = 128', name='ck_planning_team_sprint_capacity_order'),
         CheckConstraint('revision >= 1', name='ck_planning_team_sprint_capacity_revision'),
+        CheckConstraint("planned_source IN ('user', 'jira', 'inherited')", name='ck_planning_team_sprint_capacity_planned_source'),
+        CheckConstraint('(planned_capacity IS NULL) = (planned_source IS NULL)', name='ck_planning_team_sprint_capacity_planned_pair'),
         Index('ix_planning_team_sprint_capacity_order', 'workspace_id', 'team_id', 'sprint_order'),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
@@ -911,6 +913,9 @@ class PlanningTeamSprintCapacity(Base):
     sprint_order: Mapped[str] = mapped_column(String(128), nullable=False)
     team_id: Mapped[str] = mapped_column(String(128), nullable=False)
     rows: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
+    # Stored team capacity ("Team capacity (not in Jira)"): a trimmed decimal string, null with its source.
+    planned_capacity: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
+    planned_source: Mapped[Optional[str]] = mapped_column(String(16), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)

@@ -1,5 +1,6 @@
 """Synthetic contract tests for the per-Team, per-Sprint assignee capacity store (#323)."""
 import io
+import json
 import os
 from pathlib import Path
 import tempfile
@@ -13,6 +14,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, event, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
 
 from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
@@ -53,8 +55,11 @@ class CapacityFixture(unittest.TestCase):
     def get(self, sprint='20', team=TEAM, context=None):
         return capacity.get_document(context or self.context, sprint, team, self.url)
 
-    def patch_rows(self, changes, sprint='20', team=TEAM, context=None):
-        return capacity.apply_changes(context or self.context, sprint, team, changes, self.url)
+    def patch_rows(self, changes, sprint='20', team=TEAM, context=None, planned=None):
+        return capacity.apply_changes(context or self.context, sprint, team, changes, self.url, planned=planned)
+
+    def patch_planned(self, planned, sprint='20', team=TEAM, changes=(), context=None):
+        return self.patch_rows(list(changes), sprint, team, context, planned=planned)
 
     def count(self):
         with db_engine.session_scope(self.url) as session:
@@ -72,7 +77,7 @@ class CapacityFixture(unittest.TestCase):
 
 class AssigneeCapacityServiceTests(CapacityFixture):
     def test_empty_read_has_no_document_and_no_inheritance(self):
-        self.assertEqual(self.get(), {'teamId': TEAM, 'sprintId': '20', 'revision': 0, 'rows': [], 'inherited': None})
+        self.assertEqual(self.get(), {'teamId': TEAM, 'sprintId': '20', 'revision': 0, 'rows': [], 'planned': None, 'inherited': None})
         self.assertEqual(self.count(), 0)
 
     def test_first_write_creates_the_document_with_revision_one(self):
@@ -292,6 +297,153 @@ class AssigneeCapacityServiceTests(CapacityFixture):
         self.assertEqual(fk.ondelete, 'CASCADE')
 
 
+class PlannedTeamCapacityServiceTests(CapacityFixture):
+    """Stored team capacity ("Team capacity (not in Jira)") on the same document."""
+
+    def stored(self, sprint='20'):
+        with db_engine.session_scope(self.url) as session:
+            row = session.query(models.PlanningTeamSprintCapacity).filter_by(sprint_id=sprint).one()
+            return row.planned_capacity, row.planned_source
+
+    def test_planned_only_patch_creates_and_persists(self):
+        saved = self.patch_planned({'value': '12.50', 'source': 'user'})
+        self.assertEqual((saved['revision'], saved['rows'], saved['planned']), (1, [], {'value': '12.5', 'source': 'user'}))
+        self.assertEqual(self.get()['planned'], {'value': '12.5', 'source': 'user'})
+        self.assertEqual(self.stored(), ('12.5', 'user'))
+        again = self.patch_planned({'value': '13', 'source': 'jira'})
+        self.assertEqual((again['revision'], again['planned']), (2, {'value': '13', 'source': 'jira'}))
+
+    def test_null_value_clears_value_and_source(self):
+        self.patch_planned({'value': '8', 'source': 'user'})
+        cleared = self.patch_planned({'value': None})
+        self.assertEqual((cleared['planned'], cleared['revision']), (None, 2))
+        self.assertEqual(self.stored(), (None, None))
+        self.assertIsNone(self.patch_planned({'value': None, 'source': None})['planned'])
+        self.assertEqual(self.get()['revision'], 2)
+
+    def test_same_planned_is_a_no_op(self):
+        self.patch_planned({'value': '8', 'source': 'user'})
+        self.assertEqual(self.patch_planned({'value': '8.00', 'source': 'user'})['revision'], 1)
+        self.assertEqual(self.count(), 1)
+
+    def test_empty_patch_is_a_no_op_without_lock_or_document(self):
+        statements = []
+        engine = db_engine.get_engine(self.url)
+        listener = lambda conn, cursor, statement, *args: statements.append(statement.split()[0].upper())
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            document = self.patch_rows([])
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        self.assertEqual((document['revision'], document['planned'], self.count()), (0, None, 0))
+        self.assertEqual(set(statements), {'SELECT'})
+
+    def test_planned_validation_and_inherited_source_rejected_from_client(self):
+        bad = [
+            {'value': '10000.01', 'source': 'user'}, {'value': '1.234', 'source': 'user'}, {'value': '-1', 'source': 'user'},
+            {'value': 5, 'source': 'user'}, {'value': '1e3', 'source': 'user'}, {'value': '5'},
+            {'value': '5', 'source': 'inherited'}, {'value': '5', 'source': 'other'}, {'value': '5', 'source': None},
+            {'value': None, 'source': 'user'}, {'source': 'user'}, {'value': '5', 'source': 'user', 'extra': 1},
+            {'value': '5', 'source': 'jira', 'onlyIfSource': []}, {'value': '5', 'source': 'jira', 'onlyIfSource': 'jira'},
+            {'value': '5', 'source': 'jira', 'onlyIfSource': ['jira', 'jira']},
+            {'value': '5', 'source': 'jira', 'onlyIfSource': ['bogus']}, 'nope', ['value'], 0,
+        ]
+        for planned in bad:
+            with self.subTest(planned=planned):
+                self.assert_error('invalid_review_request', 400, self.patch_planned, planned)
+        self.assertEqual(self.count(), 0)
+        for good in ('0', '10000', '0.5', '12.25'):
+            self.assertEqual(self.patch_planned({'value': good, 'source': 'user'})['planned']['value'], good)
+
+    def test_inheritance_carries_planned_and_reads_never_write(self):
+        self.patch_planned({'value': '30', 'source': 'user'}, sprint='10',
+                           changes=[{'assigneeKey': 'a', 'displayName': 'Ada', 'capacity': '8'}])
+        statements = []
+        engine = db_engine.get_engine(self.url)
+        listener = lambda conn, cursor, statement, *args: statements.append(statement.split()[0].upper())
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            later = self.get('11')
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        self.assertEqual(set(statements), {'SELECT'})
+        self.assertEqual((later['revision'], later['planned']), (0, None))
+        self.assertEqual(later['inherited']['planned'], {'value': '30', 'source': 'inherited'})
+        self.assertEqual(self.count(), 1)
+        self.patch_rows([{'assigneeKey': 'b', 'capacity': '1'}], sprint='12')
+        self.assertIsNone(self.get('12')['inherited'])
+
+    def test_source_without_planned_inherits_null(self):
+        self.patch_rows([{'assigneeKey': 'a', 'capacity': '8'}], sprint='10')
+        self.assertIsNone(self.get('11')['inherited']['planned'])
+        self.assertIsNone(self.patch_rows([{'assigneeKey': 'a', 'notes': 'n'}], sprint='11')['planned'])
+
+    def test_first_write_materialises_planned_as_inherited(self):
+        self.patch_planned({'value': '30', 'source': 'user'}, sprint='10')
+        saved = self.patch_rows([{'assigneeKey': 'a', 'capacity': '4'}], sprint='11')
+        self.assertEqual((saved['revision'], saved['planned'], saved['inherited']), (1, {'value': '30', 'source': 'inherited'}, None))
+        self.assertEqual(self.stored('11'), ('30', 'inherited'))
+        # The next Sprint still shows it, still as inherited.
+        self.assertEqual(self.get('12')['inherited']['planned'], {'value': '30', 'source': 'inherited'})
+        # A planned write on the gray number materialises the user's value instead.
+        typed = self.patch_planned({'value': '25', 'source': 'user'}, sprint='13')
+        self.assertEqual((typed['planned'], self.stored('13')), ({'value': '25', 'source': 'user'}, ('25', 'user')))
+
+    def test_only_if_source_applies_when_stored_source_matches(self):
+        self.patch_planned({'value': '30', 'source': 'user'}, sprint='10')
+        self.patch_rows([{'assigneeKey': 'a', 'capacity': '4'}], sprint='11')  # stored source: inherited
+        mirror = {'value': '28', 'source': 'jira', 'onlyIfSource': ['jira', 'inherited']}
+        applied = self.patch_planned(mirror, sprint='11')
+        self.assertEqual((applied['planned'], applied['revision']), ({'value': '28', 'source': 'jira'}, 2))
+        self.assertEqual(self.patch_planned({**mirror, 'value': '27'}, sprint='11')['planned'], {'value': '27', 'source': 'jira'})
+
+    def test_only_if_source_never_overwrites_a_user_edit(self):
+        self.patch_planned({'value': '30', 'source': 'user'})
+        unchanged = self.patch_planned({'value': '28', 'source': 'jira', 'onlyIfSource': ['jira', 'inherited']})
+        self.assertEqual((unchanged['planned'], unchanged['revision']), ({'value': '30', 'source': 'user'}, 1))
+        self.assertEqual(self.stored(), ('30', 'user'))
+
+    def test_only_if_source_matches_absent_number_only_when_listed(self):
+        self.patch_rows([{'assigneeKey': 'a', 'capacity': '4'}])
+        self.assertIsNone(self.patch_planned({'value': '28', 'source': 'jira', 'onlyIfSource': ['jira', 'inherited']})['planned'])
+        filled = self.patch_planned({'value': '28', 'source': 'jira', 'onlyIfSource': [None, 'jira', 'inherited']})
+        self.assertEqual((filled['planned'], filled['revision']), ({'value': '28', 'source': 'jira'}, 2))
+
+    def test_mirror_never_creates_a_document(self):
+        mirror = {'value': '28', 'source': 'jira', 'onlyIfSource': [None, 'jira', 'inherited']}
+        self.assertEqual(self.patch_planned(mirror)['revision'], 0)
+        self.assertEqual(self.count(), 0)
+        self.patch_planned({'value': '30', 'source': 'user'}, sprint='10')
+        inherited = self.patch_planned(mirror, sprint='11')
+        self.assertEqual((inherited['revision'], inherited['inherited']['planned']), (0, {'value': '30', 'source': 'inherited'}))
+        self.assertEqual(self.count(), 1)
+        # With row changes the document is created, but the guarded planned part is not applied.
+        created = self.patch_planned(mirror, sprint='11', changes=[{'assigneeKey': 'a', 'capacity': '1'}])
+        self.assertEqual(created['planned'], {'value': '30', 'source': 'inherited'})
+
+    def test_check_constraints_reject_unpaired_or_unknown_sources(self):
+        self.patch_rows([{'assigneeKey': 'a', 'capacity': '1'}])
+        for capacity_value, source in (('5', None), (None, 'user'), ('5', 'bogus')):
+            with self.subTest(capacity=capacity_value, source=source):
+                with self.assertRaises(IntegrityError):
+                    with db_engine.session_scope(self.url) as session:
+                        row = session.query(models.PlanningTeamSprintCapacity).one()
+                        row.planned_capacity, row.planned_source = capacity_value, source
+                        session.flush()
+
+    def test_planned_counts_in_the_write_time_size_guard(self):
+        bare = {'teamId': TEAM, 'sprintId': '20', 'revision': 1, 'rows': [], 'planned': None, 'inherited': None}
+        fits_null = capacity.RESPONSE_RESERVE_BYTES + len(json.dumps(bare, separators=(',', ':'))) + 5
+        with patch.object(capacity, 'MAX_RESPONSE_BYTES', fits_null):
+            self.assert_error('review_response_limit', 413, self.patch_planned, {'value': '5', 'source': 'user'})
+        self.assertEqual(self.count(), 0)
+
+    def test_planned_is_isolated_by_workspace_and_team(self):
+        self.patch_planned({'value': '30', 'source': 'user'}, sprint='10')
+        self.assertIsNone(self.get('11', context=context_for(self.other_workspace))['inherited'])
+        self.assertIsNone(self.get('11', team='team-b')['inherited'])
+
+
 class AssigneeCapacityMigrationTests(unittest.TestCase):
     def config(self, url):
         config = Config('backend/db/alembic.ini')
@@ -307,7 +459,9 @@ class AssigneeCapacityMigrationTests(unittest.TestCase):
         sql = output.getvalue()
         for required in ('CREATE TABLE planning_team_sprint_capacity', 'ON DELETE CASCADE', 'length(sprint_order) = 128',
                          'revision >= 1', 'uq_planning_team_sprint_capacity', 'CREATE INDEX ix_planning_team_sprint_capacity_order',
-                         '(workspace_id, team_id, sprint_order)'):
+                         '(workspace_id, team_id, sprint_order)', 'planned_capacity VARCHAR(16)', 'planned_source VARCHAR(16)',
+                         "CONSTRAINT ck_planning_team_sprint_capacity_planned_source CHECK (planned_source IN ('user', 'jira', 'inherited'))",
+                         'CONSTRAINT ck_planning_team_sprint_capacity_planned_pair CHECK ((planned_capacity IS NULL) = (planned_source IS NULL))'):
             self.assertIn(required, sql)
         self.assertNotIn('DROP TABLE', sql)
 
@@ -328,8 +482,14 @@ class AssigneeCapacityMigrationTests(unittest.TestCase):
                 command.upgrade(self.config(url), 'head')
                 from sqlalchemy import inspect
                 inspector = inspect(db_engine.get_engine(url))
-                columns = {c['name'] for c in inspector.get_columns('planning_team_sprint_capacity')}
-                self.assertEqual(columns, set(models.PlanningTeamSprintCapacity.__table__.c.keys()))
+                columns = {c['name']: c for c in inspector.get_columns('planning_team_sprint_capacity')}
+                self.assertEqual(set(columns), set(models.PlanningTeamSprintCapacity.__table__.c.keys()))
+                self.assertTrue(columns['planned_capacity']['nullable'] and columns['planned_source']['nullable'])
+                checks = {c['name'] for c in inspector.get_check_constraints('planning_team_sprint_capacity')}
+                model_checks = {c.name for c in models.PlanningTeamSprintCapacity.__table__.constraints
+                                if c.__class__.__name__ == 'CheckConstraint'}
+                self.assertEqual(checks, model_checks)
+                self.assertIn('ck_planning_team_sprint_capacity_planned_pair', checks)
                 self.assertEqual([i['column_names'] for i in inspector.get_indexes('planning_team_sprint_capacity')],
                                  [['workspace_id', 'team_id', 'sprint_order']])
                 db_engine.dispose_engines()

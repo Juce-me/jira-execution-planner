@@ -92,16 +92,18 @@ def _capacity_get(context, sprint_id):
     sprint_review.sprint_identity(sprint_id)
     caps = sprint_review.capabilities(context)
     if not caps['canRead']:
-        return {'teamId': team_id, 'sprintId': sprint_id, 'revision': 0, 'rows': [], 'inherited': None, 'capabilities': caps}
+        return {'teamId': team_id, 'sprintId': sprint_id, 'revision': 0, 'rows': [], 'planned': None, 'inherited': None,
+                'capabilities': caps}
     return {**assignee_capacity.get_document(context, sprint_id, team_id), 'capabilities': caps}
 
 
 def _capacity_patch(context, sprint_id):
     payload = _payload(assignee_capacity.MAX_REQUEST_BYTES)
-    if set(payload) - {'teamId', 'changes'}:
+    if set(payload) - {'teamId', 'changes', 'planned'} or ('planned' in payload and payload['planned'] is None):
         raise sprint_review.ReviewError()
     team_id = assignee_capacity.team_identity(payload.get('teamId'))
-    document = assignee_capacity.apply_changes(context, sprint_id, team_id, payload.get('changes'))
+    document = assignee_capacity.apply_changes(context, sprint_id, team_id, payload.get('changes'),
+                                               planned=payload.get('planned'))
     return {**document, 'capabilities': sprint_review.capabilities(context)}
 
 

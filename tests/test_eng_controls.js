@@ -212,7 +212,6 @@ const expectedProps = {
         "showStats",
         "statusTransitionEnabled",
         "statusTransitionSourceSurface",
-        "statusTransitionSubmitting",
         "statusTransitions",
         "stickyEpicFocusKey",
         "storySubtasksByKey",

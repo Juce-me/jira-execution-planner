@@ -4766,7 +4766,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const statusTransitionEnabled = isStatusTransitionSurfaceEnabled({
                 selectedView, showPlanning, showStats, showScenario,
             }) && !showGroupManage;
-            const [statusTransitionSubmitting, setStatusTransitionSubmitting] = useState(false);
             const [onboardingPreviewSession, setOnboardingPreviewSession] = useState(null);
             const onboardingPreviewDescriptorMatches = React.useCallback((left, right) => Boolean(left && right
                 && left.sessionId === right.sessionId
@@ -4906,19 +4905,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             }, [activeGroupId, closeSingleIssueStatusControl, closePriorityControl, closeProjectTrackControl]);
 
             // Every status pill acts on its own issue: a key is required, and the Planning
-            // selection never widens the write. Board additionally holds one write at a time;
-            // the flag lets its menus disable their action and show an in-flight state.
-            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue) => {
+            // selection never widens the write.
+            const handleSubmitStatusTransition = React.useCallback(async (targetStatus, issue, options) => {
                 if (!issue?.key) return null;
-                if (statusTransitionSourceSurface !== 'board') return submitStatusTransition(targetStatus, issue.key);
-                if (statusTransitionSubmitting) return null;
-                setStatusTransitionSubmitting(true);
-                try {
-                    return await submitStatusTransition(targetStatus, issue.key);
-                } finally {
-                    setStatusTransitionSubmitting(false);
-                }
-            }, [statusTransitionSubmitting, statusTransitionSourceSurface, submitStatusTransition]);
+                return submitStatusTransition(targetStatus, issue.key, options);
+            }, [submitStatusTransition]);
 
             const {
                 selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
@@ -5696,7 +5687,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (field === 'status') return <StatusTransitionMenu
                     issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
-                    options={statusTransitions.transitionOptions} optionsLoading={statusTransitions.transitionOptionsLoading} submitting={statusTransitionSubmitting || statusTransitions.pendingIssueKeys.has(row.key)}
+                    options={statusTransitions.transitionOptions} optionsLoading={statusTransitions.transitionOptionsLoading} submitting={statusTransitions.pendingIssueKeys.has(row.key)}
                     error={statusTransitions.transitionError} errorCode={statusTransitions.transitionErrorCode} result={statusTransitions.transitionResult}
                     portalTarget={document.body} onOpen={statusTransitions.openSingleIssueStatusControl} onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
@@ -6082,7 +6073,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showGroupManage,
                 isGroupDraftDirty,
                 statusTransitionEnabled,
-                statusTransitionSubmitting,
                 handleSubmitStatusTransition,
                 isEpicRefreshMode,
                 epicRefresh,
@@ -6715,7 +6705,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 statusTransitions={statusTransitions}
                                 priorityTransitions={priorityTransitions}
                                 projectTrackTransitions={projectTrackTransitions}
-                                statusTransitionSubmitting={statusTransitionSubmitting}
                                 onSubmitStatusTransition={handleSubmitStatusTransition}
                                 issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
                                 onConfigure={() => {

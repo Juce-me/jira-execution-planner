@@ -19,9 +19,9 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7302,
+    "lineCeiling": 7291,
     "hookCeilings": {
-      "useState": 117,
+      "useState": 116,
       "useEffect": 69,
       "useRef": 83,
       "useMemo": 71,
@@ -17064,7 +17064,6 @@
             "showStats",
             "statusTransitionEnabled",
             "statusTransitionSourceSurface",
-            "statusTransitionSubmitting",
             "statusTransitions",
             "stickyEpicFocusKey",
             "storySubtasksByKey",
@@ -17173,7 +17172,6 @@
             "showStats",
             "statusTransitionEnabled",
             "statusTransitionSourceSurface",
-            "statusTransitionSubmitting",
             "statusTransitions",
             "statusTransitions.activeSingleIssueTarget",
             "statusTransitions.activeSingleIssueTarget.key",
@@ -17194,13 +17192,13 @@
             "toggleTaskSelection"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 119,
+          "expandedInputCount": 118,
           "returnCount": 0,
-          "propCount": 37,
+          "propCount": 36,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 119,
+          "expandedInputCeiling": 118,
           "returnCeiling": 0,
-          "propCeiling": 37,
+          "propCeiling": 36,
           "unresolved": [
             "bag epicGroup member alias epicInfo",
             "forwarded input epicGroup",
@@ -17211,7 +17209,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "5f036d4cecd29b66e57eda3f4a2a8864178439d384962c090b25ba90c1d42c84",
+            "sourceDigest": "b6ec6bc58f34762370cf4b59ca7315365222deeea9932a6c693786cbc5d67424",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -17290,7 +17288,6 @@
               "showStats",
               "statusTransitionEnabled",
               "statusTransitionSourceSurface",
-              "statusTransitionSubmitting",
               "stickyEpicFocusKey",
               "storySubtasksByKey",
               "storySubtasksByKey[task.key]",

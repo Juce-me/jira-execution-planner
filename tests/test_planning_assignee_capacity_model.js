@@ -147,17 +147,44 @@ test('cues: over above 120%, under below 90%, only with Capacity; matches getCap
     }
 });
 
-test('Totals cue compares people Selected without Unassigned against the sum of Capacity', async () => {
+test('Totals cue compares the displayed Selected total (people plus Unassigned) against the sum of Capacity', async () => {
     const m = await load();
     const rows = [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '10', vacations: null, notes: null, removed: false }];
     const tasks = [story('A-1', 'u1', 'Ann', 10), story('A-2', undefined, null, 20)];
     const model = m.buildAssigneeRows({ document: { revision: 1, rows, inherited: null }, teamTasksList: tasks, selectedTasks: tasks });
-    assert.equal(model.totals.cue, '');
+    // 30 shown against 10: the cue uses the same numbers the Totals row displays.
     assert.equal(model.totals.selectedHundredths, 3000);
+    assert.equal(model.totals.cue, 'over');
+    assert.equal(model.totals.cue, m.capacityCue(model.totals.selectedHundredths, model.totals.capacityHundredths));
     assert.equal(model.rows[0].cue, '');
-    const over = m.buildAssigneeRows({ document: { revision: 1, rows, inherited: null }, teamTasksList: tasks, selectedTasks: [story('A-1', 'u1', 'Ann', 13)] });
-    assert.equal(over.totals.cue, 'over');
+    // 8 for Ann plus 2 Unassigned = 10 against 10: within range although people alone (8) would read under.
+    const even = m.buildAssigneeRows({ document: { revision: 1, rows, inherited: null }, teamTasksList: tasks, selectedTasks: [story('A-1', 'u1', 'Ann', 8), story('A-2', undefined, null, 2)] });
+    assert.equal(even.totals.cue, '');
     assert.equal(m.buildAssigneeRows({ document: { revision: 0, rows: [], inherited: null }, teamTasksList: tasks, selectedTasks: tasks }).totals.cue, '');
+});
+
+test('displayName snapshots are made safe before sending: no control characters, at most 200 code points', async () => {
+    const m = await load();
+    assert.equal(m.sanitizeDisplayName('Ann\u0007 Synthetic\n'), 'Ann Synthetic');
+    assert.equal(Array.from(m.sanitizeDisplayName('\u{1F600}'.repeat(250))).length, 200);
+    assert.equal(m.sanitizeDisplayName('\u0001\u0002'), null);
+    assert.equal(m.sanitizeDisplayName(null), null);
+    assert.equal(m.isValidDisplayName('x'.repeat(200)), true);
+    assert.equal(m.isValidDisplayName('x'.repeat(201)), false);
+    assert.equal(m.isValidDisplayName('a\tb'), false);
+    const shown = [{ key: 'u1', storyName: 'x'.repeat(300), storedName: null, capacity: null }];
+    const [change] = m.buildChanges([{ key: 'u1', field: 'capacity', value: '3' }], shown);
+    assert.equal(change.displayName.length, 200);
+    const bad = [{ key: 'u2', storyName: '\u0003', storedName: null, capacity: null }];
+    assert.deepEqual(m.buildChanges([{ key: 'u2', field: 'capacity', value: '3' }], bad), [{ assigneeKey: 'u2', capacity: '3' }]);
+});
+
+test('selected Stories of the Team hidden by filters are counted', async () => {
+    const m = await load();
+    const team = [story('A-1', 'u1', 'Ann', 1), story('A-2', 'u1', 'Ann', 2), story('A-3', 'u2', 'Bob', 3)];
+    assert.equal(m.hiddenSelectedCount(team, { 'A-1': true, 'A-2': true, 'B-9': true }, [team[0]]), 1);
+    assert.equal(m.hiddenSelectedCount(team, { 'A-1': true }, [team[0]]), 0);
+    assert.equal(m.hiddenSelectedCount(team, null, []), 0);
 });
 
 test('removable only without Stories', async () => {
@@ -272,21 +299,31 @@ test('underbar: Unassigned is the unassigned Total effort and removed or capacit
 
 test('a person row tint equals the underbar segment colour for every person, and people without Capacity get none', async () => {
     const m = await load();
-    const { resolveTeamColor, buildTeamColorMap } = await import('../frontend/src/stats/statsUtils.js');
     const row = (key, name, capacity) => ({ key, name, capacity, selectedHundredths: 0, totalHundredths: 0 });
     const rows = [row('acc-b', 'Bob', '6'), row('acc-a', 'Ann', '8'), row('acc-c', 'Cy', null), row('acc-d', 'Di', '0')];
     const map = m.buildAssigneeColorMap(rows);
-    assert.deepEqual(map, buildTeamColorMap(rows.map(entry => ({ id: entry.key, name: entry.name }))));
+    // Sorted by name: Ann, Bob, Cy, Di take the palette in order.
+    assert.deepEqual(map, { 'acc-a': m.ASSIGNEE_PALETTE[0], 'acc-b': m.ASSIGNEE_PALETTE[1], 'acc-c': m.ASSIGNEE_PALETTE[2], 'acc-d': m.ASSIGNEE_PALETTE[3] });
     const bar = m.buildUnderbar({ rows, unassigned: null }, null);
     assert.deepEqual(bar.people.map(person => person.key), ['acc-b', 'acc-a']);
     for (const person of bar.people) {
         const source = rows.find(entry => entry.key === person.key);
-        assert.equal(m.assigneeRowColor(source, map), resolveTeamColor(person.key, map));
         assert.equal(m.assigneeRowColor(source, map), m.resolveAssigneeColor(person.key, map));
     }
     assert.equal(m.assigneeRowColor(rows[2], map), null);
     assert.equal(m.assigneeRowColor(rows[3], map), null);
     assert.notEqual(m.assigneeRowColor(rows[0], map), m.assigneeRowColor(rows[1], map));
+    assert.ok(m.ASSIGNEE_PALETTE.includes(m.resolveAssigneeColor('unmapped', map)));
+});
+
+test('the assignee palette leaves out the colours that clash with the Unassigned pink and the amber bar and text', async () => {
+    const m = await load();
+    const { RADAR_PALETTE } = await import('../frontend/src/stats/statsConstants.js');
+    for (const clash of ['#eab308', '#db2777', '#d97706']) assert.equal(m.ASSIGNEE_PALETTE.includes(clash), false, clash);
+    assert.deepEqual(m.ASSIGNEE_PALETTE, RADAR_PALETTE.filter(color => !['#eab308', '#db2777', '#d97706'].includes(color)));
+    // Warm hues (red through yellow: hue below 65 degrees or above 300) are absent, so nothing reads as pink or amber.
+    const hue = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255); const max = Math.max(r, g, b), min = Math.min(r, g, b); if (max === min) return null; const d = max - min; const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4; return (h * 60 + 360) % 360; };
+    for (const color of m.ASSIGNEE_PALETTE) { const h = hue(color); if (h != null && color !== '#78716c') assert.ok(h >= 65 && h <= 300, `${color} ${h}`); }
 });
 
 test('underbar on the bar axis: people scale by the Product/Tech multiplier, Unassigned does not, and overflow is past Team Cap', async () => {

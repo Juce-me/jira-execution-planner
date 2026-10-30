@@ -686,18 +686,24 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
     await expect(panel.locator('.capacity-bar-graph')).toHaveCount(1);
     for(const readout of await panel.locator('.planning-compact-readout').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
     for(const selector of ['.capacity-bar-fill','.project-bar-fill.product']) {
-        const fill=panel.locator(selector).first();await fill.hover();
+        const fill=panel.locator(selector).first();
+        // One Team: the assignee strip (#323 D6, loaded without expanding) owns the capacity track's pointer and replaces the fill tooltip.
+        const strip=selector==='.capacity-bar-fill'&&await panel.locator('[data-assignee-underbar]').count()>0;
+        if(strip){const box=await fill.boundingBox();await page.mouse.move(box.x+4,box.y+box.height/2);}else await fill.hover();
         await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}${selectedTeams?'-one':''}-${selector.includes('product')?'project':'capacity'}.png`});
         const label=fill.locator('..').locator('.planning-compact-readout');
         expect(await label.evaluate(node=>{
             // Include the normally pointer-transparent label in paint-order hit testing.
+            // The transparent strip wrapper takes the pointer above the label; leave it out of the paint-order check.
             node.style.pointerEvents='auto';
+            const under=document.querySelector('[data-assignee-underbar]');if(under)under.style.pointerEvents='none';
             const r=node.getBoundingClientRect();
             const top=document.elementFromPoint(r.left+4,r.top+r.height/2);
-            node.style.pointerEvents='';
+            node.style.pointerEvents='';if(under)under.style.pointerEvents='';
             return top===node;
         })).toBe(true);
-        expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
+        if(strip){await expect(page.locator('.stacked-bar-readout')).toContainText('Selected');expect(await fill.getAttribute('data-tooltip')).toBeNull();}
+        else expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
     }
     const geometry=await panel.locator('.planning-panel-capacity-graph,.planning-panel-project-graph').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().y));expect(Math.abs(geometry[0]-geometry[1])).toBeLessThan(8);
     const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;

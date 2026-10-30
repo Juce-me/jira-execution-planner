@@ -12,7 +12,9 @@
 .planning-assignee-under { color: #a16207; font-weight: 600; }
 .planning-assignee-removed { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.25rem; margin: 0.5rem 0 0; }
 .planning-assignee-note .planning-review-input { text-overflow: ellipsis; }
-.planning-assignee-removed .planning-review-text-button { text-transform: none; }
+.planning-assignee-removed .planning-review-text-button { text-transform: none; text-decoration: underline; }
+/* Scoped exception to the collapsed strip hiding its subtitle: a saving or failed save stays visible in the 28px header. */
+.capacity-panel.open.capacity-panel-collapsed[data-assignee-capacity] .capacity-subtitle:is([data-save-state="saving"], [data-save-state="failed"]) { display: inline; }
 
 /* Underbar (#323): positioning wrapper for the shared StackedBar strip variant (its rules live in stats/project-track.css);
    it adds no height. It covers the whole capacity track and takes the pointer there (StackedBar resolves the segment at

@@ -6,18 +6,18 @@ import { buildAssigneeColorMap, buildUnderbar, formatHundredths, resolveAssignee
 const sp = hundredths => formatHundredths(hundredths);
 const formatValue = value => sp(Math.round(value * 100));
 
-// The strip's data on the amber bar's axis, or null (no provider, several Teams, or the strip not yet expanded once).
+// The strip's data on the amber bar's axis, or null (no provider, several Teams, or the document not loaded yet).
 // `barCapacity` is the Product/Tech-adjusted totalCapacityAdjusted. With one Team it equals the raw Jira number times
 // the Product/Tech multiplier, so the multiplier is derived here instead of threading it through the dashboard.
 export function useAssigneeUnderbar(barCapacity) {
     const context = usePlanningAssigneeCapacityView();
-    const opened = context?.opened, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity;
+    const loaded = context?.loaded, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity;
     return React.useMemo(() => {
-        const model = opened && oneTeam ? buildUnderbar(view, rawCapacity) : null;
+        const model = loaded && oneTeam ? buildUnderbar(view, rawCapacity) : null;
         if (!model) return null;
         const multiplier = Number(rawCapacity) > 0 && barCapacity > 0 ? barCapacity / Number(rawCapacity) : 1;
         return { model, multiplier, colorMap: buildAssigneeColorMap(view?.rows), ...underbarOnBarAxis(model, barCapacity, multiplier) };
-    }, [opened, oneTeam, view, rawCapacity, barCapacity]);
+    }, [loaded, oneTeam, view, rawCapacity, barCapacity]);
 }
 
 // The thin per-person strip inside the capacity track, on the bar's own `axis`: the wrapper covers the whole track and

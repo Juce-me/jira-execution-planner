@@ -233,6 +233,33 @@ class AssigneeCapacityServiceTests(CapacityFixture):
         self.assert_error('assignee_capacity_row_limit', 400, self.patch_rows, [{'assigneeKey': 'extra', 'capacity': '1'}])
         self.assertEqual(len(self.get()['rows']), 100)
 
+    def test_write_time_size_guard_never_stores_an_unreadable_document(self):
+        wide = '\U0001F600'  # one code point, four UTF-8 bytes
+        row = lambda key: {'assigneeKey': key, 'displayName': wide * 200, 'notes': wide * 500, 'capacity': '1'}
+        self.patch_rows([row(f'p{i}') for i in range(50)])
+        before = self.get()
+        self.assert_error('review_response_limit', 413, self.patch_rows, [row(f'q{i}') for i in range(50)])
+        after = self.get()
+        self.assertEqual((after['revision'], len(after['rows'])), (before['revision'], 50))
+        # A first write that would already be too large creates no document at all.
+        self.patch_rows([{'assigneeKey': 'only', 'capacity': '1'}], sprint='19')
+        documents = self.count()
+        with patch.object(capacity, 'MAX_RESPONSE_BYTES', 1100):
+            self.assert_error('review_response_limit', 413, self.patch_rows, [{'assigneeKey': 'new', 'capacity': '1'}], '22')
+        self.assertEqual(self.count(), documents)
+
+    def test_lock_and_statement_timeouts_map_to_assignee_capacity_busy(self):
+        class Orig(Exception):
+            def __init__(self, sqlstate):
+                super().__init__(sqlstate)
+                self.sqlstate = sqlstate
+        for sqlstate in ('55P03', '57014'):
+            with patch.object(capacity.db_engine, 'session_scope', side_effect=capacity.DBAPIError('s', {}, Orig(sqlstate))):
+                self.assert_error('assignee_capacity_busy', 503, self.patch_rows, [{'assigneeKey': 'a', 'capacity': '1'}])
+        with patch.object(capacity.db_engine, 'session_scope', side_effect=capacity.DBAPIError('s', {}, Orig('23505'))):
+            with self.assertRaises(capacity.DBAPIError):
+                self.patch_rows([{'assigneeKey': 'a', 'capacity': '1'}])
+
     def test_document_cap_per_workspace(self):
         with patch.object(capacity, 'MAX_DOCUMENTS_PER_WORKSPACE', 2):
             self.patch_rows([{'assigneeKey': 'a', 'capacity': '1'}], sprint='1')

@@ -5,13 +5,15 @@ import IconButton from '../ui/IconButton.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeRowColor, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, mayBeIncomplete, teamTasks, validateCellDraft,
+    applyChangesToDocument, assigneeRowColor, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, hiddenSelectedCount, mayBeIncomplete, teamTasks, validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
-const EXPANDED_KEY = 'jep.planningAssigneeCapacityExpanded';
-const readExpanded = () => { try { return window.localStorage.getItem(EXPANDED_KEY) === '1'; } catch (_error) { return false; } };
-const writeExpanded = expanded => { try { window.localStorage.setItem(EXPANDED_KEY, expanded ? '1' : '0'); } catch (_error) { /* storage unavailable */ } };
+// The strip's own preference (the UI-prefs object is rewritten from App state). The pre-release key
+// `jep.planningAssigneeCapacityExpanded` is not read: it never shipped, so the strip simply starts collapsed once.
+export const EXPANDED_KEY = 'jira_dashboard_planning_assignee_capacity_v1';
+const readExpanded = () => { try { return JSON.parse(window.localStorage.getItem(EXPANDED_KEY) || 'null')?.expanded === true; } catch (_error) { return false; } };
+const writeExpanded = expanded => { try { window.localStorage.setItem(EXPANDED_KEY, JSON.stringify({ expanded })); } catch (_error) { /* storage unavailable */ } };
 
 export const PlanningAssigneeCapacityContext = React.createContext(null);
 export const usePlanningAssigneeCapacityView = () => React.useContext(PlanningAssigneeCapacityContext);
@@ -87,13 +89,14 @@ function PersonRow({ row, color, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, editors, sprintName, incomplete }) {
+function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, editors, sprintName, incomplete, hiddenSelected, tinted }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
     return <>
-        {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}.</p>}
+        {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}. Editing any value saves this Sprint's own copy.</p>}
         {incomplete && <p className="planning-review-guidance">Total effort may be incomplete: one load returns at most 250 issues per request.</p>}
+        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Selected effort.</p>}
         <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity">
             <thead><tr>
                 <th className="planning-assignee-name">Assignee</th>
@@ -112,7 +115,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, ed
                     <td className="planning-review-storyPoints" />
                     <td className="planning-assignee-note" />
                 </tr>}
-                {rows.map(row => <PersonRow key={row.key} row={row} color={assigneeRowColor(row, colorMap)} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
+                {rows.map(row => <PersonRow key={row.key} row={row} color={tinted ? assigneeRowColor(row, colorMap) : null} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
             </tbody>
             <tfoot><tr>
                 <td className="planning-assignee-name">Total</td>
@@ -124,13 +127,14 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, ed
             </tr></tfoot>
         </table>
         {removed.length > 0 && !readOnly && <p className="planning-review-guidance planning-assignee-removed">
-            <span aria-hidden="true">☹</span> Removed from this Sprint:{' '}
-            {removed.map((person, index) => <React.Fragment key={person.key}>{index > 0 && ', '}
-                <button type="button" className="planning-review-text-button" aria-label={`Restore ${person.name}`} onClick={() => onRestore(person.key)}>{person.name}</button>
-            </React.Fragment>)}
+            Removed from this Sprint and later ones:{' '}
+            {removed.map((person, index) => <span key={person.key}>
+                <button type="button" className="planning-review-text-button" aria-label={`Restore ${person.name}`} onClick={() => onRestore(person.key)}>{person.name}</button>{index < removed.length - 1 && ','}
+            </span>)}
         </p>}
-        {failed && <p className="planning-review-guidance" role="alert">{state.error || 'Assignee capacity could not be saved.'}{' '}
-            <button type="button" className="planning-action-button" onClick={onRetry}>Retry</button>
+        {failed && <p className="planning-review-guidance" role="alert" data-assignee-save-failed>Not saved: {state.error || 'Assignee capacity could not be saved.'}{' '}
+            <button type="button" className="planning-action-button" onClick={onRetry}>Retry</button>{' '}
+            <button type="button" className="planning-action-button" onClick={onDiscard}>Discard changes</button>
         </p>}
     </>;
 }
@@ -139,16 +143,17 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, ed
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null,
+    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, selectedKeys = null,
 }) {
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
     const [expanded, setExpanded] = React.useState(readExpanded);
+    // The table mounts on the first expansion and then stays (hidden while collapsed); the data does not wait for it.
     const [opened, setOpened] = React.useState(expanded);
     const [host, setHost] = React.useState(null);
     React.useLayoutEffect(() => { setHost(document.getElementById(HOST_ID)); });
-    const active = oneTeam && opened;
-    const { state, controller } = usePlanningAssigneeCapacity({ backendUrl, sprintId: sprintId ? String(sprintId) : '', teamId, active });
+    // D6: the document is read whenever one Team is selected (the pinned bar's strip needs it), expanded or not.
+    const { state, controller } = usePlanningAssigneeCapacity({ backendUrl, sprintId: sprintId ? String(sprintId) : '', teamId, active: oneTeam });
     const editors = React.useRef(new Set()).current;
     const normalizeRef = React.useRef(normalizeStatus), teamInfoRef = React.useRef(getTeamInfo);
     normalizeRef.current = normalizeStatus; teamInfoRef.current = getTeamInfo;
@@ -166,6 +171,7 @@ export default function PlanningAssigneeCapacity({
     const onCommit = React.useCallback((key, field, value) => { controller.commit({ key, field, value }, document => shownRef.current(document)); }, [controller]);
     const onRestore = React.useCallback(key => onCommit(key, 'removed', false), [onCommit]);
     const onRetry = React.useCallback(() => controller.retry(), [controller]);
+    const onDiscard = React.useCallback(() => controller.discard(), [controller]);
     const sprintName = React.useCallback(id => (sprints || []).find(sprint => String(sprint.id) === String(id))?.name, [sprints]);
     const toggle = () => {
         if (expanded) [...editors].forEach(editor => editor());
@@ -174,7 +180,11 @@ export default function PlanningAssigneeCapacity({
         if (next) setOpened(true);
     };
     const incomplete = mayBeIncomplete({ laneIssueCounts: laneCounts || [] });
-    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, opened, rawCapacity }), [oneTeam, teamId, view, state, opened, rawCapacity]);
+    const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
+    const loaded = Boolean(state.document);
+    // Only people with an underbar segment are tinted, and the strip exists only with a Jira team number.
+    const tinted = Number(rawCapacity) > 0;
+    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity }), [oneTeam, teamId, view, state, loaded, rawCapacity]);
 
     const readOnly = !state.capabilities.canSave;
     const hidden = state.load === 'ready' && !state.capabilities.canRead;
@@ -187,14 +197,14 @@ export default function PlanningAssigneeCapacity({
         else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} editors={editors} sprintName={sprintName} incomplete={incomplete} />
+            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} />
         </>;
     }
     const strip = oneTeam && !hidden && host ? createPortal(
         <div className={`capacity-panel open${expanded ? '' : ' capacity-panel-collapsed'}`} data-assignee-capacity>
             <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={expanded} aria-controls="planning-assignee-capacity-body" onClick={toggle}>
                 <span className="capacity-title">Assignee Capacity (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
-                <span className="capacity-subtitle" role="status">{status}</span>
+                <span className="capacity-subtitle" role="status" data-save-state={state.save}>{status}</span>
             </button>
             <div id="planning-assignee-capacity-body" className="capacity-grid-wrapper" key={`${sprintId}|${teamId}`}>{body}</div>
         </div>, host) : null;

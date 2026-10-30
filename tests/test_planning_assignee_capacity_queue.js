@@ -139,7 +139,7 @@ test('an unconfirmed PATCH whose fields are all stored finishes without a second
 test('a failed save keeps the draft visible and rides along with the next commit', async () => {
     let fail = true;
     const sent = [];
-    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => { sent.push(payload); if (fail) { const error = new Error('Server said no'); error.status = 400; throw error; } return { revision: 2, rows: [] }; } });
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => { sent.push(payload); if (fail) { const error = new Error('Server said no'); error.status = 503; throw error; } return { revision: 2, rows: [] }; } });
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
     await settle();
     controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
@@ -218,4 +218,158 @@ test('the CSRF cache object is shared by every PATCH of the queue', async () => 
     controller.commit({ key: 'u1', field: 'capacity', value: '7' }, buildShown); await fire();
     assert.equal(seen.length, 2);
     assert.equal(seen[0], seen[1]);
+});
+
+test('a change the server refuses (400) waits for Retry or Discard and never rides along with later commits', async () => {
+    const sent = [];
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => {
+        sent.push(payload);
+        if (payload.changes.some(change => change.notes === 'bad')) { const error = new Error('Refused'); error.status = 400; throw error; }
+        return { revision: sent.length + 1, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: payload.changes[0].capacity ?? '5', vacations: null, notes: null, removed: false }] };
+    } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'notes', value: 'bad' }, buildShown);
+    await fire();
+    assert.equal(controller.getState().save, 'failed');
+    assert.equal(controller.getState().changes[0].notes, 'bad', 'the refused draft stays visible');
+    controller.commit({ key: 'u2', field: 'capacity', value: '4' }, buildShown);
+    await fire();
+    assert.deepEqual(sent[1].changes, [{ assigneeKey: 'u2', displayName: 'Bob', capacity: '4' }], 'the refused change is not resent with a later batch');
+    assert.equal(controller.getState().save, 'failed', 'still Not saved while a refused change waits');
+    assert.ok(controller.isBusy());
+    controller.discard();
+    assert.equal(controller.getState().save, 'idle');
+    assert.equal(controller.getState().error, '');
+    assert.deepEqual(controller.getState().changes, []);
+    assert.equal(controller.isBusy(), false);
+    await fire();
+    assert.equal(sent.length, 2, 'discard sends nothing');
+});
+
+test('a newer commit of a refused field replaces it; Retry resends refused changes', async () => {
+    let refuse = true;
+    const sent = [];
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => { sent.push(payload); if (refuse) { const error = new Error('Refused'); error.status = 400; throw error; } return { revision: 2, rows: [] }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'notes', value: 'bad' }, buildShown);
+    await fire();
+    refuse = false;
+    controller.commit({ key: 'u1', field: 'notes', value: 'good' }, buildShown);
+    await fire();
+    assert.deepEqual(sent[1].changes, [{ assigneeKey: 'u1', notes: 'good' }]);
+    assert.equal(controller.getState().save, 'saved');
+    refuse = true;
+    controller.commit({ key: 'u1', field: 'vacations', value: '2' }, buildShown);
+    await fire();
+    assert.equal(controller.getState().save, 'failed');
+    refuse = false;
+    controller.retry();
+    await settle();
+    assert.deepEqual(sent.at(-1).changes, [{ assigneeKey: 'u1', displayName: 'Ann', vacations: '2' }]);
+    assert.equal(controller.getState().save, 'saved');
+});
+
+test('an invalid displayName snapshot is cleaned before sending, so it cannot fail the batch', async () => {
+    const sent = [];
+    const { controller, fire } = await fixture({ save: async (_u, _s, payload) => { sent.push(payload); return { revision: 2, rows: [] }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    const shown = () => ({ rows: [{ key: 'u9', storyName: `Long\u0007${'y'.repeat(250)}`, storedName: null, capacity: null }], removedKeys: [] });
+    controller.commit({ key: 'u9', field: 'capacity', value: '3' }, shown);
+    await fire();
+    const [change] = sent[0].changes;
+    assert.equal(change.displayName.length, 200);
+    assert.equal(/[\u0000-\u001f]/.test(change.displayName), false);
+});
+
+test('a failed background save is kept per scope: a revisit shows Not saved with the drafts and Retry; at most five scopes are kept', async () => {
+    let fail = true;
+    const sent = [];
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, sprintId, payload) => { sent.push({ sprintId, payload }); if (fail) { const error = new Error('Server unavailable'); error.status = 503; throw error; } return { revision: 2, rows: [] }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
+    controller.setScope({ sprintId: '100', teamId: 't2', active: true });
+    await settle();
+    assert.equal(sent.length, 1);
+    assert.equal(controller.getState().save, 'idle', 'the left scope\'s failure does not show here');
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(controller.getState().save, 'failed');
+    assert.equal(controller.getState().error, 'Server unavailable');
+    assert.equal(controller.getState().changes[0].capacity, '6');
+    fail = false;
+    controller.retry();
+    await settle();
+    assert.equal(controller.getState().save, 'saved');
+    assert.deepEqual(sent.at(-1).payload.changes, [{ assigneeKey: 'u1', capacity: '6' }]);
+    // Six failed scopes: the oldest is dropped.
+    fail = true;
+    for (const team of ['a1', 'a2', 'a3', 'a4', 'a5', 'a6']) {
+        controller.setScope({ sprintId: '100', teamId: team, active: true });
+        await fire();
+        controller.commit({ key: 'u1', field: 'capacity', value: '7' }, buildShown);
+    }
+    controller.setScope({ sprintId: '100', teamId: 'done', active: true });
+    await settle();
+    await fire();
+    controller.setScope({ sprintId: '100', teamId: 'a6', active: true });
+    assert.equal(controller.getState().save, 'failed');
+    controller.setScope({ sprintId: '100', teamId: 'a1', active: true });
+    assert.equal(controller.getState().save, 'idle', 'the sixth-oldest failed scope is no longer kept');
+    assert.deepEqual(controller.getState().changes, []);
+});
+
+test('returning to a scope whose save is still running reuses its queue: one request, and the late response shows there', async () => {
+    const gate = deferred();
+    const sent = [];
+    const { controller, buildShown } = await fixture({ save: (_u, _s, payload) => { sent.push(payload); return gate.promise; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
+    controller.setScope({ sprintId: '100', teamId: 't2', active: true });
+    await settle();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(controller.getState().save, 'saving');
+    gate.resolve({ revision: 2, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '6', vacations: null, notes: null, removed: false }] });
+    await settle();
+    assert.equal(sent.length, 1);
+    assert.equal(controller.getState().save, 'saved');
+    assert.equal(controller.getState().document.rows[0].capacity, '6');
+});
+
+test('a 403 csrf_required clears the cached token and resends once with a fresh one', async () => {
+    const tokens = [];
+    let calls = 0;
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, _p, options) => {
+        calls += 1;
+        tokens.push(options.csrf.token);
+        if (calls === 1) { options.csrf.token = 'stale'; const error = new Error('csrf'); error.status = 403; error.code = 'csrf_required'; throw error; }
+        options.csrf.token = 'fresh';
+        return { revision: 2, rows: [] };
+    } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
+    await fire();
+    assert.equal(calls, 2);
+    assert.deepEqual(tokens, [null, null], 'the second attempt starts without the rejected token');
+    assert.equal(controller.getState().save, 'saved');
+    controller.commit({ key: 'u1', field: 'capacity', value: '7' }, buildShown);
+    await fire();
+    assert.equal(tokens.at(-1), 'fresh', 'the refetched token is reused by the queue');
+});
+
+test('D6: the document is read once per one-Team scope whether or not the strip is expanded', async () => {
+    const { controller, calls } = await fixture();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(calls.gets.length, 1);
+    controller.setScope({ sprintId: '100', teamId: '', active: false });
+    await settle();
+    assert.equal(calls.gets.length, 1, 'no scope (two Teams or All) reads nothing');
 });

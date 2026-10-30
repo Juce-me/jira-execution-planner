@@ -7,6 +7,7 @@ document under a row lock, then merges the changes field by field (last write wi
 """
 from copy import deepcopy
 from decimal import Decimal
+import json
 import re
 import unicodedata
 import uuid
@@ -26,6 +27,8 @@ MAX_DOCUMENTS_PER_WORKSPACE = 2000
 MAX_NUMBER = Decimal('10000')
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 256 * 1024
+# Headroom for what the route adds to a saved document (`capabilities`), so a stored document always reads back.
+RESPONSE_RESERVE_BYTES = 1024
 LOCK_TIMEOUT = '3s'
 CHANGE_KEYS = ('assigneeKey', 'displayName', 'capacity', 'vacations', 'notes', 'removed')
 FIELD_KEYS = CHANGE_KEYS[1:]
@@ -160,6 +163,13 @@ def get_document(context, sprint_id, team_id, database_url=None):
         return _document(sprint_id, team_id, _nearest(session, context.workspace_id, sprint_id, team_id))
 
 
+def _require_readable(document):
+    """Write-time size guard: a document whose response would exceed the read limit is never stored."""
+    encoded = json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
+    if len(encoded) + RESPONSE_RESERVE_BYTES > MAX_RESPONSE_BYTES:
+        raise ReviewError('review_response_limit', 413)
+
+
 def _unavailable(error):
     code = getattr(getattr(error, 'orig', None), 'sqlstate', None)
     return code in {'55P03', '57014'}
@@ -215,6 +225,7 @@ def _apply(session, context, sprint_id, team_id, changes):
         if merged == current:
             return _document(sprint_id, team_id, row)
         row.revision += 1
+    _require_readable({'teamId': team_id, 'sprintId': sprint_id, 'revision': row.revision, 'rows': merged, 'inherited': None})
     row.rows = merged
     session.flush()
     return _document(sprint_id, team_id, row)

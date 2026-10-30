@@ -1,5 +1,6 @@
 import { getCapacityStatus } from './planningCapacityUtils.js';
-import { buildTeamColorMap, resolveTeamColor } from '../stats/statsUtils.js';
+import { hashTeamId } from '../stats/statsUtils.js';
+import { RADAR_PALETTE } from '../stats/statsConstants.js';
 
 // One ENG task-load request collects at most this many issues (jira_server.py fetch_tasks).
 export const TASK_LOAD_LIMIT = 250;
@@ -56,6 +57,18 @@ export function validateNoteDraft(text) {
     return { ok: true, value: value.trim() ? value : null };
 }
 
+export const MAX_DISPLAY_NAME_LENGTH = 200;
+
+// A Story's display name made safe to send as a `displayName` snapshot (the server rejects more than 200 characters or
+// control characters, which would fail the whole batch): control characters removed, cut to 200 code points; null when
+// nothing is left, so the change is sent without a name.
+export function sanitizeDisplayName(name) {
+    if (typeof name !== 'string') return null;
+    const clean = Array.from(name.replace(/[\u0000-\u001f\u007f-\u009f]/g, '')).slice(0, MAX_DISPLAY_NAME_LENGTH).join('');
+    return clean.trim() ? clean : null;
+}
+export const isValidDisplayName = name => typeof name === 'string' && Array.from(name).length <= MAX_DISPLAY_NAME_LENGTH && !hasControl(name);
+
 export function validateCellDraft(field, text) {
     if (NUMBER_FIELDS.includes(field)) return validateNumberDraft(text);
     if (field === 'notes') return validateNoteDraft(text);
@@ -108,6 +121,14 @@ export function teamTasks(tasks, { teamId, getTeamInfo, normalizeStatus }) {
 }
 
 export const totalEffortByAssignee = (tasks, options) => accumulate(teamTasks(tasks, options));
+
+// Checked Stories of the Team that the filters keep out of Selected effort (and out of the capacity bar's Selected):
+// `selectedMap` is the Planning selection ({issueKey: true}), `selectedTasks` the filtered list both sum.
+export function hiddenSelectedCount(teamTasksList, selectedMap, selectedTasks) {
+    if (!selectedMap) return 0;
+    const counted = new Set((selectedTasks || []).map(task => task.key));
+    return (teamTasksList || []).filter(task => selectedMap[task.key] && !counted.has(task.key)).length;
+}
 
 // One load returns at most TASK_LOAD_LIMIT issues per request (Product and Tech are separate requests),
 // so a lane at the limit may have dropped Stories and Total effort may be understated.
@@ -190,8 +211,8 @@ export function buildAssigneeRows({
         selectedHundredths: peopleSelectedH + selected.unassigned.hundredths,
         totalHundredths: sumHundredths(active.map(row => row.totalHundredths)) + total.unassigned.hundredths,
         vacationsHundredths: sumHundredths(active.map(row => numberStringToHundredths(row.vacations) || 0)),
-        // people's Selected only, against the sum of Capacity
-        cue: active.some(row => numberStringToHundredths(row.capacity) != null) ? capacityCue(peopleSelectedH, capacityH) : '',
+        // the displayed Selected total (people plus Unassigned) against the sum of Capacity, the numbers the row shows
+        cue: active.some(row => numberStringToHundredths(row.capacity) != null) ? capacityCue(peopleSelectedH + selected.unassigned.hundredths, capacityH) : '',
     };
     return {
         rows: active,
@@ -243,7 +264,8 @@ export function buildChanges(commits, shownRows, removedKeys = []) {
             if (!equalValue(field, current, value)) change[field] = value;
         }
         if (Object.keys(change).length === 1) continue;
-        if (row?.storyName && row.storyName !== row.storedName) change.displayName = row.storyName;
+        const storyName = sanitizeDisplayName(row?.storyName);
+        if (storyName && storyName !== row.storedName) change.displayName = storyName;
         changes.push(change);
     }
     return changes;
@@ -338,11 +360,27 @@ export function underbarOnBarAxis(model, barCapacity, multiplier = 1) {
     return { people, unassignedValue, stacked: stackedHundredths / 100, overflow: overflowHundredths / 100, overflowHundredths };
 }
 
-// One colour source for a person's underbar segment and tinted table row: the sorted-index map over every row of the view.
+// The stats palette without the colours that clash with the Unassigned pink/red (`--warn`, the over cue) and the amber
+// bar and amber under-cue text: lemon, magenta and amber are left out.
+const CLASHING = new Set(['#eab308', '#db2777', '#d97706']);
+export const ASSIGNEE_PALETTE = RADAR_PALETTE.filter(color => !CLASHING.has(color));
+
+// One colour source for a person's underbar segment and tinted table row: the sorted-index map (name, then key) over
+// every row of the view, as buildTeamColorMap, on ASSIGNEE_PALETTE.
 export function buildAssigneeColorMap(rows) {
-    return buildTeamColorMap((rows || []).map(row => ({ id: row.key, name: row.name })));
+    const byKey = new Map();
+    (rows || []).forEach(row => { const key = String(row?.key || '').trim(); if (key && !byKey.has(key)) byKey.set(key, String(row?.name || key).trim() || key); });
+    return Object.fromEntries([...byKey.entries()]
+        .sort(([leftKey, left], [rightKey, right]) => {
+            const a = left.toLowerCase(), b = right.toLowerCase();
+            return a < b ? -1 : a > b ? 1 : leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+        })
+        .map(([key], index) => [key, ASSIGNEE_PALETTE[index % ASSIGNEE_PALETTE.length]]));
 }
-export const resolveAssigneeColor = (key, colorMap) => resolveTeamColor(key, colorMap);
+export function resolveAssigneeColor(key, colorMap) {
+    const id = String(key || '').trim();
+    return (id && colorMap?.[id]) || ASSIGNEE_PALETTE[hashTeamId(id) % ASSIGNEE_PALETTE.length];
+}
 // Only people with a Capacity have an underbar segment, so only they get a row tint (null otherwise).
 export function assigneeRowColor(row, colorMap) {
     return numberStringToHundredths(row.capacity) > 0 ? resolveAssigneeColor(row.key, colorMap) : null;

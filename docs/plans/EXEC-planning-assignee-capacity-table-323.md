@@ -201,7 +201,7 @@ Storage in the app database, with a stored display-name snapshot per person; Cap
 | 5 Underbar | `bc094d30`, `1ba54f55` | Strip, then `variant="strip"`, pointer/z-index fixes, row tint. `0e7c84bc` (card-embedded bar) reverted by `5c2617fc`. |
 | 5b Sync with `origin/main` | `673b7dc3` | Merged without conflicts; `dashboard.jsx` 7,288 lines (ceiling 7,291). |
 | 6 Strip rework (6a) | this commit | Shared `capacityAxis`, overflow mark, whole-track hover, card bar on the shared scale; 95 Chromium tests in the three Planning specs. `capacityMultiplier` is derived in `useAssigneeUnderbar` as `totalCapacityAdjusted / rawCapacity` (Task 8 must keep `rawCapacity` equal to the merged value or pass it in). Re-baselined: Ann's segment 8/20 to 8/23 of the track; over-capacity card fill 1.0 to 0.769, marker 0.769 to 0.549. Integration specs needed only new one-team cases. |
-| 6b Defect fixes | not started | Fixture already answers the assignee-capacity route. |
+| 6b Defect fixes | this commit | D6 always-on fetch for one team, displayed-number Totals cue, collapsed-header status, 400/413 changes held as drafts with Retry and Discard, retained failed queues (last five), new copy, palette, key renamed to `jira_dashboard_planning_assignee_capacity_v1` (old key ignored), `_require_readable` write guard (413). Unverified: headed Firefox and WebKit, full runs, render counts, bundle delta. Choices: only 400 and 413 count as rejected; invalid `displayName` is cleaned, not rejected; Killed Stories count in Selected effort as in the bar. |
 | 7 Freshness, reading position, budgets | not started | Enable gate and lazy fetch with abort, cache and settle exist today. |
 | 8 Planned team capacity | not started | |
 | 9 Add assignee | not started | |

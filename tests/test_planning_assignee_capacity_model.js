@@ -229,7 +229,7 @@ test('mayBeIncomplete flags a lane at the 250-issue request cap', async () => {
     assert.equal(m.mayBeIncomplete(), false);
 });
 
-test('underbar: raw Jira capacity is the denominator, else the sum of Capacity, else no bar', async () => {
+test('bar: the track spans the raw Jira capacity when it exceeds the segments (remainder is unallocated), else the sum of the segments, else no bar', async () => {
     const m = await load();
     const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'b', 'Bob', 5), story('S-3', undefined, null, 4)];
     const doc = { revision: 1, rows: [
@@ -237,20 +237,27 @@ test('underbar: raw Jira capacity is the denominator, else the sum of Capacity, 
         { assigneeKey: 'b', displayName: 'Bob', capacity: '6', vacations: null, notes: null, removed: false },
     ] };
     const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[0]] });
+    // segments: 8 + 6 + Unassigned effort 4 = 18
     const raw = m.buildUnderbar(view, 20);
     assert.equal(raw.source, 'jira');
+    assert.equal(raw.segmentsHundredths, 1800);
     assert.equal(raw.denominatorHundredths, 2000);
     assert.deepEqual(raw.people.map(person => [person.key, person.capacityHundredths]), [['a', 800], ['b', 600]]);
+    const small = m.buildUnderbar(view, 10);
+    assert.equal(small.source, 'jira');
+    assert.equal(small.rawHundredths, 1000);
+    assert.equal(small.denominatorHundredths, 1800, 'raw below the segments never shrinks the track');
     const sum = m.buildUnderbar(view, null);
     assert.equal(sum.source, 'sum');
-    assert.equal(sum.denominatorHundredths, 1400);
+    assert.equal(sum.denominatorHundredths, 1800);
     assert.equal(m.buildUnderbar(view, 0).source, 'sum');
     const empty = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: [], selectedTasks: [] });
     assert.equal(m.buildUnderbar(empty, null), null);
+    assert.equal(m.buildUnderbar(empty, 20), null, 'a raw number alone shows nothing');
     assert.equal(m.buildUnderbar(null, null), null);
 });
 
-test('underbar: Unassigned is the unassigned Total effort and removed or capacity-less people are excluded', async () => {
+test('bar: Unassigned is the unassigned Total effort and removed or capacity-less people are excluded', async () => {
     const m = await load();
     const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'c', 'Cy', 2), story('S-3', undefined, null, 4), story('S-4', 'none', null, 1)];
     const doc = { revision: 1, rows: [
@@ -264,13 +271,17 @@ test('underbar: Unassigned is the unassigned Total effort and removed or capacit
     assert.equal(bar.unassigned.totalHundredths, 500);
     assert.equal(bar.unassigned.selectedHundredths, 400);
     assert.equal(bar.unassigned.name, 'Unassigned (effort)');
-    // Unassigned alone does not make a bar without any capacity number
-    const noNumber = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: m.teamTasks([tasks[2]], options), selectedTasks: [] });
-    assert.equal(m.buildUnderbar(noNumber, null), null);
-    assert.equal(m.buildUnderbar(noNumber, 10).unassigned.totalHundredths, 400);
+    assert.equal(bar.denominatorHundredths, 1300);
+    // No segment at all means no bar, whatever the raw capacity is.
+    const noSegment = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: m.teamTasks([], options), selectedTasks: [] });
+    assert.equal(m.buildUnderbar(noSegment, 10), null);
+    // Unassigned effort alone is a segment: the bar spans it, or the raw capacity when larger.
+    const only = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: m.teamTasks([tasks[2]], options), selectedTasks: [] });
+    assert.equal(m.buildUnderbar(only, null).denominatorHundredths, 400);
+    assert.equal(m.buildUnderbar(only, 10).denominatorHundredths, 1000);
 });
 
-test('a person row tint equals the underbar segment colour for every person, and people without Capacity get none', async () => {
+test('a person row tint equals the bar segment colour for every person, and people without Capacity get none', async () => {
     const m = await load();
     const { resolveTeamColor, buildTeamColorMap } = await import('../frontend/src/stats/statsUtils.js');
     const row = (key, name, capacity) => ({ key, name, capacity, selectedHundredths: 0, totalHundredths: 0 });

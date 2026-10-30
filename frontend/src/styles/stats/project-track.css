@@ -245,35 +245,6 @@
             flex-shrink: 0;
         }
 
-        /* Strip variant (variant="strip", #323): a 5px label-less segmented strip for embedding inside another track,
-           e.g. the Planning assignee underbar. The wrapper decides where it sits and whether it takes the pointer;
-           only the segments take the pointer here, so whatever lies under a gap stays hoverable. */
-        .stacked-bar--strip,
-        .stacked-bar--strip .stacked-bar-rows,
-        .stacked-bar--strip .stacked-bar-row {
-            display: block;
-        }
-
-        .stacked-bar--strip .stacked-bar-meta,
-        .stacked-bar--strip .stacked-bar-segment span {
-            display: none;
-        }
-
-        .stacked-bar--strip .stacked-bar-track {
-            height: 5px;
-            border-radius: 0;
-        }
-
-        .stacked-bar--strip .stacked-bar-segment {
-            height: 5px;
-            pointer-events: auto;
-        }
-
-        .stacked-bar--strip .stacked-bar-segment:focus-visible {
-            outline: 1px solid #1f6feb;
-            outline-offset: -1px;
-        }
-
         .stacked-bar-empty {
             color: var(--text-secondary);
             font-size: 0.78rem;

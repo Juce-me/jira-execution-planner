@@ -86,12 +86,3 @@ test('resolveSegmentStrip renders one aligned strip per rendered segment with SP
     assert.deepEqual([...strips[0][3].matchAll(/width:([\d.]+)%/g)].map((m) => m[1]), ['75', '25']);
     assert.doesNotMatch(markup, /class="stacked-bar-strip"[^>]*onclick/i);
 });
-
-test('variant="strip" only adds the stacked-bar--strip hook to the root', () => {
-    const StackedBar = loadStackedBar();
-    const props = { rows, segmentOrder: order, resolveColor, ariaLabel: 'Bars' };
-    const plain = renderToStaticMarkup(React.createElement(StackedBar, props));
-    const strip = renderToStaticMarkup(React.createElement(StackedBar, { ...props, variant: 'strip' }));
-    assert.equal(strip, plain.replace('class="stacked-bar"', 'class="stacked-bar stacked-bar--strip"'));
-    assert.notEqual(strip, plain);
-});

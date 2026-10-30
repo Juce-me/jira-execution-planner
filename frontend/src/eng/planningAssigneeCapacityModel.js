@@ -302,35 +302,34 @@ export function pruneChange(change, document) {
     return fields ? next : null;
 }
 
-// ---- underbar -----------------------------------------------------------------
+// ---- assignee capacity bar ----------------------------------------------------
 
 export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';
 
-// Segments of the thin bar under the capacity bar: one per non-removed person with Capacity, plus a trailing
-// Unassigned segment sized by unassigned Total effort. The denominator is the raw Jira capacity, else the sum of
-// the people's Capacity; with no number at all there is no bar (null). Values are integer hundredths.
+// Segments of the assignee capacity bar under the Team card's bar: one per non-removed person with Capacity, plus a
+// trailing Unassigned segment sized by unassigned Total effort. The track spans the raw Jira capacity when it exceeds
+// the segments (the rest is unallocated track), else the sum of the segments; with no segment there is no bar (null).
+// Values are integer hundredths.
 export function buildUnderbar(view, rawCapacity = null) {
     const rows = view?.rows || [];
     const people = rows
         .map(row => ({ key: row.key, name: row.name, capacityHundredths: numberStringToHundredths(row.capacity) || 0, selectedHundredths: row.selectedHundredths, totalHundredths: row.totalHundredths }))
         .filter(person => person.capacityHundredths > 0);
-    const rawHundredths = Number(rawCapacity) > 0 ? toHundredths(rawCapacity) : 0;
-    const peopleCapacity = sumHundredths(people.map(person => person.capacityHundredths));
-    const denominatorHundredths = rawHundredths > 0 ? rawHundredths : peopleCapacity;
-    if (denominatorHundredths <= 0) return null;
     const unassigned = view?.unassigned?.totalHundredths > 0
         ? { key: UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', totalHundredths: view.unassigned.totalHundredths, selectedHundredths: view.unassigned.selectedHundredths }
         : null;
     if (!people.length && !unassigned) return null;
-    return { denominatorHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
+    const segmentsHundredths = sumHundredths(people.map(person => person.capacityHundredths)) + (unassigned ? unassigned.totalHundredths : 0);
+    const rawHundredths = Number(rawCapacity) > 0 ? toHundredths(rawCapacity) : 0;
+    return { denominatorHundredths: Math.max(rawHundredths, segmentsHundredths), segmentsHundredths, rawHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
 }
 
-// One colour source for a person's underbar segment and tinted table row: the sorted-index map over every row of the view.
+// One colour source for a person's bar segment and tinted table row: the sorted-index map over every row of the view.
 export function buildAssigneeColorMap(rows) {
     return buildTeamColorMap((rows || []).map(row => ({ id: row.key, name: row.name })));
 }
 export const resolveAssigneeColor = (key, colorMap) => resolveTeamColor(key, colorMap);
-// Only people with a Capacity have an underbar segment, so only they get a row tint (null otherwise).
+// Only people with a Capacity have a bar segment, so only they get a row tint (null otherwise).
 export function assigneeRowColor(row, colorMap) {
     return numberStringToHundredths(row.capacity) > 0 ? resolveAssigneeColor(row.key, colorMap) : null;
 }

@@ -60,8 +60,7 @@ export default function StackedBar({
     resolveSegmentLink,     // optional: ({ row, segmentKey, segment, value }) => tracked anchor props
     resolveSegmentStrip,    // optional: ({ row, segmentKey, segment, value }) => { parts: [{ key, label, colour, value }] }
     ariaLabel,
-    emptyText = 'No data in range.',
-    variant                 // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar
+    emptyText = 'No data in range.'
 }) {
     const rowList = Array.isArray(rows) ? rows : [];
     const order = Array.isArray(segmentOrder) ? segmentOrder : [];
@@ -90,7 +89,7 @@ export default function StackedBar({
     ) : null;
 
     return (
-        <div className={variant === 'strip' ? 'stacked-bar stacked-bar--strip' : 'stacked-bar'} role="group" aria-label={ariaLabel}>
+        <div className="stacked-bar" role="group" aria-label={ariaLabel}>
             {!rowList.length && <div className="stacked-bar-empty">{emptyText}</div>}
             {rowList.length > 0 && (
                 <div className="stacked-bar-rows">

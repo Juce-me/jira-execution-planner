@@ -138,7 +138,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, ed
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, laneCounts,
+    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null,
 }) {
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
@@ -173,7 +173,7 @@ export default function PlanningAssigneeCapacity({
         if (next) setOpened(true);
     };
     const incomplete = mayBeIncomplete({ laneIssueCounts: laneCounts || [] });
-    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, opened }), [oneTeam, teamId, view, state, opened]);
+    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, opened, rawCapacity }), [oneTeam, teamId, view, state, opened, rawCapacity]);
 
     const readOnly = !state.capabilities.canSave;
     const hidden = state.load === 'ready' && !state.capabilities.canRead;

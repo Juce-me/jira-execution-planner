@@ -11,3 +11,11 @@
 .planning-assignee-removed { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.25rem; margin: 0.5rem 0 0; }
 .planning-assignee-note .planning-review-input { text-overflow: ellipsis; }
 .planning-assignee-removed .planning-review-text-button { text-transform: none; }
+
+/* Underbar (#323): the thin per-person strip at the bottom of the capacity track; it adds no height. */
+.planning-assignee-underbar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; border-radius: 5px; overflow: hidden; z-index: 2; }
+.planning-assignee-underbar .stacked-bar, .planning-assignee-underbar .stacked-bar-rows, .planning-assignee-underbar .stacked-bar-row { display: block; }
+.planning-assignee-underbar .stacked-bar-meta { display: none; }
+.planning-assignee-underbar .stacked-bar-track { height: 5px; border-radius: 0; }
+.planning-assignee-underbar .stacked-bar-segment { height: 5px; }
+.planning-assignee-underbar .stacked-bar-segment span { display: none; }

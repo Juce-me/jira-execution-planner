@@ -60,7 +60,7 @@ function capacityServer({ inherited = null, rows = [], capabilities = caps, dela
     return { state, handler };
 }
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {} } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '' } = {}) {
     const calls = [];
     await installDashboardShell(page);
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
@@ -73,11 +73,12 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         if (url.pathname === '/api/epm/access') return json(route, { state: 'disabled', epmHomeReadAvailable: false });
         if (url.pathname === '/api/config') {
             return json(route, {
-                jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'basic', epmViewEnabled: false, epmHomeReadAvailable: false,
+                jiraUrl: 'https://jira.example', capacityProject, authMode: 'basic', epmViewEnabled: false, epmHomeReadAvailable: false,
                 projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true,
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', version: 1, view: { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showScenario: false } },
             });
         }
+        if (url.pathname === '/api/capacity') return json(route, { enabled: true, mutationEnabled: false, sprint: url.searchParams.get('sprint'), capacities: { 'Alpha Team': 20 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 20 }] });
         if (url.pathname === '/api/version') return json(route, { enabled: false });
         if (url.pathname === '/api/groups-config') {
             return json(route, {
@@ -349,5 +350,98 @@ test('a touch tap toggles the strip, removes and restores', async ({ browser }) 
     await rowOf(page, 'acc-cy').getByRole('button', { name: 'Remove Cy Former' }).tap();
     await strip(page).getByRole('button', { name: 'Restore Cy Former' }).tap();
     await expect(rowOf(page, 'acc-cy')).toHaveCount(1);
+    await context.close();
+});
+
+// ---- underbar (#323 Task 5) -------------------------------------------------------------------
+
+const underbarRows = [
+    { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: '6', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: null, vacations: null, notes: null, removed: false },
+];
+const underbar = page => page.locator('.planning-panel [data-assignee-underbar]');
+const segments = page => underbar(page).locator('.stacked-bar-segment');
+const readout = page => page.locator('.stacked-bar-readout');
+async function expectReadoutInViewport(page) {
+    const viewport = page.viewportSize();
+    const box = await readout(page).boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
+
+test('the underbar is absent until the strip has been expanded once, then stays', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-track')).toBeVisible();
+    await expect(underbar(page)).toHaveCount(0);
+    await expand(page);
+    await expect(underbar(page)).toHaveCount(1);
+    await stripToggle(page).click();
+    await expect(underbar(page)).toHaveCount(1);
+});
+
+test('segments are one per person with Capacity plus Unassigned, distinct, proportional, and the readout stays on screen', async ({ page }) => {
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(segments(page)).toHaveCount(3);
+    const unassignedTotal = Number((await rowOf(page, 'unassigned').locator('td').nth(3).textContent()).trim());
+    const measure = await page.evaluate(() => {
+        const track = document.querySelector('[data-assignee-underbar] .stacked-bar-track').getBoundingClientRect();
+        const outer = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+        return { trackWidth: track.width, trackHeight: track.height, outerBottom: outer.bottom, trackBottom: track.bottom, outerHeight: outer.height,
+            segments: [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => ({ label: node.getAttribute('aria-label'), width: node.getBoundingClientRect().width, color: getComputedStyle(node).backgroundColor })) };
+    });
+    expect(measure.trackHeight).toBeGreaterThanOrEqual(4); expect(measure.trackHeight).toBeLessThanOrEqual(6);
+    expect(measure.trackBottom).toBeLessThanOrEqual(measure.outerBottom + 0.5);
+    expect(new Set(measure.segments.map(segment => segment.color)).size).toBe(3);
+    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / 20, 2);
+    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / 20, 2);
+    expect(measure.segments[2].label).toContain('Unassigned (effort)');
+    expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedTotal / 20, 2);
+    const before = await page.locator('.planning-panel').boundingBox();
+    await segments(page).nth(2).hover();
+    await expect(readout(page)).toContainText('Unassigned (effort)');
+    await expect(readout(page)).toContainText(`Total ${unassignedTotal}`);
+    await expectReadoutInViewport(page);
+    expect(await page.locator('.planning-panel').boundingBox()).toEqual(before);
+    expect(await readout(page).evaluate(node => node.hasAttribute('title') || node.closest('[title]') !== null)).toBe(false);
+    await segments(page).nth(0).hover();
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expect(readout(page)).toContainText('Capacity 8');
+    await expectReadoutInViewport(page);
+    await page.mouse.move(5, 400);
+    await expect(readout(page)).toHaveCount(0);
+});
+
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`the underbar adds no height to the compact panel or the pinned stack at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    const withoutBar = (await page.locator('.planning-panel').boundingBox()).height;
+    await expand(page);
+    await expect(underbar(page)).toHaveCount(1);
+    const panel = await page.locator('.planning-panel').boundingBox();
+    expect(panel.height).toBeLessThan(64);
+    expect(panel.height).toBeCloseTo(withoutBar, 0);
+    expect((await page.locator('.planning-review-sticky-stack').boundingBox()).height).toBeLessThanOrEqual(175);
+});
+
+test('tapping a segment shows its readout and a settled screenshot of the pinned panel is taken', async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: underbarRows });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
+    await expect(segments(page)).toHaveCount(3);
+    await segments(page).nth(1).tap();
+    await expect(readout(page)).toContainText('Bob Synthetic');
+    await expectReadoutInViewport(page);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/323-ui/underbar-pinned-panel.png' });
     await context.close();
 });

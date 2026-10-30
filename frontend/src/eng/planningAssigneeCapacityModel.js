@@ -300,3 +300,26 @@ export function pruneChange(change, document) {
     }
     return fields ? next : null;
 }
+
+// ---- underbar -----------------------------------------------------------------
+
+export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';
+
+// Segments of the thin bar under the capacity bar: one per non-removed person with Capacity, plus a trailing
+// Unassigned segment sized by unassigned Total effort. The denominator is the raw Jira capacity, else the sum of
+// the people's Capacity; with no number at all there is no bar (null). Values are integer hundredths.
+export function buildUnderbar(view, rawCapacity = null) {
+    const rows = view?.rows || [];
+    const people = rows
+        .map(row => ({ key: row.key, name: row.name, capacityHundredths: numberStringToHundredths(row.capacity) || 0, selectedHundredths: row.selectedHundredths, totalHundredths: row.totalHundredths }))
+        .filter(person => person.capacityHundredths > 0);
+    const rawHundredths = Number(rawCapacity) > 0 ? toHundredths(rawCapacity) : 0;
+    const peopleCapacity = sumHundredths(people.map(person => person.capacityHundredths));
+    const denominatorHundredths = rawHundredths > 0 ? rawHundredths : peopleCapacity;
+    if (denominatorHundredths <= 0) return null;
+    const unassigned = view?.unassigned?.totalHundredths > 0
+        ? { key: UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', totalHundredths: view.unassigned.totalHundredths, selectedHundredths: view.unassigned.selectedHundredths }
+        : null;
+    if (!people.length && !unassigned) return null;
+    return { denominatorHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
+}

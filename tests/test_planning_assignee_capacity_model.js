@@ -228,3 +228,44 @@ test('mayBeIncomplete flags a lane at the 250-issue request cap', async () => {
     assert.equal(m.mayBeIncomplete({ laneIssueCounts: [], capped: true }), true);
     assert.equal(m.mayBeIncomplete(), false);
 });
+
+test('underbar: raw Jira capacity is the denominator, else the sum of Capacity, else no bar', async () => {
+    const m = await load();
+    const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'b', 'Bob', 5), story('S-3', undefined, null, 4)];
+    const doc = { revision: 1, rows: [
+        { assigneeKey: 'a', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false },
+        { assigneeKey: 'b', displayName: 'Bob', capacity: '6', vacations: null, notes: null, removed: false },
+    ] };
+    const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[0]] });
+    const raw = m.buildUnderbar(view, 20);
+    assert.equal(raw.source, 'jira');
+    assert.equal(raw.denominatorHundredths, 2000);
+    assert.deepEqual(raw.people.map(person => [person.key, person.capacityHundredths]), [['a', 800], ['b', 600]]);
+    const sum = m.buildUnderbar(view, null);
+    assert.equal(sum.source, 'sum');
+    assert.equal(sum.denominatorHundredths, 1400);
+    assert.equal(m.buildUnderbar(view, 0).source, 'sum');
+    const empty = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: [], selectedTasks: [] });
+    assert.equal(m.buildUnderbar(empty, null), null);
+    assert.equal(m.buildUnderbar(null, null), null);
+});
+
+test('underbar: Unassigned is the unassigned Total effort and removed or capacity-less people are excluded', async () => {
+    const m = await load();
+    const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'c', 'Cy', 2), story('S-3', undefined, null, 4), story('S-4', 'none', null, 1)];
+    const doc = { revision: 1, rows: [
+        { assigneeKey: 'a', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false },
+        { assigneeKey: 'c', displayName: 'Cy', capacity: null, vacations: null, notes: null, removed: false },
+        { assigneeKey: 'gone', displayName: 'Gone', capacity: '9', vacations: null, notes: null, removed: true },
+    ] };
+    const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[2]] });
+    const bar = m.buildUnderbar(view, null);
+    assert.deepEqual(bar.people.map(person => person.key), ['a']);
+    assert.equal(bar.unassigned.totalHundredths, 500);
+    assert.equal(bar.unassigned.selectedHundredths, 400);
+    assert.equal(bar.unassigned.name, 'Unassigned (effort)');
+    // Unassigned alone does not make a bar without any capacity number
+    const noNumber = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: m.teamTasks([tasks[2]], options), selectedTasks: [] });
+    assert.equal(m.buildUnderbar(noNumber, null), null);
+    assert.equal(m.buildUnderbar(noNumber, 10).unassigned.totalHundredths, 400);
+});

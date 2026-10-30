@@ -1,4 +1,4 @@
-// Build only the fixture controller; it imports production Settings components unchanged.
+// Build the synthetic fixture using the actual Settings components and opt-in mapping rows.
 const path = require('node:path');
 const fs = require('node:fs');
 const esbuild = require('esbuild');

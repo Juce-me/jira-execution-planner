@@ -1,21 +1,18 @@
 # Quarterly project configurations design
 
-> **Status:** Proposed feature design, 2026-10-30. The document and mockup are design artifacts; application implementation is not complete.
+> **Status:** Proposed feature design, revised 2026-10-30. The Settings specimen is a local fixture; application migration, persistence and live Jira acceptance remain planned.
 
-This feature lets the dashboard keep its current project structure through `2026Q4` and use the new structure from `2027Q1`. A dashboard Sprint means one quarter. The viewed quarter selects the configuration automatically; choosing an item in Settings only chooses which configuration to edit.
-
-The migration uses two supported models. It does not require a new administrative lifecycle, a generic hierarchy designer or a Jira data migration.
+A dashboard Sprint means one quarter (`YYYYQn`). The initial configurations are Legacy through `2026Q4` and DELIVERY from `2027Q1`. These are editable initial ranges, not a hard-coded cutover. The viewed quarter selects the saved configuration automatically; selecting a left-hand item in Settings only chooses which configuration to edit.
 
 ## Settings layout
 
-Admin has this exact two-level hierarchy:
+Keep the approved two-level Admin navigation:
 
 ```text
 Admin
 ├─ Project config
 │  ├─ Left: Legacy / DELIVERY configuration list
-│  └─ Right: selected configuration editor
-│     ├─ Selected name and range summary
+│  └─ Right: selected name and range summary
 │     └─ Scope / Source / Field mapping nested tabs
 ├─ Capacity
 ├─ Priority weights
@@ -23,120 +20,145 @@ Admin
 └─ Performance
 ```
 
-Only **Project config** shows the configuration list, selected-name/range header and nested tabs. Capacity, Priority weights, Access and Performance display their existing workspace panels without that configuration chrome. Returning to Project config restores its selected configuration, nested tab and drafts.
+Only Project config shows the Department-style list and selected editor. Legacy is initially selected, and its name is edited inline in the selected left row, without a duplicate name input on the right. At compact widths, the list uses the existing Configurations drawer. Global panels hide configuration chrome; returning restores the selected configuration, nested tab and drafts.
 
-The left list follows the Department groups pattern. Legacy is initially selected; rename it inline in its selected left row. Do not duplicate its name input on the right. On compact screens, the list becomes the existing-style Configurations drawer.
+- **Scope:** editable start/end quarters and Jira project chips, with existing Add/remove/search behavior. Render sections from the stored project classifications, so changing a Jira issue-type mapping cannot hide a selected project. Legacy retains its current Product/Tech split. DELIVERY initially selects one Jira project and shows combined totals.
+- **Source:** reuse the current Jira source Board and Sprint-field controls, selected state, technical IDs and pickers.
+- **Field mapping:** reuse and extend the existing renderer for editable hierarchy rows, Project Track and `RnD_allocation_category`, alongside the existing fields and preview. Values and preview labels use actual Jira issue-type and field names. No separate Structure selector is required.
 
-The selected right editor contains:
+One global footer Save persists all dirty editable owners. Cancel uses the established dirty-discard confirmation and restores the complete accepted baseline only after confirmation. Switching configuration or nested tab preserves local changes; a field edit emits changed keys rather than overwriting a renamed configuration from an older whole-object snapshot. Show a concise warning that edits affect live views throughout the selected range. Test/save feedback belongs to the configuration and revision it describes and clears when that context changes.
 
-- **Scope:** start/end quarter and selected Jira project chips; existing Add, remove and search behavior. Legacy retains Product/Tech project sections; DELIVERY shows one planning project without inventing a classification.
-- **Source:** the existing Jira source Board editor and its current selected/search behavior.
-- **Field mapping:** the existing issue-type/field mapping controls and preview, including technical field IDs and established pickers. The selected configuration owns these values. The fixture uses the existing Issue type picker to switch between Story / Legacy and Epic / new structure; it adds no separate Structure control. The implementation maps these choices to the two supported models and their hierarchy roles, with no generic hierarchy designer.
+## Hierarchy mappings and names
 
-There is one global footer Save and the established Cancel behavior. No additional overview cards, configuration bar, per-tab Save, activation state or scheduling step is introduced.
+Each configuration has a stable opaque id and an explicit internal model token, `legacy` or `rnd_2027`. The token selects one of two adapters and supplies initial defaults; it is neither a displayed Jira name nor a value inferred from the literal text `Epic`. A renamed Jira type or a mapping edit cannot switch the model, Scope sections or classification.
 
-## Configuration ownership and time ranges
+Use four nullable, single-valued type-id settings. Resolve values through Jira metadata containing id, name and hierarchy level; display Jira names rather than process-specific aliases. Empty mappings may save, but a required missing mapping prevents that configuration's affected reads with clear setup guidance.
 
-| Configuration | Range | Initial model |
+| Stored setting | Legacy initial Jira name | DELIVERY initial Jira name |
 | --- | --- | --- |
-| Legacy | Open start through `2026Q4`, inclusive | Current quarterly planning structure |
-| DELIVERY | `2027Q1` through open end | Quarterly team Epics under deliverables |
+| `planningIssueTypeId` | Story | Epic |
+| `parentIssueTypeId` | Epic | Initiative |
+| `ancestorIssueTypeId` | Initiative | Objective |
+| `optionalAncestorIssueTypeId` | Unmapped | Strategy, optional |
 
-Ranges use `YYYYQn`; a blank start/end is open-ended. Validate ordering, overlaps, gaps and the agreed Q4/Q1 boundary. The two initial entries have stable opaque ids. Their names and supported model choices are edited normally; an id must never imply a model.
+An administrator can change each mapped type through the same selected-chip/remove/search behavior. The preview must show those resolved Jira names and actual fields; a missing mapping is explicit, rather than a Story preview left behind for an Epic configuration. Jira type ids remain identities when names change. Initial Legacy capture also preserves an existing multiple-name or unrestricted issue-type filter; show that exact filter and retire it only when the administrator explicitly replaces the planning-type mapping, as specified by `legacyIssueTypeNames` in the execution contract. Other edits must not silently narrow Legacy data. The implementation plan defines metadata validation and the behavior of unsupported hierarchy relationships; the fixture does not attest live Jira metadata.
 
-Each entry owns its range, projects, Jira source, hierarchy roles and field mappings. The workspace stores the complete project-configuration bundle with one optimistic revision. **Capacity remains global:** its current storage, routes, numeric-field verification and controls are unchanged, and no capacity value is copied into either entry. Priority weights, Access and Performance also remain workspace-level.
+Project Track remains a configurable Jira field on the mapped parent: Legacy Epic becomes new Initiative. It is inherited by the child only where the current view already inherits it; edits always target that parent’s own Jira key. `RnD_allocation_category` is a separate configurable field; neither chooses the hierarchy model or silently classifies work as Product or Tech. There is no current application allocation contract to capture as a Legacy Components allocation rule, and this feature adds no invented extra classification field.
 
-Department groups retain their collaborative ownership; group preferences remain private. EPM goal scope, Home project-label mappings and legacy issue-type presets remain in each user's private saved view. Project configuration never absorbs those values. See the [configuration ownership contract](../../backend/security/CONFIGURATION_OWNERSHIP.md).
+## Ranges, ownership and saving
 
-## Editing and saving
+Ranges use `YYYYQn`, inclusive ends and optional open bounds. Validate syntax, start/end ordering and nonoverlapping complete coverage across the two configurations. Adjacent valid ranges can move away from the initial Q4/Q1 boundary through normal Save; neither names nor ids freeze that boundary. Retain each configuration's stable id when its name or range is edited.
 
-Switching left configuration or nested tab preserves both configurations' independent drafts. A structure/model correction uses the same editor and Save as any mapping correction. A concise in-form warning explains that edits affect live views throughout that configuration's quarter range; no separate correction wizard is needed.
+Each entry owns its range, project scope, source Board, hierarchy mappings and Jira field mappings. Store the complete project-configuration bundle under one workspace optimistic revision. **Capacity stays global:** keep its existing storage, routes, numeric-field proof and controls; do not copy it into entries. Priority weights, Access and Performance remain global. Department groups remain collaborative, group preferences remain private, and EPM Home scope/project-label mappings/private legacy type settings remain user-owned. See the [ownership contract](../../backend/security/CONFIGURATION_OWNERSHIP.md).
 
-Save can persist incomplete field mappings if their shapes and ranges are valid. It does not claim that Jira is ready. When a required source or mapping is unusable, selecting the affected dashboard quarter shows clear setup guidance rather than silently substituting Legacy. Optional missing fields affect only their dependent control or report.
+The first bundle Save captures the current effective Legacy settings server-side, including applicable existing environment defaults, then applies explicit validated Legacy draft edits in that same revision-checked transaction. It must not discard an initial edit or require another Save. Remove only the duplicated project/source/type/field keys; global Capacity and its verification stay untouched. Capture preserves current behavior but does not create a historical Jira snapshot.
 
-The footer saves all dirty editable owners. Project ranges/scope/source/roles/fields use one atomic bundle request; a dirty global Capacity mapping still uses its existing endpoint, with the shared revision updated between requests. Other ownership domains keep their endpoints. If a later save fails, show exactly which sections committed and retain the unsuccessful drafts; never describe separate requests as one database transaction.
+Save accepts incomplete field mappings when their shape and ranges are valid. Save does not prove Jira access. Selecting a quarter whose required source/mapping is unusable shows concise setup guidance with no fallback to another entry or environment value. An optional missing field affects only its dependent control/report. The execution plan defines the exact precedence, reader delegation, catalog authority and write-stamp contracts.
 
-A stale revision uses the existing conflict surface and preserves local edits. Explicit Reload follows existing discard confirmation. Clean state can adopt a remote baseline; dirty state cannot silently overwrite another editor's changes. Read-only users can inspect saved configuration but cannot edit without the server's explicit permission grant.
+A dirty global Capacity mapping still uses its existing endpoint; chain the returned shared revision between it and the structural bundle request. Other owners keep their endpoints. Report exactly which sections committed if a later request fails, and retain the unsuccessful drafts. A stale revision uses the existing conflict surface; explicit Reload follows existing discard confirmation. Read-only users inspect saved values without editable controls unless the server explicitly grants permission.
 
-**Test configuration** is optional and tests the saved selected configuration using the existing interaction. It reports a simple success/error/unknown result from read-only metadata/access checks. Unsaved edits are not silently tested or saved, and a failed/unavailable test does not prevent an otherwise valid incomplete Save.
+Optional Test configuration uses the existing saved-configuration interaction and a simple read-only result. Dirty edits must be saved first; the fixture states that it performs no Jira test. A failed or unavailable test does not block an otherwise valid incomplete Save. The fixture hides project-scoped Test on global Capacity; the existing application Capacity mapping and verification contract stays unchanged.
 
-## New work meaning
+## Existing behavior, one Jira level higher
 
-The current quarterly commitment represented by a Story becomes an **Epic / quarterly team KR** in the new model. Its parent Initiative represents a deliverable; Objective provides project context and Strategy is an optional program. Preserve actual Jira issue types, ids and keys in display, exports, dependencies and edits.
+Apply the existing calculations and alerts through this mapping, preserving each surface's status, exclusion, grouping and capacity rules:
 
-Daily team Stories can live in team projects. They are optional operational detail, not a prerequisite for quarterly KR visibility or planning. Discover new work from the quarterly KR's Sprint/Team, then fetch parents as context; do not require quarter or Team on every ancestor.
+| Existing entity | Entity in the new structure |
+| --- | --- |
+| Story | Epic |
+| Epic | Initiative |
+| Initiative | Objective |
 
-Allocation Category is separate from Components and from Product/Tech classification. Resolve a readable explicit KR value before Initiative, then Objective. An unreadable intermediate ancestor may contain an override: report unavailable instead of claiming a higher ancestor's value is authoritative. Missing/unreadable parents must not remove a readable KR.
+Use the configured Jira ids and display their actual names. An Initiative aggregates its Epics using the existing Epic-from-Story calculation. Story Points come from the mapped Epic field; do not invent a replacement effort field, formula or parent/child time-log summation. The existing daily Stories under those Epics are optional operational detail and do not become a new prerequisite for planning, totals or alerts.
 
-Count quarterly effort once at the KR contract; do not add its daily Story estimates or parent/child work logs again. Legacy Story-readiness alerts do not automatically become new KR health rules. Until a genuine Product/Tech source is agreed, new work is unified/unclassified rather than defaulting to Product.
+Existing alerts move one level too. A check currently finding a missing or unestimated Story under an Epic becomes the corresponding Epic check under an Initiative, with the same existing calculation/status/exclusion semantics. Do not suppress the existing checks merely to accommodate the migration, or keep requiring daily Stories in the new structure.
 
-Business decisions still open:
+Department `teamLabels` retain their current per-Team alias arrays and ownership. In the new structure those aliases match Initiative labels; they establish which Department Teams need corresponding Epics for the selected Sprint. Discover the Initiative context from those labels even when the Initiative has no Sprint/Team value, then evaluate its Team Epics in the selected Sprint. An absent expected Team Epic remains detectable. Matching remains exact per existing alias rules; it is not a replacement Jira project scope or allocation category.
 
-- The exact Jira representation and values for Work Area: Project, Continuous Improvement, Interrupt and Org Invest.
-- Project Track and owner field contexts/editability; proposed default is track on the KR, Assignee as dev owner and independently mapped Delivery owner.
-- A genuine Product/Tech source, if that split is still needed for the new model.
-- The authoritative KR estimate, remaining/completed effort, capacity unit and dependency semantics.
+For the new single-project structure, show combined totals using the existing `other` classification where an internal project-type value is needed. Preserve Legacy Product/Tech behavior. A possible future Component/Label classification has no agreed definition and is outside this feature; do not silently map other work to Product.
 
-Keep dependent editors/reports unavailable or explicitly missing until these decisions are confirmed. Independent development and normal configuration editing can proceed with synthetic data.
+## Source evidence and limits
+
+[RnD work structure for 2027+](https://criteo.atlassian.net/wiki/spaces/~i.moldovan/pages/5492835223/RnD+work+structure+for+2027), version 41 dated 2026-10-29, was read through the connected source during this review. It specifies Sprint/Team/Story Points on Epic, with Initiative and Objective not assigned a Sprint, and optional Strategy above Objective. This is the proposed business contract, not proof that the live project's field contexts or Board already support it. Verify those identities before live use without turning configuration editing into another lifecycle.
+
+The proposal introduces `RnD_allocation_category`, with an explicit Epic value taking precedence over Initiative, then Objective. Show provenance or missing/unavailable values; an unreadable intermediate ancestor can contain an override and must not be skipped to claim a higher value. This dedicated field does not retroactively establish an allocation feature in the existing app. The source's discussion of company reporting through Components is not an application storage/calculation contract.
+
+Earlier quarters remain live Jira reads using their saved configuration. The app cannot reconstruct issue types, estimates, status, parents or project values changed in Jira, and this feature does not move/retype Jira issues. Changing a saved range/mapping can change that range's live interpretation; the in-form warning must say so.
+
+## Technical approach and preserved work
+
+The [execution plan](EXEC-quarterly-work-structure-migration.md) owns the detailed repository operation, endpoint matrix, environment precedence, catalog/cache inventory and tests. `workConfigurations` becomes the project/source/type/field source of truth through an atomic multi-key operation. Old partial structural setters must delegate or reject after promotion; one section write cannot independently remove the old keys. JSON needs an explicit persisted revision and one process/cross-process lock around every relevant read-modify-write; DB mode uses the existing workspace fence.
+
+A captured configuration contains id/revision/model, viewed quarter, digest and resolved mappings. Carry it and existing auth into queries, workers, catalogs, memos, streams and writes. Resolve physical Board/Sprint identities before selecting a quarter; matching quarter names do not make ids interchangeable. Preserve Legacy canonical duplicates and valid old choices when the new source is unavailable. Requests spanning configuration ranges resolve each period separately. Existing data/issue writes compare their submitted configuration stamp before any Jira mutation.
+
+The two adapters preserve the existing per-surface formulas and shift their entity inputs. Current review storage only accepts native `epic`/`story` kinds, including `String(8)` and database CHECK constraints. Editable Initiative review rows therefore require an explicit forward migration of width/kinds, column/schema/layout rules, authorization and client handling, with rollback and populated-data tests. Existing Story/Epic values remain on their own immutable Jira ids; never rename or transfer them to different issues to simulate the shift. This review-data migration is planned, not delivered by the JSON configuration bundle or fixture.
+
+Scenario sources/versions keep their original configuration interpretation. EPM preserves each user's Home scope and exact labels, uses the configured Objective/Initiative/Epic hierarchy for new-quarter Jira results and retains private legacy type presets for Legacy. Existing auth/CSRF/workspace and own-issue guards remain. Forward rollback preserves saved configuration/review/draft data; running an older binary needs a separately verified restoration path, rather than a claim that old code can reject a new payload itself.
 
 ## Alternatives considered
 
 | Approach | Tradeoff and decision |
 | --- | --- |
-| One quarter-ranged configuration bundle | Chosen. Projects, source and structure move together, while the existing Settings editor remains familiar. Legacy corrections use the same flow. |
-| Separate start/end quarters on Scope and every mapping | Smaller storage changes, but independent ranges can select projects from one era and fields from another. It also repeats range editing across screens. |
-| Fixed Q1 switch with two hard-coded models | Viable for a one-off migration, but corrections would require releases or another special editor. Retain two supported models behind one shared resolver and ordinary configuration editing instead. |
-
-## Technical approach
-
-The implementation contract is the [quarterly migration execution plan](EXEC-quarterly-work-structure-migration.md); it owns the detailed file inventory, route shapes, tests and compatibility cases. This design defines the interaction and product behavior, without duplicating that checklist.
-
-`workConfigurations` in the existing workspace Admin payload is the structural source of truth. First save captures the current effective Legacy settings server-side, applies explicit validated edits under the revision fence and removes only duplicated project/source/field/type keys. Global capacity and its verification metadata stay untouched. Existing readers delegate to a captured configuration; old partial structural writers cannot split projects from mappings. No new database migration is needed for this bundle.
-
-`resolve_work_configuration(snapshot, quarter, configuration_id)` returns one immutable context with the configuration id/revision/model, quarter, digest and resolved scope/roles/fields. Carry it and the existing auth context into workers and all dependent queries, caches, streams and writes. A delayed response or edit from another configuration must fail its identity check. All work uses the configuration associated with the accepted dashboard quarter.
-
-Retain actual Board/Sprint ids in catalogs; identical quarter names across sources do not make their ids interchangeable. Preserve current Legacy canonical duplicate selection. Requests spanning the boundary resolve each quarter separately and separate metrics whose Story/Epic units are not comparable.
-
-A two-model planning adapter preserves Legacy behavior and supplies new KR-centered data. Existing review values retain immutable issue ids and native Epic/Story cell kinds; no automatic Story-to-Epic value transfer. Scenario sources/versions keep their original configuration interpretation. EPM preserves private Home scope and exact labels; workspace roles visibly control new-quarter Jira rollups while private legacy type presets remain intact and usable for Legacy.
-
-Use current workspace/auth/CSRF guards and own-issue edits. JSON compare/save needs a stable process/cross-process lock around revision check and replacement; DB writes use the current workspace fence. Forward rollback preserves stored data; an older binary requires explicit verified restoration of promoted structural keys. This is not permission to rewrite Jira history.
+| Two ranged configurations with one selected editor | Chosen. One range selects consistent projects/source/hierarchy/fields; corrections use the same editor and normal Save. |
+| Independent ranges on every mapping | Repeats range editing and can combine scope from one period with fields from another. |
+| Fixed switch tied to literal Jira names | Cannot support the confirmed editable ranges or renamed/mapped Jira types. |
 
 ## Mockup construction and review
 
-The [interactive HTML specimen](../../assets/mockups/quarterly-work-structure-settings.html) uses synthetic configuration data and repository CSS. Source and Field mapping mount the unchanged production [`JiraFieldSettings.jsx`](../../frontend/src/settings/JiraFieldSettings.jsx), directly imported by [`quarterly-work-structure-fields.jsx`](../../assets/mockups/quarterly-work-structure-fields.jsx). Existing Story/Epic labels and preview copy are intentionally retained in the specimen; the application implementation must bind role-aware copy and additional role mappings to the selected model. The fixture reuses `makeFieldSearchResults` and `makeFieldKeyDown` from the existing picker helpers; it must not approximate those forms with a second implementation.
+The [HTML specimen](../../assets/mockups/quarterly-work-structure-settings.html) uses synthetic state and repository CSS. Its [controller](../../assets/mockups/quarterly-work-structure-fields.jsx) imports the real [JiraFieldSettings renderer](../../frontend/src/settings/JiraFieldSettings.jsx) and existing picker helpers. That renderer now has a narrow optional extension for the editable hierarchy rows, Project Track, `RnD_allocation_category` and accurate hierarchy preview. Existing consumers retain their default behavior. Reuse of a shared renderer is not a claim that this extension or the migration was already present in production.
 
-Build the fixture controller with [`build_work_structure_mockup.cjs`](../../scripts/build_work_structure_mockup.cjs):
+The fixture imports the real `SettingsModal` for its shell, footer and dirty Cancel confirmation. The list, ranges and memory-only state controller are local fixture code. Scope, Source, Field mapping and the preview use the shared `JiraFieldSettings` renderer, with its optional [MappingPickerRow](../../frontend/src/settings/MappingPickerRow.jsx) extension. Existing production callers retain their default markup; the fixture does not duplicate those forms. Hidden per-configuration panels preserve independent tabs and picker queries while navigating.
 
 ```bash
 node scripts/build_work_structure_mockup.cjs --serve
 ```
 
-The script bundles only the fixture into ignored `tmp/quarterly-work-structure-fields.js` and records its module inputs there. It does not modify application components or publish generated output. Open `http://localhost:5062/assets/mockups/quarterly-work-structure-settings.html`; use the pinned Node 20 toolchain and run `npm ci` first in a fresh checkout. The local preview server serves only the fixture, generated controller and existing CSS. Use `--port=5063` if 5062 is already occupied.
+The script bundles only the fixture into ignored `tmp/` output and serves an allowlist of the specimen, generated controller and existing CSS at `http://localhost:5062/assets/mockups/quarterly-work-structure-settings.html`. Use the pinned Node 20 toolchain and this checkout's dependencies. It changes no app persistence; `--port=5063` selects another unused preview port.
 
-Preserve existing native buttons, labels, focus and picker behavior. Use the established selected/disabled states, touch-accessible actions and polite result feedback. At compact widths, the drawer must not cover the active editor after selection; tabs/forms/footer remain usable without clipped controls. This is reuse of the app's existing behavior, not a claim of a completed accessibility audit.
+### Review finding dispositions
 
-Acceptance for implementation:
+The external review numbered B1 plus P1-1 through P1-15. These dispositions separate corrected design requirements and fixture verification from production implementation, which remains open. Final fixture results must be recorded from the revised files; earlier passing counts do not prove these corrections.
 
-- Exact upper Admin tabs and nested right-editor tabs; global panels hide configuration chrome and returning restores drafts/selection.
-- Legacy three-project and DELIVERY single-project scope, unchanged real Source/Mapping controls, mobile drawer and one footer Save.
-- Q4/Q1 automatic selection, inclusive range validation, incomplete Save and no silent fallback; stale requests/writes rejected.
-- Atomic structural save plus accurate partial-save/conflict handling; unchanged global capacity and private/group ownership.
-- Actual Epic KRs work without daily Stories; totals/provenance, review/Scenario preservation and EPM precedence follow the execution plan.
+| Finding | Design/mockup disposition | Application implementation |
+| --- | --- | --- |
+| B1 | Four editable single-id Jira-name rows, id/name/level metadata and both named fields replace the inadequate single-name picker contract; shared renderer extension required. | Metadata endpoint, validation and persistence planned. |
+| P1-1 | A mapping edit cannot infer/change the model or hide Scope projects; historical-impact warning required. | Configuration-aware Scope/classification planned. |
+| P1-2 | Resolved Jira hierarchy names and missing mappings drive the shared preview. | Actual hierarchy queries/rendering planned. |
+| P1-3 | Generic editable adjacent ranges replace hard-coded Q4/Q1 rejection. | Server range validation planned. |
+| P1-4 | Field callbacks emit patches; rename and field edits share one accepted draft. | Production draft integration planned. |
+| P1-5 | Atomic multi-key promotion, persisted JSON revision and all-writer locking are required. | Repository/concurrency implementation and race tests planned. |
+| P1-6 | Captured configuration is the reader choke point; direct readers/bootstrap must be inventoried and guarded. | Whole-backend reader migration planned. |
+| P1-7 | Materialize effective Legacy defaults once; explicit incomplete entries cannot fall back to environment mappings. | Precedence enforcement planned. |
+| P1-8 | Per-configuration Board/Sprint identities, completeness and setup errors are explicit. | Catalog route/cache adaptation planned. |
+| P1-9 | Configuration identity belongs in field memos and all dependent caches. | Full inventory/invalidation tests planned. |
+| P1-10 | Existing write routes carry and compare the configuration stamp with concrete errors. | Route-body compatibility and stale-write tests planned. |
+| P1-11 | Source v41 confirms the proposed Epic Sprint/Team/Story Points placement; live contexts remain unverified. | Live metadata/access evidence pending. |
+| P1-12 | Actual Story/Epic/Initiative/Objective names and neutral mapping keys replace ambiguous role aliases. | Native Initiative review kind requires a planned migration. |
+| P1-13 | No invented Legacy allocation or extra classification field; dedicated new field has source-backed inheritance. | New field reads/provenance planned. |
+| P1-14 | Reuse existing `other` and show combined totals; future Component/Label split is undefined. | Remove forced Product fallback in new-configuration calculations. |
+| P1-15 | Consistent internal tokens, materialized defaults and Initiative-label-to-Team-Epic scope are specified. | Backend hierarchy/JQL consumers and per-surface alerts shift together. |
+| Bundled fixture findings | Require Cancel confirmation, truthful context-bound feedback, long/blank-name handling, generic ranges, preserved drafts/picker state, real Scope behavior and reachable mobile controls; global Capacity has its own context. | Conflicts, partial saves, permissions, auth expiry, review migration, live quarter switching and full runtime verification remain planned. |
+
+The revised fixture checks below exercise the rendered mapping, range, draft, Cancel, feedback and mobile requirements. Backend, storage, migration and live-data claims remain implementation work, as recorded in the right column.
 
 ## Outcome and limits
 
-This deliverable is a design document and interactive fixture. The application migration, backend/storage routes and live Jira checks are unimplemented. The mockup changes only local synthetic state; it sends no app API request, saves no production configuration and emits no analytics. Its analytics impact is trigger/event_type/event_name none, feature_name settings, typed params none; production instrumentation is specified in the execution plan.
+This deliverable is a revised design and local specimen. Application migration, backend storage/routes and live Jira checks remain unimplemented. The fixture changes synthetic state, sends no app API request, saves no production configuration and emits no analytics. Analytics impact for this artifact: trigger/event_type/event_name none, feature_name settings, typed params none; production instrumentation belongs to the execution plan.
 
-Verified on 2026-10-30 in the dedicated `docs/quarter-sprint-terminology` worktree:
+Verified on 2026-10-30 with the pinned Node 20 toolchain and the existing project Python environment:
 
-| Command/check | Result |
+| Check | Actual result |
 | --- | --- |
-| `npm run build` with Node 20 | Passed |
-| `npx playwright test tests/ui/work_structure_settings_mockup.spec.js --browser=chromium --workers=1` | 5 passed: navigation/drafts, real Source pickers, independent mappings/preview, mobile drawer, quarter boundary/scope |
-| Project Python `unittest` modules `tests.test_agents_md_learnings` and `tests.test_codebase_structure_budgets` | 21 passed |
-| `node --test tests/test_jira_field_pickers.js` | 19 passed |
-| Visual inspection | Desktop Scope, Source, Field mapping and its scrolled preview; mobile Source and reachable footer |
+| `npm run build` | Passed after the optional renderer changes. |
+| `npx playwright test tests/ui/work_structure_settings_mockup.spec.js --browser=chromium --workers=1` | 12 passed. The final Source wording/mobile capture subset also passed 2 cases. |
+| `npx playwright test tests/ui/settings_unified_save.spec.js tests/ui/jira_field_picker_read_race.spec.js --browser=chromium --workers=2` with a synthetic localhost test base | 60 passed, 1 optional DOM capture skipped. Existing Settings save, conflict, auth-recovery and picker behavior is preserved. |
+| `node --test tests/test_epm_settings_source_guards.js tests/test_jira_field_pickers.js tests/test_design_system_ratchets.js tests/test_design_system_hover_foundation.js tests/test_design_system_write_contract.js` | 99 passed. |
+| Project Python `unittest` modules `tests.test_agents_md_learnings` and `tests.test_codebase_structure_budgets` | 21 passed. |
+| Three representative default Source/Mapping/Scope server-rendered fixtures | Byte-identical before/after when optional props are omitted; existing browser journeys provide additional runtime coverage. |
+| Artifact checks | JSON examples and local links valid; ontology Coverage unchanged; only the two intended renderer ledger entries changed. |
 
-Screenshots: [Scope](../../assets/mockups/work-structure-settings-scope.png), [Source](../../assets/mockups/work-structure-settings-source.png), [Field mapping](../../assets/mockups/work-structure-settings-mapping.png), [scrolled preview](../../assets/mockups/work-structure-settings-mapping-preview.png), [mobile](../../assets/mockups/work-structure-settings-mobile.png). The revised screens place configuration navigation inside Project config and use the actual Source/Mapping forms; earlier A/B/C concepts are superseded.
+Updated screenshots: [Scope](../../assets/mockups/work-structure-settings-scope.png), [Source](../../assets/mockups/work-structure-settings-source.png), [Field mapping](../../assets/mockups/work-structure-settings-mapping.png), [scrolled preview](../../assets/mockups/work-structure-settings-mapping-preview.png), [mobile](../../assets/mockups/work-structure-settings-mobile.png). Visual inspection confirms the existing forms are reused, explicit Jira mappings and the Initiative/Epic preview replace the implicit model switch, and the mobile footer/remove controls remain reachable. These replace the earlier review captures.
 
-These checks validate the synthetic fixture and unchanged picker helpers. Live field metadata, access, business semantics and performance remain unverified; the application migration and its full acceptance suite have not run. GATE-05 remains unchanged and write-only, next review 2026-11-02; this feature adds no Home auth migration or Home write capability.
+The full extraction-interface checker exits 1 with 10 ledger discrepancies in unchanged EPM/Department owner entries. It was run with Node 20 on both an isolated source snapshot of `43396243` and the revised worktree: all 10 enforced diagnostics match, and neither changed renderer adds a diagnostic. Those unrelated entries were not restamped. This is a verified baseline failure, not a passing full-check result.
+
+Live field identities/access, configured data and performance remain unverified. Existing [Home public-read design](SUPPORT-home-oauth-public-read-design.md) and [write-only GATE-05](GATE-05-home-write-capability.md) stay authoritative; this feature adds no Home auth migration or Home writes. GATE-05's recorded next review is 2026-11-02 and is unchanged inside its review window.

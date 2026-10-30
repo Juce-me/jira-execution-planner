@@ -1,6 +1,7 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import MappingPickerRow from './MappingPickerRow.jsx';
 
 export default function JiraFieldSettings(props) {
     const {
@@ -210,7 +211,7 @@ export default function JiraFieldSettings(props) {
                                                 </div>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
                                                     <div className="team-selector-label">Sprint Board (optional)</div>
-                                                    <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
+                                                    <div className="group-field-helper">{props.sourceFieldHelpers?.board ?? 'Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.'}</div>
                                                     {!boardIdDraft && (
                                                         <div className="capacity-inline-row">
                                                             <div className="team-search-wrapper capacity-inline-search">
@@ -273,7 +274,7 @@ export default function JiraFieldSettings(props) {
                                             <div className="group-pane-header group-projects-pane-header">
                                                 <div className="group-pane-title">Dashboard Projects</div>
                                                 <div className="group-projects-desc">
-                                                    Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.
+                                                    {props.classificationMode === 'combined' ? 'Select which Jira projects to include in dashboard queries.' : 'Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.'}
                                                 </div>
                                                 <div className="team-search-wrapper">
                                                     <input
@@ -301,8 +302,12 @@ export default function JiraFieldSettings(props) {
                                                                 >
                                                                     <span className="project-result-label"><strong>{p.key}</strong> &mdash; {p.name}</span>
                                                                     <span className="project-result-actions">
+                                                                        {props.classificationMode === 'combined' ? (
+                                                                            <button type="button" className="secondary compact" onClick={() => addProjectSelection(p.key, 'other')}>Add</button>
+                                                                        ) : <>
                                                                         <button type="button" className="project-type-btn product" onClick={() => addProjectSelection(p.key, 'product')}>Product</button>
                                                                         <button type="button" className="project-type-btn tech" onClick={() => addProjectSelection(p.key, 'tech')}>Tech</button>
+                                                                        </>}
                                                                     </span>
                                                                 </div>
                                                             ))}
@@ -312,6 +317,21 @@ export default function JiraFieldSettings(props) {
                                             </div>
                                             <div className="group-pane-list group-projects-pane-list">
                                                 <div className="settings-two-col-grid settings-scope-grid">
+                                                {props.classificationMode === 'combined' ? (
+                                                <div className="group-projects-subsection">
+                                                    <div className="team-selector-label">Projects</div>
+                                                    {selectedProjectsDraft.length === 0 ? <div className="team-selector-empty">No projects selected.</div> : (
+                                                        <div className="selected-teams-list">
+                                                            {selectedProjectsDraft.map(p => (
+                                                                <div key={p.key} className={`selected-team-chip${p.type === 'product' ? ' product-chip' : p.type === 'tech' ? ' tech-chip' : ''}`}>
+                                                                    <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove project ${p.key}`}>&times;</button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                ) : <>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Product</div>
                                                     <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
@@ -344,6 +364,7 @@ export default function JiraFieldSettings(props) {
                                                         </div>
                                                     )}
                                                 </div>
+                                                </>}
                                                 </div>
                                             </div>
                                         </div>
@@ -367,9 +388,9 @@ export default function JiraFieldSettings(props) {
                                             <>
                                             <div className="mapping-preview-section group-config-card">
                                                 <div className="group-pane-title">Preview</div>
-                                                <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
+                                                <div className="group-field-helper">{props.mappingPreviewLabels?.description ?? 'This is how a story will be shown with your current mapping.'}</div>
                                                 {(() => {
-                                                    const previewIssueType = issueTypesDraft[0] || 'Issue Type';
+                                                    const previewIssueType = props.mappingPreviewLabels?.childType ?? (issueTypesDraft[0] || 'Issue Type');
                                                     const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
                                                     const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
                                                     const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
@@ -377,13 +398,13 @@ export default function JiraFieldSettings(props) {
                                                     const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
                                                     const previewTeamFieldId = teamFieldIdDraft || '';
                                                     const previewEpic = {
-                                                        key: 'Parent-Key',
-                                                        parentValue: parentNameFieldNameDraft || 'Parent Name Field'
+                                                        key: props.mappingPreviewLabels?.parentKey ?? 'Parent-Key',
+                                                        parentValue: props.mappingPreviewLabels?.parentType ? `${props.mappingPreviewLabels.parentType} Summary` : parentNameFieldNameDraft || 'Parent Name Field'
                                                     };
                                                     const previewStories = [
                                                         {
-                                                            key: 'STORY-KEY',
-                                                            summary: 'Story Summary',
+                                                            key: props.mappingPreviewLabels?.childKey ?? 'STORY-KEY',
+                                                            summary: props.mappingPreviewLabels?.childSummary ?? (props.mappingPreviewLabels?.childType ? `${props.mappingPreviewLabels.childType} Summary` : 'Story Summary'),
                                                             status: 'Status',
                                                             statusClass: 'accepted',
                                                             updated: 'Last Updated Date',
@@ -402,15 +423,15 @@ export default function JiraFieldSettings(props) {
                                                                 <div className="epic-header">
                                                                     <div className="epic-title">
                                                                         <div className="epic-title-row">
-                                                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                                                <svg viewBox="0 0 16 16" fill="none">
+                                                                            <span className="epic-icon" aria-hidden="true" title={props.mappingPreviewLabels?.parentType?.toUpperCase() ?? "EPIC"}>
+                                                                                {props.mappingPreviewLabels?.parentIconUrl ? <img src={props.mappingPreviewLabels.parentIconUrl} width="16" height="16" alt="" /> : props.mappingPreviewLabels?.parentType ? null : <svg viewBox="0 0 16 16" fill="none">
                                                                                     <path
                                                                                         clipRule="evenodd"
                                                                                         d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
                                                                                         fill="#bf63f3"
                                                                                         fillRule="evenodd"
                                                                                     />
-                                                                                </svg>
+                                                                                </svg>}
                                                                             </span>
                                                                         <a
                                                                             className={`epic-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
@@ -444,10 +465,10 @@ export default function JiraFieldSettings(props) {
                                                                 >
                                                                     <div className="task-header">
                                                                         <div className="task-headline">
-                                                                            <span className="story-icon" aria-hidden="true" title="STORY">
-                                                                                <svg viewBox="0 0 24 24" fill="none">
-                                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                                                </svg>
+                                                                            <span className="story-icon" aria-hidden="true" title={props.mappingPreviewLabels?.childType?.toUpperCase() ?? "STORY"}>
+                                                                                {props.mappingPreviewLabels?.childIconUrl ? <img src={props.mappingPreviewLabels.childIconUrl} width="16" height="16" alt="" /> : <svg viewBox={props.mappingPreviewLabels?.childHierarchyLevel === 1 ? "0 0 16 16" : "0 0 24 24"} fill="none">
+                                                                                    {props.mappingPreviewLabels?.childHierarchyLevel === 1 ? <path d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z" fill="#bf63f3" fillRule="evenodd" /> : <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>}
+                                                                                </svg>}
                                                                             </span>
                                                                             <h3 className="task-title">
                                                                                 <a
@@ -509,6 +530,9 @@ export default function JiraFieldSettings(props) {
                                                 })()}
                                             </div>
                                             <div className="mapping-config-grid">
+                                            {props.hierarchyMappings ? props.hierarchyMappings.map(mapping => (
+                                                <MappingPickerRow key={mapping.key} mapping={mapping} kind="hierarchy" showTechnicalFieldIds={showTechnicalFieldIds} mappingHoverKey={mappingHoverKey} setMappingHoverKey={setMappingHoverKey} />
+                                            )) : (
                                             <div
                                                 className={`group-projects-section group-config-card ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
                                                 onMouseEnter={() => setMappingHoverKey('issueType')}
@@ -558,6 +582,7 @@ export default function JiraFieldSettings(props) {
                                                     <div className="team-selector-empty">No filter — all issue types will be included.</div>
                                                 )}
                                             </div>
+                                            )}
                                             <div
                                                 className={`group-projects-subsection ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
                                                 onMouseEnter={() => setMappingHoverKey('parent')}
@@ -565,7 +590,7 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="parent"
                                             >
                                                 <div className="team-selector-label">Parent Name Field</div>
-                                                <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
+                                                <div className="group-field-helper">{props.mappingFieldHelpers?.parentName ?? 'Field used to map stories back to their parent epic name.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
@@ -598,7 +623,7 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="storyPoints"
                                             >
                                                 <div className="team-selector-label">Story Points Field</div>
-                                                <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
+                                                <div className="group-field-helper">{props.mappingFieldHelpers?.storyPoints ?? 'Field used for effort, velocity, and capacity comparisons.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
@@ -631,7 +656,7 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="team"
                                             >
                                                 <div className="team-selector-label">Team Field</div>
-                                                <div className="group-field-helper">Field used to assign each ticket to a team.</div>
+                                                <div className="group-field-helper">{props.mappingFieldHelpers?.team ?? 'Field used to assign each ticket to a team.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
@@ -662,7 +687,7 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="deliveryOwner"
                                             >
                                                 <div className="team-selector-label">Delivery Owner Field</div>
-                                                <div className="group-field-helper">Field naming the person accountable for delivering an epic.</div>
+                                                <div className="group-field-helper">{props.mappingFieldHelpers?.deliveryOwner ?? 'Field naming the person accountable for delivering an epic.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {deliveryOwnerFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-delivery-owner-chip" title={deliveryOwnerFieldIdDraft || ''}>
@@ -688,6 +713,9 @@ export default function JiraFieldSettings(props) {
                                                     )}
                                                 </div>
                                             </div>
+                                            {props.extraFieldMappings?.map(mapping => (
+                                                <MappingPickerRow key={mapping.key} mapping={mapping} showTechnicalFieldIds={showTechnicalFieldIds} mappingHoverKey={mappingHoverKey} setMappingHoverKey={setMappingHoverKey} />
+                                            ))}
                                             </div>
                                             </>
                                             )}

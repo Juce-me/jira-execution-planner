@@ -472,3 +472,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Treat dashboard planning sprints as quarters (`YYYYQn`); inspect the sprint catalog before asking whether a sprint means a team iteration.
 - In Admin, keep Project config, Capacity, Priority weights, Access and Performance at the workspace level; only Project config contains the Department-style left configuration list, with Scope, Source and Field mapping tabs inside the selected configuration’s right panel.
 - Render existing Settings components directly in mockups; never replace Source or Field mapping with handwritten cards, selects or previews.
+- Use Jira issue-type names in migration settings, documentation and questions; do not replace them with process-specific labels.
+- For the 2027 structure, preserve existing calculations and shift Jira entities one level up: Story to Epic, Epic to Initiative, and Initiative to Objective; roll up each Initiative from its Epics’ Story Points instead of introducing new effort formulas, and shift existing alerts plus Department team-label matching from Epics/Stories to Initiatives/Epics.

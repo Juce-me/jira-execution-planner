@@ -1,0 +1,60 @@
+import * as React from 'react';
+import { makeFieldSearchResults, makeFieldKeyDown } from './useJiraFieldPickers.js';
+
+// Optional Settings mappings reuse the existing selected-chip and field-search interaction.
+export default function MappingPickerRow({ mapping, kind = 'field', showTechnicalFieldIds, mappingHoverKey, setMappingHoverKey }) {
+    const [query, setQuery] = React.useState('');
+    const [open, setOpen] = React.useState(false);
+    const [index, setIndex] = React.useState(0);
+    const { items, total } = makeFieldSearchResults(query, mapping.options || []);
+    const selected = mapping.selected;
+    const hoverKey = mapping.previewKey;
+    const select = option => {
+        mapping.onSelect(option);
+        setQuery('');
+        setOpen(false);
+        setIndex(0);
+    };
+    React.useEffect(() => { if (index >= items.length) setIndex(0); }, [index, items.length]);
+    const handleKeyDown = makeFieldKeyDown(items, index, setIndex,
+        id => select(items.find(option => option.id === id)), () => {}, setQuery, setOpen);
+    return (
+        <div
+            className={`group-projects-subsection${hoverKey && mappingHoverKey === hoverKey ? ' is-linked-hover' : ''}`}
+            data-map-key={hoverKey || mapping.key}
+            data-mapping-key={mapping.key}
+            onMouseEnter={hoverKey ? () => setMappingHoverKey(hoverKey) : undefined}
+            onMouseLeave={hoverKey ? () => setMappingHoverKey(null) : undefined}
+        >
+            <div className="team-selector-label">{mapping.label}{mapping.optional ? ' (optional)' : ''}</div>
+            {mapping.helper && <div className="group-field-helper">{mapping.helper}</div>}
+            <div className="capacity-inline-row">
+                {selected ? (
+                    <div className={`selected-team-chip${kind === 'hierarchy' ? ' issue-type-chip' : ''}`} title={selected.id}>
+                        <span className="team-name"><strong>{selected.name}</strong>{showTechnicalFieldIds && selected.id && <span className="field-id-hint">({selected.id})</span>}</span>
+                        <button className="remove-btn" type="button" title="Remove" aria-label={`Remove ${mapping.label}`} onClick={() => { setQuery(''); setOpen(false); setIndex(0); mapping.onRemove(); }}>&times;</button>
+                    </div>
+                ) : (
+                    <div className="team-search-wrapper capacity-inline-search">
+                        <input
+                            type="text" className="team-search-input" aria-label={`Search ${mapping.label}`}
+                            placeholder={kind === 'hierarchy' ? 'Search issue types...' : 'Search fields...'} value={query}
+                            onChange={event => { setQuery(event.target.value); setOpen(true); setIndex(0); }}
+                            onFocus={() => setOpen(true)} onBlur={() => { window.setTimeout(() => setOpen(false), 120); }} onKeyDown={handleKeyDown}
+                        />
+                        {open && items.length > 0 && (
+                            <div className="team-search-results" onMouseDown={event => event.preventDefault()}>
+                                {items.map((option, optionIndex) => (
+                                    <div key={option.id} className={`team-search-result-item ${optionIndex === index ? 'active' : ''}`} onClick={() => select(option)}>
+                                        <strong>{option.name}</strong> <span style={{ opacity: 0.5 }}>({option.id})</span>
+                                    </div>
+                                ))}
+                                {total > items.length && <div className="team-search-more">+{total - items.length} more matches — keep typing to narrow.</div>}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}

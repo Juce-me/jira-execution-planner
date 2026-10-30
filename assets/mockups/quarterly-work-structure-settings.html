@@ -3,205 +3,54 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Planning configurations — Settings mockup</title>
-<!-- Synthetic, memory-only mockup. Reuses the Department editor shell and existing Admin fields.
-     Source and Field mapping mount the unchanged JiraFieldSettings component. No app API, analytics or storage. -->
+<title>Project configurations — Settings mockup</title>
+<!-- Synthetic, memory-only fixture. Uses actual SettingsModal and JiraFieldSettings components. -->
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="../../frontend/src/styles/dashboard.css">
 <style>
-/* Layout glue only: every font, colour, radius and control treatment comes from application CSS. */
+/* Fixture layout only; control appearance comes from application CSS. */
 [hidden] { display: none !important; }
-[data-mockup] .group-modal-tabs, [data-mockup] .group-modal-footer { flex-shrink: 0; }
-[data-mockup] .group-modal-tabs { overflow-x: auto; }
+[data-mockup] .group-modal-tabs { flex-shrink: 0; overflow-x: auto; }
 [data-mockup] .group-modal-tab { white-space: nowrap; }
 [data-mockup] .group-modal-content { overflow: hidden; }
 [data-mockup] #editor { padding: 0; overflow: hidden; }
-[data-mockup] #configuration-header { padding: .8rem 1rem .6rem; }
+[data-mockup] #configuration-header { padding: .65rem 1rem; min-width: 0; }
+[data-mockup] [data-header-row] { display: flex; align-items: center; justify-content: space-between; gap: .6rem; min-width: 0; }
+[data-mockup] [data-header-row] h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-mockup] [data-header-row] > span { flex-shrink: 0; }
 [data-mockup] #editor > * { flex-shrink: 0; }
-[data-mockup] #settings-panel { flex: 1 1 auto; min-height: 0; overflow: hidden; gap: 0; }
-[data-mockup] #settings-panel[data-mode="scope"] { overflow-y: auto; padding: .8rem 1rem 1rem; gap: .5rem; }
-[data-mockup] [data-real-jira-settings] { display: flex; flex: 1 1 auto; min-height: 0; min-width: 0; }
-[data-mockup] #editor > .group-pane-mobile-header { padding: .6rem 1rem 0; }
-[data-mockup] #editor > .group-pane-mobile-header button { margin: 0; }
-[data-mockup] [data-config-tabs] { padding: 0 .9rem; margin: 0 0 .25rem; background: transparent; }
+[data-mockup] #settings-panel { flex: 1 1 auto; min-height: 0; overflow: hidden; display: flex; }
+[data-mockup] [data-fixture-panel] { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
+[data-mockup] [data-real-jira-settings] { display: flex; flex: 1; min-height: 0; min-width: 0; }
+[data-mockup] [data-ranges] { padding: .65rem 1rem; flex-shrink: 0; }
+[data-mockup] [data-range-row] { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: center; gap: .5rem; margin-bottom: .35rem; }
+[data-mockup] [data-range-row] .group-name-input { min-width: 0; width: 100%; }
+[data-mockup] [data-range-row] > .selected-team-chip { justify-self: start; max-width: 100%; }
+[data-mockup] [data-range-error] { grid-column: 2 / -1; }
+[data-mockup] [data-config-tabs] { padding: 0 .9rem; margin: 0; }
 [data-mockup] [data-config-tabs] .group-modal-tab { flex: 1; }
 [data-mockup] [data-config-row] { grid-template-columns: minmax(0, 1fr); gap: .2rem; }
 [data-mockup] [data-config-row] .group-list-name-input { min-width: 0; width: 100%; }
-[data-mockup] [data-row] { display: flex; align-items: center; justify-content: space-between; gap: .6rem; flex-wrap: wrap; }
-[data-mockup] [data-actions] { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; }
-[data-mockup] [data-actions] button { margin: 0; }
-[data-mockup] [data-stack] { display: flex; flex-direction: column; gap: .5rem; }
-[data-mockup] [data-settings-header] { padding-bottom: .75rem; border-bottom: 1px solid var(--border); }
-[data-mockup] [data-field-row] { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: center; gap: .5rem; }
-[data-mockup] [data-field-row] > select { min-width: 0; max-width: 100%; }
-[data-mockup] [data-fill] { flex: 1; min-width: 0; }
-[data-mockup] [data-field-card] { min-width: 0; }
-[data-mockup] .selected-team-chip { max-width: 100%; }
-[data-mockup] .selected-team-chip .team-name { white-space: normal; overflow-wrap: anywhere; }
-[data-mockup] [data-footer-message] { margin-right: auto; }
+[data-mockup] [data-config-select] { border: 0; padding: 0; margin: 0; background: transparent; color: inherit; text-align: left; }
 [data-mockup] [data-configuration-summary] { padding: .6rem .9rem; border-top: 1px solid var(--border); }
-[data-mockup] [data-example-item] { display: flex; align-items: center; gap: .5rem; padding: .5rem; border-top: 1px solid var(--border); }
+[data-mockup] .group-pane-mobile-header { padding: .5rem 1rem; }
+[data-mockup] .group-pane-mobile-close { color: var(--text-primary); background: var(--bg-primary); }
+[data-mockup] .group-modal-footer { flex-shrink: 0; }
 @media (max-width: 650px) {
   [data-mockup] .group-modal { width: calc(100vw - 1rem); height: calc(100dvh - 1rem); max-height: none; }
   [data-mockup] .group-modal-backdrop { align-items: flex-start; padding-top: .5rem; }
-  [data-mockup] #settings-panel[data-mode="scope"] .settings-two-col-grid { grid-template-columns: 1fr; }
-  [data-mockup] [data-field-row] { grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
+  [data-mockup] [data-range-row] { grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
+  [data-mockup] [data-header-row] { flex-wrap: wrap; }
   [data-mockup] .group-modal-footer { flex-wrap: wrap; gap: .5rem; }
-  [data-mockup] [data-footer-message] { flex-basis: 100%; }
+  [data-mockup] .group-modal-footer > .group-modal-button-row:first-child { flex-basis: 100%; min-width: 0; }
+  [data-mockup] .group-modal-footer > .group-modal-button-row:first-child button { flex-shrink: 0; white-space: nowrap; }
+  [data-mockup] .group-modal-footer .group-modal-meta { flex: 1; min-width: 0; }
+  [data-mockup] .remove-btn { min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
 }
 </style>
 </head>
 <body data-mockup>
-<main class="container" aria-hidden="true"><header><h1>Jira Delivery Planner</h1><p class="group-modal-meta">Planning · Example department · 2026Q4</p></header></main>
-<div class="group-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-<section class="group-modal">
-<header class="group-modal-header"><div class="group-modal-title-wrap"><div><div class="group-modal-title" id="settings-title">Settings</div><div class="group-modal-subtitle">Configure data sources and field mapping so planning metrics are calculated correctly.</div></div></div><div class="group-modal-dirty" id="dirty" hidden></div></header>
-<div class="group-modal-tabs" aria-label="Settings areas"><button type="button" class="group-modal-tab" disabled>Departments</button><button type="button" class="group-modal-tab" disabled>EPM</button><button type="button" class="group-modal-tab" disabled>Connections</button><button type="button" class="group-modal-tab active">Admin</button></div>
-<nav class="group-modal-tabs epm-settings-tabs" id="admin-tabs" role="tablist" aria-label="Admin settings sections"></nav>
-<div class="group-modal-content">
-<div class="group-modal-body group-modal-split" id="project-config-panel">
-<aside class="group-pane group-pane-left" id="configurations" aria-label="Planning configurations">
-  <div class="group-pane-header"><div class="group-pane-header-row"><div class="group-pane-title">Configurations</div></div><div class="group-pane-count">2 configurations</div><button type="button" class="group-pane-mobile-close" id="close-list">Back</button></div>
-  <div class="group-pane-list" id="configuration-list"></div>
-  <div class="group-field-helper" data-configuration-summary>The selected sprint determines which configuration is used.</div>
-</aside>
-<section class="group-pane group-pane-right" id="editor" aria-label="Selected configuration">
-  <div class="group-pane-mobile-header"><button type="button" class="secondary compact" id="open-list">Configurations</button><span class="group-pane-mobile-title" id="mobile-name"></span></div>
-  <div id="configuration-header" data-stack data-settings-header></div>
-  <nav class="group-modal-tabs epm-settings-tabs" id="tabs" role="tablist" aria-label="Configuration sections" data-config-tabs></nav>
-  <div id="settings-panel" role="tabpanel" data-stack></div>
-</section>
-</div>
-<section class="group-pane group-projects-pane-right group-single-pane" id="workspace-panel" aria-label="Workspace settings" hidden></section>
-</div>
-<div class="group-modal-validation" id="validation" role="alert" hidden></div>
-<footer class="group-modal-footer"><div class="group-modal-button-row" data-footer-message><button type="button" class="secondary compact" id="test-config">Test configuration</button><span class="group-modal-meta" id="message" role="status" aria-live="polite">Mockup · example data only</span></div><div class="group-modal-button-row"><button type="button" class="secondary compact" id="cancel">Cancel</button></div><div class="group-modal-button-row"><button type="button" class="compact" id="save" disabled>Save</button></div></footer>
-</section>
-</div>
+<div id="work-structure-mockup"></div>
 <script src="../../tmp/quarterly-work-structure-fields.js"></script>
-<script>
-'use strict';
-const params = new URLSearchParams(location.search);
-const initial = [
-  {id:'legacy',name:'Legacy',from:null,through:'2026Q4',model:'legacy',projects:[{key:'ROADMAP',type:'product'},{key:'PLATFORM',type:'tech'},{key:'FOUNDATION',type:'tech'}],board:'Legacy quarterly planning',estimate:'Story Points',team:'Team',sprint:'Sprint',allocation:'Components'},
-  {id:'delivery',name:'DELIVERY',from:'2027Q1',through:null,model:'delivery',projects:[{key:'DELIVERY',type:'unclassified'}],board:'Delivery quarterly planning',estimate:'Story Points',team:'Team',sprint:'Sprint',allocation:'RnD allocation category'}
-];
-const tabs=[['scope','Scope'],['source','Source'],['mapping','Field mapping']];
-const adminTabs=[['project','Project config'],['capacity','Capacity'],['priority','Priority weights'],['access','Access'],['performance','Performance']];
-const state={configs:initial.map(window.prepareActualSettingsMockup),saved:initial.map(window.prepareActualSettingsMockup),active:params.get('configuration')==='delivery'?'delivery':'legacy',admin:adminTabs.some(t=>t[0]===params.get('admin'))?params.get('admin'):'project',tab:tabs.some(t=>t[0]===params.get('section'))?params.get('section'):'scope',picker:null};
-const $=selector=>document.querySelector(selector);
-const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const active=()=>state.configs.find(c=>c.id===state.active);
-const newer=()=>active().model==='delivery';
-const role=()=>({item:newer()?'Epic':'Story',parent:newer()?'Initiative':'Epic',context:newer()?'Objective':'Initiative'});
-const range=c=>`${c.from||'All earlier sprints'} → ${c.through||'No end'}`;
-const compactRange=c=>c.from?`${c.from} onward`:`Through ${c.through}`;
-const button=(label,attrs='')=>`<button type="button" class="secondary compact" ${attrs}>${label}</button>`;
-const chip=(label,attrs='',tone='')=>`<span class="selected-team-chip ${tone}"><span class="team-name">${esc(label)}</span>${attrs?`<button type="button" class="remove-btn" ${attrs} aria-label="Remove ${esc(label)}">×</button>`:''}</span>`;
-function quarterIndex(q){return Number(q.slice(0,4))*4+Number(q.slice(-1))-1;}
-function errors(){
-  const [legacy,delivery]=state.configs;
-  const out=[];
-  if(state.configs.some(c=>!c.name.trim())||new Set(state.configs.map(c=>c.name.trim().toLowerCase())).size!==2)out.push('Use a different, non-empty name for each configuration.');
-  if(legacy.through!=='2026Q4'||delivery.from!=='2027Q1')out.push('This migration uses Legacy through 2026Q4 and DELIVERY from 2027Q1.');
-  if(legacy.from!==null||delivery.through!==null)out.push('Legacy must cover earlier sprints and DELIVERY must have no end sprint.');
-  if(!legacy.through||!delivery.from||quarterIndex(legacy.through)+1!==quarterIndex(delivery.from))out.push('Sprint ranges must meet without a gap or overlap. Legacy ends at 2026Q4; DELIVERY starts at 2027Q1 for this migration.');
-  return out;
-}
-function dirtyIds(){return state.configs.filter((c,i)=>JSON.stringify(c)!==JSON.stringify(state.saved[i])).map(c=>c.id);}
-function updateChrome(){
-  const count=dirtyIds().length;
-  $('#dirty').hidden=!count;$('#dirty').textContent=`Unsaved changes · ${count}`;
-  $('#save').disabled=!count||errors().length>0;
-  $('#validation').hidden=!errors().length;$('#validation').textContent=errors().join(' ');
-  $('#mobile-name').textContent=active().name;
-}
-function setURL(){const u=new URL(location.href);u.searchParams.delete('variant');u.searchParams.delete('profile');u.searchParams.set('admin',state.admin);u.searchParams.set('configuration',state.active);u.searchParams.set('section',state.tab);history.replaceState(null,'',u);}
-function renderList(){
-  $('#configuration-list').innerHTML=state.configs.map(c=>`<div class="group-list-item ${state.active===c.id?'active':''}" data-config-row data-config="${c.id}" role="button" tabindex="0" aria-pressed="${state.active===c.id}" aria-label="Edit ${esc(c.name)} configuration">${state.active===c.id?`<input class="group-list-name-input" data-name="${c.id}" aria-label="Configuration name" value="${esc(c.name)}">`:`<span class="group-list-name">${esc(c.name)}</span>`}<span class="group-list-meta">${esc(compactRange(c))}</span></div>`).join('');
-}
-function fieldRow(label,value,key,options){
-  const editing=state.picker===key;
-  const control=editing?`<select class="group-name-input" data-select="${key}" aria-label="${label}">${options.map(o=>`<option value="${esc(o[0])}" ${String(value??'')===o[0]?'selected':''}>${esc(o[1])}</option>`).join('')}</select>`:chip(key==='model'?(value==='legacy'?'Epic → Story':'Initiative → Epic'):value||(key==='from'?'All earlier sprints':'No end'));
-  return `<div data-field-row><span class="team-selector-label">${label}</span><div data-fill>${control}</div>${button(editing?'Done':'Change',`data-change="${key}"`)}</div>`;
-}
-function header(){
-  const c=active();
-  return `<div data-row><h2 class="group-pane-title">${esc(c.name)}</h2><span class="group-modal-meta">${esc(compactRange(c))}</span></div>`;
-}
-function projectChip(p){return chip(p.key,`data-remove="${p.key}"`,p.type==='unclassified'?'':`${p.type}-chip`);}
-function scope(){
- const c=active();
- const projectSection=(label,kind,help)=>`<section class="group-projects-subsection"><div class="team-selector-label">${label}</div><p class="group-field-helper">${help}</p><div class="selected-teams-list">${c.projects.filter(p=>!kind||p.type===kind).map(projectChip).join('')||'<span class="team-selector-empty">No projects selected.</span>'}</div></section>`;
- const quarters=[['2026Q3','2026Q3'],['2026Q4','2026Q4'],['2027Q1','2027Q1'],['2027Q2','2027Q2']];
- const picker=state.picker==='projects'?`<div class="team-search-wrapper"><input class="team-search-input" aria-label="Search projects" placeholder="Search projects to add…" data-search><div class="team-search-results" id="project-results">${projectResults('')}</div></div>`:'';
- return `<div data-stack>${fieldRow('Start sprint',c.from,'from',[['','All earlier sprints'],...quarters])}${fieldRow('End sprint',c.through,'through',[...quarters,['','No end']])}</div><div class="group-projects-divider"></div><div data-row><h3 class="group-pane-title">Dashboard projects</h3>${button('Add project','data-change="projects"')}</div><p class="group-projects-desc">${newer()?'Select the Jira project containing quarterly team Epics.':'Select the Jira projects included in dashboard queries and assign them to Product or Tech.'}</p>${picker}<div class="settings-two-col-grid settings-scope-grid">${newer()?projectSection('Planning project',null,'Quarterly commitments are Epics in this project.'):projectSection('Product','product','Projects counted as Product work in planning and stats.')+projectSection('Tech','tech','Projects counted as Tech work in planning and stats.')}</div><p class="group-field-helper">${newer()?'Daily team Stories can remain in other Jira projects. Their estimates are not counted again.':'These projects and this structure remain available when viewing earlier quarters.'}</p>`;
-}
-function projectResults(query){
- const available=(active().id==='legacy'?initial[0].projects:initial[1].projects).filter(p=>!active().projects.some(x=>x.key===p.key)&&p.key.toLowerCase().includes(query.toLowerCase()));
- return available.map(p=>`<button type="button" class="team-search-result-item" data-add="${p.key}">${esc(p.key)}</button>`).join('')||'<div class="team-search-result-item is-empty">No other projects in this example.</div>';
-}
-function mappingCard(label,value,key,options,helper){
- return `<section class="group-projects-section group-config-card" data-field-card><div data-row><h3 class="group-pane-title">${label}</h3>${key?button(state.picker===key?'Done':'Change',`data-change="${key}"`):''}</div>${key && state.picker===key?`<select class="group-name-input" data-select="${key}" aria-label="${label} field">${options.map(o=>`<option ${value===o?'selected':''}>${esc(o)}</option>`).join('')}</select>`:chip(value)}<p class="group-field-helper">${helper}</p></section>`;
-}
-function mapping(){return '<div data-real-jira-settings></div>';}
-function source(){return '<div data-real-jira-settings></div>';}
-function workspacePage(){
- const titles={capacity:'Capacity',priority:'Priority weights',access:'Access',performance:'Performance'};
- const content=state.admin==='capacity'?`<div class="settings-two-col-grid">${mappingCard('Capacity project','Example capacity',null,[],'Workspace capacity source shared by all project configurations.')}${mappingCard('Capacity field','Quarterly capacity',null,[],'Existing shared numeric-field mapping and verification.')}</div>`:state.admin==='priority'?'<section class="group-config-card" data-stack><div data-row><span class="group-modal-meta">Urgent</span><span class="group-modal-meta">50%</span></div><div data-row><span class="group-modal-meta">High</span><span class="group-modal-meta">30%</span></div><div data-row><span class="group-modal-meta">Normal</span><span class="group-modal-meta">20%</span></div></section>':state.admin==='access'?'<section class="group-config-card" data-stack><span class="team-selector-label">Settings permissions</span><span class="group-modal-meta">Administrators only · example</span><p class="group-field-helper">Access rules apply to the workspace.</p></section>':'<section class="group-config-card"><div class="team-selector-label">Load observations</div><p class="group-modal-meta">No live observations in this mockup.</p></section>';
- return `<h2 class="group-pane-title">${titles[state.admin]}</h2><p class="group-projects-desc">Workspace settings · shared across all project configurations.</p>${content}`;
-}
-function render(){
- window.unmountActualJiraSettings?.();
- renderList();
- $('#admin-tabs').innerHTML=adminTabs.map(([id,label])=>`<button type="button" class="group-modal-tab ${state.admin===id?'active':''}" role="tab" aria-selected="${state.admin===id}" aria-controls="${id==='project'?'project-config-panel':'workspace-panel'}" id="admin-tab-${id}" tabindex="${state.admin===id?0:-1}" data-admin="${id}">${label}</button>`).join('');
- $('#tabs').innerHTML=tabs.map(([id,label])=>`<button type="button" class="group-modal-tab ${state.tab===id?'active':''}" role="tab" aria-selected="${state.tab===id}" aria-controls="settings-panel" id="tab-${id}" tabindex="${state.tab===id?0:-1}" data-tab="${id}">${label}</button>`).join('');
- $('#project-config-panel').hidden=state.admin!=='project';$('#workspace-panel').hidden=state.admin==='project';
- if(state.admin!=='project')$('#workspace-panel').innerHTML=workspacePage();
- $('#test-config').hidden=!['project','capacity'].includes(state.admin);
- $('#configuration-header').innerHTML=header();$('#settings-panel').innerHTML=state.tab==='mapping'?mapping():state.tab==='source'?source():scope();
- $('#settings-panel').setAttribute('aria-labelledby',`tab-${state.tab}`);
- $('#settings-panel').dataset.mode=state.tab;
- if(state.admin==='project'&&['source','mapping'].includes(state.tab)){
-   const id=state.active;
-   window.mountActualJiraSettings($('#settings-panel [data-real-jira-settings]'),{
-     tab:state.tab,configuration:structuredClone(active()),technicalIds:state.technicalIds??false,
-     onTechnicalIds:value=>{state.technicalIds=value;},
-     onChange:next=>{Object.assign(state.configs.find(c=>c.id===id),next);updateChrome();}
-   });
- }
- updateChrome();setURL();
-}
-function selectConfig(id){state.active=id;state.picker=null;render();$('#configurations').classList.remove('is-mobile-active');}
-document.addEventListener('click',event=>{
- const name=event.target.closest('[data-name]');if(name)return;
- const config=event.target.closest('[data-config]');if(config){selectConfig(config.dataset.config);return;}
- const admin=event.target.closest('[data-admin]');if(admin){state.admin=admin.dataset.admin;state.picker=null;render();$(`#admin-tab-${state.admin}`).focus();return;}
- const tab=event.target.closest('[data-tab]');if(tab&&!tab.disabled){state.tab=tab.dataset.tab;state.picker=null;render();$(`#tab-${state.tab}`).focus();return;}
- const change=event.target.closest('[data-change]');if(change){state.picker=state.picker===change.dataset.change?null:change.dataset.change;render();if(state.picker==='projects')$('[data-search]').focus();return;}
- const remove=event.target.closest('[data-remove]');if(remove){active().projects=active().projects.filter(p=>p.key!==remove.dataset.remove);state.picker=null;render();return;}
- const add=event.target.closest('[data-add]');if(add){const p=initial.flatMap(c=>c.projects).find(p=>p.key===add.dataset.add);active().projects.push(structuredClone(p));state.picker=null;render();}
-});
-document.addEventListener('input',event=>{
- if(event.target.matches('[data-name]')){active().name=event.target.value;$('#configuration-header .group-pane-title').textContent=active().name;updateChrome();}
- if(event.target.matches('[data-search]'))$('#project-results').innerHTML=projectResults(event.target.value);
-});
-document.addEventListener('change',event=>{
- const key=event.target.dataset.select;if(!key)return;
- active()[key]=['from','through'].includes(key)?event.target.value||null:event.target.value;state.picker=null;render();
-});
-$('#open-list').addEventListener('click',()=>$('#configurations').classList.add('is-mobile-active'));
-$('#close-list').addEventListener('click',()=>$('#configurations').classList.remove('is-mobile-active'));
-$('#cancel').addEventListener('click',()=>{state.configs=structuredClone(state.saved);state.picker=null;$('#message').textContent='Preview changes discarded.';render();});
-$('#save').addEventListener('click',()=>{if(errors().length)return;state.saved=structuredClone(state.configs);state.picker=null;$('#message').textContent='Saved in this preview only.';render();});
-$('#test-config').addEventListener('click',()=>{if(dirtyIds().length){$('#message').textContent='Save your changes before testing.';return;}if(state.admin==='capacity'){$('#message').textContent='Example only · shared workspace capacity. No Jira check.';return;}const c=state.saved.find(c=>c.id===state.active);$('#message').textContent=`Example only · ${c.name}: ${c.model==='delivery'?'Initiative → Epic':'Epic → Story'}. No Jira check.`;});
-document.addEventListener('keydown',event=>{
- if(event.target.matches('input,select,textarea'))return;
- const row=event.target.closest('[data-config]');if(row&&['Enter',' '].includes(event.key)){event.preventDefault();selectConfig(row.dataset.config);return;}
- if(event.target.closest('#admin-tabs')&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const ids=adminTabs.map(t=>t[0]);state.admin=ids[(ids.indexOf(state.admin)+(event.key==='ArrowRight'?1:-1)+ids.length)%ids.length];state.picker=null;render();$(`#admin-tab-${state.admin}`).focus();return;}
- if(event.target.closest('#tabs')&&['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const ids=tabs.filter(t=>!['priority','access','performance'].includes(t[0])).map(t=>t[0]);state.tab=ids[(ids.indexOf(state.tab)+(event.key==='ArrowRight'?1:-1)+ids.length)%ids.length];state.picker=null;render();$(`#tab-${state.tab}`).focus();}
-});
-render();
-</script>
 </body>
 </html>

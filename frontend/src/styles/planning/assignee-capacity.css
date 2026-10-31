@@ -12,6 +12,15 @@
 .planning-assignee-table .planning-review-storyPoints .planning-review-input { text-align: right; }
 .planning-assignee-person { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .planning-assignee-table .planning-review-truncated-value { flex: 1 1 auto; width: auto; min-width: 0; max-width: none; }
+/* Mark slot (#323): a fixed 14px leading slot on every name cell (empty without a mark), as tall as the avatar, so names
+   stay aligned and rows keep their height. A mark is the derived-column marker button (its hover circle, focus ring and
+   readout), placed over the slot with its 24x24 hit area centred on it; on plan is inked --good, over is inked --warn. */
+.planning-assignee-person > [data-assignee-mark] { flex: none; position: relative; width: 14px; height: 14px; }
+[data-assignee-mark][data-mark="on-plan"] { color: var(--good); }
+[data-assignee-mark][data-mark="over"] { color: var(--warn); }
+[data-assignee-mark] > .planning-review-derived-marker { position: absolute; top: 0; left: 0; width: 14px; height: 14px; color: inherit; }
+[data-assignee-mark] > .planning-review-derived-marker::before { top: -5px; left: -5px; }
+[data-assignee-mark] > .planning-review-derived-marker svg { display: block; width: 14px; height: 14px; }
 /* Row tint (#323): the person's underbar segment colour at 12% over the table surface; text, cues and geometry unchanged. */
 .planning-review-table.planning-assignee-table tbody tr.planning-assignee-tinted td { background: color-mix(in srgb, var(--planning-assignee-color) 12%, var(--bg-secondary)); }
 .planning-assignee-inherited { color: var(--text-secondary); }

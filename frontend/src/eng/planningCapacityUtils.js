@@ -319,12 +319,13 @@ export function getCapacityStatus(selected, capacity) {
     };
 }
 
-// One scale for the pinned amber capacity bar and the team-card microbar (#323 D8): the larger drawn value (capacity or
-// selected) times the caller's headroom. The assignee underbar is the Selected split by person, so it never exceeds it.
+// One scale for the pinned amber capacity bar and the team-card microbar (#323 D8): the largest drawn value (capacity,
+// selected, and the assignee underbar's total, the sum of each person's max(capacity, effort) plus Unassigned) times
+// the caller's headroom, so the strip never clips and the Team Cap marker stays on the same axis.
 export const CAPACITY_BAR_HEADROOM = 1.15;
 export const TEAM_CARD_HEADROOM = 1.3;
-export function capacityAxis({ capacity = 0, selected = 0 }, headroom) {
-    return Math.max(capacity || 0, selected || 0) * headroom;
+export function capacityAxis({ capacity = 0, selected = 0, stacked = 0 }, headroom) {
+    return Math.max(capacity || 0, selected || 0, stacked || 0) * headroom;
 }
 
 export function getTeamCapacityMeta(selected, capacity) {

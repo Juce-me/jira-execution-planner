@@ -247,46 +247,110 @@ test('chunkChanges respects the 50-change limit', async () => {
     assert.deepEqual(m.chunkChanges(changes).map(chunk => chunk.length), [50, 50, 20]);
 });
 
-test('underbar: one segment per person with Planned effort above 0 plus Unassigned effort; its total is the Planned effort total', async () => {
+test('underbar: one segment per person with Planned capacity or effort, max(capacity, effort) wide, plus Unassigned effort', async () => {
     const m = await load();
     const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'b', 'Bob', 5), story('S-3', undefined, null, 4), story('S-4', 'c', 'Cy', 2)];
     const doc = { revision: 1, rows: [
         { assigneeKey: 'a', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false },
         { assigneeKey: 'b', displayName: 'Bob', capacity: '6', vacations: null, notes: null, removed: false },
+        { assigneeKey: 'z', displayName: 'Zed', capacity: null, vacations: null, notes: null, removed: false },
         { assigneeKey: 'gone', displayName: 'Gone', capacity: '9', vacations: null, notes: null, removed: true },
     ] };
-    // Ann and Cy (no Capacity) and the unassigned Story are checked; Bob (Capacity 6) has nothing selected.
+    // Ann (Capacity 8, effort 3), Cy (no Capacity, effort 2) and the unassigned Story are checked; Bob (Capacity 6) has
+    // nothing selected; Zed has neither; Gone is removed.
     const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[0], tasks[2], tasks[3]] });
     const bar = m.buildUnderbar(view);
-    assert.deepEqual(bar.people.map(person => [person.key, person.selectedHundredths, person.capacityHundredths]), [['a', 300, 800], ['c', 200, null]]);
+    assert.deepEqual(bar.people.map(person => [person.key, person.widthHundredths, person.base, person.overlay]), [
+        ['a', 800, 'tint', { tone: 'solid', hundredths: 300 }],
+        ['b', 600, 'tint', null],
+        ['c', 200, 'solid', null],
+    ]);
     assert.deepEqual(bar.unassigned, { key: m.UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', selectedHundredths: 400 });
-    assert.equal(bar.totalHundredths, 900);
-    assert.equal(bar.totalHundredths, view.totals.selectedHundredths, 'the strip equals the table total and the bar Selected');
-    // Unassigned Stories that are not checked draw no Unassigned segment; nothing checked draws no strip.
+    // The total is what the strip spans: 8 + 6 + 2 + 4 = 20, more than the Planned effort total (9).
+    assert.equal(bar.totalHundredths, 2000);
+    assert.equal(view.totals.selectedHundredths, 900);
+    assert.equal(bar.selectedHundredths, 900, 'the strip still knows the Planned effort total it shows');
+    // Nothing checked still draws the capacity-only people; nobody with a number draws nothing.
     const none = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [] });
-    assert.equal(m.buildUnderbar(none), null);
-    const peopleOnly = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[1]] });
-    assert.equal(m.buildUnderbar(peopleOnly).unassigned, null);
+    assert.deepEqual(m.buildUnderbar(none).people.map(person => person.key), ['a', 'b']);
+    assert.equal(m.buildUnderbar(none).unassigned, null);
+    assert.equal(m.buildUnderbar({ rows: [{ key: 'z', name: 'Zed', capacity: null, selectedHundredths: 0 }], unassigned: null }), null);
     assert.equal(m.buildUnderbar(null), null);
     assert.equal(m.underbarOnBarAxis, undefined);
 });
 
-test('a person row tint equals the underbar segment colour for every person, and people with no Planned effort get none', async () => {
+test('underbar layers: the effort lies on top below capacity, the capacity lies on top once effort reaches or passes it', async () => {
+    const m = await load();
+    // effort < capacity: tinted capacity full width, solid effort on top; the tinted rest is the capacity left.
+    assert.deepEqual(m.underbarLayers(800, 300), { widthHundredths: 800, base: 'tint', overlay: { tone: 'solid', hundredths: 300 } });
+    // effort = capacity: the rule "capacity on top when effort >= capacity" makes it fully tinted over solid.
+    assert.deepEqual(m.underbarLayers(500, 500), { widthHundredths: 500, base: 'solid', overlay: { tone: 'tint', hundredths: 500 } });
+    // effort > capacity: solid effort full width, tinted capacity on top up to where capacity is used up.
+    assert.deepEqual(m.underbarLayers(400, 650), { widthHundredths: 650, base: 'solid', overlay: { tone: 'tint', hundredths: 400 } });
+    // hundredths, not floats: 0.01 below and above.
+    assert.deepEqual(m.underbarLayers(1001, 1000).overlay, { tone: 'solid', hundredths: 1000 });
+    assert.deepEqual(m.underbarLayers(999, 1000).overlay, { tone: 'tint', hundredths: 999 });
+    // capacity only, effort only, neither (blank and zero capacity are the same here).
+    assert.deepEqual(m.underbarLayers(500, 0), { widthHundredths: 500, base: 'tint', overlay: null });
+    assert.deepEqual(m.underbarLayers(null, 300), { widthHundredths: 300, base: 'solid', overlay: null });
+    assert.deepEqual(m.underbarLayers(0, 300), { widthHundredths: 300, base: 'solid', overlay: null });
+    assert.equal(m.underbarLayers(null, 0), null);
+    assert.equal(m.underbarLayers(0, 0), null);
+});
+
+test('capacity balance readout text: capacity left, over capacity, none without capacity; at most two decimals', async () => {
+    const m = await load();
+    assert.equal(m.capacityBalanceText(800, 500), '3 SP capacity left');
+    assert.equal(m.capacityBalanceText(500, 500), '0 SP capacity left');
+    assert.equal(m.capacityBalanceText(400, 650), '2.5 SP over capacity');
+    assert.equal(m.capacityBalanceText(1025, 0), '10.25 SP capacity left');
+    assert.equal(m.capacityBalanceText(null, 300), null);
+    assert.equal(m.capacityBalanceText(0, 300), null);
+});
+
+test('mark: on plan within 20% of a set capacity (inclusive), over above 120%, none otherwise, in integer hundredths', async () => {
+    const m = await load();
+    // Capacity 5: 0.8 x 5 = 4 exactly is on plan, 0.01 less is none; 1.2 x 5 = 6 exactly is on plan, 0.01 more is over.
+    assert.equal(m.capacityMark(500, 400), 'on-plan');
+    assert.equal(m.capacityMark(500, 399), null);
+    assert.equal(m.capacityMark(500, 500), 'on-plan');
+    assert.equal(m.capacityMark(500, 600), 'on-plan');
+    assert.equal(m.capacityMark(500, 601), 'over');
+    // No float drift: capacity 3, effort 3.6 (3 x 1.2 = 3.5999… in floats) and 2.4 (3 x 0.8 = 2.4000…04).
+    assert.equal(m.capacityMark(300, 360), 'on-plan');
+    assert.equal(m.capacityMark(300, 361), 'over');
+    assert.equal(m.capacityMark(300, 240), 'on-plan');
+    assert.equal(m.capacityMark(300, 239), null);
+    // Effort 0 with capacity, and spare capacity, get no mark.
+    assert.equal(m.capacityMark(500, 0), null);
+    assert.equal(m.capacityMark(800, 300), null);
+    // No capacity set (blank, null or 0) never gets a mark, however large the effort.
+    assert.equal(m.capacityMark(null, 900), null);
+    assert.equal(m.capacityMark(0, 900), null);
+    assert.equal(m.capacityMark(m.numberStringToHundredths(''), 900), null);
+    assert.equal(m.capacityMarkText('over', 500, 800), 'Effort 8 SP, capacity 5 SP: 3 SP over capacity');
+    assert.equal(m.capacityMarkText('over', 100, 1025), 'Effort 10.25 SP, capacity 1 SP: 9.25 SP over capacity');
+    assert.equal(m.capacityMarkText('on-plan', 250, 300), 'Effort 3 SP of capacity 2.5 SP: on plan');
+    assert.equal(m.capacityMarkText('on-plan', 1025, 820), 'Effort 8.2 SP of capacity 10.25 SP: on plan');
+    assert.equal(m.capacityMarkText(null, 500, 0), '');
+});
+
+test('a person row tint equals the underbar segment colour for every person, and people with no segment get none', async () => {
     const m = await load();
     const row = (key, name, capacity, selectedHundredths) => ({ key, name, capacity, selectedHundredths });
-    // Bob and Ann carry Planned effort; Cy has Capacity but nothing selected; Di neither.
-    const rows = [row('acc-b', 'Bob', '6', 300), row('acc-a', 'Ann', null, 500), row('acc-c', 'Cy', '4', 0), row('acc-d', 'Di', null, 0)];
+    // Bob and Ann carry Planned effort; Cy has Capacity but nothing selected (a tinted-only segment); Di neither.
+    const rows = [row('acc-b', 'Bob', '6', 300), row('acc-a', 'Ann', null, 500), row('acc-c', 'Cy', '4', 0), row('acc-d', 'Di', null, 0), row('acc-e', 'Eve', '0', 0)];
     const map = m.buildAssigneeColorMap(rows);
-    // Sorted by name: Ann, Bob, Cy, Di take the palette in order.
-    assert.deepEqual(map, { 'acc-a': m.ASSIGNEE_PALETTE[0], 'acc-b': m.ASSIGNEE_PALETTE[1], 'acc-c': m.ASSIGNEE_PALETTE[2], 'acc-d': m.ASSIGNEE_PALETTE[3] });
+    // Sorted by name: Ann, Bob, Cy, Di, Eve take the palette in order.
+    assert.deepEqual(map, { 'acc-a': m.ASSIGNEE_PALETTE[0], 'acc-b': m.ASSIGNEE_PALETTE[1], 'acc-c': m.ASSIGNEE_PALETTE[2], 'acc-d': m.ASSIGNEE_PALETTE[3], 'acc-e': m.ASSIGNEE_PALETTE[4] });
     const bar = m.buildUnderbar({ rows, unassigned: null });
-    assert.deepEqual(bar.people.map(person => person.key), ['acc-b', 'acc-a']);
+    assert.deepEqual(bar.people.map(person => person.key), ['acc-b', 'acc-a', 'acc-c']);
     for (const person of bar.people) {
         const source = rows.find(entry => entry.key === person.key);
         assert.equal(m.assigneeRowColor(source, map), m.resolveAssigneeColor(person.key, map));
     }
-    assert.equal(m.assigneeRowColor(rows[2], map), null);
     assert.equal(m.assigneeRowColor(rows[3], map), null);
+    assert.equal(m.assigneeRowColor(rows[4], map), null, 'Capacity 0 and no effort: no segment, no tint');
     assert.notEqual(m.assigneeRowColor(rows[0], map), m.assigneeRowColor(rows[1], map));
     assert.ok(m.ASSIGNEE_PALETTE.includes(m.resolveAssigneeColor('unmapped', map)));
 });

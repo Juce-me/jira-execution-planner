@@ -407,19 +407,66 @@ export const handlesUndoKey = event => isUndoShortcut(event) && !event.repeat;
 
 export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';
 
-// Segments of the thin bar under the capacity bar (#323): the Planned effort (Selected) of each non-removed person
-// above 0, plus a trailing Unassigned segment sized by the Planned effort of Stories with no assignee, so the strip's
-// total is the table's Planned effort total, the bar's Selected. Values are integer hundredths; null when nothing is selected.
+// Two layers of one person segment (#323), in integer hundredths: the segment is max(capacity, effort) wide; the layer
+// drawn on top is the effort (solid) while effort is below capacity, and the capacity (tinted) once effort reaches or
+// passes it, so the tinted part ends where capacity is used up. `base` is the full-width layer, `overlay` the one on
+// top (null when the person has only one of the two numbers).
+export function underbarLayers(capacityHundredths, effortHundredths) {
+    const capacity = capacityHundredths > 0 ? capacityHundredths : 0;
+    const effort = effortHundredths > 0 ? effortHundredths : 0;
+    if (!capacity && !effort) return null;
+    if (!capacity) return { widthHundredths: effort, base: 'solid', overlay: null };
+    if (!effort) return { widthHundredths: capacity, base: 'tint', overlay: null };
+    return effort < capacity
+        ? { widthHundredths: capacity, base: 'tint', overlay: { tone: 'solid', hundredths: effort } }
+        : { widthHundredths: effort, base: 'solid', overlay: { tone: 'tint', hundredths: capacity } };
+}
+
+// Segments of the thin bar under the capacity bar (#323): each non-removed person with Planned capacity or Planned
+// effort above 0, max(capacity, effort) wide in two layers (underbarLayers), plus a trailing Unassigned segment sized
+// by the Planned effort of Stories with no assignee (effort only). The total is what the strip spans on the bar's axis
+// and may exceed the bar's Selected. Values are integer hundredths; null when no segment is drawn.
 export function buildUnderbar(view) {
-    const people = (view?.rows || [])
-        .filter(row => row.selectedHundredths > 0)
-        .map(row => ({ key: row.key, name: row.name, capacityHundredths: numberStringToHundredths(row.capacity), selectedHundredths: row.selectedHundredths }));
+    const people = (view?.rows || []).map(row => {
+        const capacityHundredths = numberStringToHundredths(row.capacity);
+        const layers = underbarLayers(capacityHundredths, row.selectedHundredths);
+        return layers && { key: row.key, name: row.name, capacityHundredths, selectedHundredths: row.selectedHundredths, ...layers };
+    }).filter(Boolean);
     const unassigned = view?.unassigned?.selectedHundredths > 0
         ? { key: UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', selectedHundredths: view.unassigned.selectedHundredths }
         : null;
     if (!people.length && !unassigned) return null;
-    const totalHundredths = sumHundredths(people.map(person => person.selectedHundredths)) + (unassigned?.selectedHundredths || 0);
-    return { people, unassigned, totalHundredths };
+    const totalHundredths = sumHundredths(people.map(person => person.widthHundredths)) + (unassigned?.selectedHundredths || 0);
+    // The Planned effort the strip shows (people plus Unassigned), the Selected of the bar: the Unassigned share's base.
+    const selectedHundredths = sumHundredths(people.map(person => person.selectedHundredths)) + (unassigned?.selectedHundredths || 0);
+    return { people, unassigned, totalHundredths, selectedHundredths };
+}
+
+// The readout line under a person's capacity: what is left of it, or how far effort is above it (null without capacity).
+export function capacityBalanceText(capacityHundredths, effortHundredths) {
+    if (!(capacityHundredths > 0)) return null;
+    const delta = capacityHundredths - (effortHundredths || 0);
+    return delta >= 0 ? `${formatHundredths(delta)} SP capacity left` : `${formatHundredths(-delta)} SP over capacity`;
+}
+
+// ---- attention mark --------------------------------------------------------------
+
+// A person's mark (#323), with Planned capacity set (above 0), in integer hundredths (no float drift), boundaries
+// inclusive: 'on-plan' when 0.8 x capacity <= effort <= 1.2 x capacity, 'over' when effort > 1.2 x capacity (the
+// Planned effort cell's over cue threshold); null otherwise: no or zero capacity, or spare capacity (effort below 80%,
+// effort 0 included).
+export function capacityMark(capacityHundredths, effortHundredths) {
+    if (!(capacityHundredths > 0)) return null;
+    const effort = effortHundredths > 0 ? effortHundredths : 0;
+    if (effort * 10 > capacityHundredths * 12) return 'over';
+    return effort * 10 >= capacityHundredths * 8 ? 'on-plan' : null;
+}
+
+// The mark's readout and accessible name.
+export function capacityMarkText(mark, capacityHundredths, effortHundredths) {
+    const effort = formatHundredths(effortHundredths || 0), capacity = formatHundredths(capacityHundredths);
+    if (mark === 'over') return `Effort ${effort} SP, capacity ${capacity} SP: ${formatHundredths((effortHundredths || 0) - capacityHundredths)} SP over capacity`;
+    return mark === 'on-plan' ? `Effort ${effort} SP of capacity ${capacity} SP: on plan` : '';
 }
 
 // The stats palette without the colours that clash with the Unassigned pink/red (`--warn`, the over cue) and the amber
@@ -443,7 +490,7 @@ export function resolveAssigneeColor(key, colorMap) {
     const id = String(key || '').trim();
     return (id && colorMap?.[id]) || ASSIGNEE_PALETTE[hashTeamId(id) % ASSIGNEE_PALETTE.length];
 }
-// Only people with Planned effort above 0 have an underbar segment, so only they get a row tint (null otherwise).
+// Only people with an underbar segment (Planned capacity or Planned effort above 0) get a row tint (null otherwise).
 export function assigneeRowColor(row, colorMap) {
-    return row.selectedHundredths > 0 ? resolveAssigneeColor(row.key, colorMap) : null;
+    return underbarLayers(numberStringToHundredths(row.capacity), row.selectedHundredths) ? resolveAssigneeColor(row.key, colorMap) : null;
 }

@@ -478,7 +478,7 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     expect(Number(footer[1]), 'the Planned capacity sum is the people, not the team number').toBe(14);
 });
 
-test('segments are one per person with Planned effort plus Unassigned, distinct, sized by Selected on the bar axis, ending with the fill; the readout stays on screen', async ({ page }) => {
+test('segments are one per person with Planned capacity or effort plus Unassigned, distinct, max(capacity, effort) wide on the bar axis; the readout stays on screen', async ({ page }) => {
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
@@ -501,14 +501,16 @@ test('segments are one per person with Planned effort plus Unassigned, distinct,
     expect(measure.trackBottom).toBeLessThanOrEqual(measure.outerBottom + 0.5);
     expect(new Set(measure.segments.map(segment => segment.color)).size).toBe(3);
     expect(measure.segments.map(segment => segment.label).some(label => label.includes('Cy Former'))).toBe(false);
-    // Axis max(capacity 20, selected 14) x 1.15 = 23 (revision 4: max(20, 14, people Capacity 8 + 6 + Unassigned 4 = 18) x 1.15 = 23,
-    // with Ann 8/23 and Bob 6/23 by Capacity). Now Ann 5/23, Bob 5/23, Unassigned 4/23: the strip is the Selected 14/23.
-    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(5 / 23, 2);
-    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(5 / 23, 2);
+    // Axis max(capacity 20, selected 14, strip 8 + 6 + 4 = 18) x 1.15 = 23. Slice 9: Ann 5/23, Bob 5/23, Unassigned 4/23,
+    // the strip ending with the Selected 14/23. Round 3: each person is max(capacity, effort) wide, Ann 8/23, Bob 6/23,
+    // Unassigned (effort only) 4/23, so the strip ends at 18/23, past the fill and before the Team Cap at 20/23.
+    expect(measure.segments[0].width / measure.trackWidth).toBeCloseTo(8 / 23, 2);
+    expect(measure.segments[1].width / measure.trackWidth).toBeCloseTo(6 / 23, 2);
     expect(measure.segments[2].label).toContain('Unassigned (effort)');
     expect(measure.segments[2].width / measure.trackWidth).toBeCloseTo(unassignedEffort / 23, 2);
     expect(measure.capX / measure.trackWidth).toBeCloseTo(20 / 23, 2);
-    expect(Math.abs(measure.stripRight - measure.fillRight), 'the strip ends where the Selected fill ends').toBeLessThanOrEqual(1);
+    expect((measure.stripRight - measure.stripLeft) / measure.trackWidth, 'the strip spans 18/23').toBeCloseTo(18 / 23, 2);
+    expect(measure.stripRight, 'the strip runs past the Selected fill').toBeGreaterThan(measure.fillRight + 10);
     expect(Math.abs(measure.stripLeft - measure.fillLeft)).toBeLessThanOrEqual(1);
     await expect(underbar(page).locator('[data-assignee-overflow], .planning-assignee-overflow')).toHaveCount(0);
     const before = await page.locator('.planning-panel').boundingBox();
@@ -522,8 +524,10 @@ test('segments are one per person with Planned effort plus Unassigned, distinct,
     expect(await readout(page).evaluate(node => node.hasAttribute('title') || node.closest('[title]') !== null)).toBe(false);
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
-    await expect(readout(page)).toContainText('Selected 5');
-    await expect(readout(page)).toContainText('Planned capacity 8 · 36% of Selected');
+    await expect(readout(page)).toContainText('Planned effort 5');
+    await expect(readout(page)).toContainText('Planned capacity 8');
+    await expect(readout(page)).toContainText('3 SP capacity left');
+    await expect(readout(page)).not.toContainText('% of Selected');
     await expectReadoutInViewport(page);
     await page.mouse.move(5, 400);
     await expect(readout(page)).toHaveCount(0);
@@ -607,6 +611,10 @@ test('whole-track hover: any height resolves the segment under the pointer, past
     await expect(readout(page)).toContainText('Selected 4');
     await expect(readout(page)).toContainText('29% of Selected');
     await expect(readout(page)).toContainText('Team capacity: Jira');
+    // A person segment resolves with the round-3 readout (Bob: effort 5, capacity 6).
+    await page.mouse.move(5, 400);
+    await page.mouse.move(bob.left + bob.width / 2, geometry.track.top + 2);
+    await expect(readout(page)).toHaveText(/Selected 4 tasks · 14\.0 SP\s*Bob Synthetic\s*Planned effort 5\s*Planned capacity 6\s*1 SP capacity left\s*Team capacity: Jira/);
     // Past the last segment and off the marker: the header-only readout.
     const pastX = (unassigned.right + geometry.marker.left) / 2;
     expect(pastX).toBeGreaterThan(unassigned.right + 2);
@@ -638,42 +646,53 @@ test('whole-track hover: any height resolves the segment under the pointer, past
 const overflowMark = page => underbar(page).locator('[data-assignee-overflow], .planning-assignee-overflow');
 const showPanel = page => page.locator('.planning-panel').getByRole('button', { name: 'Show panel' });
 
-test('people Capacity above Team Cap draws no overflow mark: the strip is Planned effort and ends with the fill, in the expanded panel and the compact readout', async ({ page }) => {
+test('people Capacity above Team Cap widens the shared axis: the strip is not clipped, no overflow mark, and the Team Cap marker stays on the axis, expanded and compact', async ({ page }) => {
     const server = capacityServer({ rows: bigCapacityRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
     await expand(page);
-    // Capacity 12 + 10 against Team Cap 20; Selected 14 is under, so the bar has no over zone and the strip stops at 14.
+    // Capacity 12 + 10 + Unassigned 4 = 26 against Team Cap 20, Selected 14: the axis is 26 x 1.15 = 29.9 (slice 9: 23,
+    // the strip ending with the fill at 14/23), so the strip ends at 26/29.9, past the Team Cap at 20/29.9.
     await expect(segments(page)).toHaveCount(3);
     await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(0);
     await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 20.0 cap');
     const measure = () => page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
         const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
-        return { stripEnd: list[list.length - 1].right, fillRight: document.querySelector('.planning-panel .capacity-bar-fill').getBoundingClientRect().right,
-            ratio: (list[list.length - 1].right - track.left) / track.width, track: { top: track.top } };
+        const wrapper = document.querySelector('[data-assignee-underbar]').getBoundingClientRect();
+        const cap = document.querySelector('.planning-panel .capacity-bar-marker.teamcap').getBoundingClientRect();
+        const fill = document.querySelector('.planning-panel .capacity-bar-fill').getBoundingClientRect();
+        return { stripEnd: list[list.length - 1].right, wrapperRight: wrapper.right, fillRatio: (fill.right - track.left) / track.width,
+            ratio: (list[list.length - 1].right - track.left) / track.width, capRatio: (cap.left + cap.width / 2 - track.left) / track.width,
+            widths: list.map(rect => rect.width / track.width), track: { top: track.top } };
     });
     for (const mode of ['compact', 'expanded']) {
         if (mode === 'expanded') { await showPanel(page).click(); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
         await expect(page.locator('.planning-panel [data-assignee-overflow], .planning-panel .planning-assignee-overflow'), mode).toHaveCount(0);
         await expect(page.locator('.planning-panel').getByText(/SP over/), mode).toHaveCount(0);
         const m = await measure();
-        expect(Math.abs(m.stripEnd - m.fillRight), mode).toBeLessThanOrEqual(1);
-        expect(m.ratio, mode).toBeCloseTo(14 / 23, 2);
+        expect(m.ratio, mode).toBeCloseTo(26 / 29.9, 2);
+        expect(m.widths[0], mode).toBeCloseTo(12 / 29.9, 2);
+        expect(m.widths[1], mode).toBeCloseTo(10 / 29.9, 2);
+        expect(m.widths[2], mode).toBeCloseTo(4 / 29.9, 2);
+        expect(m.capRatio, `${mode}: the Team Cap marker is on the same axis`).toBeCloseTo(20 / 29.9, 2);
+        expect(m.fillRatio, `${mode}: the fill is on the same axis`).toBeCloseTo(14 / 29.9, 2);
+        expect(m.stripEnd, `${mode}: the strip is not clipped`).toBeLessThan(m.wrapperRight - 1);
         await page.mouse.move(5, 400);
         await page.mouse.move(m.stripEnd - 3, m.track.top + 3);
         await expect(readout(page)).toContainText('Unassigned (effort)');
         await expect(readout(page)).not.toContainText('over Team Cap');
         await expectReadoutInViewport(page);
         await page.mouse.move(5, 400);
-        await page.locator('.planning-panel').screenshot({ path: `tmp/slice9-shots/pinned-bar-${mode}.png`, animations: 'disabled' });
+        await page.locator('.planning-panel').screenshot({ path: `tmp/slice10-shots/pinned-bar-big-capacity-${mode}.png`, animations: 'disabled' });
     }
 });
 
-test('over capacity: the strip spans the clipped fill and the bar\'s own over-capacity zone and ends at the Selected', async ({ page }) => {
+test('over capacity: the strip spans the clipped fill and the bar\'s own over-capacity zone and runs on to the people\'s capacity', async ({ page }) => {
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
-    // Team Cap 10: selected 14 is above 120%, so the bar is over; the strip is Selected 14 split by person and ends where the zone does.
+    // Team Cap 10: selected 14 is above 120%, so the bar is over. The strip is Ann 8 + Bob 6 + Unassigned 4 = 18 on the
+    // axis 18 x 1.15 = 20.7 (slice 9: it ended with the zone at 14), so it runs past the zone's end (14/20.7) to 18/20.7.
     await page.route('**/api/capacity?*', route => json(route, { enabled: true, mutationEnabled: false, sprint: new URL(route.request().url()).searchParams.get('sprint'), capacities: { 'Alpha Team': 10 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 10 }] }));
     await openPlanning(page);
     await expand(page);
@@ -683,9 +702,12 @@ test('over capacity: the strip spans the clipped fill and the bar\'s own over-ca
     await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 10.0 cap');
     const ends = await page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
-        return { strip: list[list.length - 1].right, zone: document.querySelector('.planning-panel .capacity-bar-variance-zone.visible').getBoundingClientRect().right };
+        const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+        const ratio = x => (x - track.left) / track.width;
+        return { strip: ratio(list[list.length - 1].right), zone: ratio(document.querySelector('.planning-panel .capacity-bar-variance-zone.visible').getBoundingClientRect().right) };
     });
-    expect(Math.abs(ends.strip - ends.zone)).toBeLessThanOrEqual(1);
+    expect(ends.zone).toBeCloseTo(14 / 20.7, 2);
+    expect(ends.strip).toBeCloseTo(18 / 20.7, 2);
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
     await expect(readout(page)).not.toContainText('over Team Cap');
@@ -762,20 +784,22 @@ test('settled screenshots of the strip in the normal case, compact and expanded,
     await page.locator('.team-stat-card').first().screenshot({ path: 'tmp/slice1-shots/card-bar-normal.png', animations: 'disabled' });
 });
 
-test('each person row with Planned effort is tinted with its segment colour; rows with none (Capacity or not) and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {
-    // Zoe has Capacity 5 but no Stories, so Planned effort 0 and no segment.
+test('each person row with a segment (Planned capacity or effort) is tinted with its colour; rows with neither and Unassigned keep their own surface; geometry is unchanged', async ({ page }) => {
+    // Zoe has Capacity 5 but no Stories: a tinted-only segment, so her row is tinted too (slice 9: no segment, no tint).
     const server = capacityServer({ rows: [...underbarRows, { assigneeKey: 'acc-zoe', displayName: 'Zoe Capacity Only', capacity: '5', vacations: null, notes: null, removed: false }] });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
     await expand(page);
-    await expect(segments(page)).toHaveCount(3);
+    await expect(segments(page)).toHaveCount(4);
     const measure = () => page.evaluate(() => {
         const probe = document.createElement('i');
         document.body.appendChild(probe);
         const resolve = value => { probe.style.background = value; return getComputedStyle(probe).backgroundColor; };
         const surface = getComputedStyle(document.querySelector('[data-assignee-capacity]')).getPropertyValue('--bg-secondary').trim();
+        // The person colour: the segment's colour, or the colour its tinted layer mixes (tinted-only and capacity-on-the-bottom segments).
+        const solid = node => { const value = node.style.getPropertyValue('--stacked-bar-color'); const mix = /^color-mix\(in srgb, (\S+) /.exec(value); return resolve(mix ? mix[1] : value); };
         const segmentColors = Object.fromEntries([...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')]
-            .map(node => [node.getAttribute('aria-label').replace(/^Assignee capacity /, '').split(': ')[0], getComputedStyle(node).backgroundColor]));
+            .map(node => [node.getAttribute('aria-label').replace(/^Assignee capacity /, '').split(': ')[0], solid(node)]));
         const rows = Object.fromEntries([...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => {
             const box = node => { const r = node.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; };
             return [tr.dataset.assigneeKey, {
@@ -793,18 +817,17 @@ test('each person row with Planned effort is tinted with its segment colour; row
     const withTint = await measure();
     expect(withTint.segmentColors['Ann Synthetic']).toBe(withTint.rows['acc-ann'].varColor);
     expect(withTint.segmentColors['Bob Synthetic']).toBe(withTint.rows['acc-bob'].varColor);
-    for (const key of ['acc-ann', 'acc-bob']) {
+    expect(withTint.rows['acc-zoe'].varColor).toBeTruthy();
+    for (const key of ['acc-ann', 'acc-bob', 'acc-zoe']) {
         expect(withTint.rows[key].tinted, key).toBe(true);
         expect(new Set(withTint.rows[key].cellBackgrounds), key).toEqual(new Set([withTint.rows[key].expectedMix]));
         expect(withTint.rows[key].expectedMix, key).not.toBe(withTint.rows[key].plain);
     }
     expect(withTint.rows['acc-ann'].expectedMix).not.toBe(withTint.rows['acc-bob'].expectedMix);
-    // Planned effort 0 (Cy without Capacity, Zoe with Capacity 5): no segment, no tint. Unassigned keeps its warning-tone row.
-    for (const key of ['acc-cy', 'acc-zoe']) {
-        expect(withTint.rows[key].tinted, key).toBe(false);
-        expect(new Set(withTint.rows[key].cellBackgrounds), key).toEqual(new Set([withTint.rows[key].plain]));
-    }
-    expect(Object.keys(withTint.segmentColors)).not.toContain('Zoe Capacity Only');
+    // Neither Capacity nor Planned effort (Cy): no segment, no tint. Unassigned keeps its warning-tone row.
+    expect(withTint.rows['acc-cy'].tinted).toBe(false);
+    expect(new Set(withTint.rows['acc-cy'].cellBackgrounds)).toEqual(new Set([withTint.rows['acc-cy'].plain]));
+    expect(Object.keys(withTint.segmentColors)).not.toContain('Cy Former');
     expect(new Set(withTint.rows.unassigned.cellBackgrounds)).toEqual(new Set([withTint.rows.unassigned.unassignedPlain]));
     await page.mouse.move(5, 400);
     await strip(page).scrollIntoViewIfNeeded();
@@ -2032,4 +2055,461 @@ test('a person added this session shows the search result photo until reload; no
     await expect(table(page)).toBeVisible();
     await expect(rowOf(page, 'acc-new').locator('.task-assignee-icon svg'), 'after reload the glyph').toHaveCount(1);
     await expect(rowOf(page, 'acc-new').locator('.task-assignee-icon img')).toHaveCount(0);
+});
+
+// ---- operator review round 3: capacity marks and two-level person segments (#323) ----------------------------------
+
+// Ann over (Capacity 3, effort 5 > 1.2 x 3: over mark; effort above capacity), Bob effort only (no Capacity: no mark),
+// Cy neither, Eve spare capacity (Capacity 4, effort 2 < 0.8 x 4: no mark; effort below capacity), Fay at the upper
+// boundary (Capacity 2.5, effort 3 = 1.2 x 2.5 exactly: on plan; effort above capacity), Zoe capacity only (Capacity 5,
+// effort 0: no mark), Gus removed; Unassigned 4. Team Cap 20, Selected 19, strip 5 + 5 + 4 + 3 + 5 + 4 = 26, axis 29.9.
+const layerStories = [...stories, story('PLAN-6', 'acc-eve', 'Eve Synthetic', 2), story('PLAN-7', 'acc-fay', 'Fay Synthetic', 3)];
+const layerRows = [
+    { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '3', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: null, vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: null, vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-eve', displayName: 'Eve Synthetic', capacity: '4', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-fay', displayName: 'Fay Synthetic', capacity: '2.5', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-zoe', displayName: 'Zoe Capacity Only', capacity: '5', vacations: null, notes: null, removed: false },
+    { assigneeKey: 'acc-gus', displayName: 'Gus Removed', capacity: '1', vacations: null, notes: null, removed: true },
+];
+const ANN_SENTENCE = 'Effort 5 SP, capacity 3 SP: 2 SP over capacity';
+const FAY_SENTENCE = 'Effort 3 SP of capacity 2.5 SP: on plan';
+const markSlot = (page, key) => rowOf(page, key).locator('[data-assignee-mark]');
+const markReadout = page => page.locator('.epic-full-value-readout');
+async function expectBoxInViewport(page, locator) {
+    const viewport = page.viewportSize();
+    await expect(locator).toBeVisible();
+    const box = await locator.boundingBox();
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.y).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width); expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+}
+const nameGeometry = page => page.evaluate(() => [...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => {
+    const r = node => { const b = node.getBoundingClientRect(); return { left: b.left, width: b.width, height: b.height, top: b.top }; };
+    const text = tr.querySelector('td.planning-assignee-name .planning-review-truncated-value');
+    const range = document.createRange(); range.selectNodeContents(text);
+    return { key: tr.dataset.assigneeKey, height: tr.getBoundingClientRect().height, slot: r(tr.querySelector('[data-assignee-mark]')),
+        avatar: r(tr.querySelector('.task-assignee-icon')), nameX: range.getBoundingClientRect().left, removable: Boolean(tr.querySelector('.planning-review-column-action')) };
+}));
+
+test('marks: on plan within 20% of capacity and over above 120%, none otherwise, in a fixed slot on every row that keeps names aligned and rows the same height', async ({ page }) => {
+    const server = capacityServer({ rows: layerRows });
+    await install(page, { server, capacityProject: 'CAP', issues: layerStories });
+    await openPlanning(page);
+    await expand(page);
+    expect(await names(page)).toEqual(['Unassigned', 'Ann Synthetic', 'Bob Synthetic', 'Cy Former', 'Eve Synthetic', 'Fay Synthetic', 'Zoe Capacity Only']);
+    // Ann over, Fay on plan (the 1.2 x boundary is inclusive); spare capacity (Eve, Zoe), no capacity (Bob, Cy),
+    // Unassigned and the removed Gus get none.
+    await expect(table(page).locator('[data-assignee-mark] button')).toHaveCount(2);
+    await expect(markSlot(page, 'acc-ann')).toHaveAttribute('data-mark', 'over');
+    await expect(markSlot(page, 'acc-fay')).toHaveAttribute('data-mark', 'on-plan');
+    for (const [key, sentence] of [['acc-ann', ANN_SENTENCE], ['acc-fay', FAY_SENTENCE]]) {
+        const mark = markSlot(page, key).getByRole('button', { name: sentence, exact: true });
+        await expect(mark, key).toHaveCount(1);
+        await expect(mark, key).not.toHaveAttribute('title', /.*/);
+    }
+    for (const key of ['unassigned', 'acc-bob', 'acc-cy', 'acc-eve', 'acc-zoe']) {
+        await expect(markSlot(page, key), key).toHaveCount(1);
+        await expect(markSlot(page, key).locator('*'), key).toHaveCount(0);
+        await expect(markSlot(page, key), key).toHaveAttribute('aria-hidden', 'true');
+        await expect(markSlot(page, key), key).not.toHaveAttribute('data-mark', /.*/);
+    }
+    // Ink is the --warn and --good tokens through currentColor; no emoji character anywhere in the cells.
+    const tokens = await page.evaluate(() => {
+        const probe = document.createElement('i'); document.body.appendChild(probe);
+        const resolve = value => { probe.style.color = value; return getComputedStyle(probe).color; };
+        const result = { warn: resolve('var(--warn)'), good: resolve('var(--good)'), white: resolve('var(--bg-secondary)') };
+        probe.remove();
+        return result;
+    });
+    const ink = key => markSlot(page, key).evaluate(node => {
+        const svg = node.querySelector('svg');
+        return { color: getComputedStyle(node.querySelector('button')).color, painted: [...svg.querySelectorAll('[stroke], [fill]')].filter(el => el !== svg)
+            .map(el => el.getAttribute('stroke') || el.getAttribute('fill') || ''), check: svg.querySelector('path[style]') ? getComputedStyle(svg.querySelector('path[style]')).stroke : null,
+            text: node.textContent };
+    });
+    const over = await ink('acc-ann'), onPlan = await ink('acc-fay');
+    expect(over.color).toBe(tokens.warn);
+    expect(new Set(over.painted)).toEqual(new Set(['currentColor']));
+    expect(onPlan.color).toBe(tokens.good);
+    expect(onPlan.check, 'the check is drawn in the surface white').toBe(tokens.white);
+    expect(over.text + onPlan.text).toBe('');
+    expect(await table(page).locator('tbody').textContent()).not.toMatch(/[\u2600-\u27bf\u{1f300}-\u{1faff}\u203c]/u);
+    const g = await nameGeometry(page);
+    // Before the slot existed: the same rows with every mark slot taken out, so the heights compare like for like.
+    const withoutSlots = await page.evaluate(() => {
+        const heights = () => [...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => [tr.dataset.assigneeKey, tr.getBoundingClientRect().height]);
+        const slots = [...document.querySelectorAll('[data-assignee-mark]')].map(node => [node.parentElement, node, node.nextSibling]);
+        slots.forEach(([, node]) => node.remove());
+        const without = heights();
+        slots.forEach(([parent, node, next]) => parent.insertBefore(node, next));
+        return without;
+    });
+    console.log('SLICE10_ROW_HEIGHTS', JSON.stringify({ withSlots: g.map(row => [row.key, row.height]), withoutSlots }));
+    expect(g.map(row => [row.key, row.height]), 'the slot and marks change no row height').toEqual(withoutSlots);
+    for (const row of g) {
+        expect(row.slot.width, row.key).toBe(14);
+        expect(Math.abs(row.slot.left - g[0].slot.left), `${row.key} slot x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.avatar.left - g[0].avatar.left), `${row.key} avatar x`).toBeLessThanOrEqual(0.5);
+        expect(Math.abs(row.nameX - g[0].nameX), `${row.key} name x`).toBeLessThanOrEqual(0.5);
+        // Rows keep the slice 9 heights: 32, and 35 where the 24px Remove sits (Cy and Zoe have no Stories). WebKit lays the
+        // person rows out at 32.39 with or without the slot (asserted above), so allow half a pixel there.
+        expect(Math.abs(row.height - (row.removable ? 35 : 32)), `${row.key} ${row.height}`).toBeLessThanOrEqual(0.5);
+    }
+    // Each icon fills its slot and its 24x24 hit area is centred on it.
+    for (const key of ['acc-ann', 'acc-fay']) {
+        const hit = await markSlot(page, key).locator('button').evaluate(node => {
+            const slot = node.parentElement.getBoundingClientRect(), before = getComputedStyle(node, '::before'), svg = node.querySelector('svg').getBoundingClientRect();
+            return { slot: [slot.left, slot.top, slot.width, slot.height], svg: [svg.left, svg.top, svg.width, svg.height], hitWidth: before.width, hitHeight: before.height, hitTop: before.top, hitLeft: before.left };
+        });
+        expect(hit.svg, key).toEqual(hit.slot);
+        expect(hit, key).toMatchObject({ hitWidth: '24px', hitHeight: '24px', hitTop: '-5px', hitLeft: '-5px' });
+    }
+    await page.mouse.move(5, 400);
+    await strip(page).scrollIntoViewIfNeeded();
+    await table(page).locator('tbody').screenshot({ path: 'tmp/slice10-shots/table-marks.png', animations: 'disabled' });
+});
+
+test('a mark opens its in-app readout on hover and on keyboard focus, inside the viewport, and writes nothing', async ({ page, browserName }) => {
+    const server = capacityServer({ rows: layerRows });
+    // No capacity project, so no stored-number mirror PATCH: any write here would come from a mark.
+    const { calls } = await install(page, { server, issues: layerStories });
+    await openPlanning(page);
+    await expand(page);
+    const since = calls.length;
+    for (const [key, sentence] of [['acc-ann', ANN_SENTENCE], ['acc-fay', FAY_SENTENCE]]) {
+        const mark = markSlot(page, key).locator('button');
+        const before = await rowOf(page, key).boundingBox();
+        await mark.hover();
+        await expect(markReadout(page), key).toHaveText(sentence);
+        await expectBoxInViewport(page, markReadout(page));
+        expect(await rowOf(page, key).boundingBox(), key).toEqual(before);
+        await page.mouse.move(5, 400);
+        await expect(markReadout(page), key).toHaveCount(0);
+    }
+    // Keyboard: from the strip toggle the next stop is Ann's mark (Undo is disabled, Unassigned has no control).
+    await stripToggle(page).focus();
+    // WebKit moves keyboard focus to buttons with Option+Tab.
+    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    await expect(markSlot(page, 'acc-ann').locator('button')).toBeFocused();
+    await expect(markReadout(page)).toHaveText(ANN_SENTENCE);
+    await page.keyboard.press('Escape');
+    await expect(markReadout(page)).toHaveCount(0);
+    await markSlot(page, 'acc-ann').locator('button').blur();
+    // At 1280x720 with the row at the bottom edge of the viewport the readouts still fit (they open above).
+    await page.setViewportSize({ width: 1280, height: 720 });
+    for (const key of ['acc-ann', 'acc-fay']) {
+        await page.mouse.move(5, 5);
+        await expect(markReadout(page)).toHaveCount(0);
+        await rowOf(page, key).evaluate(node => node.scrollIntoView({ block: 'end' }));
+        await markSlot(page, key).locator('button').hover();
+        await expectBoxInViewport(page, markReadout(page));
+    }
+    await page.waitForTimeout(300);
+    expect(calls.slice(since).filter(call => call.method !== 'GET'), 'the marks write nothing').toEqual([]);
+    expect(server.state.patches).toHaveLength(0);
+});
+
+test('a mark follows the mouse by hover only: a click neither pins the readout nor leaves focus or a ring on the mark', async ({ page, browserName }) => {
+    const server = capacityServer({ rows: layerRows });
+    await install(page, { server, issues: layerStories });
+    await openPlanning(page);
+    await expand(page);
+    for (const [key, sentence] of [['acc-ann', ANN_SENTENCE], ['acc-fay', FAY_SENTENCE]]) {
+        const mark = markSlot(page, key).locator('button');
+        await page.mouse.move(5, 400);
+        await expect(markReadout(page), key).toHaveCount(0);
+        await mark.hover();
+        await expect(markReadout(page), `${key}: hover opens`).toHaveText(sentence);
+        await page.mouse.move(5, 400);
+        await expect(markReadout(page), `${key}: leave closes`).toHaveCount(0);
+        await mark.click();
+        await expect(markReadout(page), `${key}: still hovered after the click`).toHaveText(sentence);
+        const state = await mark.evaluate(node => ({ focused: document.activeElement === node, focusVisible: node.matches(':focus-visible'), ring: getComputedStyle(node, '::before').outlineStyle }));
+        expect(state, `${key}: the click leaves no focus and no ring`).toEqual({ focused: false, focusVisible: false, ring: 'none' });
+        await page.mouse.move(5, 400);
+        await expect(markReadout(page), `${key}: click then leave leaves no readout`).toHaveCount(0);
+        await page.waitForTimeout(200);
+        await expect(markReadout(page), `${key}: nothing was pinned`).toHaveCount(0);
+        // A double click is two clicks: still nothing pinned.
+        await mark.dblclick();
+        await page.mouse.move(5, 400);
+        await page.waitForTimeout(200);
+        await expect(markReadout(page), `${key}: double click pins nothing`).toHaveCount(0);
+    }
+    // Keyboard focus (Tab) shows the readout with the ring; blur hides it.
+    const ann = markSlot(page, 'acc-ann').locator('button');
+    await stripToggle(page).focus();
+    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    await expect(ann).toBeFocused();
+    await expect(markReadout(page)).toHaveText(ANN_SENTENCE);
+    expect(await ann.evaluate(node => getComputedStyle(node, '::before').outlineStyle)).toBe('solid');
+    await ann.blur();
+    await expect(markReadout(page)).toHaveCount(0);
+    expect(server.state.patches).toHaveLength(0);
+});
+
+test('a mark opens by tap and closes by a second tap, an outside tap or a scroll', async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: layerRows });
+    await install(page, { server, issues: layerStories });
+    await openPlanning(page);
+    await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
+    for (const [key, sentence] of [['acc-ann', ANN_SENTENCE], ['acc-fay', FAY_SENTENCE]]) {
+        const mark = markSlot(page, key).locator('button');
+        // Second tap on the mark.
+        await mark.tap();
+        await expect(markReadout(page), key).toHaveText(sentence);
+        await expectBoxInViewport(page, markReadout(page));
+        await page.waitForTimeout(200);
+        await expect(markReadout(page), `${key}: a tap holds it with no hover`).toHaveText(sentence);
+        await mark.tap();
+        await expect(markReadout(page), key).toHaveCount(0);
+        // An outside tap (on the strip title row, which only toggles on its own button).
+        await mark.tap();
+        await expect(markReadout(page), key).toHaveText(sentence);
+        const empty = await rowOf(page, key).locator('td.planning-assignee-note').boundingBox();
+        await page.touchscreen.tap(empty.x + empty.width - 4, empty.y + 4);
+        await expect(markReadout(page), `${key}: outside tap closes`).toHaveCount(0);
+        // A scroll.
+        await mark.tap();
+        await expect(markReadout(page), key).toHaveText(sentence);
+        await page.evaluate(() => window.scrollBy(0, 40));
+        await expect(markReadout(page), `${key}: scroll closes`).toHaveCount(0);
+        await page.evaluate(() => window.scrollBy(0, -40));
+    }
+    expect(server.state.patches).toHaveLength(0);
+    await context.close();
+});
+
+const layerGeometry = page => page.evaluate(() => {
+    const probe = document.createElement('i'); document.body.appendChild(probe);
+    const resolve = value => { probe.style.background = value; return getComputedStyle(probe).backgroundColor; };
+    const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
+    const wrapper = document.querySelector('[data-assignee-underbar]').getBoundingClientRect();
+    const cap = document.querySelector('.planning-panel .capacity-bar-marker.teamcap').getBoundingClientRect();
+    const surface = getComputedStyle(document.body).getPropertyValue('--bg-secondary').trim();
+    const segmentsList = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
+        const box = node.getBoundingClientRect();
+        const overlay = node.querySelector(':scope > .stacked-bar-strip-part');
+        const value = node.style.getPropertyValue('--stacked-bar-color');
+        const raw = /^color-mix\(in srgb, (\S+) /.exec(value)?.[1] || value;
+        const style = overlay && getComputedStyle(overlay);
+        return {
+            name: node.getAttribute('aria-label').split(': ')[0].replace(/^Assignee capacity /, ''),
+            width: box.width / track.width, left: box.left, right: box.right, height: box.height,
+            background: getComputedStyle(node).backgroundColor, solid: resolve(raw), tint: resolve(`color-mix(in srgb, ${raw} 45%, ${surface})`),
+            overlay: overlay ? { width: overlay.getBoundingClientRect().width / box.width, left: overlay.getBoundingClientRect().left - box.left, height: overlay.getBoundingClientRect().height,
+                background: style.backgroundColor, position: style.position, parentIsSegment: overlay.parentElement === node, last: overlay === node.lastElementChild } : null,
+        };
+    });
+    const stripTrack = getComputedStyle(document.querySelector('[data-assignee-underbar] .stacked-bar-track')).backgroundColor;
+    const trackColor = getComputedStyle(document.querySelector('.planning-panel-capacity-graph .capacity-bar-track')).backgroundColor;
+    probe.remove();
+    return { segments: segmentsList, trackLeft: track.left, trackWidth: track.width, wrapperRight: wrapper.right, capRatio: (cap.left + cap.width / 2 - track.left) / track.width, stripTrack, trackColor };
+});
+
+const rgb = text => (text.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+const colourDistance = (a, b) => { const [x, y] = [rgb(a), rgb(b)]; return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
+
+for (const mode of ['compact', 'expanded']) test(`person segments draw two layers of the person colour: tinted capacity and solid effort, capacity on top when effort reaches it (${mode} panel)`, async ({ page }) => {
+    const server = capacityServer({ rows: layerRows });
+    await install(page, { server, capacityProject: 'CAP', issues: layerStories });
+    await openPlanning(page);
+    await expand(page);
+    if (mode === 'expanded') { await showPanel(page).click(); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
+    await expect(segments(page)).toHaveCount(6);
+    const g = await layerGeometry(page);
+    const by = Object.fromEntries(g.segments.map(segment => [segment.name, segment]));
+    // Table order, Unassigned trailing; Cy (neither number) has no segment.
+    expect(g.segments.map(segment => segment.name)).toEqual(['Ann Synthetic', 'Bob Synthetic', 'Eve Synthetic', 'Fay Synthetic', 'Zoe Capacity Only', 'Unassigned (effort)']);
+    for (const segment of g.segments) { expect(segment.height, segment.name).toBe(5); if (segment.overlay) expect(segment.overlay.height, segment.name).toBe(5); }
+    // Widths are max(capacity, effort) on the 29.9 axis; the strip ends at 26/29.9, inside the wrapper, past the Team Cap.
+    for (const [name, sp] of [['Ann Synthetic', 5], ['Bob Synthetic', 5], ['Eve Synthetic', 4], ['Fay Synthetic', 3], ['Zoe Capacity Only', 5], ['Unassigned (effort)', 4]]) expect(by[name].width, name).toBeCloseTo(sp / 29.9, 2);
+    const stripEnd = g.segments.at(-1).right;
+    expect((stripEnd - g.trackLeft) / g.trackWidth).toBeCloseTo(26 / 29.9, 2);
+    expect(stripEnd, 'not clipped').toBeLessThan(g.wrapperRight - 1);
+    expect(g.capRatio, 'Team Cap on the shared axis').toBeCloseTo(20 / 29.9, 2);
+    // Eve under capacity: tinted capacity (4) at the bottom, solid effort (2) on top from the left; the tinted rest is capacity left.
+    expect(by['Eve Synthetic'].background).toBe(by['Eve Synthetic'].tint);
+    expect(by['Eve Synthetic'].overlay).toMatchObject({ background: by['Eve Synthetic'].solid, position: 'absolute', parentIsSegment: true, last: true, left: 0 });
+    expect(by['Eve Synthetic'].overlay.width).toBeCloseTo(2 / 4, 2);
+    // Ann over (effort 5, capacity 3) and Fay at effort 3 >= capacity 2.5: solid effort at the bottom, tinted capacity on top.
+    for (const [name, ratio] of [['Ann Synthetic', 3 / 5], ['Fay Synthetic', 2.5 / 3]]) {
+        expect(by[name].background, name).toBe(by[name].solid);
+        expect(by[name].overlay, name).toMatchObject({ background: by[name].tint, position: 'absolute', parentIsSegment: true, last: true, left: 0 });
+        expect(by[name].overlay.width, name).toBeCloseTo(ratio, 2);
+    }
+    // Zoe capacity only: purely tinted; Bob effort only: purely solid; Unassigned: one solid --warn segment.
+    expect(by['Zoe Capacity Only'].background).toBe(by['Zoe Capacity Only'].tint);
+    expect(by['Zoe Capacity Only'].overlay).toBeNull();
+    expect(by['Bob Synthetic'].background).toBe(by['Bob Synthetic'].solid);
+    expect(by['Bob Synthetic'].overlay).toBeNull();
+    expect(by['Unassigned (effort)'].overlay).toBeNull();
+    expect(by['Unassigned (effort)'].background).toBe('rgb(207, 19, 34)');
+    // The tint is distinguishable from the empty track and from the solid layer.
+    for (const name of ['Ann Synthetic', 'Eve Synthetic', 'Fay Synthetic', 'Zoe Capacity Only']) {
+        expect(colourDistance(by[name].tint, g.trackColor), `${name} tint vs track`).toBeGreaterThan(60);
+        expect(colourDistance(by[name].tint, by[name].solid), `${name} tint vs solid`).toBeGreaterThan(60);
+    }
+    // Rows: every person with a segment is tinted, Cy (no segment) is not.
+    for (const key of ['acc-ann', 'acc-bob', 'acc-eve', 'acc-fay', 'acc-zoe']) await expect(rowOf(page, key), key).toHaveClass(/planning-assignee-tinted/);
+    await expect(rowOf(page, 'acc-cy')).not.toHaveClass(/planning-assignee-tinted/);
+    // Whole-track hover resolves one segment per person, at the top of the track and on the strip pixels of either layer.
+    const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
+    for (const [name, lines] of [
+        ['Ann Synthetic', ['Planned effort 5', 'Planned capacity 3', '2 SP over capacity']],
+        ['Eve Synthetic', ['Planned effort 2', 'Planned capacity 4', '2 SP capacity left']],
+        ['Fay Synthetic', ['Planned effort 3', 'Planned capacity 2.5', '0.5 SP over capacity']],
+        ['Zoe Capacity Only', ['Planned effort 0', 'Planned capacity 5', '5 SP capacity left']],
+        ['Bob Synthetic', ['Planned effort 5']],
+    ]) {
+        const segment = by[name];
+        for (const [x, y] of [[segment.left + 2, track.y + 2], [segment.right - 2, track.y + track.height - 2]]) {
+            await page.mouse.move(5, 400);
+            await page.mouse.move(x, y);
+            await expect(readout(page), `${name} at ${x}`).toContainText('Selected 6 tasks · 19.0 SP');
+            await expect(readout(page)).toContainText(name);
+            for (const line of lines) await expect(readout(page), `${name}: ${line}`).toContainText(line);
+            await expectReadoutInViewport(page);
+        }
+    }
+    await expect(readout(page)).not.toContainText('Planned capacity');
+    await expect(readout(page)).not.toContainText('capacity left');
+    await page.mouse.move(5, 400);
+    await page.mouse.move(by['Unassigned (effort)'].left + 3, track.y + 3);
+    await expect(readout(page)).toContainText('Unassigned (effort)');
+    await expect(readout(page)).toContainText('Selected 4');
+    await expect(readout(page)).toContainText('21% of Selected');
+    await page.mouse.move(5, 400);
+});
+
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`two-level segments keep the 5px strip, the compact panel and the pinned stack inside DoD 14 at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const server = capacityServer({ rows: layerRows, holdGet: true });
+    await install(page, { server, capacityProject: 'CAP', issues: layerStories });
+    await openPlanning(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    const withoutBar = (await page.locator('.planning-panel').boundingBox()).height;
+    server.state.release();
+    await expand(page);
+    await expect(segments(page)).toHaveCount(6);
+    const panel = await page.locator('.planning-panel').boundingBox();
+    expect(panel.height).toBeLessThan(64);
+    expect(panel.height).toBeCloseTo(withoutBar, 0);
+    expect((await page.locator('.planning-review-sticky-stack').boundingBox()).height).toBeLessThanOrEqual(175);
+    expect((await underbar(page).locator('.stacked-bar-track').boundingBox()).height).toBe(5);
+    // The marker still wins over the strip at its x, and the longest readout (6 lines, first segment at the left edge) fits.
+    const markerLine = await page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-line').boundingBox();
+    const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
+    const hit = await page.evaluate(({ x, y }) => Boolean(document.elementFromPoint(x, y)?.closest('.capacity-bar-marker.teamcap')), { x: markerLine.x + markerLine.width / 2, y: track.y + track.height - 2 });
+    expect(hit).toBe(true);
+    await page.mouse.move(track.x + 2, track.y + 2);
+    await expect(readout(page)).toContainText('2 SP over capacity');
+    await expectReadoutInViewport(page);
+    await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    await page.mouse.move(5, 5);
+    const pinned = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
+    await page.mouse.move(pinned.x + 2, pinned.y + 2);
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expectReadoutInViewport(page);
+});
+
+test('zoomed settled screenshots of the two-level segments: over, effort only, under, boundary, capacity only and Unassigned', async ({ browser }) => {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 3 });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: layerRows });
+    await install(page, { server, capacityProject: 'CAP', issues: layerStories });
+    await openPlanning(page);
+    await expect(segments(page)).toHaveCount(6);
+    await page.mouse.move(5, 400);
+    const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
+    await page.screenshot({ path: 'tmp/slice10-shots/strip-layers-track.png', clip: { x: track.x - 4, y: track.y - 4, width: track.width + 8, height: track.height + 8 }, animations: 'disabled' });
+    const list = await segments(page).evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { name: node.getAttribute('aria-label').split(':')[0].replace(/^Assignee capacity /, '').split(' ')[0].toLowerCase(), x: r.left, y: r.top, width: r.width, height: r.height }; }));
+    for (const segment of list) {
+        await page.screenshot({ path: `tmp/slice10-shots/segment-${segment.name}.png`, clip: { x: segment.x - 2, y: segment.y - 6, width: segment.width + 4, height: segment.height + 8 }, animations: 'disabled' });
+    }
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/slice10-shots/pinned-panel-layers.png', animations: 'disabled' });
+    await stripToggle(page).click(); await expect(table(page)).toBeVisible();
+    await page.mouse.move(5, 400);
+    await strip(page).scrollIntoViewIfNeeded();
+    await strip(page).screenshot({ path: 'tmp/slice10-shots/strip-table-marks.png', animations: 'disabled' });
+    for (const key of ['acc-ann', 'acc-fay']) {
+        await page.mouse.move(5, 400);
+        await expect(markReadout(page)).toHaveCount(0);
+        await markSlot(page, key).locator('button').hover();
+        await expect(markReadout(page)).toBeVisible();
+        const row = await rowOf(page, key).boundingBox();
+        const readoutBox = await markReadout(page).boundingBox();
+        await page.screenshot({ path: `tmp/slice10-shots/mark-readout-${key.slice(4)}.png`, clip: { x: row.x, y: row.y - 4, width: Math.max(420, readoutBox.x + readoutBox.width - row.x + 8), height: readoutBox.y + readoutBox.height - row.y + 12 }, animations: 'disabled' });
+    }
+    await context.close();
+});
+
+// A mark icon's painted ink (pixels near its token colour) inside its 24px hover frame. The icons are inline SVG (no
+// emoji font), so their placement is the same in every engine and this runs headless too.
+const INK = { over: '(r, g, b) => r - Math.max(g, b) > 90', 'on-plan': '(r, g, b) => g - Math.max(r, b) > 60' };
+async function markInk(page, frame, kind) {
+    const x0 = Math.floor(frame.x), y0 = Math.floor(frame.y), width = Math.ceil(frame.x + frame.w) - x0, height = Math.ceil(frame.y + frame.h) - y0;
+    const image = await page.screenshot({ clip: { x: x0, y: y0, width, height }, animations: 'disabled' });
+    return page.evaluate(async ({ base64, x0: originX, y0: originY, frame: box, width: clipWidth, test: source }) => {
+        const isInk = new Function(`return ${source}`)();
+        const img = new Image(); img.src = `data:image/png;base64,${base64}`; await img.decode();
+        const scale = img.width / clipWidth, canvas = document.createElement('canvas'); canvas.width = img.width; canvas.height = img.height;
+        const context = canvas.getContext('2d'); context.drawImage(img, 0, 0);
+        const data = context.getImageData(0, 0, img.width, img.height).data;
+        let minX = Infinity, minY = Infinity, maxX = -1, maxY = -1, count = 0, ground = null;
+        for (let y = 0; y < img.height; y += 1) for (let x = 0; x < img.width; x += 1) {
+            const o = (y * img.width + x) * 4, [r, g, b] = [data[o], data[o + 1], data[o + 2]];
+            if (isInk(r, g, b)) { count += 1; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+            if (x === Math.round(img.width / 2) && y === Math.round(2 * scale)) ground = [r, g, b];
+        }
+        return { count, scale, frameTop: ground, dx: originX + ((minX + maxX + 1) / 2) / scale - (box.x + box.w / 2), dy: originY + ((minY + maxY + 1) / 2) / scale - (box.y + box.h / 2),
+            inkWidth: (maxX - minX + 1) / scale, inkHeight: (maxY - minY + 1) / scale };
+    }, { base64: image.toString('base64'), x0, y0, frame, width, test: INK[kind] });
+}
+
+for (const scale of [1, 2]) test.describe(`mark icon ink at ${scale}x`, () => {
+    test.use({ deviceScaleFactor: scale });
+    test(`both mark icons are centred in their hover frame at rest, on hover and on focus at ${scale}x; hover paints a circle without moving them`, async ({ page, browserName }) => {
+        const server = capacityServer({ rows: layerRows });
+        await install(page, { server, issues: layerStories });
+        await openPlanning(page);
+        await expand(page);
+        for (const [key, kind] of [['acc-ann', 'over'], ['acc-fay', 'on-plan']]) {
+            const mark = markSlot(page, key).locator('button');
+            const frameOf = () => mark.evaluate(node => { const b = node.getBoundingClientRect(); return { x: b.x - 5, y: b.y - 5, w: 24, h: 24 }; });
+            const results = {};
+            for (const state of ['rest', 'hover', 'focus']) {
+                await page.mouse.move(5, 400);
+                if (state === 'hover') await mark.hover();
+                if (state === 'focus') { const tab = browserName === 'webkit' ? 'Alt+Tab' : 'Tab'; await mark.focus(); await page.keyboard.press(`Shift+${tab}`); await page.keyboard.press(tab); await expect(mark).toBeFocused(); }
+                await page.waitForTimeout(150);
+                const frame = await frameOf();
+                const ink = await markInk(page, frame, kind);
+                results[state] = { ...ink, box: await mark.boundingBox() };
+                const label = `${kind} ${state} ${scale}x`;
+                expect(ink.scale, label).toBe(scale);
+                expect(ink.count, `${label}: the icon paints`).toBeGreaterThan(20 * scale * scale);
+                // Ink centre within a device pixel of the frame centre (half a CSS pixel at 2x).
+                expect(Math.abs(ink.dx), `${label} horizontal offset`).toBeLessThanOrEqual(1 / scale + 0.01);
+                expect(Math.abs(ink.dy), `${label} vertical offset`).toBeLessThanOrEqual(1 / scale + 0.01);
+                // The double exclamation is narrower than the rounded square (bars at 6-18 of 24 units, about 7px).
+                expect(ink.inkWidth, label).toBeGreaterThan(kind === 'over' ? 6 : 10); expect(ink.inkWidth, label).toBeLessThanOrEqual(14);
+                expect(ink.inkHeight, label).toBeGreaterThan(10); expect(ink.inkHeight, label).toBeLessThanOrEqual(14);
+                await page.screenshot({ path: `tmp/slice10-shots/mark-${kind}-${state}-${scale}x.png`, clip: { x: frame.x - 4, y: frame.y - 4, width: frame.w + 8, height: frame.h + 8 }, animations: 'disabled' });
+                await page.keyboard.press('Escape');
+                await mark.blur();
+            }
+            // Hover changes paint only: same box, no transform, and the circle shows at the frame's top centre.
+            expect(results.hover.box, kind).toEqual(results.rest.box);
+            expect(results.hover.frameTop, kind).not.toEqual(results.rest.frameTop);
+            expect(await mark.evaluate(node => getComputedStyle(node).transform), kind).toBe('none');
+            // A deliberate 3px shift fails the same tolerance.
+            await mark.evaluate(node => { node.querySelector('svg').style.transform = 'translateX(3px)'; });
+            expect(Math.abs((await markInk(page, await frameOf(), kind)).dx), kind).toBeGreaterThan(1);
+            await mark.evaluate(node => { node.querySelector('svg').style.transform = ''; });
+        }
+    });
 });

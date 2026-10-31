@@ -20,6 +20,10 @@ const READOUT_HEIGHT = 72;
 const READOUT_LINE_HEIGHT = 23;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
+// Strip layers: a tinted layer is the segment colour at this strength over the surface (opaque, so it reads the same over
+// the track, the fill or a solid layer).
+const STRIP_TINT_PERCENT = 45;
+const tintOf = colour => `color-mix(in srgb, ${colour} ${STRIP_TINT_PERCENT}%, var(--bg-secondary))`;
 
 function clampReadoutPoint(x, y, lineCount = 0) {
     return resolveFloatingHoverPosition({
@@ -65,7 +69,10 @@ export default function StackedBar({
     resolveSegmentStrip,    // optional: ({ row, segmentKey, segment, value }) => { parts: [{ key, label, colour, value }] }
     ariaLabel,
     emptyText = 'No data in range.',
-    variant,                // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar
+    variant,                // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar.
+                            // Strip segments may carry two layers of their colour: `tint: true` paints the segment (the base,
+                            // `value` wide) tinted, and `overlay: { value, tint }` is drawn ON TOP of it from its left edge,
+                            // `overlay.value` wide, solid or tinted. Hit testing and readouts still see one segment.
     readoutLineCount        // optional: ({ segmentKey }) => lines of formatReadout's output, so the readout clamps inside the viewport
 }) {
     const rowList = Array.isArray(rows) ? rows : [];
@@ -141,6 +148,8 @@ export default function StackedBar({
                                     const showFull = width >= FULL_SEGMENT_LABEL_MIN_WIDTH;
                                     const readoutData = { rowLabel: row.label, segmentKey: key, segmentLabel, valueText, value,
                                         ...(readoutLineCount ? { extraLines: Math.max(0, readoutLineCount({ segmentKey: key }) - 2) } : {}) };
+                                    const colour = resolveColor ? resolveColor(key) : '#94a3b8';
+                                    const overlay = isStrip && segment.overlay?.value > 0 ? segment.overlay : null;
                                     const segmentLink = resolveSegmentLink
                                         ? resolveSegmentLink({ row, segmentKey: key, segment, value })
                                         : null;
@@ -193,7 +202,7 @@ export default function StackedBar({
                                             className="stacked-bar-segment"
                                             style={{
                                                 width: `${Math.max(0, Math.min(100, width))}%`,
-                                                '--stacked-bar-color': resolveColor ? resolveColor(key) : '#94a3b8'
+                                                '--stacked-bar-color': isStrip && segment.tint ? tintOf(colour) : colour
                                             }}
                                             tabIndex={0}
                                             {...(isStrip ? {} : {
@@ -207,6 +216,8 @@ export default function StackedBar({
                                             aria-label={segmentLink?.ariaLabel || `${row.label} ${segmentLabel}: ${valueText}`}
                                         >
                                             <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>
+                                            {overlay && <span className="stacked-bar-strip-part" aria-hidden="true"
+                                                style={{ width: `${Math.min(100, (overlay.value / value) * 100)}%`, background: overlay.tint ? tintOf(colour) : colour }} />}
                                         </SegmentControl>
                                     );
                                 })}

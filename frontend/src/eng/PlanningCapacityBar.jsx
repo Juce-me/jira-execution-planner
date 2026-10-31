@@ -14,7 +14,7 @@ export default function PlanningCapacityBar({
 }) {
     const underbar = useAssigneeUnderbar(totalCapacityAdjusted);
     if (capacityEnabled && totalCapacityAdjusted > 0) {
-        const scale = capacityAxis({ capacity: totalCapacityAdjusted, selected: selectedSP }, CAPACITY_BAR_HEADROOM);
+        const scale = capacityAxis({ capacity: totalCapacityAdjusted, selected: selectedSP, stacked: underbar ? underbar.model.totalHundredths / 100 : 0 }, CAPACITY_BAR_HEADROOM);
         const toPct = (v) => Math.min(100, (v / scale) * 100);
         const selectedPct = toPct(selectedSP);
         const planningPct = toPct(estimatedCapacityAdjusted);

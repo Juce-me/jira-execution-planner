@@ -279,8 +279,18 @@
         }
 
         .stacked-bar--strip .stacked-bar-segment {
+            position: relative;
             height: 5px;
             pointer-events: auto;
+        }
+
+        /* A strip segment's optional top layer (#323): the existing part hook, laid over the segment from its left edge. */
+        .stacked-bar--strip .stacked-bar-segment > .stacked-bar-strip-part {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
         }
 
         .stacked-bar--strip .stacked-bar-segment:focus-visible {

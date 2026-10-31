@@ -319,6 +319,18 @@ for it. A person added from the search this page session shows the photo the sea
 avatar URL, kept in memory by account id until reload); otherwise a person with no loaded Story shows the glyph. The
 Unassigned row has the same slot empty, so its name lines up with the person names.
 
+**Marks.** Before the avatar every row has a fixed 14px mark slot, empty unless the person has a set Planned capacity (above
+0) and a Planned effort that is either on plan or over, compared in integer hundredths with both boundaries inclusive: on
+plan when 0.8 x capacity <= effort <= 1.2 x capacity (a rounded green square with a white check, in `--good`; readout "Effort
+M SP of capacity N SP: on plan"), over when effort > 1.2 x capacity (two bold rounded exclamation marks in `--warn`, the
+same threshold as the over cue; readout "Effort M SP, capacity N SP: X SP over capacity"). Spare capacity (effort below 80%,
+effort 0 included), a blank or 0 capacity, the Unassigned row and removed people get no mark. The icons are inline SVG that
+only resemble the check-mark and double-exclamation emoji, so no emoji font is involved. A mark is a native button whose
+accessible name is its readout sentence; the in-app readout follows a mouse by hover only (a mouse or pen click neither
+pins it nor focuses the mark), opens on keyboard focus-visible until blur or Escape, and opens on a touch tap until a second
+tap, an outside tap or a scroll. It writes nothing; numbers are trimmed to at most two decimals. The slot keeps names,
+avatars and row heights where they were.
+
 **Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such non-Killed
 Stories of the Team exist; it shows Planned effort only and is neither editable nor removable.
 
@@ -353,16 +365,22 @@ Sprint keeps the Sprint's own copy with the inherited values, and a muted line s
 Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
 auth session. Read-only strips show no Undo.
 
-**Underbar.** The pinned amber capacity bar carries a thin strip at the bottom of its existing track, adding no height: the
-Selected split by person, one segment per person with Planned effort above 0 (width by that person's Selected Story Points)
-plus a trailing Unassigned segment for the Selected Stories with no assignee. Its total is the bar's Selected, so it lies
-exactly under the fill on the bar's own scale (the larger of capacity and Selected, times 1.15; the team-card bar uses the
-same function with 1.3) and the Team Cap marker lines up; over capacity the bar's own over-capacity zone shows what lies
-beyond Team Cap, and with nothing selected there is no strip. The whole track is hoverable and tappable: the segment under
-the pointer shows its readout (name, Selected, then Planned capacity and the person's share of Selected; "Unassigned
-(effort)" with Selected and its share for the Unassigned segment) under a "Selected N tasks · X SP" header that replaces the
-fill tooltip, and the marker lines keep their own tooltips. Table rows of people with a segment are tinted with the segment
-colour; others keep the normal row surface.
+**Underbar.** The pinned amber capacity bar carries a thin 5px strip at the bottom of its existing track, adding no height:
+one segment per person with Planned capacity or Planned effort above 0, in table order, plus a trailing Unassigned segment
+(one solid `--warn` layer sized by the Selected Stories with no assignee). A person's segment is max(capacity, effort) wide
+and draws two layers of the person's colour: a tinted layer (the colour at 45% over the surface) for Planned capacity and the
+solid layer for Planned effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
+top, so the tinted rest is the capacity left; once effort reaches or passes capacity (equal included) the tinted capacity
+lies on top, so the tint ends where capacity is used up and the solid part beyond it is the work above capacity. A person
+with capacity only is purely tinted, with effort only purely solid, with neither has no segment. The strip's total (the sum
+of max(capacity, effort) plus Unassigned) may exceed the Selected fill and run past the Team Cap marker, so the bar's scale
+is the largest of capacity, Selected and that total, times 1.15 (the team-card bar uses the same function with 1.3); the
+fill, the markers and the strip share it, so nothing clips and the Team Cap marker lines up. The whole track is hoverable
+and tappable: the segment under the pointer shows its readout under a "Selected N tasks · X SP" header that replaces the fill
+tooltip (person: name, Planned effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
+is set, then the team number's source; "Unassigned (effort)" with Selected and its share of Selected), and the marker lines
+keep their own tooltips. Table rows of people with a segment are tinted with the person colour; others keep the normal row
+surface.
 
 **Team capacity (not in Jira).** The document also stores one team number per Sprint and Team. It is editable from the team
 card's own pencil only when the Jira capacity read settled for this scope and found no ticket for the Team (not loading,

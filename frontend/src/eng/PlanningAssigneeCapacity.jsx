@@ -8,8 +8,8 @@ import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, teamTasks,
-    validateCellDraft,
+    applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, capacityMark, capacityMarkText, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, teamTasks,
+    numberStringToHundredths, validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
@@ -84,10 +84,44 @@ function EffortCell({ hundredths, cue }) {
     return <td className={`planning-review-storyPoints${cueClass(cue)}`}>{fmt(hundredths)}{cue && <span className="planning-review-sr-only"> ({cueText(cue)})</span>}</td>;
 }
 
+// The leading mark slot of every name cell (#323): one fixed width on every row, Unassigned included, so avatars and
+// names stay aligned. A person with Planned capacity set gets a mark when effort is within 20% of it (on plan: a rounded
+// `--good` square with a check) or more than 20% above it (over: two bold rounded exclamation marks in `--warn`); spare
+// capacity gets none. The mark is the derived-column marker kind (a native button with the in-app readout on hover,
+// focus-visible or tap; in `transient` mode a mouse or pen click neither pins it nor focuses the mark) and writes
+// nothing. The icons follow the app's inline-SVG icon style (24-unit viewBox, currentColor, round caps and joins), so
+// every engine paints them alike; they only resemble the emoji, no emoji font is involved.
+const MARK_ICONS = {
+    'on-plan': <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+        <rect x="2" y="2" width="20" height="20" rx="5.5" fill="currentColor" />
+        <path d="M7.2 12.4l3.3 3.3 6.4-7" style={{ stroke: 'var(--bg-secondary)' }} strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>,
+    over: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+        <path d="M8 4.2v9.6M16 4.2v9.6" stroke="currentColor" strokeWidth="4" strokeLinecap="round" />
+        <circle cx="8" cy="19.4" r="2.3" fill="currentColor" />
+        <circle cx="16" cy="19.4" r="2.3" fill="currentColor" />
+    </svg>,
+};
+
+function MarkSlot({ row }) {
+    const capacity = row ? numberStringToHundredths(row.capacity) : null;
+    const mark = row ? capacityMark(capacity, row.selectedHundredths) : null;
+    if (!mark) return <span data-assignee-mark="" aria-hidden="true" />;
+    const sentence = capacityMarkText(mark, capacity, row.selectedHundredths);
+    return <span data-assignee-mark="" data-mark={mark}>
+        <EpicHeaderValueReadout value={sentence} alwaysOn transient>
+            {({ triggerRef, pointerProps, focusProps, pinProps }) => <button ref={triggerRef} type="button" className="planning-review-derived-marker" aria-label={sentence} {...pointerProps} {...focusProps} {...pinProps}>
+                <span>{MARK_ICONS[mark]}</span>
+            </button>}
+        </EpicHeaderValueReadout>
+    </span>;
+}
+
 function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
     const input = (field, label, maxLength) => <CapacityInput field={field} label={`${label} for ${row.name}`} value={row[field]} disabled={readOnly} maxLength={maxLength} editors={editors} onCommit={(name, value) => onCommit(row.key, name, value)} />;
     return <tr data-assignee-key={row.key} className={color ? 'planning-assignee-tinted' : undefined} style={color ? { '--planning-assignee-color': color } : undefined}>
         <td className="planning-assignee-name"><div className="planning-assignee-person">
+            <MarkSlot row={row} />
             {/* The issue card's person slot: the Story assignee's photo when loaded, else its person glyph. */}
             <span className="task-assignee-icon" aria-hidden="true">
                 <PersonAvatar avatarUrl={avatarUrl}>
@@ -137,7 +171,7 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
             <tbody>
                 {unassigned && <tr className="planning-review-zero-sp" data-assignee-key="unassigned">
                     {/* An empty person slot keeps the name in line with the person names; no glyph, as the row is no person. */}
-                    <td className="planning-assignee-name"><div className="planning-assignee-person"><span className="task-assignee-icon" aria-hidden="true" /><span className="planning-review-truncated-value">Unassigned</span></div></td>
+                    <td className="planning-assignee-name"><div className="planning-assignee-person"><MarkSlot row={null} /><span className="task-assignee-icon" aria-hidden="true" /><span className="planning-review-truncated-value">Unassigned</span></div></td>
                     <td className="planning-review-storyPoints" />
                     <EffortCell hundredths={unassigned.selectedHundredths} />
                     <td className="planning-review-storyPoints" />

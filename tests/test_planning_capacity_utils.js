@@ -830,10 +830,12 @@ test('capacityAxis is one scale for the amber bar (1.15) and the team card (1.3)
     const { capacityAxis, CAPACITY_BAR_HEADROOM, TEAM_CARD_HEADROOM } = await loadUtils();
     assert.equal(CAPACITY_BAR_HEADROOM, 1.15);
     assert.equal(TEAM_CARD_HEADROOM, 1.3);
-    // max(capacity, selected) x 1.15; the assignee strip is the Selected split by person, so it adds no term (#323).
+    // max(capacity, selected, stacked) x 1.15; the assignee strip's total (each person's max(capacity, effort) plus
+    // Unassigned) is the stacked term again (#323 round 3), so the strip never clips.
     assert.equal(capacityAxis({ capacity: 20, selected: 12 }, CAPACITY_BAR_HEADROOM), 20 * 1.15);
     assert.equal(capacityAxis({ capacity: 20, selected: 30 }, CAPACITY_BAR_HEADROOM), 30 * 1.15);
-    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 26 }, CAPACITY_BAR_HEADROOM), 20 * 1.15, 'a stacked term is no longer read');
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 26 }, CAPACITY_BAR_HEADROOM), 26 * 1.15, 'the strip total widens the axis');
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 18 }, CAPACITY_BAR_HEADROOM), 20 * 1.15, 'a smaller strip total does not');
     // Card: over capacity no longer saturates; the fill ends at 1/1.3 of the bar and the marker moves left of it.
     const axis = capacityAxis({ capacity: 10, selected: 15 }, TEAM_CARD_HEADROOM);
     assert.ok(15 / axis < 1);

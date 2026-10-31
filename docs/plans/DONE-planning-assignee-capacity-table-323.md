@@ -1,6 +1,6 @@
 # Planning Assignee Capacity Table (#323)
 
-> **Status:** In execution, design revision 4 (2026-10-30), with B1 (client-side injection) and B2 (no change to which teams are shown) decided. Tasks 1 to 5 are implemented and committed locally on `feature/323-planning-assignee-capacity-table`, synced with `origin/main` (merge `673b7dc3`); the work below them is re-planned after the 2026-10-30 operator review (stored planned team capacity, Add assignee and Undo pulled into this PR; underbar kept on the capacity bar's own scale with a visible overflow). Revision 4 was reviewed once by a read-only subagent, whose corrections are applied. Nothing is pushed.
+> **Status:** Done. Executed in branch `feature/323-planning-assignee-capacity-table` (not yet pushed; the PR number is added only if the plan still needs it). Tasks 1 to 12 are implemented and verified locally except the items listed under Outcome. Kept for audit context; the shipped code, tests and `docs/features/planning-sprint-review.md` are the source of truth.
 
 ## Intent
 
@@ -184,7 +184,7 @@ Evidence for each item (command output, test name or screenshot) is recorded in 
 
 ## Deferred scope
 
-A one-click push of the stored planned number to Jira is not built: Jira is written only through the existing capacity editor on the user's Save (the reconcile banner's Write to ticket opens that editor prefilled). If a direct push is wanted later: conflicts surface as `capacity_conflict` (409, current value shown), the service is not an atomic compare-and-set so the UI must not promise nothing is written, it is available only where `capacityTargetState === 'matched'` and `capacityMutationEnabled`, and a distinct analytics `workflow_action` is a README and test change. At completion this paragraph moves to a `FUTURE-planning-assignee-capacity-deferred-323.md` with an index line.
+Moved to [FUTURE-planning-assignee-capacity-deferred-323.md](FUTURE-planning-assignee-capacity-deferred-323.md): the one-click push of the stored team number to Jira, plus the open items from the verification gate.
 
 ## Decisions taken by the operator (unchanged)
 
@@ -227,11 +227,21 @@ The revision 3 review findings (F1 to F9) and open questions (O1 to O12) are res
 
 **B1**: design A (client-side injection, with the exceptions recorded under Team capacity). **B2**: the teams-with-Stories rule is unchanged, so no card and no editor for a team awaiting Stories. Verified: the OAuth grant already carries `read:jira-work` and `read:jira-user` (`backend/auth/jira_auth.py:38`). Still to verify during execution: `alembic current` on the local databases (Task 1b) and the `multiProjectSearch` semantics (Task 9 probe).
 
+## Outcome
+
+Implemented with changes. Tasks 1 to 12 are in: store, routes, client model and save queue, the strip on the capacity bar's own scale with overflow and whole-track hover, defect fixes, freshness, stored team capacity ("Team capacity (not in Jira)") with card editor, reconcile banner and silent mirror, Add assignee, docs and analytics, the verification gate, and Undo. The implementation is now the source of truth. Material differences from the plan text: migration `0022` was amended in place (no database was stamped at it, recorded under Task 1b) instead of adding `0023`; Add assignee uses the per-project `/user/assignable/search` fan-out because the `multiProjectSearch` probe was inconclusive; `onlyIfSource` accepts `null`; Task 11 found and fixed a PostgreSQL first-writer defect (`rowcount` is -1, now `RETURNING id`). Open at completion (see the FUTURE file): the EPM automatic-refresh failures in `dashboard_data_freshness.spec.js` (cause traced to `useEngSprintData.js` loading flags, not changed by this branch), `buildAssigneeRows` re-adding the Total per toggle (DoD 13), toggle-to-paint p50/p95 (no harness), the manual glyph check, a direct measurement that a stored-number change re-renders App, and `tests.test_assignee_capacity_service` missing from the CI PostgreSQL runner.
+
+## Current Accuracy
+
+Partially accurate: the intent, decisions D1 to D15 and the Definition of Done still apply, but the Behaviour, API and Files sections describe revision 4 before execution. Where they differ (migration amendment instead of `0023`, search fan-out, Undo semantics, planned mutation rules), the Implementation state table and the notes in it are authoritative.
+
 ## Execution log
 
 2026-10-29/30, local only: Tasks 1 to 5 as in Implementation state. Last full runs on the executing worktree: Python `unittest discover` 2,849 tests OK (51 skipped, before the final strip revert, which touched frontend only); `npm run test:frontend:unit` 3,206 pass; `planning_assignee_capacity` 21 passed in Chromium; related Planning, Project Track and hover-surface specs green; full Chromium `tests/ui` on `bc094d30`: 2,012 passed, 5 failed (two flaky under load and passing on rerun, three `dashboard_data_freshness` EPM timer tests that also fail on the merge-base). DoD 1, 2, 5 to 8 are implemented (DoD 4 is reopened by revision 4: shared scale and overflow) and covered (model, service, queue and Playwright tests; the Playwright specs run against a mock capacity server, not the real route); DoD 3 and 9 are partial (no test compares the table's Selected with the bar's; no assertion reads the team number); 10 (PostgreSQL), 12 to 16 (ledger, render counts, headed engines, bundle) and 17 are open. The Python run predates the final revert, which changed frontend files, `docs/design-system.md` and tests only; the full Chromium `tests/ui` run was on `bc094d30`. The three `dashboard_data_freshness` EPM timer failures also fail on the merge-base with a different subset each run; their cause, user impact and remedy are not yet explained, so they are not accepted as baseline.
 
 2026-10-30, Task 1b (read-only `select version_num from alembic_version` on each local server, equivalent to `alembic current`): Docker `jep_local` on `127.0.0.1:5432` (the app's database) is at `20261028_0021`; Homebrew `jep_local` is at `20261001_0018`. Neither has `planning_team_sprint_capacity`, so no database is stamped `20261029_0022`. Ruling: Task 8 amends `20261029_0022` in place (adds the planned columns and CHECKs) instead of adding `0023`; the head pins stay at `20261029_0022`. Cost if wrong: a database upgraded to the old `0022` by someone else's checkout would miss the columns (none known locally).
+
+2026-10-30/31, closing: Task 11 evidence (full Python 2,901 OK with 54 skipped; Node 3,264 pass, 3,277 after Undo; full Chromium `tests/ui` 2,094 passed, 6 failed, 16 skipped, of which five EPM automatic-refresh failures reproduce alone and one load flake passes 3 of 3 alone; PostgreSQL checks on a throwaway Homebrew database; bundle delta `dashboard.js` +42,961 raw / +13,796 gzip-9 against merge-base `1f8db143`; headed Firefox and WebKit 63 passed after Undo). Task 12 (Undo) was verified with Node 3,277 pass and Chromium 160 passed across the Planning specs. DoD 3, 9 and 13 (render counts) are recorded in Task 11; DoD 13's Total builder and p50/p95 items are open.
 
 ## Validation record (revision 2)
 

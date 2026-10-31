@@ -313,6 +313,7 @@ test('Enter commits the explicit suggestion after results reorder', async ({ pag
     await input.press('ArrowDown');
     await expect(page.getByRole('option', { name: 'New Two' })).toHaveAttribute('aria-selected', 'true');
     await page.evaluate(values => window.__issueEditorHarness.setPersonSuggestions(values), [people[1], people[0]]);
+    await expect(page.getByRole('option').first()).toHaveText('New Two');
     await expect(input).toHaveAttribute('aria-activedescendant', await page.getByRole('option', { name: 'New Two' }).getAttribute('id'));
     await input.press('Enter');
     await expect.poll(() => page.evaluate(() => window.__issueEditorHarness.personSubmits)).toEqual(['two']);

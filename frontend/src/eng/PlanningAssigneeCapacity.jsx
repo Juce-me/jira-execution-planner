@@ -10,7 +10,7 @@ import { projectPlanningOriginals } from './engIssueEditState.js';
 import { createStripRowModeSync } from './planningRowModeChannel.js';
 import {
     applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, capacityMark, capacityMarkText, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, teamTasks,
-    numberStringToHundredths, validateCellDraft,
+    numberStringToHundredths, plannedCapacityTotal, validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
@@ -85,6 +85,19 @@ function EffortCell({ hundredths, cue }) {
     return <td className={`planning-review-storyPoints${cueClass(cue)}`}>{fmt(hundredths)}{cue && <span className="planning-review-sr-only"> ({cueText(cue)})</span>}</td>;
 }
 
+// The Totals row's Planned capacity (#323): the people's sum out of the team number when one is known. Above it, the cell
+// takes the over cue's tone and its text becomes a native button with the marks' transient in-app readout (hover,
+// focus-visible or tap; a mouse click pins nothing); display only, it writes nothing and gates no edit.
+function PlannedTotalCell({ hundredths, teamCapacity }) {
+    const { text, over } = plannedCapacityTotal(hundredths, teamCapacity);
+    if (!over) return <td className="planning-review-storyPoints">{text}</td>;
+    return <td className={`planning-review-storyPoints${cueClass('over')}`}>
+        <EpicHeaderValueReadout value={over} alwaysOn transient>
+            {({ triggerRef, pointerProps, focusProps, pinProps }) => <button ref={triggerRef} type="button" className="planning-review-text-button" aria-label={over} {...pointerProps} {...focusProps} {...pinProps}>{text}</button>}
+        </EpicHeaderValueReadout>
+    </td>;
+}
+
 // The leading mark slot of every name cell (#323): one fixed width on every row, Unassigned included, so avatars and
 // names stay aligned. A person with Planned capacity set gets a mark when effort is within 20% of it (on plan: a rounded
 // `--good` square with a check) or more than 20% above it (over: two bold rounded exclamation marks in `--warn`); spare
@@ -148,7 +161,7 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, hiddenSelected, tinted, addPicker }) {
+function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, hiddenSelected, tinted, addPicker, teamCapacity }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
@@ -182,7 +195,7 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
             </tbody>
             <tfoot><tr>
                 <td className="planning-assignee-name">Total</td>
-                <td className="planning-review-storyPoints">{fmt(totals.capacityHundredths)}</td>
+                <PlannedTotalCell hundredths={totals.capacityHundredths} teamCapacity={teamCapacity} />
                 <EffortCell hundredths={totals.selectedHundredths} cue={totals.cue} />
                 <td className="planning-review-storyPoints">{fmt(totals.vacationsHundredths)}</td>
                 <td className="planning-assignee-note" />
@@ -309,7 +322,7 @@ export default function PlanningAssigneeCapacity({
         else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
+            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} teamCapacity={rawCapacity} />
         </>;
     }
     const open = Boolean(oneTeam && !hidden && host && expanded);

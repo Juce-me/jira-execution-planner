@@ -46,3 +46,10 @@
    person, so it ends where the Selected does. The capacity markers sit above it (42) and keep their own tooltips. */
 .planning-assignee-underbar { position: absolute; inset: 0; border-radius: 5px; overflow: hidden; z-index: 41; }
 .capacity-bar-track:has(> .planning-assignee-underbar) > .capacity-bar-marker { z-index: 42; }
+/* Totals over cue trigger (#323): the shared text button gets room for its ring; equal negative margins cancel the
+   padding, so the text, its right edge and the 32px row stay where they were; 0.4375rem (7px) is the cell padding, so
+   the button ends on the cell edge and the inset ring clears the last glyph by 4px. Hover and focus rings are drawn inside
+   the control (foundation inset ring; focus outline inset), clear of the text. */
+.planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button { padding: 0.15rem 0.4375rem; margin: -0.15rem -0.4375rem; }
+@media (hover: hover) { .planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button:hover:where(:enabled):where(:not([aria-disabled="true"])) { box-shadow: var(--hover-overlay), var(--hover-ring-inset); } }
+.planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: -2px; }

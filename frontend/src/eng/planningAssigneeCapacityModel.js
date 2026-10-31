@@ -167,6 +167,20 @@ export function capacityCue(selectedHundredths, capacityHundredths) {
 export const capacityCueLabel = (selectedHundredths, capacityHundredths) =>
     capacityHundredths > 0 ? getCapacityStatus(selectedHundredths / 100, capacityHundredths / 100).label : '';
 
+// The Totals row's Planned capacity (#323): the people's sum out of the team number (the raw Jira ticket value, else the
+// stored team number; never scaled by the Product/Tech share, as person capacities are raw). The team number is unknown
+// when absent, 0 or not finite: then the sum shows alone. `over` (people's sum above the team number, in hundredths)
+// carries the readout sentence; display only.
+export function plannedCapacityTotal(capacityHundredths, teamCapacity) {
+    const team = teamCapacity == null || teamCapacity === '' ? null : roundHalfUpHundredths(teamCapacity);
+    if (!(team > 0)) return { text: formatHundredths(capacityHundredths), over: '' };
+    const text = `${formatHundredths(capacityHundredths)} / ${formatHundredths(team)}`;
+    const over = capacityHundredths > team
+        ? `People's planned capacity ${formatHundredths(capacityHundredths)} SP exceeds team capacity ${formatHundredths(team)} SP by ${formatHundredths(capacityHundredths - team)} SP`
+        : '';
+    return { text, over };
+}
+
 // ---- rows -------------------------------------------------------------------
 
 const same = (left, right) => (left ?? null) === (right ?? null);

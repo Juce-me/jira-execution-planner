@@ -312,7 +312,13 @@ effort sums the checked Stories of the Team from the same selection the capacity
 so search, Team, Project and Project Track filters narrow it and a muted line says how many selected Stories filters hide.
 There is no Total effort column. The over/under cue uses the existing capacity thresholds (over above 120%, under below 90%)
 on rows with Planned capacity and on the Totals row, which compares the displayed Estimated effort total (including Unassigned)
-with the Planned capacity sum. Sums run in integer hundredths. The table fills the strip's width: Assignee takes a quarter,
+with the Planned capacity sum. The Totals Planned capacity reads "X / Y": the people's Planned capacity sum out of the team
+capacity the team card uses, the Jira ticket value or, without one, the stored Team capacity (not in Jira), unscaled by the
+Product/Tech share because person capacities are raw; with no team number (no ticket value and no stored number, loading or a
+read error) it shows the sum alone. When the sum is above the team number the cell takes the over cue's tone and its text is
+a native button with the marks' transient readout (mouse hover, focus-visible or a tap; a mouse click pins nothing), "People's
+planned capacity X SP exceeds team capacity Y SP by D SP", also its accessible name; it is display only and gates no edit.
+Sums run in integer hundredths. The table fills the strip's width: Assignee takes a quarter,
 the numeric columns are compact and right-aligned, Notes takes the rest; long names and notes stay on one line with an
 ellipsis and show in full on hover or focus. Below 680px the table scrolls inside the strip, never the page.
 

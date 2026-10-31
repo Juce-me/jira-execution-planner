@@ -465,3 +465,21 @@ test('assignee avatar URLs come from the loaded Stories by account id, first one
     assert.deepEqual([...urls], [['a', 'https://host.example/a1']]);
     assert.equal(m.assigneeAvatarUrls(null).size, 0);
 });
+
+test('the Totals Planned capacity reads the people sum out of the team number, with the over sentence only above it', async () => {
+    const m = await load();
+    assert.deepEqual(m.plannedCapacityTotal(1100, 20), { text: '11 / 20', over: '' });
+    assert.deepEqual(m.plannedCapacityTotal(2000, 20), { text: '20 / 20', over: '' });
+    assert.deepEqual(m.plannedCapacityTotal(2550, 20), { text: '25.5 / 20', over: "People's planned capacity 25.5 SP exceeds team capacity 20 SP by 5.5 SP" });
+    // Team number unknown: the sum alone, no cue.
+    for (const unknown of [null, undefined, 0, NaN, Infinity, '', -3]) assert.deepEqual(m.plannedCapacityTotal(1100, unknown), { text: '11', over: '' }, String(unknown));
+    // Hundredths: 0.1 + 0.2 equals 0.3, so no cue; a hundredth more is over.
+    const sum = m.sumHundredths([m.numberStringToHundredths('0.1'), m.numberStringToHundredths('0.2')]);
+    assert.deepEqual(m.plannedCapacityTotal(sum, 0.1 + 0.2), { text: '0.3 / 0.3', over: '' });
+    assert.deepEqual(m.plannedCapacityTotal(sum, 0.3), { text: '0.3 / 0.3', over: '' });
+    assert.equal(m.plannedCapacityTotal(sum + 1, 0.3).over, "People's planned capacity 0.31 SP exceeds team capacity 0.3 SP by 0.01 SP");
+    // A team number with decimals, rounded half-up to hundredths.
+    assert.deepEqual(m.plannedCapacityTotal(1234, 12.345), { text: '12.34 / 12.35', over: '' });
+    assert.equal(m.plannedCapacityTotal(1300, 12.5).over, "People's planned capacity 13 SP exceeds team capacity 12.5 SP by 0.5 SP");
+    assert.deepEqual(m.plannedCapacityTotal(0, 8), { text: '0 / 8', over: '' });
+});

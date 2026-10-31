@@ -468,14 +468,15 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     // The hover readout's header carries the same Selected number.
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText(`Selected 4 tasks · ${Number(barSelected).toFixed(1)} SP`);
-    // The team number lives on the pinned bar only: compact readout, Team Cap marker; no table column carries it.
+    // The team number lives on the pinned bar (compact readout, Team Cap marker); in the table only the Totals row's
+    // Planned capacity carries it, after the people's sum (operator review, #323).
     expect(Number(teamNumber)).toBe(20);
     await page.mouse.move(5, 400);
     await showPanel(page).click();
     await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Team Cap\s*20\.0/);
     const headers = await table(page).locator('thead th').evaluateAll(ths => ths.map(th => th.textContent.trim()));
     expect(headers).toEqual(['Assignee', 'Planned capacity', 'Estimated effort', 'Vacations', 'Notes']);
-    expect(Number(footer[1]), 'the Planned capacity sum is the people, not the team number').toBe(14);
+    expect(footer[1], 'the people\'s Planned capacity sum out of the team number').toBe('14 / 20');
 });
 
 test('segments are one per person with Planned capacity or effort plus Unassigned, distinct, max(capacity, effort) wide on the bar axis; the readout stays on screen', async ({ page }) => {
@@ -2732,4 +2733,287 @@ test('the pinned stack stays inside DoD 14 after the automatic switch and collap
         expect(after.stack, 'the round trip leaves the pinned stack as it was').toBeCloseTo(before.stack, 1);
         await page.unrouteAll({ behavior: 'ignoreErrors' });
     }
+});
+
+// ---- operator review: Totals Planned capacity out of team capacity (#323) -----------------------------------------
+
+const totalsCapacity = page => table(page).locator('tfoot td').nth(1);
+const totalsReadout = page => page.locator('.epic-full-value-readout');
+const peopleRows = (ann, cy) => [
+    { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: ann, vacations: '1', notes: 'away Friday', removed: false },
+    { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: cy, vacations: null, notes: null, removed: false },
+];
+const jiraTeam = value => sprint => ({ enabled: true, mutationEnabled: false, sprint, capacities: { 'Alpha Team': value }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: value }] });
+const OVER_SENTENCE = "People's planned capacity 23 SP exceeds team capacity 20 SP by 3 SP";
+// Every column's edges (head, foot) and the Totals Planned capacity text's painted box against its cell's content box.
+const totalsGeometry = page => page.evaluate(() => {
+    const tableNode = document.querySelector('[data-assignee-capacity] table.planning-assignee-table');
+    const edges = selector => [...tableNode.querySelectorAll(selector)].map(node => { const b = node.getBoundingClientRect(); return [Math.round(b.left * 100) / 100, Math.round(b.right * 100) / 100]; });
+    const cell = tableNode.querySelectorAll('tfoot td')[1];
+    const style = getComputedStyle(cell), box = cell.getBoundingClientRect();
+    // Painted text: the line boxes of the cell's text nodes only (the trigger's padded box is left out).
+    const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+    const lines = new Set(), text = { left: Infinity, right: -Infinity };
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+        const nodeRange = document.createRange(); nodeRange.selectNodeContents(node);
+        [...nodeRange.getClientRects()].filter(rect => rect.width > 0).forEach(rect => { lines.add(Math.round(rect.top)); text.left = Math.min(text.left, rect.left); text.right = Math.max(text.right, rect.right); });
+    }
+    const trigger = cell.querySelector('button');
+    return {
+        head: edges('thead th'), foot: edges('tfoot td'),
+        contentLeft: box.left + parseFloat(style.paddingLeft), contentRight: box.right - parseFloat(style.paddingRight),
+        textLeft: text.left, textRight: text.right, lines: lines.size,
+        cellOverflow: cell.scrollWidth - cell.clientWidth, triggerOverflow: trigger ? trigger.scrollWidth - trigger.clientWidth : 0,
+        footHeight: tableNode.querySelector('tfoot tr').getBoundingClientRect().height,
+    };
+});
+
+for (const [label, options, expected] of [
+    ['a Jira ticket value', { capacity: defaultCapacity, capacityProject: 'CAP' }, '11 / 20'],
+    ['no ticket and no stored number', { capacity: noTicket, capacityProject: 'CAP', authMode: 'atlassian_oauth' }, '11'],
+]) test(`Totals Planned capacity with ${label} reads ${expected}, with no cue at or below the team number`, async ({ page }) => {
+    const server = capacityServer({ rows: peopleRows('8', '3') });
+    await install(page, { server, ...options });
+    await openPlanning(page);
+    await expand(page);
+    await expect(totalsCapacity(page)).toHaveText(expected);
+    await expect(totalsCapacity(page)).not.toHaveClass(/planning-assignee-over/);
+    await expect(totalsCapacity(page).locator('button')).toHaveCount(0);
+    await expect(totalsCapacity(page).locator('[title]')).toHaveCount(0);
+    // The Planned effort cue is unchanged.
+    await expect(table(page).locator('tfoot td').nth(2)).toHaveText('14 (over capacity)');
+});
+
+test('Totals Planned capacity with the stored team number and no ticket reads X / stored', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(futureSprintId)]: { revision: 1, rows: peopleRows('8', '3'), planned: { value: '14', source: 'user' } } } });
+    await install(page, { server, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(totalsCapacity(page)).toHaveText('11 / 14');
+    await expect(totalsCapacity(page)).not.toHaveClass(/planning-assignee-over/);
+});
+
+test('Totals Planned capacity equal to the team number shows no cue', async ({ page }) => {
+    const server = capacityServer({ rows: peopleRows('12.5', '7.5') });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await expect(totalsCapacity(page)).toHaveText('20 / 20');
+    await expect(totalsCapacity(page)).not.toHaveClass(/planning-assignee-over/);
+    await expect(totalsCapacity(page).locator('button')).toHaveCount(0);
+});
+
+test('Totals Planned capacity above the team number: over tone and a transient in-app readout on hover and keyboard focus that writes nothing', async ({ page, browserName }) => {
+    const server = capacityServer({ rows: peopleRows('15', '8') });
+    const { calls } = await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    const since = calls.length, patchesBefore = server.state.patches.length;
+    const cell = totalsCapacity(page), trigger = cell.locator('button');
+    await expect(cell).toHaveText('23 / 20');
+    await expect(cell).toHaveClass(/planning-review-storyPoints planning-assignee-over/);
+    await expect(trigger).toHaveClass('planning-review-text-button');
+    await expect(trigger).toHaveAttribute('aria-label', OVER_SENTENCE);
+    expect(await cell.evaluate(node => [node, ...node.querySelectorAll('*')].some(item => item.hasAttribute('title')))).toBe(false);
+    // The tone is the over cue's (planning-assignee-over, #b91c1c at 600), painted by the trigger's text too.
+    const tone = await cell.evaluate(node => [node, node.querySelector('button')].map(item => { const s = getComputedStyle(item); return `${s.color}|${s.fontWeight}`; }));
+    expect(tone).toEqual(['rgb(185, 28, 28)|600', 'rgb(185, 28, 28)|600']);
+    // Hover shows, leave hides.
+    await trigger.hover();
+    await expect(totalsReadout(page)).toHaveText(OVER_SENTENCE);
+    await expectBoxInViewport(page, totalsReadout(page));
+    await page.mouse.move(5, 400);
+    await expect(totalsReadout(page)).toHaveCount(0);
+    // A mouse click does not pin it and leaves no focus.
+    await trigger.click();
+    await expect(totalsReadout(page)).toHaveText(OVER_SENTENCE);
+    expect(await trigger.evaluate(node => document.activeElement === node)).toBe(false);
+    await page.mouse.move(5, 400);
+    await page.waitForTimeout(200);
+    await expect(totalsReadout(page), 'the click pinned nothing').toHaveCount(0);
+    // Keyboard: Tab from the last row's Notes reaches the trigger and shows the readout; blur hides it.
+    await rowOf(page, 'acc-cy').getByRole('textbox', { name: 'Notes for Cy Former' }).focus();
+    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    await expect(trigger).toBeFocused();
+    await expect(totalsReadout(page)).toHaveText(OVER_SENTENCE);
+    await trigger.blur();
+    await expect(totalsReadout(page)).toHaveCount(0);
+    await page.waitForTimeout(300);
+    expect(calls.slice(since).filter(call => call.method !== 'GET'), 'the cue writes nothing').toEqual([]);
+    // Editing stays open: a Planned capacity cell still edits and saves.
+    const input = rowOf(page, 'acc-cy').getByRole('textbox', { name: 'Capacity for Cy Former' });
+    await expect(input).toBeEnabled();
+    await input.fill('4'); await input.press('Enter');
+    await expect(cell).toHaveText('19 / 20');
+    await expect(cell).not.toHaveClass(/planning-assignee-over/);
+    await expect.poll(() => server.state.patches.length).toBe(patchesBefore + 1);
+});
+
+test('Totals Planned capacity readout opens by tap and closes by an outside tap', async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: peopleRows('15', '8') });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    const patchesBefore = server.state.patches.length;
+    const trigger = totalsCapacity(page).locator('button');
+    await trigger.tap();
+    await expect(totalsReadout(page)).toHaveText(OVER_SENTENCE);
+    await page.waitForTimeout(200);
+    await expect(totalsReadout(page), 'a tap holds it').toHaveText(OVER_SENTENCE);
+    const empty = await table(page).locator('tfoot td.planning-assignee-note').boundingBox();
+    await page.touchscreen.tap(empty.x + empty.width - 4, empty.y + 4);
+    await expect(totalsReadout(page), 'outside tap closes').toHaveCount(0);
+    expect(server.state.patches).toHaveLength(patchesBefore);
+    await context.close();
+});
+
+for (const [width, height] of [[1440, 900], [1280, 720], [390, 844]]) test(`Totals Planned capacity "X / Y" stays on one line inside its cell at ${width}x${height}, columns and pinned stack unchanged`, async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: width < 768, viewport: { width, height } });
+    const page = await context.newPage();
+    const measure = async (rows, capacity) => {
+        const server = capacityServer({ rows });
+        await install(page, { server, capacity, capacityProject: 'CAP', authMode: 'atlassian_oauth' });
+        await openPlanning(page);
+        const stack = await pinnedHeights(page);
+        // The expanded preference persists across the three loads of this page.
+        if (await stripToggle(page).getAttribute('aria-expanded') !== 'true') { if (width < 768) await stripToggle(page).tap(); else await stripToggle(page).click(); }
+        await expect(table(page)).toBeVisible();
+        if (width >= 768) await page.mouse.move(1, 1);
+        const geometry = await totalsGeometry(page);
+        const text = (await totalsCapacity(page).textContent()).trim();
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+        return { text, geometry, stack };
+    };
+    // Before (no team number: the sum alone, as the row read before) and after: a within case and a long over case.
+    const before = await measure(peopleRows('100.25', '23.2'), noTicket);
+    const within = await measure(peopleRows('8', '3'), defaultCapacity);
+    const over = await measure(peopleRows('100.25', '23.2'), jiraTeam(120.55));
+    console.log('SLICE13_TOTALS_GEOMETRY', width, JSON.stringify({ before: before.geometry, over: over.geometry }));
+    expect([before.text, within.text, over.text]).toEqual(['123.45', '11 / 20', '123.45 / 120.55']);
+    for (const [label, sample] of [['before', before], ['within', within], ['over', over]]) {
+        const g = sample.geometry;
+        expect(g.lines, `${label}: one line`).toBe(1);
+        expect(g.textRight, `${label}: painted text ends inside the cell`).toBeLessThanOrEqual(g.contentRight + 0.5);
+        expect(g.textLeft, `${label}: painted text starts inside the cell`).toBeGreaterThanOrEqual(g.contentLeft - 0.5);
+        expect(g.cellOverflow, `${label}: cell does not clip`).toBeLessThanOrEqual(0);
+        expect(g.triggerOverflow, `${label}: trigger does not clip`).toBeLessThanOrEqual(0);
+        expect(g.head, `${label}: column edges as before`).toEqual(before.geometry.head);
+        expect(g.foot, `${label}: totals edges as before`).toEqual(before.geometry.foot);
+        expect(g.footHeight, `${label}: totals row height as before`).toBe(before.geometry.footHeight);
+        if (width >= 1280) { expect(sample.stack.panel).toBeLessThan(64); expect(sample.stack.stack).toBeLessThanOrEqual(175); }
+    }
+    // The pinned stack does not hold the strip: the same team number leaves it the same, within or over.
+    expect(over.stack.stack).toBeCloseTo(within.stack.stack, 1);
+    expect(Math.abs(over.geometry.textRight - over.geometry.contentRight), 'right-aligned').toBeLessThanOrEqual(1);
+    await context.close();
+});
+
+test('zoomed settled screenshots of the Totals row within and over the team number', async ({ browser }) => {
+    const context = await browser.newContext({ deviceScaleFactor: 2, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    for (const [name, rows] of [['within', peopleRows('8', '3')], ['over', peopleRows('15', '8')]]) {
+        const server = capacityServer({ rows });
+        await install(page, { server, capacityProject: 'CAP' });
+        await openPlanning(page);
+        if (await stripToggle(page).getAttribute('aria-expanded') !== 'true') await expand(page);
+        await expect(table(page)).toBeVisible();
+        await page.mouse.move(1, 1);
+        await page.waitForTimeout(200);
+        const row = await table(page).locator('tfoot tr').boundingBox();
+        const vacations = await table(page).locator('tfoot td').nth(3).boundingBox();
+        const clip = { x: row.x, y: row.y - 40, width: vacations.x + vacations.width - row.x, height: row.height + 40 };
+        await page.screenshot({ path: `tmp/slice13-shots/totals-${name}.png`, clip, animations: 'disabled' });
+        if (name === 'over') {
+            await totalsCapacity(page).locator('button').hover();
+            await expect(totalsReadout(page)).toBeVisible();
+            await page.waitForTimeout(200);
+            await page.screenshot({ path: 'tmp/slice13-shots/totals-over-readout.png', clip: { ...clip, height: clip.height + 60 }, animations: 'disabled' });
+        }
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+    await context.close();
+});
+
+// The over trigger's text and ink against its ring: `bare` drops the trigger's breathing-room padding and margins (the
+// geometry before it), so text position, columns and row height compare in place. Ink comes from canvas text metrics
+// in the trigger's own font at its baseline. Clearance is measured from the ring's solid line, not from the faint
+// 25%-alpha halo that the hover ring adds 3px deep: the hover ring's solid blue line is 1px inside the button and the
+// focus outline is a solid 2px at -2px, so the inner edge used is the deeper of the two, 2px inside the button.
+const triggerGeometry = (page, bare) => page.evaluate(isBare => {
+    const tableNode = document.querySelector('[data-assignee-capacity] table.planning-assignee-table');
+    const button = tableNode.querySelector('tfoot td.planning-assignee-over > button');
+    button.style.cssText = isBare ? 'padding:0;margin:0' : '';
+    const edges = selector => [...tableNode.querySelectorAll(selector)].map(node => { const b = node.getBoundingClientRect(); return [b.left, b.right]; });
+    const range = document.createRange(); range.selectNodeContents(button);
+    const text = range.getBoundingClientRect();
+    const probe = document.createElement('span'); probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+    button.appendChild(probe); const baseline = probe.getBoundingClientRect().bottom; probe.remove();
+    const style = getComputedStyle(button);
+    const context = document.createElement('canvas').getContext('2d');
+    context.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    const metrics = context.measureText(button.textContent);
+    const ink = { left: text.left - metrics.actualBoundingBoxLeft, right: text.left + metrics.actualBoundingBoxRight, top: baseline - metrics.actualBoundingBoxAscent, bottom: baseline + metrics.actualBoundingBoxDescent };
+    const box = button.getBoundingClientRect(), cell = button.parentElement.getBoundingClientRect();
+    const ring = { left: box.left + 2, right: box.right - 2, top: box.top + 2, bottom: box.bottom - 2 };
+    return {
+        textLeft: text.left, textRight: text.right, head: edges('thead th'), foot: edges('tfoot td'),
+        rowHeight: tableNode.querySelector('tfoot tr').getBoundingClientRect().height,
+        clearance: { left: ink.left - ring.left, right: ring.right - ink.right, top: ink.top - ring.top, bottom: ring.bottom - ink.bottom },
+        insideCell: box.left >= cell.left - 0.01 && box.right <= cell.right + 0.01 && box.top >= cell.top - 0.01 && box.bottom <= cell.bottom + 0.01,
+    };
+}, bare);
+
+for (const [width, height] of [[1440, 900], [1280, 720], [390, 844]]) test(`the Totals over trigger's ring clears the text inside the control at ${width}x${height}, text, row and columns in place`, async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: width < 768, viewport: { width, height } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: peopleRows('100.25', '23.2') });
+    await install(page, { server, capacity: jiraTeam(120.55), capacityProject: 'CAP' });
+    await openPlanning(page);
+    if (width < 768) await stripToggle(page).tap(); else await stripToggle(page).click();
+    await expect(totalsCapacity(page)).toHaveText('123.45 / 120.55');
+    const bare = await triggerGeometry(page, true);
+    const padded = await triggerGeometry(page, false);
+    console.log('SLICE13_TRIGGER_GEOMETRY', width, JSON.stringify({ bare, padded }));
+    expect(padded.textLeft, 'text x unchanged').toBeCloseTo(bare.textLeft, 2);
+    expect(padded.textRight, 'right edge unchanged').toBeCloseTo(bare.textRight, 2);
+    expect(padded.rowHeight).toBe(32);
+    expect(padded.head).toEqual(bare.head);
+    expect(padded.foot).toEqual(bare.foot);
+    expect(padded.insideCell, 'the padded button stays inside its cell').toBe(true);
+    for (const side of ['left', 'right', 'top', 'bottom']) expect(padded.clearance[side], `the ring's solid line clears the ink by 4px on the ${side}`).toBeGreaterThanOrEqual(4);
+    await context.close();
+});
+
+test('the Totals over trigger draws its hover and keyboard-focus rings inside the control (zoomed screenshots)', async ({ browser, browserName }) => {
+    const context = await browser.newContext({ deviceScaleFactor: 2, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: peopleRows('15', '8') });
+    await install(page, { server, capacityProject: 'CAP' });
+    await openPlanning(page);
+    await expand(page);
+    const trigger = totalsCapacity(page).locator('button');
+    const box = await totalsCapacity(page).boundingBox();
+    const clip = { x: box.x - 8, y: box.y - 4, width: box.width + 16, height: box.height + 8 };
+    await trigger.hover();
+    await expect(totalsReadout(page)).toBeVisible();
+    const hovered = await trigger.evaluate(node => { const s = getComputedStyle(node); return { shadow: s.boxShadow, transform: s.transform, transition: s.transitionProperty }; });
+    expect(hovered.shadow).toContain('inset');
+    expect(hovered.shadow).not.toMatch(/(^|,\s*)rgb[^)]*\)\s+0px\s+0px\s+0px\s+[13]px(?!.*inset)/);
+    expect(hovered.transform).toBe('none');
+    expect(hovered.transition).not.toBe('all');
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'tmp/slice13-shots/totals-trigger-hover.png', clip, animations: 'disabled' });
+    await page.mouse.move(5, 400);
+    await expect(totalsReadout(page)).toHaveCount(0);
+    await rowOf(page, 'acc-cy').getByRole('textbox', { name: 'Notes for Cy Former' }).focus();
+    await page.keyboard.press(browserName === 'webkit' ? 'Alt+Tab' : 'Tab');
+    await expect(trigger).toBeFocused();
+    expect(await trigger.evaluate(node => { const s = getComputedStyle(node); return [s.outlineStyle, s.outlineWidth, s.outlineOffset]; })).toEqual(['solid', '2px', '-2px']);
+    await page.waitForTimeout(200);
+    await page.screenshot({ path: 'tmp/slice13-shots/totals-trigger-focus.png', clip, animations: 'disabled' });
+    await context.close();
 });

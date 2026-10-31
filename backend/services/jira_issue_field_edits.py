@@ -13,6 +13,7 @@ import math
 import re
 
 from backend.auth.jira_auth import AuthError
+from backend.security.avatar_urls import sanitize_avatar_url
 
 
 LOGICAL_FIELDS = frozenset({"assignee", "deliveryOwner", "storyPoints", "summary", "team"})
@@ -567,7 +568,8 @@ def search_assignable_project_users(payload, *, project_keys, jira_request, cont
 
     One `/user/assignable/search` call per project (capped), deduplicated by account id, first ten.
     `multiProjectSearch` is not used: its any-versus-all semantics could not be verified (Task 9 probe).
-    The caller is kept and no email is returned.
+    The caller is kept and no email is returned. A user's 32x32 avatar URL is added as `avatarUrl` only when it passes
+    `sanitize_avatar_url` (the app-wide host allowlist, as `jira_person_avatar_url`), else it is left out.
     """
     query = _validate_assignable_query(payload)
     keys = []
@@ -606,6 +608,10 @@ def search_assignable_project_users(payload, *, project_keys, jira_request, cont
             if candidate is None or candidate["accountId"] in seen:
                 continue
             seen.add(candidate["accountId"])
+            avatar_urls = raw.get("avatarUrls")
+            avatar_url = sanitize_avatar_url(avatar_urls.get("32x32")) if isinstance(avatar_urls, dict) else None
+            if avatar_url:
+                candidate["avatarUrl"] = avatar_url
             users.append(candidate)
             if len(users) == ASSIGNABLE_USERS_LIMIT:
                 return {"users": users, "reason": None}

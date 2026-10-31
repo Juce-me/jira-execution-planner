@@ -1,45 +1,45 @@
 import * as React from 'react';
 import StackedBar from '../stats/StackedBar.jsx';
 import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
-import { buildAssigneeColorMap, buildUnderbar, formatHundredths, resolveAssigneeColor, underbarOnBarAxis, UNDERBAR_UNASSIGNED_KEY } from './planningAssigneeCapacityModel.js';
+import { buildAssigneeColorMap, buildUnderbar, formatHundredths, resolveAssigneeColor, UNDERBAR_UNASSIGNED_KEY } from './planningAssigneeCapacityModel.js';
 
 const sp = hundredths => formatHundredths(hundredths);
 const formatValue = value => sp(Math.round(value * 100));
 
-// The strip's data on the amber bar's axis, or null (no provider, several Teams, or the document not loaded yet).
-// `barCapacity` is the Product/Tech-adjusted totalCapacityAdjusted. With one Team it equals the raw Jira number times
-// the Product/Tech multiplier, so the multiplier is derived here instead of threading it through the dashboard.
+// The strip's data, or null (no provider, several Teams, the document not loaded yet, or nothing selected).
+// `barCapacity` is the Product/Tech-adjusted totalCapacityAdjusted. With one Team it equals the raw team number times the
+// Product/Tech share, derived here only for the readout's source line; segments are Planned effort and are never scaled.
 export function useAssigneeUnderbar(barCapacity) {
     const context = usePlanningAssigneeCapacityView();
     const loaded = context?.loaded, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity, capacitySource = context?.capacitySource;
     return React.useMemo(() => {
-        const model = loaded && oneTeam ? buildUnderbar(view, rawCapacity) : null;
+        const model = loaded && oneTeam ? buildUnderbar(view) : null;
         if (!model) return null;
-        const multiplier = Number(rawCapacity) > 0 && barCapacity > 0 ? barCapacity / Number(rawCapacity) : 1;
-        return { model, multiplier, capacitySource, colorMap: buildAssigneeColorMap(view?.rows), ...underbarOnBarAxis(model, barCapacity, multiplier) };
+        const share = Number(rawCapacity) > 0 && barCapacity > 0 ? barCapacity / Number(rawCapacity) : 1;
+        return { model, share, capacitySource, colorMap: buildAssigneeColorMap(view?.rows) };
     }, [loaded, oneTeam, view, rawCapacity, capacitySource, barCapacity]);
 }
 
-// The thin per-person strip inside the capacity track, on the bar's own `axis`: the wrapper covers the whole track and
-// takes the pointer, so the readout follows the segment under the pointer's x (a header-only readout past the last
-// segment). `showOverflow` is false while the bar draws its own over-capacity zone; compact mode draws no label.
-function PlanningAssigneeCapacityBar({ underbar, axis, teamCapPct, selectedCount, selectedSP, showOverflow, compact }) {
+const percentOf = (part, whole) => `${whole > 0 ? Math.round((part / whole) * 100) : 0}% of Selected`;
+
+// The thin per-person strip inside the capacity track, on the bar's own `axis`: its total is the Selected the fill shows,
+// so it lies exactly under the fill. The wrapper covers the whole track and takes the pointer, so the readout follows the
+// segment under the pointer's x (a header-only readout past the last segment).
+function PlanningAssigneeCapacityBar({ underbar, axis, selectedCount, selectedSP }) {
     const chart = React.useMemo(() => {
-        const { model, multiplier, capacitySource, colorMap, people, unassignedValue, overflowHundredths } = underbar;
-        const byKey = new Map(people.map(person => [person.key, person]));
-        const segments = people.map(person => ({ key: person.key, value: person.value }));
-        if (model.unassigned) segments.push({ key: UNDERBAR_UNASSIGNED_KEY, value: unassignedValue });
+        const { model, share, capacitySource, colorMap } = underbar;
+        const byKey = new Map(model.people.map(person => [person.key, person]));
+        const segments = model.people.map(person => ({ key: person.key, value: person.selectedHundredths / 100 }));
+        if (model.unassigned) segments.push({ key: UNDERBAR_UNASSIGNED_KEY, value: model.unassigned.selectedHundredths / 100 });
         const header = `Selected ${selectedCount} tasks · ${selectedSP.toFixed(1)} SP`;
-        const split = Math.abs(multiplier - 1) > 0.001 ? ` · ${Math.round(multiplier * 100)}% share` : '';
+        const split = Math.abs(share - 1) > 0.001 ? ` · ${Math.round(share * 100)}% share` : '';
         // The team number's source: the Jira ticket, or the stored "Team capacity (not in Jira)".
         const source = `${capacitySource === 'planned' ? 'Team capacity (not in Jira)' : 'Team capacity: Jira'}${split}`;
-        const overflowLine = showOverflow ? `+${sp(overflowHundredths)} SP over Team Cap` : '';
         const segmentLines = segmentKey => {
             if (segmentKey === null) return [header];
-            const body = segmentKey === UNDERBAR_UNASSIGNED_KEY
-                ? [model.unassigned.name, `Total ${sp(model.unassigned.totalHundredths)} · Selected ${sp(model.unassigned.selectedHundredths)}`]
-                : (person => [person.name, `Capacity ${sp(person.capacityHundredths)} · Selected ${sp(person.selectedHundredths)}`, `Total ${sp(person.totalHundredths)}`])(byKey.get(segmentKey));
-            return [header, ...body, overflowLine, source].filter(Boolean);
+            const segment = segmentKey === UNDERBAR_UNASSIGNED_KEY ? model.unassigned : byKey.get(segmentKey);
+            const context = [segment.capacityHundredths != null ? `Planned capacity ${sp(segment.capacityHundredths)}` : '', percentOf(segment.selectedHundredths, model.totalHundredths)].filter(Boolean).join(' · ');
+            return [header, segment.name, `Selected ${sp(segment.selectedHundredths)}`, context, source];
         };
         return {
             rows: [{ id: 'assignee-capacity', label: 'Assignee capacity', total: axis, segments }],
@@ -51,13 +51,10 @@ function PlanningAssigneeCapacityBar({ underbar, axis, teamCapPct, selectedCount
                 <React.Fragment key={index}>{index > 0 && <br />}{index < (segmentKey === null ? 1 : 2) ? <strong>{line}</strong> : line}</React.Fragment>
             )),
         };
-    }, [underbar, axis, selectedCount, selectedSP, showOverflow]);
+    }, [underbar, axis, selectedCount, selectedSP]);
     return <div className="planning-assignee-underbar" data-assignee-underbar>
         <StackedBar rows={chart.rows} segmentOrder={chart.order} resolveColor={chart.color} resolveLabel={chart.label}
-            formatValue={formatValue} formatReadout={chart.readout} readoutLineCount={chart.lineCount} variant="strip" ariaLabel="Assignee capacity by person" />
-        {showOverflow && <div className="planning-assignee-overflow" data-assignee-overflow style={{ left: `${teamCapPct}%`, width: `${(underbar.overflow / axis) * 100}%` }}>
-            {!compact && <span className="capacity-bar-fill-label">+{sp(underbar.overflowHundredths)} SP over</span>}
-        </div>}
+            formatValue={formatValue} formatReadout={chart.readout} readoutLineCount={chart.lineCount} variant="strip" ariaLabel="Planned effort by person" />
     </div>;
 }
 

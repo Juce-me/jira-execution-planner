@@ -302,22 +302,25 @@ Points)", below the controls stack (portaled into `#planning-assignee-capacity-h
 All Teams and the List layout keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
 (`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points.
 
-**Columns.** Assignee, Capacity, Selected effort, Total effort, Vacations, Notes, with a Totals row summing the four numeric
-columns. Capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500 characters, single
-line); blank means unset. Vacations are informational and never subtracted from Capacity. Selected effort sums the checked
-Stories of the Team from the same selection the capacity bar uses, so search, Team, Project and Project Track filters narrow it
-and a muted line says how many selected Stories filters hide. Total effort sums every non-Killed Story of the Team in the
-Sprint, independent of filters and checkboxes, including Stories under excluded Epics; when a Product or Tech load reached the
-250-issue request limit a line warns that it may be incomplete. The over/under cue uses the existing capacity thresholds
-(over above 120%, under below 90%) on rows with Capacity and on the Totals row, which compares the displayed Selected total
-(including Unassigned) with the Capacity sum. Sums run in integer hundredths.
+**Columns.** Assignee, Planned capacity, Planned effort, Vacations, Notes, with a Totals row summing the three numeric
+columns. Planned capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500
+characters, single line); blank means unset. Vacations are informational and never subtracted from Planned capacity. Planned
+effort sums the checked Stories of the Team from the same selection the capacity bar uses (its total is the bar's Selected),
+so search, Team, Project and Project Track filters narrow it and a muted line says how many selected Stories filters hide.
+There is no Total effort column. The over/under cue uses the existing capacity thresholds (over above 120%, under below 90%)
+on rows with Planned capacity and on the Totals row, which compares the displayed Planned effort total (including Unassigned)
+with the Planned capacity sum. Sums run in integer hundredths. The table fills the strip's width: Assignee takes a quarter,
+the numeric columns are compact and right-aligned, Notes takes the rest; long names and notes stay on one line with an
+ellipsis and show in full on hover or focus. Below 680px the table scrolls inside the strip, never the page.
 
 **Avatars.** Each person's name follows the issue card's 14px person slot (`PersonAvatar` in `task-assignee-icon`): the
 photo of that person from a loaded Story's assignee, keyed by account id, else the person glyph. Nothing is requested or stored
-for it; a person with no loaded Story, including one just added, shows the glyph. The Unassigned row has no slot.
+for it. A person added from the search this page session shows the photo the search returned (an allowlisted Atlassian
+avatar URL, kept in memory by account id until reload); otherwise a person with no loaded Story shows the glyph. The
+Unassigned row has the same slot empty, so its name lines up with the person names.
 
-**Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such Stories
-exist; it is neither editable nor removable.
+**Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such non-Killed
+Stories of the Team exist; it shows Planned effort only and is neither editable nor removable.
 
 **Rows, names and inheritance.** One person is one row, merged from the people with Stories in scope, the Sprint's own
 document and an inherited document. A Sprint without its own document reads the nearest earlier document of the same Team
@@ -350,15 +353,16 @@ Sprint keeps the Sprint's own copy with the inherited values, and a muted line s
 Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
 auth session. Read-only strips show no Undo.
 
-**Underbar.** The pinned amber capacity bar carries a thin strip at the bottom of its existing track, adding no height: one
-segment per person with Capacity above 0 (scaled by the Product/Tech multiplier) plus a trailing Unassigned effort segment.
-It shares the bar's own scale (the largest of capacity, Selected and people plus Unassigned, times 1.15; the team-card bar
-uses the same function with 1.3), so the Team Cap marker lines up. What lies beyond the Team Cap marker is drawn as an
-overflow with a "+N SP over" label (in compact mode the readout carries it); it is hidden while the bar already shows its
-own over-capacity zone. The whole track is hoverable and tappable: the segment under the pointer shows its readout (name,
-Capacity, Selected, Total; "Unassigned (effort)" for the Unassigned segment) under a "Selected N tasks · X SP" header that
-replaces the fill tooltip, and the marker lines keep their own tooltips. Table rows of people with a segment are tinted
-with the segment colour.
+**Underbar.** The pinned amber capacity bar carries a thin strip at the bottom of its existing track, adding no height: the
+Selected split by person, one segment per person with Planned effort above 0 (width by that person's Selected Story Points)
+plus a trailing Unassigned segment for the Selected Stories with no assignee. Its total is the bar's Selected, so it lies
+exactly under the fill on the bar's own scale (the larger of capacity and Selected, times 1.15; the team-card bar uses the
+same function with 1.3) and the Team Cap marker lines up; over capacity the bar's own over-capacity zone shows what lies
+beyond Team Cap, and with nothing selected there is no strip. The whole track is hoverable and tappable: the segment under
+the pointer shows its readout (name, Selected, then Planned capacity and the person's share of Selected; "Unassigned
+(effort)" with Selected and its share for the Unassigned segment) under a "Selected N tasks · X SP" header that replaces the
+fill tooltip, and the marker lines keep their own tooltips. Table rows of people with a segment are tinted with the segment
+colour; others keep the normal row surface.
 
 **Team capacity (not in Jira).** The document also stores one team number per Sprint and Team. It is editable from the team
 card's own pencil only when the Jira capacity read settled for this scope and found no ticket for the Team (not loading,
@@ -374,7 +378,7 @@ written to Jira except through that editor's Save; a successful Jira save turns 
 
 **Add assignee.** Under the table and in the empty state, a person picker searches the active users assignable in the
 workspace's selected Product and Tech Jira projects through `POST /api/eng/assignee-capacity/user-options` (the signed-in
-user's Jira context; no email shown). Picking a person adds a row with a stored name snapshot and no Capacity; picking a
+user's Jira context; no email shown; each result may carry an allowlisted avatar URL). Picking a person adds a row with a stored name snapshot and no Capacity; picking a
 removed person restores them; picking a listed person focuses their row.
 
 **Freshness.** The document is read whenever one Team is selected in Table, expanded or not, cached per Sprint and Team

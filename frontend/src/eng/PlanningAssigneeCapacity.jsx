@@ -8,7 +8,7 @@ import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, mayBeIncomplete, teamTasks,
+    applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, teamTasks,
     validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
@@ -18,6 +18,10 @@ const HOST_ID = 'planning-assignee-capacity-host';
 export const EXPANDED_KEY = 'jira_dashboard_planning_assignee_capacity_v1';
 const readExpanded = () => { try { return JSON.parse(window.localStorage.getItem(EXPANDED_KEY) || 'null')?.expanded === true; } catch { return false; } };
 const writeExpanded = expanded => { try { window.localStorage.setItem(EXPANDED_KEY, JSON.stringify({ expanded })); } catch { /* storage unavailable */ } };
+
+// Avatars of people added from the search this page session, by account id (the search result's allowlisted URL), so an
+// added row shows its photo until reload; a loaded Story's assignee photo wins. Nothing is stored.
+const addedAvatarUrls = new Map();
 
 export const PlanningAssigneeCapacityContext = React.createContext(null);
 export const usePlanningAssigneeCapacityView = () => React.useContext(PlanningAssigneeCapacityContext);
@@ -100,7 +104,6 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
         </div></td>
         <td className={`planning-review-storyPoints${row.inherited ? ' planning-assignee-inherited' : ''}`}>{input('capacity', 'Capacity', 8)}</td>
         <EffortCell hundredths={row.selectedHundredths} cue={row.cue} />
-        <EffortCell hundredths={row.totalHundredths} />
         <td className="planning-review-storyPoints">{input('vacations', 'Vacations', 8)}</td>
         <td className="planning-assignee-note">
             <EpicHeaderValueReadout value={row.notes || ''} suppressed={!row.notes} measureSelector="input" nativeSelector="input">
@@ -110,7 +113,7 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
+function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, hiddenSelected, tinted, addPicker }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
@@ -122,23 +125,21 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
     return <>
         {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}. Editing any value saves this Sprint's own copy.</p>}
         {state.undoKept && !inheritedFromSprintId && <p className="planning-review-guidance" data-assignee-undo-kept>Undo kept this Sprint's own copy with the inherited values.</p>}
-        {incomplete && <p className="planning-review-guidance">Total effort may be incomplete: one load returns at most 250 issues per request.</p>}
-        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Selected effort.</p>}
+        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Planned effort.</p>}
         <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity" onKeyDown={onKeyDown}>
             <thead><tr>
                 <th className="planning-assignee-name">Assignee</th>
-                <th className="planning-review-storyPoints">Capacity</th>
-                <th className="planning-review-storyPoints">Selected effort</th>
-                <th className="planning-review-storyPoints">Total effort</th>
+                <th className="planning-review-storyPoints">Planned capacity</th>
+                <th className="planning-review-storyPoints">Planned effort</th>
                 <th className="planning-review-storyPoints">Vacations</th>
                 <th className="planning-assignee-note">Notes</th>
             </tr></thead>
             <tbody>
                 {unassigned && <tr className="planning-review-zero-sp" data-assignee-key="unassigned">
-                    <td className="planning-assignee-name">Unassigned</td>
+                    {/* An empty person slot keeps the name in line with the person names; no glyph, as the row is no person. */}
+                    <td className="planning-assignee-name"><div className="planning-assignee-person"><span className="task-assignee-icon" aria-hidden="true" /><span className="planning-review-truncated-value">Unassigned</span></div></td>
                     <td className="planning-review-storyPoints" />
                     <EffortCell hundredths={unassigned.selectedHundredths} />
-                    <EffortCell hundredths={unassigned.totalHundredths} />
                     <td className="planning-review-storyPoints" />
                     <td className="planning-assignee-note" />
                 </tr>}
@@ -148,7 +149,6 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
                 <td className="planning-assignee-name">Total</td>
                 <td className="planning-review-storyPoints">{fmt(totals.capacityHundredths)}</td>
                 <EffortCell hundredths={totals.selectedHundredths} cue={totals.cue} />
-                <EffortCell hundredths={totals.totalHundredths} />
                 <td className="planning-review-storyPoints">{fmt(totals.vacationsHundredths)}</td>
                 <td className="planning-assignee-note" />
             </tr></tfoot>
@@ -171,7 +171,7 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, laneCounts, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null,
+    getTeamInfo, normalizeStatus, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null,
 }) {
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
@@ -187,9 +187,15 @@ export default function PlanningAssigneeCapacity({
     normalizeRef.current = normalizeStatus; teamInfoRef.current = getTeamInfo;
 
     const projected = React.useMemo(() => projectPlanningOriginals(tasks, originals), [tasks, originals]);
-    // Keyed on the loaded tasks and the Team only, so a selection toggle never rebuilds the Total list.
+    // The team's Stories in scope ("has Stories" and the Unassigned row), keyed on the loaded tasks and the Team only, so a
+    // selection toggle never rebuilds it.
     const teamList = React.useMemo(() => (oneTeam ? teamTasks(projected, { teamId, getTeamInfo: task => teamInfoRef.current(task), normalizeStatus: status => normalizeRef.current(status) }) : []), [projected, teamId, oneTeam]);
-    const avatars = React.useMemo(() => assigneeAvatarUrls(projected), [projected]);
+    const [addedAvatars, setAddedAvatars] = React.useState(0);
+    const avatars = React.useMemo(() => {
+        const urls = assigneeAvatarUrls(projected);
+        addedAvatarUrls.forEach((url, key) => { if (!urls.has(key)) urls.set(key, url); });
+        return urls;
+    }, [projected, addedAvatars]);
     const effective = React.useMemo(() => applyChangesToDocument(state.document, state.changes), [state.document, state.changes]);
     const view = React.useMemo(() => buildAssigneeRows({ document: effective, teamTasksList: teamList, selectedTasks: selectedTasks || [], ignoreInherited: sprintClosed }), [effective, teamList, selectedTasks, sprintClosed]);
     const shownRef = React.useRef(null);
@@ -201,6 +207,10 @@ export default function PlanningAssigneeCapacity({
     const onRestore = React.useCallback(key => onCommit(key, 'removed', false), [onCommit]);
     // Add assignee: a new person is a row with the result's name snapshot; a removed one is restored; an existing row is focused.
     const onAdd = React.useCallback(person => {
+        if (person.avatarUrl && addedAvatarUrls.get(person.accountId) !== person.avatarUrl) {
+            addedAvatarUrls.set(person.accountId, person.avatarUrl);
+            setAddedAvatars(count => count + 1);
+        }
         if (controller.addPerson(person, document => shownRef.current(document)) !== 'exists' || !host) return;
         requestAnimationFrame(() => host.querySelector(`tr[data-assignee-key="${CSS.escape(person.accountId)}"] input`)?.focus());
     }, [controller, host]);
@@ -214,7 +224,6 @@ export default function PlanningAssigneeCapacity({
         setExpanded(next); writeExpanded(next);
         if (next) setOpened(true);
     };
-    const incomplete = mayBeIncomplete({ laneIssueCounts: laneCounts || [] });
     const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
     const loaded = Boolean(state.document);
     // The Planning freshness follow-up and the header Refresh re-read the shown document through this entry (#251).
@@ -239,7 +248,8 @@ export default function PlanningAssigneeCapacity({
         const shift = host.getBoundingClientRect().bottom - previous;
         if (previous <= visibleTop && Math.abs(shift) >= 1) window.scrollBy(0, shift);
     }, [host, state]);
-    // Only people with an underbar segment are tinted, and the strip exists only with a team number (Jira or stored).
+    // Only people with an underbar segment (Planned effort above 0) are tinted, and the strip exists only with a team
+    // number (Jira or stored).
     const tinted = Number(rawCapacity) > 0;
     // The stored team number as shown (own, gray inherited or pending), for the team card's editor and reconcile banner.
     const planned = React.useMemo(() => effectivePlanned(effective), [effective]);
@@ -259,7 +269,7 @@ export default function PlanningAssigneeCapacity({
         else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
+            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
         </>;
     }
     const strip = oneTeam && !hidden && host ? createPortal(

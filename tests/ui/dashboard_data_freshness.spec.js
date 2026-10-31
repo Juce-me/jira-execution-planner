@@ -1193,7 +1193,7 @@ async function mountAssigneeReadingHarness(page, { dismissed }) {
             const hierarchy=useEngWorkHierarchy({visibleTasksForList:stories,epicDetails:epics,showPlanning:true,selectedSprint:1,activeGroupId:'g',groupByInitiativeChoice:false});
             return <><div className="planning-review-sticky-stack" style={{height:90}}><strong>Synthetic Filters / capacity stack</strong></div>
                 <div id="planning-assignee-capacity-host" />
-                <PlanningAssigneeCapacity enabled selectedTeamIds={teams} allTeams={false} sprintId="100" sprintClosed={false} sprints={[]} backendUrl="" tasks={stories} originals={null} selectedTasks={[]} getTeamInfo={()=>({id:'t',name:'Synthetic Team'})} normalizeStatus={s=>s} laneCounts={[40,0]} automaticRefreshRef={window.__assigneeRef}>
+                <PlanningAssigneeCapacity enabled selectedTeamIds={teams} allTeams={false} sprintId="100" sprintClosed={false} sprints={[]} backendUrl="" tasks={stories} originals={null} selectedTasks={[]} getTeamInfo={()=>({id:'t',name:'Synthetic Team'})} normalizeStatus={s=>s} automaticRefreshRef={window.__assigneeRef}>
                     <PlanningReviewTable epicGroups={hierarchy.epicGroups} visibleTasks={stories} selectedStoryKeys={new Set()} review={review} getTeamInfo={()=>({id:'t',name:'Synthetic Team'})} admittedTeamCount={1} admittedProjectCount={1} resolveSprintName={()=>'Synthetic Sprint 90'} inheritedHintDismissals={dismissals} />
                 </PlanningAssigneeCapacity></>;
         }

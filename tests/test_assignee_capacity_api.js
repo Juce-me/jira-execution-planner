@@ -50,7 +50,8 @@ test('assignee capacity API: Add assignee search posts only the query with CSRF 
         if (url.endsWith('/api/auth/csrf')) return Response.json({ csrfToken: 'synthetic-csrf' });
         if (mode === 'rate') return Response.json({ error: 'jira_rate_limited', retryAfterSeconds: 2 }, { status: 429 });
         return Response.json({ users: [
-            { accountId: 'u1', displayName: ' Ann ', emailAddress: 'ann@example.test' },
+            { accountId: 'u1', displayName: ' Ann ', emailAddress: 'ann@example.test', avatarUrl: 'https://avatar.example.test/u1' },
+            { accountId: 'u3', displayName: 'Cy', avatarUrl: { nested: true } },
             { accountId: '', displayName: 'No id' },
             { accountId: 'u2', displayName: '' },
         ], reason: null });
@@ -63,7 +64,8 @@ test('assignee capacity API: Add assignee search posts only the query with CSRF 
         assert.equal(post.options.headers['X-CSRF-Token'], 'synthetic-csrf');
         assert.equal(post.options.headers['X-Requested-With'], 'jira-execution-planner');
         assert.deepEqual(JSON.parse(post.options.body), { query: 'ann' });
-        assert.deepEqual(result, { users: [{ accountId: 'u1', displayName: 'Ann' }], reason: null });
+        // The server's allowlisted avatar URL is kept as given (PersonAvatar applies the host allowlist again); a non-string is dropped.
+        assert.deepEqual(result, { users: [{ accountId: 'u1', displayName: 'Ann', avatarUrl: 'https://avatar.example.test/u1' }, { accountId: 'u3', displayName: 'Cy' }], reason: null });
         mode = 'rate';
         await assert.rejects(searchAssignableUsers('', 'ann'), error => error.status === 429 && error.code === 'jira_rate_limited');
         const aborted = new AbortController(); aborted.abort();

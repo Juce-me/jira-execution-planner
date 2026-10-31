@@ -209,6 +209,22 @@ class SearchAssignableProjectUsersServiceTests(unittest.TestCase):
         result = search_assignable_project_users({"query": "abc"}, project_keys=["PRODA"], jira_request=jira, context=None)
         self.assertEqual(result["users"], [{"accountId": "u-2", "displayName": "Bob"}])
 
+    def test_avatar_url_only_for_allowlisted_hosts_and_never_an_email(self):
+        good = "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/synthetic/photo/32"
+        records = [
+            dict(person("u-1", "Ann", email="ann@example.test"), avatarUrls={"32x32": good, "48x48": good}),
+            dict(person("u-2", "Bob"), avatarUrls={"32x32": "https://evil.example.test/photo.png"}),
+            dict(person("u-3", "Cy"), avatarUrls={"32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/CY-1.png"}),
+            dict(person("u-4", "Dee"), avatarUrls={"32x32": "http://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/synthetic/photo/32"}),
+            dict(person("u-5", "Eve"), avatarUrls="not-a-dict"),
+            person("u-6", "Fay"),
+        ]
+        result = search_assignable_project_users({"query": "abc"}, project_keys=["PRODA"], jira_request=FakeJira({"PRODA": records}), context=None)
+        self.assertEqual(result["users"][0], {"accountId": "u-1", "displayName": "Ann", "avatarUrl": good})
+        self.assertEqual([user for user in result["users"][1:]], [{"accountId": key, "displayName": name} for key, name in
+                                                              [("u-2", "Bob"), ("u-3", "Cy"), ("u-4", "Dee"), ("u-5", "Eve"), ("u-6", "Fay")]])
+        self.assertNotIn("email", repr(result).lower())
+
 
 if __name__ == "__main__":
     unittest.main()

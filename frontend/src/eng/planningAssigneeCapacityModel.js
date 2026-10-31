@@ -2,8 +2,6 @@ import { getCapacityStatus } from './planningCapacityUtils.js';
 import { hashTeamId } from '../stats/statsUtils.js';
 import { RADAR_PALETTE } from '../stats/statsConstants.js';
 
-// One ENG task-load request collects at most this many issues (jira_server.py fetch_tasks).
-export const TASK_LOAD_LIMIT = 250;
 export const MAX_NUMBER_HUNDREDTHS = 1000000;
 export const MAX_NOTE_LENGTH = 500;
 export const MAX_CHANGES = 50;
@@ -81,15 +79,17 @@ export const UNASSIGNED_KEY = null;
 export const isUnassigned = task => !task?.fields?.assignee?.accountId;
 export const storyPointsHundredths = task => toHundredths(task?.fields?.customfield_10004);
 
-// Accumulations are memoised by list identity so a selection toggle never re-sums the (stable) Total list.
-const accumulated = new WeakMap();
-function accumulate(tasks) {
-    const cached = accumulated.get(tasks);
-    if (cached) return cached;
-    const result = accumulateTasks(tasks);
-    accumulated.set(tasks, result);
-    return result;
-}
+// Accumulations are memoised by list identity, so a re-render with the same selection never re-sums it.
+const memo = build => {
+    const cache = new WeakMap();
+    return tasks => {
+        const cached = cache.get(tasks);
+        if (cached) return cached;
+        const result = build(tasks);
+        cache.set(tasks, result);
+        return result;
+    };
+};
 
 function accumulateTasks(tasks) {
     const byKey = new Map();
@@ -110,6 +110,20 @@ function accumulateTasks(tasks) {
     }
     return { byKey, unassigned };
 }
+const accumulate = memo(accumulateTasks);
+
+// Who has Stories in scope (the team's non-Killed Stories): names by account id and how many are unassigned. It sums no
+// Story Points; it decides "has Stories" (not removable), the Story name snapshot and whether the Unassigned row shows.
+const teamPresence = memo(tasks => {
+    const names = new Map();
+    let unassignedCount = 0;
+    for (const task of tasks) {
+        if (isUnassigned(task)) { unassignedCount += 1; continue; }
+        const key = task.fields.assignee.accountId;
+        names.set(key, task.fields.assignee.displayName || names.get(key) || '');
+    }
+    return { names, unassignedCount };
+});
 
 // Avatars (#323): the loaded Stories' assignee avatar URL by account id, first one found; no request, nothing stored.
 // The URL is shown only through PersonAvatar, which applies the host allowlist.
@@ -123,29 +137,21 @@ export function assigneeAvatarUrls(tasks) {
     return urls;
 }
 
-// Selected effort: the checked Stories (the same list the capacity bar sums).
+// Planned effort: the checked Stories (the same list the capacity bar sums).
 export const selectedEffortByAssignee = selectedTasks => accumulate(selectedTasks || []);
 
-// Total effort: every non-Killed Story of the team, independent of filters and checkboxes.
+// The team's Stories in scope: every non-Killed Story of the team, independent of filters and checkboxes.
 export function teamTasks(tasks, { teamId, getTeamInfo, normalizeStatus }) {
     return (tasks || []).filter(task => getTeamInfo(task).id === teamId
         && normalizeStatus(task?.fields?.status?.name) !== 'killed');
 }
 
-export const totalEffortByAssignee = (tasks, options) => accumulate(teamTasks(tasks, options));
-
-// Checked Stories of the Team that the filters keep out of Selected effort (and out of the capacity bar's Selected):
+// Checked Stories of the Team that the filters keep out of Planned effort (and out of the capacity bar's Selected):
 // `selectedMap` is the Planning selection ({issueKey: true}), `selectedTasks` the filtered list both sum.
 export function hiddenSelectedCount(teamTasksList, selectedMap, selectedTasks) {
     if (!selectedMap) return 0;
     const counted = new Set((selectedTasks || []).map(task => task.key));
     return (teamTasksList || []).filter(task => selectedMap[task.key] && !counted.has(task.key)).length;
-}
-
-// One load returns at most TASK_LOAD_LIMIT issues per request (Product and Tech are separate requests),
-// so a lane at the limit may have dropped Stories and Total effort may be understated.
-export function mayBeIncomplete({ laneIssueCounts = [], capped = false } = {}) {
-    return capped === true || laneIssueCounts.some(count => count >= TASK_LOAD_LIMIT);
 }
 
 // ---- cues -----------------------------------------------------------------
@@ -168,11 +174,11 @@ const byNameThenKey = (a, b) => a.name.localeCompare(b.name) || a.key.localeComp
 
 export function buildAssigneeRows({
     document = null,          // GET payload {revision, rows, inherited}; null while not loaded
-    teamTasksList = [],       // already filtered by teamTasks(); used for Stories, names and Total
+    teamTasksList = [],       // already filtered by teamTasks(); used for "has Stories", names and the Unassigned row
     selectedTasks = [],
     ignoreInherited = false,  // closed Sprints show only their own document
 } = {}) {
-    const total = accumulate(teamTasksList);
+    const team = teamPresence(teamTasksList);
     const selected = accumulate(selectedTasks);
     const own = document && document.revision > 0 ? document.rows || [] : [];
     const inheritedRows = !own.length && !ignoreInherited && document?.revision === 0 && document.inherited
@@ -180,22 +186,22 @@ export function buildAssigneeRows({
     const useInherited = document?.revision === 0 && inheritedRows.length > 0;
     const stored = new Map();
     (useInherited ? inheritedRows : own).forEach(row => stored.set(row.assigneeKey, row));
-    const keys = new Set([...stored.keys(), ...total.byKey.keys(), ...selected.byKey.keys()]);
+    const keys = new Set([...stored.keys(), ...team.names.keys(), ...selected.byKey.keys()]);
 
     const active = [];
     const removed = [];
     for (const key of keys) {
         const row = stored.get(key);
-        const stories = total.byKey.get(key) || selected.byKey.get(key) || null;
-        const hasStories = Boolean(stories);
-        const name = stories?.displayName || row?.displayName || key;
+        const hasStories = team.names.has(key) || selected.byKey.has(key);
+        const storyName = team.names.get(key) || selected.byKey.get(key)?.displayName || null;
+        const name = storyName || row?.displayName || key;
         const selectedHundredths = selected.byKey.get(key)?.hundredths || 0;
         const capacity = row?.capacity ?? null;
         const entry = {
             key,
             name,
             // the Story's current name; present only when it can refresh the stored snapshot
-            storyName: stories?.displayName || null,
+            storyName,
             storedName: row?.displayName ?? null,
             inRows: Boolean(row),
             inherited: useInherited && Boolean(row),
@@ -206,7 +212,6 @@ export function buildAssigneeRows({
             hasStories,
             removable: !hasStories,
             selectedHundredths,
-            totalHundredths: total.byKey.get(key)?.hundredths || 0,
             cue: capacityCue(selectedHundredths, numberStringToHundredths(capacity)),
         };
         // A person who has Stories is never removed.
@@ -221,20 +226,15 @@ export function buildAssigneeRows({
     const totals = {
         capacityHundredths: capacityH,
         selectedHundredths: peopleSelectedH + selected.unassigned.hundredths,
-        totalHundredths: sumHundredths(active.map(row => row.totalHundredths)) + total.unassigned.hundredths,
         vacationsHundredths: sumHundredths(active.map(row => numberStringToHundredths(row.vacations) || 0)),
-        // the displayed Selected total (people plus Unassigned) against the sum of Capacity, the numbers the row shows
+        // the displayed Planned effort total (people plus Unassigned) against the Planned capacity sum, as the row shows them
         cue: active.some(row => numberStringToHundredths(row.capacity) != null) ? capacityCue(peopleSelectedH + selected.unassigned.hundredths, capacityH) : '',
     };
     return {
         rows: active,
         removed,
-        unassigned: total.unassigned.count || selected.unassigned.count
-            ? {
-                storyCount: total.unassigned.count,
-                totalHundredths: total.unassigned.hundredths,
-                selectedHundredths: selected.unassigned.hundredths,
-            }
+        unassigned: team.unassignedCount || selected.unassigned.count
+            ? { storyCount: team.unassignedCount, selectedHundredths: selected.unassigned.hundredths }
             : null,
         totals,
         inheritedFromSprintId: useInherited ? document.inherited.fromSprintId : null,
@@ -407,36 +407,19 @@ export const handlesUndoKey = event => isUndoShortcut(event) && !event.repeat;
 
 export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';
 
-// Segments of the thin bar under the capacity bar: one per non-removed person with Capacity, plus a trailing
-// Unassigned segment sized by unassigned Total effort. The denominator is the raw Jira capacity, else the sum of
-// the people's Capacity; with no number at all there is no bar (null). Values are integer hundredths.
-export function buildUnderbar(view, rawCapacity = null) {
-    const rows = view?.rows || [];
-    const people = rows
-        .map(row => ({ key: row.key, name: row.name, capacityHundredths: numberStringToHundredths(row.capacity) || 0, selectedHundredths: row.selectedHundredths, totalHundredths: row.totalHundredths }))
-        .filter(person => person.capacityHundredths > 0);
-    const rawHundredths = Number(rawCapacity) > 0 ? toHundredths(rawCapacity) : 0;
-    const peopleCapacity = sumHundredths(people.map(person => person.capacityHundredths));
-    const denominatorHundredths = rawHundredths > 0 ? rawHundredths : peopleCapacity;
-    if (denominatorHundredths <= 0) return null;
-    const unassigned = view?.unassigned?.totalHundredths > 0
-        ? { key: UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', totalHundredths: view.unassigned.totalHundredths, selectedHundredths: view.unassigned.selectedHundredths }
+// Segments of the thin bar under the capacity bar (#323): the Planned effort (Selected) of each non-removed person
+// above 0, plus a trailing Unassigned segment sized by the Planned effort of Stories with no assignee, so the strip's
+// total is the table's Planned effort total, the bar's Selected. Values are integer hundredths; null when nothing is selected.
+export function buildUnderbar(view) {
+    const people = (view?.rows || [])
+        .filter(row => row.selectedHundredths > 0)
+        .map(row => ({ key: row.key, name: row.name, capacityHundredths: numberStringToHundredths(row.capacity), selectedHundredths: row.selectedHundredths }));
+    const unassigned = view?.unassigned?.selectedHundredths > 0
+        ? { key: UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', selectedHundredths: view.unassigned.selectedHundredths }
         : null;
     if (!people.length && !unassigned) return null;
-    return { denominatorHundredths, source: rawHundredths > 0 ? 'jira' : 'sum', people, unassigned };
-}
-
-// The underbar on the amber bar's own axis (#323 D5). Person Capacity is raw Jira-scale while the bar is Product/Tech
-// adjusted, so people are scaled by `multiplier`; Unassigned is effort and is drawn unscaled. Values are SP; the
-// overflow (in hundredths, so float noise never draws a false mark) is what lies beyond the Team Cap marker.
-export function underbarOnBarAxis(model, barCapacity, multiplier = 1) {
-    const people = model.people.map(person => ({ ...person, value: (person.capacityHundredths * multiplier) / 100 }));
-    const unassignedValue = model.unassigned ? model.unassigned.totalHundredths / 100 : 0;
-    // Scale the raw sum once and round only the difference, so people equal to the raw team number never overflow.
-    const stackedHundredths = sumHundredths(model.people.map(person => person.capacityHundredths)) * multiplier
-        + (model.unassigned ? model.unassigned.totalHundredths : 0);
-    const overflowHundredths = Math.max(0, Math.round(stackedHundredths - (Number(barCapacity) || 0) * 100));
-    return { people, unassignedValue, stacked: stackedHundredths / 100, overflow: overflowHundredths / 100, overflowHundredths };
+    const totalHundredths = sumHundredths(people.map(person => person.selectedHundredths)) + (unassigned?.selectedHundredths || 0);
+    return { people, unassigned, totalHundredths };
 }
 
 // The stats palette without the colours that clash with the Unassigned pink/red (`--warn`, the over cue) and the amber
@@ -460,7 +443,7 @@ export function resolveAssigneeColor(key, colorMap) {
     const id = String(key || '').trim();
     return (id && colorMap?.[id]) || ASSIGNEE_PALETTE[hashTeamId(id) % ASSIGNEE_PALETTE.length];
 }
-// Only people with a Capacity have an underbar segment, so only they get a row tint (null otherwise).
+// Only people with Planned effort above 0 have an underbar segment, so only they get a row tint (null otherwise).
 export function assigneeRowColor(row, colorMap) {
-    return numberStringToHundredths(row.capacity) > 0 ? resolveAssigneeColor(row.key, colorMap) : null;
+    return row.selectedHundredths > 0 ? resolveAssigneeColor(row.key, colorMap) : null;
 }

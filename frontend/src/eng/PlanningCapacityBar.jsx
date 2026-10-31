@@ -1,7 +1,6 @@
 import * as React from 'react';
 import PlanningAssigneeCapacityBar, { useAssigneeUnderbar } from './PlanningAssigneeCapacityBar.jsx';
 import { CAPACITY_BAR_HEADROOM, capacityAxis } from './planningCapacityUtils.js';
-import { formatHundredths } from './planningAssigneeCapacityModel.js';
 
 export default function PlanningCapacityBar({
     capacityEnabled,
@@ -15,7 +14,7 @@ export default function PlanningCapacityBar({
 }) {
     const underbar = useAssigneeUnderbar(totalCapacityAdjusted);
     if (capacityEnabled && totalCapacityAdjusted > 0) {
-        const scale = capacityAxis({ capacity: totalCapacityAdjusted, selected: selectedSP, stacked: underbar?.stacked }, CAPACITY_BAR_HEADROOM);
+        const scale = capacityAxis({ capacity: totalCapacityAdjusted, selected: selectedSP }, CAPACITY_BAR_HEADROOM);
         const toPct = (v) => Math.min(100, (v / scale) * 100);
         const selectedPct = toPct(selectedSP);
         const planningPct = toPct(estimatedCapacityAdjusted);
@@ -24,8 +23,6 @@ export default function PlanningCapacityBar({
         const isOver = capacitySummary.status === 'over';
         const isUnder = capacitySummary.status === 'under';
         const varianceOverPct = isOver ? selectedPct - teamCapPct : 0;
-        // The strip's overflow mark is hidden while the bar draws its own over-capacity zone, so the two never disagree.
-        const showOverflow = Boolean(underbar && underbar.overflowHundredths > 0 && !isOver);
         return (
             <div className="capacity-bar-graph">
                 <div className="capacity-bar-track">
@@ -45,8 +42,8 @@ export default function PlanningCapacityBar({
                     <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={underbar ? undefined : `Total story points from ${selectedCount} selected tasks.`}>
                         {!compact && <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>}
                     </div>
-                    {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap{showOverflow ? ` · +${formatHundredths(underbar.overflowHundredths)} SP over` : ''}</span>}
-                    {underbar && <PlanningAssigneeCapacityBar underbar={underbar} axis={scale} teamCapPct={teamCapPct} selectedCount={selectedCount} selectedSP={selectedSP} showOverflow={showOverflow} compact={compact} />}
+                    {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap</span>}
+                    {underbar && <PlanningAssigneeCapacityBar underbar={underbar} axis={scale} selectedCount={selectedCount} selectedSP={selectedSP} />}
                     {/* Planning marker */}
                     {showPlanningMarker && (
                         <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip={compact ? `Planning capacity: ${estimatedCapacityAdjusted.toFixed(1)} SP, after excluded activities.` : 'Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).'}>

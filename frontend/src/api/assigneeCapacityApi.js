@@ -71,6 +71,6 @@ export async function searchAssignableUsers(backendUrl, query, { signal } = {}) 
     }
     const users = (Array.isArray(data.users) ? data.users : [])
         .filter(user => typeof user?.accountId === 'string' && user.accountId && typeof user.displayName === 'string' && user.displayName.trim())
-        .map(user => ({ accountId: user.accountId, displayName: user.displayName.trim() }));
+        .map(user => ({ accountId: user.accountId, displayName: user.displayName.trim(), ...(typeof user.avatarUrl === 'string' && user.avatarUrl ? { avatarUrl: user.avatarUrl } : {}) }));
     return { users, reason: typeof data.reason === 'string' ? data.reason : null };
 }

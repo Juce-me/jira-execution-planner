@@ -1,7 +1,14 @@
-/* Assignee capacity table (#323): a Planning review table inside a Planned Teams Effort style strip; widths and alignment only. */
-.planning-assignee-table .planning-assignee-name { width: 200px; min-width: 200px; max-width: 200px; }
-.planning-assignee-table .planning-assignee-note { width: 280px; min-width: 280px; max-width: 280px; }
-.planning-assignee-table .planning-review-storyPoints { width: 96px; min-width: 96px; }
+/* Assignee capacity table (#323): a Planning review table inside a Planned Teams Effort style strip; widths and alignment only.
+   It fills the strip's content width (the wrapper's scrollbar gutter is dropped here so the table meets the content edge):
+   fixed layout from the header row, Assignee a quarter of the width, the numeric columns 112px, Notes the rest. Below
+   the 680px minimum the table scrolls inside its wrapper, never the page; the wrapper is the containing block, so the
+   cues' visually hidden text (absolute) scrolls and clips with the table instead of widening the page. */
+[data-assignee-capacity] > .capacity-grid-wrapper { position: relative; padding-right: 0; }
+.planning-review-table.planning-assignee-table { width: 100%; min-width: 680px; table-layout: fixed; }
+.planning-assignee-table .planning-assignee-name { width: 25%; }
+.planning-assignee-table .planning-review-storyPoints { width: 112px; }
+.planning-assignee-table .planning-assignee-note { width: auto; }
+.planning-assignee-table td.planning-assignee-note { overflow: hidden; }
 .planning-assignee-table .planning-review-storyPoints .planning-review-input { text-align: right; }
 .planning-assignee-person { display: flex; align-items: center; gap: 0.25rem; min-width: 0; }
 .planning-assignee-table .planning-review-truncated-value { flex: 1 1 auto; width: auto; min-width: 0; max-width: none; }
@@ -26,11 +33,7 @@
 
 /* Underbar (#323): positioning wrapper for the shared StackedBar strip variant (its rules live in stats/project-track.css);
    it adds no height. It covers the whole capacity track and takes the pointer there (StackedBar resolves the segment at
-   the pointer's x), painting above a hovered fill (z-index 40); the strip itself is the bottom 5px. The capacity markers
-   sit above it (42) and keep their own tooltips. */
+   the pointer's x), painting above a hovered fill (z-index 40); the strip itself is the bottom 5px, the Selected split by
+   person, so it ends where the Selected does. The capacity markers sit above it (42) and keep their own tooltips. */
 .planning-assignee-underbar { position: absolute; inset: 0; border-radius: 5px; overflow: hidden; z-index: 41; }
 .capacity-bar-track:has(> .planning-assignee-underbar) > .capacity-bar-marker { z-index: 42; }
-/* The part of the strip beyond the Team Cap marker, with its "+N SP over" label just past its end, above the strip and
-   inside the track (the Team Cap label sits below the track, so the two never meet). Paint only. */
-.planning-assignee-overflow { position: absolute; bottom: 0; height: 5px; background: repeating-linear-gradient(-45deg, rgba(0, 0, 0, 0.5) 0 2px, transparent 2px 4px); pointer-events: none; }
-.planning-assignee-overflow > .capacity-bar-fill-label { position: absolute; left: calc(100% + 4px); bottom: calc(100% + 1px); color: #d4380d; }

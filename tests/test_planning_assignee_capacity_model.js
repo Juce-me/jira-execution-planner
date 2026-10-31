@@ -46,21 +46,21 @@ test('Unassigned detection handles a null-field assignee object', async () => {
     assert.equal(m.isUnassigned(story('A-3', 'u1', 'Ann', 1)), false);
 });
 
-test('Total effort covers non-Killed team Stories; null points count as 0; identity holds', async () => {
+test('the team list holds non-Killed team Stories: it decides "has Stories" and the Unassigned row, and no Total is summed', async () => {
     const m = await load();
     const tasks = [
         story('A-1', 'u1', 'Ann', 3), story('A-2', 'u1', 'Ann', null), story('A-3', 'u2', 'Bob', 2.5),
-        story('A-4', undefined, null, 4), story('A-5', 'u1', 'Ann', 9, { status: 'Killed' }),
+        story('A-4', undefined, null, 4), story('A-5', 'u4', 'Killed Only', 9, { status: 'Killed' }),
         story('A-6', 'u3', 'Cy', 8, { team: 't2' }),
     ];
-    const total = m.totalEffortByAssignee(tasks, options);
-    assert.equal(total.byKey.get('u1').hundredths, 300);
-    assert.equal(total.byKey.get('u2').hundredths, 250);
-    assert.equal(total.unassigned.hundredths, 400);
-    assert.equal(total.byKey.has('u3'), false);
-    const model = m.buildAssigneeRows({ document: { revision: 0, rows: [], inherited: null }, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [] });
-    assert.equal(model.totals.totalHundredths, 300 + 250 + 400);
-    assert.equal(model.unassigned.storyCount, 1);
+    assert.deepEqual(m.teamTasks(tasks, options).map(task => task.key), ['A-1', 'A-2', 'A-3', 'A-4']);
+    assert.equal(m.totalEffortByAssignee, undefined);
+    assert.equal(m.mayBeIncomplete, undefined);
+    const model = m.buildAssigneeRows({ document: { revision: 1, rows: [{ assigneeKey: 'u4', displayName: 'Killed Only', capacity: '2', vacations: null, notes: null, removed: false }], inherited: null }, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [] });
+    assert.deepEqual(model.rows.map(row => [row.key, row.hasStories, row.removable, row.selectedHundredths]), [['u1', true, false, 0], ['u2', true, false, 0], ['u4', false, true, 0]]);
+    assert.equal('totalHundredths' in model.rows[0], false);
+    assert.equal('totalHundredths' in model.totals, false);
+    assert.deepEqual(model.unassigned, { storyCount: 1, selectedHundredths: 0 });
 });
 
 test('Selected total equals the sum of the selected list, including Unassigned', async () => {
@@ -247,64 +247,39 @@ test('chunkChanges respects the 50-change limit', async () => {
     assert.deepEqual(m.chunkChanges(changes).map(chunk => chunk.length), [50, 50, 20]);
 });
 
-test('mayBeIncomplete flags a lane at the 250-issue request cap', async () => {
+test('underbar: one segment per person with Planned effort above 0 plus Unassigned effort; its total is the Planned effort total', async () => {
     const m = await load();
-    assert.equal(m.TASK_LOAD_LIMIT, 250);
-    assert.equal(m.mayBeIncomplete({ laneIssueCounts: [249, 10] }), false);
-    assert.equal(m.mayBeIncomplete({ laneIssueCounts: [250, 10] }), true);
-    assert.equal(m.mayBeIncomplete({ laneIssueCounts: [], capped: true }), true);
-    assert.equal(m.mayBeIncomplete(), false);
-});
-
-test('underbar: raw Jira capacity is the denominator, else the sum of Capacity, else no bar', async () => {
-    const m = await load();
-    const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'b', 'Bob', 5), story('S-3', undefined, null, 4)];
+    const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'b', 'Bob', 5), story('S-3', undefined, null, 4), story('S-4', 'c', 'Cy', 2)];
     const doc = { revision: 1, rows: [
         { assigneeKey: 'a', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false },
         { assigneeKey: 'b', displayName: 'Bob', capacity: '6', vacations: null, notes: null, removed: false },
-    ] };
-    const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[0]] });
-    const raw = m.buildUnderbar(view, 20);
-    assert.equal(raw.source, 'jira');
-    assert.equal(raw.denominatorHundredths, 2000);
-    assert.deepEqual(raw.people.map(person => [person.key, person.capacityHundredths]), [['a', 800], ['b', 600]]);
-    const sum = m.buildUnderbar(view, null);
-    assert.equal(sum.source, 'sum');
-    assert.equal(sum.denominatorHundredths, 1400);
-    assert.equal(m.buildUnderbar(view, 0).source, 'sum');
-    const empty = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: [], selectedTasks: [] });
-    assert.equal(m.buildUnderbar(empty, null), null);
-    assert.equal(m.buildUnderbar(null, null), null);
-});
-
-test('underbar: Unassigned is the unassigned Total effort and removed or capacity-less people are excluded', async () => {
-    const m = await load();
-    const tasks = [story('S-1', 'a', 'Ann', 3), story('S-2', 'c', 'Cy', 2), story('S-3', undefined, null, 4), story('S-4', 'none', null, 1)];
-    const doc = { revision: 1, rows: [
-        { assigneeKey: 'a', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false },
-        { assigneeKey: 'c', displayName: 'Cy', capacity: null, vacations: null, notes: null, removed: false },
         { assigneeKey: 'gone', displayName: 'Gone', capacity: '9', vacations: null, notes: null, removed: true },
     ] };
-    const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[2]] });
-    const bar = m.buildUnderbar(view, null);
-    assert.deepEqual(bar.people.map(person => person.key), ['a']);
-    assert.equal(bar.unassigned.totalHundredths, 500);
-    assert.equal(bar.unassigned.selectedHundredths, 400);
-    assert.equal(bar.unassigned.name, 'Unassigned (effort)');
-    // Unassigned alone does not make a bar without any capacity number
-    const noNumber = m.buildAssigneeRows({ document: { revision: 1, rows: [] }, teamTasksList: m.teamTasks([tasks[2]], options), selectedTasks: [] });
-    assert.equal(m.buildUnderbar(noNumber, null), null);
-    assert.equal(m.buildUnderbar(noNumber, 10).unassigned.totalHundredths, 400);
+    // Ann and Cy (no Capacity) and the unassigned Story are checked; Bob (Capacity 6) has nothing selected.
+    const view = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[0], tasks[2], tasks[3]] });
+    const bar = m.buildUnderbar(view);
+    assert.deepEqual(bar.people.map(person => [person.key, person.selectedHundredths, person.capacityHundredths]), [['a', 300, 800], ['c', 200, null]]);
+    assert.deepEqual(bar.unassigned, { key: m.UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', selectedHundredths: 400 });
+    assert.equal(bar.totalHundredths, 900);
+    assert.equal(bar.totalHundredths, view.totals.selectedHundredths, 'the strip equals the table total and the bar Selected');
+    // Unassigned Stories that are not checked draw no Unassigned segment; nothing checked draws no strip.
+    const none = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [] });
+    assert.equal(m.buildUnderbar(none), null);
+    const peopleOnly = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [tasks[1]] });
+    assert.equal(m.buildUnderbar(peopleOnly).unassigned, null);
+    assert.equal(m.buildUnderbar(null), null);
+    assert.equal(m.underbarOnBarAxis, undefined);
 });
 
-test('a person row tint equals the underbar segment colour for every person, and people without Capacity get none', async () => {
+test('a person row tint equals the underbar segment colour for every person, and people with no Planned effort get none', async () => {
     const m = await load();
-    const row = (key, name, capacity) => ({ key, name, capacity, selectedHundredths: 0, totalHundredths: 0 });
-    const rows = [row('acc-b', 'Bob', '6'), row('acc-a', 'Ann', '8'), row('acc-c', 'Cy', null), row('acc-d', 'Di', '0')];
+    const row = (key, name, capacity, selectedHundredths) => ({ key, name, capacity, selectedHundredths });
+    // Bob and Ann carry Planned effort; Cy has Capacity but nothing selected; Di neither.
+    const rows = [row('acc-b', 'Bob', '6', 300), row('acc-a', 'Ann', null, 500), row('acc-c', 'Cy', '4', 0), row('acc-d', 'Di', null, 0)];
     const map = m.buildAssigneeColorMap(rows);
     // Sorted by name: Ann, Bob, Cy, Di take the palette in order.
     assert.deepEqual(map, { 'acc-a': m.ASSIGNEE_PALETTE[0], 'acc-b': m.ASSIGNEE_PALETTE[1], 'acc-c': m.ASSIGNEE_PALETTE[2], 'acc-d': m.ASSIGNEE_PALETTE[3] });
-    const bar = m.buildUnderbar({ rows, unassigned: null }, null);
+    const bar = m.buildUnderbar({ rows, unassigned: null });
     assert.deepEqual(bar.people.map(person => person.key), ['acc-b', 'acc-a']);
     for (const person of bar.people) {
         const source = rows.find(entry => entry.key === person.key);
@@ -324,34 +299,6 @@ test('the assignee palette leaves out the colours that clash with the Unassigned
     // Warm hues (red through yellow: hue below 65 degrees or above 300) are absent, so nothing reads as pink or amber.
     const hue = hex => { const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255); const max = Math.max(r, g, b), min = Math.min(r, g, b); if (max === min) return null; const d = max - min; const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4; return (h * 60 + 360) % 360; };
     for (const color of m.ASSIGNEE_PALETTE) { const h = hue(color); if (h != null && color !== '#78716c') assert.ok(h >= 65 && h <= 300, `${color} ${h}`); }
-});
-
-test('underbar on the bar axis: people scale by the Product/Tech multiplier, Unassigned does not, and overflow is past Team Cap', async () => {
-    const m = await load();
-    const row = (key, capacity) => ({ key, name: key, capacity, selectedHundredths: 0, totalHundredths: 0 });
-    // Product-only 0.7: raw people sum 10 against a marker of 10 x 0.7 = 7 is not an overflow.
-    const exact = m.buildUnderbar({ rows: [row('a', '3.3'), row('b', '3.3'), row('c', '3.4')], unassigned: null }, 10);
-    const scaled = m.underbarOnBarAxis(exact, 10 * 0.7, 0.7);
-    assert.equal(scaled.overflowHundredths, 0);
-    assert.equal(scaled.overflow, 0);
-    assert.ok(Math.abs(scaled.stacked - 7) < 1e-9);
-    assert.ok(Math.abs(scaled.people[0].value - 2.31) < 1e-9);
-    // Many people whose scaled values would each round up still do not draw a false mark.
-    const many = m.buildUnderbar({ rows: ['a', 'b', 'c', 'd', 'e'].map(key => row(key, '2.05')) , unassigned: null }, 10.25);
-    assert.equal(m.underbarOnBarAxis(many, 10.25 * 0.7, 0.7).overflowHundredths, 0);
-    // Unassigned is effort: added unscaled; the overflow is people x multiplier + Unassigned - capacity.
-    const withUnassigned = m.buildUnderbar({ rows: [row('a', '10')], unassigned: { totalHundredths: 300, selectedHundredths: 100 } }, 10);
-    const over = m.underbarOnBarAxis(withUnassigned, 7, 0.7);
-    assert.equal(over.unassignedValue, 3);
-    assert.equal(over.overflowHundredths, 300);
-    assert.equal(over.overflow, 3);
-    assert.ok(Math.abs(over.stacked - 10) < 1e-9);
-    // Multiplier 1: 12 + 10 + 4 against 20 overflows by 6; below capacity there is none.
-    const big = m.buildUnderbar({ rows: [row('a', '12'), row('b', '10')], unassigned: { totalHundredths: 400, selectedHundredths: 0 } }, 20);
-    assert.equal(m.underbarOnBarAxis(big, 20, 1).overflowHundredths, 600);
-    const small = m.buildUnderbar({ rows: [row('a', '8'), row('b', '6')], unassigned: { totalHundredths: 400, selectedHundredths: 0 } }, 20);
-    assert.equal(m.underbarOnBarAxis(small, 20, 1).overflowHundredths, 0);
-    assert.equal(m.underbarOnBarAxis(small, 20, 1).stacked, 18);
 });
 
 // ---- Team capacity (not in Jira), #323 Task 8 ----

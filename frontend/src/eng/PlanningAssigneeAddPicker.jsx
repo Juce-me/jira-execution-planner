@@ -65,6 +65,6 @@ export default function PlanningAssigneeAddPicker({ backendUrl, onAdd }) {
         onOpen={() => { reset(); setOpen(true); }}
         onClose={() => { reset(); setOpen(false); }}
         onSearch={onSearch}
-        onSelect={person => { reset(); setOpen(false); onAdd({ accountId: person.accountId, displayName: person.displayName }); }}
+        onSelect={person => { reset(); setOpen(false); onAdd({ accountId: person.accountId, displayName: person.displayName, avatarUrl: person.avatarUrl || null }); }}
     />;
 }

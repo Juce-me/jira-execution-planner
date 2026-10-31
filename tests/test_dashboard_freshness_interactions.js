@@ -211,3 +211,72 @@ for (const [name, cached, changes] of [
     await new Promise(resolve => setImmediate(resolve));
     if (name === 'auth recovery') assert.equal(h.inputs.planningAuthResumeLoadRef.current.outcome, 'pending', 'retired recovery completions cannot settle a replacement');
 });
+
+function freshnessInput(overrides = {}) {
+    return {
+        selectedView: 'epm', sharedConfigReady: true, engWorkspaceConfigured: true,
+        acceptedBoardConfigRef: { current: true }, authResumePrincipalRef: {}, connectionRecoveryPrincipalRef: {},
+        connectionUnavailableRef: {}, loadEpochRef: { current: 1 }, groupLoadVersionRef: { current: 1 },
+        alertCohortRef: {}, ...overrides,
+    };
+}
+
+async function freshnessController(input) {
+    const { readFreshnessEnvironment } = await import('../frontend/src/dashboardFreshnessAdapters.js');
+    const { createDashboardFreshnessController } = await import('../frontend/src/dashboardFreshnessController.js');
+    let reads = 0;
+    const controller = createDashboardFreshnessController({
+        readEnvironment: () => ({ ...readFreshnessEnvironment(input), focused: true, authReady: true, sessionEpoch: 0 }),
+        readAdapter: () => ({ sources: () => ['synthetic_source'], refreshScope: async () => {
+            reads++;
+            return [{ source: 'synthetic_source', status: 'ok', checkKind: 'forced', requestStartedAtMs: Date.now() }];
+        } }),
+    });
+    return { controller, reads: () => reads };
+}
+
+test('EPM return refresh starts despite stale inactive ENG loading and clears pending intent', async () => {
+    const input = freshnessInput({ loading: true, productTasksLoading: true, techTasksLoading: true });
+    const h = await freshnessController(input);
+    await h.controller.request({ reason: 'bfcache' });
+    assert.equal(h.reads(), 1);
+    assert.equal(h.controller.getState().pending, false);
+});
+
+for (const [view, flags] of [
+    ['eng', ['loading', 'productTasksLoading', 'techTasksLoading']],
+    ['epm', ['epmLoading']],
+]) for (const flag of flags) test(`${view} genuine ${flag} defers return refresh until settled`, async () => {
+    const input = freshnessInput({ selectedView: view, [flag]: true });
+    const h = await freshnessController(input);
+    await h.controller.request({ reason: 'bfcache' });
+    assert.equal(h.reads(), 0); assert.equal(h.controller.getState().pending, true);
+    input[flag] = false;
+    await h.controller.update();
+    assert.equal(h.reads(), 1); assert.equal(h.controller.getState().pending, false);
+});
+
+for (const [flag, value] of Object.entries({
+    sharedConfigReady: false, terminalAuth: true, connectionRecoveryBlocksRefresh: true,
+    showGroupManage: true, onboardingActive: true, groupsLoading: true, catalogLoading: true,
+    groupSaving: true, epmConfigSaving: true, workspaceConfigConflict: true,
+    issueFieldEdits: { activeEditor: {} }, pendingStatusIssueKeys: new Set(['SAMPLE-1']),
+})) test(`EPM retains shared ${flag} protection despite stale ENG loading`, async () => {
+    const h = await freshnessController(freshnessInput({ loading: true, productTasksLoading: true, techTasksLoading: true, [flag]: value }));
+    await h.controller.request({ reason: 'bfcache' });
+    assert.equal(h.reads(), 0);
+});
+
+for (const [surfaceFlags, busy] of [
+    [{ selectedView: 'epm', showPlanning: true, showStats: true, showScenario: true, scenarioLoading: true,
+        statsLoading: true, capacityLoading: true, planningReview: { getState: () => ({ loading: true }) }, alertCohortRef: { current: {} } }, false],
+    [{ selectedView: 'eng', epmLoading: true }, false],
+    [{ selectedView: 'eng', showPlanning: true, planningReview: { getState: () => ({ loading: true }) } }, true],
+    [{ selectedView: 'eng', showPlanning: true, capacityLoading: true }, true],
+    [{ selectedView: 'eng', showStats: true, statsLoading: true }, true],
+    [{ selectedView: 'eng', showScenario: true, scenarioLoading: true }, true],
+    [{ selectedView: 'eng', alertCohortRef: { current: {} } }, true],
+]) test(`loading guards follow the resolved active surface: ${Object.keys(surfaceFlags).join(', ')}`, async () => {
+    const { readFreshnessEnvironment } = await import('../frontend/src/dashboardFreshnessAdapters.js');
+    assert.equal(readFreshnessEnvironment(freshnessInput(surfaceFlags)).ownerBusy, busy);
+});

@@ -439,3 +439,18 @@ test('a person added with no Stories stays a row under the stored name and is in
     const next = { revision: 0, rows: [], inherited: { fromSprintId: '100', rows: saved.rows } };
     assert.deepEqual(m.buildAssigneeRows({ document: next, teamTasksList: [], selectedTasks: [] }).rows.map(row => row.name), ['Cy']);
 });
+
+test('assignee avatar URLs come from the loaded Stories by account id, first one wins, unassigned and blank skipped', async () => {
+    const m = await load();
+    const withAvatar = (task, url) => ({ ...task, fields: { ...task.fields, assignee: { ...task.fields.assignee, avatarUrl: url } } });
+    const urls = m.assigneeAvatarUrls([
+        withAvatar(story('S-1', 'a', 'Ann', 1), 'https://host.example/a1'),
+        withAvatar(story('S-2', 'a', 'Ann', 1), 'https://host.example/a2'),
+        withAvatar(story('S-3', 'b', 'Bob', 1), ''),
+        story('S-4', 'c', 'Cy', 1),
+        story('S-5', undefined, null, 1),
+        story('S-6', 'none', null, 1),
+    ]);
+    assert.deepEqual([...urls], [['a', 'https://host.example/a1']]);
+    assert.equal(m.assigneeAvatarUrls(null).size, 0);
+});

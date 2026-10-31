@@ -312,6 +312,10 @@ Sprint, independent of filters and checkboxes, including Stories under excluded 
 (over above 120%, under below 90%) on rows with Capacity and on the Totals row, which compares the displayed Selected total
 (including Unassigned) with the Capacity sum. Sums run in integer hundredths.
 
+**Avatars.** Each person's name follows the issue card's 14px person slot (`PersonAvatar` in `task-assignee-icon`): the
+photo of that person from a loaded Story's assignee, keyed by account id, else the person glyph. Nothing is requested or stored
+for it; a person with no loaded Story, including one just added, shows the glyph. The Unassigned row has no slot.
+
 **Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such Stories
 exist; it is neither editable nor removable.
 
@@ -337,7 +341,8 @@ storage or save rights the read reports `capabilities` and the strip is read-onl
 hidden.
 
 **Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
-stored team number, which shares the queue) can be undone with the Undo button under the table, or with Cmd/Ctrl+Z while focus
+stored team number, which shares the queue) can be undone with the Undo button at the right end of the expanded strip header
+(beside the save status, a sibling of the header toggle; the collapsed strip shows no Undo), or with Cmd/Ctrl+Z while focus
 is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
 undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
 sends nothing. Undoing an Add assignee removes the person again (there is no delete). Undoing the first edit of an inherited

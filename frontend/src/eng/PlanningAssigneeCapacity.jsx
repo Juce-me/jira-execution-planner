@@ -2,12 +2,13 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import IconButton from '../ui/IconButton.jsx';
+import PersonAvatar from '../ui/PersonAvatar.jsx';
 import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, mayBeIncomplete, teamTasks,
+    applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, mayBeIncomplete, teamTasks,
     validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
@@ -79,10 +80,19 @@ function EffortCell({ hundredths, cue }) {
     return <td className={`planning-review-storyPoints${cueClass(cue)}`}>{fmt(hundredths)}{cue && <span className="planning-review-sr-only"> ({cueText(cue)})</span>}</td>;
 }
 
-function PersonRow({ row, color, readOnly, onCommit, editors }) {
+function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
     const input = (field, label, maxLength) => <CapacityInput field={field} label={`${label} for ${row.name}`} value={row[field]} disabled={readOnly} maxLength={maxLength} editors={editors} onCommit={(name, value) => onCommit(row.key, name, value)} />;
     return <tr data-assignee-key={row.key} className={color ? 'planning-assignee-tinted' : undefined} style={color ? { '--planning-assignee-color': color } : undefined}>
         <td className="planning-assignee-name"><div className="planning-assignee-person">
+            {/* The issue card's person slot: the Story assignee's photo when loaded, else its person glyph. */}
+            <span className="task-assignee-icon" aria-hidden="true">
+                <PersonAvatar avatarUrl={avatarUrl}>
+                    <svg viewBox="0 0 24 24" fill="none">
+                        <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6"/>
+                        <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                    </svg>
+                </PersonAvatar>
+            </span>
             <EpicHeaderValueReadout value={row.name}>{({ discoveryProps }) => <span {...discoveryProps} className="planning-review-truncated-value">{row.name}</span>}</EpicHeaderValueReadout>
             {row.removable && !readOnly && <IconButton size="sm" className="planning-review-column-action" aria-label={`Remove ${row.name}`} onClick={() => onCommit(row.key, 'removed', true)}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
@@ -100,7 +110,7 @@ function PersonRow({ row, color, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
+function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
@@ -132,7 +142,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
                     <td className="planning-review-storyPoints" />
                     <td className="planning-assignee-note" />
                 </tr>}
-                {rows.map(row => <PersonRow key={row.key} row={row} color={tinted ? assigneeRowColor(row, colorMap) : null} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
+                {rows.map(row => <PersonRow key={row.key} row={row} color={tinted ? assigneeRowColor(row, colorMap) : null} avatarUrl={avatars.get(row.key)} readOnly={readOnly} onCommit={onCommit} editors={editors} />)}
             </tbody>
             <tfoot><tr>
                 <td className="planning-assignee-name">Total</td>
@@ -143,9 +153,7 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
                 <td className="planning-assignee-note" />
             </tr></tfoot>
         </table>
-        {addPicker && <p className="planning-review-guidance">{addPicker}{' '}
-            <button type="button" className="planning-action-button" disabled={!state.undoCount} onClick={() => onUndo()}>Undo</button>
-        </p>}
+        {addPicker && <p className="planning-review-guidance">{addPicker}</p>}
         {removed.length > 0 && !readOnly && <p className="planning-review-guidance planning-assignee-removed">
             Removed from this Sprint and later ones:{' '}
             {removed.map((person, index) => <span key={person.key}>
@@ -181,6 +189,7 @@ export default function PlanningAssigneeCapacity({
     const projected = React.useMemo(() => projectPlanningOriginals(tasks, originals), [tasks, originals]);
     // Keyed on the loaded tasks and the Team only, so a selection toggle never rebuilds the Total list.
     const teamList = React.useMemo(() => (oneTeam ? teamTasks(projected, { teamId, getTeamInfo: task => teamInfoRef.current(task), normalizeStatus: status => normalizeRef.current(status) }) : []), [projected, teamId, oneTeam]);
+    const avatars = React.useMemo(() => assigneeAvatarUrls(projected), [projected]);
     const effective = React.useMemo(() => applyChangesToDocument(state.document, state.changes), [state.document, state.changes]);
     const view = React.useMemo(() => buildAssigneeRows({ document: effective, teamTasksList: teamList, selectedTasks: selectedTasks || [], ignoreInherited: sprintClosed }), [effective, teamList, selectedTasks, sprintClosed]);
     const shownRef = React.useRef(null);
@@ -241,6 +250,8 @@ export default function PlanningAssigneeCapacity({
     const empty = !view.rows.length && !view.unassigned && !view.removed.length;
     const status = state.save === 'saving' ? 'Saving…' : state.save === 'saved' ? 'Saved' : state.save === 'failed' ? 'Not saved' : '';
     const addPicker = readOnly ? null : <PlanningAssigneeAddPicker backendUrl={backendUrl} onAdd={onAdd} />;
+    // The table (and with it the header's Undo) shows once the document is loaded and holds a row, a person or a removal.
+    const showTable = opened && state.load !== 'error' && Boolean(state.document) && !empty;
     let body = null;
     if (opened) {
         if (state.load === 'error') body = <p className="planning-review-guidance" role="alert">Assignee capacity could not be loaded. <button type="button" className="planning-action-button" onClick={() => controller.reload()}>Retry</button></p>;
@@ -248,15 +259,18 @@ export default function PlanningAssigneeCapacity({
         else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
+            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
         </>;
     }
     const strip = oneTeam && !hidden && host ? createPortal(
         <div className={`capacity-panel open${expanded ? '' : ' capacity-panel-collapsed'}`} data-assignee-capacity>
-            <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={expanded} aria-controls="planning-assignee-capacity-body" onClick={toggle}>
-                <span className="capacity-title">Assignee Capacity (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
-                <span className="capacity-subtitle" role="status" data-save-state={state.save}>{status}</span>
-            </button>
+            <div className="capacity-header">
+                <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={expanded} aria-controls="planning-assignee-capacity-body" onClick={toggle}>
+                    <span className="capacity-title">Assignee Capacity (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
+                    <span className="capacity-subtitle" role="status" data-save-state={state.save}>{status}</span>
+                </button>
+                {expanded && showTable && !readOnly && <button type="button" className="planning-action-button" disabled={!state.undoCount} onClick={() => onUndo()}>Undo</button>}
+            </div>
             <div id="planning-assignee-capacity-body" className="capacity-grid-wrapper" key={`${sprintId}|${teamId}`}>{body}</div>
         </div>, host) : null;
     return <PlanningAssigneeCapacityContext.Provider value={context}>{children}{strip}</PlanningAssigneeCapacityContext.Provider>;

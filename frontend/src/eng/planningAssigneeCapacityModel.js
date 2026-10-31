@@ -111,6 +111,18 @@ function accumulateTasks(tasks) {
     return { byKey, unassigned };
 }
 
+// Avatars (#323): the loaded Stories' assignee avatar URL by account id, first one found; no request, nothing stored.
+// The URL is shown only through PersonAvatar, which applies the host allowlist.
+export function assigneeAvatarUrls(tasks) {
+    const urls = new Map();
+    for (const task of tasks || []) {
+        const assignee = task?.fields?.assignee;
+        const url = assignee?.avatarUrl;
+        if (assignee?.accountId && typeof url === 'string' && url && !urls.has(assignee.accountId)) urls.set(assignee.accountId, url);
+    }
+    return urls;
+}
+
 // Selected effort: the checked Stories (the same list the capacity bar sums).
 export const selectedEffortByAssignee = selectedTasks => accumulate(selectedTasks || []);
 

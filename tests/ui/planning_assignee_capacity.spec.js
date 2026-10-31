@@ -1737,3 +1737,171 @@ test('the undo stack is cleared after a Team switch and after a failed save', as
     await expect(strip(page).locator('[data-assignee-save-failed]')).toContainText('Not saved');
     await expect(undoButton(page)).toBeDisabled();
 });
+
+
+// ---- strip header: toggle ring inset, Undo in the header, avatars (#323 operator review) -------------------------
+
+const AVATAR_HOST = 'avatar-management--avatars.us-west-2.prod.public.atl-paas.net';
+const PHOTO = `https://${AVATAR_HOST}/synthetic/photo/32`;
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const effortPanelOf = page => page.locator('.capacity-panel.open:not([data-assignee-capacity])');
+// Both strip headers (Assignee Capacity and Planned Teams Effort) measured against their own panel.
+const headerGeometry = page => page.evaluate(() => [...document.querySelectorAll('.capacity-panel.open')].map(panel => {
+    const r = node => { if (!node) return null; const b = node.getBoundingClientRect(); return b.width ? { left: b.left, right: b.right, top: b.top, bottom: b.bottom, height: b.height } : null; };
+    const style = getComputedStyle(panel);
+    const status = panel.querySelector('.capacity-subtitle');
+    return {
+        which: panel.hasAttribute('data-assignee-capacity') ? 'assignee' : 'effort',
+        panel: r(panel), border: parseFloat(style.borderLeftWidth), padding: parseFloat(style.paddingLeft), overflow: style.overflow,
+        toggle: r(panel.querySelector('.capacity-header-toggle')), title: r(panel.querySelector('.capacity-title')),
+        status: status && status.textContent.trim() ? r(status) : null,
+        grid: r(panel.querySelector('.capacity-grid-wrapper')),
+        undo: r(panel.querySelector(':scope > .capacity-header > .planning-action-button')),
+        nested: panel.querySelectorAll('.capacity-header-toggle button').length,
+    };
+}));
+const expandEffort = async page => { await effortPanelOf(page).locator('.capacity-header-toggle').click(); await expect(effortPanelOf(page)).not.toHaveClass(/capacity-panel-collapsed/); };
+
+test('both strip toggles keep their text in place while the hover ring clears it, collapsed and expanded', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    const check = (entry, collapsed) => {
+        const label = `${entry.which} ${collapsed ? 'collapsed' : 'expanded'}`;
+        const inner = { left: entry.panel.left + entry.border, right: entry.panel.right - entry.border };
+        // The text sits on the panel's content edge, exactly where it was with the unpadded toggle.
+        expect(entry.title.left, label).toBeCloseTo(inner.left + 12, 1);
+        expect(entry.title.left - entry.toggle.left, label).toBeGreaterThanOrEqual(8);
+        expect(entry.title.top - entry.toggle.top, label).toBeGreaterThanOrEqual(2);
+        expect(entry.toggle.bottom - entry.title.bottom, label).toBeGreaterThanOrEqual(2);
+        if (entry.status) expect(entry.toggle.right - entry.status.right, label).toBeGreaterThanOrEqual(8);
+        if (collapsed) {
+            expect(entry.panel.height, label).toBeCloseTo(28, 1);
+            expect(entry.overflow, label).toBe('hidden');
+            // Nothing of the toggle is clipped by the 28px strip.
+            expect(entry.toggle.top, label).toBeGreaterThanOrEqual(entry.panel.top + entry.border - 0.5);
+            expect(entry.toggle.bottom, label).toBeLessThanOrEqual(entry.panel.bottom - entry.border + 0.5);
+            expect(entry.toggle.left, label).toBeGreaterThanOrEqual(inner.left - 0.5);
+            expect(entry.toggle.right, label).toBeLessThanOrEqual(inner.right + 0.5);
+            expect(entry.title.top - entry.panel.top, label).toBeCloseTo(entry.panel.bottom - entry.title.bottom, 0);
+        } else {
+            expect(entry.toggle.left, label).toBeCloseTo(inner.left, 1);
+            expect(entry.title.top, label).toBeCloseTo(entry.panel.top + entry.border + 12, 1);
+            // The header keeps its 0.5rem gap to the grid, so the panel height does not change.
+            expect(entry.grid.top - entry.title.bottom, label).toBeCloseTo(8, 1);
+        }
+    };
+    const collapsed = await headerGeometry(page);
+    expect(collapsed.map(entry => entry.which)).toEqual(['assignee', 'effort']);
+    for (const entry of collapsed) check(entry, true);
+    await stripToggle(page).hover(); await page.waitForTimeout(250);
+    expect(await headerGeometry(page), 'collapsed hover keeps geometry').toEqual(collapsed);
+    const collapsedBox = await strip(page).boundingBox();
+    await page.screenshot({ path: 'tmp/slice8-shots/hover-assignee-collapsed.png', clip: { x: collapsedBox.x - 4, y: collapsedBox.y - 4, width: collapsedBox.width + 8, height: collapsedBox.height + 8 }, animations: 'disabled', scale: 'device' });
+    await page.mouse.move(0, 0);
+    await expand(page); await expandEffort(page);
+    const expanded = await headerGeometry(page);
+    for (const entry of expanded) check(entry, false);
+    expect(expanded.find(entry => entry.which === 'effort').status, 'the effort subtitle is measured').not.toBeNull();
+    // Settled hover: paint only, the text does not move; zoomed element captures with animations disabled.
+    for (const [which, toggle] of [['assignee', stripToggle(page)], ['effort', effortPanelOf(page).locator('.capacity-header-toggle')]]) {
+        const before = await headerGeometry(page);
+        await toggle.hover(); await page.waitForTimeout(250);
+        const after = await headerGeometry(page);
+        expect(after, `${which} hover keeps geometry`).toEqual(before);
+        expect(await toggle.evaluate(node => getComputedStyle(node).boxShadow)).not.toBe('none');
+        const box = await toggle.boundingBox();
+        await page.screenshot({ path: `tmp/slice8-shots/hover-${which}-expanded.png`, clip: { x: box.x - 4, y: box.y - 4, width: box.width + 8, height: box.height + 8 }, animations: 'disabled', scale: 'device' });
+    }
+    await page.mouse.move(0, 0);
+});
+
+test('Undo sits in the expanded strip header right of the save status, never inside the toggle, and leaves the header height alone', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expect(undoButton(page), 'collapsed: no Undo').toHaveCount(0);
+    await expand(page);
+    await expect(undoButton(page)).toBeDisabled();
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('11'); await capacity.press('Enter');
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await expect(undoButton(page)).toBeEnabled();
+    await expect(strip(page).locator('.planning-review-guidance').getByRole('button', { name: 'Undo', exact: true }), 'not under the table').toHaveCount(0);
+    expect(await undoButton(page).evaluate(node => node.draggable)).toBe(false);
+    const [entry] = (await headerGeometry(page)).filter(item => item.which === 'assignee');
+    expect(entry.nested, 'no button nested in the toggle').toBe(0);
+    const contentRight = entry.panel.right - entry.border - 12;
+    expect(entry.undo.right).toBeLessThanOrEqual(contentRight + 0.5);
+    expect(entry.undo.right).toBeGreaterThanOrEqual(contentRight - 0.5);
+    expect((entry.undo.top + entry.undo.bottom) / 2).toBeCloseTo((entry.title.top + entry.title.bottom) / 2, 0);
+    // The ring ends before Undo; the status keeps its 8px of ring clearance and sits just left of Undo.
+    expect(entry.toggle.right).toBeLessThanOrEqual(entry.undo.left + 0.5);
+    expect(entry.status.right).toBeLessThanOrEqual(entry.undo.left - 8);
+    expect(entry.undo.left - entry.status.right).toBeLessThanOrEqual(24);
+    expect(entry.toggle.right - entry.status.right).toBeGreaterThanOrEqual(8);
+    expect(entry.title.top).toBeCloseTo(entry.panel.top + entry.border + 12, 1);
+    expect(entry.grid.top - entry.title.bottom, 'header height unchanged').toBeCloseTo(8, 1);
+    const header = strip(page).locator(':scope > .capacity-header');
+    await stripToggle(page).hover(); await page.waitForTimeout(250);
+    expect((await headerGeometry(page)).find(item => item.which === 'assignee'), 'hover keeps the header geometry').toEqual(entry);
+    const box = await header.boundingBox();
+    await page.screenshot({ path: 'tmp/slice8-shots/header-undo-status-hover.png', clip: { x: box.x - 16, y: box.y - 16, width: box.width + 32, height: box.height + 32 }, animations: 'disabled', scale: 'device' });
+    await page.mouse.move(0, 0);
+    await undoButton(page).click();
+    await expect(capacity).toHaveValue('8');
+    await stripToggle(page).click();
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await expect(undoButton(page), 'collapsed again: no Undo').toHaveCount(0);
+    await expect(strip(page)).toHaveCSS('height', '28px');
+});
+
+test('person rows show the loaded Story assignee photo in the issue-card slot, a glyph otherwise, with no extra request and unchanged rows', async ({ page }) => {
+    const issues = stories.map(task => (task.fields.assignee?.accountId === 'acc-ann' ? { ...task, fields: { ...task.fields, assignee: { ...task.fields.assignee, avatarUrl: PHOTO } } } : task));
+    const imageRequests = [];
+    await page.route(`https://${AVATAR_HOST}/**`, route => { imageRequests.push(route.request().url()); return route.fulfill({ status: 200, contentType: 'image/png', body: PNG }); });
+    const server = capacityServer({ rows: [...annRows(), { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: '3', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server, issues });
+    await openPlanning(page);
+    await expand(page);
+    const apiBefore = calls.map(call => `${call.method} ${call.pathname}`);
+    const ann = rowOf(page, 'acc-ann').locator('.planning-assignee-person > .task-assignee-icon');
+    await expect(ann.locator('img')).toHaveAttribute('src', PHOTO);
+    await expect.poll(() => ann.locator('img').evaluate(node => node.complete && node.naturalWidth > 0)).toBe(true);
+    for (const key of ['acc-bob', 'acc-cy']) {
+        await expect(rowOf(page, key).locator('.planning-assignee-person > .task-assignee-icon svg'), `${key} keeps the glyph`).toHaveCount(1);
+        await expect(rowOf(page, key).locator('.task-assignee-icon img')).toHaveCount(0);
+    }
+    await expect(rowOf(page, 'unassigned').locator('.task-assignee-icon')).toHaveCount(0);
+    const rows = await table(page).evaluate(node => {
+        const r = n => n.getBoundingClientRect();
+        return {
+            heights: [...node.querySelectorAll('tbody tr')].map(tr => ({ key: tr.dataset.assigneeKey, height: r(tr).height })),
+            icons: [...node.querySelectorAll('tbody .task-assignee-icon')].map(icon => {
+                const name = icon.parentElement.querySelector('.planning-review-truncated-value');
+                const cell = icon.closest('td');
+                return { width: r(icon).width, height: r(icon).height, iconMid: (r(icon).top + r(icon).bottom) / 2, nameMid: (r(name).top + r(name).bottom) / 2, inCell: r(icon).left >= r(cell).left && r(name).right <= r(cell).right + 0.5, cellWidth: r(cell).width };
+            }),
+        };
+    });
+    // Row heights are what they are without the slot (a row with Remove is taller either way); the slot is the card's 14px one.
+    const hide = await page.addStyleTag({ content: '.planning-assignee-person > .task-assignee-icon{display:none!important}' });
+    const without = await table(page).evaluate(node => [...node.querySelectorAll('tbody tr')].map(tr => ({ key: tr.dataset.assigneeKey, height: tr.getBoundingClientRect().height })));
+    await hide.evaluate(node => node.remove());
+    expect(rows.heights).toEqual(without);
+    for (const icon of rows.icons) {
+        expect(icon.width).toBeCloseTo(14, 1); expect(icon.height).toBeCloseTo(14, 1);
+        expect(Math.abs(icon.iconMid - icon.nameMid)).toBeLessThanOrEqual(1);
+        expect(icon.inCell).toBe(true); expect(icon.cellWidth).toBeCloseTo(200, 0);
+    }
+    await page.waitForTimeout(300);
+    expect(calls.map(call => `${call.method} ${call.pathname}`), 'no API request for avatars').toEqual(apiBefore);
+    expect(new Set(imageRequests)).toEqual(new Set([PHOTO]));
+    // A person added in this session has no loaded Story and the route carries no avatar: the glyph.
+    await addTrigger(page).click();
+    await page.getByRole('combobox', { name: 'Search Assignee to add' }).pressSequentially('nor', { delay: 30 });
+    await peopleMenu(page).getByRole('option', { name: 'Nora Newcomer' }).click();
+    await expect(rowOf(page, 'acc-new').locator('.task-assignee-icon svg')).toHaveCount(1);
+    await strip(page).scrollIntoViewIfNeeded();
+    await strip(page).screenshot({ path: 'tmp/slice8-shots/strip-expanded-undo-avatars.png', animations: 'disabled' });
+});

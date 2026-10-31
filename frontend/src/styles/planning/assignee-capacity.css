@@ -15,6 +15,14 @@
 .planning-assignee-removed .planning-review-text-button { text-transform: none; text-decoration: underline; }
 /* Scoped exception to the collapsed strip hiding its subtitle: a saving or failed save stays visible in the 28px header. */
 .capacity-panel.open.capacity-panel-collapsed[data-assignee-capacity] .capacity-subtitle:is([data-save-state="saving"], [data-save-state="failed"]) { display: inline; }
+/* Header row (#323): the existing .capacity-header row holds the toggle and, while expanded, Undo as a sibling (never
+   nested in the toggle). The toggle keeps the shared inset on the left (and on the right when it ends the row) with a
+   symmetric vertical inset, so the row stays as tall as the title and the grid keeps its place; Undo's negative block
+   margin keeps its taller box from growing the row. Placement only: Undo keeps planning-action-button's own look. */
+[data-assignee-capacity] > .capacity-header { align-items: center; gap: 0.25rem; }
+[data-assignee-capacity] > .capacity-header > .capacity-header-toggle { flex: 1 1 auto; width: auto; min-width: 0; margin: -0.25rem -0.75rem; }
+[data-assignee-capacity] > .capacity-header > .capacity-header-toggle:not(:last-child) { margin-right: 0; }
+[data-assignee-capacity] > .capacity-header > .planning-action-button { flex: none; margin-block: -0.25rem; }
 
 /* Underbar (#323): positioning wrapper for the shared StackedBar strip variant (its rules live in stats/project-track.css);
    it adds no height. It covers the whole capacity track and takes the pointer there (StackedBar resolves the segment at

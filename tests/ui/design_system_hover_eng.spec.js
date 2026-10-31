@@ -629,6 +629,9 @@ test('Planning Table Stats-owned disclosure preserves collapsed and expanded tex
     await expect(page.locator('.capacity-grid-wrapper')).toBeVisible();
     await page.waitForTimeout(800); // Settle the existing 600ms panel expansion before measuring hover.
     await hoverEvidence(page,toggle,testInfo,'stats-effort-expanded',{foundation:true,clipped:true,readableDescendants:true});
+    // The toggle spans the panel padding (#323 review): its inset ring clears the title and the subtitle by 8px.
+    const inset=await toggle.evaluate(node=>{const r=n=>n.getBoundingClientRect(),t=r(node),title=r(node.querySelector('.capacity-title')),sub=r(node.querySelector('.capacity-subtitle'));return {left:title.left-t.left,right:t.right-sub.right,top:title.top-t.top,bottom:t.bottom-title.bottom};});
+    expect(inset.left).toBeGreaterThanOrEqual(8);expect(inset.right).toBeGreaterThanOrEqual(8);expect(inset.top).toBeGreaterThanOrEqual(2);expect(inset.bottom).toBeGreaterThanOrEqual(2);
     for(const hook of ['todo-link','postponed-link','accepted-link']) {
         const arrow=page.locator(`.capacity-grid .${hook}`).first();
         await expect(arrow).toHaveText('↗');

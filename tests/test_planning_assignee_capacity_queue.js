@@ -657,3 +657,265 @@ test('Add assignee is refused read-only', async () => {
     await settle();
     assert.equal(controller.addPerson({ accountId: 'u7', displayName: 'Cy' }, buildShown), false);
 });
+
+// ---- Undo (Task 12) ----
+
+// A server that applies each PATCH to its stored document and answers with it.
+async function echoFixture(initial = doc(), { failWhen = () => null } = {}) {
+    const model = await loadModel();
+    let stored = initial;
+    const sent = [];
+    const save = async (_url, _sprint, payload) => {
+        sent.push(payload);
+        const failure = failWhen(payload, sent.length);
+        if (failure) throw failure;
+        const changes = [...payload.changes, ...(payload.planned ? [{ assigneeKey: model.PLANNED_SLOT, planned: payload.planned }] : [])];
+        stored = { ...model.applyChangesToDocument(stored, changes), revision: (stored.revision || 0) + 1 };
+        return { revision: stored.revision, rows: stored.rows, planned: stored.planned ?? null };
+    };
+    const env = await fixture({ document: initial, save });
+    return { ...env, sent, stored: () => stored };
+}
+const ann = (controller, model, key = 'u1') => model.buildAssigneeRows({ document: model.applyChangesToDocument(controller.getState().document, controller.getState().changes), teamTasksList: tasks, selectedTasks: [] }).rows.find(row => row.key === key);
+
+test('undo re-commits the previous full row as one ordinary PATCH, then the stack is empty', async () => {
+    const { controller, buildShown, fire, sent, model } = await echoFixture();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.getState().undoCount, 0);
+    assert.equal(controller.undo(), false, 'nothing to undo');
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    await fire();
+    assert.equal(controller.getState().undoCount, 1);
+    assert.equal(controller.undo(), true);
+    assert.equal(ann(controller, model).capacity, '5', 'shown at once');
+    await fire();
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1].changes, [{ assigneeKey: 'u1', capacity: '5' }], 'only the field that differs is sent');
+    assert.equal(controller.getState().undoCount, 0);
+    assert.equal(controller.getState().save, 'saved');
+});
+
+test('undo pops newest first and the stack keeps at most MAX_UNDO entries', async () => {
+    const { MAX_UNDO } = await loadController();
+    const { controller, buildShown, fire, model } = await echoFixture();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    for (let index = 1; index <= MAX_UNDO + 5; index++) controller.commit({ key: 'u1', field: 'capacity', value: String(10 + index) }, buildShown);
+    assert.equal(controller.getState().undoCount, MAX_UNDO);
+    controller.undo();
+    assert.equal(ann(controller, model).capacity, String(10 + MAX_UNDO + 4));
+    while (controller.undo());
+    assert.equal(ann(controller, model).capacity, '15', 'the oldest five snapshots were dropped');
+    await fire();
+});
+
+test('an undo while the edit is still pending coalesces with it: no request at all', async () => {
+    const { controller, buildShown, fire, sent } = await echoFixture();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    controller.commit({ key: 'u1', field: 'notes', value: 'away' }, buildShown);
+    controller.undo();
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, 0);
+    assert.deepEqual(controller.getState().changes, []);
+});
+
+test('an undo during an in-flight save waits behind it and follows as the next request', async () => {
+    const model = await loadModel();
+    const gate = deferred();
+    const sent = [];
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => {
+        sent.push(payload);
+        if (sent.length === 1) { await gate.promise; return { revision: 2, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false }] }; }
+        return { revision: 3, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', vacations: null, notes: null, removed: false }] };
+    } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    await fire();
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, 1, 'one request in flight');
+    gate.resolve();
+    await settle();
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1].changes, [{ assigneeKey: 'u1', capacity: '5' }]);
+    assert.equal(ann(controller, model).capacity, '5');
+});
+
+test('undo of the first edit of an inherited row keeps the saved own copy with the inherited values', async () => {
+    const inherited = doc({ revision: 0, rows: [], inherited: { fromSprintId: '99', rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', vacations: '2', notes: 'n', removed: false }] } });
+    const { controller, buildShown, fire, sent, stored, model } = await echoFixture(inherited);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    await fire();
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1].changes, [{ assigneeKey: 'u1', capacity: '5' }]);
+    assert.ok(stored().revision > 0, 'the Sprint keeps its own copy');
+    assert.equal(ann(controller, model).capacity, '5');
+    assert.equal(ann(controller, model).inherited, false);
+    assert.equal(controller.getState().undoKept, true, 'the strip says the own copy was kept');
+    controller.commit({ key: 'u1', field: 'notes', value: 'x' }, buildShown);
+    assert.equal(controller.getState().undoKept, false, 'a new edit drops the line');
+    await fire();
+});
+
+test('undo of an inherited first edit that was never sent leaves the Sprint inheriting', async () => {
+    const inherited = doc({ revision: 0, rows: [], inherited: { fromSprintId: '99', rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', removed: false }] } });
+    const { controller, buildShown, fire, sent } = await echoFixture(inherited);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, 0);
+    assert.equal(controller.getState().undoKept, false);
+    assert.equal(controller.getState().document.revision, 0);
+});
+
+test('undo reverses Remove, Restore and Add assignee', async () => {
+    const start = doc({ rows: [
+        { assigneeKey: 'u7', displayName: 'Cy', capacity: '3', vacations: '1', notes: 'n', removed: false },
+        { assigneeKey: 'u9', displayName: 'Old', capacity: '2', vacations: null, notes: null, removed: true },
+    ] });
+    const { controller, buildShown, fire, sent } = await echoFixture(start);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u7', field: 'removed', value: true }, buildShown);
+    await fire();
+    controller.undo();
+    await fire();
+    assert.deepEqual(sent.map(payload => payload.changes), [[{ assigneeKey: 'u7', removed: true }], [{ assigneeKey: 'u7', removed: false }]]);
+    assert.equal(controller.addPerson({ accountId: 'u9', displayName: 'Old' }, buildShown), 'restore');
+    await fire();
+    controller.undo();
+    await fire();
+    assert.deepEqual(sent.slice(2).map(payload => payload.changes), [[{ assigneeKey: 'u9', removed: false }], [{ assigneeKey: 'u9', removed: true }]], 'Restore undone keeps the stored Capacity');
+    assert.equal(controller.addPerson({ accountId: 'u5', displayName: 'Dee' }, buildShown), 'add');
+    await fire();
+    controller.undo();
+    await fire();
+    assert.deepEqual(sent.slice(4).map(payload => payload.changes), [[{ assigneeKey: 'u5', displayName: 'Dee' }], [{ assigneeKey: 'u5', removed: true }]], 'without a delete route the added person is removed again');
+    const before = sent.length;
+    controller.addPerson({ accountId: 'u6', displayName: 'Eve' }, buildShown);
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, before, 'an Add assignee undone before it is sent sends nothing');
+    assert.deepEqual(controller.getState().changes, []);
+});
+
+test('the stored team number shares the queue: a planned edit is undone like a row edit', async () => {
+    const { controller, fire, sent } = await echoFixture(doc({ planned: { value: '12', source: 'user' } }));
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commitPlanned('20', 'user');
+    await fire();
+    assert.equal(controller.getState().undoCount, 1);
+    controller.undo();
+    await fire();
+    assert.deepEqual(sent.map(payload => payload.planned), [{ value: '20', source: 'user' }, { value: '12', source: 'user' }]);
+    controller.commitPlanned('7', 'user');
+    controller.undo();
+    await fire();
+    assert.equal(sent.length, 2, 'undone before it was sent: nothing');
+});
+
+test('the stack is cleared on a scope change, a failed or refused save, Retry, Discard and a new session', async () => {
+    let fail = null;
+    const { controller, buildShown, fire } = await echoFixture(doc(), { failWhen: () => fail });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    await fire();
+    controller.setScope({ sprintId: '100', teamId: 't2', active: true });
+    await settle();
+    assert.equal(controller.getState().undoCount, 0);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await fire();
+    assert.equal(controller.getState().undoCount, 0, 'coming back does not bring the old stack back');
+    controller.commit({ key: 'u1', field: 'capacity', value: '9' }, buildShown);
+    fail = Object.assign(new Error('down'), { status: 503 });
+    await fire();
+    assert.equal(controller.getState().save, 'failed');
+    assert.equal(controller.getState().undoCount, 0, 'a failed save clears the stack');
+    assert.equal(controller.undo(), false);
+    fail = null;
+    await fire();
+    controller.retry();
+    await fire();
+    assert.equal(controller.getState().save, 'saved');
+    // A refused change stays until Retry or Discard; edits made meanwhile push snapshots that both clear.
+    controller.commit({ key: 'u1', field: 'notes', value: 'bad' }, buildShown);
+    fail = Object.assign(new Error('Refused'), { status: 400 });
+    await fire();
+    assert.equal(controller.getState().undoCount, 0, 'a refused save clears');
+    fail = null;
+    controller.commit({ key: 'u1', field: 'vacations', value: '1' }, buildShown);
+    assert.equal(controller.getState().undoCount, 1);
+    controller.discard();
+    assert.equal(controller.getState().undoCount, 0, 'Discard clears');
+    await fire();
+    controller.commit({ key: 'u1', field: 'notes', value: 'bad' }, buildShown);
+    fail = Object.assign(new Error('Refused'), { status: 400 });
+    await fire();
+    fail = null;
+    controller.commit({ key: 'u1', field: 'vacations', value: '2' }, buildShown);
+    assert.equal(controller.getState().undoCount, 1);
+    controller.retry();
+    assert.equal(controller.getState().undoCount, 0, 'Retry clears');
+    await fire();
+    controller.commit({ key: 'u1', field: 'notes', value: 'w' }, buildShown);
+    assert.equal(controller.getState().undoCount, 1);
+    controller.resetSession();
+    assert.equal(controller.getState().undoCount, 0, 'a session boundary clears');
+    await fire();
+});
+
+test('a refresh that brings a different document clears the stack', async () => {
+    let served = doc();
+    const { controller, buildShown, fire } = await fixture({ fetch: async () => served, save: async () => ({ revision: 2, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false }] }) });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '8' }, buildShown);
+    await fire();
+    served = doc({ revision: 2, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '8', vacations: null, notes: null, removed: false }] });
+    await controller.refresh();
+    assert.equal(controller.getState().undoCount, 1, 'the same revision keeps the stack');
+    served = doc({ revision: 4, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '11', vacations: null, notes: null, removed: false }] });
+    await controller.refresh();
+    assert.equal(controller.getState().undoCount, 0, 'another writer\'s document is never overwritten by a stale snapshot');
+});
+
+test('undo is refused read-only', async () => {
+    const { controller } = await fixture({ document: doc({ capabilities: { canRead: true, canSave: false } }) });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    assert.equal(controller.undo(), false);
+});
+
+test('the undo shortcut is Cmd/Ctrl+Z only and ignores key auto-repeat', async () => {
+    const { isUndoShortcut, handlesUndoKey } = await loadModel();
+    assert.equal(handlesUndoKey({ key: 'z', metaKey: true }), true);
+    assert.equal(handlesUndoKey({ key: 'Z', ctrlKey: true }), true);
+    assert.equal(handlesUndoKey({ key: 'z', metaKey: true, repeat: true }), false, 'auto-repeat is ignored');
+    assert.equal(isUndoShortcut({ key: 'z', metaKey: true, repeat: true }), true);
+    assert.equal(handlesUndoKey({ key: 'z', metaKey: true, shiftKey: true }), false, 'Shift is redo');
+    assert.equal(handlesUndoKey({ key: 'z', ctrlKey: true, altKey: true }), false);
+    assert.equal(handlesUndoKey({ key: 'z' }), false);
+    assert.equal(handlesUndoKey({ key: 'y', ctrlKey: true }), false);
+});
+
+test('the undo paths import no analytics tracker', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    for (const file of ['usePlanningAssigneeCapacity.js', 'PlanningAssigneeCapacity.jsx']) {
+        const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'eng', file), 'utf8');
+        assert.doesNotMatch(source, /analytics/i, `${file} stays a no-event surface`);
+    }
+});

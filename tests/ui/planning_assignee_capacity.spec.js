@@ -1610,3 +1610,130 @@ test.describe('render counts (#323 DoD 13)', () => {
         expect(result.teamTasks).toBe(0);
     });
 });
+
+// ---- Undo (#323 Task 12) ---------------------------------------------------------------------------------
+
+const undoButton = page => strip(page).getByRole('button', { name: 'Undo', exact: true });
+const annRows = () => [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }];
+
+test('Cmd/Ctrl+Z in the table reverses the last edit with one PATCH and no extra read; a settled screenshot shows the Undo control', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await expect(undoButton(page)).toBeDisabled();
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('11'); await capacity.press('Tab');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await expect(undoButton(page)).toBeEnabled();
+    const gets = server.state.gets;
+    // Focus is on the next (unedited) cell of the table.
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Vacations for Ann Synthetic' })).toBeFocused();
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(capacity).toHaveValue('8');
+    await expect.poll(() => server.state.patches.length).toBe(2);
+    expect(server.state.patches[1].body.changes).toEqual([{ assigneeKey: 'acc-ann', capacity: '8' }]);
+    await expect(undoButton(page)).toBeDisabled();
+    await page.waitForTimeout(400);
+    expect(server.state.patches).toHaveLength(2);
+    expect(server.state.gets, 'an undo reads nothing').toBe(gets);
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await capacity.fill('10'); await capacity.press('Tab');
+    await expect(undoButton(page)).toBeEnabled();
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    const box = await undoButton(page).boundingBox();
+    expect(box.height).toBeGreaterThan(0);
+    await strip(page).scrollIntoViewIfNeeded();
+    await strip(page).screenshot({ path: 'tmp/slice7-shots/strip-with-undo.png', animations: 'disabled' });
+});
+
+test('the shortcut is ignored while a cell is mid-edit, when focus is outside the table, and on key auto-repeat', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('11'); await capacity.press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await expect(undoButton(page)).toBeEnabled();
+    // Mid-edit: the input keeps its own native undo, the stack is untouched.
+    const notes = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Notes for Ann Synthetic' });
+    await notes.click(); await page.keyboard.type('draft');
+    const midEdit = await notes.evaluate(node => { const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, metaKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented; });
+    expect(midEdit, 'a mid-edit cell is not handled').toBe(false);
+    await page.keyboard.press('Escape');
+    await expect(notes).toHaveValue('');
+    await expect(capacity).toHaveValue('11');
+    await expect(undoButton(page)).toBeEnabled();
+    // Auto-repeat on a clean cell is ignored.
+    const repeat = await notes.evaluate(node => { node.focus(); const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, metaKey: true, repeat: true, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented; });
+    expect(repeat).toBe(false);
+    await expect(capacity).toHaveValue('11');
+    // Focus outside the table: dispatched to the page (a real key press there would also run WebKit's page-level native undo).
+    await notes.evaluate(node => node.blur());
+    const outside = await page.evaluate(() => { const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, metaKey: true, bubbles: true, cancelable: true }); document.body.dispatchEvent(event); return event.defaultPrevented; });
+    expect(outside).toBe(false);
+    await page.waitForTimeout(400);
+    await expect(capacity).toHaveValue('11');
+    expect(server.state.patches).toHaveLength(1);
+    await expect(undoButton(page)).toBeEnabled();
+    // Inside the table, clean: handled and prevented.
+    const handled = await notes.evaluate(node => { node.focus(); const event = new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, metaKey: true, bubbles: true, cancelable: true }); node.dispatchEvent(event); return event.defaultPrevented; });
+    expect(handled).toBe(true);
+    await expect(capacity).toHaveValue('8');
+    await expect.poll(() => server.state.patches.length).toBe(2);
+});
+
+test('the Undo control works by tap', async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1440, height: 900 } });
+    const page = await context.newPage();
+    const server = capacityServer({ rows: [...annRows(), { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: '3', vacations: null, notes: null, removed: false }] });
+    await install(page, { server });
+    await openPlanning(page);
+    await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
+    await rowOf(page, 'acc-cy').getByRole('button', { name: 'Remove Cy Former' }).tap();
+    await expect(rowOf(page, 'acc-cy')).toHaveCount(0);
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await undoButton(page).tap();
+    await expect(rowOf(page, 'acc-cy')).toHaveCount(1);
+    await expect.poll(() => server.state.patches.length).toBe(2);
+    expect(server.state.patches[1].body.changes).toEqual([{ assigneeKey: 'acc-cy', removed: false }]);
+    await expect(undoButton(page)).toBeDisabled();
+    await context.close();
+});
+
+test('read-only shows no Undo control', async ({ page }) => {
+    const server = capacityServer({ rows: annRows(), capabilities: { canRead: true, canSave: false, reason: 'database_required' } });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await expect(strip(page).getByText('Assignee capacity is read-only here.')).toBeVisible();
+    await expect(undoButton(page)).toHaveCount(0);
+});
+
+test('the undo stack is cleared after a Team switch and after a failed save', async ({ page }) => {
+    let fail = false;
+    const server = capacityServer({ rows: annRows(), patchStatus: () => (fail ? 503 : 0) });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = () => rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity().fill('11'); await capacity().press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await expect(undoButton(page)).toBeEnabled();
+    await pickTeam(page, 'Beta Team');
+    await pickTeam(page, 'Alpha Team');
+    await expect(strip(page)).toBeVisible();
+    await pickTeam(page, 'Alpha Team');
+    await pickTeam(page, 'Beta Team');
+    await expect(table(page)).toBeVisible();
+    await expect(undoButton(page), 'back on the first Team the stack is gone').toBeDisabled();
+    await capacity().fill('12'); await capacity().press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(2);
+    await expect(undoButton(page)).toBeEnabled();
+    fail = true;
+    await capacity().fill('13'); await capacity().press('Enter');
+    await expect(strip(page).locator('[data-assignee-save-failed]')).toContainText('Not saved');
+    await expect(undoButton(page)).toBeDisabled();
+});

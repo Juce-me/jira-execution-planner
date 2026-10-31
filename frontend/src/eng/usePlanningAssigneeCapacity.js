@@ -2,8 +2,8 @@ import * as React from 'react';
 import { fetchAssigneeCapacity, saveAssigneeCapacity } from '../api/assigneeCapacityApi.js';
 import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
 import {
-    addAssigneeAction, applyChangesToDocument, buildChanges, chunkChanges, effectivePlanned, isPlannedChange, isPlannedNoop, isValidDisplayName, PLANNED_SLOT, plannedNumber, plannedWireValue,
-    pruneChange, samePlannedValue, sanitizeDisplayName,
+    addAssigneeAction, applyChangesToDocument, baseRowsOf, buildChanges, chunkChanges, documentFieldValue, effectivePlanned, isPlannedChange, isPlannedNoop, isValidDisplayName, PLANNED_SLOT, plannedNumber,
+    plannedWireValue, pruneChange, samePlannedValue, sanitizeDisplayName,
 } from './planningAssigneeCapacityModel.js';
 
 const SAVE_DELAY_MS = 200;
@@ -15,8 +15,11 @@ const isRejected = error => error?.status === 400 || error?.status === 413;
 // Scopes left with a failed or still running save are kept for the page session (the last five), so a revisit
 // shows Not saved with Retry and the drafts.
 export const MAX_PARKED_SCOPES = 5;
+// Undo keeps the last twenty edits of the shown scope (full-row snapshots, or the stored team number before a planned edit).
+export const MAX_UNDO = 20;
+const ROW_FIELDS = ['capacity', 'vacations', 'notes', 'removed'];
 const scopeKeyOf = (sprintId, teamId) => (sprintId && teamId ? `${sprintId}|${teamId}` : '');
-const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', origin: '', document: null, changes: [], plannedSave: '', capabilities: { canRead: false, canSave: false } });
+const EMPTY = Object.freeze({ scopeKey: '', sprintId: '', teamId: '', load: 'idle', save: 'idle', error: '', origin: '', document: null, changes: [], plannedSave: '', undoCount: 0, undoKept: false, capabilities: { canRead: false, canSave: false } });
 const sameValue = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 // A re-read that changes none of these leaves the shown document as it is.
 const sameDocument = (a, b) => Boolean(a && b) && a.revision === b.revision && sameValue(a.planned, b.planned) && sameValue(a.inherited, b.inherited);
@@ -24,9 +27,11 @@ const sameDocument = (a, b) => Boolean(a && b) && a.revision === b.revision && s
 // One queue per (Sprint, Team): the unsaved changes, at most one request in flight, and the last known document.
 // `failed` holds changes whose request failed (they ride along with the next commit); `rejected` holds changes the
 // server refused, which wait for Retry or Discard so one bad change cannot fail later batches.
-const newQueue = (sprintId, teamId, document) => ({ sprintId, teamId, document, pending: new Map(), inFlight: [], failed: new Map(), rejected: new Map(), error: '', timer: null, running: false, stopped: false, writeEpoch: 0 });
+const newQueue = (sprintId, teamId, document) => ({ sprintId, teamId, document, pending: new Map(), inFlight: [], failed: new Map(), rejected: new Map(), error: '', timer: null, running: false, stopped: false, writeEpoch: 0, undo: [], undoKept: false });
 const hasFailures = queue => Boolean(queue.failed.size || queue.rejected.size);
 const hasDrafts = queue => Boolean(queue.pending.size || hasFailures(queue));
+// A stale snapshot must never overwrite newer state: scope changes, failures, Retry, Discard and new reads empty the stack.
+const clearUndo = queue => { if (queue) { queue.undo = []; queue.undoKept = false; } };
 
 // Later commits override earlier values per field; a displayName only ever refreshes.
 function mergeInto(target, change) {
@@ -86,6 +91,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         state = { ...state, origin: '', ...patch, changes: overlay(queue) };
         if (queue) state.document = queue.document;
         // The card shows the stored number's own save state (the strip may be collapsed).
+        state.undoCount = queue ? queue.undo.length : 0;
+        state.undoKept = Boolean(queue?.undoKept);
         state.plannedSave = !queue ? '' : holdsPlanned(queue.rejected.values()) || holdsPlanned(queue.failed.values()) ? 'failed' : holdsPlanned(queue.inFlight) || holdsPlanned(queue.pending.values()) ? 'saving' : '';
         updatePlannedSnapshot();
         listeners.forEach(listener => listener());
@@ -114,6 +121,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             const data = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, { signal: controller.signal });
             // A write started or finished meanwhile makes this read stale; the queue's own response wins.
             if (!isCurrent(queue) || generation !== thisGeneration || queue.writeEpoch !== epoch || controller.signal.aborted) return;
+            if (!sameDocument(queue.document, data)) clearUndo(queue);
             queue.document = data;
             cache.set(scopeKeyOf(queue.sprintId, queue.teamId), data);
             publish({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, error: state.save === 'failed' ? state.error : '' });
@@ -183,6 +191,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                     if (isCurrent(queue)) publish({ save: queue.pending.size ? 'saving' : hasFailures(queue) ? 'failed' : 'saved', error: hasFailures(queue) ? queue.error : '', load: 'ready' });
                 } catch (error) {
                     queue.writeEpoch += 1;
+                    clearUndo(queue);
                     // The failed batch stays visible as drafts and rides along with the next commit or retry.
                     const unsentKeys = new Set(batches.slice(done).flat().map(item => item.assigneeKey));
                     if (planned && done === 0) unsentKeys.add(PLANNED_SLOT);
@@ -204,6 +213,22 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         }
     }
 
+    // Queues validated changes as one commit (an undo is an ordinary edit); `record` is the undo entry it pushes, if any.
+    function enqueue(queue, changes, record) {
+        revive(queue);
+        changes.forEach(change => { supersede(queue, change); mergeInto(queue.pending, change); });
+        if (record) { queue.undo.push(record); if (queue.undo.length > MAX_UNDO) queue.undo.shift(); queue.undoKept = false; }
+        const rejected = queue.rejected.size > 0;
+        publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
+        schedule(queue);
+    }
+    // The full row as the shown document holds it (inherited rows hold Capacity only); `inheriting` marks a snapshot
+    // taken before the first write of an inherited Sprint, which an undo cannot bring back.
+    const rowSnapshot = (queue, shownDocument, key, extra = {}) => ({
+        type: 'row', key, values: Object.fromEntries(ROW_FIELDS.map(field => [field, documentFieldValue(shownDocument, key, field)])),
+        inheriting: !(queue.document.revision > 0) && !overlay(queue).length, ...extra,
+    });
+
     const schedule = queue => { if (queue.timer == null && !queue.running) queue.timer = setTimer(() => { queue.timer = null; void pump(queue); }, saveDelay); };
     const flush = queue => { if (!queue) return; if (queue.timer != null) { clearTimer(queue.timer); queue.timer = null; } if (queue.pending.size || queue.failed.size) { revive(queue); void pump(queue); } };
 
@@ -222,6 +247,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             // Leaving a scope sends its unsaved commits first; their outcome no longer shows here.
             const previous = current;
             current = null;
+            clearUndo(previous);
             flush(previous);
             if (previous) park(previous);
             generation += 1;
@@ -229,7 +255,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (loadTimer != null) { clearTimer(loadTimer); loadTimer = null; }
             // A revisited scope gets its own queue back: its drafts, its failure and any save still running.
             const kept = key ? parked.get(key) : null;
-            if (kept) parked.delete(key);
+            if (kept) { parked.delete(key); clearUndo(kept); }
             current = key ? kept || newQueue(String(sprintId), String(teamId), cache.get(key) || null) : null;
             if (current && !current.document) current.document = cache.get(key) || null;
             const cached = current?.document || null;
@@ -248,14 +274,11 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         commit(commit, buildShown) {
             const queue = current;
             if (!queue?.document || !state.capabilities.canSave || queue.stopped) return false;
-            const shown = buildShown(applyChangesToDocument(queue.document, overlay(queue)));
+            const shownDocument = applyChangesToDocument(queue.document, overlay(queue));
+            const shown = buildShown(shownDocument);
             const changes = buildChanges([commit], shown.rows, shown.removedKeys);
             if (!changes.length) return true;
-            revive(queue);
-            changes.forEach(change => { supersede(queue, change); mergeInto(queue.pending, change); });
-            const rejected = queue.rejected.size > 0;
-            publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
-            schedule(queue);
+            enqueue(queue, changes, rowSnapshot(queue, shownDocument, commit.key));
             return true;
         },
         // Add assignee: `person` is a search result {accountId, displayName}. Returns the action taken ('exists', 'restore',
@@ -263,16 +286,16 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         addPerson(person, buildShown) {
             const queue = current;
             if (!queue?.document || !state.capabilities.canSave || queue.stopped) return false;
-            const shown = buildShown(applyChangesToDocument(queue.document, overlay(queue)));
+            const shownDocument = applyChangesToDocument(queue.document, overlay(queue));
+            const shown = buildShown(shownDocument);
             const action = addAssigneeAction(person, shown.rows, shown.removedKeys);
             if (!action) return false;
             if (action.type === 'exists') return 'exists';
             if (action.type === 'restore') return controller.commit({ key: action.key, field: 'removed', value: false }, buildShown) && 'restore';
-            revive(queue);
-            supersede(queue, action.change); mergeInto(queue.pending, action.change);
-            const rejected = queue.rejected.size > 0;
-            publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
-            schedule(queue);
+            // Without a delete route, undoing an Add assignee removes the person again (unless it was never sent).
+            const record = rowSnapshot(queue, shownDocument, action.key, { added: true });
+            record.values.removed = true;
+            enqueue(queue, [action.change], record);
             return 'add';
         },
         // Records the stored team number ("Team capacity (not in Jira)"): `value` is a validated wire string or null to clear;
@@ -281,13 +304,37 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             const queue = current;
             if (!queue?.document || !state.capabilities.canSave || queue.stopped) return false;
             const planned = value == null ? { value: null } : { value, source };
-            if (isPlannedNoop(effectivePlanned(applyChangesToDocument(queue.document, overlay(queue))), planned)) return true;
-            const change = { assigneeKey: PLANNED_SLOT, planned };
-            revive(queue);
-            supersede(queue, change); mergeInto(queue.pending, change);
-            const rejected = queue.rejected.size > 0;
-            publish({ save: queue.running ? 'saving' : rejected ? 'failed' : state.save === 'failed' ? 'idle' : state.save, error: rejected ? queue.error : '' });
-            schedule(queue);
+            const previous = effectivePlanned(applyChangesToDocument(queue.document, overlay(queue)));
+            if (isPlannedNoop(previous, planned)) return true;
+            enqueue(queue, [{ assigneeKey: PLANNED_SLOT, planned }], { type: 'planned', planned: previous, inheriting: !(queue.document.revision > 0) && !overlay(queue).length });
+            return true;
+        },
+        // Undo: re-commits the newest snapshot through the same queue as an ordinary edit (a field already equal sends nothing).
+        // Returns whether an entry was taken. Undo of the first edit of an inherited Sprint keeps the Sprint's own copy with
+        // the inherited values (`undoKept`), unless that edit was never sent.
+        undo() {
+            const queue = current;
+            if (!queue?.document || !state.capabilities.canSave || queue.stopped || !queue.undo.length) return false;
+            const entry = queue.undo.pop();
+            const shownDocument = applyChangesToDocument(queue.document, overlay(queue));
+            const written = queue.document.revision > 0 || queue.running || queue.inFlight.length > 0;
+            let changes;
+            if (entry.type === 'planned') {
+                // `inherited` is server-only: the restored number is saved as this Sprint's own (typed) one.
+                const planned = entry.planned?.value == null ? { value: null } : { value: entry.planned.value, source: entry.planned.source === 'jira' ? 'jira' : 'user' };
+                changes = isPlannedNoop(effectivePlanned(shownDocument), planned) ? [] : [{ assigneeKey: PLANNED_SLOT, planned }];
+            } else if (entry.added && queue.pending.has(entry.key) && !baseRowsOf(queue.document).some(row => row.assigneeKey === entry.key)
+                && !queue.inFlight.some(change => change.assigneeKey === entry.key) && !queue.failed.has(entry.key) && !queue.rejected.has(entry.key)) {
+                // An Add assignee not sent yet is simply dropped.
+                queue.pending.delete(entry.key);
+                changes = [];
+            } else {
+                const change = pruneChange({ assigneeKey: entry.key, ...entry.values }, shownDocument);
+                changes = change ? [change] : [];
+            }
+            if (changes.length) enqueue(queue, changes, null);
+            queue.undoKept = Boolean(entry.inheriting && written);
+            publish({});
             return true;
         },
         // Silent database-only mirror of the Jira ticket value after a user-initiated capacity read: only into an existing own
@@ -308,7 +355,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                     queue.document = asDocument(queue, await send(queue, [], { value, source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }));
                     cache.set(scopeKeyOf(queue.sprintId, queue.teamId), queue.document);
                     if (isCurrent(queue)) publish({});
-                } catch { /* dropped silently */ }
+                } catch { clearUndo(queue); if (isCurrent(queue)) publish({}); /* otherwise dropped silently */ }
                 finally {
                     queue.writeEpoch += 1;
                     queue.running = false;
@@ -324,6 +371,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             const queue = current;
             if (!queue || !hasFailures(queue) || queue.stopped) return;
             if (queue.timer != null) { clearTimer(queue.timer); queue.timer = null; }
+            clearUndo(queue);
             revive(queue, { rejected: true });
             publish({ save: 'saving', error: '' });
             void pump(queue);
@@ -332,7 +380,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         discard() {
             const queue = current;
             if (!queue || !hasFailures(queue)) return;
-            queue.failed.clear(); queue.rejected.clear(); queue.error = '';
+            queue.failed.clear(); queue.rejected.clear(); queue.error = ''; clearUndo(queue);
             publish({ save: queue.running ? 'saving' : 'idle', error: '' });
         },
         flush() { flush(current); },
@@ -353,6 +401,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (stale()) return { status: 'ignored' };
             cache.set(scopeKeyOf(queue.sprintId, queue.teamId), data);
             if (sameDocument(queue.document, data)) return { status: 'ok' };
+            clearUndo(queue);
             queue.document = data;
             publish({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, ...(automatic ? { origin: 'automatic' } : {}) });
             return { status: 'ok' };
@@ -360,6 +409,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         // A new auth session: nothing read under the old one is reused; the shown document is held while it is re-read.
         resetSession() {
             cache.clear(); csrf.token = null;
+            parked.forEach(clearUndo); clearUndo(current);
+            if (current) publish({});
             if (current && active) void load(current);
         },
         isBusy: () => Boolean(current && (current.running || hasDrafts(current))),

@@ -336,6 +336,15 @@ scopes) and shows Not saved with Retry on return. A `401` keeps the drafts behin
 storage or save rights the read reports `capabilities` and the strip is read-only (no Remove, Restore or Add assignee) or
 hidden.
 
+**Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
+stored team number, which shares the queue) can be undone with the Undo button under the table, or with Cmd/Ctrl+Z while focus
+is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
+undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
+sends nothing. Undoing an Add assignee removes the person again (there is no delete). Undoing the first edit of an inherited
+Sprint keeps the Sprint's own copy with the inherited values, and a muted line says so. The stack is cleared on a Team or
+Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
+auth session. Read-only strips show no Undo.
+
 **Underbar.** The pinned amber capacity bar carries a thin strip at the bottom of its existing track, adding no height: one
 segment per person with Capacity above 0 (scaled by the Product/Tech multiplier) plus a trailing Unassigned effort segment.
 It shares the bar's own scale (the largest of capacity, Selected and people plus Unassigned, times 1.15; the team-card bar

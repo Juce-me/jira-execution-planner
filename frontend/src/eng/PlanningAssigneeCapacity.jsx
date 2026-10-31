@@ -7,7 +7,8 @@ import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import {
-    applyChangesToDocument, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, hiddenSelectedCount, mayBeIncomplete, teamTasks, validateCellDraft,
+    applyChangesToDocument, assigneeRowColor, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, mayBeIncomplete, teamTasks,
+    validateCellDraft,
 } from './planningAssigneeCapacityModel.js';
 
 const HOST_ID = 'planning-assignee-capacity-host';
@@ -29,7 +30,13 @@ function CapacityInput({ field, label, value, disabled, maxLength, onCommit, edi
     const cancelled = React.useRef(false);
     const latest = React.useRef({});
     latest.current = { draft, shown, error, onCommit };
-    React.useEffect(() => { if (document.activeElement !== ref.current && !latest.current.error) setDraft(shown); }, [shown]);
+    // A new shown value (a save, a re-read or an Undo) replaces the draft unless the focused cell holds an edit of its own.
+    const previousShown = React.useRef(shown);
+    React.useEffect(() => {
+        const before = previousShown.current;
+        previousShown.current = shown;
+        if (!latest.current.error && (document.activeElement !== ref.current || latest.current.draft === before)) setDraft(shown);
+    }, [shown]);
     const commit = () => {
         const { draft: text, shown: current, onCommit: send } = latest.current;
         if (cancelled.current) { cancelled.current = false; return true; }
@@ -55,6 +62,8 @@ function CapacityInput({ field, label, value, disabled, maxLength, onCommit, edi
             onChange={event => { setDraft(event.target.value); setError(''); }}
             onBlur={() => commit()}
             onKeyDown={event => {
+                // A cell mid-edit keeps Cmd/Ctrl+Z for the input's own native undo; the table's Undo never sees it.
+                if (isUndoShortcut(event) && (latest.current.draft !== latest.current.shown || latest.current.error)) { event.stopPropagation(); return; }
                 if (event.key === 'Enter') { if (commit()) ref.current.blur(); }
                 else if (event.key === 'Escape') { cancelled.current = true; setDraft(shown); setError(''); ref.current.blur(); }
             }} />
@@ -91,15 +100,21 @@ function PersonRow({ row, color, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
+function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, incomplete, hiddenSelected, tinted, addPicker }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
+    // Cmd/Ctrl+Z inside the table undoes the last edit; default is prevented only when an edit was undone.
+    const onKeyDown = event => {
+        if (readOnly || !handlesUndoKey(event) || event.currentTarget.querySelector('.planning-review-input.invalid')) return;
+        if (onUndo()) event.preventDefault();
+    };
     return <>
         {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}. Editing any value saves this Sprint's own copy.</p>}
+        {state.undoKept && !inheritedFromSprintId && <p className="planning-review-guidance" data-assignee-undo-kept>Undo kept this Sprint's own copy with the inherited values.</p>}
         {incomplete && <p className="planning-review-guidance">Total effort may be incomplete: one load returns at most 250 issues per request.</p>}
         {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Selected effort.</p>}
-        <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity">
+        <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity" onKeyDown={onKeyDown}>
             <thead><tr>
                 <th className="planning-assignee-name">Assignee</th>
                 <th className="planning-review-storyPoints">Capacity</th>
@@ -128,7 +143,9 @@ function AssigneeTable({ view, state, readOnly, onCommit, onRestore, onRetry, on
                 <td className="planning-assignee-note" />
             </tr></tfoot>
         </table>
-        {addPicker && <p className="planning-review-guidance">{addPicker}</p>}
+        {addPicker && <p className="planning-review-guidance">{addPicker}{' '}
+            <button type="button" className="planning-action-button" disabled={!state.undoCount} onClick={() => onUndo()}>Undo</button>
+        </p>}
         {removed.length > 0 && !readOnly && <p className="planning-review-guidance planning-assignee-removed">
             Removed from this Sprint and later ones:{' '}
             {removed.map((person, index) => <span key={person.key}>
@@ -180,6 +197,7 @@ export default function PlanningAssigneeCapacity({
     }, [controller, host]);
     const onRetry = React.useCallback(() => controller.retry(), [controller]);
     const onDiscard = React.useCallback(() => controller.discard(), [controller]);
+    const onUndo = React.useCallback(() => controller.undo(), [controller]);
     const sprintName = React.useCallback(id => (sprints || []).find(sprint => String(sprint.id) === String(id))?.name, [sprints]);
     const toggle = () => {
         if (expanded) [...editors].forEach(editor => editor());
@@ -230,7 +248,7 @@ export default function PlanningAssigneeCapacity({
         else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
+            <AssigneeTable view={view} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} incomplete={incomplete} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
         </>;
     }
     const strip = oneTeam && !hidden && host ? createPortal(

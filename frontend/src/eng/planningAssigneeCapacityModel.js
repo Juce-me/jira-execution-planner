@@ -385,6 +385,12 @@ export function pruneChange(change, document) {
     return fields ? next : null;
 }
 
+// ---- undo shortcut ---------------------------------------------------------------
+
+// Cmd/Ctrl+Z without Shift or Alt (Shift is redo); a key auto-repeat is never handled, so holding the keys undoes once.
+export const isUndoShortcut = event => Boolean(event && (event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && String(event.key || '').toLowerCase() === 'z');
+export const handlesUndoKey = event => isUndoShortcut(event) && !event.repeat;
+
 // ---- underbar -----------------------------------------------------------------
 
 export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';

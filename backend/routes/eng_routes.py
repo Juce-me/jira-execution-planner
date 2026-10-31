@@ -48,6 +48,7 @@ from backend.services.jira_issue_field_edits import (
     FieldEditInputError,
     FieldEditServiceError,
     load_editable_field,
+    search_assignable_project_users,
     search_field_users,
     update_issue_field,
 )
@@ -850,6 +851,38 @@ def post_issue_field_user_options(issue_key):
         return _issue_field_service_error_response(error)
     except Exception:
         logger.exception('Jira issue field user search failed')
+        return jsonify({'error': 'jira_read_failed'}), 502
+    return jsonify(result)
+
+
+@bp.route('/api/eng/assignee-capacity/user-options', methods=['POST'])
+def post_assignee_capacity_user_options():
+    """Add assignee search: active users assignable in the workspace's selected Product and Tech projects."""
+    basic_denial = _issue_field_basic_denial()
+    if basic_denial is not None:
+        return basic_denial
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return jsonify({'error': 'invalid_json'}), 400
+    try:
+        auth_context = current_request_auth_context()
+        _require_issue_field_scopes(auth_context, 'assignee')
+        # A JQL_QUERY workspace has no selected-project scope to search in.
+        project_keys = [] if JQL_QUERY else [item['key'] for item in get_selected_projects_typed()]
+        result = search_assignable_project_users(
+            payload,
+            project_keys=project_keys,
+            jira_request=current_jira_request,
+            context=auth_context,
+        )
+    except AuthError as error:
+        return _eng_auth_error_response(error)
+    except FieldEditInputError as error:
+        return jsonify({'error': error.code}), 400
+    except FieldEditServiceError as error:
+        return _issue_field_service_error_response(error)
+    except Exception:
+        logger.exception('Assignee capacity user search failed')
         return jsonify({'error': 'jira_read_failed'}), 502
     return jsonify(result)
 

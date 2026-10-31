@@ -214,6 +214,22 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
         self.assertIs(captured["context"], context)
         self.assertIs(captured["invalidate"], eng_routes.clear_jira_issue_status_caches)
 
+    def test_update_rejects_three_decimal_story_points_before_jira(self):
+        # The real service runs; the stale mapping revision stops a valid value before any Jira call.
+        context = verified_context()
+        for value, status, error in ((0.755, 400, "invalid_value"), (0.75, 409, "field_mapping_changed")):
+            payload = {**self.mutation_payload(), "value": value}
+            with self.subTest(value=value), self.oauth_mode(), \
+                 patch.object(jira_server, "current_request_auth_context", return_value=context), \
+                 patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
+                 patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_owner"), \
+                 patch.object(jira_server, "current_jira_request", side_effect=AssertionError("Jira reached")):
+                response = self.client.post(
+                    "/api/issues/DEMO-1/field", json=payload, headers=self.write_headers(),
+                )
+            self.assertEqual(response.status_code, status, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()["error"], error)
+
     def test_people_and_story_point_routes_enforce_context_scope_provenance(self):
         read_only = "read:jira-work"
         cases = [

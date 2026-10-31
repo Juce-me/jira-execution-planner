@@ -20,6 +20,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
 | ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group; views (column order and hidden columns) per workspace + group + Sprint; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
+| ENG Planning assignee capacity (Capacity, Vacations, Notes, removed flag per person; stored team capacity `planned_capacity`/`planned_source`, "Team capacity (not in Jira)", never written to Jira by this store) | `planning_team_sprint_capacity` | Authenticated workspace users | `user_write` with requested-with and CSRF; read `authenticated_read` | Shared per workspace + Sprint + Team (a Team is part of this store's key, unlike review data, where Team stays a filter); no user columns; not stored in `workspace_dashboard_configs` or `shared_capacity_config`; a Sprint without a document reads the nearest earlier one, including its stored team capacity as `inherited` |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -141,7 +142,7 @@ catalog on PATCH only (reads never consult it), and it is a storage key, never a
 
 Before merging a database, rights, or configuration change, verify all of these together:
 
-1. The model/table key matches the ownership scope (`workspace_id`, `workspace_id + user_id`, or `workspace_id + group_id` for Sprint review data, whose legacy tables have no user columns).
+1. The model/table key matches the ownership scope (`workspace_id`, `workspace_id + user_id`, `workspace_id + group_id` for Sprint review data, whose legacy tables have no user columns, or `workspace_id + sprint_id + team_id` for Planning assignee capacity).
 2. Route policies match the matrix above for both reads and writes.
 3. Request identity comes from `RequestAuthContext`, never the payload.
 4. `/api/config` and section GET routes resolve the same canonical source.

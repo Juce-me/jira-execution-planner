@@ -23,16 +23,22 @@ const metadata = (overrides = {}) => ({
     ...overrides,
 });
 
-test('story point lexical parsing accepts documented decimals and rejects coercible invalid drafts', async () => {
+test('story point lexical parsing accepts two decimals, rounds longer drafts half-up and rejects coercible invalid drafts', async () => {
     const { parseStoryPointsDraft, formatStoryPointsValue } = await loadUtils();
-    for (const [draft, value] of [['0', 0], ['1.5', 1.5], ['2', 2], ['3', 3], ['2.0', 2]]) {
-        assert.deepEqual(parseStoryPointsDraft(draft), { valid: true, value });
+    for (const [draft, value] of [['0', 0], ['1.5', 1.5], ['2', 2], ['3', 3], ['2.0', 2], ['0.75', 0.75], ['1.25', 1.25],
+        ['0.755', 0.76], ['0.754', 0.75], ['1.005', 1.01], ['0.999', 1], ['2.50', 2.5], ['99999999999999999999', 1e20]]) {
+        assert.deepEqual(parseStoryPointsDraft(draft), { valid: true, value }, draft);
     }
-    for (const draft of ['', ' ', '-1', 'NaN', 'Infinity', '1.25', '1,5', '1e2', '.5', '2.']) {
+    for (const draft of ['', ' ', '-1', '-0.01', 'NaN', 'Infinity', 'abc', '1,5', '1e2', '.5', '2.', '9'.repeat(400)]) {
         assert.deepEqual(parseStoryPointsDraft(draft), { valid: false, value: null }, draft);
     }
     assert.equal(formatStoryPointsValue(2.0), '2');
     assert.equal(formatStoryPointsValue(1.5), '1.5');
+    assert.equal(formatStoryPointsValue(0.75), '0.75');
+    assert.equal(formatStoryPointsValue(1), '1');
+    assert.equal(formatStoryPointsValue(0.5), '0.5');
+    assert.equal(formatStoryPointsValue(0.333), '0.33');
+    assert.equal(formatStoryPointsValue(null), '');
 });
 
 test('Unicode threshold and people normalization pin Me, dedupe accountId, and cap at five', async () => {

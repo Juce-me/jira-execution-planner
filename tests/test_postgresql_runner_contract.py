@@ -205,6 +205,7 @@ class GithubRunnerSourceContractTests(unittest.TestCase):
             "tests.test_token_refresh_race",
             "tests.test_user_view_config_concurrency",
             "tests.test_sprint_review_postgresql",
+            "tests.test_assignee_capacity_service",
         ])
         for forbidden in ("set -x", "source .env", "printenv", " env", "reset_local"):
             self.assertNotIn(forbidden, source)

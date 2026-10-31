@@ -37,6 +37,7 @@ SECURITY_SAMPLES = {
         ("GET", "/api/board-config/statuses"),
         ("GET", "/api/eng/board?departmentId=department-a&scope=all_work&refresh=0"),
         ("GET", "/api/issues/DEMO-1/editable-fields?field=storyPoints"),
+        ("GET", "/api/eng/sprints/17/assignee-capacity?teamId=team-a"),
     ],
     "user_write": [
         ("PATCH", "/api/capacity/CAP-101"),
@@ -50,6 +51,8 @@ SECURITY_SAMPLES = {
         ("POST", "/api/issues/project-track"),
         ("POST", "/api/issues/DEMO-1/user-options"),
         ("POST", "/api/issues/DEMO-1/field"),
+        ("PATCH", "/api/eng/sprints/17/assignee-capacity"),
+        ("POST", "/api/eng/assignee-capacity/user-options"),
     ],
     "workspace_write": [
         ("POST", "/api/scenario/drafts"),

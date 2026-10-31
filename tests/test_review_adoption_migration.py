@@ -30,7 +30,7 @@ from scripts import adopt_legacy_sprint_reviews as adopt
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION_FILE = ROOT / 'backend' / 'db' / 'migrations' / 'versions' / '20261023_0020_adopt_legacy_sprint_reviews.py'
-PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261028_0021'
+PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261029_0022'
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
 SECRET_LABEL, SECRET_VALUE = 'Secret-Label-Zq', 'Secret-Value-4711'
 LOGGER = 'review_adoption'

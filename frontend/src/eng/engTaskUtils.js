@@ -1,4 +1,5 @@
 import { epicMatchesTeamAliases, normalizeTeamLabelAliases } from '../settings/groupConfigUtils.js';
+import { formatStoryPointsValue } from './engIssueFieldEditUtils.js';
 
 // Issue #311: Killed work is off an Epic's totals entirely (the same line the story-progress bar draws).
 export function isKilledStatusName(statusName) {
@@ -14,10 +15,11 @@ export function sumEpicStoryPoints(tasks = []) {
     }, 0);
 }
 
-// A Story's own points for display: always one decimal, null Jira points read as 0.0.
+// A Story's own points for a fixed column: at least one decimal, up to two (2.0, 0.75), null Jira points read as 0.0.
 export function formatStoryPointsFixed(task) {
     const value = parseFloat(task?.fields?.customfield_10004 || 0);
-    return (Number.isNaN(value) ? 0 : value).toFixed(1);
+    const text = formatStoryPointsValue(Number.isNaN(value) ? 0 : value);
+    return /^\d+$/.test(text) ? `${text}.0` : text;
 }
 
 export const PRIORITY_ORDER = {

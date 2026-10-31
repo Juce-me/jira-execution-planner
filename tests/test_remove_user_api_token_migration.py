@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from backend.db import models
 
 ROOT = Path(__file__).resolve().parents[1]
-PARENT, HEAD = '20261023_0020', '20261028_0021'
+PARENT, HEAD, LATEST = '20261023_0020', '20261028_0021', '20261029_0022'
 TOKEN_PROVIDER = 'atlassian_user_api_token'
 TOKEN_INDEX = 'uq_auth_connections_user_api_token_cloud'
 
@@ -83,7 +83,7 @@ class RemoveUserApiTokenMigrationTests(unittest.TestCase):
         self.assertNotIn(TOKEN_INDEX, indexes)
         self.assertTrue({'uq_auth_connections_current_cloud', 'uq_auth_connections_current_site'} <= indexes)
         with self.engine.connect() as connection:
-            self.assertEqual(connection.execute(text('SELECT version_num FROM alembic_version')).scalar(), HEAD)
+            self.assertEqual(connection.execute(text('SELECT version_num FROM alembic_version')).scalar(), LATEST)
             sql = connection.execute(
                 text("SELECT sql FROM sqlite_master WHERE name = 'auth_connections'")).scalar()
         self.assertNotIn(TOKEN_PROVIDER, sql)

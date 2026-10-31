@@ -20,6 +20,7 @@ import {
     normalizeCapacityKey,
     normalizeCapacityTeamName,
     reduceCapacityReadLifecycle,
+    resolvePlannedCapacity,
     resolveUniqueCapacityValue,
 } from './planningCapacityUtils.js';
 import { buildExcludedProjectStats, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats } from './planningSelectionStats.js';
@@ -62,6 +63,8 @@ export function useEngCapacity({
     setCapacityDataStale, capacityReadModelRef, capacityRefreshNonce, setCapacityRefreshNonce,
     capacityReadGenerationRef, capacityReadAbortRef, activeCapacityScopeRef, capacityScopeHoldRef,
     capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
+    // #323 design A: the stored team number ({sprintId, teamId, value} or null) and the Jira read lifecycle that gates it.
+    plannedCapacity = null, capacityLoading = false, capacityReadError = '', capacityDataStale = false,
 }) {
     const { activeGroupId, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature } = scope;
     const selectedTeamStats = React.useMemo(() => {
@@ -178,11 +181,29 @@ export function useEngCapacity({
         setCapacityDataStale(nextModel.capacityDataStale);
     };
 
-    const effectiveCapacityState = React.useMemo(() => (
-        capacityState.scopeSignature === capacityScopeSignature
-            ? capacityState
-            : { capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: capacityScopeSignature }
-    ), [capacityState, capacityScopeSignature]);
+    // The stored team number keyed like capacityByTeam; only for the one selected Team of the selected Sprint (Table layout).
+    const plannedCapacityByTeam = React.useMemo(() => {
+        if (!plannedCapacity || isAllTeamsSelected || selectedTeamSet.size !== 1) return null;
+        if (String([...selectedTeamSet][0]) !== String(plannedCapacity.teamId) || String(selectedSprintInfo?.id ?? '') !== String(plannedCapacity.sprintId)) return null;
+        const team = displayedTeamOptions.find(option => String(option.id) === String(plannedCapacity.teamId));
+        const key = team ? normalizeCapacityKey(team.name) : '';
+        return key ? { [key]: plannedCapacity.value } : null;
+    }, [plannedCapacity, isAllTeamsSelected, selectedTeamSet, selectedSprintInfo?.id, displayedTeamOptions]);
+    // Merged after the scope check, into capacityByTeam only: targets, the issue count and mutationEnabled stay Jira's.
+    const { effectiveCapacityState, plannedCapacityKeys } = React.useMemo(() => {
+        if (capacityState.scopeSignature === capacityScopeSignature) {
+            const planned = resolvePlannedCapacity({
+                capacityState, teamNames: displayedTeamOptions.map(team => team.name), plannedCapacityByTeam,
+                capacityEnabled, capacityLoading, capacityReadError, capacityDataStale,
+            });
+            const merged = planned.fallbackKeys.size ? {
+                capacityByTeam: { ...capacityState.capacityByTeam, ...planned.capacityByTeam }, capacityTargetsByTeam: capacityState.capacityTargetsByTeam,
+                capacityIssueCount: capacityState.capacityIssueCount, mutationEnabled: capacityState.mutationEnabled, scopeSignature: capacityState.scopeSignature,
+            } : capacityState;
+            return { effectiveCapacityState: merged, plannedCapacityKeys: planned };
+        }
+        return { effectiveCapacityState: { capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: capacityScopeSignature }, plannedCapacityKeys: null };
+    }, [capacityState, capacityScopeSignature, displayedTeamOptions, plannedCapacityByTeam, capacityEnabled, capacityLoading, capacityReadError, capacityDataStale]);
     const { capacityByTeam, capacityTargetsByTeam } = effectiveCapacityState;
     const capacityMutationEnabled = effectiveCapacityState.mutationEnabled === true;
 
@@ -377,7 +398,7 @@ export function useEngCapacity({
     }, [showPlanning, selectedProjectStats, capacityEnabled, projectCapacity]);
 
     const selectedTeamEntries = React.useMemo(() => {
-        return buildSelectedTeamEntries({
+        const entries = buildSelectedTeamEntries({
             showPlanning,
             displayedTeamOptions,
             selectedTeamStats,
@@ -388,6 +409,12 @@ export function useEngCapacity({
             getTeamNetCapacity,
             capacityMultiplier
         });
+        // Where each card's number comes from, and whether the "no ticket" predicate lets it edit the stored number.
+        return entries.map((entry) => {
+            const key = normalizeCapacityKey(entry.name);
+            const planned = Boolean(plannedCapacityKeys?.fallbackKeys.has(key));
+            return { ...entry, capacitySource: planned ? 'planned' : entry.hasCapacityValue ? 'jira' : '', plannedEditable: Boolean(plannedCapacityKeys?.noTicketKeys.has(key)) };
+        });
     }, [
         showPlanning,
         displayedTeamOptions,
@@ -396,7 +423,8 @@ export function useEngCapacity({
         capacityMultiplier,
         capacityByTeam,
         capacityTargetsByTeam,
-        excludedCapacityByTeamId
+        excludedCapacityByTeamId,
+        plannedCapacityKeys
     ]);
 
     const capacityTotals = React.useMemo(() => {

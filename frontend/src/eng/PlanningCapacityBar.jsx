@@ -1,4 +1,6 @@
 import * as React from 'react';
+import PlanningAssigneeCapacityBar, { useAssigneeUnderbar } from './PlanningAssigneeCapacityBar.jsx';
+import { CAPACITY_BAR_HEADROOM, capacityAxis } from './planningCapacityUtils.js';
 
 export default function PlanningCapacityBar({
     capacityEnabled,
@@ -10,8 +12,9 @@ export default function PlanningCapacityBar({
     capacitySummary,
     compact = false,
 }) {
+    const underbar = useAssigneeUnderbar(totalCapacityAdjusted);
     if (capacityEnabled && totalCapacityAdjusted > 0) {
-        const scale = Math.max(totalCapacityAdjusted, selectedSP) * 1.15;
+        const scale = capacityAxis({ capacity: totalCapacityAdjusted, selected: selectedSP, stacked: underbar ? underbar.model.totalHundredths / 100 : 0 }, CAPACITY_BAR_HEADROOM);
         const toPct = (v) => Math.min(100, (v / scale) * 100);
         const selectedPct = toPct(selectedSP);
         const planningPct = toPct(estimatedCapacityAdjusted);
@@ -36,10 +39,11 @@ export default function PlanningCapacityBar({
                         <div className="capacity-bar-variance-zone under-zone" style={{ left: `${selectedPct}%`, width: `${teamCapPct - selectedPct}%` }} />
                     )}
                     {/* Selected fill - clip at teamCap when over so variance zone is visible */}
-                    <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={`Total story points from ${selectedCount} selected tasks.`}>
+                    <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={underbar ? undefined : `Total story points from ${selectedCount} selected tasks.`}>
                         {!compact && <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>}
                     </div>
                     {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap</span>}
+                    {underbar && <PlanningAssigneeCapacityBar underbar={underbar} axis={scale} selectedCount={selectedCount} selectedSP={selectedSP} />}
                     {/* Planning marker */}
                     {showPlanningMarker && (
                         <div className="capacity-bar-marker planning" style={{ left: `${planningPct}%` }} data-tooltip={compact ? `Planning capacity: ${estimatedCapacityAdjusted.toFixed(1)} SP, after excluded activities.` : 'Team capacity minus excluded mandatory activities (perf review, dev lead management, etc.).'}>

@@ -5,19 +5,20 @@ function planningStoryPoints(task) {
     return Number.isNaN(sp) ? 0 : sp;
 }
 
+// Story Points carry up to two decimals, so totals accumulate integer hundredths and never drift (0.07 + 0.14 = 0.21).
 function createStoryPointTotal() {
-    return { sum: 0, tenths: 0, allTenths: true };
+    return { sum: 0, hundredths: 0, allHundredths: true };
 }
 
 function addStoryPoints(total, value) {
     total.sum += value;
-    const scaled = value * 10;
-    if (Number.isInteger(scaled)) total.tenths += scaled;
-    else total.allTenths = false;
+    const scaled = Math.round(value * 100);
+    if (Math.abs(value * 100 - scaled) < 1e-6) total.hundredths += scaled;
+    else total.allHundredths = false;
 }
 
 function storyPointTotalValue(total) {
-    return total.allTenths ? total.tenths / 10 : total.sum;
+    return total.allHundredths ? total.hundredths / 100 : total.sum;
 }
 
 export function buildSelectedPlanningTasksList(tasks, excludedEpicSet, normalizeEpicKey) {

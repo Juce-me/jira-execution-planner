@@ -51,6 +51,7 @@ import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
 import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
+import PlanningAssigneeCapacity, { getAssigneeCapacityController } from './eng/PlanningAssigneeCapacity.jsx';
 import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
 import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
 import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
@@ -4911,6 +4912,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return submitStatusTransition(targetStatus, issue.key, options);
             }, [submitStatusTransition]);
 
+            const plannedCapacity = React.useSyncExternalStore(getAssigneeCapacityController(BACKEND_URL).subscribe, getAssigneeCapacityController(BACKEND_URL).getPlannedSnapshot); // #323 design A: App re-renders only when the stored team number changes
             const {
                 selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
                 displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
@@ -4926,7 +4928,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setCapacityState, setCapacityLoading, setCapacityReadRevision, setCapacityReadError,
                 setCapacityDataStale, capacityReadModelRef, capacityRefreshNonce, setCapacityRefreshNonce,
                 capacityReadGenerationRef, capacityReadAbortRef, activeCapacityScopeRef, capacityScopeHoldRef,
-                capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef,
+                capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef, plannedCapacity, capacityLoading, capacityReadError, capacityDataStale,
             });
 
             const renderPriorityIcon = (priority, idSeed) => {
@@ -5805,7 +5807,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     groupStateRef.current.delete(activeGroupId);
                 }
                 if (selectedView === 'eng' && showPlanning) {
-                    void recordExplicitRefresh({ capacity: refreshCapacity({ automatic: false }) });
+                    void recordExplicitRefresh({ capacity: refreshCapacity({ automatic: false }), assignee: freshness.automaticRefreshRef.assigneeCapacity?.refresh({ automatic: false }) });
                     // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
                     if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void recordExplicitRefresh({ review: planningReview.refresh() });
                 }
@@ -5980,6 +5982,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
+                <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef}>
                     <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — open panel to retry' : capacityReadError ? 'Capacity unavailable — open panel to retry' : ''} table={planningLayout === 'table'}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         onToggleLayout={() => { setPlanningLayout('list'); trackPlanningReviewAction('layout_list'); }}
@@ -6010,15 +6013,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             statusTransitionErrorCode={statusTransitions.transitionErrorCode}
                             statusTransitionResult={statusTransitions.transitionResult}
                         />}
-                        capacity={<PlanningCapacityBar compact={compactPlanningPanel}
-                            capacityEnabled={capacityEnabled}
-                            totalCapacityAdjusted={totalCapacityAdjusted}
-                            estimatedCapacityAdjusted={estimatedCapacityAdjusted}
-                            excludedCapacityAdjusted={excludedCapacityAdjusted}
-                            selectedCount={selectedCount}
-                            selectedSP={selectedSP}
-                            capacitySummary={capacitySummary}
-                        />}
+                        capacity={<PlanningCapacityBar compact={compactPlanningPanel} capacityEnabled={capacityEnabled} totalCapacityAdjusted={totalCapacityAdjusted} estimatedCapacityAdjusted={estimatedCapacityAdjusted} excludedCapacityAdjusted={excludedCapacityAdjusted}
+                            selectedCount={selectedCount} selectedSP={selectedSP} capacitySummary={capacitySummary} />}
                         teams={<PlanningTeamCapacityCards
                             entries={selectedTeamEntries}
                             capacityEnabled={capacityEnabled}
@@ -6048,6 +6044,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             adHocProductSP={selectedAdHocProductSP}
                         />}
                     />
+                </PlanningAssigneeCapacity>
             );
             const epicBlockProps = {
                 renderEpicShareControl,
@@ -6252,6 +6249,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                     {selectedView === 'eng' && !engWorkspaceConfigured && <UnconfiguredWorkspaceNotice canEditSettings={canEditSharedConfiguration} adminContacts={adminSettingsGate.contacts} onOpenSettings={() => openGroupManage(firstMissingAdminSettingsTab(adminSettingsGate.missing))} />}
 
+                    <div id="planning-assignee-capacity-host" />
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && (
                         <div className={`capacity-panel ${showPlanning ? 'open' : ''}${showPlanning && planningLayout === 'table' && !teamsEffortExpanded ? ' capacity-panel-collapsed' : ''}`}>
                             {showPlanning && planningLayout === 'table' ? (

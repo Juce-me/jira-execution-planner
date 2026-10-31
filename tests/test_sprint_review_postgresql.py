@@ -580,8 +580,10 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertTrue(set(GROUP_TABLES) <= before)
         command.downgrade(self.config, '20261001_0018')
         after = set(inspect(engine).get_table_names())
-        self.assertEqual(before - after, set(GROUP_TABLES))
-        self.assertEqual(after, before - set(GROUP_TABLES))
+        # Downgrading below 0019 also removes the later assignee capacity table (#323).
+        dropped = set(GROUP_TABLES) | {'planning_team_sprint_capacity'}
+        self.assertEqual(before - after, dropped)
+        self.assertEqual(after, before - dropped)
         self.assertEqual(legacy_rows(), expected)
         with engine.connect() as conn:
             self.assertEqual(conn.execute(text('SELECT version_num FROM alembic_version')).scalar(), '20261001_0018')
@@ -634,7 +636,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         column = self.seed_review_legacy()
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261028_0021')
+        self.assertEqual(self.stamped(), '20261029_0022')
         self.assertEqual(self.rows(), ([('group-x', 1, [column['id']])],
                                        [('17', 1, {'story': {'order': ['status', column['id']], 'hidden': []}})]))
         loaded = review.load_review(self.context, '17', 'group-x', self.url)
@@ -658,7 +660,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual(self.stamped(), PARENT_REVISION)
         self.assertEqual(self.rows(), ([], []))
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261028_0021')
+        self.assertEqual(self.stamped(), '20261029_0022')
         self.assertEqual(len(self.rows()[0]), 1)
 
     def test_a_later_workspace_failure_rolls_back_the_earlier_workspace(self):
@@ -744,7 +746,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         self.seed_review_legacy(column=self.legacy_column(archived=True), plain=True)  # an archive intent plans nothing
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261028_0021')
+        self.assertEqual(self.stamped(), '20261029_0022')
         self.assertEqual(self.rows(), ([], []))
 
     def test_the_revision_takes_the_same_schema_row_lock_as_the_app(self):

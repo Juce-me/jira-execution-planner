@@ -294,3 +294,126 @@ a no-op. `--list` reports `nothing to adopt`, `pending`, `needs-merge`, `adopted
 - `--merge` adds a column again after a label-matched column was renamed in the group (archiving it does not) or a purged Sprint view row (the way to free the view cap), and an inserted legacy view
   changes the layout that later Sprints without their own view inherit (the report names the Sprint-id intervals). It has no automatic
   undo: the pre-run backup is the rollback.
+
+## Assignee capacity strip (#323)
+
+With exactly one Team selected in the Table layout, Planning shows a collapsible in-flow strip, "Assignee Capacity (Story
+Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams,
+All Teams and the List layout keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
+(`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points. The strip and the table's Epics/Stories
+control follow each other: expanding the strip from its header selects Stories, and choosing Epics (a click or a link's rows)
+while it is expanded collapses it; the Epics a table mount starts with (reload, Sprint switch) yields to an expanded strip by
+selecting Stories. Neither direction emits analytics or adds a request.
+
+**Columns.** Assignee, Planned capacity, Estimated effort, Vacations, Notes, with a Totals row summing the three numeric
+columns. Planned capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500
+characters, single line); blank means unset. Vacations are informational and never subtracted from Planned capacity. Planned
+effort sums the checked Stories of the Team from the same selection the capacity bar uses (its total is the bar's Selected),
+so search, Team, Project and Project Track filters narrow it and a muted line says how many selected Stories filters hide.
+There is no Total effort column. The over/under cue uses the existing capacity thresholds (over above 120%, under below 90%)
+on rows with Planned capacity and on the Totals row, which compares the displayed Estimated effort total (including Unassigned)
+with the Planned capacity sum. The Totals Planned capacity reads "X / Y": the people's Planned capacity sum out of the team
+capacity the team card uses, the Jira ticket value or, without one, the stored Team capacity (not in Jira), unscaled by the
+Product/Tech share because person capacities are raw; with no team number (no ticket value and no stored number, loading or a
+read error) it shows the sum alone. When the sum is above the team number the cell takes the over cue's tone and its text is
+a native button with the marks' transient readout (mouse hover, focus-visible or a tap; a mouse click pins nothing), "People's
+planned capacity X SP exceeds team capacity Y SP by D SP", also its accessible name; it is display only and gates no edit.
+Sums run in integer hundredths. The table fills the strip's width: Assignee takes a quarter,
+the numeric columns are compact and right-aligned, Notes takes the rest; long names and notes stay on one line with an
+ellipsis and show in full on hover or focus. Below 680px the table scrolls inside the strip, never the page.
+
+**Avatars.** Each person's name follows the issue card's 14px person slot (`PersonAvatar` in `task-assignee-icon`): the
+photo of that person from a loaded Story's assignee, keyed by account id, else the person glyph. Nothing is requested or stored
+for it. A person added from the search this page session shows the photo the search returned (an allowlisted Atlassian
+avatar URL, kept in memory by account id until reload); otherwise a person with no loaded Story shows the glyph. The
+Unassigned row has the same slot empty, so its name lines up with the person names.
+
+**Marks.** Before the avatar every row has a fixed 14px mark slot, empty unless the person has a set Planned capacity (above
+0) and a Estimated effort that is either on plan or over, compared in integer hundredths with both boundaries inclusive: on
+plan when 0.8 x capacity <= effort <= 1.2 x capacity (a rounded green square with a white check, in `--good`; readout "Effort
+M SP of capacity N SP: on plan"), over when effort > 1.2 x capacity (two bold rounded exclamation marks in `--warn`, the
+same threshold as the over cue; readout "Effort M SP, capacity N SP: X SP over capacity"). Spare capacity (effort below 80%,
+effort 0 included), a blank or 0 capacity, the Unassigned row and removed people get no mark. The icons are inline SVG that
+only resemble the check-mark and double-exclamation emoji, so no emoji font is involved. A mark is a native button whose
+accessible name is its readout sentence; the in-app readout follows a mouse by hover only (a mouse or pen click neither
+pins it nor focuses the mark), opens on keyboard focus-visible until blur or Escape, and opens on a touch tap until a second
+tap, an outside tap or a scroll. It writes nothing; numbers are trimmed to at most two decimals. The slot keeps names,
+avatars and row heights where they were.
+
+**Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such non-Killed
+Stories of the Team exist; it shows Estimated effort only and is neither editable nor removable.
+
+**Rows, names and inheritance.** One person is one row, merged from the people with Stories in scope, the Sprint's own
+document and an inherited document. A Sprint without its own document reads the nearest earlier document of the same Team
+(by Sprint id) as a whole: its people and Capacity show gray, with "Inherited from <Sprint>. Editing any value saves this
+Sprint's own copy."; Vacations and Notes are not inherited. The first save in such a Sprint materialises the inherited people
+and Capacity into the Sprint's own document in one locked transaction, then applies the edit, so the next Sprint still sees
+everyone; a commit equal to what is shown sends nothing. Every row stores a display-name snapshot, refreshed on save from a
+Story's current name, so a person with no Stories (including one deactivated in Jira) keeps appearing under the stored name.
+
+**Remove and Restore.** Only a person with no Stories in scope can be removed. Removed people are listed under the table,
+"Removed from this Sprint and later ones:", where each underlined name restores the person with one tap; values are kept.
+
+**Saving.** Enter or blur commits, Escape cancels; an invalid draft stays in its cell with its error. One serial queue per
+Sprint and Team coalesces commits within about 200 ms into one PATCH, keeps one request in flight and reuses the CSRF token.
+An unconfirmed write is read back and only the differing fields are resent (last write wins per field, so retries are
+idempotent). A failed save shows "Not saved" with Retry and Discard changes, in the table and in the collapsed header; a
+change the server refuses waits for Retry or Discard so it cannot fail later batches. Changing Team or Sprint sends the old
+scope's commits in the background; a scope left with a failed save keeps its drafts for the page session (the last five
+scopes) and shows Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. Without database
+storage or save rights the read reports `capabilities` and the strip is read-only (no Remove, Restore or Add assignee) or
+hidden.
+
+**Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
+stored team number, which shares the queue) can be undone with the Undo button at the right end of the expanded strip header
+(beside the save status, a sibling of the header toggle; the collapsed strip shows no Undo), or with Cmd/Ctrl+Z while focus
+is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
+undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
+sends nothing. Undoing an Add assignee removes the person again (there is no delete). Undoing the first edit of an inherited
+Sprint keeps the Sprint's own copy with the inherited values, and a muted line says so. The stack is cleared on a Team or
+Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
+auth session. Read-only strips show no Undo.
+
+**Underbar.** The pinned amber capacity bar carries a thin 5px strip at the bottom of its existing track, adding no height:
+one segment per person with Planned capacity or Estimated effort above 0, in table order, plus a trailing Unassigned segment
+(one solid `--warn` layer sized by the Selected Stories with no assignee). A person's segment is max(capacity, effort) wide
+and draws two layers of the person's colour: a tinted layer (the colour at 45% over the surface) for Planned capacity and the
+solid layer for Estimated effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
+top, so the tinted rest is the capacity left; once effort reaches or passes capacity (equal included) the tinted capacity
+lies on top, so the tint ends where capacity is used up and the solid part beyond it is the work above capacity. A person
+with capacity only is purely tinted, with effort only purely solid, with neither has no segment. The strip's total (the sum
+of max(capacity, effort) plus Unassigned) may exceed the Selected fill and run past the Team Cap marker, so the bar's scale
+is the largest of capacity, Selected and that total, times 1.15 (the team-card bar uses the same function with 1.3); the
+fill, the markers and the strip share it, so nothing clips and the Team Cap marker lines up. The whole track is hoverable
+and tappable: the segment under the pointer shows its readout under a "Selected N tasks · X SP" header that replaces the fill
+tooltip (person: name, Estimated effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
+is set, then the team number's source; "Unassigned (effort)" with Selected and its share of Selected), and the marker lines
+keep their own tooltips. Table rows of people with a segment are tinted with the person colour; others keep the normal row
+surface.
+
+**Team capacity (not in Jira).** The document also stores one team number per Sprint and Team. It is editable from the team
+card's own pencil only when the Jira capacity read settled for this scope and found no ticket for the Team (not loading,
+failed, stale or ambiguous, and only with a Capacity Project configured); a matched ticket with a blank value also shows
+the stored number as a fallback while its pencil keeps editing Jira. The stored number enters the same capacity maths as a
+Jira value (multiplier and excluded capacity apply), so the amber bar and the underbar appear for a Team without a ticket.
+Jira wins on screen whenever it has a value. A Sprint without its own document shows the nearest earlier number gray
+(source `inherited`). After a user-initiated capacity read, a Jira value that differs is mirrored silently into an existing
+own document (database only; never into a typed number, never while the queue is busy, failures dropped). A typed number
+that differs from the ticket shows a banner above the cards with Write to ticket (opens the existing Jira editor prefilled;
+the user saves there), Use ticket value and Not now (hidden per Sprint and Team until either number changes). Nothing is
+written to Jira except through that editor's Save; a successful Jira save turns a typed number into the ticket value.
+
+**Add assignee.** Under the table and in the empty state, a person picker searches the active users assignable in the
+workspace's selected Product and Tech Jira projects through `POST /api/eng/assignee-capacity/user-options` (the signed-in
+user's Jira context; no email shown; each result may carry an allowlisted avatar URL). Picking a person adds a row with a stored name snapshot and no Capacity; picking a
+removed person restores them; picking a listed person focuses their row.
+
+**Freshness.** The document is read whenever one Team is selected in Table, expanded or not, cached per Sprint and Team
+for the page session. The Planning automatic follow-up and the header Refresh re-read it, never while it loads or holds
+unsaved changes; an unchanged document is not republished, a failure keeps the held document, and an automatic height
+change of the strip above the viewport keeps the reading position. A new auth session clears the cache and re-reads.
+
+**Limitations.** The stored team number is used only in the Table layout with one Team: List layout and several Teams show
+Jira values only. A Team with no pointed Stories has no card, so its stored number can be typed only once it has Stories.
+Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
+against Jira. Undo is not built yet.

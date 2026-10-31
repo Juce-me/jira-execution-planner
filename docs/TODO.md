@@ -26,6 +26,7 @@ RICE = (Reach x Impact x Confidence) / Effort
 - Compact sticky header at 390px with two or more visible Department groups: the "Find in view" search field covers the "Catch Up" mode radio and blocks its click (found while building the two-group Playwright fixture for #267; the existing 390px sticky-heading test in `tests/ui/planning_review_integration.spec.js` stays on the one-group fixture until fixed). Needs a product fix with geometry checks on every sibling control of that header.
 
 ## Deferred
+- Assignee capacity Undo (#323): Cmd/Ctrl+Z works after Enter only once focus returns to the table (Tab keeps it there); keyboard-only, parked per the a11y deprioritization.
 - Catch Up cold load speed follow-ups (from the 2026-10-25 production HAR; [EXEC plan](plans/EXEC-catch-up-cold-load-speed.md) implemented compression, concurrent dependency and readiness batches, lazy admin settings and the early config prefetch; what it left, "Not done here" first, then what execution found; line numbers verified at `0837dbf5`):
   - The 250-issue lane cap and the fact that the task list can drop issues beyond it: `fetch_tasks` in `jira_server.py` sets `max_results = 250` (`:3382`, loop at `:3396`) and a code comment at `:3515` names "the 250-capped task list"; plan decision 6 left it out of scope. A separate design on the performance-critical initial-load path.
   - Continuation-token handling for the other `fetch_issues_by_keys` callers (`/api/issues/lookup`, epic record fetches); only `/api/dependencies` is strict.

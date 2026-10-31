@@ -268,7 +268,8 @@ def _apply(session, context, sprint_id, team_id, changes, planned=None):
     inserted = session.execute(insert(models.PlanningTeamSprintCapacity).values(
         id=str(uuid.uuid4()), workspace_id=workspace_id, sprint_id=sprint_id, sprint_order=sprint_order(sprint_id),
         team_id=team_id, rows=[], revision=1, created_at=models._utcnow(), updated_at=models._utcnow(),
-    ).on_conflict_do_nothing(index_elements=['workspace_id', 'sprint_id', 'team_id'])).rowcount == 1
+    ).on_conflict_do_nothing(index_elements=['workspace_id', 'sprint_id', 'team_id'])
+        .returning(models.PlanningTeamSprintCapacity.id)).scalar_one_or_none() is not None
     row = session.scalar(select(models.PlanningTeamSprintCapacity).where(
         *_scope(workspace_id, team_id), models.PlanningTeamSprintCapacity.sprint_id == sprint_id).with_for_update())
     if inserted:

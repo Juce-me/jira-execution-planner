@@ -580,8 +580,10 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertTrue(set(GROUP_TABLES) <= before)
         command.downgrade(self.config, '20261001_0018')
         after = set(inspect(engine).get_table_names())
-        self.assertEqual(before - after, set(GROUP_TABLES))
-        self.assertEqual(after, before - set(GROUP_TABLES))
+        # Downgrading below 0019 also removes the later assignee capacity table (#323).
+        dropped = set(GROUP_TABLES) | {'planning_team_sprint_capacity'}
+        self.assertEqual(before - after, dropped)
+        self.assertEqual(after, before - dropped)
         self.assertEqual(legacy_rows(), expected)
         with engine.connect() as conn:
             self.assertEqual(conn.execute(text('SELECT version_num FROM alembic_version')).scalar(), '20261001_0018')

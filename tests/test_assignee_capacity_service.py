@@ -552,6 +552,47 @@ class AssigneeCapacityPostgresqlRaceTests(unittest.TestCase):
         raise AssertionError('second first-writer never waited on the document row lock')
 
     def test_two_first_writers_of_one_new_document_both_land(self):
+        self.race({}, {})
+        self.assertIsNone(capacity.get_document(self.context, '20', 'team-a', self.url)['planned'])
+
+    def test_two_first_writers_with_planned_fields_both_land(self):
+        self.race({'planned': {'value': '20', 'source': 'user'}}, {})
+        self.assertEqual(capacity.get_document(self.context, '20', 'team-a', self.url)['planned'],
+                         {'value': '20', 'source': 'user'})
+
+    def test_first_write_of_an_inherited_sprint_materialises_the_source_rows(self):
+        # PostgreSQL reports rowcount -1 for the ON CONFLICT insert; the first writer must still be recognised.
+        first = capacity.apply_changes(self.context, '10', 'team-a', [{'assigneeKey': 'acc-1', 'capacity': '5'}], self.url,
+                                       planned={'value': '30', 'source': 'user'})
+        self.assertEqual(first['revision'], 1)
+        saved = capacity.apply_changes(self.context, '11', 'team-a', [{'assigneeKey': 'acc-2', 'capacity': '3'}], self.url)
+        self.assertEqual((saved['revision'], sorted(row['assigneeKey'] for row in saved['rows'])), (1, ['acc-1', 'acc-2']))
+        self.assertEqual(saved['planned'], {'value': '30', 'source': 'inherited'})
+
+    def test_nearest_earlier_lookup_uses_the_order_index_within_four_queries(self):
+        engine = db_engine.get_engine(self.url)
+        with engine.begin() as conn:
+            conn.execute(text("""
+                INSERT INTO planning_team_sprint_capacity
+                SELECT gen_random_uuid(), :w, g::text, lpad(g::text, 128, '0'), 'team-' || (g % 50), '[]', NULL, NULL, 1, now(), now()
+                FROM generate_series(100, 20100) g"""), {'w': self.context.workspace_id})
+            conn.execute(text('ANALYZE planning_team_sprint_capacity'))
+        statements = []
+        listener = lambda conn, cursor, statement, params, context, many: statements.append((statement, params))
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            capacity.get_document(self.context, '15000', 'team-7', self.url)
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        self.assertLessEqual(len(statements), 4)
+        lookup = [item for item in statements if 'sprint_order' in item[0] and 'ORDER BY' in item[0]]
+        self.assertEqual(len(lookup), 1)
+        with engine.connect() as conn:
+            plan = '\n'.join(conn.exec_driver_sql('EXPLAIN ' + lookup[0][0], lookup[0][1]).scalars())
+        self.assertIn('Index Scan', plan)
+        self.assertIn('ix_planning_team_sprint_capacity_order', plan)
+
+    def race(self, first_kwargs, second_kwargs):
         entered, release, results = Event(), Event(), {}
         real_merge, calls = capacity.merge_changes, {}
 
@@ -565,15 +606,16 @@ class AssigneeCapacityPostgresqlRaceTests(unittest.TestCase):
                     raise AssertionError('first writer was never released')
             return real_merge(rows, changes)
 
-        def run(name, key):
+        def run(name, key, kwargs):
             try:
-                results[name] = capacity.apply_changes(self.context, '20', 'team-a', [{'assigneeKey': key, 'capacity': '3'}], self.url)
+                results[name] = capacity.apply_changes(self.context, '20', 'team-a', [{'assigneeKey': key, 'capacity': '3'}],
+                                                       self.url, **kwargs)
             except Exception as error:  # noqa: BLE001 - returned to the test for assertion
                 results[name] = error
 
         with patch.object(capacity, 'merge_changes', pausing_merge):
-            first = Thread(target=run, args=('first', 'acc-1'), name='first')
-            second = Thread(target=run, args=('second', 'acc-2'), name='second')
+            first = Thread(target=run, args=('first', 'acc-1', first_kwargs), name='first')
+            second = Thread(target=run, args=('second', 'acc-2', second_kwargs), name='second')
             first.start()
             self.assertTrue(entered.wait(5))
             second.start()

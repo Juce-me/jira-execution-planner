@@ -145,6 +145,12 @@ async function openPlanning(page) {
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
 }
 
+// The text a [data-tooltip] ::after shows: Firefox serialises the computed `content: attr(data-tooltip)` unresolved.
+const shownTooltip = node => {
+    const content = getComputedStyle(node, '::after').content;
+    if (content === 'none' || content === 'normal') return '';
+    return content === 'attr(data-tooltip)' ? node.getAttribute('data-tooltip') : content;
+};
 const strip = page => page.locator('[data-assignee-capacity]');
 const stripToggle = page => strip(page).locator('.capacity-header-toggle');
 const table = page => strip(page).locator('table.planning-assignee-table');
@@ -604,7 +610,7 @@ test('whole-track hover: any height resolves the segment under the pointer, past
     expect(zIndex).toEqual({ marker: '42', strip: '41' });
     await page.mouse.move(5, 400);
     await page.mouse.move(markerX, geometry.track.top + 3);
-    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Team capacity');
     await expect(readout(page)).toHaveCount(0);
     // A segment's own pixels stay topmost under the strip (no fill above them).
     const topmost = await page.evaluate(() => [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
@@ -711,7 +717,7 @@ for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewp
                 const first = track();
                 await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
                 const second = track();
-                return first.top === second.top && Boolean(document.elementFromPoint(second.left + 1, second.top + 1)?.closest('.capacity-bar-track'));
+                return first.top === second.top && Boolean(document.elementFromPoint(second.left + 2, second.top + 2)?.closest('.capacity-bar-track'));
             })).toBe(true);
         }
         const g = await page.evaluate(() => {
@@ -720,14 +726,15 @@ for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewp
             return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, stripEnd: s[s.length - 1].right };
         });
         // Left edge (first segment, 6 lines), the strip end near the right (6 lines), the track's right end (header only), top row pixels.
-        for (const [x, y, text] of [[g.left + 1, g.top + 1, 'Ann Synthetic'], [g.stripEnd - 1, g.top + 1, 'Unassigned (effort)'], [g.right - 1, g.top + 1, 'Selected 4 tasks'], [g.left + 1, g.bottom - 1, 'Ann Synthetic']]) {
+        // 2px in: the track's 5px rounded corners clip hit-testing in Firefox, so a 1px corner pixel belongs to the graph there.
+        for (const [x, y, text] of [[g.left + 2, g.top + 2, 'Ann Synthetic'], [g.stripEnd - 1, g.top + 2, 'Unassigned (effort)'], [g.right - 2, g.top + 2, 'Selected 4 tasks'], [g.left + 2, g.bottom - 2, 'Ann Synthetic']]) {
             await page.mouse.move(5, 5);
             await page.mouse.move(x, y);
             await expect(readout(page), `${mode} scrolled=${scrolled} x=${x}`).toContainText(text);
             await expectReadoutInViewport(page);
         }
         if (!scrolled) {
-            await page.mouse.move(g.left + 1, g.top + 1);
+            await page.mouse.move(g.left + 2, g.top + 2);
             await page.screenshot({ path: `tmp/slice1-shots/strip-readout-${mode}.png`, clip: { x: 0, y: 0, width: page.viewportSize().width, height: Math.min(page.viewportSize().height, g.bottom + 200) }, animations: 'disabled' });
         }
     }
@@ -821,7 +828,7 @@ test('where the strip has no segment the team-cap marker stays hoverable down to
     const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
     const box = await marker.boundingBox();
     await page.mouse.move(gap.x, box.y + box.height - 2);
-    await expect.poll(() => marker.evaluate(node => getComputedStyle(node, '::after').content)).toContain('Team capacity');
+    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Team capacity');
     expect(box.height).toBeGreaterThan(5);
 });
 
@@ -1523,4 +1530,83 @@ test('Add assignee: no selected projects and a failed search show a message, not
     await search.fill('anna');
     await expect(peopleMenu(page).getByRole('alert')).toHaveText('Jira is busy. Try again in a moment.');
     await expect(peopleMenu(page).getByRole('option')).toHaveCount(0);
+});
+
+// DoD 13 render and compute counts (opt-in, as tests/ui/app_render_counts.spec.js; the probe bundle is built in memory):
+//   JEP_RUNTIME_PROBE=1 npx playwright test tests/ui/planning_assignee_capacity.spec.js -g "render counts" --browser=chromium
+// teamTasks is the Total list filter; buildAssigneeRows runs once per derived view and accumulates Total and Selected.
+test.describe('render counts (#323 DoD 13)', () => {
+    test.skip(process.env.JEP_RUNTIME_PROBE !== '1', 'opt-in runtime probe (JEP_RUNTIME_PROBE=1)');
+    let probeBundle;
+    test.beforeAll(() => {
+        let text = require('./runtime_probe_helpers').buildRuntimeProbeBundle();
+        for (const name of ['teamTasks', 'buildAssigneeRows']) {
+            const anchor = `function ${name}(`;
+            if (text.split(anchor).length !== 2) throw new Error(`${anchor} must occur exactly once`);
+            const next = text.replace(new RegExp(`(function ${name}\\([\\s\\S]*?\\)\\s*\\{)`), `$1 (window.__JEP_323_COUNTS__ ||= {}).${name} = (window.__JEP_323_COUNTS__.${name} || 0) + 1;`);
+            if (next === text) throw new Error(`${name} counter was not injected`);
+            text = next;
+        }
+        probeBundle = text;
+    });
+    const many = Array.from({ length: 3000 }, (_, index) => {
+        const person = index % 9;
+        return person === 8 ? story(`PLAN-${index + 10}`, null, null, 1 + (index % 5))
+            : story(`PLAN-${index + 10}`, `acc-p${person}`, `Person ${person} Synthetic`, 1 + (index % 5), { team: index % 10 === 9 ? 'team-beta' : 'team-alpha' });
+    });
+    const read = page => page.evaluate(() => ({ renders: window.__JEP_EXTRACTION_PERF__().renders, ...(window.__JEP_323_COUNTS__ || {}) }));
+    async function measure(page, action) {
+        await page.waitForTimeout(500);
+        const before = await read(page);
+        await action();
+        await page.waitForTimeout(500);
+        const after = await read(page);
+        return { ...Object.fromEntries(['renders', 'teamTasks', 'buildAssigneeRows'].map(key => [key, (after[key] || 0) - (before[key] || 0)])), absolute: after };
+    }
+    async function openProbe(page, options) {
+        await page.addInitScript(() => window.history.replaceState(null, '', '/?perf=1'));
+        const fixture = await install(page, { issues: many, ...options });
+        await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: probeBundle }));
+        await openPlanning(page);
+        return fixture;
+    }
+    const toggleFirstStory = async page => {
+        const box = page.locator('.planning-review-table tbody input[type=checkbox]').first();
+        const was = await box.isChecked();
+        await box.click();
+        await expect(box).toBeChecked({ checked: !was });
+    };
+
+    for (const [label, selectedTeams] of [['one Team, strip expanded', ['team-alpha']], ['two Teams, no strip', ['team-alpha', 'team-beta']]]) test(`render counts: a Story toggle with 3,000 Stories (${label})`, async ({ page }, testInfo) => {
+        test.setTimeout(180000);
+        const server = capacityServer({ rows: [{ assigneeKey: 'acc-p0', displayName: 'Person 0 Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+        await openProbe(page, { server, selectedTeams });
+        if (selectedTeams.length === 1) await expand(page);
+        await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+        await expect(page.locator('.planning-review-table tbody input[type=checkbox]').first()).toBeVisible();
+        const result = await measure(page, () => toggleFirstStory(page));
+        const back = await measure(page, () => toggleFirstStory(page));
+        console.log('DOD13_MEASURE', label, JSON.stringify({ toggle: result, toggleBack: back }));
+        testInfo.annotations.push({ type: 'dod13', description: `${label} ${JSON.stringify({ toggle: result, toggleBack: back })}` });
+        expect(result.teamTasks, 'the Total list is not rebuilt by a toggle').toBe(0);
+        expect(back.teamTasks).toBe(0);
+        // Merge-base 1f8db143 measured 2 App renders for the second toggle in every run (the first toggle varies 5..10 in both).
+        expect(back.renders, 'App renders on a settled Story toggle').toBeLessThanOrEqual(2);
+    });
+
+    test('render counts: a strip Capacity edit does not re-render App (the stored team number is unchanged)', async ({ page }, testInfo) => {
+        test.setTimeout(180000);
+        const server = capacityServer({ rows: [{ assigneeKey: 'acc-p0', displayName: 'Person 0 Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+        await openProbe(page, { server });
+        await expand(page);
+        const capacity = rowOf(page, 'acc-p0').getByRole('textbox', { name: 'Capacity for Person 0 Synthetic' });
+        const result = await measure(page, async () => {
+            await capacity.fill('9'); await capacity.press('Enter');
+            await expect.poll(() => server.state.patches.length).toBe(1);
+        });
+        console.log('DOD13_MEASURE', 'strip edit', JSON.stringify(result));
+        testInfo.annotations.push({ type: 'dod13', description: `strip edit ${JSON.stringify(result)}` });
+        expect(result.renders, 'App renders on a strip edit').toBe(0);
+        expect(result.teamTasks).toBe(0);
+    });
 });

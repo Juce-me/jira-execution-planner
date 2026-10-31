@@ -9,11 +9,14 @@ const hookPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useStoryR
 function loadApi(dependencies = {}) {
     const source = fs.readFileSync(apiPath, 'utf8')
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/http\.js';\n?/, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/workStructure\/[A-Za-z]+\.js';\n?/g, '')
         .replaceAll('export const ', 'const ');
     const defaults = {
         apiFetch: () => { throw new Error('unexpected apiFetch'); },
         getJson: () => { throw new Error('unexpected getJson'); },
         trackedFetch: () => { throw new Error('unexpected trackedFetch'); },
+        runInWorkContext: (init, start) => start(init), stampParams: params => params, stampBody: body => body,
+        applyContextToParams: params => params,
         jsonOrStructuredError: async response => {
             if (!response.ok) {
                 const body = await response.json();

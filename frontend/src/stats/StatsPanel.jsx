@@ -16,6 +16,9 @@ import ProjectTrackSprintChart from './ProjectTrackSprintChart.jsx';
 import ProjectTrackBreakdownChart from './ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
+import UnconfiguredWorkspaceNotice from '../settings/UnconfiguredWorkspaceNotice.jsx';
+import { describeStatsScope, unavailablePeriodSpans } from './statsScope.js';
+import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
 
 const COHORT_SCOPE_NOTES = {
@@ -24,9 +27,17 @@ const COHORT_SCOPE_NOTES = {
     none: 'Scope: none configured (no Components or Teams)'
 };
 
+function cohortModeMeta(stats) {
+    return stats.cohortData?.meta || null;
+}
+
 export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
-    showStats, jiraUrl, activeGroupMissingComponents, priorityAxis, resolveStatsTeamColor
+    showStats, jiraUrl, activeGroupMissingComponents, priorityAxis, resolveStatsTeamColor,
+    workScope: workScopeProp, workSetupNotice = null
 }) {
+    // The dashboard may pass the model-aware scope; otherwise the viewed quarter alone is still named.
+    const activeWorkContext = useActiveWorkContext();
+    const workScope = workScopeProp !== undefined ? workScopeProp : describeStatsScope(activeWorkContext, null);
     const {
         canRenderStatsPanel,
         statsView,
@@ -151,7 +162,17 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
         cohortLastNShortfall,
         burnoutScopedTeamIds,
         burnoutData,
+        cohortSetupBlocked = false,
     } = stats;
+    // Names the quarter and configuration a scoped view answers for; absent before promotion.
+    const scopeLine = workScope ? (
+        <div className="stats-note" data-stats-work-scope={workScope.quarter}>
+            Quarter {workScope.label}{workScope.roles ? ` \u00b7 ${workScope.roles.parents} grouped by ${workScope.roles.parent}` : ''}
+        </div>
+    ) : null;
+    const unavailableCohortQuarters = unavailablePeriodSpans(cohortModeMeta(stats)).map(span => span.label);
+    const unavailableCapacityIds = stats.excludedCapacityData?.meta?.unavailableSprintIds || [];
+    const unavailableCapacityNames = unavailableCapacityIds.map(id => (stats.excludedCapacitySprintOptions || []).find(option => String(option.id) === String(id))?.name || id);
     // Created and Closed share one quarter control; Last N swaps it for a count.
     const closedQuarterMode = cohortMode === 'closed';
     const quarterStart = closedQuarterMode ? cohortClosedStartQuarter : cohortStartQuarter;
@@ -462,6 +483,10 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         {excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
                             <div className="stats-note cohort-error">{excludedCapacityError}</div>
                         )}
+                        {scopeLine}
+                        {unavailableCapacityNames.length > 0 && (
+                            <div className="stats-note excluded-capacity-unavailable">Unavailable periods (not zero): {unavailableCapacityNames.join(', ')}</div>
+                        )}
                         {!excludedCapacityError && excludedCapacityWarnings.length > 0 && (
                             <div className="cohort-warnings">
                                 {excludedCapacityWarnings.map((warning, index) => (
@@ -714,8 +739,12 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         </div>
 
                         <div className="project-track-mode-title">
-                            {projectTrackMode === 'team' ? 'TEAM MODE' : 'EPIC MODE'}
+                            {projectTrackMode === 'team' ? 'TEAM MODE' : `${(workScope?.roles?.parent || 'Epic').toUpperCase()} MODE`}
                         </div>
+                        {scopeLine}
+                        {unavailableCapacityNames.length > 0 && (
+                            <div className="stats-note project-track-unavailable">Unavailable periods (not zero): {unavailableCapacityNames.join(', ')}</div>
+                        )}
 
                         {(projectTrackMode !== 'team' || !projectTrackSingleTeam) && (
                             <div className="stats-card project-track-card">
@@ -807,10 +836,10 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                             {cohortMode === 'last_n' ? (
                                 <div className="stats-control-group">
-                                    <div className="controls-label">Number of epics</div>
+                                    <div className="controls-label">{`Number of ${(workScope?.roles?.parents || 'Epics').toLowerCase()}`}</div>
                                     <select
                                         className="scenario-input"
-                                        aria-label="Number of epics"
+                                        aria-label={`Number of ${(workScope?.roles?.parents || 'Epics').toLowerCase()}`}
                                         value={cohortLastN}
                                         onChange={(event) => {
                                             setCohortLastN(resolveLeadTimesLastN(event.target.value));
@@ -893,7 +922,19 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         </div>
 
+                        {scopeLine}
                         {cohortScopeNote && <div className="stats-note">{cohortScopeNote}</div>}
+                        {unavailableCohortQuarters.length > 0 && (
+                            <div className="stats-note cohort-unavailable">Unavailable periods (not zero): {unavailableCohortQuarters.join(', ')}</div>
+                        )}
+                        {cohortSetupBlocked && workSetupNotice && (
+                            <UnconfiguredWorkspaceNotice
+                                canEditSettings={workSetupNotice.canEditSettings}
+                                adminContacts={workSetupNotice.adminContacts || []}
+                                onOpenSettings={workSetupNotice.onOpenSettings}
+                                scope={workSetupNotice.scope}
+                            />
+                        )}
                         {cohortShortfallNote && <div className="stats-note">{cohortShortfallNote}</div>}
 
                         <div className="stats-actions cohort-status-actions">
@@ -917,7 +958,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
 
                         <div className="stats-summary cohort-summary">
                             <div className="stats-card">
-                                <h4>Epics Overview</h4>
+                                <h4>{`${workScope?.roles?.parents || 'Epics'} Overview`}</h4>
                                 <div className="stat-value">{cohortSummary.total}</div>
                                 <div className="stats-note">
                                     {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
@@ -956,9 +997,9 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         </div>
 
-                        {cohortBusy && <div className="stats-note">Loading lead time cohorts…</div>}
-                        {!cohortBusy && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
-                        {!cohortBusy && !cohortError && cohortWarnings.length > 0 && (
+                        {!cohortSetupBlocked && cohortBusy && <div className="stats-note">Loading lead time cohorts…</div>}
+                        {!cohortSetupBlocked && !cohortBusy && cohortError && <div className="stats-note cohort-error">{cohortError}</div>}
+                        {!cohortSetupBlocked && !cohortBusy && !cohortError && cohortWarnings.length > 0 && (
                             <div className="cohort-warnings">
                                 {cohortWarnings.map((warning, index) => (
                                     <div key={`${warning}-${index}`}>• {warning}</div>
@@ -966,7 +1007,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         )}
 
-                        {!cohortBusy && !cohortError && (
+                        {!cohortSetupBlocked && !cohortBusy && !cohortError && (
                             <div className="cohort-panel">
                                 <div className="cohort-section cohort-section-fullbleed">
                                     <div className="cohort-section-title">
@@ -987,7 +1028,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     <CohortGrid
                                         model={cohortGridModel}
                                         showOpen={cohortMode === 'created'}
-                                        emptyMessage={cohortMode !== 'created' && cohortScope !== null && cohortFetchedCount === 0 ? 'No closed epics in this scope.' : undefined}
+                                        emptyMessage={cohortMode !== 'created' && cohortScope !== null && cohortFetchedCount === 0 ? `No closed ${(workScope?.roles?.parents || 'epics').toLowerCase()} in this scope.` : undefined}
                                         selectedRowKey={cohortSelectedRow}
                                         onSelectRow={(rowKey) => {
                                             setCohortSelectedRow((prev) => (prev === rowKey ? null : rowKey));
@@ -996,6 +1037,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 </div>
                                 <LeadTimesEpicCharts
                                     cohortMode={cohortMode}
+                                    roles={workScope?.roles}
                                     cohortOpenBars={cohortOpenBars}
                                     cohortCompletedBars={cohortCompletedBars}
                                     cohortSelectedRowLabel={cohortSelectedRowLabel}

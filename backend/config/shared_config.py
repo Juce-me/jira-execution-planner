@@ -16,7 +16,11 @@ ADMIN_CONFIG_SECTIONS = frozenset({
     'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField',
     'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes',
 })
+# The quarterly work-configuration bundle is workspace-owned and has its own
+# transactional save path; it is not a section of the single-key admin writer.
+WORK_CONFIGURATIONS_SECTION = 'workConfigurations'
 PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS = ADMIN_CONFIG_SECTIONS - {'version'}
+_PRIVATE_VIEW_STRIPPED_SECTIONS = PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS | {WORK_CONFIGURATIONS_SECTION}
 LEGACY_EXCLUDED_TOP_LEVEL_SECTIONS = frozenset({'filters', 'eng', 'epm', 'teamGroups', 'teamCatalog'})
 
 
@@ -147,7 +151,7 @@ def normalize_shared_admin_section(section, value):
 
 def strip_shared_sections_from_private_view(payload):
     payload = deepcopy(payload) if isinstance(payload, dict) else {}
-    for key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS:
+    for key in _PRIVATE_VIEW_STRIPPED_SECTIONS:
         payload.pop(key, None)
     return payload
 
@@ -168,7 +172,7 @@ def validate_private_view_ownership(payload, *, validate_sensitive=True):
     paths = []
     if validate_sensitive:
         paths.extend(_collect_forbidden_paths(payload))
-    paths.extend(key for key in payload if key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS)
+    paths.extend(key for key in payload if key in _PRIVATE_VIEW_STRIPPED_SECTIONS)
     if paths:
         raise ViewPayloadValidationError(paths)
     return normalize_user_view_payload(payload)

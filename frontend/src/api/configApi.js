@@ -181,3 +181,40 @@ export const fetchAvailableIssueTypes = (backendUrl) =>
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
     });
+
+// Quarterly Project config bundle. GET returns {workConfigurations,configRevision,promoted,
+// userCanEditSettings,featureEnabled}; POST carries the whole bundle (first save adds legacyEdits,
+// later saves add clearProjectsForConfigurationIds). Failures throw with .status/.payload/.code.
+export const fetchWorkStructureConfig = (backendUrl, { signal } = {}) =>
+    apiFetch(`${backendUrl}/api/work-structure/config`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    }).then(workspaceConfigJson);
+
+export const saveWorkStructureConfig = (backendUrl, payload) =>
+    postWorkspaceConfig(backendUrl, '/api/work-structure/config', payload);
+
+// Saved-configuration Test: sanitized {ok,status,code,configurationId,configurationRevision,
+// missingFields,checks}; the server reads only the saved entry.
+export const testWorkConfiguration = (backendUrl, { configurationId, configurationRevision }) => {
+    const params = new URLSearchParams({
+        configurationId: String(configurationId),
+        configurationRevision: String(configurationRevision),
+    });
+    return apiFetch(`${backendUrl}/api/test?${params.toString()}`, { method: 'GET', cache: 'no-cache' });
+};
+
+export const fetchWorkIssueTypes = (backendUrl, { configurationId, configurationRevision, signal } = {}) => {
+    const params = new URLSearchParams({
+        configurationId: String(configurationId),
+        configurationRevision: String(configurationRevision),
+    });
+    return apiFetch(`${backendUrl}/api/issue-types?${params.toString()}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    });
+};

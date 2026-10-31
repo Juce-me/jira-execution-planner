@@ -22,6 +22,7 @@ import uuid
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import inspect, text
+from sqlalchemy.orm import load_only
 
 from backend.auth.context import RequestAuthContext
 from backend.db import engine as db_engine, models
@@ -30,10 +31,17 @@ from scripts import adopt_legacy_sprint_reviews as adopt
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION_FILE = ROOT / 'backend' / 'db' / 'migrations' / 'versions' / '20261023_0020_adopt_legacy_sprint_reviews.py'
-PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261028_0021'
+PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261030_0022'
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
 SECRET_LABEL, SECRET_VALUE = 'Secret-Label-Zq', 'Secret-Value-4711'
 LOGGER = 'review_adoption'
+# These tests start at revision 20261019 (before the namespace columns exist); read only the columns that revision has.
+SCHEMA_COLUMNS = (load_only(models.WorkspaceGroupReviewSchema.id, models.WorkspaceGroupReviewSchema.workspace_id,
+                            models.WorkspaceGroupReviewSchema.group_id, models.WorkspaceGroupReviewSchema.schema_revision,
+                            models.WorkspaceGroupReviewSchema.columns),)
+VIEW_COLUMNS = (load_only(models.GroupSprintReviewView.workspace_id, models.GroupSprintReviewView.group_id,
+                          models.GroupSprintReviewView.sprint_id, models.GroupSprintReviewView.sprint_order,
+                          models.GroupSprintReviewView.view_revision, models.GroupSprintReviewView.layouts),)
 
 
 def uid(number):
@@ -105,22 +113,22 @@ class RevisionCase(unittest.TestCase):
 
     def live_group(self, group, columns, revision=2, workspace=None, cells=()):
         with db_engine.session_scope(self.url) as session:
-            row = models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=workspace or self.workspace,
-                                                    group_id=group, schema_revision=revision, columns=columns)
-            session.add(row)
-            session.flush()
+            schema_id = str(uuid.uuid4())
+            # Core insert: the table is at the pre-namespace revision here, so only its own columns are written.
+            session.execute(models.WorkspaceGroupReviewSchema.__table__.insert().values(
+                id=schema_id, workspace_id=workspace or self.workspace, group_id=group, schema_revision=revision, columns=columns))
             for issue, kind, column_id, value in cells:
-                session.add(models.GroupReviewCell(schema_id=row.id, issue_id=issue, row_kind=kind, column_id=column_id,
+                session.add(models.GroupReviewCell(schema_id=schema_id, issue_id=issue, row_kind=kind, column_id=column_id,
                                                    value=value, revision=1))
 
     def group_state(self, strip_ids=True):
         with db_engine.session_scope(self.url) as session:
-            schemas = {s.id: s for s in session.query(models.WorkspaceGroupReviewSchema).all()}
+            schemas = {s.id: s for s in session.query(models.WorkspaceGroupReviewSchema).options(*SCHEMA_COLUMNS).all()}
             return (sorted((s.workspace_id, s.group_id, s.schema_revision, repr(s.columns)) for s in schemas.values()),
                     sorted((schemas[c.schema_id].workspace_id, schemas[c.schema_id].group_id, c.issue_id, c.row_kind,
                             c.column_id, repr(c.value), c.revision) for c in session.query(models.GroupReviewCell).all()),
                     sorted((v.workspace_id, v.group_id, v.sprint_id, v.sprint_order, v.view_revision, repr(v.layouts))
-                           for v in session.query(models.GroupSprintReviewView).all()))
+                           for v in session.query(models.GroupSprintReviewView).options(*VIEW_COLUMNS).all()))
 
     def legacy_state(self):
         with db_engine.session_scope(self.url) as session:
@@ -514,12 +522,12 @@ class DifferentialTests(RevisionCase):
                 except ValueError:
                     pass  # the script refuses the workspace; the revision must skip it too
         with db_engine.session_scope(script_url) as session:
-            schemas = {s.id: s for s in session.query(models.WorkspaceGroupReviewSchema).all()}
+            schemas = {s.id: s for s in session.query(models.WorkspaceGroupReviewSchema).options(*SCHEMA_COLUMNS).all()}
             state = (sorted((s.workspace_id, s.group_id, s.schema_revision, repr(s.columns)) for s in schemas.values()),
                      sorted((schemas[c.schema_id].workspace_id, schemas[c.schema_id].group_id, c.issue_id, c.row_kind,
                              c.column_id, repr(c.value), c.revision) for c in session.query(models.GroupReviewCell).all()),
                      sorted((v.workspace_id, v.group_id, v.sprint_id, v.sprint_order, v.view_revision, repr(v.layouts))
-                            for v in session.query(models.GroupSprintReviewView).all()))
+                            for v in session.query(models.GroupSprintReviewView).options(*VIEW_COLUMNS).all()))
         db_engine.dispose_engines()
         return state
 

@@ -843,5 +843,114 @@ class StoryReadinessConcurrentBatchTests(unittest.TestCase):
                     self.assertTrue(self._slots_all_free())
 
 
+class NewModelStoryReadinessTests(unittest.TestCase):
+    """Initiative aliases need one actionable selected-Sprint Team Epic per Team (plan 4C)."""
+
+    GROUP = {'id': 'dept', 'revision': 1, 'teams': [
+        {'id': 'team-a', 'name': 'Alpha', 'labels': ['alias_a']},
+        {'id': 'team-b', 'name': 'Beta', 'labels': ['alias_b']},
+    ]}
+
+    def roles(self):
+        from tests.test_planning_work_profiles import bundle, context
+        from backend.services.planning_work import WorkRoles
+        return WorkRoles(context('2027Q1', bundle()))
+
+    def compute(self, search):
+        eng_routes.bind_server_globals(vars(eng_routes))
+        roles = self.roles()
+        config = roles.flat_admin_settings()
+        calls = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/sprint/'):
+                return _FakeResponse(200, {'id': 42, 'name': 'Q1', 'state': 'active'})
+            if path == '/rest/api/3/field':
+                return _FakeResponse(200, [{'id': 'customfield_10014', 'name': 'Epic Link'}])
+            raise AssertionError(path)
+
+        def jira_search(payload, **_kwargs):
+            calls.append(payload)
+            return search(payload)
+
+        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+             patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
+            result, _timing = eng_routes._story_readiness_compute(
+                SimpleNamespace(auth_mode='atlassian_oauth'), ('42', 'Q1', 'active'), self.GROUP,
+                eng_routes._story_readiness_projects(config, allow_other=True), config, transport, (), roles)
+        return result, calls
+
+    @staticmethod
+    def initiative(key, labels):
+        return {'id': key[-1], 'key': key, 'fields': {
+            'summary': key, 'status': {'name': 'To Do'}, 'labels': labels, 'components': [],
+            'project': {'key': 'PLAN'}, 'parent': None}}
+
+    @staticmethod
+    def epic(key, parent, team, sprint, status='To Do'):
+        return {'key': key, 'fields': {
+            'status': {'name': status}, 'parent': {'key': parent},
+            'customfield_10101': [{'id': sprint}] if sprint else [], 'customfield_30101': {'id': team}}}
+
+    def test_one_team_epic_in_the_selected_sprint_covers_that_team_only(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'issuetype = 10001' in jql and 'labels in' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a', 'alias_b'])], 'isLast': True})
+        result, calls = self.compute(search)
+        self.assertEqual([item['key'] for item in result['epics']], ['PLAN-1'])
+        self.assertEqual(result['epics'][0]['missingTeams'],
+                         [{'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'}])
+        self.assertEqual(result['epics'][0]['projectClass'], 'other')
+        discovery = calls[0]['jql']
+        self.assertIn('issuetype = 10001', discovery)
+        self.assertIn('status not in (Done, Killed, Incomplete, Postponed)', discovery)
+        self.assertNotIn('customfield_10101', discovery)   # Initiatives carry no Sprint
+        self.assertNotIn('_candidate', discovery)       # quarter labels are not required by the new source
+        children = [call['jql'] for call in calls if 'issuetype = 10002' in call['jql']]
+        self.assertEqual(len(children), 1)
+        self.assertNotIn('customfield_10014', children[0])  # Epic Link is Story->Epic only
+        self.assertNotIn('issuetype = Story', children[0])
+
+    def test_actionable_epics_for_every_team_leave_nothing_missing(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'labels in' in jql and 'issuetype = 10001' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42'),
+                                                       self.epic('PLAN-12', 'PLAN-1', 'team-b', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a', 'alias_b'])], 'isLast': True})
+        result, _calls = self.compute(search)
+        self.assertEqual(result['epics'], [])
+
+    def test_partial_child_source_never_yields_missing_child_requirements(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'labels in' in jql and 'issuetype = 10001' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(500, {})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a'])], 'isLast': True})
+        with self.assertRaises(RuntimeError):
+            self.compute(search)
+
+    def test_single_other_scope_is_accepted_and_empty_or_partial_access_is_not(self):
+        payload = _complete_input(projectAccessSnapshot={'other': 'accessible'})
+        payload['epics'][0]['projectClass'] = 'other'
+        self.assertTrue(project_story_readiness(payload)['complete'])
+        for access in ({}, {'other': 'unknown'}, {'product': 'accessible'},
+                       {'product': 'accessible', 'tech': 'accessible', 'other': 'inaccessible'}):
+            with self.subTest(access=access), self.assertRaises(InvalidCompleteReadinessInput):
+                project_story_readiness(_complete_input(projectAccessSnapshot=access))
+
+
 if __name__ == "__main__":
     unittest.main()

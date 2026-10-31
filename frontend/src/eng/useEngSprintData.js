@@ -77,6 +77,10 @@ function taskLoadErrorMessage(err, backendUrl) {
 }
 
 export function useEngSprintData({
+    // Combined (rnd_2027) model: ONE project=all request fills the product lane slots; no Tech request is made or faked.
+    // The accepted configuration context itself is stamped on every request by the API layer (workStructure/requestContext.js);
+    // this hook only needs the model, which defaults to Legacy.
+    workModel,
     backendUrl,
     selectedSprint,
     selectedSprintName,
@@ -118,7 +122,12 @@ export function useEngSprintData({
     strictBoardActive = false,
     issueEditState,
 }) {
-    const fetchTasks = async (project, options = {}) => {
+    // Same test as engWorkModel.js `isCombinedWorkModel`, inlined: this module is source-loaded by the collector harness tests.
+    const combinedLane = workModel === 'rnd_2027';
+    const bothLanesLoaded = () => combinedLane || (sprintLoadRef.current.product && sprintLoadRef.current.tech);
+    // `project` names the lane; the combined model has one lane (`product` slots) whose request is project=all.
+    const fetchTasks = async (lane, options = {}) => {
+        const project = combinedLane ? 'all' : lane;
         if (strictBoardActive) return IGNORED_RESULT;
         const readToken = issueEditState?.beginRead();
         let tokenRetained = false;
@@ -216,7 +225,7 @@ export function useEngSprintData({
 
             if (!options.automatic && options.updateEpics !== false) {
                 setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
-                if (project === 'product') {
+                if (project === 'product' || project === 'all') {
                     setProductEpicsInScope(filteredEpicsInScope);
                 } else if (project === 'tech') {
                     setTechEpicsInScope(filteredEpicsInScope);
@@ -267,7 +276,7 @@ export function useEngSprintData({
 
     const fetchBacklogEpics = async (project, { signal } = {}) => {
         if (strictBoardActive) return [];
-        if (!isFutureSprintSelected) return [];
+        if (!isFutureSprintSelected || combinedLane) return [];
         if (activeGroupId && activeGroupTeamIds.length === 0) return [];
         const payload = await requestBacklogEpics(backendUrl, { project, teamIds: activeGroupTeamIds, signal });
         return Array.isArray(payload.epics) ? payload.epics : [];
@@ -290,7 +299,7 @@ export function useEngSprintData({
                     product: true,
                     tech: current.sprintId === sprintId ? current.tech : false
                 };
-                if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+                if (bothLanesLoaded()) {
                     lastLoadedSprintRef.current = sprintId;
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
@@ -312,7 +321,7 @@ export function useEngSprintData({
                 product: true,
                 tech: current.sprintId === sprintId ? current.tech : false
             };
-            if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+            if (bothLanesLoaded()) {
                 lastLoadedSprintRef.current = sprintId;
             }
             return ENG_TASK_LOAD_OUTCOME.APPLIED;
@@ -326,6 +335,8 @@ export function useEngSprintData({
 
     const loadTechTasks = async ({ forceRefresh = false, shouldApplyResult, measurement, operatorRefresh } = {}) => {
         if (strictBoardActive) return ENG_TASK_LOAD_OUTCOME.IGNORED;
+        // One combined lane: there is no Tech request, so nothing is marked loaded and no Tech state is written.
+        if (combinedLane) return ENG_TASK_LOAD_OUTCOME.APPLIED;
         const sprintId = selectedSprint;
         setTechTasksLoading(true);
         let retainedReadToken;
@@ -342,7 +353,7 @@ export function useEngSprintData({
                     product: current.sprintId === sprintId ? current.product : false,
                     tech: true
                 };
-                if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+                if (bothLanesLoaded()) {
                     lastLoadedSprintRef.current = sprintId;
                 }
                 return ENG_TASK_LOAD_OUTCOME.APPLIED;
@@ -365,7 +376,7 @@ export function useEngSprintData({
                 product: current.sprintId === sprintId ? current.product : false,
                 tech: true
             };
-            if (sprintLoadRef.current.product && sprintLoadRef.current.tech) {
+            if (bothLanesLoaded()) {
                 lastLoadedSprintRef.current = sprintId;
             }
             return ENG_TASK_LOAD_OUTCOME.APPLIED;
@@ -392,7 +403,8 @@ export function useEngSprintData({
                 shouldApplyResult,
                 signal, background: automatic
             }),
-            fetchTasks('tech', {
+            // The combined model has no Tech lane: no request is made; its outcome mirrors an applied lane for the caller's reading.
+            combinedLane ? Promise.resolve(ENG_TASK_LOAD_OUTCOME.APPLIED) : fetchTasks('tech', {
                 purpose: 'alerts',
                 useLoading: false,
                 setErrorOnFailure: false,
@@ -511,7 +523,7 @@ export function useEngSprintData({
             } });
         const product = loadProductTasks({ ...options, measurement });
         const tech = loadTechTasks({ ...options, measurement });
-        for (const lane of [product, tech]) {
+        for (const lane of combinedLane ? [product] : [product, tech]) {
             void lane.then(outcome => {
                 if (outcome === ENG_TASK_LOAD_OUTCOME.APPLIED) return measurement.contentReady();
             }).catch(() => {});
@@ -612,10 +624,10 @@ export function useEngSprintData({
         if (strictBoardActive) return lanes;
         const wants = call => calls.includes(call);
         await Promise.all([
-            ...Object.keys(requests).filter(wants).flatMap(call => ['product', 'tech'].map(async project => {
+            ...Object.keys(requests).filter(wants).flatMap(call => (combinedLane ? ['product'] : ['product', 'tech']).map(async project => {
                 lanes[project][call] = await fetchAlertLane(project, { epicKey, signal, epicRequest: requests[call] });
             })),
-            ...(wants('backlog') ? ['product', 'tech'].map(async project => { lanes[project].backlog = await fetchEpicBacklogLane(project, { epicKey, signal }); }) : []),
+            ...(wants('backlog') && !combinedLane ? ['product', 'tech'].map(async project => { lanes[project].backlog = await fetchEpicBacklogLane(project, { epicKey, signal }); }) : []),
             ...(wants('missingInfo') ? [(async () => { lanes.missingInfo = await fetchEpicMissingInfoLane({ epicKey, signal }); })()] : []),
         ]);
         return lanes;
@@ -627,6 +639,7 @@ export function useEngSprintData({
         const release = () => { if (!released) { released = true; retained.forEach(token => issueEditState?.finishRead(token)); } };
         const fetchLane = async project => {
             if (pendingSources && !pendingSources.includes(`eng_${project}`)) return { status: 'ignored' };
+            if (combinedLane && project === 'tech') return { status: 'ignored' };
             const data = await fetchTasks(project, {
                 ...(epicKey ? { epicRefresh: true, epicKeys: [epicKey] } : {}), automatic,
                 updateEpics: false, useLoading: false, setErrorOnFailure: false, forceRefresh: true,

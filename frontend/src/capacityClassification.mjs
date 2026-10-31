@@ -13,11 +13,18 @@
 //   ordinary Product-> 'product' / 'product' / 'standard'
 //   ordinary Tech   -> 'tech'    / 'tech'    / null
 
+import { isCombinedWorkModel } from './eng/engWorkModel.js';
+
+// New (`rnd_2027`) model: one combined lane, no Product/Tech attribution. The grouping parent is an
+// Initiative and Epic leaves inherit Ad Hoc from it (`epicKey`/`parentKey` carry the parent key).
+//   ordinary combined -> 'other' / 'other'  / null
+//   Ad Hoc combined   -> 'other' / 'ad_hoc' / null
+
 function normalizeKey(value) {
     return String(value || '').trim().toUpperCase();
 }
 
-export function classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet } = {}) {
+export function classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet, workModel } = {}) {
     const techKeys = techProjectKeys instanceof Set ? techProjectKeys : new Set();
     const adHocKeys = adHocEpicSet instanceof Set ? adHocEpicSet : new Set();
 
@@ -25,6 +32,9 @@ export function classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet } =
     // Story-level records carry their parent epic in `epicKey`/`parentKey`;
     // Epic-level cohort records carry their own key in `key`.
     const epicKey = normalizeKey(fields.epicKey || fields.parentKey || issue?.key);
+    if (isCombinedWorkModel(workModel)) {
+        return { projectType: 'other', capacityType: epicKey && adHocKeys.has(epicKey) ? 'ad_hoc' : 'other', productSubtype: null };
+    }
     if (epicKey && adHocKeys.has(epicKey)) {
         return { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' };
     }

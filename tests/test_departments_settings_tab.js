@@ -82,9 +82,9 @@ async function render(overrides) {
     return { markup, stubs: globalThis.__stubProps };
 }
 
-test('the container takes the 120 explicit props the interface checker verifies', () => {
-    assert.equal(PROP_NAMES.length, 120);
-    assert.equal(new Set(PROP_NAMES).size, 120);
+test('the container takes the 122 explicit props the interface checker verifies', () => {
+    assert.equal(PROP_NAMES.length, 122);
+    assert.equal(new Set(PROP_NAMES).size, 122);
     assert.deepEqual([...PROP_NAMES].sort(), PROP_NAMES, 'props are alphabetical like the other containers');
     assert.ok(!/use(State|Effect|Ref|Memo|Callback)\(/.test(source), 'the container must stay stateless');
 });
@@ -108,7 +108,7 @@ test('only the active panel mounts, and the Team groups panel forwards its expli
     const callSource = source.slice(source.indexOf('<TeamGroupsSettings'), source.indexOf('/>', source.indexOf('<TeamGroupsSettings')));
     const expected = callSource.split('\n').map((line) => line.trim().replace(/,$/, '')).filter((line) => /^[A-Za-z_$][\w$]*$/.test(line)).sort();
     assert.deepEqual(forwarded, expected);
-    assert.equal(forwarded.length, 90);
+    assert.equal(forwarded.length, 91);
     assert.equal(teams.stubs.TeamGroupsSettings.groupManageTab, 'teams');
     assert.equal(teams.stubs.FirstRunGroupConfigurationGuide, undefined, 'the guide stays hidden outside first-run');
 });
@@ -152,7 +152,7 @@ test('the Boards panel derives the group-board props from the saved board and pr
     const { markup, stubs } = await render({ groupManageTab: 'boards', updateGroupDraftBoard: (...args) => calls.push(args) });
     assert.ok(markup.includes('id="department-settings-boards-panel"'));
     const props = stubs.GroupBoardsTab;
-    assert.deepEqual(Object.keys(props).sort(), ['backendUrl', 'board', 'boardId', 'epicsByStatus', 'filteredGroupDrafts', 'groupManageTab', 'groupName', 'groupSearchQuery', 'onChange', 'projectScopeKey', 'random', 'setActiveGroupDraftId', 'setGroupSearchQuery', 'setShowGroupListMobile', 'showGroupListMobile', 'activeGroupDraft'].sort());
+    assert.deepEqual(Object.keys(props).sort(), ['backendUrl', 'board', 'boardId', 'catalogScope', 'epicsByStatus', 'filteredGroupDrafts', 'groupManageTab', 'groupName', 'groupSearchQuery', 'onChange', 'projectScopeKey', 'random', 'setActiveGroupDraftId', 'setGroupSearchQuery', 'setShowGroupListMobile', 'showGroupListMobile', 'activeGroupDraft'].sort());
     assert.equal(props.backendUrl, 'http://example.test');
     assert.equal(props.boardId, '12', 'saved, not draft, board id');
     assert.equal(props.projectScopeKey, 'A,B', 'upper-cased, trimmed, blank-free and sorted project keys');

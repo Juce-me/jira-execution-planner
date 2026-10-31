@@ -169,7 +169,7 @@ test('the Catch Up filter state round-trips through local state and per-group sn
             `Expected ${key} in local state, the per-group default, the snapshot and the restore (found ${occurrences})`
         );
     });
-    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails })'));
+    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, workModel })'));
     assert.ok(dashboardSource.includes('engCatchUpFilters.admitsProjectTrack(task)'));
 });
 

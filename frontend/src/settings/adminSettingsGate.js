@@ -6,7 +6,10 @@ const GATED_ADMIN_SETTINGS_TABS = ['scope', 'source'];
 export const ADMIN_SETTINGS_GATE_PENDING = Object.freeze({ status: 'pending', missing: [], contacts: [] });
 
 export function resolveAdminSettingsGate(config) {
-    const reported = Array.isArray(config?.adminSettingsMissing) ? config.adminSettingsMissing : [];
+    // After promotion setup is per configuration (`adminSettingsMissingByConfiguration`) and is never
+    // an auto-open or ENG-blocking gate; the flat `adminSettingsMissing` list describes the old model.
+    const promoted = config?.workConfigurationsPromoted === true;
+    const reported = !promoted && Array.isArray(config?.adminSettingsMissing) ? config.adminSettingsMissing : [];
     const missing = GATED_ADMIN_SETTINGS_TABS.filter(tab => reported.includes(tab));
     const contacts = Array.isArray(config?.adminContacts)
         ? config.adminContacts.filter(name => typeof name === 'string' && name.trim())
@@ -37,4 +40,13 @@ export function useAdminSettingsGate({ canEditSettings, openSettings }) {
         return next;
     }, []);
     return [gate, applyConfig, setGate];
+}
+
+// Per-configuration missing setup after promotion, for display only (never a gate).
+export function resolveMissingByConfiguration(config) {
+    const raw = config?.adminSettingsMissingByConfiguration;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    return Object.fromEntries(Object.entries(raw)
+        .filter(([, list]) => Array.isArray(list))
+        .map(([id, list]) => [id, list.filter(item => typeof item === 'string')]));
 }

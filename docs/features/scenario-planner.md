@@ -278,3 +278,7 @@ const fromRect = visibleRects.get(edge.from) || getFallbackRect(edge.from);
 const toRect = visibleRects.get(edge.to) || getFallbackRect(edge.to);
 if (!fromRect || !toRect) return;
 ```
+
+## Quarterly project configurations
+
+Scenario history, save, reload and rollback are not rebuilt for the quarterly work structure. After promotion `POST /api/scenario` and a draft reload admit `filters.sprint` through its saved source and run only for a complete Legacy configuration, using its captured fields and scope; a new-model, unknown or unresolved source answers `409 scenario_not_supported` before the planner or any Jira query. A request that names a `quarter`/`configurationId` is checked the same way on the stored-draft routes; stored Legacy drafts, presence, locks and preview keep their current rights, actual writeback stays blocked and the legacy override POST stays unreachable in DB/OAuth. No Scenario stamp or snapshot format is stored.

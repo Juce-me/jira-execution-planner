@@ -4,6 +4,8 @@ import AdminAccessSettings from './AdminAccessSettings.jsx';
 import AdminSettingsTabs from './AdminSettingsTabs.jsx';
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import PerformanceSettings from './PerformanceSettings.jsx';
+import WorkConfigurationsEditor, { WorkConfigurationUnavailable } from './WorkConfigurationsEditor.jsx';
+import { effectiveAdminTab } from './settingsTabIds.js';
 
 export default function AdminSettingsContainer({
     BACKEND_URL,
@@ -166,22 +168,41 @@ export default function AdminSettingsContainer({
     teamFieldSearchQuery,
     teamFieldSearchResults,
     updatePriorityWeightDraft,
+    workConfig,
+    workConfigMode,
 }) {
+    const activeAdminTab = effectiveAdminTab(workConfigMode, groupManageTab);
     return (
         <>
         <AdminSettingsTabs
+            workConfigMode={workConfigMode}
             activeTab={groupManageTab}
             performanceAvailable={performanceAdminAvailable}
             accessAvailable={adminAccessAvailable}
             onSelect={selectAdminSettingsTab}
             onKeyDown={handleAdminSettingsTabKeyDown}
         />
+        {workConfig?.saveFeedback && (
+            <p className="group-field-helper work-config-save-feedback" role="status" data-work-config-save-feedback>{workConfig.saveFeedback}</p>
+        )}
         <div
-            id={`admin-settings-${groupManageTab}-panel`}
+            id={`admin-settings-${activeAdminTab}-panel`}
             role="tabpanel"
-            aria-labelledby={`admin-settings-${groupManageTab}-tab`}
+            aria-labelledby={`admin-settings-${activeAdminTab}-tab`}
         >
-        {groupManageTab === 'performance' ? (
+        {activeAdminTab === 'project' ? (
+        workConfigMode === 'unavailable' ? <WorkConfigurationUnavailable /> : (
+        <WorkConfigurationsEditor
+            BACKEND_URL={BACKEND_URL}
+            workConfig={workConfig}
+            jiraProjects={jiraProjects}
+            loadingProjects={loadingProjects}
+            jiraFields={jiraFields}
+            loadingFields={loadingFields}
+            resolveProjectName={resolveProjectName}
+        />
+        )
+        ) : groupManageTab === 'performance' ? (
         performanceAdminAvailable ? <PerformanceSettings backendUrl={BACKEND_URL} /> : null
         ) : groupManageTab === 'access' ? (
         <AdminAccessSettings

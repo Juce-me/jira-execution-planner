@@ -4,7 +4,7 @@ import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildStatusStyle, resolveStatusColumnColour } from '../issues/statusColumnColours.js';
-import { loadBoardStatusCatalog } from './boardStatusCatalog.js';
+import { catalogScopeKey, loadBoardStatusCatalog } from './boardStatusCatalog.js';
 import { deriveDefaultBoardColumns } from '../eng/engBoardColumns.js';
 import {
     BOARD_COLUMN_COLOURS,
@@ -115,6 +115,7 @@ export default function GroupBoardSettings(props) {
         backendUrl = '',
         boardId = '',
         projectScopeKey = '',
+        catalogScope = null,
         groupName = '',
         epicsByStatus = {},
         onChange,
@@ -250,7 +251,7 @@ export default function GroupBoardSettings(props) {
         setCatalog((current) => {
             return current.state === 'loading' ? current : { ...current, state: 'loading', code: '', message: '' };
         });
-        loadBoardStatusCatalog(backendUrl, { boardId, projectScopeKey })
+        loadBoardStatusCatalog(backendUrl, { boardId, projectScopeKey, catalogScope })
             .then((payload) => {
                 if (cancelled) return;
                 const entries = (payload?.statuses || []).filter((status) => status?.name);
@@ -277,7 +278,7 @@ export default function GroupBoardSettings(props) {
                 });
             });
         return () => { cancelled = true; };
-    }, [backendUrl, boardId, projectScopeKey]);
+    }, [backendUrl, boardId, projectScopeKey, catalogScopeKey(catalogScope)]);
 
     const commit = (next) => {
         setColumns(next);

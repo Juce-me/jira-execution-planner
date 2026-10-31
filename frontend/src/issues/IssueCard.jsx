@@ -147,7 +147,9 @@ export default function IssueCard({
     });
     const storyPoints = task.fields.customfield_10004;
     const fieldEditingEnabled = issueFieldEdits
-        && String(task.fields.issuetype?.name || '').trim().toLowerCase() === 'story'
+        // A card is the planning leaf: a Story, or an Epic in the combined model (its leaf level). The server alone decides
+        // the write target from the mapped type; a parent never renders as a card, so this opens nothing new.
+        && ['story', 'epic'].includes(String(task.fields.issuetype?.name || '').trim().toLowerCase())
         && task.fields.issuetype?.subtask !== true;
     const fieldIsActive = field => fieldEditingEnabled
         && issueFieldEdits.activeEditor?.issueKey === task.key

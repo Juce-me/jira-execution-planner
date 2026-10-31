@@ -1,5 +1,6 @@
 import { fetchCsrfToken } from './authApi.js';
 import { trackedFetch } from './http.js';
+import { getActiveWorkContext, isStaleWorkContextError, reportWorkContextStale, stampWriteBody, stampWriteParams } from '../workStructure/requestContext.js';
 
 export const REVIEW_REQUEST_TIMEOUT_MS = 20000;
 const url = (backendUrl, sprintId, suffix = '') => `${backendUrl}/api/eng/sprints/${encodeURIComponent(String(sprintId))}/review${suffix}`;
@@ -35,6 +36,8 @@ async function request(backendUrl, sprintId, suffix, method, payload, { signal, 
             const error = new Error(data.message || 'Review request failed.');
             error.status = response.status;
             error.code = data.code || data.error;
+            // The rejected draft stays with the caller; the dashboard re-reads the configuration, nothing replays.
+            if (isStaleWorkContextError(error)) reportWorkContextStale();
             if (response.status === 409) error.conflict = { schemaConflict: data.schemaConflict, viewConflict: data.viewConflict, cellConflicts: data.cellConflicts || [] };
             throw error;
         }
@@ -49,6 +52,15 @@ async function request(backendUrl, sprintId, suffix, method, payload, { signal, 
     }
 }
 
-export const fetchSprintReview = (backendUrl, sprintId, { groupId, ...options } = {}) => request(backendUrl, sprintId, groupId == null ? '' : `?groupId=${encodeURIComponent(groupId)}`, 'GET', null, options);
-export const readSprintReviewValues = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '/values/read', 'POST', payload, options);
-export const saveSprintReview = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '', 'PATCH', payload, options);
+// The review namespace follows the configuration the call is stamped with, so an era switch reads that era's own
+// definitions and layout. The context active when the call is made is the one it carries and reports back.
+export const reviewQuery = (groupId) => {
+    // The group keeps its encodeURIComponent form (unpromoted URLs are byte-identical); the stamp appends after it.
+    const stamp = stampWriteParams(new URLSearchParams()).toString();
+    const parts = [groupId == null ? '' : `groupId=${encodeURIComponent(groupId)}`, stamp].filter(Boolean);
+    return parts.length ? `?${parts.join('&')}` : '';
+};
+export const fetchSprintReview = (backendUrl, sprintId, { groupId, ...options } = {}) => request(backendUrl, sprintId, reviewQuery(groupId), 'GET', null, options);
+export const readSprintReviewValues = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '/values/read', 'POST', stampWriteBody(payload), options);
+export const saveSprintReview = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '', 'PATCH', stampWriteBody(payload), options);
+export const activeReviewContext = () => getActiveWorkContext();

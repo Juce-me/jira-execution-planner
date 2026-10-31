@@ -14,7 +14,7 @@ import { matchesEngBoardSearch } from './engBoardSearch.js';
 // the facets counted, not over the story-level population.
 export function useEngBoardFilters({
     scopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection,
-    strictEpicGroups = null, filtersEnabled = true,
+    strictEpicGroups = null, filtersEnabled = true, workModel,
 }) {
     const epicGroups = React.useMemo(
         () => Array.isArray(strictEpicGroups)
@@ -27,8 +27,8 @@ export function useEngBoardFilters({
         [scopeTasks, epicsInScope, epicDetails, strictEpicGroups]
     );
     const facetModel = React.useMemo(
-        () => buildEngBoardFacetModel({ epicGroups, isTechTask }),
-        [epicGroups, isTechTask]
+        () => buildEngBoardFacetModel({ epicGroups, isTechTask, workModel }),
+        [epicGroups, isTechTask, workModel]
     );
     const boardFilters = React.useMemo(
         () => resolveEngBoardFilters({ model: facetModel, selection: filtersEnabled ? selection : {} }),

@@ -20,6 +20,12 @@ export function formatStoryPointsFixed(task) {
     return (Number.isNaN(value) ? 0 : value).toFixed(1);
 }
 
+// Story Points display copy: a null/empty/unparseable value reads as `0 SP` while the source value stays null internally.
+export function formatStoryPointsLabel(task) {
+    const value = parseFloat(task?.fields?.customfield_10004 || 0);
+    return `${Number.isNaN(value) ? 0 : value} SP`;
+}
+
 export const PRIORITY_ORDER = {
     'Blocker': 0,
     'Highest': 1,

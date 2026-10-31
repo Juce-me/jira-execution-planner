@@ -38,6 +38,8 @@ bp = Blueprint('scenario_draft_routes', __name__)
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 SCENARIO_RELOAD_TIMEOUT_SECONDS = 20
+# Codes a reload gate raises through the loader (the fork path only carries the message text).
+_RELOAD_DENIAL_CODES = frozenset({'scenario_not_supported', 'configuration_incomplete', 'configuration_scope_changed'})
 
 
 @bp.before_request
@@ -83,6 +85,17 @@ def _require_db_storage_and_auth_context():
     except DatabaseConfigurationError:
         return _storage_error_response()
     return None
+
+
+@bp.before_request
+def _deny_unsupported_scenario_context():
+    """A request that names a selected quarter/configuration may only address a complete Legacy source."""
+    body = request.get_json(force=True, silent=True) if request.method in UNSAFE_METHODS else None
+    selectors = scenario_selectors(request.args, body if isinstance(body, dict) else None)
+    if not selectors:
+        return None
+    _work_request, error = scenario_work_gate(g.auth_context, selectors=selectors)
+    return error
 
 
 def _storage_error_response():
@@ -143,6 +156,16 @@ def scenario_draft_reload_source_loader(context, draft, timeout_seconds):
         raise ScenarioDraftReloadUnavailable('browser session is required for DB OAuth Scenario reload')
     with app.test_request_context('/api/scenario', method='POST', json=payload):
         session['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
+        # Resolve the saved source's Legacy context before the planner or any moved getter runs; the
+        # planner then reuses this captured context instead of resolving a calendar/global default.
+        work_request, gate_error = server.scenario_work_gate(
+            server.current_request_auth_context(), sprint=(payload.get('filters') or {}).get('sprint'),
+            require_source=True)
+        if gate_error is not None:
+            gate_body = gate_error[0].get_json() or {}
+            raise ScenarioDraftReloadUnavailable(str(gate_body.get('error') or 'scenario_not_supported'))
+        g.scenario_work_gate_done = True
+        g.scenario_work_request = work_request
         response = planner()
 
     if isinstance(response, tuple):
@@ -229,6 +252,13 @@ def api_scenario_drafts_get():
 @bp.route('/api/scenario/drafts', methods=['POST'])
 def api_scenario_drafts_post():
     body = _request_json()
+    scope = body.get('scope') if isinstance(body.get('scope'), dict) else {}
+    scope_filters = scope.get('filters') if isinstance(scope.get('filters'), dict) else scope
+    if scope_filters.get('sprint') not in (None, ''):
+        # A new draft naming its source may only name a complete Legacy source; no stamp is stored.
+        _work_request, gate_error = scenario_work_gate(g.auth_context, sprint=scope_filters.get('sprint'))
+        if gate_error is not None:
+            return gate_error
     try:
         return jsonify(save_draft(
             g.auth_context,
@@ -449,6 +479,8 @@ def api_scenario_draft_reload_from_jira_route(draft_id):
     except ScenarioDraftReloadTimeout:
         return _reload_timeout_response()
     except ScenarioDraftReloadUnavailable as error:
+        if str(error) in _RELOAD_DENIAL_CODES:
+            return _error_response(str(error), 'Scenario Planner is not available for this period.', 409)
         return _error_response('scenario_reload_unavailable', str(error), 503)
     except ScenarioDraftValidationError as error:
         return _validation_error_response(error)

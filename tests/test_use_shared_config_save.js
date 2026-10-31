@@ -187,8 +187,8 @@ async function mount(options) {
 const sequence = (log) => log.map((entry) => entry[0]);
 const before = (log, first, second) => { const a = sequence(log).indexOf(first); const b = sequence(log).indexOf(second); return a !== -1 && b !== -1 && a < b; };
 
-test('interface: 127 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
-    assert.equal(INPUT_NAMES.length, 127);
+test('interface: 128 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
+    assert.equal(INPUT_NAMES.length, 128);
     for (const getter of GETTERS) assert.ok(INPUT_NAMES.includes(getter), getter);
     for (const forbidden of ['loadConfig', 'loadSprints', 'activeDepartmentSettingsTab', ...(CLOSE_VIA_GETTER ? ['closeGroupManage'] : ['getCloseGroupManage'])]) assert.equal(INPUT_NAMES.includes(forbidden), false, `${forbidden} is reached through a getter`);
     const mod = await load();
@@ -588,7 +588,7 @@ test('verbatim closures: no useCallback or latest-ref around the save functions;
     assert.equal(/React\.useCallback\(\(\) => saveAllSettings/.test(hookSource), false);
     assert.equal(/latest.*Ref|useLatest\(/i.test(mainSource.replace('useLatestWorkspaceConfig', '')), false);
     for (const name of ['saveGroupsConfig', 'saveAllSettingsOnce', 'saveAllSettings']) assert.ok(hookSource.includes(`const ${name} = async`), name);
-    assert.ok(hookSource.includes('}, [adminAccess, firstRunConfigurationSession]);'));
+    assert.ok(hookSource.includes('}, [adminAccess, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);'));
     assert.ok(hookSource.includes('}, [firstRunConfigurationSession, restoreSettingsDraftsToCommittedBaselines]);'));
     assert.equal((mainSource.match(/\buseEffect\(|React\.useEffect\(/g) || []).length, 0, 'the save hook registers no effect, so its call position crosses none');
 });

@@ -65,7 +65,8 @@ def normalize_epm_sprint_field(raw):
     return [normalized_by_id[sprint_id] for sprint_id in sorted(normalized_by_id)]
 
 
-def build_epm_scope_clause(linkage):
+def build_epm_scope_clause(linkage, epic_link=True):
+    """Scope clause for a project's linkage; ``epic_link=False`` drops the Legacy-only Epic Link relation."""
     linkage = linkage or {}
     labels = sorted(set(linkage.get('labels') or []))
     epic_keys = sorted(set(linkage.get('epicKeys') or []))
@@ -76,6 +77,7 @@ def build_epm_scope_clause(linkage):
     if epic_keys:
         quoted_epics = ', '.join(_quote_jql_value(key) for key in epic_keys)
         clauses.append(f'key in ({quoted_epics})')
-        clauses.append(f'"Epic Link" in ({quoted_epics})')
+        if epic_link:
+            clauses.append(f'"Epic Link" in ({quoted_epics})')
         clauses.append(f'parent in ({quoted_epics})')
     return '(' + ' OR '.join(clauses) + ')' if clauses else ''

@@ -1,4 +1,5 @@
 import { apiFetch, getJson } from './http.js';
+import { applyContextToParams } from '../workStructure/configurationContext.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
@@ -30,6 +31,7 @@ export const saveTeamCatalog = (backendUrl, { catalog, meta, merge }) =>
     postJsonWithCsrf(backendUrl, '/api/team-catalog', { catalog, meta, merge });
 
 export const fetchAllTeams = (backendUrl, {
+    context = null,
     sprint,
     refresh = false,
     completionAttemptId = null,
@@ -49,6 +51,7 @@ export const fetchAllTeams = (backendUrl, {
     if (refresh) params.set('refresh', 'true');
     if (completionAttemptId) params.set('completionAttemptId', String(completionAttemptId));
     if (catalogIdentity) params.set('catalogIdentity', String(catalogIdentity));
+    applyContextToParams(params, context, { includeQuarter: false });
     return apiFetch(`${backendUrl}/api/teams?${params.toString()}`, {
         cache: 'no-cache',
         signal,
@@ -101,10 +104,15 @@ export const searchBoards = (backendUrl, { query, signal }) => {
     });
 };
 
-export const searchComponents = (backendUrl, { query, signal }) => {
+export const searchComponents = (backendUrl, { query, signal, configurationId = '', configurationRevision = null, quarter = '' }) => {
     const params = new URLSearchParams();
     params.set('query', query);
     params.set('limit', '15');
+    if (configurationId) {
+        params.set('configurationId', String(configurationId));
+        params.set('configurationRevision', String(configurationRevision ?? ''));
+        if (quarter) params.set('quarter', String(quarter));
+    }
     return apiFetch(`${backendUrl}/api/components?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },

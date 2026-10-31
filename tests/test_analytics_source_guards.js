@@ -649,7 +649,7 @@ test('epic refresh analytics keeps per-click requests on a dedicated api surface
     assert.ok(jsSetValues(analyticsSource, 'API_SURFACES').has('epic_refresh'));
     assert.match(engApi, /apiSurface: 'epic_refresh'/);
     assert.match(engApi, /featureName: 'epic_refresh'/);
-    assert.match(engApi, /trackedFetch\(apiSurface, /);
+    assert.match(engApi, /(?:trackedFetch|scopedTracked)\(apiSurface, /);
     assert.match(yaml, /^\s{8}issue_count_bucket: "\{\{DLV - issue_count_bucket\}\}"$/m);
     assert.doesNotMatch(yaml, /custom_dimensions:[\s\S]*?parameter_name: "issue_count_bucket"/);
     assert.ok(analyticsDoc.includes('`epic_refresh_action`'));

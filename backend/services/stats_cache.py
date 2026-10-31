@@ -46,7 +46,11 @@ def invalidate_stats_cache(cache_file, log_warning_fn=None):
         return False
 
 
-def build_stats_cache_key(sprint_name, base_jql, team_ids, *, order_by, group_id=None):
+def build_stats_cache_key(sprint_name, base_jql, team_ids, *, order_by, group_id=None,
+                          configuration_segment=''):
     raw = f"{sprint_name}::{base_jql}::{','.join(team_ids or [])}::{order_by}::{group_id or ''}"
+    if configuration_segment:
+        # Work-configuration partition (id, revision, digest); absent keeps flat keys unchanged.
+        raw = f"{raw}::{configuration_segment}"
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"sprint:{sprint_name}:{digest}"

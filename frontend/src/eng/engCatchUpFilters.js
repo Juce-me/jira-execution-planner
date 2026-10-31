@@ -23,6 +23,7 @@
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
 import { getStatusPhaseRank } from './engTaskUtils.js';
+import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
 import {
     classifyEpicProjectTrack,
@@ -116,7 +117,10 @@ function epicForTask(task, epicDetails) {
     return epicKey ? epicDetails?.[epicKey] || null : null;
 }
 
-export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {} } = {}) {
+export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {}, workModel } = {}) {
+    // The combined model has one lane: the Projects (Product/Tech) facet stays in the positional facet list
+    // but is hidden, never counted and never filtering.
+    const combinedLane = isCombinedWorkModel(workModel);
     const statusCounts = countBy(tasks, (task) => task.fields?.status?.name);
     const priorityCounts = countBy(tasks, (task) => priorityAxisLabel(task.fields?.priority?.name));
     const projectCounts = { tech: 0, product: 0 };
@@ -125,7 +129,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
     let trackEpicTotal = 0;
     let unsetTrackEpicTotal = 0;
     tasks.forEach((task) => {
-        projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
+        if (!combinedLane) projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
         const epicKey = String(task?.fields?.epicKey || '').trim();
         const epic = epicForTask(task, epicDetails);
         if (!epicKey || !epic || countedEpicKeys.has(epicKey)) return;
@@ -140,6 +144,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
     return {
         scopeTotal,
         epicDetails,
+        workModel,
         counts: {
             status: statusCounts,
             priority: PRIORITY_AXIS.reduce((all, label) => ({ ...all, [label]: priorityCounts[label] || 0 }), {}),
@@ -164,6 +169,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
             {
                 id: 'projects',
                 label: 'Projects',
+                ...(combinedLane ? { hidden: true } : {}),
                 kind: 'multi',
                 neutralTotal: scopeTotal,
                 options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
@@ -239,7 +245,7 @@ export function resolveEngCatchUpFilters({
         facetViews,
         activeFacetCount: countActiveFacets(facetViews),
         subject: ENG_CATCH_UP_SUBJECT,
-        readoutUnit: `of ${scopeTotal} stories`,
+        readoutUnit: `of ${scopeTotal} ${workEntityNames(model.workModel).childPlural.toLowerCase()}`,
         admitsStatus: (statusName) => admits(statusView, statusName),
         admitsStatusForPlanning: (statusName) => !statusExcludes || admits(statusView, statusName),
         admitsPriority: (priorityName) => admits(priorityView, priorityAxisLabel(priorityName)),

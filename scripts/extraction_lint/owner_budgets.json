@@ -19,12 +19,12 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7302,
+    "lineCeiling": 7482,
     "hookCeilings": {
-      "useState": 117,
-      "useEffect": 69,
-      "useRef": 83,
-      "useMemo": 71,
+      "useState": 121,
+      "useEffect": 74,
+      "useRef": 85,
+      "useMemo": 72,
       "useCallback": 25,
       "useReducer": 0,
       "useLayoutEffect": 0
@@ -1084,7 +1084,8 @@
             "updateEpmLabelPrefixDraft",
             "updateEpmProjectDraft",
             "visibleEpmRootGoals",
-            "visibleEpmSubGoals"
+            "visibleEpmSubGoals",
+            "workHierarchy"
           ],
           "expandedInputNames": [
             "DEFAULT_EPM_LABEL_PREFIX",
@@ -1202,16 +1203,21 @@
             "visibleEpmRootGoals.map",
             "visibleEpmSubGoals",
             "visibleEpmSubGoals.length",
-            "visibleEpmSubGoals.map"
+            "visibleEpmSubGoals.map",
+            "workHierarchy",
+            "workHierarchy.configurationName",
+            "workHierarchy.epicName",
+            "workHierarchy.initiativeName",
+            "workHierarchy.quarter"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 116,
+          "expandedInputCount": 121,
           "returnCount": 0,
-          "propCount": 82,
+          "propCount": 83,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 116,
+          "expandedInputCeiling": 121,
           "returnCeiling": 0,
-          "propCeiling": 82,
+          "propCeiling": 83,
           "unresolved": [
             "forwarded input selectedEpmRootGoal",
             "bag labelSearchLoading dynamic member",
@@ -1228,7 +1234,7 @@
             "bag labelSearchOpen dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "f11625a91edeac00874076e44ee3eed7174da5e29a866772b688798a5ac3b973",
+            "sourceDigest": "8b7343985f6dc6f43afde5dc6010671041bfcc527d113f833be3e8d937f299a6",
             "reviewed": true,
             "memberNames": [
               "DEFAULT_EPM_LABEL_PREFIX",
@@ -1346,9 +1352,14 @@
               "visibleEpmRootGoals.map",
               "visibleEpmSubGoals",
               "visibleEpmSubGoals.length",
-              "visibleEpmSubGoals.map"
+              "visibleEpmSubGoals.map",
+              "workHierarchy",
+              "workHierarchy.configurationName",
+              "workHierarchy.epicName",
+              "workHierarchy.initiativeName",
+              "workHierarchy.quarter"
             ],
-            "rationale": "Goal display uses getEpmSubGoalDisplayParts in epmProjectUtils.mjs:key/name. Row-key maps hold boolean loading/show/change/open values, numeric indices and string queries; [rowKey] records arbitrary data keys, no hidden callbacks."
+            "rationale": "Goal display uses getEpmSubGoalDisplayParts in epmProjectUtils.mjs:key/name. Row-key maps hold boolean loading/show/change/open values, numeric indices and string queries; [rowKey] records arbitrary data keys, no hidden callbacks. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -1493,6 +1504,7 @@
         "buildEpmProjectProgress",
         "buildEpmProjectUpdateLine",
         "buildRollupTree",
+        "extractEpmHierarchyNames",
         "filterEpmProjectsForTab",
         "filterEpmRollupBoardsForSearch",
         "filterEpmSettingsProjectsForView",
@@ -1501,6 +1513,7 @@
         "getEpmProjectIdentity",
         "getEpmProjectPrerequisites",
         "getEpmProjectSortLabel",
+        "getEpmProjectStatusSemanticClass",
         "getEpmSettingsProjectsCacheKey",
         "getEpmSubGoalDisplayParts",
         "getNextEpmSubGoalSelection",
@@ -1548,7 +1561,8 @@
             "savedEpmSubGoalKeys",
             "searchQuery",
             "selectedSprint",
-            "selectedView"
+            "selectedView",
+            "workContext"
           ],
           "returnNames": [
             "epmAggregateFallback",
@@ -1596,14 +1610,15 @@
             "savedEpmSubGoalKeys",
             "searchQuery",
             "selectedSprint",
-            "selectedView"
+            "selectedView",
+            "workContext"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 15,
+          "expandedInputCount": 16,
           "returnCount": 28,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 15,
+          "expandedInputCeiling": 16,
           "returnCeiling": 28,
           "propCeiling": 0,
           "unresolved": [
@@ -1612,7 +1627,7 @@
             "forwarded input searchQuery"
           ],
           "inventory": {
-            "sourceDigest": "41c063a73e68a1b3b78608487ea475c980d91114d5addca335594e741b428fd1",
+            "sourceDigest": "bde6970c8e6924b05685842bb14ff08eb0cd5a5791485a441821b40764b8888a",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -1623,14 +1638,16 @@
               "hasSavedEpmScope",
               "initialEpmSelectedProjectId",
               "initialEpmTab",
+              "onHomeAccessDenied",
               "onServerConnectionFailure",
               "performanceGate",
               "savedEpmSubGoalKeys",
               "searchQuery",
               "selectedSprint",
-              "selectedView"
+              "selectedView",
+              "workContext"
             ],
-            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried. Reviewed EPM acceptance fix: epmProjectsLoaded is an owner-produced scalar indicating accepted metadata for the current Project-query scope; Controls and EpmView consume it for unavailable-selection guidance, without component-local load history. No new nested protocol or hook inputs."
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried. Reviewed EPM acceptance fix: epmProjectsLoaded is an owner-produced scalar indicating accepted metadata for the current Project-query scope; Controls and EpmView consume it for unavailable-selection guidance, without component-local load history. No new nested protocol or hook inputs. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -3724,30 +3741,47 @@
             "activeTab",
             "onKeyDown",
             "onSelect",
-            "performanceAvailable"
+            "performanceAvailable",
+            "workConfigMode"
           ],
           "expandedInputNames": [
             "accessAvailable",
             "activeTab",
             "onKeyDown",
             "onSelect",
-            "performanceAvailable"
+            "performanceAvailable",
+            "workConfigMode"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 5,
+          "expandedInputCount": 6,
           "returnCount": 0,
-          "propCount": 5,
+          "propCount": 6,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 5,
+          "expandedInputCeiling": 6,
           "returnCeiling": 0,
-          "propCeiling": 5,
-          "unresolved": [],
-          "inventory": {},
+          "propCeiling": 6,
+          "unresolved": [
+            "forwarded input activeTab",
+            "forwarded input workConfigMode"
+          ],
+          "inventory": {
+            "sourceDigest": "9e3a8fcf7e8c51848f7b2893853ec1093654b28d11c9819e64f87e8f41d1b07f",
+            "reviewed": true,
+            "memberNames": [
+              "accessAvailable",
+              "activeTab",
+              "onKeyDown",
+              "onSelect",
+              "performanceAvailable",
+              "workConfigMode"
+            ],
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+          },
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
               "symbol": "AdminSettingsTabs",
-              "line": 172,
+              "line": 177,
               "phase": "render"
             }
           ],
@@ -3799,13 +3833,9 @@
             "busy",
             "error",
             "group",
-            "group.id",
             "group.missingInfoComponents",
-            "group.name",
             "group.teamIds",
             "groups",
-            "groups[].id",
-            "groups[].name",
             "interactionReady",
             "onBack",
             "onCancel",
@@ -3816,11 +3846,11 @@
             "step"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 18,
+          "expandedInputCount": 14,
           "returnCount": 0,
           "propCount": 12,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 18,
+          "expandedInputCeiling": 14,
           "returnCeiling": 0,
           "propCeiling": 12,
           "unresolved": [
@@ -3835,13 +3865,9 @@
               "busy",
               "error",
               "group",
-              "group.id",
               "group.missingInfoComponents",
-              "group.name",
               "group.teamIds",
               "groups",
-              "groups[].id",
-              "groups[].name",
               "interactionReady",
               "onBack",
               "onCancel",
@@ -3851,13 +3877,13 @@
               "status",
               "step"
             ],
-            "rationale": "step is a guide-step enum. FirstRunGroupConfigurationGuide.jsx:canAdvanceFirstRunConfigurationGuide consumes group id/name/teamIds/missingInfoComponents and group-array id/name; data only."
+            "rationale": "step is a guide-step enum. FirstRunGroupConfigurationGuide.jsx:canAdvanceFirstRunConfigurationGuide consumes group id/name/teamIds/missingInfoComponents and group-array id/name; data only. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 288,
+              "line": 289,
               "phase": "render"
             }
           ],
@@ -4052,6 +4078,7 @@
             "backendUrl",
             "board",
             "boardId",
+            "catalogScope",
             "epicsByStatus",
             "groupName",
             "onChange",
@@ -4061,64 +4088,49 @@
           "expandedInputNames": [
             "backendUrl",
             "board",
-            "board.columns[].colour",
-            "board.columns[].id",
-            "board.columns[].max",
-            "board.columns[].min",
-            "board.columns[].name",
-            "board.columns[].star",
-            "board.columns[].statuses",
-            "board.doneEpicRetentionDays",
             "boardId",
+            "catalogScope",
             "epicsByStatus",
-            "epicsByStatus[status]",
             "groupName",
             "onChange",
             "projectScopeKey",
             "random"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 17,
+          "expandedInputCount": 9,
           "returnCount": 0,
-          "propCount": 8,
+          "propCount": 9,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 17,
+          "expandedInputCeiling": 9,
           "returnCeiling": 0,
-          "propCeiling": 8,
+          "propCeiling": 9,
           "unresolved": [
             "forwarded input board",
             "forwarded input backendUrl",
+            "forwarded input catalogScope",
             "forwarded input epicsByStatus"
           ],
           "inventory": {
-            "sourceDigest": "5894b54457d0999f95c2fe66b4a0e1d8987090e5f0018bb713020d147e094aef",
+            "sourceDigest": "db7d79127b577b0b8d9414835c2d40437fd4e35f6d1ff6032a28d6a8a96c20eb",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
               "board",
-              "board.columns[].colour",
-              "board.columns[].id",
-              "board.columns[].max",
-              "board.columns[].min",
-              "board.columns[].name",
-              "board.columns[].star",
-              "board.columns[].statuses",
-              "board.doneEpicRetentionDays",
               "boardId",
+              "catalogScope",
               "epicsByStatus",
-              "epicsByStatus[status]",
               "groupName",
               "onChange",
               "projectScopeKey",
               "random"
             ],
-            "rationale": "board is data normalized by groupBoardModel.js:fromStoredBoard; columns have id/name/colour/star/min/max/statuses and doneEpicRetentionDays belongs to board. epicsByStatus[status] is a numeric count; backendUrl is a string."
+            "rationale": "board is data normalized by groupBoardModel.js:fromStoredBoard; columns have id/name/colour/star/min/max/statuses and doneEpicRetentionDays belongs to board. epicsByStatus[status] is a numeric count; backendUrl is a string. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/settings/GroupBoardsTab.jsx",
               "symbol": "GroupBoardSettings",
-              "line": 82,
+              "line": 83,
               "phase": "render"
             }
           ],
@@ -4147,6 +4159,7 @@
             "backendUrl",
             "board",
             "boardId",
+            "catalogScope",
             "epicsByStatus",
             "filteredGroupDrafts",
             "groupManageTab",
@@ -4167,6 +4180,7 @@
             "backendUrl",
             "board",
             "boardId",
+            "catalogScope",
             "epicsByStatus",
             "filteredGroupDrafts",
             "groupManageTab",
@@ -4181,20 +4195,20 @@
             "showGroupListMobile"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 18,
+          "expandedInputCount": 19,
           "returnCount": 0,
-          "propCount": 16,
+          "propCount": 17,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 18,
+          "expandedInputCeiling": 19,
           "returnCeiling": 0,
-          "propCeiling": 16,
+          "propCeiling": 17,
           "unresolved": [],
           "inventory": {},
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
               "symbol": "GroupBoardsTab",
-              "line": 470,
+              "line": 471,
               "phase": "render"
             }
           ],
@@ -4350,6 +4364,7 @@
             "capacityProjectSearchOpen",
             "capacityProjectSearchQuery",
             "capacityProjectSearchResults",
+            "classificationMode",
             "clearBoardSelection",
             "deliveryOwnerFieldIdDraft",
             "deliveryOwnerFieldNameDraft",
@@ -4359,6 +4374,7 @@
             "deliveryOwnerFieldSearchOpen",
             "deliveryOwnerFieldSearchQuery",
             "deliveryOwnerFieldSearchResults",
+            "extraFieldMappings",
             "groupManageTab",
             "handleBoardSearchKeyDown",
             "handleCapacityFieldSearchKeyDown",
@@ -4370,6 +4386,7 @@
             "handleSprintFieldSearchKeyDown",
             "handleStoryPointsFieldSearchKeyDown",
             "handleTeamFieldSearchKeyDown",
+            "hierarchyMappings",
             "issueTypeSearchIndex",
             "issueTypeSearchInputRef",
             "issueTypeSearchOpen",
@@ -4380,7 +4397,9 @@
             "jiraProjects",
             "loadingFields",
             "loadingProjects",
+            "mappingFieldHelpers",
             "mappingHoverKey",
+            "mappingPreviewLabels",
             "parentNameFieldIdDraft",
             "parentNameFieldNameDraft",
             "parentNameFieldSearchHidden",
@@ -4453,6 +4472,7 @@
             "setTeamFieldSearchOpen",
             "setTeamFieldSearchQuery",
             "showTechnicalFieldIds",
+            "sourceFieldHelpers",
             "sprintFieldIdDraft",
             "sprintFieldNameDraft",
             "sprintFieldSearchHidden",
@@ -4568,10 +4588,12 @@
             "mappingPreviewLabels.childKey",
             "mappingPreviewLabels.childSummary",
             "mappingPreviewLabels.childType",
+            "mappingPreviewLabels.childType.toUpperCase",
             "mappingPreviewLabels.description",
             "mappingPreviewLabels.parentIconUrl",
             "mappingPreviewLabels.parentKey",
             "mappingPreviewLabels.parentType",
+            "mappingPreviewLabels.parentType.toUpperCase",
             "parentNameFieldIdDraft",
             "parentNameFieldNameDraft",
             "parentNameFieldSearchHidden",
@@ -4688,18 +4710,20 @@
             "updatePriorityWeightDraft"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 206,
+          "expandedInputCount": 208,
           "returnCount": 0,
-          "propCount": 152,
+          "propCount": 158,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 206,
+          "expandedInputCeiling": 208,
           "returnCeiling": 0,
-          "propCeiling": 152,
+          "propCeiling": 158,
           "unresolved": [
-            "forwarded input capacityProjectDraft"
+            "forwarded input capacityProjectDraft",
+            "forwarded input mappingFieldHelpers",
+            "forwarded input sourceFieldHelpers"
           ],
           "inventory": {
-            "sourceDigest": "d567e302be3c7d6c131380310f0dd20774df1f3bdbd32d28966ad0fe85c0e75a",
+            "sourceDigest": "9c15161e4455a2b147bedabff321718d3217442aeec9ba1d6ebcdeecff770634",
             "reviewed": true,
             "memberNames": [
               "addIssueType",
@@ -4790,10 +4814,12 @@
               "mappingPreviewLabels.childKey",
               "mappingPreviewLabels.childSummary",
               "mappingPreviewLabels.childType",
+              "mappingPreviewLabels.childType.toUpperCase",
               "mappingPreviewLabels.description",
               "mappingPreviewLabels.parentIconUrl",
               "mappingPreviewLabels.parentKey",
               "mappingPreviewLabels.parentType",
+              "mappingPreviewLabels.parentType.toUpperCase",
               "parentNameFieldIdDraft",
               "parentNameFieldNameDraft",
               "parentNameFieldSearchHidden",
@@ -4909,13 +4935,19 @@
               "teamFieldSearchResults.map",
               "updatePriorityWeightDraft"
             ],
-            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text."
+            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 199,
+              "line": 220,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
+              "symbol": "JiraFieldSettings",
+              "line": 196,
               "phase": "render"
             }
           ],
@@ -4949,6 +4981,7 @@
           "expandedInputNames": [
             "kind",
             "mapping",
+            "mapping.emptyMessage",
             "mapping.helper",
             "mapping.key",
             "mapping.label",
@@ -4956,22 +4989,20 @@
             "mapping.onSelect",
             "mapping.optional",
             "mapping.options",
-            "mapping.options[].id",
-            "mapping.options[].name",
             "mapping.previewKey",
+            "mapping.required",
             "mapping.selected",
-            "mapping.selected.id",
-            "mapping.selected.name",
+            "mapping.status",
             "mappingHoverKey",
             "setMappingHoverKey",
             "showTechnicalFieldIds"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 18,
+          "expandedInputCount": 17,
           "returnCount": 0,
           "propCount": 5,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 18,
+          "expandedInputCeiling": 17,
           "returnCeiling": 0,
           "propCeiling": 5,
           "unresolved": [
@@ -4979,11 +5010,12 @@
             "bag mapping member alias hoverKey"
           ],
           "inventory": {
-            "sourceDigest": "e878ac0285f906e2d425b1be79286cf7fb906ba1e3c2e5137e3dccd5d0304eef",
+            "sourceDigest": "4389207a82cc3ac8831b6aba9ca2b7c1c8f66953d9cbbb4bce0d80e6aba44712",
             "reviewed": true,
             "memberNames": [
               "kind",
               "mapping",
+              "mapping.emptyMessage",
               "mapping.helper",
               "mapping.key",
               "mapping.label",
@@ -4991,29 +5023,27 @@
               "mapping.onSelect",
               "mapping.optional",
               "mapping.options",
-              "mapping.options[].id",
-              "mapping.options[].name",
               "mapping.previewKey",
+              "mapping.required",
               "mapping.selected",
-              "mapping.selected.id",
-              "mapping.selected.name",
+              "mapping.status",
               "mappingHoverKey",
               "setMappingHoverKey",
               "showTechnicalFieldIds"
             ],
-            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present."
+            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/settings/JiraFieldSettings.jsx",
               "symbol": "MappingPickerRow",
-              "line": 534,
+              "line": 542,
               "phase": "render"
             },
             {
               "path": "frontend/src/settings/JiraFieldSettings.jsx",
               "symbol": "MappingPickerRow",
-              "line": 717,
+              "line": 725,
               "phase": "render"
             }
           ],
@@ -5347,7 +5377,8 @@
             "toggleDefaultGroupDraft",
             "toggleGroupVisibleInControls",
             "updateGroupDraftName",
-            "visibleGroupDraftIds"
+            "visibleGroupDraftIds",
+            "workModel"
           ],
           "expandedInputNames": [
             "activeGroupDraft",
@@ -5467,17 +5498,19 @@
             "toggleDefaultGroupDraft",
             "toggleGroupVisibleInControls",
             "updateGroupDraftName",
-            "visibleGroupDraftIds"
+            "visibleGroupDraftIds",
+            "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 118,
+          "expandedInputCount": 119,
           "returnCount": 0,
-          "propCount": 90,
+          "propCount": 91,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 118,
+          "expandedInputCeiling": 119,
           "returnCeiling": 0,
-          "propCeiling": 90,
+          "propCeiling": 91,
           "unresolved": [
+            "forwarded input workModel",
             "bag teamChipLastRef dynamic deep member",
             "forwarded input activeTeamResultsLimited",
             "bag teamSearchInputRefs dynamic deep member",
@@ -5487,8 +5520,9 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "cc509f11ccc5cdcc9dea33dae691dd4ed0e9123b933af568a370d311a4368d8b",
+            "sourceDigest": "85fd4f7c9d6a5b86f312483bd0b4058ff02daa89865548cd906816fa4dc78fe7",
             "reviewed": true,
+            "rationale": "Ref maps hold DOM nodes indexed by groupId; open map values are booleans, feedback records contain tone/message. activeTeamResultsLimited is Team record data with id/name; arbitrary group IDs do not multiply dependency count. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
               "activeGroupDraft",
               "activeGroupDraft.adHocCapacityEpics",
@@ -5607,15 +5641,15 @@
               "toggleDefaultGroupDraft",
               "toggleGroupVisibleInControls",
               "updateGroupDraftName",
-              "visibleGroupDraftIds"
-            ],
-            "rationale": "Ref maps hold DOM nodes indexed by groupId; open map values are booleans, feedback records contain tone/message. activeTeamResultsLimited is Team record data with id/name; arbitrary group IDs do not multiply dependency count."
+              "visibleGroupDraftIds",
+              "workModel"
+            ]
           },
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 193,
+              "line": 195,
               "phase": "render"
             }
           ],
@@ -5633,7 +5667,7 @@
       "exports": [
         "default"
       ],
-      "lineCeiling": 30,
+      "lineCeiling": 80,
       "interfaces": [
         {
           "exportName": "default",
@@ -5642,23 +5676,28 @@
           "propNames": [
             "adminContacts",
             "canEditSettings",
-            "onOpenSettings"
+            "onOpenSettings",
+            "scope"
           ],
           "expandedInputNames": [
             "adminContacts",
             "adminContacts.length",
             "adminContacts.map",
             "canEditSettings",
-            "onOpenSettings"
+            "onOpenSettings",
+            "scope",
+            "scope.configurationName",
+            "scope.quarter",
+            "scope.status"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 5,
+          "expandedInputCount": 9,
           "returnCount": 0,
-          "propCount": 3,
+          "propCount": 4,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 5,
+          "expandedInputCeiling": 9,
           "returnCeiling": 0,
-          "propCeiling": 3,
+          "propCeiling": 4,
           "unresolved": [],
           "inventory": {},
           "callers": [
@@ -5666,6 +5705,12 @@
               "path": "frontend/src/dashboard.jsx",
               "symbol": "UnconfiguredWorkspaceNotice",
               "line": 9031,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/stats/StatsPanel.jsx",
+              "symbol": "UnconfiguredWorkspaceNotice",
+              "line": 931,
               "phase": "render"
             }
           ],
@@ -5739,9 +5784,10 @@
         "ADMIN_SETTINGS_GATE_PENDING",
         "firstMissingAdminSettingsTab",
         "resolveAdminSettingsGate",
+        "resolveMissingByConfiguration",
         "useAdminSettingsGate"
       ],
-      "lineCeiling": 50,
+      "lineCeiling": 60,
       "interfaces": [
         {
           "exportName": "useAdminSettingsGate",
@@ -5773,7 +5819,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useAdminSettingsGate",
-              "line": 614,
+              "line": 561,
               "phase": "hook execution"
             }
           ],
@@ -5828,10 +5874,11 @@
         "settings"
       ],
       "exports": [
+        "catalogScopeKey",
         "clearBoardStatusCatalogCache",
         "loadBoardStatusCatalog"
       ],
-      "lineCeiling": 40,
+      "lineCeiling": 50,
       "interfaces": []
     },
     {
@@ -7063,7 +7110,8 @@
             "showSettings",
             "sprintBrowserContextId",
             "sprintCatalogGeneration",
-            "sprintCatalogIdentity"
+            "sprintCatalogIdentity",
+            "workContext"
           ],
           "returnNames": [
             "fetchAllTeamsFromJira",
@@ -7085,21 +7133,22 @@
             "showSettings",
             "sprintBrowserContextId",
             "sprintCatalogGeneration",
-            "sprintCatalogIdentity"
+            "sprintCatalogIdentity",
+            "workContext"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 11,
+          "expandedInputCount": 12,
           "returnCount": 6,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 11,
+          "expandedInputCeiling": 12,
           "returnCeiling": 6,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input backendUrl"
           ],
           "inventory": {
-            "sourceDigest": "f3adc4df2f061a142679fb64ff99516d2058bcbb69687dc623cc2615e27a76de",
+            "sourceDigest": "c76545e0af673ba559edfcd1ec82c47a58d495950aa39153d5fc2b18545d0a6f",
             "reviewed": true,
             "memberNames": [
               "authResumeStagedRevision",
@@ -7112,9 +7161,10 @@
               "showSettings",
               "sprintBrowserContextId",
               "sprintCatalogGeneration",
-              "sprintCatalogIdentity"
+              "sprintCatalogIdentity",
+              "workContext"
             ],
-            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried."
+            "rationale": "backendUrl is an endpoint-base string passed to API wrappers; it has no callable or nested dependency members. epmProjectSort/searchQuery, where present, are strings. All statically read member names are inventoried. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -7240,7 +7290,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectCatalogEffects",
-              "line": 2425,
+              "line": 2290,
               "phase": "hook execution"
             }
           ],
@@ -7305,13 +7355,13 @@
               "setProjectSearchRemoteResults",
               "showGroupManage"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the project and board search request wrappers; the remaining inputs are query strings, the board id draft, the tab name, the open flag and four state setters. No input is a bag."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the project and board search request wrappers; the remaining inputs are query strings, the board id draft, the tab name, the open flag and four state setters. No input is a bag. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSearchEffects",
-              "line": 2388,
+              "line": 2252,
               "phase": "hook execution"
             }
           ],
@@ -7436,7 +7486,7 @@
             "bag boardConfigSaveReadFenceRef member alias saveReadFence"
           ],
           "inventory": {
-            "sourceDigest": "26124098cf18bc5c858a027ae81262d846c754441aaea505c09e892a8bf14ebf",
+            "sourceDigest": "fdb773ac60f5c0fcf4748f8e5ba20ee9ac25f92bad8d8308aabae640d66e9b59",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -7456,13 +7506,13 @@
               "sharedConfigRevisionRef",
               "sharedConfigRevisionRef.current"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the configApi and jiraCatalogApi request wrappers; settingsDraftSnapshotRef, sharedConfigRevisionRef and the two board read-fence refs are refs read or written only through .current inside handlers; saveReadFence is the numeric value of boardConfigSaveReadFenceRef.current captured verbatim, not a bag. The remaining inputs are the baseline, revision-commit, connection-error and group-error callbacks and the baseline revision counter."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the configApi and jiraCatalogApi request wrappers; settingsDraftSnapshotRef, sharedConfigRevisionRef and the two board read-fence refs are refs read or written only through .current inside handlers; saveReadFence is the numeric value of boardConfigSaveReadFenceRef.current captured verbatim, not a bag. The remaining inputs are the baseline, revision-commit, connection-error and group-error callbacks and the baseline revision counter. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useJiraProjectSettings",
-              "line": 712,
+              "line": 659,
               "phase": "hook execution"
             }
           ],
@@ -8478,7 +8528,9 @@
             "teamFieldSearchOpen",
             "teamFieldSearchQuery",
             "teamFieldSearchResults",
-            "updatePriorityWeightDraft"
+            "updatePriorityWeightDraft",
+            "workConfig",
+            "workConfigMode"
           ],
           "expandedInputNames": [
             "BACKEND_URL",
@@ -8645,18 +8697,198 @@
             "teamFieldSearchOpen",
             "teamFieldSearchQuery",
             "teamFieldSearchResults",
-            "updatePriorityWeightDraft"
+            "updatePriorityWeightDraft",
+            "workConfig",
+            "workConfig.saveFeedback",
+            "workConfigMode"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 165,
+          "expandedInputCount": 168,
           "returnCount": 0,
-          "propCount": 160,
+          "propCount": 162,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 165,
+          "expandedInputCeiling": 168,
           "returnCeiling": 0,
-          "propCeiling": 160,
-          "unresolved": [],
-          "inventory": {},
+          "propCeiling": 162,
+          "unresolved": [
+            "forwarded input groupManageTab",
+            "forwarded input workConfigMode"
+          ],
+          "inventory": {
+            "sourceDigest": "07dd38d264c581225dd1244a3d90b42cb30f3fe1ef26126ded27d71721215f27",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "addIssueType",
+              "addProjectSelection",
+              "adminAccess",
+              "adminAccess.error",
+              "adminAccess.loading",
+              "adminAccess.selectedUserIds",
+              "adminAccess.toggleUser",
+              "adminAccess.users",
+              "adminAccessAvailable",
+              "adminUserManagementAvailable",
+              "authMode",
+              "boardIdDraft",
+              "boardNameDraft",
+              "boardSearchIndex",
+              "boardSearchInputRef",
+              "boardSearchOpen",
+              "boardSearchQuery",
+              "boardSearchRemoteLoading",
+              "boardSearchResults",
+              "capacityFieldIdDraft",
+              "capacityFieldNameDraft",
+              "capacityFieldSearchHidden",
+              "capacityFieldSearchIndex",
+              "capacityFieldSearchInputRef",
+              "capacityFieldSearchOpen",
+              "capacityFieldSearchQuery",
+              "capacityFieldSearchResults",
+              "capacityProjectDraft",
+              "capacityProjectSearchIndex",
+              "capacityProjectSearchInputRef",
+              "capacityProjectSearchOpen",
+              "capacityProjectSearchQuery",
+              "capacityProjectSearchResults",
+              "clearBoardSelection",
+              "deliveryOwnerFieldIdDraft",
+              "deliveryOwnerFieldNameDraft",
+              "deliveryOwnerFieldSearchHidden",
+              "deliveryOwnerFieldSearchIndex",
+              "deliveryOwnerFieldSearchInputRef",
+              "deliveryOwnerFieldSearchOpen",
+              "deliveryOwnerFieldSearchQuery",
+              "deliveryOwnerFieldSearchResults",
+              "groupManageTab",
+              "handleAdminSettingsTabKeyDown",
+              "handleBoardSearchKeyDown",
+              "handleCapacityFieldSearchKeyDown",
+              "handleCapacityProjectSearchKeyDown",
+              "handleDeliveryOwnerFieldSearchKeyDown",
+              "handleIssueTypeSearchKeyDown",
+              "handleParentNameFieldSearchKeyDown",
+              "handleProjectSearchKeyDown",
+              "handleSprintFieldSearchKeyDown",
+              "handleStoryPointsFieldSearchKeyDown",
+              "handleTeamFieldSearchKeyDown",
+              "issueTypeSearchIndex",
+              "issueTypeSearchInputRef",
+              "issueTypeSearchOpen",
+              "issueTypeSearchQuery",
+              "issueTypeSearchResults",
+              "issueTypesDraft",
+              "jiraFields",
+              "jiraProjects",
+              "loadingFields",
+              "loadingProjects",
+              "mappingHoverKey",
+              "parentNameFieldIdDraft",
+              "parentNameFieldNameDraft",
+              "parentNameFieldSearchHidden",
+              "parentNameFieldSearchIndex",
+              "parentNameFieldSearchInputRef",
+              "parentNameFieldSearchOpen",
+              "parentNameFieldSearchQuery",
+              "parentNameFieldSearchResults",
+              "performanceAdminAvailable",
+              "priorityWeightsDraft",
+              "priorityWeightsSource",
+              "priorityWeightsSum",
+              "priorityWeightsValidationError",
+              "projectSearchIndex",
+              "projectSearchInputRef",
+              "projectSearchOpen",
+              "projectSearchQuery",
+              "projectSearchRemoteLoading",
+              "projectSearchResults",
+              "removeIssueType",
+              "removeProjectSelection",
+              "resetPriorityWeightsDraft",
+              "resolveCapacityProjectName",
+              "resolveProjectName",
+              "selectAdminSettingsTab",
+              "selectedProjectsDraft",
+              "setBoardIdDraft",
+              "setBoardNameDraft",
+              "setBoardSearchIndex",
+              "setBoardSearchOpen",
+              "setBoardSearchQuery",
+              "setCapacityFieldIdDraft",
+              "setCapacityFieldNameDraft",
+              "setCapacityFieldSearchIndex",
+              "setCapacityFieldSearchOpen",
+              "setCapacityFieldSearchQuery",
+              "setCapacityProjectDraft",
+              "setCapacityProjectSearchIndex",
+              "setCapacityProjectSearchOpen",
+              "setCapacityProjectSearchQuery",
+              "setDeliveryOwnerFieldIdDraft",
+              "setDeliveryOwnerFieldNameDraft",
+              "setDeliveryOwnerFieldSearchIndex",
+              "setDeliveryOwnerFieldSearchOpen",
+              "setDeliveryOwnerFieldSearchQuery",
+              "setIssueTypeSearchIndex",
+              "setIssueTypeSearchOpen",
+              "setIssueTypeSearchQuery",
+              "setMappingHoverKey",
+              "setParentNameFieldIdDraft",
+              "setParentNameFieldNameDraft",
+              "setParentNameFieldSearchIndex",
+              "setParentNameFieldSearchOpen",
+              "setParentNameFieldSearchQuery",
+              "setProjectSearchIndex",
+              "setProjectSearchOpen",
+              "setProjectSearchQuery",
+              "setShowTechnicalFieldIds",
+              "setSprintFieldIdDraft",
+              "setSprintFieldNameDraft",
+              "setSprintFieldSearchIndex",
+              "setSprintFieldSearchOpen",
+              "setSprintFieldSearchQuery",
+              "setStoryPointsFieldIdDraft",
+              "setStoryPointsFieldNameDraft",
+              "setStoryPointsFieldSearchIndex",
+              "setStoryPointsFieldSearchOpen",
+              "setStoryPointsFieldSearchQuery",
+              "setTeamFieldIdDraft",
+              "setTeamFieldNameDraft",
+              "setTeamFieldSearchIndex",
+              "setTeamFieldSearchOpen",
+              "setTeamFieldSearchQuery",
+              "showTechnicalFieldIds",
+              "sprintFieldIdDraft",
+              "sprintFieldNameDraft",
+              "sprintFieldSearchHidden",
+              "sprintFieldSearchIndex",
+              "sprintFieldSearchInputRef",
+              "sprintFieldSearchOpen",
+              "sprintFieldSearchQuery",
+              "sprintFieldSearchResults",
+              "storyPointsFieldIdDraft",
+              "storyPointsFieldNameDraft",
+              "storyPointsFieldSearchHidden",
+              "storyPointsFieldSearchIndex",
+              "storyPointsFieldSearchInputRef",
+              "storyPointsFieldSearchOpen",
+              "storyPointsFieldSearchQuery",
+              "storyPointsFieldSearchResults",
+              "teamFieldIdDraft",
+              "teamFieldNameDraft",
+              "teamFieldSearchHidden",
+              "teamFieldSearchIndex",
+              "teamFieldSearchInputRef",
+              "teamFieldSearchOpen",
+              "teamFieldSearchQuery",
+              "teamFieldSearchResults",
+              "updatePriorityWeightDraft",
+              "workConfig",
+              "workConfig.saveFeedback",
+              "workConfigMode"
+            ],
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+          },
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -9945,7 +10177,8 @@
             "updateEpmLabelPrefixDraft",
             "updateEpmProjectDraft",
             "visibleEpmRootGoals",
-            "visibleEpmSubGoals"
+            "visibleEpmSubGoals",
+            "workHierarchy"
           ],
           "expandedInputNames": [
             "activeEpmRootGoalIndex",
@@ -10029,16 +10262,17 @@
             "updateEpmLabelPrefixDraft",
             "updateEpmProjectDraft",
             "visibleEpmRootGoals",
-            "visibleEpmSubGoals"
+            "visibleEpmSubGoals",
+            "workHierarchy"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 82,
+          "expandedInputCount": 83,
           "returnCount": 0,
-          "propCount": 80,
+          "propCount": 81,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 82,
+          "expandedInputCeiling": 83,
           "returnCeiling": 0,
-          "propCeiling": 80,
+          "propCeiling": 81,
           "unresolved": [],
           "inventory": {},
           "callers": [
@@ -10103,7 +10337,7 @@
             "bag activeTeamResultsLimited dynamic member"
           ],
           "inventory": {
-            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
+            "sourceDigest": "efec20797c91a0dece211d9dc1a0932feae8d8517faf2166960b71f5e08270c2",
             "reviewed": true,
             "memberNames": [
               "activeGroupDraft",
@@ -10116,13 +10350,13 @@
               "labelSearchDebounceRef.current",
               "setTeamSearchIndex"
             ],
-            "rationale": "activeTeamResultsLimited is the active group's limited Team result list, read by dynamic position inside the label effects, so its member count is data and the checker cannot enumerate it; the other inputs are the label search state and setters."
+            "rationale": "activeTeamResultsLimited is the active group's limited Team result list, read by dynamic position inside the label effects, so its member count is data and the checker cannot enumerate it; the other inputs are the label search state and setters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupLabelEffects",
-              "line": 2458,
+              "line": 2323,
               "phase": "hook execution"
             }
           ],
@@ -10152,7 +10386,8 @@
             "setExcludedEpicSearchIndex",
             "setExcludedEpicSearchLoading",
             "setExcludedEpicSearchResults",
-            "showGroupManage"
+            "showGroupManage",
+            "workCatalogScope"
           ],
           "returnNames": [],
           "propNames": [],
@@ -10183,21 +10418,26 @@
             "setExcludedEpicSearchIndex",
             "setExcludedEpicSearchLoading",
             "setExcludedEpicSearchResults",
-            "showGroupManage"
+            "showGroupManage",
+            "workCatalogScope",
+            "workCatalogScope.configurationId",
+            "workCatalogScope.configurationRevision",
+            "workCatalogScope.quarter"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 27,
+          "expandedInputCount": 31,
           "returnCount": 0,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 27,
+          "expandedInputCeiling": 31,
           "returnCeiling": 0,
           "propCeiling": 0,
           "unresolved": [
-            "forwarded input BACKEND_URL"
+            "forwarded input BACKEND_URL",
+            "forwarded input workCatalogScope"
           ],
           "inventory": {
-            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
+            "sourceDigest": "69df8fa7694ab125e810990f5705eda1fe2a999046d3908f470fbed6eff9a943",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -10226,15 +10466,19 @@
               "setExcludedEpicSearchIndex",
               "setExcludedEpicSearchLoading",
               "setExcludedEpicSearchResults",
-              "showGroupManage"
+              "showGroupManage",
+              "workCatalogScope",
+              "workCatalogScope.configurationId",
+              "workCatalogScope.configurationRevision",
+              "workCatalogScope.quarter"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the component, epic and Team search request wrappers; the remaining inputs are query strings, open flags, per-key request-id refs and state setters, none a dependency bag."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the component, epic and Team search request wrappers; the remaining inputs are query strings, open flags, per-key request-id refs and state setters, none a dependency bag. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSearchEffects",
-              "line": 2401,
+              "line": 2265,
               "phase": "hook execution"
             }
           ],
@@ -10276,7 +10520,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSelectionEffect",
-              "line": 1867,
+              "line": 1720,
               "phase": "hook execution"
             }
           ],
@@ -10505,7 +10749,7 @@
             "forwarded input selectedSprintInfo"
           ],
           "inventory": {
-            "sourceDigest": "edc5d16857d36cb3fc29fdd652f16154f14145607334f411ffe801912e19b9b7",
+            "sourceDigest": "f7c34f6bcb97507f664208a7302c4c4acce63eed89ced83c1d1d21b95b0f23cc",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -10534,13 +10778,13 @@
               "teamMembershipState.validated",
               "trackSettingsAction"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSettings",
-              "line": 1272,
+              "line": 1133,
               "phase": "hook execution"
             }
           ],
@@ -11795,7 +12039,9 @@
             "toggleGroupVisibleInControls",
             "updateGroupDraftBoard",
             "updateGroupDraftName",
-            "visibleGroupDraftIds"
+            "visibleGroupDraftIds",
+            "workCatalogScope",
+            "workModel"
           ],
           "expandedInputNames": [
             "BACKEND_URL",
@@ -11928,16 +12174,18 @@
             "toggleGroupVisibleInControls",
             "updateGroupDraftBoard",
             "updateGroupDraftName",
-            "visibleGroupDraftIds"
+            "visibleGroupDraftIds",
+            "workCatalogScope",
+            "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 131,
+          "expandedInputCount": 133,
           "returnCount": 0,
-          "propCount": 120,
+          "propCount": 122,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 131,
+          "expandedInputCeiling": 133,
           "returnCeiling": 0,
-          "propCeiling": 120,
+          "propCeiling": 122,
           "unresolved": [
             "bag activeGroupDraft dynamic deep member",
             "bag labelAddButtonRefs dynamic deep member",
@@ -11956,8 +12204,9 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "74bc68a68e3d362a48016a6ca13aadf558d6cd3bff778cf3ad51df012ee75ee7",
+            "sourceDigest": "f69ef916526551737de86fea169fa635ffef3b0656f058b72a4580861f67256e",
             "reviewed": true,
+            "rationale": "labelSearch*, labelAddOpen, labelAddButtonRefs and teamSearchFeedback are the Team label picker's and Team search's per-row state maps (records keyed by group and team row key) and activeGroupDraft is the active draft group; the container reads them by dynamic key or position and forwards them to TeamGroupsSettings and the Labels tab, so their member count is data and the interface checker cannot enumerate it. All 120 props are explicit name={name} attributes, evaluated during App's render after their declarations; the container has no hook. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
               "BACKEND_URL",
               "activeGroupDraft",
@@ -12089,15 +12338,16 @@
               "toggleGroupVisibleInControls",
               "updateGroupDraftBoard",
               "updateGroupDraftName",
-              "visibleGroupDraftIds"
-            ],
-            "rationale": "labelSearch*, labelAddOpen, labelAddButtonRefs and teamSearchFeedback are the Team label picker's and Team search's per-row state maps (records keyed by group and team row key) and activeGroupDraft is the active draft group; the container reads them by dynamic key or position and forwards them to TeamGroupsSettings and the Labels tab, so their member count is data and the interface checker cannot enumerate it. All 120 props are explicit name={name} attributes, evaluated during App's render after their declarations; the container has no hook."
+              "visibleGroupDraftIds",
+              "workCatalogScope",
+              "workModel"
+            ]
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "DepartmentsSettingsTab",
-              "line": 10660,
+              "line": 7309,
               "phase": "render"
             }
           ],
@@ -12170,6 +12420,7 @@
             "storyPointsFieldNameDraft",
             "teamFieldIdDraft",
             "teamFieldNameDraft",
+            "workConfigDraft",
             "workspaceConfigConflict"
           ],
           "returnNames": [
@@ -12251,15 +12502,16 @@
             "storyPointsFieldNameDraft",
             "teamFieldIdDraft",
             "teamFieldNameDraft",
+            "workConfigDraft",
             "workspaceConfigConflict",
             "workspaceConfigConflict.currentRevision"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 67,
+          "expandedInputCount": 68,
           "returnCount": 10,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 67,
+          "expandedInputCeiling": 68,
           "returnCeiling": 10,
           "propCeiling": 0,
           "unresolved": [
@@ -12267,7 +12519,7 @@
             "spread input firstRunSetupChoice"
           ],
           "inventory": {
-            "sourceDigest": "12cc40643eea3e7099f4f37e094c6ce8cfee23ef20ab1ded23f2fe44ce2c394c",
+            "sourceDigest": "2727f68d93d0e0287a500eb488add57ca496d48df9b77dc5076350ea3674abf9",
             "reviewed": true,
             "memberNames": [
               "activeGroupDraft",
@@ -12335,16 +12587,17 @@
               "storyPointsFieldNameDraft",
               "teamFieldIdDraft",
               "teamFieldNameDraft",
+              "workConfigDraft",
               "workspaceConfigConflict",
               "workspaceConfigConflict.currentRevision"
             ],
-            "rationale": "firstRunConfigurationSession is the reducer-held session record and 'captured' is a local alias for its captured drafts snapshot, read by member inside the handlers; firstRunSetupChoice is a state value spread into the next choice object, not a dependency bag. The 50 inputs are state cells, setters, callbacks and the section drafts the capture reads; the two getters supply closeGroupManage and saveAllSettings, which are declared later."
+            "rationale": "firstRunConfigurationSession is the reducer-held session record and 'captured' is a local alias for its captured drafts snapshot, read by member inside the handlers; firstRunSetupChoice is a state value spread into the next choice object, not a dependency bag. The 50 inputs are state cells, setters, callbacks and the section drafts the capture reads; the two getters supply closeGroupManage and saveAllSettings, which are declared later. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useFirstRunConfiguration",
-              "line": 1424,
+              "line": 1286,
               "phase": "hook execution"
             }
           ],
@@ -12464,7 +12717,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useFirstRunConfigurationState",
-              "line": 576,
+              "line": 523,
               "phase": "hook execution"
             }
           ],
@@ -12800,9 +13053,12 @@
       "exports": [
         "ADMIN_SETTINGS_TAB_IDS",
         "DEPARTMENT_SETTINGS_TAB_IDS",
-        "SHARED_CONFIGURATION_TAB_IDS"
+        "LEGACY_PROJECT_CONFIG_TAB_IDS",
+        "SHARED_CONFIGURATION_TAB_IDS",
+        "adminTabIdsFor",
+        "effectiveAdminTab"
       ],
-      "lineCeiling": 10,
+      "lineCeiling": 20,
       "interfaces": []
     },
     {
@@ -12946,6 +13202,7 @@
             "storyPointsFieldIdDraft",
             "teamFieldIdDraft",
             "trackSettingsAction",
+            "workConfig",
             "workspaceConfigConflict"
           ],
           "returnNames": [
@@ -13119,15 +13376,26 @@
             "storyPointsFieldIdDraft",
             "teamFieldIdDraft",
             "trackSettingsAction",
+            "workConfig",
+            "workConfig.active",
+            "workConfig.applyBootstrap",
+            "workConfig.dirty",
+            "workConfig.mode",
+            "workConfig.prepareKeepMine",
+            "workConfig.reload",
+            "workConfig.restoreDraft",
+            "workConfig.save",
+            "workConfig.validationMessages",
             "workspaceConfigConflict",
-            "workspaceConfigConflict.currentRevision"
+            "workspaceConfigConflict.currentRevision",
+            "workspaceConfigConflict.workConfigurations"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 158,
+          "expandedInputCount": 169,
           "returnCount": 11,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 158,
+          "expandedInputCeiling": 169,
           "returnCeiling": 11,
           "propCeiling": 0,
           "unresolved": [
@@ -13149,10 +13417,11 @@
             "forwarded input setStoryPointsFieldIdDraft",
             "forwarded input setStoryPointsFieldNameDraft",
             "forwarded input setTeamFieldIdDraft",
-            "forwarded input setTeamFieldNameDraft"
+            "forwarded input setTeamFieldNameDraft",
+            "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "69757e0cdecb92e3f2f64e96833f80f52fcd86d0deb77b5cb81dafad32b1e602",
+            "sourceDigest": "06944a2d66cb9d40ee134d58ca3930c2dbd11ddfede332fe6d29eb975c2ed736",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -13169,6 +13438,7 @@
               "anyFieldConfigDirty",
               "applyAdminSettingsGateConfig",
               "applyCapacityLoaded",
+              "applyEpmCapabilityConfig",
               "applyJiraIssueTypesLoaded",
               "applyJiraProjectsAndBoardLoaded",
               "applyPriorityWeightsLoaded",
@@ -13189,6 +13459,7 @@
               "dispatchFirstRunConfigurationSession",
               "epmConfigLoading",
               "epmConfigSaving",
+              "epmViewPreferenceDirty",
               "favoriteGroupValidationError",
               "firstRunConfigurationActive",
               "firstRunConfigurationSession",
@@ -13241,10 +13512,12 @@
               "persistGroupPreferences",
               "priorityWeightsValidationError",
               "queueConfigSaveRefresh",
+              "refreshEpmAccess",
               "saveBoardConfig",
               "saveCapacityConfig",
               "saveDeliveryOwnerFieldConfig",
               "saveEpmConfig",
+              "saveEpmViewPreference",
               "saveFirstRunGroupPreferences",
               "saveIssueTypesConfig",
               "saveParentNameFieldConfig",
@@ -13307,16 +13580,27 @@
               "storyPointsFieldIdDraft",
               "teamFieldIdDraft",
               "trackSettingsAction",
+              "workConfig",
+              "workConfig.active",
+              "workConfig.applyBootstrap",
+              "workConfig.dirty",
+              "workConfig.mode",
+              "workConfig.prepareKeepMine",
+              "workConfig.reload",
+              "workConfig.restoreDraft",
+              "workConfig.save",
+              "workConfig.validationMessages",
               "workspaceConfigConflict",
-              "workspaceConfigConflict.currentRevision"
+              "workspaceConfigConflict.currentRevision",
+              "workspaceConfigConflict.workConfigurations"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSharedConfigSave",
-              "line": 2039,
+              "line": 1968,
               "phase": "hook execution"
             }
           ],
@@ -13473,7 +13757,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSharedConfigSaveState",
-              "line": 536,
+              "line": 537,
               "phase": "hook execution"
             }
           ],
@@ -13651,6 +13935,7 @@
             "testGroupsConfigConnection",
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
+            "workConfigMode",
             "workspaceConfigConflict"
           ],
           "expandedInputNames": [
@@ -13689,24 +13974,26 @@
             "testGroupsConfigConnection",
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
+            "workConfigMode",
             "workspaceConfigConflict"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 36,
+          "expandedInputCount": 37,
           "returnCount": 0,
-          "propCount": 36,
+          "propCount": 37,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 36,
+          "expandedInputCeiling": 37,
           "returnCeiling": 0,
-          "propCeiling": 36,
+          "propCeiling": 37,
           "unresolved": [
             "spread input groupConfigValidationErrors",
             "forwarded input groupManageTab",
             "forwarded input groupsConfigConflict",
+            "forwarded input workConfigMode",
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "1a703f2d79ac1cdca3d15eacd7c01fa2695be20927eab8a99ca37af5c3da9451",
+            "sourceDigest": "b81445a162361237fc065faa9818e2ff117914bcce5727861b15ec3828158370",
             "reviewed": true,
             "memberNames": [
               "activeSettingsModalTab",
@@ -13715,6 +14002,7 @@
               "children",
               "discardGroupDraftChanges",
               "discardMineOnGroupsConfigConflict",
+              "epmViewPreferenceDirty",
               "firstRunConfigurationActive",
               "firstRunHasCommittedSection",
               "groupConfigValidationErrors",
@@ -13743,9 +14031,10 @@
               "testGroupsConfigConnection",
               "unsavedSectionsCount",
               "useLatestWorkspaceConfig",
+              "workConfigMode",
               "workspaceConfigConflict"
             ],
-            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook."
+            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -13796,7 +14085,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsAutoOpenEffect",
-              "line": 1709,
+              "line": 1637,
               "phase": "hook execution"
             }
           ],
@@ -13854,7 +14143,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsHotkeyEffect",
-              "line": 2301,
+              "line": 2235,
               "phase": "hook execution"
             }
           ],
@@ -13871,6 +14160,7 @@
             "canEditSharedConfiguration",
             "departmentSettingsTab",
             "discardEpmViewPreference",
+            "discardWorkConfigDraft",
             "epmConfigBaselineRef",
             "epmConfigSaving",
             "epmViewPreferenceDirty",
@@ -13921,7 +14211,8 @@
             "setShowGroupListMobile",
             "setShowGroupManage",
             "trackSettingsAction",
-            "userCanEditSettings"
+            "userCanEditSettings",
+            "workConfigMode"
           ],
           "returnNames": [
             "activeDepartmentSettingsTab",
@@ -13954,6 +14245,7 @@
             "canEditSharedConfiguration",
             "departmentSettingsTab",
             "discardEpmViewPreference",
+            "discardWorkConfigDraft",
             "epmConfigBaselineRef",
             "epmConfigBaselineRef.current",
             "epmConfigSaving",
@@ -14008,14 +14300,15 @@
             "setShowGroupListMobile",
             "setShowGroupManage",
             "trackSettingsAction",
-            "userCanEditSettings"
+            "userCanEditSettings",
+            "workConfigMode"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 62,
+          "expandedInputCount": 64,
           "returnCount": 20,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 62,
+          "expandedInputCeiling": 64,
           "returnCeiling": 20,
           "propCeiling": 0,
           "unresolved": [
@@ -14024,10 +14317,11 @@
             "forwarded input departmentSettingsTab",
             "forwarded input groupManageTab",
             "forwarded input preferredSettingsTab",
-            "forwarded input saveBlockedReason"
+            "forwarded input saveBlockedReason",
+            "forwarded input workConfigMode"
           ],
           "inventory": {
-            "sourceDigest": "bd2ff5ab8a21c707bb3eccfabca866a4a9456eb5373e538607702e281cd3fb31",
+            "sourceDigest": "b1d8d2da7991b0ee80a5987e56ab8760c79f06aa2c30cf93cd8c239778d2404b",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -14036,9 +14330,13 @@
               "canEditEpmConfiguration",
               "canEditSharedConfiguration",
               "departmentSettingsTab",
+              "discardEpmViewPreference",
+              "discardWorkConfigDraft",
               "epmConfigBaselineRef",
               "epmConfigBaselineRef.current",
               "epmConfigSaving",
+              "epmViewPreferenceDirty",
+              "epmViewPreferenceSaving",
               "firstRunConfigurationActive",
               "firstRunConfigurationSession",
               "groupDraft",
@@ -14088,15 +14386,16 @@
               "setShowGroupListMobile",
               "setShowGroupManage",
               "trackSettingsAction",
-              "userCanEditSettings"
+              "userCanEditSettings",
+              "workConfigMode"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to testJiraConnection; adminSettingsTab, departmentSettingsTab, groupManageTab and preferredSettingsTab are tab-id strings forwarded to setters, trackSettingsAction or compared against the tab sets, and saveBlockedReason is a string tested with Boolean(); none is a dependency bag. The 55 inputs are the modal cells, the permission outputs, search setters, the group and EPM state and the save hook's outputs, read directly because this hook is called after the save hook."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to testJiraConnection; adminSettingsTab, departmentSettingsTab, groupManageTab and preferredSettingsTab are tab-id strings forwarded to setters, trackSettingsAction or compared against the tab sets, and saveBlockedReason is a string tested with Boolean(); none is a dependency bag. The 55 inputs are the modal cells, the permission outputs, search setters, the group and EPM state and the save hook's outputs, read directly because this hook is called after the save hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsModal",
-              "line": 2189,
+              "line": 2119,
               "phase": "hook execution"
             }
           ],
@@ -14104,130 +14403,130 @@
             {
               "name": "activeDepartmentSettingsTab",
               "lines": [
-                2071
+                2000
               ]
             },
             {
               "name": "activeSettingsModalTab",
               "lines": [
-                7194
+                6845
               ]
             },
             {
               "name": "closeGroupManage",
               "lines": [
-                1375,
-                2072,
-                2287
+                1302,
+                2001,
+                2221
               ]
             },
             {
               "name": "discardGroupDraftChanges",
               "lines": [
-                7197
+                6848
               ]
             },
             {
               "name": "handleAdminSettingsTabKeyDown",
               "lines": [
-                7286
+                6941
               ]
             },
             {
               "name": "handleDepartmentSettingsTabKeyDown",
               "lines": [
-                7553
+                7208
               ]
             },
             {
               "name": "labelsTabEnabled",
               "lines": [
-                7571
+                7226
               ]
             },
             {
               "name": "openBoardAdminScopeSettings",
               "lines": [
-                6124
+                5979
               ]
             },
             {
               "name": "openBoardDepartmentSettings",
               "lines": [
-                6111,
-                6117,
-                6133,
-                6139
+                5966,
+                5972,
+                5988,
+                5994
               ]
             },
             {
               "name": "openGroupManage",
               "lines": [
-                560,
-                6342,
-                6451
+                561,
+                6168,
+                6277
               ]
             },
             {
               "name": "requestCloseGroupManage",
               "lines": [
-                2310,
-                7214
+                2244,
+                6865
               ]
             },
             {
               "name": "selectAdminSettingsTab",
               "lines": [
-                7332
+                6987
               ]
             },
             {
               "name": "selectDepartmentSettingsTab",
               "lines": [
-                7035,
-                7586
+                6738,
+                7242
               ]
             },
             {
               "name": "settingsModalTabs",
               "lines": [
-                7217
+                6868
               ]
             },
             {
               "name": "settingsSaveDisabled",
               "lines": [
-                7218
+                6869
               ]
             },
             {
               "name": "settingsSaveHandler",
               "lines": [
-                7220
+                6871
               ]
             },
             {
               "name": "settingsSaveLabel",
               "lines": [
-                7221
+                6872
               ]
             },
             {
               "name": "settingsSaveTitle",
               "lines": [
-                7222
+                6873
               ]
             },
             {
               "name": "settingsShowsSave",
               "lines": [
-                7223
+                6874
               ]
             },
             {
-              "name": "testGroupsConfigConnection",
+              "name": "testFlatConfigConnection",
               "lines": [
-                7225
+                2182
               ]
             }
           ],
@@ -14271,7 +14570,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsModalState",
-              "line": 422,
+              "line": 423,
               "phase": "hook execution"
             }
           ],
@@ -14492,13 +14791,13 @@
               "setGroupManageTab",
               "showGroupManage"
             ],
-            "rationale": "groupManageTab is a tab-id string compared against the shared and administrator tab sets inside the guard effects; not a dependency bag."
+            "rationale": "groupManageTab is a tab-id string compared against the shared and administrator tab sets inside the guard effects; not a dependency bag. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSettingsTabGuardEffects",
-              "line": 2378,
+              "line": 2313,
               "phase": "hook execution"
             }
           ],
@@ -14788,7 +15087,9 @@
             "setBurnoutLoading",
             "showStats",
             "statsView",
-            "tasksFetched"
+            "tasksFetched",
+            "workContext",
+            "workSetupScope"
           ],
           "returnNames": [
             "burnoutIssueWeightByKey",
@@ -14799,7 +15100,11 @@
             "burnoutTaskTeamByIssueKey",
             "cohortQueryKey",
             "cohortScopedTeamSignature",
-            "effectiveStatsData"
+            "cohortSetupBlocked",
+            "effectiveStatsData",
+            "statsWorkCatalogKey",
+            "workContext",
+            "workSetupScope"
           ],
           "propNames": [],
           "expandedInputNames": [
@@ -14855,15 +15160,18 @@
             "setBurnoutLoading",
             "showStats",
             "statsView",
-            "tasksFetched"
+            "tasksFetched",
+            "workContext",
+            "workSetupScope",
+            "workSetupScope.status"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 53,
-          "returnCount": 9,
+          "expandedInputCount": 56,
+          "returnCount": 13,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 53,
-          "returnCeiling": 9,
+          "expandedInputCeiling": 56,
+          "returnCeiling": 13,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -14872,7 +15180,7 @@
             "forwarded input issueEditStateRef"
           ],
           "inventory": {
-            "sourceDigest": "3e88d79d48a93321f2338beaecaad4d12a53f23d96031107a5c9f705cfb5f9bd",
+            "sourceDigest": "024105f221e7a5d59171a1e8fd14478c5c51d792915bbfd65f3bf134ffbc4bcd",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -14891,7 +15199,10 @@
               "burnoutCacheRef.current[burnoutQueryKey]",
               "burnoutData",
               "burnoutData.assignees",
+              "cohortClosedEndQuarter",
+              "cohortClosedStartQuarter",
               "cohortEndQuarter",
+              "cohortMode",
               "cohortStartQuarter",
               "getTeamInfo",
               "groupPreferences",
@@ -14924,9 +15235,12 @@
               "setBurnoutLoading",
               "showStats",
               "statsView",
-              "tasksFetched"
+              "tasksFetched",
+              "workContext",
+              "workSetupScope",
+              "workSetupScope.status"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 6 reviewed change: cohortMode and the closed quarters are plain inputs that only choose which key cohortQueryKey builds; no new bag reads, aliases or forwarded inputs."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. burnoutCacheRef.current indexes burnoutQueryKey; cached is the stored Stats payload tested for presence and passed unchanged to setBurnoutData. No dynamic callback or getter is supplied. issueEditStateRef aggregate read methods keep the same captured token and deferred timing. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 6 reviewed change: cohortMode and the closed quarters are plain inputs that only choose which key cohortQueryKey builds; no new bag reads, aliases or forwarded inputs. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -14980,6 +15294,7 @@
             "cohortQueryKey",
             "cohortScopedTeamSignature",
             "cohortSelectedRow",
+            "cohortSetupBlocked",
             "cohortStartQuarter",
             "cohortStatusToggles",
             "excludedCapacityCacheRef",
@@ -15024,7 +15339,9 @@
             "setProjectTrackPhaseLoading",
             "showStats",
             "statsView",
-            "trackApiResult"
+            "statsWorkCatalogKey",
+            "trackApiResult",
+            "workContext"
           ],
           "returnNames": [
             "clearExcludedCapacityEpicSelection",
@@ -15121,6 +15438,7 @@
             "cohortQueryKey",
             "cohortScopedTeamSignature",
             "cohortSelectedRow",
+            "cohortSetupBlocked",
             "cohortStartQuarter",
             "cohortStatusToggles",
             "excludedCapacityCacheRef",
@@ -15197,14 +15515,16 @@
             "setProjectTrackPhaseLoading",
             "showStats",
             "statsView",
-            "trackApiResult"
+            "statsWorkCatalogKey",
+            "trackApiResult",
+            "workContext"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 123,
+          "expandedInputCount": 126,
           "returnCount": 45,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 123,
+          "expandedInputCeiling": 126,
           "returnCeiling": 45,
           "propCeiling": 0,
           "unresolved": [
@@ -15225,7 +15545,7 @@
             "bag projectTrackPhaseCacheRef dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "fc855a2feda2b397bbfd18d16885b2ed0bd01025680c73b20cb95e2408d294b4",
+            "sourceDigest": "7ad0c19ad936061827dbb99ce06946ba691ea4221918bd338f9b4eb842434e4a",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -15254,9 +15574,12 @@
               "cohortCacheRef",
               "cohortCacheRef.current",
               "cohortCacheRef.current[cohortQueryKey]",
+              "cohortClosedEndQuarter",
+              "cohortClosedStartQuarter",
               "cohortData",
               "cohortData.issues",
               "cohortData.meta",
+              "cohortData.meta.mode",
               "cohortData.meta.warnings",
               "cohortData.range",
               "cohortData.range.endDate",
@@ -15265,10 +15588,13 @@
               "cohortExcludeAdHoc",
               "cohortExcludeCapacity",
               "cohortGroupBy",
+              "cohortLastN",
+              "cohortMode",
               "cohortProjectFilter",
               "cohortQueryKey",
               "cohortScopedTeamSignature",
               "cohortSelectedRow",
+              "cohortSetupBlocked",
               "cohortStartQuarter",
               "cohortStatusToggles",
               "excludedCapacityCacheRef",
@@ -15345,9 +15671,11 @@
               "setProjectTrackPhaseLoading",
               "showStats",
               "statsView",
-              "trackApiResult"
+              "statsWorkCatalogKey",
+              "trackApiResult",
+              "workContext"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 4 reviewed change: the Assignee filter members (cohortAssigneeFilter, setCohortAssigneeFilter) are removed with their effect; every other binding, alias, cache index and forwarded input is unchanged. Lead Times modes Task 6 reviewed change: cohortMode, the closed quarters and cohortLastN are plain inputs; cohortData.meta.mode is read once to decide whether the data belongs to the current mode (cohortModeData aliases cohortData or null); the request body is built by buildCohortRequest from the same inputs; no other binding, cache index or forwarded input changes."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 4 reviewed change: the Assignee filter members (cohortAssigneeFilter, setCohortAssigneeFilter) are removed with their effect; every other binding, alias, cache index and forwarded input is unchanged. Lead Times modes Task 6 reviewed change: cohortMode, the closed quarters and cohortLastN are plain inputs; cohortData.meta.mode is read once to decide whether the data belongs to the current mode (cohortModeData aliases cohortData or null); the request body is built by buildCohortRequest from the same inputs; no other binding, cache index or forwarded input changes. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -15523,7 +15851,9 @@
             "priorityAxis",
             "resolveStatsTeamColor",
             "showStats",
-            "stats"
+            "stats",
+            "workScope",
+            "workSetupNotice"
           ],
           "expandedInputNames": [
             "activeGroupMissingComponents",
@@ -15577,6 +15907,7 @@
             "stats.cohortScope",
             "stats.cohortSelectedRow",
             "stats.cohortSelectedRowLabel",
+            "stats.cohortSetupBlocked",
             "stats.cohortStartQuarter",
             "stats.cohortStatusControls",
             "stats.cohortStatusToggles",
@@ -15589,6 +15920,8 @@
             "stats.effortSplitVisibleBuckets",
             "stats.excludedCapacityChartMode",
             "stats.excludedCapacityData",
+            "stats.excludedCapacityData.meta",
+            "stats.excludedCapacityData.meta.unavailableSprintIds",
             "stats.excludedCapacityEffectiveFilters",
             "stats.excludedCapacityEndSprintId",
             "stats.excludedCapacityEpicCatalog",
@@ -15661,18 +15994,175 @@
             "stats.statsTotals",
             "stats.statsView",
             "stats.toggleEffortSplitBucket",
-            "stats.toggleExcludedCapacityEpicKey"
+            "stats.toggleExcludedCapacityEpicKey",
+            "workScope",
+            "workSetupNotice",
+            "workSetupNotice.adminContacts",
+            "workSetupNotice.canEditSettings",
+            "workSetupNotice.onOpenSettings",
+            "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 136,
+          "expandedInputCount": 145,
           "returnCount": 0,
-          "propCount": 9,
+          "propCount": 11,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 136,
+          "expandedInputCeiling": 145,
           "returnCeiling": 0,
-          "propCeiling": 9,
+          "propCeiling": 11,
           "unresolved": [],
-          "inventory": {},
+          "inventory": {
+            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupMissingComponents",
+              "analytics",
+              "analytics.trackStatsAction",
+              "analytics.trackStatsAnalyticsAction",
+              "jiraUrl",
+              "links",
+              "links.buildPriorityStatLink",
+              "links.buildStatLink",
+              "onSelectBurnoutTask",
+              "priorityAxis",
+              "resolveStatsTeamColor",
+              "showStats",
+              "stats",
+              "stats.buildBurnoutTaskFilter",
+              "stats.burndownMetric",
+              "stats.burndownMetricIsStoryPoints",
+              "stats.burnoutAssigneeFilter",
+              "stats.burnoutAssigneeOptions",
+              "stats.burnoutChartModel",
+              "stats.burnoutData",
+              "stats.burnoutError",
+              "stats.burnoutLoading",
+              "stats.burnoutScopedTeamIds",
+              "stats.burnoutTaskFilter",
+              "stats.burnoutTotals",
+              "stats.canRenderStatsPanel",
+              "stats.clearExcludedCapacityEpicSelection",
+              "stats.cohortAverageLeadDays",
+              "stats.cohortAwaitingMode",
+              "stats.cohortClosedEndQuarter",
+              "stats.cohortClosedStartQuarter",
+              "stats.cohortCompletedBars",
+              "stats.cohortEndQuarter",
+              "stats.cohortError",
+              "stats.cohortExcludeAdHoc",
+              "stats.cohortExcludeCapacity",
+              "stats.cohortFetchedCount",
+              "stats.cohortGridModel",
+              "stats.cohortGroupBy",
+              "stats.cohortLastN",
+              "stats.cohortLastNShortfall",
+              "stats.cohortLoading",
+              "stats.cohortMedianLeadDays",
+              "stats.cohortMode",
+              "stats.cohortOpenBars",
+              "stats.cohortProjectFilter",
+              "stats.cohortProjectOptions",
+              "stats.cohortQuarterOptions",
+              "stats.cohortScope",
+              "stats.cohortSelectedRow",
+              "stats.cohortSelectedRowLabel",
+              "stats.cohortSetupBlocked",
+              "stats.cohortStartQuarter",
+              "stats.cohortStatusControls",
+              "stats.cohortStatusToggles",
+              "stats.cohortSummary",
+              "stats.cohortWarnings",
+              "stats.cohortWorkflowStatusTotal",
+              "stats.effortSplitRows",
+              "stats.effortSplitSprintLabel",
+              "stats.effortSplitTotals",
+              "stats.effortSplitVisibleBuckets",
+              "stats.excludedCapacityChartMode",
+              "stats.excludedCapacityData",
+              "stats.excludedCapacityData.meta",
+              "stats.excludedCapacityData.meta.unavailableSprintIds",
+              "stats.excludedCapacityEffectiveFilters",
+              "stats.excludedCapacityEndSprintId",
+              "stats.excludedCapacityEpicCatalog",
+              "stats.excludedCapacityEpicDropdownOpen",
+              "stats.excludedCapacityEpicDropdownRef",
+              "stats.excludedCapacityEpicOptions",
+              "stats.excludedCapacityError",
+              "stats.excludedCapacityFilterLabel",
+              "stats.excludedCapacityIsolatedTeam",
+              "stats.excludedCapacityLineSeries",
+              "stats.excludedCapacityLoading",
+              "stats.excludedCapacityMetric",
+              "stats.excludedCapacityModeOverall",
+              "stats.excludedCapacityModeSprintRows",
+              "stats.excludedCapacityModeTeamLineSeries",
+              "stats.excludedCapacityRows",
+              "stats.excludedCapacitySprintOptions",
+              "stats.excludedCapacitySprintRange",
+              "stats.excludedCapacityStartSprintId",
+              "stats.excludedCapacityWarnings",
+              "stats.formatBurndownValue",
+              "stats.formatExcludedPoints",
+              "stats.priorityRadar",
+              "stats.priorityRows",
+              "stats.projectTrackBreakdown",
+              "stats.projectTrackCapacitySide",
+              "stats.projectTrackColumnSplit",
+              "stats.projectTrackExcludeAdHoc",
+              "stats.projectTrackExcludeExcludedCapacity",
+              "stats.projectTrackMode",
+              "stats.projectTrackPhaseData",
+              "stats.projectTrackPhaseEpics",
+              "stats.projectTrackPhaseError",
+              "stats.projectTrackPhaseLoading",
+              "stats.projectTrackPhaseSummary",
+              "stats.projectTrackRangeLabel",
+              "stats.projectTrackSeries",
+              "stats.projectTrackSingleTeam",
+              "stats.projectTrackTotals",
+              "stats.selectAllExcludedCapacityEpics",
+              "stats.setBurndownMetric",
+              "stats.setBurnoutAssigneeFilter",
+              "stats.setCohortClosedEndQuarter",
+              "stats.setCohortClosedStartQuarter",
+              "stats.setCohortEndQuarter",
+              "stats.setCohortExcludeAdHoc",
+              "stats.setCohortExcludeCapacity",
+              "stats.setCohortGroupBy",
+              "stats.setCohortLastN",
+              "stats.setCohortMode",
+              "stats.setCohortProjectFilter",
+              "stats.setCohortSelectedRow",
+              "stats.setCohortStartQuarter",
+              "stats.setCohortStatusToggles",
+              "stats.setExcludedCapacityChartMode",
+              "stats.setExcludedCapacityEndSprintId",
+              "stats.setExcludedCapacityEpicDropdownOpen",
+              "stats.setExcludedCapacityIsolatedTeam",
+              "stats.setExcludedCapacityMetric",
+              "stats.setExcludedCapacityStartSprintId",
+              "stats.setProjectTrackCapacitySide",
+              "stats.setProjectTrackExcludeAdHoc",
+              "stats.setProjectTrackExcludeExcludedCapacity",
+              "stats.setProjectTrackMode",
+              "stats.setStatsGraphMode",
+              "stats.setStatsView",
+              "stats.statsBarColumns",
+              "stats.statsGraphMode",
+              "stats.statsTeamRows",
+              "stats.statsTotals",
+              "stats.statsView",
+              "stats.toggleEffortSplitBucket",
+              "stats.toggleExcludedCapacityEpicKey",
+              "workScope",
+              "workSetupNotice",
+              "workSetupNotice.adminContacts",
+              "workSetupNotice.canEditSettings",
+              "workSetupNotice.onOpenSettings",
+              "workSetupNotice.scope"
+            ],
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+          },
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -15690,7 +16180,9 @@
             "priorityAxis",
             "resolveStatsTeamColor",
             "showStats",
-            "stats"
+            "stats",
+            "workScope",
+            "workSetupNotice"
           ],
           "expandedInputNames": [
             "activeGroupMissingComponents",
@@ -15744,6 +16236,7 @@
             "stats.cohortScope",
             "stats.cohortSelectedRow",
             "stats.cohortSelectedRowLabel",
+            "stats.cohortSetupBlocked",
             "stats.cohortStartQuarter",
             "stats.cohortStatusControls",
             "stats.cohortStatusToggles",
@@ -15756,6 +16249,8 @@
             "stats.effortSplitVisibleBuckets",
             "stats.excludedCapacityChartMode",
             "stats.excludedCapacityData",
+            "stats.excludedCapacityData.meta",
+            "stats.excludedCapacityData.meta.unavailableSprintIds",
             "stats.excludedCapacityEffectiveFilters",
             "stats.excludedCapacityEndSprintId",
             "stats.excludedCapacityEpicCatalog",
@@ -15828,18 +16323,175 @@
             "stats.statsTotals",
             "stats.statsView",
             "stats.toggleEffortSplitBucket",
-            "stats.toggleExcludedCapacityEpicKey"
+            "stats.toggleExcludedCapacityEpicKey",
+            "workScope",
+            "workSetupNotice",
+            "workSetupNotice.adminContacts",
+            "workSetupNotice.canEditSettings",
+            "workSetupNotice.onOpenSettings",
+            "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 136,
+          "expandedInputCount": 145,
           "returnCount": 0,
-          "propCount": 9,
+          "propCount": 11,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 136,
+          "expandedInputCeiling": 145,
           "returnCeiling": 0,
-          "propCeiling": 9,
+          "propCeiling": 11,
           "unresolved": [],
-          "inventory": {},
+          "inventory": {
+            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "reviewed": true,
+            "memberNames": [
+              "activeGroupMissingComponents",
+              "analytics",
+              "analytics.trackStatsAction",
+              "analytics.trackStatsAnalyticsAction",
+              "jiraUrl",
+              "links",
+              "links.buildPriorityStatLink",
+              "links.buildStatLink",
+              "onSelectBurnoutTask",
+              "priorityAxis",
+              "resolveStatsTeamColor",
+              "showStats",
+              "stats",
+              "stats.buildBurnoutTaskFilter",
+              "stats.burndownMetric",
+              "stats.burndownMetricIsStoryPoints",
+              "stats.burnoutAssigneeFilter",
+              "stats.burnoutAssigneeOptions",
+              "stats.burnoutChartModel",
+              "stats.burnoutData",
+              "stats.burnoutError",
+              "stats.burnoutLoading",
+              "stats.burnoutScopedTeamIds",
+              "stats.burnoutTaskFilter",
+              "stats.burnoutTotals",
+              "stats.canRenderStatsPanel",
+              "stats.clearExcludedCapacityEpicSelection",
+              "stats.cohortAverageLeadDays",
+              "stats.cohortAwaitingMode",
+              "stats.cohortClosedEndQuarter",
+              "stats.cohortClosedStartQuarter",
+              "stats.cohortCompletedBars",
+              "stats.cohortEndQuarter",
+              "stats.cohortError",
+              "stats.cohortExcludeAdHoc",
+              "stats.cohortExcludeCapacity",
+              "stats.cohortFetchedCount",
+              "stats.cohortGridModel",
+              "stats.cohortGroupBy",
+              "stats.cohortLastN",
+              "stats.cohortLastNShortfall",
+              "stats.cohortLoading",
+              "stats.cohortMedianLeadDays",
+              "stats.cohortMode",
+              "stats.cohortOpenBars",
+              "stats.cohortProjectFilter",
+              "stats.cohortProjectOptions",
+              "stats.cohortQuarterOptions",
+              "stats.cohortScope",
+              "stats.cohortSelectedRow",
+              "stats.cohortSelectedRowLabel",
+              "stats.cohortSetupBlocked",
+              "stats.cohortStartQuarter",
+              "stats.cohortStatusControls",
+              "stats.cohortStatusToggles",
+              "stats.cohortSummary",
+              "stats.cohortWarnings",
+              "stats.cohortWorkflowStatusTotal",
+              "stats.effortSplitRows",
+              "stats.effortSplitSprintLabel",
+              "stats.effortSplitTotals",
+              "stats.effortSplitVisibleBuckets",
+              "stats.excludedCapacityChartMode",
+              "stats.excludedCapacityData",
+              "stats.excludedCapacityData.meta",
+              "stats.excludedCapacityData.meta.unavailableSprintIds",
+              "stats.excludedCapacityEffectiveFilters",
+              "stats.excludedCapacityEndSprintId",
+              "stats.excludedCapacityEpicCatalog",
+              "stats.excludedCapacityEpicDropdownOpen",
+              "stats.excludedCapacityEpicDropdownRef",
+              "stats.excludedCapacityEpicOptions",
+              "stats.excludedCapacityError",
+              "stats.excludedCapacityFilterLabel",
+              "stats.excludedCapacityIsolatedTeam",
+              "stats.excludedCapacityLineSeries",
+              "stats.excludedCapacityLoading",
+              "stats.excludedCapacityMetric",
+              "stats.excludedCapacityModeOverall",
+              "stats.excludedCapacityModeSprintRows",
+              "stats.excludedCapacityModeTeamLineSeries",
+              "stats.excludedCapacityRows",
+              "stats.excludedCapacitySprintOptions",
+              "stats.excludedCapacitySprintRange",
+              "stats.excludedCapacityStartSprintId",
+              "stats.excludedCapacityWarnings",
+              "stats.formatBurndownValue",
+              "stats.formatExcludedPoints",
+              "stats.priorityRadar",
+              "stats.priorityRows",
+              "stats.projectTrackBreakdown",
+              "stats.projectTrackCapacitySide",
+              "stats.projectTrackColumnSplit",
+              "stats.projectTrackExcludeAdHoc",
+              "stats.projectTrackExcludeExcludedCapacity",
+              "stats.projectTrackMode",
+              "stats.projectTrackPhaseData",
+              "stats.projectTrackPhaseEpics",
+              "stats.projectTrackPhaseError",
+              "stats.projectTrackPhaseLoading",
+              "stats.projectTrackPhaseSummary",
+              "stats.projectTrackRangeLabel",
+              "stats.projectTrackSeries",
+              "stats.projectTrackSingleTeam",
+              "stats.projectTrackTotals",
+              "stats.selectAllExcludedCapacityEpics",
+              "stats.setBurndownMetric",
+              "stats.setBurnoutAssigneeFilter",
+              "stats.setCohortClosedEndQuarter",
+              "stats.setCohortClosedStartQuarter",
+              "stats.setCohortEndQuarter",
+              "stats.setCohortExcludeAdHoc",
+              "stats.setCohortExcludeCapacity",
+              "stats.setCohortGroupBy",
+              "stats.setCohortLastN",
+              "stats.setCohortMode",
+              "stats.setCohortProjectFilter",
+              "stats.setCohortSelectedRow",
+              "stats.setCohortStartQuarter",
+              "stats.setCohortStatusToggles",
+              "stats.setExcludedCapacityChartMode",
+              "stats.setExcludedCapacityEndSprintId",
+              "stats.setExcludedCapacityEpicDropdownOpen",
+              "stats.setExcludedCapacityIsolatedTeam",
+              "stats.setExcludedCapacityMetric",
+              "stats.setExcludedCapacityStartSprintId",
+              "stats.setProjectTrackCapacitySide",
+              "stats.setProjectTrackExcludeAdHoc",
+              "stats.setProjectTrackExcludeExcludedCapacity",
+              "stats.setProjectTrackMode",
+              "stats.setStatsGraphMode",
+              "stats.setStatsView",
+              "stats.statsBarColumns",
+              "stats.statsGraphMode",
+              "stats.statsTeamRows",
+              "stats.statsTotals",
+              "stats.statsView",
+              "stats.toggleEffortSplitBucket",
+              "stats.toggleExcludedCapacityEpicKey",
+              "workScope",
+              "workSetupNotice",
+              "workSetupNotice.adminContacts",
+              "workSetupNotice.canEditSettings",
+              "workSetupNotice.onOpenSettings",
+              "workSetupNotice.scope"
+            ],
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+          },
           "callers": [],
           "remainingAppReaders": [],
           "getters": []
@@ -15888,7 +16540,8 @@
             "selectionTasks",
             "tasks",
             "visibleTasks",
-            "visibleTasksForList"
+            "visibleTasksForList",
+            "workModel"
           ],
           "returnNames": [
             "alertCounts",
@@ -15961,17 +16614,19 @@
             "visibleTasks",
             "visibleTasks.filter",
             "visibleTasks.forEach",
-            "visibleTasksForList"
+            "visibleTasksForList",
+            "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 47,
+          "expandedInputCount": 48,
           "returnCount": 21,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 47,
+          "expandedInputCeiling": 48,
           "returnCeiling": 21,
           "propCeiling": 0,
           "unresolved": [
+            "forwarded input workModel",
             "bag priorityOrder dynamic member",
             "bag priorityOrder dynamic deep member",
             "spread input backlogProductEpics",
@@ -15980,8 +16635,9 @@
             "forwarded input burnoutTaskFilter"
           ],
           "inventory": {
-            "sourceDigest": "99319d1deddd0a1332da5fbf2ea0634351d5fc11b85998fabdcd6517bca656c2",
+            "sourceDigest": "cbc13c926c87b3693bf77d2e9acf997eaec09801dbc285d174ea82d07a6dac03",
             "reviewed": true,
+            "rationale": "Reviewed exact Task 4 immutable closure ledger: priorityOrder aliases PRIORITY_ORDER and is indexed only by task priority names for numeric sorting (fallback 999); member paths name both consolidated item.task and task sort comparators. Spread backlogProductEpics/backlogTechEpics are the existing remote Backlog Epic arrays; readyToCloseEpicsInScope is the existing independently loaded ready-to-close Epic array. Each spread is iterated only as Epic metadata with existing key/status/team predicates. burnoutTaskFilter is converted only by Boolean() to the unchanged focusedFilterActive argument of useEngAlertFilters; no member or callback invocation. All six scope aliases are destructured directly and explicit App helpers remain synchronous predicates, with deferred dismissAlertItem/celebration callbacks staying App-owned. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
               "activeGroupTeamLabels",
               "alertScopeTooLarge",
@@ -16029,15 +16685,15 @@
               "visibleTasks",
               "visibleTasks.filter",
               "visibleTasks.forEach",
-              "visibleTasksForList"
-            ],
-            "rationale": "Reviewed exact Task 4 immutable closure ledger: priorityOrder aliases PRIORITY_ORDER and is indexed only by task priority names for numeric sorting (fallback 999); member paths name both consolidated item.task and task sort comparators. Spread backlogProductEpics/backlogTechEpics are the existing remote Backlog Epic arrays; readyToCloseEpicsInScope is the existing independently loaded ready-to-close Epic array. Each spread is iterated only as Epic metadata with existing key/status/team predicates. burnoutTaskFilter is converted only by Boolean() to the unchanged focusedFilterActive argument of useEngAlertFilters; no member or callback invocation. All six scope aliases are destructured directly and explicit App helpers remain synchronous predicates, with deferred dismissAlertItem/celebration callbacks staying App-owned."
+              "visibleTasksForList",
+              "workModel"
+            ]
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEngAlerts",
-              "line": 5219,
+              "line": 5364,
               "phase": "hook execution"
             }
           ],
@@ -16045,10 +16701,10 @@
             {
               "name": "alerts",
               "lines": [
-                5231,
-                5465,
-                6807,
-                6815
+                5376,
+                5610,
+                6938,
+                6946
               ]
             }
           ],
@@ -16157,7 +16813,8 @@
             "setCapacityState",
             "showPlanning",
             "showProduct",
-            "showTech"
+            "showTech",
+            "workModel"
           ],
           "returnNames": [
             "capacityMutationEnabled",
@@ -16249,17 +16906,19 @@
             "setCapacityState",
             "showPlanning",
             "showProduct",
-            "showTech"
+            "showTech",
+            "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 66,
+          "expandedInputCount": 67,
           "returnCount": 21,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 66,
+          "expandedInputCeiling": 67,
           "returnCeiling": 21,
           "propCeiling": 0,
           "unresolved": [
+            "forwarded input workModel",
             "forwarded input selectedTasksList",
             "forwarded input selectedPlanningTasksList",
             "forwarded input selectedSP",
@@ -16269,8 +16928,9 @@
             "bag capacityReadGuardRef member alias guard"
           ],
           "inventory": {
-            "sourceDigest": "7550b328727bc53ad4382c7886f31cfc5b4be452df591ceddc9224c17bd91f4e",
+            "sourceDigest": "6bc634e4a342daa36ea7db67e12dfcccf7e95dc5dae735e64d7b005a0d4ecd6e",
             "reviewed": true,
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
               "BACKEND_URL",
               "activeCapacityScopeRef",
@@ -16337,15 +16997,15 @@
               "setCapacityState",
               "showPlanning",
               "showProduct",
-              "showTech"
-            ],
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter."
+              "showTech",
+              "workModel"
+            ]
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEngCapacity",
-              "line": 5109,
+              "line": 5089,
               "phase": "hook execution"
             }
           ],
@@ -16353,181 +17013,181 @@
             {
               "name": "selectedAdHocProductSP",
               "lines": [
-                6769
+                6218
               ]
             },
             {
               "name": "excludedProjectStats",
               "lines": [
-                6768
+                6217
               ]
             },
             {
               "name": "capacityShareLabel",
               "lines": [
-                6757
+                6205
               ]
             },
             {
               "name": "teamCapacityEntries",
               "lines": [
-                5556
+                5533
               ]
             },
             {
               "name": "displayedTeamCapacityEntries",
               "lines": [
-                6978,
-                7160,
-                7338,
-                7342
+                6466,
+                6648,
+                6826,
+                6830
               ]
             },
             {
               "name": "capacityScopeSignature",
               "lines": [
-                6751
+                6199
               ]
             },
             {
               "name": "effectiveCapacityState",
               "lines": [
-                6756
+                6204
               ]
             },
             {
               "name": "capacityMutationEnabled",
               "lines": [
-                6748
+                6196
               ]
             },
             {
               "name": "handleCapacitySaved",
               "lines": [
-                6760
+                6209
               ]
             },
             {
               "name": "retryCapacity",
               "lines": [
-                6761
-              ]
-            },
-            {
-              "name": "capacityTeamIds",
-              "lines": [
-                7168,
-                7171,
-                7187,
-                7190,
-                7206,
-                7209,
-                7226,
-                7229,
-                7245,
-                7248,
-                7264,
-                7267,
-                7284,
-                7287,
-                7303,
-                7306,
-                7322,
-                7325
-              ]
-            },
-            {
-              "name": "totalCapacityAdjusted",
-              "lines": [
-                5556,
-                6737
-              ]
-            },
-            {
-              "name": "estimatedCapacityAdjusted",
-              "lines": [
-                6738
-              ]
-            },
-            {
-              "name": "excludedCapacityAdjusted",
-              "lines": [
-                6739
-              ]
-            },
-            {
-              "name": "capacitySummary",
-              "lines": [
-                6742
-              ]
-            },
-            {
-              "name": "selectedProjectEntries",
-              "lines": [
-                6767
-              ]
-            },
-            {
-              "name": "selectedTeamEntries",
-              "lines": [
-                5556,
-                6745
-              ]
-            },
-            {
-              "name": "capacityTotals",
-              "lines": [
-                7165,
-                7166,
-                7185,
-                7203,
-                7204,
-                7223,
-                7224,
-                7243,
-                7261,
-                7262,
-                7281,
-                7282,
-                7301,
-                7319,
-                7320
-              ]
-            },
-            {
-              "name": "showTotalsRow",
-              "lines": [
-                7160
-              ]
-            },
-            {
-              "name": "formatCapacityValue",
-              "lines": [
-                6988,
-                7007,
-                7026,
-                7046,
-                7065,
-                7084,
-                7104,
-                7123,
-                7142,
-                7166,
-                7185,
-                7204,
-                7224,
-                7243,
-                7262,
-                7282,
-                7301,
-                7320
+                6210
               ]
             },
             {
               "name": "refreshCapacity",
               "lines": [
-                5879,
-                5956
+                5977,
+                6055
+              ]
+            },
+            {
+              "name": "capacityTeamIds",
+              "lines": [
+                6656,
+                6659,
+                6675,
+                6678,
+                6694,
+                6697,
+                6714,
+                6717,
+                6733,
+                6736,
+                6752,
+                6755,
+                6772,
+                6775,
+                6791,
+                6794,
+                6810,
+                6813
+              ]
+            },
+            {
+              "name": "totalCapacityAdjusted",
+              "lines": [
+                5533,
+                6185
+              ]
+            },
+            {
+              "name": "estimatedCapacityAdjusted",
+              "lines": [
+                6186
+              ]
+            },
+            {
+              "name": "excludedCapacityAdjusted",
+              "lines": [
+                6187
+              ]
+            },
+            {
+              "name": "capacitySummary",
+              "lines": [
+                6190
+              ]
+            },
+            {
+              "name": "selectedProjectEntries",
+              "lines": [
+                6216
+              ]
+            },
+            {
+              "name": "selectedTeamEntries",
+              "lines": [
+                5533,
+                6193
+              ]
+            },
+            {
+              "name": "capacityTotals",
+              "lines": [
+                6653,
+                6654,
+                6673,
+                6691,
+                6692,
+                6711,
+                6712,
+                6731,
+                6749,
+                6750,
+                6769,
+                6770,
+                6789,
+                6807,
+                6808
+              ]
+            },
+            {
+              "name": "showTotalsRow",
+              "lines": [
+                6648
+              ]
+            },
+            {
+              "name": "formatCapacityValue",
+              "lines": [
+                6476,
+                6495,
+                6514,
+                6534,
+                6553,
+                6572,
+                6592,
+                6611,
+                6630,
+                6654,
+                6673,
+                6692,
+                6712,
+                6731,
+                6750,
+                6770,
+                6789,
+                6808
               ]
             }
           ],
@@ -16576,7 +17236,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEngCapacityState",
-              "line": 916,
+              "line": 945,
               "phase": "hook execution"
             }
           ],
@@ -16584,141 +17244,142 @@
             {
               "name": "capacityState",
               "lines": [
-                5114
+                5094
               ]
             },
             {
               "name": "setCapacityState",
               "lines": [
-                1616,
-                5115
+                1670,
+                5095
               ]
             },
             {
               "name": "capacityStateRef",
               "lines": [
-                5114
+                5094
               ]
             },
             {
               "name": "capacityLoading",
               "lines": [
-                6753
+                6055,
+                6201
               ]
             },
             {
               "name": "setCapacityLoading",
               "lines": [
-                1617,
-                5115
+                1671,
+                5095
               ]
             },
             {
               "name": "capacityReadRevision",
               "lines": [
-                6752
+                6200
               ]
             },
             {
               "name": "setCapacityReadRevision",
               "lines": [
-                5115
+                5095
               ]
             },
             {
               "name": "capacityReadError",
               "lines": [
-                6703,
-                6754
+                6153,
+                6202
               ]
             },
             {
               "name": "setCapacityReadError",
               "lines": [
-                1618,
-                5115
+                1672,
+                5095
               ]
             },
             {
               "name": "capacityDataStale",
               "lines": [
-                6703,
-                6755
+                6153,
+                6203
               ]
             },
             {
               "name": "setCapacityDataStale",
               "lines": [
-                1619,
-                5116
+                1673,
+                5096
               ]
             },
             {
               "name": "capacityReadModelRef",
               "lines": [
-                5116
+                5096
               ]
             },
             {
               "name": "capacityRefreshNonce",
               "lines": [
-                5116
+                5096
               ]
             },
             {
               "name": "setCapacityRefreshNonce",
               "lines": [
-                5116,
-                6555
+                5096
               ]
             },
             {
               "name": "capacityReadGenerationRef",
               "lines": [
-                5117
+                5097
               ]
             },
             {
               "name": "capacityReadAbortRef",
               "lines": [
-                5117
+                5097
               ]
             },
             {
               "name": "activeCapacityScopeRef",
               "lines": [
-                5117
+                5097
               ]
             },
             {
               "name": "capacityScopeHoldRef",
               "lines": [
-                5117,
-                6630
+                5097,
+                6050,
+                6055
               ]
             },
             {
               "name": "capacityScopePinRef",
               "lines": [
-                5118
+                5098
               ]
             },
             {
               "name": "capacityScopeKeyRef",
               "lines": [
-                5118
+                5098
               ]
             },
             {
               "name": "capacityReadGuardRef",
               "lines": [
-                5048
+                5098
               ]
             },
             {
               "name": "activeCapacityTeamsRef",
               "lines": [
-                5048
+                5098
               ]
             }
           ],
@@ -16974,7 +17635,7 @@
             "bag sprintTriggerRefs dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "bca702b55070d1105516db562dac26cd03e74e9c477d33a0dba22fff420bdef7",
+            "sourceDigest": "a4bcaa0fae3d61ece58d37938ac1ce355a69e95e4a7d22a21a07e96319aa7c1a",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -17010,7 +17671,7 @@
               "sprintsLoading",
               "surface"
             ],
-            "rationale": "surface remains the old main/compact argument forwarded unchanged to sprintOptionDomId/openSprintSelector. selectedSprint/sprintActiveOptionIndex are forwarded only to existing String/Math helpers. canOpen aliases engSprintSelectorState.ordinarySelectable. sprintDropdownRefs/sprintTriggerRefs.current[surface] preserve the two mounted DOM-node slots, and sprintSelectorOriginRef retains the unchanged deferred Tab reset. No state, effect, getter or scope ownership moves."
+            "rationale": "surface remains the old main/compact argument forwarded unchanged to sprintOptionDomId/openSprintSelector. selectedSprint/sprintActiveOptionIndex are forwarded only to existing String/Math helpers. canOpen aliases engSprintSelectorState.ordinarySelectable. sprintDropdownRefs/sprintTriggerRefs.current[surface] preserve the two mounted DOM-node slots, and sprintSelectorOriginRef retains the unchanged deferred Tab reset. No state, effect, getter or scope ownership moves. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
           },
           "callers": [
             {
@@ -18204,6 +18865,360 @@
           "getters": []
         }
       ]
+    },
+    {
+      "id": "settings.WorkConfigurationsEditor",
+      "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "WorkConfigurationUnavailable",
+        "default"
+      ],
+      "lineCeiling": 330,
+      "interfaces": [
+        {
+          "exportName": "WorkConfigurationUnavailable",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [],
+          "outerParameterCount": 0,
+          "expandedInputCount": 0,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 0,
+          "expandedInputCeiling": 0,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [],
+          "inventory": {},
+          "callers": [
+            {
+              "path": "frontend/src/settings/AdminSettingsContainer.jsx",
+              "symbol": "WorkConfigurationUnavailable",
+              "line": 194,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        },
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "BACKEND_URL",
+            "jiraFields",
+            "jiraProjects",
+            "loadingFields",
+            "loadingProjects",
+            "resolveProjectName",
+            "workConfig"
+          ],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "jiraFields",
+            "jiraProjects",
+            "loadingFields",
+            "loadingProjects",
+            "resolveProjectName",
+            "workConfig",
+            "workConfig.activeEntry",
+            "workConfig.activeId",
+            "workConfig.drawerOpen",
+            "workConfig.entries",
+            "workConfig.loadError",
+            "workConfig.loadState",
+            "workConfig.patch",
+            "workConfig.reload",
+            "workConfig.selectConfiguration",
+            "workConfig.setDrawerOpen",
+            "workConfig.setTab",
+            "workConfig.tabFor",
+            "workConfig.validation",
+            "workConfig.validation.errors"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 21,
+          "returnCount": 0,
+          "propCount": 7,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 21,
+          "returnCeiling": 0,
+          "propCeiling": 7,
+          "unresolved": [
+            "bag workConfig member alias errors"
+          ],
+          "inventory": {
+            "sourceDigest": "053e282319d1ce1c51a6c32ab06ba96ec6af03b3077004fea1e429fd514559ec",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "jiraFields",
+              "jiraProjects",
+              "loadingFields",
+              "loadingProjects",
+              "resolveProjectName",
+              "workConfig",
+              "workConfig.activeEntry",
+              "workConfig.activeId",
+              "workConfig.drawerOpen",
+              "workConfig.entries",
+              "workConfig.loadError",
+              "workConfig.loadState",
+              "workConfig.patch",
+              "workConfig.reload",
+              "workConfig.selectConfiguration",
+              "workConfig.setDrawerOpen",
+              "workConfig.setTab",
+              "workConfig.tabFor",
+              "workConfig.validation",
+              "workConfig.validation.errors"
+            ],
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/AdminSettingsContainer.jsx",
+              "symbol": "WorkConfigurationsEditor",
+              "line": 195,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
+    },
+    {
+      "id": "settings.useWorkConfigurationSettings",
+      "path": "frontend/src/settings/useWorkConfigurationSettings.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "readWorkConfigBootstrap",
+        "resolveWorkConfigMode",
+        "useWorkConfigurationSettings"
+      ],
+      "lineCeiling": 450,
+      "interfaces": [
+        {
+          "exportName": "useWorkConfigurationSettings",
+          "inputNames": [
+            "BACKEND_URL",
+            "jiraFields",
+            "onDraftReplaced",
+            "selectedSprintName",
+            "setGroupTestMessage",
+            "setGroupTesting",
+            "visible"
+          ],
+          "returnNames": [
+            "active",
+            "activeEntry",
+            "activeId",
+            "addProject",
+            "applyBootstrap",
+            "baseline",
+            "bundle",
+            "catalogHintFor",
+            "dirty",
+            "dirtyIds",
+            "discard",
+            "drawerOpen",
+            "entries",
+            "featureEnabled",
+            "fieldErrors",
+            "isLegacy",
+            "limitMessages",
+            "loadError",
+            "loadState",
+            "missingByConfiguration",
+            "mode",
+            "patch",
+            "prepareKeepMine",
+            "promoted",
+            "quarterHint",
+            "reload",
+            "removeProject",
+            "restoreDraft",
+            "retryTypeCatalog",
+            "revision",
+            "save",
+            "saveFeedback",
+            "scopeForQuarter",
+            "selectConfiguration",
+            "setDrawerOpen",
+            "setSearch",
+            "setTab",
+            "setTechnicalIds",
+            "summaries",
+            "tabFor",
+            "technicalIds",
+            "testSaved",
+            "typeCatalogFor",
+            "uiFor",
+            "unavailable",
+            "userCanEdit",
+            "validation",
+            "validationMessages"
+          ],
+          "propNames": [],
+          "expandedInputNames": [
+            "BACKEND_URL",
+            "jiraFields",
+            "onDraftReplaced",
+            "selectedSprintName",
+            "setGroupTestMessage",
+            "setGroupTesting",
+            "visible"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 7,
+          "returnCount": 48,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 7,
+          "returnCeiling": 48,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input BACKEND_URL",
+            "forwarded input jiraFields",
+            "forwarded input onDraftReplaced"
+          ],
+          "inventory": {
+            "sourceDigest": "935a8c05dfacb69d8e68b0dca010ce028c91de8f10aebec20f3f59c8d3495904",
+            "reviewed": true,
+            "memberNames": [
+              "BACKEND_URL",
+              "jiraFields",
+              "onDraftReplaced",
+              "selectedSprintName",
+              "setGroupTestMessage",
+              "setGroupTesting",
+              "visible"
+            ],
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "useWorkConfigurationSettings",
+              "line": 944,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "workConfig",
+              "lines": [
+                947,
+                948,
+                1336,
+                2095,
+                2127,
+                2182,
+                3362,
+                6901
+              ]
+            }
+          ],
+          "getters": [
+            {
+              "caller": "frontend/src/dashboard.jsx",
+              "name": "onDraftReplaced",
+              "line": 945,
+              "capturedBindings": [
+                "setGroupDraftError",
+                "setSettingsSaveError"
+              ],
+              "phase": "deferred callback",
+              "evidence": "useWorkConfigurationSettings.js reads the callback through onDraftReplacedRef.current only inside reload(), after the awaited work-structure GET resolves for a user-triggered Reload or Use latest; it clears the two error strings via setSettingsSaveError and setGroupDraftError (stable useState setters declared earlier in App) and is never read in render, a memo or a dependency array."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "settings.workConfigurationCatalogs",
+      "path": "frontend/src/settings/workConfigurationCatalogs.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "clearWorkCatalogCache",
+        "issueTypeCatalogKey",
+        "loadIssueTypeCatalog"
+      ],
+      "lineCeiling": 50,
+      "interfaces": []
+    },
+    {
+      "id": "settings.workConfigurationFormProps",
+      "path": "frontend/src/settings/workConfigurationFormProps.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "DELIVERY_PROJECT_LIMIT_MESSAGE",
+        "FIELD_SLOTS",
+        "buildFieldSettingsProps",
+        "projectLimitReached"
+      ],
+      "lineCeiling": 250,
+      "interfaces": []
+    },
+    {
+      "id": "settings.workConfigurationModel",
+      "path": "frontend/src/settings/workConfigurationModel.js",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "BLANK_FIELD",
+        "DELIVERY_PROJECT_LIMIT_MESSAGE",
+        "HIERARCHY_SLOTS",
+        "LEGACY_FIELDS",
+        "MODEL_LEGACY",
+        "MODEL_RND",
+        "MODE_SLOTS",
+        "QUARTER_MESSAGE",
+        "REQUIRED_FIELDS",
+        "RND_FIELDS",
+        "addProjectToEntry",
+        "adoptServerOwned",
+        "applyEntryPatch",
+        "buildSaveRequest",
+        "catalogScopeFor",
+        "clearedProjectIds",
+        "cloneBundle",
+        "deriveLegacyEdits",
+        "describeHierarchyRow",
+        "dirtyConfigurationIds",
+        "entryById",
+        "fieldErrorFromServer",
+        "hierarchyLabels",
+        "hierarchyLevelOffset",
+        "isEntryDirty",
+        "isPromotedBundle",
+        "isValidQuarter",
+        "missingMappings",
+        "missingSummary",
+        "normalizeIssueTypes",
+        "patchBundleEntry",
+        "quarterIndex",
+        "rangeLabel",
+        "rebaseOntoLatest",
+        "removeProjectFromEntry",
+        "slotsFor",
+        "validateBundle"
+      ],
+      "lineCeiling": 380,
+      "interfaces": []
     }
   ],
   "transfer": {

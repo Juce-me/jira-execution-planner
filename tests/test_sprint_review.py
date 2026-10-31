@@ -731,8 +731,8 @@ class ReviewStatementCountTests(ReviewFixture, unittest.TestCase):
         self.assert_count(5, self.save, schemas=[self.layout(order=['priority'])], view=1)
 
     def test_add_plus_layout_patch_first_and_existing_view(self):
-        self.assert_count(7, self.save, schemas=[self.new_column(), self.layout()], view=0)
-        self.assert_count(6, self.save, schemas=[self.new_column(), self.layout(order=['priority'])], base=2, view=1)
+        self.assert_count(8, self.save, schemas=[self.new_column(), self.layout()], view=0)
+        self.assert_count(7, self.save, schemas=[self.new_column(), self.layout(order=['priority'])], base=2, view=1)
 
 
 class GroupReviewMigrationTests(unittest.TestCase):

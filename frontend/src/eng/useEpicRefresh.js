@@ -428,7 +428,7 @@ export function useEpicRefresh(inputs) {
             }
             latest.current.afterApply?.(update);
             // Scope-based alerts follow in the background: the epic is not kept busy for them, and a failure shows nothing.
-            const calls = alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === 'catch_up' });
+            const calls = alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === 'catch_up', workModel: latest.current.workModel });
             if (calls.length) void schedulerRef.current.request(epicKey, { calls, ctx: { alertVersion: alertVersionAtClick.current.get(epicKey), guards: latest.current.readGuards(epicKey) } });
             return { hiddenCount };
         };
@@ -484,7 +484,7 @@ export function useEpicRefresh(inputs) {
         const isCatchUp = input.sourceSurface === 'catch_up';
         if (!isCatchUp) return { handled: false, unresolved: [] };
         if (field === 'priority') return { handled: true, unresolved: [] };
-        const calls = alertCallsForEdit({ field, isFutureSprint: input.isFutureSprint === true, isCatchUp });
+        const calls = alertCallsForEdit({ field, isFutureSprint: input.isFutureSprint === true, isCatchUp, workModel: input.workModel });
         if (!calls.length) return { handled: false, unresolved: [] };
         const state = input.getState();
         const { epicKeys, unresolved } = resolveEditEpicKeys({

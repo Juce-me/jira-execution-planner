@@ -211,15 +211,27 @@ def _load_snapshot(key, field, field_id, *, jira_request, context):
         raise FieldEditServiceError("jira_read_failed", 502)
     return {
         "issueType": type_name.strip(),
+        "issueTypeId": str(issue_type.get("id") or "").strip(),
+        "hierarchyLevel": issue_type.get("hierarchyLevel"),
         "subtask": issue_type.get("subtask") is True,
         "updated": updated.strip(),
         "value": _normalize_current_value(field, fields[field_id]),
     }
 
 
-def _issue_supports_field(snapshot, field):
+def _issue_supports_field(snapshot, field, scope=None):
     if snapshot["subtask"]:
         return False
+    if scope is not None and scope.mapped:
+        # New model: the role comes from the mapped type id and level, never from a name. Delivery
+        # owner belongs to the parent (Initiative), points to the child (Epic); a child is never
+        # redirected to its parent.
+        role = scope.role(snapshot["issueTypeId"], snapshot["hierarchyLevel"])
+        if field == "deliveryOwner":
+            return role == "parent"
+        if field == "storyPoints":
+            return role == "child"
+        return role is not None
     issue_type = snapshot["issueType"].lower()
     if field == "deliveryOwner":
         return issue_type == "epic"
@@ -370,7 +382,7 @@ def _allowed_account_ids(metadata):
     return allowed
 
 
-def load_editable_field(issue_key, field, *, jira_request, context, field_ids):
+def load_editable_field(issue_key, field, *, jira_request, context, field_ids, scope=None):
     key = _normalize_issue_key(issue_key)
     logical_field = _normalize_field(field)
     resolved_field_id = _field_id(logical_field, field_ids)
@@ -403,7 +415,7 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids):
                 jira_request=jira_request, context=context,
             )
             snapshot = snapshot_future.result()
-            if not _issue_supports_field(snapshot, logical_field):
+            if not _issue_supports_field(snapshot, logical_field, scope):
                 return _metadata_payload(
                     key, logical_field, current_value=snapshot["value"],
                     updated=snapshot["updated"], revision=revision,
@@ -423,7 +435,7 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids):
             key, logical_field, resolved_field_id,
             jira_request=jira_request, context=context,
         )
-        if not _issue_supports_field(snapshot, logical_field):
+        if not _issue_supports_field(snapshot, logical_field, scope):
             return _metadata_payload(
                 key, logical_field, current_value=snapshot["value"],
                 updated=snapshot["updated"], revision=revision,
@@ -492,7 +504,7 @@ def _validate_search_payload(payload):
     return field, query
 
 
-def search_field_users(issue_key, payload, *, jira_request, context, field_ids):
+def search_field_users(issue_key, payload, *, jira_request, context, field_ids, scope=None):
     key = _normalize_issue_key(issue_key)
     field, query = _validate_search_payload(payload)
     resolved_field_id = _field_id(field, field_ids)
@@ -501,7 +513,7 @@ def search_field_users(issue_key, payload, *, jira_request, context, field_ids):
     snapshot = _load_snapshot(
         key, field, resolved_field_id, jira_request=jira_request, context=context,
     )
-    if not _issue_supports_field(snapshot, field):
+    if not _issue_supports_field(snapshot, field, scope):
         raise FieldEditServiceError("issue_type_not_supported", 409)
     metadata = _load_editmeta(
         key, field, resolved_field_id, jira_request=jira_request, context=context,
@@ -683,7 +695,7 @@ def _raise_put_failure(response, key, field, snapshot, revision):
         )
 
 
-def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, invalidate):
+def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, invalidate, scope=None):
     key = _normalize_issue_key(issue_key)
     field, target, baseline, _base_updated, submitted_revision = _validate_mutation_payload(payload)
     resolved_field_id = _field_id(field, field_ids)
@@ -693,7 +705,7 @@ def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, 
     snapshot = _load_snapshot(
         key, field, resolved_field_id, jira_request=jira_request, context=context,
     )
-    if not _issue_supports_field(snapshot, field):
+    if not _issue_supports_field(snapshot, field, scope):
         raise FieldEditServiceError("issue_type_not_supported", 409)
     metadata = _load_editmeta(
         key, field, resolved_field_id, jira_request=jira_request, context=context,

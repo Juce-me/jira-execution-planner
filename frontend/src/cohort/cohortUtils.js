@@ -1,3 +1,5 @@
+import { catalogContextKey } from '../workStructure/configurationContext.js';
+
 const TERMINAL_STATUS_KEYS = new Set(['done', 'killed', 'incomplete', 'postponed']);
 
 export const LEAD_TIMES_MODES = Object.freeze(['created', 'closed', 'last_n']);
@@ -22,13 +24,49 @@ export function resolveLeadTimesLastN(value) {
 }
 
 // The Created body is exactly what Lead Times has always sent (frozen by the request-contract specs);
-// only the closed modes add `mode`, and Last N takes no quarters.
-export function buildCohortRequest({ mode, startQuarter, endQuarter, teamIds, components, adHocCapacityEpics }) {
+// only the closed modes add `mode`. Last N takes no quarters: after promotion it names the selected
+// configuration instead, and the viewed quarter only selects it (N stays client-only). `context` is the
+// accepted work-configuration context; null keeps every unpromoted body byte-identical.
+export function buildCohortRequest({ mode, startQuarter, endQuarter, teamIds, components, adHocCapacityEpics, context = null }) {
     if (mode === 'last_n') {
-        return { mode, teamIds, components, adHocCapacityEpics, refresh: false };
+        const selector = context
+            ? { quarter: context.quarter, configurationId: context.id, configurationRevision: String(context.revision) }
+            : {};
+        return { mode, ...selector, teamIds, components, adHocCapacityEpics, refresh: false };
     }
     const body = { startQuarter, endQuarter, teamIds, components, adHocCapacityEpics, refresh: false };
     return mode === 'closed' ? { mode, ...body } : body;
+}
+
+// Browser cache identity. Unpromoted keys are unchanged. Promoted keys add the selected configuration's
+// id/revision/digest; the viewed quarter is intent, not a cache dimension, so a quarter change inside one
+// unchanged configuration reuses the fetched window and an era or revision change never does.
+export function buildCohortQueryKey({ mode, startQuarter, endQuarter, closedStartQuarter, closedEndQuarter, scopeKey, context = null }) {
+    const configuration = context ? `::cfg:${catalogContextKey(context)}` : '';
+    if (mode === 'last_n') return context ? `last_n${configuration}::${scopeKey}` : `last_n::::::${scopeKey}`;
+    const closedMode = mode === 'closed';
+    const start = String((closedMode ? closedStartQuarter : startQuarter) || '').trim();
+    const end = String((closedMode ? closedEndQuarter : endQuarter) || '').trim();
+    if (!start || !end) return '';
+    const key = `${start}::${end}::${scopeKey}${configuration}`;
+    return closedMode ? `closed::${key}` : key;
+}
+
+// A late Last N completion is admitted only for the configuration and report scope that requested it.
+export const admitCohortResult = (requestedKey, currentKey) => Boolean(requestedKey) && requestedKey === currentKey;
+
+export const COHORT_CONFIGURATION_CODES = Object.freeze(['configuration_required', 'configuration_scope_changed', 'configuration_incomplete']);
+const COHORT_CONFIGURATION_MESSAGES = Object.freeze({
+    configuration_required: 'Choose a quarter with a configured project structure to load Lead Times.',
+    configuration_scope_changed: 'The project configuration changed. Refresh to load Lead Times for the current configuration.',
+    configuration_incomplete: 'This quarter\u2019s project configuration is incomplete. Finish its setup in admin settings.',
+});
+
+// The configuration failure a 409 carries, or null. Callers keep held data and never replay the request.
+export function cohortConfigurationFailure(status, payload) {
+    if (status !== 409) return null;
+    const code = payload?.error;
+    return COHORT_CONFIGURATION_CODES.includes(code) ? { code, message: COHORT_CONFIGURATION_MESSAGES[code] } : null;
 }
 
 export function parseIsoDate(value) {

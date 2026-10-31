@@ -6,6 +6,8 @@ import os
 import re
 from datetime import datetime, timedelta
 
+from backend.auth.jira_auth import AuthError
+
 
 BOARD_SPRINT_MAX_PAGES = 100
 BOARD_SPRINT_MAX_ROWS = 10000
@@ -334,6 +336,130 @@ def fetch_board_sprints(*, board_id, jira_get, auth_error_class, budget):
         if previous is None or rank < previous[0]:
             winners[name] = (rank, sprint)
 
+    budget.check('sprint_publish')
+    return sorted((entry[1] for entry in winners.values()), key=lambda item: item['name'], reverse=True)
+
+
+SCOPED_SPRINT_PAGE_SIZE = 100
+SCOPED_SPRINT_MAX_PAGES = 200
+SCOPED_SPRINT_MAX_ROWS = 20000
+
+
+def fetch_scoped_issue_sprints(*, base_jql, sprint_field_id, jira_search, budget):
+    """Observed Sprint catalog from the mapped Sprint field of scoped issues.
+
+    Complete or nothing: any malformed page, repeated/missing continuation,
+    ceiling or Jira failure raises ``SprintCatalogFetchError`` and nothing is
+    published.  A complete scan with no Sprint values is a valid empty catalog.
+    Only quarter-named Sprints are retained, deduplicated by name with the
+    ``fetch_board_sprints`` rule (active > closed > future, lower id).
+    """
+    from backend.services.eng_board import MAX_ENCODED_REQUEST_BYTES, paged_search_bytes
+
+    base = str(base_jql or '').strip()
+    field_id = str(sprint_field_id or '').strip()
+    match = re.fullmatch(r'customfield_([0-9]+)', field_id)
+    if not base or match is None:
+        raise SprintCatalogFetchError('catalog_incomplete')
+    jql = f'({base}) AND cf[{match.group(1)}] is not EMPTY'
+    # Jira's continuation token scales with the JQL: size the worst page-two GET.
+    if paged_search_bytes(jql, [field_id]) > MAX_ENCODED_REQUEST_BYTES:
+        raise SprintCatalogFetchError('catalog_incomplete')
+
+    collected = []
+    seen_tokens = set()
+    next_token = None
+    page_count = 0
+    row_count = 0
+    while True:
+        budget.check('sprint_page')
+        payload = {'jql': jql, 'fields': [field_id], 'maxResults': SCOPED_SPRINT_PAGE_SIZE}
+        if next_token is not None:
+            payload['nextPageToken'] = next_token
+        try:
+            response = jira_search(payload)
+        except AuthError:
+            raise
+        except Exception as exc:
+            if _is_cooperative_deadline(exc) or _is_catalog_lock_timeout(exc):
+                raise
+            raise SprintCatalogFetchError('jira_unavailable') from exc
+        status = getattr(response, 'status_code', None)
+        if status == 401:
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        if isinstance(status, bool) or not isinstance(status, int):
+            raise SprintCatalogFetchError('catalog_incomplete')
+        if status != 200:
+            raise SprintCatalogFetchError('jira_unavailable')
+        try:
+            data = response.json()
+        except Exception as exc:
+            raise SprintCatalogFetchError('catalog_incomplete') from exc
+        if not isinstance(data, dict):
+            raise SprintCatalogFetchError('catalog_incomplete')
+        issues = data.get('issues')
+        is_last = data.get('isLast')
+        if (
+            not isinstance(issues, list) or not isinstance(is_last, bool)
+            or len(issues) > SCOPED_SPRINT_PAGE_SIZE
+            or any(not isinstance(issue, dict) for issue in issues)
+        ):
+            raise SprintCatalogFetchError('catalog_incomplete')
+        page_count += 1
+        row_count += len(issues)
+        if page_count > SCOPED_SPRINT_MAX_PAGES or row_count > SCOPED_SPRINT_MAX_ROWS:
+            raise SprintCatalogFetchError('catalog_incomplete')
+        for issue in issues:
+            fields = issue.get('fields')
+            if not isinstance(fields, dict):
+                raise SprintCatalogFetchError('catalog_incomplete')
+            value = fields.get(field_id)
+            if value is None:
+                continue
+            if not isinstance(value, list):
+                raise SprintCatalogFetchError('catalog_incomplete')
+            for sprint in value:
+                if not isinstance(sprint, dict):
+                    raise SprintCatalogFetchError('catalog_incomplete')
+                name = sprint.get('name', '')
+                state = sprint.get('state', '')
+                start_date = sprint.get('startDate')
+                end_date = sprint.get('endDate')
+                if (
+                    not isinstance(name, str) or not isinstance(state, str)
+                    or start_date is not None and not isinstance(start_date, str)
+                    or end_date is not None and not isinstance(end_date, str)
+                ):
+                    raise SprintCatalogFetchError('catalog_incomplete')
+                formatted = _format_quarter_sprint(sprint)
+                if formatted is None:
+                    continue
+                sprint_id = _strict_sprint_id(sprint.get('id'))
+                if sprint_id is None:
+                    raise SprintCatalogFetchError('catalog_incomplete')
+                formatted['id'] = sprint_id
+                collected.append(formatted)
+        budget.check('sprint_page')
+        if is_last:
+            if data.get('nextPageToken'):
+                raise SprintCatalogFetchError('catalog_incomplete')
+            break
+        token = data.get('nextPageToken')
+        if (
+            not isinstance(token, str) or not token or token in seen_tokens
+            or page_count >= SCOPED_SPRINT_MAX_PAGES
+        ):
+            raise SprintCatalogFetchError('catalog_incomplete')
+        seen_tokens.add(token)
+        next_token = token
+
+    state_priority = {'active': 0, 'closed': 1, 'future': 2}
+    winners = {}
+    for sprint in collected:
+        rank = (state_priority.get((sprint.get('state') or '').lower(), 9), sprint['id'])
+        previous = winners.get(sprint['name'])
+        if previous is None or rank < previous[0]:
+            winners[sprint['name']] = (rank, sprint)
     budget.check('sprint_publish')
     return sorted((entry[1] for entry in winners.values()), key=lambda item: item['name'], reverse=True)
 

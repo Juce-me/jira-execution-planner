@@ -135,6 +135,20 @@ function normalizeInitiativeNode(node, seenKeys) {
     };
 }
 
+function normalizeHierarchyNames(names) {
+    const list = value => (Array.isArray(value) ? value.map(item => String(item || '').trim()).filter(Boolean) : []);
+    return { initiative: list(names?.initiative), epic: list(names?.epic) };
+}
+
+// The read-only hierarchy words of a rollup (single tree or aggregate boards), for the EPM settings block.
+export function extractEpmHierarchyNames(treeOrBoards) {
+    const trees = Array.isArray(treeOrBoards) ? treeOrBoards.map(board => board?.tree) : [treeOrBoards];
+    const found = trees.filter(tree => tree?.hierarchyNames);
+    if (!found.length) return null;
+    const union = key => [...new Set(found.flatMap(tree => tree.hierarchyNames[key]))];
+    return { initiative: union('initiative'), epic: union('epic') };
+}
+
 export function buildRollupTree(payload) {
     if (payload?.metadataOnly) {
         return { kind: 'metadataOnly' };
@@ -146,6 +160,9 @@ export function buildRollupTree(payload) {
     const seenKeys = new Set();
     return {
         kind: 'tree',
+        // A new-model period carries its read-only workspace hierarchy names and has no Story level:
+        // Epics are the leaf work items. Legacy payloads carry neither, so their tree is unchanged.
+        ...(payload?.hierarchyNames ? { leafRole: 'epic', hierarchyNames: normalizeHierarchyNames(payload.hierarchyNames) } : {}),
         truncated: Boolean(payload?.truncated),
         truncatedQueries: Array.isArray(payload?.truncatedQueries) ? payload.truncatedQueries : [],
         initiatives: collectionValues(payload?.initiatives)
@@ -322,15 +339,16 @@ export function filterEpmRollupBoardsForSearch(boards, query) {
 function collectEpmProjectStories(tree) {
     if (!tree || tree.kind !== 'tree') return [];
     const stories = [];
+    const epicLeaves = tree.leafRole === 'epic';
+    const takeEpic = epic => {
+        if (epicLeaves) stories.push(epic.issue);
+        else epic.stories.forEach(story => stories.push(story));
+    };
     tree.initiatives.forEach(initiative => {
-        initiative.epics.forEach(epic => {
-            epic.stories.forEach(story => stories.push(story));
-        });
+        initiative.epics.forEach(takeEpic);
         initiative.looseStories.forEach(story => stories.push(story));
     });
-    tree.rootEpics.forEach(epic => {
-        epic.stories.forEach(story => stories.push(story));
-    });
+    tree.rootEpics.forEach(takeEpic);
     tree.orphanStories.forEach(story => stories.push(story));
     return stories;
 }

@@ -10,6 +10,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | --- | --- | --- | --- | --- |
 | Administrator settings | `workspace_dashboard_configs` | Authenticated workspace users | `shared_admin_write` | One effective value per workspace; only tool admins configure it when `SETTINGS_ADMIN_ONLY=true` |
 | Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
+| Quarterly work configurations (`workConfigurations` bundle) | `workspace_dashboard_configs.payload` (one revisioned key, server-owned `promotionRevision`) | Authenticated workspace users (virtual capture before promotion; no write on GET) | `shared_admin_write` via the dedicated bundle transaction only | One bundle per workspace: exactly Legacy then DELIVERY; after promotion it replaces the flat projects/Board/Sprint/Story Points/parent-name/Team/Project Track/Delivery owner/issue-type keys; Capacity, priority weights, groups and private payloads stay where they are |
 | Group visibility, favorite/star, and active group | `user_group_preferences` | Current user | `user_write` | Private to one user in one workspace; never copied into shared group configuration |
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
@@ -124,6 +125,29 @@ Bounds are 30 active columns per row kind and 240 columns per group (archived on
 budget. No request can return partially authorized data. Browser-supplied workspace/user authority is
 rejected; the one browser-supplied selector is `groupId`, checked against the shared Department group
 catalog on PATCH only (reads never consult it), and it is a storage key, never authority.
+
+## Quarterly Work Configurations
+
+The bundle (`backend/services/work_structure.py`) lives under `workConfigurations` in the workspace
+payload and is written only by `save_work_configurations` through
+`workspace_dashboard_config.update_workspace_config_keys`: one advisory-fence transaction that rechecks
+the global revision, recaptures first-save input from the locked row (DB-only; no JSON, ambient getter
+or request-cache read), validates, writes the bundle and the server-owned `promotionRevision`, removes
+only the moved flat keys, bumps changed entry revisions and the global revision once, and audits. It
+never touches Capacity, its verification columns, priority weights, groups or private views.
+
+- `WORK_CONFIGURATIONS_ENABLED` defaults off. Durable state decides behavior, not the flag alone:
+  unpromoted/off keeps the flat editor and writers; unpromoted/on shows the virtual two-entry editor
+  while work reads stay Legacy until an explicit Save; promoted/on reads the bundle; promoted/off fails
+  structural reads and bundle writes with `409 configuration_feature_disabled` and never falls back to
+  flat keys. A seeded bundle without `promotionRevision` is unpromoted. Nothing writes on GET or startup.
+- After promotion the old partial structural writers (`update_workspace_config_section` for the moved
+  keys, therefore `settings_routes._persist_shared_section` and `jira_server._save_field_config`) reject
+  `409 configuration_bundle_required`. Browser input never carries authority: ids, models, revisions,
+  captured compatibility and display metadata and `promotionRevision` are server-owned; a non-empty to
+  empty project scope needs an explicit `clearProjectsForConfigurationIds` entry.
+- `scripts/check_work_configuration_rollback.py --workspace-id <id>` reads the selected workspace row
+  read-only and refuses any promoted bundle. It never flattens or mutates.
 
 ## HTTP Meaning
 

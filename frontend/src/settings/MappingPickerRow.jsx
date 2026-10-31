@@ -23,10 +23,11 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
             className={`group-projects-subsection${hoverKey && mappingHoverKey === hoverKey ? ' is-linked-hover' : ''}`}
             data-map-key={hoverKey || mapping.key}
             data-mapping-key={mapping.key}
+            data-mapping-status={mapping.status || undefined}
             onMouseEnter={hoverKey ? () => setMappingHoverKey(hoverKey) : undefined}
             onMouseLeave={hoverKey ? () => setMappingHoverKey(null) : undefined}
         >
-            <div className="team-selector-label">{mapping.label}{mapping.optional ? ' (optional)' : ''}</div>
+            <div className="team-selector-label">{mapping.label}{mapping.optional ? ' (optional)' : mapping.required ? ' (required)' : ''}</div>
             {mapping.helper && <div className="group-field-helper">{mapping.helper}</div>}
             <div className="capacity-inline-row">
                 {selected ? (
@@ -42,6 +43,11 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
                             onChange={event => { setQuery(event.target.value); setOpen(true); setIndex(0); }}
                             onFocus={() => setOpen(true)} onBlur={() => { window.setTimeout(() => setOpen(false), 120); }} onKeyDown={handleKeyDown}
                         />
+                        {open && items.length === 0 && mapping.emptyMessage && query.trim() && (
+                            <div className="team-search-results" onMouseDown={event => event.preventDefault()}>
+                                <div className="team-search-result-item is-empty" role="status">{mapping.emptyMessage}</div>
+                            </div>
+                        )}
                         {open && items.length > 0 && (
                             <div className="team-search-results" onMouseDown={event => event.preventDefault()}>
                                 {items.map((option, optionIndex) => (

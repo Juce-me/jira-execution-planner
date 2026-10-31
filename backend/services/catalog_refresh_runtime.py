@@ -17,10 +17,13 @@ from sqlalchemy.exc import OperationalError
 from backend.auth.jira_auth import AuthError
 from backend.jira_client import JiraCircuitBreaker
 from backend.services.workspace_catalog_cache import (
+    SCOPED_SPRINT_CATALOGS,
     CatalogSnapshot,
     assert_catalog_refresh_actor,
+    capture_sprint_proof,
     claim_catalog_refresh,
     finish_catalog_failure,
+    load_scoped_sprint_catalog,
     load_sprint_catalog,
     load_sprint_team_catalog,
     publish_catalog,
@@ -28,9 +31,10 @@ from backend.services.workspace_catalog_cache import (
 )
 from backend.services.sprints import SprintCatalogFetchError
 from backend.services.sprint_teams import TeamCatalogFetchError
+from backend.services import work_structure
 from backend.services.workspace_catalog_config import (
     build_team_catalog_identity,
-    build_team_scope_digest,
+    team_scope_digest,
 )
 from backend.services.workspace_dashboard_config import WorkspaceConfigFenceUnavailable
 
@@ -174,10 +178,7 @@ def read_catalog_completion(
         else build_team_catalog_identity(
             context.workspace_id,
             str(sprint_id or '').strip(),
-            build_team_scope_digest(
-                board_id=config.board_id, projects=config.projects,
-                team_field_id=config.team_field_id, base_jql=config.base_jql,
-            ),
+            team_scope_digest(config),
         )
     )
     if current_identity != expected_identity:
@@ -195,6 +196,33 @@ def read_catalog_completion(
             failure_code='refresh_budget_exhausted',
         )
     return snapshot
+
+
+def classify_catalog_failure(error, *, budget=None):
+    if isinstance(error, CatalogRefreshDeadline):
+        return error.code
+    if (
+        isinstance(error, (CatalogRefreshLockTimeout, WorkspaceConfigFenceUnavailable))
+        or _is_catalog_lock_operational_error(error)
+    ):
+        if budget is not None:
+            try:
+                budget.check('fence_failure_classification')
+            except CatalogRefreshDeadline:
+                return 'refresh_budget_exhausted'
+        return 'catalog_refresh_lock_timeout'
+    if isinstance(error, TimeoutError):
+        return 'refresh_budget_exhausted'
+    if isinstance(error, (SprintCatalogFetchError, TeamCatalogFetchError)):
+        return error.code
+    if isinstance(error, AuthError):
+        cause = error.__cause__
+        while cause is not None:
+            if isinstance(cause, requests.Timeout):
+                return 'oauth_refresh_timeout'
+            cause = cause.__cause__
+        return 'auth_required'
+    return str(getattr(error, 'code', '') or 'jira_unavailable')
 
 
 class CatalogRefreshRuntime:
@@ -229,33 +257,11 @@ class CatalogRefreshRuntime:
             shutdown(wait=wait, cancel_futures=True)
 
     def _failure_code(self, error, *, budget=None):
-        if isinstance(error, CatalogRefreshDeadline):
-            return error.code
-        if (
-            isinstance(error, (CatalogRefreshLockTimeout, WorkspaceConfigFenceUnavailable))
-            or _is_catalog_lock_operational_error(error)
-        ):
-            if budget is not None:
-                try:
-                    budget.check('fence_failure_classification')
-                except CatalogRefreshDeadline:
-                    return 'refresh_budget_exhausted'
-            return 'catalog_refresh_lock_timeout'
-        if isinstance(error, TimeoutError):
-            return 'refresh_budget_exhausted'
-        if isinstance(error, (SprintCatalogFetchError, TeamCatalogFetchError)):
-            return error.code
-        if isinstance(error, AuthError):
-            cause = error.__cause__
-            while cause is not None:
-                if isinstance(cause, requests.Timeout):
-                    return 'oauth_refresh_timeout'
-                cause = cause.__cause__
-            return 'auth_required'
-        return str(getattr(error, 'code', '') or 'jira_unavailable')
+        return classify_catalog_failure(error, budget=budget)
 
     def _execute(self, context, claim, budget, resolve_config, *, propagate_auth):
         transport = CatalogRefreshTransport(budget)
+        sprint_proof = None
         try:
             budget.check('worker_start')
             if claim.kind == 'sprints':
@@ -266,6 +272,11 @@ class CatalogRefreshRuntime:
             else:
                 if self._fetch_teams is None:
                     raise RuntimeError('team catalog fetcher is unavailable')
+                if claim.config.source_mode == work_structure.SOURCE_MODE_SCOPED_ISSUES:
+                    # Server-only evidence, captured before any Jira I/O and before the DB fence.
+                    sprint_proof = capture_sprint_proof(claim.config, claim.sprint_id)
+                    if sprint_proof is None:
+                        raise CatalogCompletionError('catalog_identity_changed')
                 payload = self._fetch_teams(
                     sprint_id=claim.sprint_id, config=claim.config, context=context,
                     diagnostic_transport=transport, budget=budget,
@@ -274,6 +285,7 @@ class CatalogRefreshRuntime:
             published = publish_catalog(
                 context, claim=claim, payload=payload, budget=budget,
                 resolve_config=resolve_config, database_url=self._database_url,
+                sprint_proof=sprint_proof,
             )
             if not published:
                 finish_catalog_failure(
@@ -381,3 +393,86 @@ def reset_catalog_refresh_runtime_for_tests():
             _RUNTIME.shutdown(wait=True)
         _RUNTIME = None
         _RUNTIME_PID = None
+
+
+@dataclass(frozen=True)
+class ScopedRefreshAttempt:
+    attempt_id: str
+    identity: str
+
+
+def refresh_scoped_sprint_catalog(
+    context, *, config, fetch_sprints, resolve_config, database_url=None, store=None,
+    budget_factory=CatalogRefreshBudget.start, force=False,
+):
+    """Scan an issue-scanned Sprint source in the request thread; publish only a complete scan.
+
+    No DB fence, no Board row: the result goes to the process-local store after
+    the actor and configuration digest are rechecked.  Returns the attempt, or
+    ``None`` when another attempt is live or backing off.  ``AuthError`` is
+    propagated so the app-wide sign-in recovery applies.
+    """
+    store = store or SCOPED_SPRINT_CATALOGS
+    identity = config.sprint_identity
+    if config.source_mode != work_structure.SOURCE_MODE_SCOPED_ISSUES or not identity:
+        raise ValueError('refresh_scoped_sprint_catalog requires an issue-scanned source')
+    attempt_id = str(uuid.uuid4())
+    if not store.begin(
+        identity, attempt_id, workspace_id=context.workspace_id,
+        config_digest=config.config_digest, force=force,
+    ):
+        return None
+    attempt = ScopedRefreshAttempt(attempt_id, identity)
+    budget = budget_factory()
+    try:
+        budget.check('admission')
+        transport = CatalogRefreshTransport(budget)
+        payload = fetch_sprints(
+            config=config, context=context, diagnostic_transport=transport, budget=budget,
+        )
+        budget.check('before_publication')
+        from backend.db import engine as db_engine
+        with db_engine.session_scope(database_url) as session:
+            assert_catalog_refresh_actor(session, context, budget=budget)
+            current = resolve_config(session, context)
+        if (
+            current.workspace_id != config.workspace_id
+            or current.config_digest != config.config_digest
+            or current.sprint_identity != identity
+        ):
+            store.fail(identity, attempt_id, 'catalog_identity_changed')
+            return attempt
+        budget.check('publication')
+        store.publish(
+            identity, attempt_id, payload, workspace_id=context.workspace_id,
+            source_digest=config.source_digest,
+        )
+    except Exception as error:
+        code = classify_catalog_failure(error, budget=budget)
+        store.fail(identity, attempt_id, code)
+        if isinstance(error, AuthError) and code != 'oauth_refresh_timeout':
+            raise
+    return attempt
+
+
+def read_scoped_sprint_completion(
+    context, *, attempt_id, expected_identity, config, database_url=None, store=None,
+):
+    """Read one identified issue-scan attempt; never contacts Jira."""
+    try:
+        uuid.UUID(str(attempt_id))
+    except (TypeError, ValueError, AttributeError):
+        raise CatalogCompletionError('invalid_catalog_completion') from None
+    if not str(expected_identity or '').strip():
+        raise CatalogCompletionError('invalid_catalog_completion')
+    if config.sprint_identity != expected_identity:
+        raise CatalogCompletionError('catalog_identity_changed')
+    snapshot = load_scoped_sprint_catalog(
+        context, config=config, database_url=database_url, store=store,
+    )
+    if snapshot.refresh_attempt_id != str(attempt_id):
+        raise CatalogCompletionError('catalog_refresh_superseded')
+    deadline = _as_aware(snapshot.attempt_deadline_at)
+    if snapshot.refresh_status == 'pending' and deadline is not None and deadline <= datetime.now(timezone.utc):
+        return replace(snapshot, refresh_status='failed', failure_code='refresh_budget_exhausted')
+    return snapshot

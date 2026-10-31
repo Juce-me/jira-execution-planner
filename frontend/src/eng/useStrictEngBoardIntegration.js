@@ -26,7 +26,7 @@ export function reconcileStrictBoardPatches(patches, data, pendingKeys = new Set
 }
 
 export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprintId, groupRevision, strictScope = null,
-    resolvedFocusColumnId, performanceGate, trackApiResult, onAuthRequired, freshnessBridge }) {
+    resolvedFocusColumnId, performanceGate, trackApiResult, onAuthRequired, freshnessBridge, workContext = null }) {
     const [issuePatchesByKey, setIssuePatchesByKey] = React.useState({});
     const mutationCoordinatorRef = React.useRef(null);
     if (!mutationCoordinatorRef.current) mutationCoordinatorRef.current = createEngBoardMutationCoordinator();
@@ -55,7 +55,7 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
         return outcome;
     }, [data.refresh]);
     React.useEffect(() => setIssuePatchesByKey({}),
-        [departmentId, data.scope?.type, data.scope?.sprintId]);
+        [departmentId, data.scope?.type, data.scope?.sprintId, workContext?.digest]);
     const applyIssueField = React.useCallback((issueKey, fieldName, fieldValue) => {
         if (!active) return false;
         setIssuePatchesByKey(previous => ({ ...previous,
@@ -67,14 +67,14 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
 }
 
 export function useStrictEngBoardPresentation({ active, owner, savedBoard, legacyFilterInput,
-    searchQuery, showBoard, visibleTaskCount, trackSearch }) {
+    searchQuery, showBoard, visibleTaskCount, trackSearch, workModel }) {
     const model = React.useMemo(() => buildStrictEngBoardViewModel(owner.data.displayData, {
         savedBoard, issuePatchesByKey: owner.issuePatchesByKey,
     }), [owner.data.displayData, savedBoard, owner.issuePatchesByKey]);
     const filterState = useEngBoardFilters({ ...legacyFilterInput,
         isTechTask: active ? strictProjectClassifier : legacyFilterInput.isTechTask,
         strictEpicGroups: active ? model.epicGroups : null,
-        filtersEnabled: !active || model.authoritative,
+        filtersEnabled: !active || model.authoritative, workModel,
     });
     React.useEffect(() => {
         if (active && !model.membershipAuthoritative) return;

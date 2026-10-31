@@ -248,6 +248,7 @@ export function mergeExcludedCapacityStatsSourceChunks(chunks, options = {}) {
     const warningSet = new Set();
     let queryPages = 0;
     let issueLimit = 0;
+    const unavailableSprintIds = [];
     (chunks || []).filter(Boolean).forEach(chunk => {
         (chunk.issues || []).forEach(issue => {
             const issueKey = normalizeKey(issue?.key || issue?.id || '');
@@ -255,6 +256,8 @@ export function mergeExcludedCapacityStatsSourceChunks(chunks, options = {}) {
             issuesByKey.set(issueKey, mergeIssuePayload(issuesByKey.get(issueKey), issue));
         });
         const meta = chunk.meta || {};
+        // A failed Sprint source is unavailable, which a loaded Sprint with no work (zero) is not.
+        if (meta.unavailableSprintId) unavailableSprintIds.push(String(meta.unavailableSprintId));
         queryPages += Number(meta.queryPages || 0);
         issueLimit = Math.max(issueLimit, Number(meta.issueLimit || 0));
         (meta.warnings || []).forEach(warning => {
@@ -275,7 +278,8 @@ export function mergeExcludedCapacityStatsSourceChunks(chunks, options = {}) {
             queryPages,
             issueLimit,
             loadedSprintCount,
-            totalSprintCount
+            totalSprintCount,
+            unavailableSprintIds
         }
     };
 }
@@ -286,7 +290,8 @@ function buildSprintSourceFailureChunk(sprintId, error) {
         issues: [],
         meta: {
             warnings: [`Sprint ${sprintId} excluded capacity source failed: ${message}`],
-            queryPages: 0
+            queryPages: 0,
+            unavailableSprintId: sprintId
         }
     };
 }

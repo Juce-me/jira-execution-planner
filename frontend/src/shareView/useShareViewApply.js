@@ -84,6 +84,8 @@ export function useShareViewApply(options) {
     const captureShareUrl = React.useCallback((focus = null) => {
         const o = optionsRef.current;
         if (isShareDisabled(o, selectApplyTerminal())) return { ok: false, reason: 'disabled' };
+        // A quarter without an admitted physical Sprint has no Sprint-backed payload; the v1 format never carries a placeholder.
+        if (o.selectedSprint === null || o.selectedSprint === undefined) return { ok: false, reason: 'invalid_state' };
         if (focus && (!['epic', 'story', 'alertTeam'].includes(focus.kind) || !['catch-up', 'planning', 'board'].includes(o.activeEngMode) || (focus.kind === 'alertTeam' && o.activeEngMode !== 'catch-up') || (focus.kind === 'story' && o.activeEngMode !== 'planning'))) return { ok: false, reason: 'invalid_state' };
         const rowsMode = readPlanningRowsMode(document);
         const state = buildShareViewState({

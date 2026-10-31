@@ -1,4 +1,5 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { isCombinedWorkModel } from './engWorkModel.js';
 
 function planningStoryPoints(task) {
     const sp = parseFloat(task.fields.customfield_10004 || 0);
@@ -47,10 +48,11 @@ export function buildSelectedTeamStats(tasks, getTeamInfo) {
     ]));
 }
 
-export function buildSelectedProjectStats(tasks, techProjectKeys, adHocEpicSet = new Set()) {
+// The combined model (`rnd_2027`) has one lane: its allocation bucket is `OTHER`, never Product/Tech.
+export function buildSelectedProjectStats(tasks, techProjectKeys, adHocEpicSet = new Set(), workModel) {
     const totals = tasks.reduce((acc, task) => {
-        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
-        const bucket = projectType === 'tech' ? 'TECH' : 'PRODUCT';
+        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel });
+        const bucket = projectType === 'tech' ? 'TECH' : projectType === 'other' ? 'OTHER' : 'PRODUCT';
         if (!acc[bucket]) {
             acc[bucket] = createStoryPointTotal();
         }
@@ -60,28 +62,30 @@ export function buildSelectedProjectStats(tasks, techProjectKeys, adHocEpicSet =
     return Object.fromEntries(Object.entries(totals).map(([key, total]) => [key, storyPointTotalValue(total)]));
 }
 
-export function buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, adHocEpicSet = new Set()) {
+export function buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, adHocEpicSet = new Set(), workModel) {
+    const combined = isCombinedWorkModel(workModel);
     const totals = tasks.reduce((acc, task) => {
         const teamInfo = getTeamInfo(task);
-        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
-        const bucket = projectType === 'tech' ? 'tech' : 'product';
+        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel });
+        const bucket = projectType === 'tech' ? 'tech' : projectType === 'other' ? 'other' : 'product';
         if (!acc[teamInfo.id]) {
-            acc[teamInfo.id] = { product: createStoryPointTotal(), tech: createStoryPointTotal() };
+            acc[teamInfo.id] = { product: createStoryPointTotal(), tech: createStoryPointTotal(), other: createStoryPointTotal() };
         }
         addStoryPoints(acc[teamInfo.id][bucket], planningStoryPoints(task));
         return acc;
     }, {});
     return Object.fromEntries(Object.entries(totals).map(([key, value]) => [key, {
         product: storyPointTotalValue(value.product), tech: storyPointTotalValue(value.tech),
+        ...(combined ? { other: storyPointTotalValue(value.other) } : {}),
     }]));
 }
 
-export function buildExcludedProjectStats(tasks, excludedEpicSet, techProjectKeys, normalizeEpicKey) {
+export function buildExcludedProjectStats(tasks, excludedEpicSet, techProjectKeys, normalizeEpicKey, workModel) {
     const totals = tasks.reduce((acc, task) => {
         const epicKey = normalizeEpicKey(task.fields?.epicKey || 'NO_EPIC');
         if (!excludedEpicSet.has(epicKey)) return acc;
         const pk = String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase();
-        const projectKey = techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
+        const projectKey = isCombinedWorkModel(workModel) ? 'OTHER' : techProjectKeys.has(pk) ? 'TECH' : 'PRODUCT';
         if (!acc[projectKey]) {
             acc[projectKey] = createStoryPointTotal();
         }

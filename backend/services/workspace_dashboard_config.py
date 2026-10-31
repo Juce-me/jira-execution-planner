@@ -17,6 +17,7 @@ from backend.config.shared_config import (
 )
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services import work_structure
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,13 @@ class WorkspaceConfigConflict(Exception):
         super().__init__('workspace_config_conflict')
         self.current = current
         self.section = section
+
+
+@dataclass(frozen=True)
+class KeysMutation:
+    """Result of a multi-key mutation: new payload (None = no-op) and a result value."""
+    payload: dict | None
+    result: object = None
 
 
 class TeamCatalogConflict(Exception):
@@ -178,6 +186,9 @@ def update_workspace_config_section(
     with db_engine.session_scope(database_url) as session:
         acquire_workspace_config_fence(session, context.workspace_id)
         row = _current(session, context.workspace_id)
+        if row is not None:
+            # Old partial structural writers cannot touch moved keys after promotion.
+            work_structure.ensure_flat_structural_write_allowed(_decoded_payload(row[0]), section)
         if row is None:
             if revision != 0:
                 raise WorkspaceConfigConflict(WorkspaceConfigSnapshot({}, 0, 'empty'), section)
@@ -232,6 +243,88 @@ def update_workspace_config_section(
         ))
         session.flush()
         return WorkspaceConfigSnapshot(payload, next_revision, 'workspace_db')
+
+
+def update_workspace_config_keys(context, base_revision, mutate, *, section, database_url=None):
+    """Atomic multi-key workspace update under the existing advisory fence.
+
+    ``mutate(payload, revision)`` receives a copy of the locked row's payload and
+    returns a ``KeysMutation``.  A ``None`` payload is a no-op (no revision bump,
+    no audit).  Otherwise the new payload is written with one CAS and the global
+    revision advances exactly once.  A missing row means revision zero and an
+    empty DB-only baseline (never a JSON fallback).  Other columns (Capacity
+    verification) are untouched.  Returns ``(snapshot, mutation.result)``.
+    """
+    revision = _revision(base_revision)
+    with db_engine.session_scope(database_url) as session:
+        acquire_workspace_config_fence(session, context.workspace_id)
+        row = _current(session, context.workspace_id)
+        if row is None:
+            empty = _fallback_snapshot(context, None, '')
+            if revision != 0:
+                raise WorkspaceConfigConflict(empty, section)
+            current_payload, current_revision, payload_version = empty.payload, 0, 1
+        else:
+            current_revision = int(row[1] or 0)
+            if current_revision != revision:
+                raise WorkspaceConfigConflict(_snapshot(row), section)
+            current_payload, payload_version = _decoded_payload(row[0]), row[2]
+        outcome = mutate(deepcopy(current_payload), current_revision)
+        if outcome.payload is None:
+            return (
+                WorkspaceConfigSnapshot(current_payload, current_revision, 'workspace_db'),
+                outcome.result,
+            )
+        payload = outcome.payload
+        next_revision = current_revision + 1
+        version = int(payload.get('version') or payload_version or 1)
+        if row is None:
+            session.add(models.WorkspaceDashboardConfig(
+                workspace_id=context.workspace_id,
+                payload_version=version,
+                payload=payload,
+                config_revision=next_revision,
+                created_by=getattr(context, 'user_id', None),
+                updated_by=getattr(context, 'user_id', None),
+            ))
+            try:
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                with db_engine.session_scope(database_url) as fresh:
+                    current = _current(fresh, context.workspace_id)
+                    raise WorkspaceConfigConflict(_snapshot(current), section)
+        else:
+            result = session.execute(
+                update(models.WorkspaceDashboardConfig)
+                .where(
+                    models.WorkspaceDashboardConfig.workspace_id == context.workspace_id,
+                    models.WorkspaceDashboardConfig.config_revision == revision,
+                )
+                .values(
+                    payload=payload,
+                    payload_version=version,
+                    config_revision=next_revision,
+                    updated_by=getattr(context, 'user_id', None),
+                    updated_at=models._utcnow(),
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                session.expire_all()
+                raise WorkspaceConfigConflict(_snapshot(_current(session, context.workspace_id)), section)
+        metadata = {'section': section, 'revision': next_revision}
+        changed = (outcome.result or {}).get('changedConfigurationIds') if isinstance(outcome.result, dict) else None
+        if changed is not None:
+            metadata['changedConfigurationIds'] = list(changed)
+        session.add(models.audit_event(
+            workspace_id=context.workspace_id,
+            actor_user_id=getattr(context, 'user_id', None),
+            event_type='workspace_dashboard_config_updated',
+            metadata=metadata,
+        ))
+        session.flush()
+        return WorkspaceConfigSnapshot(payload, next_revision, 'workspace_db'), outcome.result
 
 
 def load_workspace_team_catalog(context, *, database_url=None):

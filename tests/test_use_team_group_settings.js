@@ -376,5 +376,5 @@ test('the search and label effects layers keep their clamps, cleanups and depend
     global.window = previousWindow;
     assert.deepEqual(cleared, [7]);
     assert.deepEqual(debounceRef.current, {}, 'unmount drops the pending label search timers');
-    assert.deepEqual(effects.map((effect) => effect.deps), [[true, 'teams', ''], [true, 'teams', ''], [true, 'teams', ''], [2], [0], [1], [], [2, 'a', { id: 'g1' }]]);
+    assert.deepEqual(effects.map((effect) => effect.deps), [[true, 'teams', '', ''], [true, 'teams', ''], [true, 'teams', ''], [2], [0], [1], [], [2, 'a', { id: 'g1' }]]);
 });

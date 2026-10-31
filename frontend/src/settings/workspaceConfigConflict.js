@@ -4,6 +4,7 @@ export const rebaseWorkspaceConfigSave = (payload, conflict) => ({
 });
 
 const SECTION_LABELS = [
+    ['workConfigurations', 'Project config'],
     ['projects', 'Scope projects'],
     ['priorityWeights', 'Priority weights'],
     ['board', 'Jira board'],

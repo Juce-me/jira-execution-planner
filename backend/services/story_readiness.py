@@ -13,7 +13,7 @@ _NON_ACTIONABLE_STORY_STATUSES = frozenset({
 _TERMINAL_EPIC_STATUSES = frozenset({
     "done", "killed", "incomplete", "postponed",
 })
-_PROJECT_CLASSES = frozenset({"product", "tech"})
+_PROJECT_CLASSES = frozenset({"product", "tech", "other"})
 
 
 def _text(value, *, required=False):
@@ -65,7 +65,12 @@ def _normalize_input(payload):
         raise InvalidCompleteReadinessInput("invalid_scope")
     if not isinstance(access, dict) or not isinstance(epics, list) or not isinstance(children, list):
         raise InvalidCompleteReadinessInput("invalid_complete_collections")
-    if access.get("product") != "accessible" or access.get("tech") != "accessible":
+    # Legacy needs both lanes accessible; the new model has one combined `other` scope. Any
+    # provided lane must be accessible and at least one must be provided.
+    lanes = {key: access.get(key) for key in ("product", "tech", "other") if key in access}
+    if not lanes or any(value != "accessible" for value in lanes.values()):
+        raise InvalidCompleteReadinessInput("project_access_incomplete")
+    if "other" not in lanes and (access.get("product") != "accessible" or access.get("tech") != "accessible"):
         raise InvalidCompleteReadinessInput("project_access_incomplete")
 
     sprint_id = _text(sprint.get("id"), required=True)

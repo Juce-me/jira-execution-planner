@@ -399,3 +399,42 @@ test('no model function makes a derived cell writable', async () => {
     assert.deepEqual(Object.keys(result).sort(), ['complete', 'scaled', 'value'], 'a value, not a cell handle');
     assert.ok(Object.values(result).every(value => typeof value !== 'function'));
 });
+
+test('combined model: child rows name the Initiative parent column and group labels follow the configuration', async () => {
+    const { buildPlanningReviewColumns, buildPlanningReviewRows, reviewValue } = await model();
+    const epicGroup = { key: 'PLAN-1', epic: { key: 'PLAN-1', id: '11', summary: 'Parent initiative', status: { name: 'In Progress' } }, tasks: [story('21', 'PLAN-E1', 3)], requirements: [] };
+    const tasks = [story('21', 'PLAN-E1', 3)];
+    const childRows = buildPlanningReviewRows({ epicGroups: [epicGroup], visibleTasks: tasks, mode: 'story', workModel: 'rnd_2027' });
+    assert.equal(childRows[0].epic, 'Parent initiative');
+    const legacyColumns = buildPlanningReviewColumns({ rows: childRows, mode: 'story', admittedTeamCount: 2, admittedProjectCount: 2 });
+    const combinedColumns = buildPlanningReviewColumns({ rows: childRows, mode: 'story', admittedTeamCount: 2, admittedProjectCount: 2, workModel: 'rnd_2027' });
+    assert.ok(legacyColumns.some(column => column.id === 'epic' && column.label === 'Epic'));
+    assert.ok(!combinedColumns.some(column => column.id === 'epic'), 'the stored Legacy builtin id never appears in the combined namespace');
+    const parentColumn = combinedColumns.find(column => column.id === 'initiative');
+    assert.equal(parentColumn.label, 'Initiative');
+    assert.equal(reviewValue(childRows[0], parentColumn, {}), 'Parent initiative');
+    const parentColumns = buildPlanningReviewColumns({ rows: buildPlanningReviewRows({ epicGroups: [epicGroup], visibleTasks: tasks, mode: 'epic', workModel: 'rnd_2027' }), mode: 'epic', admittedTeamCount: 2, admittedProjectCount: 2, workModel: 'rnd_2027' });
+    assert.equal(parentColumns.find(column => column.id === 'team').label, 'Initiative Team');
+    assert.ok(parentColumns.some(column => column.id === 'teamsInScope'));
+});
+
+test('combined model: orphan rows read No Initiative and Legacy keeps No Epic', async () => {
+    const { buildPlanningReviewRows } = await model();
+    const orphan = [story('31', 'PLAN-E9', 1)];
+    assert.equal(buildPlanningReviewRows({ epicGroups: [], visibleTasks: orphan, mode: 'story', workModel: 'rnd_2027' })[0].epic, 'No Initiative');
+    assert.equal(buildPlanningReviewRows({ epicGroups: [], visibleTasks: orphan, mode: 'story' })[0].epic, 'No Epic');
+    assert.equal(buildPlanningReviewRows({ epicGroups: [], visibleTasks: orphan, mode: 'epic', workModel: 'rnd_2027' })[0].summary, 'No Initiative');
+});
+
+test('combined model: derived Initiative columns on Epic rows read downward and stay read-only', async () => {
+    const { buildPlanningReviewColumns, derivedValue, reviewCellKey, buildPlanningReviewRows } = await model();
+    const epicGroup = { key: 'PLAN-1', epic: { key: 'PLAN-1', id: '11', summary: 'Parent', status: { name: 'To Do' } }, tasks: [story('21', 'PLAN-E1', 3)], requirements: [] };
+    const customs = [{ id: 'init-cost', rowKind: 'epic', label: 'Initiative cost', type: 'number', aggregation: 'sum', order: 0, archived: false }];
+    const childRows = buildPlanningReviewRows({ epicGroups: [epicGroup], visibleTasks: epicGroup.tasks, mode: 'story', workModel: 'rnd_2027' });
+    const columns = buildPlanningReviewColumns({ rows: childRows, mode: 'story', customColumns: customs, derived: true, workModel: 'rnd_2027' });
+    const derived = columns.find(column => column.id === 'init-cost');
+    assert.equal(derived.derived, true);
+    const cells = { [reviewCellKey('epic', '11', 'init-cost')]: { value: '7.000' } };
+    assert.equal(derivedValue(childRows[0], derived, { cells, isLoaded: () => true }).value, '7');
+    assert.equal(derivedValue(childRows[0], derived, { cells, isLoaded: () => false }).complete, false, 'blank until the parent values are loaded');
+});

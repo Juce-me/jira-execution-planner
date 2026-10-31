@@ -128,3 +128,13 @@ test('ENG search independently covers hierarchy text and supported assignees', a
     assert.equal(matchesEngTaskSearch(story, 'Epic Owner', epicDetails), true, 'Epic assignee');
     assert.equal(matchesEngTaskSearch(story, 'Story Owner', epicDetails), true, 'Story assignee');
 });
+
+test('Story Points display reads null as 0 SP without changing the source value', async () => {
+    const { formatStoryPointsLabel, sumEpicStoryPoints } = await import('../frontend/src/eng/engTaskUtils.js');
+    const values = [null, '', 8, '3.5', 'n/a'];
+    const issues = values.map(value => ({ key: 'X-1', fields: { customfield_10004: value, status: { name: 'To Do' } } }));
+
+    assert.deepEqual(issues.map(formatStoryPointsLabel), ['0 SP', '0 SP', '8 SP', '3.5 SP', '0 SP']);
+    assert.equal(sumEpicStoryPoints(issues), 11.5);
+    assert.deepEqual(issues.map(issue => issue.fields.customfield_10004), values);
+});

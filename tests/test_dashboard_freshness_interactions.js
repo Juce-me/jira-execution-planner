@@ -52,6 +52,9 @@ test('preserved catalog display updates never ask a dirty Planning review to cha
         sprintCatalogValidationKey: () => 'synthetic-validation', sprintCatalogPersistedValidationRef: { current: '' },
         sprintCatalogCacheRef: { current: null }, savedPrefsRef: { current: {} },
         loadUiPrefs: () => ({ selectedSprint: 42 }), saveUiPrefs: () => {}, setSprintError: () => {},
+        // Quarter-first selection is inert without a configuration context (pre-promotion).
+        sprintScopeOf: () => null, selectSprintForScope: () => null, quarterFromSprintName: () => null, catalogContextKey: () => '',
+        setObservedQuarters: () => {}, setSelectedQuarter: () => {}, quarterIntentRef: { current: { quarter: null, explicit: false } },
     };
     const consume = new Function(...Object.keys(dependencies), `return nextState => {${source.slice(start, end)}}`)(...Object.values(dependencies));
     consume({ authority: 'invalid', selectionPreserved: true, status: 'unknown', validatedSnapshot: null });

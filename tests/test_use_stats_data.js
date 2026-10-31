@@ -16,7 +16,11 @@ const EXPECTED = {
         "burnoutScopedTeamSignature",
         "cohortScopedTeamSignature",
         "burnoutQueryKey",
-        "cohortQueryKey"
+        "cohortQueryKey",
+        "statsWorkCatalogKey",
+        "cohortSetupBlocked",
+        "workContext",
+        "workSetupScope"
     ],
     "B": [
         "cohortQuarterOptions",
@@ -130,6 +134,9 @@ const INPUT_NAMES = [
     "burnoutQueryKey",
     "burnoutScopedTeamIds",
     "burnoutScopedTeamSignature",
+    "statsWorkCatalogKey",
+    "cohortSetupBlocked",
+    "workContext",
     "cohortCacheRef",
     "cohortData",
     "cohortExcludeAdHoc",
@@ -198,12 +205,12 @@ const EFFECT_DEPS = [
     "[burnoutData, burnoutAssigneeFilter]",
     "[showStats, statsView]",
     "[selectedSprintInfo?.name, burnoutAssigneeFilter, burnoutQueryKey]",
-    "[showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]",
+    "[showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision, statsWorkCatalogKey, cohortSetupBlocked]",
     "[cohortProjectFilter, cohortProjectOptions, cohortAwaitingMode]",
     "[cohortGridModel, cohortSelectedRow, cohortAwaitingMode]",
     "[ excludedCapacitySprintOptions, excludedCapacityDefaultRange, excludedCapacityStartSprintId, excludedCapacityEndSprintId ]",
     "[ showStats, statsView, excludedCapacityQueryKey, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature, excludedCapacityEpicOptions, adHocEpicSignature, activeGroupId, activeGroupTeamIds.length, excludedCapacityRefreshNonce, groupPreferences.onboardingRequired, adminSettingsGate.status ]",
-    "[ showStats, statsView, projectTrackMode, projectTrackPhaseSignature, ]",
+    "[ showStats, statsView, projectTrackMode, projectTrackPhaseSignature, statsWorkCatalogKey, ]",
     "[excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]",
     "[excludedCapacitySelectedEpicKeys, excludedCapacityEpicOptions]",
     "[statsView, excludedCapacityChartMode, excludedCapacityIsolatedTeam, excludedCapacityIsolatedSeries]",
@@ -214,7 +221,7 @@ function loadHooks({ exposeAutomatic = false, reactRuntime = null } = {}) {
     const input = exposeAutomatic ? { stdin: { contents: fs.readFileSync(sourcePath, 'utf8') + '\nexport {runAutomaticStatsRead};', resolveDir: path.dirname(sourcePath), sourcefile: sourcePath, loader: 'js' } } : { entryPoints: [sourcePath] };
     const code = esbuild.buildSync({...input,bundle:true,write:false,format:'cjs',platform:'node',external:['react']}).outputFiles[0].text;
     const module = {exports:{}};
-    new Function('module','exports','require',code)(module,module.exports,name=>name==='react'&&reactRuntime?reactRuntime:require(name));
+    new Function('module','exports','require',code)(module,module.exports,name=>name==='react'&&reactRuntime?{useState:value=>[typeof value==='function'?value():value,()=>{}],...reactRuntime}:require(name));
     return module.exports;
 }
 function inputs() {

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Adopt legacy per-Sprint review tables into every configured Department group (#267).
 
-Dry run by default. --apply requires --expected-sha256 with the digest the dry run
+Only the NULL Legacy review namespace is read, merged into or counted; quarterly-configuration schemas, cells and
+views (configuration_id not NULL) are never touched. Dry run by default. --apply requires --expected-sha256 with the digest the dry run
 printed, refuses before any write when group review rows already exist for the
 workspace, and writes every group in one transaction. Legacy rows are never modified.
 Output carries counts and column, Sprint and group ids only.
@@ -155,6 +156,7 @@ def _read_group_state(session, workspace_id, groups, issue_ids):
         models.WorkspaceGroupReviewSchema.id, models.WorkspaceGroupReviewSchema.group_id,
         models.WorkspaceGroupReviewSchema.schema_revision, models.WorkspaceGroupReviewSchema.columns).where(
         models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
+        models.WorkspaceGroupReviewSchema.configuration_id.is_(None),
         models.WorkspaceGroupReviewSchema.group_id.in_(groups))).all()]
     review_adoption.check_schema_rows(schema_rows)
     schema_ids = [row[0] for row in schema_rows]
@@ -169,8 +171,23 @@ def _read_group_state(session, workspace_id, groups, issue_ids):
     view_rows = [tuple(row) for row in session.execute(select(
         models.GroupSprintReviewView.group_id, models.GroupSprintReviewView.sprint_id).where(
         models.GroupSprintReviewView.workspace_id == workspace_id,
+        models.GroupSprintReviewView.configuration_id.is_(None),
         models.GroupSprintReviewView.group_id.in_(groups))).all()]
-    return review_adoption.group_state(groups, schema_rows, cell_rows, view_rows)
+    # Quarterly namespaces are never written, but their definitions and views count toward the group-wide caps.
+    other = {group: [0, 0] for group in groups}
+    for group, columns in session.execute(select(
+            models.WorkspaceGroupReviewSchema.group_id, models.WorkspaceGroupReviewSchema.columns).where(
+            models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
+            models.WorkspaceGroupReviewSchema.configuration_id.is_not(None),
+            models.WorkspaceGroupReviewSchema.group_id.in_(groups))).all():
+        other[group][0] += len(columns) if isinstance(columns, list) else 0
+    for group, count in session.execute(select(models.GroupSprintReviewView.group_id, func.count()).where(
+            models.GroupSprintReviewView.workspace_id == workspace_id,
+            models.GroupSprintReviewView.configuration_id.is_not(None),
+            models.GroupSprintReviewView.group_id.in_(groups)).group_by(models.GroupSprintReviewView.group_id)).all():
+        other[group][1] += count
+    return review_adoption.group_state(groups, schema_rows, cell_rows, view_rows,
+                                       {group: tuple(counts) for group, counts in other.items()})
 
 
 
@@ -234,15 +251,27 @@ def _build_merge(session, workspace_id, only_groups):
 
 
 def _group_row_counts(session, workspace_id):
+    # Legacy (NULL configuration_id) namespace only: quarterly-configuration rows are never adoption targets.
     schema_ids = select(models.WorkspaceGroupReviewSchema.id).where(
-        models.WorkspaceGroupReviewSchema.workspace_id == workspace_id)
+        models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
+        models.WorkspaceGroupReviewSchema.configuration_id.is_(None))
     return {
         'schemas': session.scalar(select(func.count()).select_from(schema_ids.subquery())),
         'cells': session.scalar(select(func.count()).select_from(models.GroupReviewCell).where(
             models.GroupReviewCell.schema_id.in_(schema_ids))),
         'views': session.scalar(select(func.count()).select_from(models.GroupSprintReviewView).where(
-            models.GroupSprintReviewView.workspace_id == workspace_id)),
+            models.GroupSprintReviewView.workspace_id == workspace_id,
+            models.GroupSprintReviewView.configuration_id.is_(None))),
     }
+
+
+def _quarterly_rows_exist(session, workspace_id):
+    return bool(session.scalar(select(func.count()).select_from(models.WorkspaceGroupReviewSchema).where(
+        models.WorkspaceGroupReviewSchema.workspace_id == workspace_id,
+        models.WorkspaceGroupReviewSchema.configuration_id.is_not(None))) or session.scalar(
+        select(func.count()).select_from(models.GroupSprintReviewView).where(
+            models.GroupSprintReviewView.workspace_id == workspace_id,
+            models.GroupSprintReviewView.configuration_id.is_not(None))))
 
 
 def _insert(session, model, rows):
@@ -404,6 +433,9 @@ def main(argv=None):
             if any(_group_row_counts(session, args.workspace_id).values()):
                 raise ValueError('group review rows already exist for this workspace; re-run with --merge to adopt '
                                  'the legacy data without replacing them; no database changes applied')
+            if _quarterly_rows_exist(session, args.workspace_id):
+                raise ValueError('quarterly review rows exist for this workspace; their group-wide caps are only counted by '
+                                 '--merge, so use --merge; no database changes applied')
             _before_write(session)
             _write(session, args.workspace_id, plan)
             print(f"applied: {len(plan['groups'])} groups")

@@ -657,3 +657,200 @@
                 border-color: var(--text-secondary);
             }
         }
+
+        /* Project config editor (WorkConfigurationsEditor.jsx): layout only. Control appearance comes from
+           the shared Department list rows, tabs, chips and pickers; this block gives the right pane one
+           scroll owner (header and nested tabs stay put) and keeps the footer reachable on small screens. */
+        .work-config-editor .group-pane-right {
+            padding: 0;
+            overflow: hidden;
+            gap: 0;
+        }
+
+        .work-config-editor .group-pane-right > :not(.work-config-panel) {
+            flex-shrink: 0;
+        }
+
+        .work-config-header {
+            padding: 0.65rem 1rem;
+            min-width: 0;
+        }
+
+        .work-config-header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.6rem;
+            min-width: 0;
+        }
+
+        .work-config-header-row .group-pane-title {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .work-config-header-row > span {
+            flex-shrink: 0;
+        }
+
+        .work-config-editor .group-pane-right > .group-modal-tabs {
+            padding: 0 0.9rem;
+            margin: 0;
+            overflow-x: auto;
+        }
+
+        .work-config-editor .group-modal-tab {
+            white-space: nowrap;
+        }
+
+        .work-config-panel {
+            flex: 1 1 auto;
+            min-height: 0;
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .work-config-fields,
+        .work-config-fields .team-catalog-edit-lock {
+            min-height: 0;
+            min-width: 0;
+        }
+
+        .work-config-fields .group-modal-body,
+        .work-config-fields .group-pane {
+            display: block;
+            overflow: visible;
+        }
+
+        .work-config-note {
+            margin: 0.5rem 1rem;
+        }
+
+        .work-config-ranges {
+            padding: 0.65rem 1rem;
+        }
+
+        .work-config-range-row {
+            display: grid;
+            grid-template-columns: 7rem minmax(0, 1fr) auto;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 0.35rem;
+        }
+
+        .work-config-range-row .group-name-input {
+            min-width: 0;
+            width: 100%;
+        }
+
+        .work-config-range-row > .selected-team-chip {
+            justify-self: start;
+            max-width: 100%;
+        }
+
+        .work-config-range-error {
+            grid-column: 2 / -1;
+        }
+
+        .work-config-summary {
+            padding: 0.6rem 0.9rem;
+            border-top: 1px solid var(--border);
+        }
+
+        .work-config-editor .group-pane-mobile-header {
+            padding: 0.5rem 1rem;
+            margin-bottom: 0;
+        }
+
+        .work-config-save-feedback {
+            margin: 0;
+            padding: 0.5rem 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .work-config-editor .group-pane-mobile-close {
+            color: var(--text-primary);
+            background: var(--bg-primary);
+        }
+
+        .work-config-editor .remove-btn {
+            min-width: 24px;
+            min-height: 24px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 650px) {
+            .group-modal-backdrop:has(.work-config-editor) {
+                align-items: flex-start;
+                padding-top: 0.5rem;
+            }
+
+            .group-modal:has(.work-config-editor) {
+                width: calc(100vw - 1rem);
+                height: calc(100dvh - 1rem);
+                max-height: none;
+            }
+
+            .work-config-range-row {
+                grid-template-columns: 5.5rem minmax(0, 1fr) auto;
+            }
+
+            .work-config-header-row {
+                flex-wrap: wrap;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-footer {
+                flex-wrap: wrap;
+                gap: 0.5rem;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-footer > .group-modal-button-row:first-child {
+                flex-basis: 100%;
+                min-width: 0;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-footer > .group-modal-button-row:first-child button {
+                flex-shrink: 0;
+                white-space: nowrap;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-footer .group-modal-meta {
+                flex: 1;
+                min-width: 0;
+            }
+        }
+
+        @media (max-height: 480px) {
+            .group-modal:has(.work-config-editor) {
+                height: calc(100dvh - 1rem);
+                max-height: none;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-subtitle,
+            .work-config-header-helper {
+                display: none;
+            }
+
+            /* The header action sits beside the title and the configuration name/range lives in the
+               mobile header, so the scroll owner keeps usable height in a landscape phone. */
+            .group-modal:has(.work-config-editor) .group-modal-title-wrap {
+                flex-wrap: nowrap;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-header-action {
+                flex-basis: auto;
+            }
+
+            .work-config-header {
+                display: none;
+            }
+
+            .group-modal:has(.work-config-editor) .group-modal-footer .group-modal-meta {
+                max-height: 2.6em;
+                overflow-y: auto;
+            }
+        }

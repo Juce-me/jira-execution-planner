@@ -22,8 +22,15 @@ const {
     normalizeEpmCapabilities,
     reduceSprintCatalog,
     shouldReconcileSprintCatalogSource,
+    selectSprintForScope,
     sprintCatalogValidationKey,
 } = sandbox.module.exports;
+const contextSandbox = { module: { exports: {} }, exports: {}, console };
+vm.runInContext(esbuild.buildSync({
+    entryPoints: [path.join(__dirname, '..', 'frontend', 'src', 'workStructure', 'configurationContext.js')],
+    bundle: true, write: false, format: 'cjs', platform: 'browser',
+}).outputFiles[0].text, vm.createContext(contextSandbox));
+const { buildConfigurationContext } = contextSandbox.module.exports;
 
 const SOURCE_A = { identity: 'sc1:a', browserContextId: 'bc1:a' };
 const SOURCE_B = { identity: 'sc1:b', browserContextId: 'bc1:a' };
@@ -614,4 +621,146 @@ test('EPM settings error copy is typed, useful and never echoes provider text', 
     for (const text of [scope, describeEpmReadError({ status: 403, code: 'home_access_denied', message: 'RAW' })]) assert.equal(text.includes('RAW'), false);
     assert.equal(describeEpmReadError(new Error('plain failure')), 'plain failure', 'untyped errors keep their message');
     assert.equal(describeEpmReadError({}, 'fallback'), 'fallback');
+});
+
+// ---- Quarter-first admission and configuration context (Task 3C) --------------------------------------------
+const LEGACY_SUMMARY = { id: 'legacy', revision: 3, model: 'legacy', fromQuarter: null, throughQuarter: '2026Q4' };
+const DELIVERY_SUMMARY = { id: 'delivery', revision: 2, model: 'rnd_2027', fromQuarter: '2027Q1', throughQuarter: null };
+const legacyAt = quarter => buildConfigurationContext(LEGACY_SUMMARY, quarter);
+const deliveryAt = quarter => buildConfigurationContext(DELIVERY_SUMMARY, quarter);
+
+test('quarter scope admits only a Sprint of that quarter and never another era', () => {
+    const sprints = [{ id: 7, name: '2026Q4', state: 'active' }, { id: 6, name: '2026Q3', state: 'closed' }];
+    const explicit = { quarter: '2027Q1', explicit: true, fromQuarter: '2027Q1', throughQuarter: null };
+    assert.equal(selectSprintForScope(sprints, 7, explicit), null);
+    assert.equal(selectSprintForScope(sprints, null, explicit), null);
+    assert.equal(selectSprintForScope(sprints, 6, { quarter: '2026Q4', explicit: true }), 7);
+    assert.equal(selectSprintForScope(sprints, 7, { quarter: '2026Q4', explicit: true }), 7);
+    assert.equal(selectSprintForScope(sprints, 99, { quarter: '2026Q3', explicit: true }), 6);
+    assert.equal(selectSprintForScope(sprints, 7, null), 7);
+    assert.equal(selectSprintForScope(sprints, 99, null), 7);
+});
+
+test('an unprompted default keeps the existing fallback but only inside the configuration range', () => {
+    const sprints = [{ id: 7, name: '2026Q4', state: 'active' }];
+    assert.equal(selectSprintForScope(sprints, null, { quarter: '2027Q1', explicit: false, fromQuarter: '2027Q1', throughQuarter: null }), null);
+    assert.equal(selectSprintForScope(sprints, null, { quarter: '2026Q4', explicit: false, fromQuarter: null, throughQuarter: '2026Q4' }), 7);
+});
+
+test('catalog response never replaces the restored quarter and clears only the physical admission', () => {
+    let state = createSprintCatalogState({ savedSprintId: 7, savedSprintName: '2026Q4' });
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    state = reduceSprintCatalog(state, responseEvent(state, validatedEnvelope({ sprints: [{ id: 7, name: '2026Q4', state: 'active' }] })));
+    assert.equal(state.authority, 'validated');
+    assert.equal(state.selectedSprintId, null);
+    assert.equal(state.context.quarter, '2027Q1');
+    assert.equal(state.quarterExplicit, true);
+    state = reduceSprintCatalog(state, { type: 'FINISH', ...responseEvent(state, {}) });
+    assert.equal(state.context.quarter, '2027Q1');
+});
+
+test('a later real source record for the unchanged quarter is admitted without changing the quarter', () => {
+    let state = createSprintCatalogState({});
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    state = reduceSprintCatalog(state, responseEvent(state, validatedEnvelope({ sprints: [] })));
+    assert.equal(state.selectedSprintId, null);
+    state = reduceSprintCatalog(state, responseEvent(state, validatedEnvelope({ sprints: [{ id: 91, name: '2027Q1', state: 'future' }] })));
+    assert.equal(state.selectedSprintId, 91);
+    assert.equal(state.context.quarter, '2027Q1');
+});
+
+test('same-configuration quarter change re-admits without a new generation; another configuration resets', () => {
+    let state = createSprintCatalogState({});
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: legacyAt('2026Q4'), explicit: true });
+    state = reduceSprintCatalog(state, responseEvent(state, validatedEnvelope({ sprints: [{ id: 6, name: '2026Q3' }, { id: 7, name: '2026Q4' }] })));
+    assert.equal(state.selectedSprintId, 7);
+    const generation = state.generation;
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: legacyAt('2026Q3'), explicit: true });
+    assert.equal(state.generation, generation);
+    assert.equal(state.selectedSprintId, 6);
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    assert.equal(state.generation, generation + 1);
+    assert.equal(state.availableSprints.length, 0);
+    assert.equal(state.selectedSprintId, null);
+    assert.equal(state.context.id, 'delivery');
+});
+
+test('a response answering for another configuration revision is dropped', () => {
+    let state = createSprintCatalogState({});
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    const stale = reduceSprintCatalog(state, responseEvent(state, { ...validatedEnvelope(), context: { configurationId: 'delivery', configurationRevision: 1 } }));
+    assert.equal(stale, state);
+    const wrongConfig = reduceSprintCatalog(state, responseEvent(state, { ...validatedEnvelope(), context: { configurationId: 'legacy', configurationRevision: 2 } }));
+    assert.equal(wrongConfig, state);
+});
+
+test('configuration refusals clear admission and keep the quarter; configuration_required before a context waits quietly', () => {
+    let state = createSprintCatalogState({});
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    const waiting = reduceSprintCatalog(state, responseEvent(state, { httpStatus: 409, error: 'configuration_required' }));
+    assert.equal(waiting.status, 'unknown');
+    assert.equal(waiting.errorReason, '');
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    for (const error of ['sprint_catalog_mismatch', 'configuration_incomplete', 'configuration_scope_changed', 'configuration_required']) {
+        const refused = reduceSprintCatalog(state, responseEvent(state, { httpStatus: 409, error }));
+        assert.equal(refused.status, 'error');
+        assert.equal(refused.errorReason, error);
+        assert.equal(refused.selectedSprintId, null);
+        assert.equal(refused.context.quarter, '2027Q1');
+    }
+});
+
+test('controller stamps every read with the accepted context and re-reads only for a new configuration', async () => {
+    const calls = [];
+    const first = deferred();
+    const controller = createSprintCatalogController({
+        initialState: createSprintCatalogState({}),
+        read: (options) => { calls.push(options); return calls.length === 1 ? first.promise : Promise.resolve(validatedEnvelope({ sprints: [{ id: 91, name: '2027Q1' }] })); },
+        setTimer: () => 1,
+        clearTimer: () => {},
+    });
+    const initial = controller.readCurrent();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls[0].context, null);
+    controller.setContext(deliveryAt('2027Q1'), { explicit: true });
+    first.resolve(validatedEnvelope({ sprints: [{ id: 7, name: '2026Q4' }] }));
+    await initial;
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].signal.aborted, true);
+    assert.equal(calls[1].context.id, 'delivery');
+    assert.equal(controller.getState().selectedSprintId, 91);
+    controller.setContext(deliveryAt('2027Q2'), { explicit: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls.length, 2);
+    assert.equal(controller.getState().selectedSprintId, null);
+    controller.setContext(legacyAt('2026Q4'), { explicit: true });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(calls.length, 3);
+    assert.equal(calls[2].context.id, 'legacy');
+    controller.dispose();
+});
+
+test('a revision bump or range edit of the same configuration resets its catalog; the quarter is unchanged', () => {
+    let state = createSprintCatalogState({});
+    state = reduceSprintCatalog(state, { type: 'SOURCE', source: SOURCE_A });
+    state = reduceSprintCatalog(state, { type: 'CONTEXT', context: deliveryAt('2027Q1'), explicit: true });
+    state = reduceSprintCatalog(state, responseEvent(state, validatedEnvelope({ sprints: [{ id: 91, name: '2027Q1' }] })));
+    assert.equal(state.selectedSprintId, 91);
+    const bumped = buildConfigurationContext({ ...DELIVERY_SUMMARY, revision: 3 }, '2027Q1');
+    const reset = reduceSprintCatalog(state, { type: 'CONTEXT', context: bumped, explicit: true });
+    assert.equal(reset.generation, state.generation + 1);
+    assert.equal(reset.availableSprints.length, 0);
+    assert.equal(reset.context.quarter, '2027Q1');
+    // A late response from the old revision's read is dropped by the generation fence.
+    assert.equal(reduceSprintCatalog(reset, responseEvent(state, validatedEnvelope({ sprints: [{ id: 91, name: '2027Q1' }] }))), reset);
+    // The quarter moving to the other configuration (range edit) keeps the quarter, clears admission.
+    const moved = reduceSprintCatalog(reset, { type: 'CONTEXT', context: buildConfigurationContext({ ...LEGACY_SUMMARY, throughQuarter: '2027Q1' }, '2027Q1'), explicit: true });
+    assert.equal(moved.context.id, 'legacy');
+    assert.equal(moved.context.quarter, '2027Q1');
+    assert.equal(moved.selectedSprintId, null);
 });

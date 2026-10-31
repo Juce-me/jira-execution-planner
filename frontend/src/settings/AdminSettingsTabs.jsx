@@ -1,6 +1,9 @@
 import * as React from 'react';
 
+import { adminTabIdsFor, effectiveAdminTab } from './settingsTabIds.js';
+
 const ADMIN_TABS = [
+    ['project', 'Project config'],
     ['scope', 'Scope projects'],
     ['source', 'Jira source'],
     ['mapping', 'Field mapping'],
@@ -10,7 +13,9 @@ const ADMIN_TABS = [
     ['performance', 'Performance'],
 ];
 
-export default function AdminSettingsTabs({ activeTab, onSelect, onKeyDown, performanceAvailable = false, accessAvailable = true }) {
+export default function AdminSettingsTabs({ activeTab: requestedTab, onSelect, onKeyDown, performanceAvailable = false, accessAvailable = true, workConfigMode = 'legacy' }) {
+    const activeTab = effectiveAdminTab(workConfigMode, requestedTab);
+    const visible = adminTabIdsFor(workConfigMode, { accessAvailable, performanceAvailable });
     return (
         <div
             className="group-modal-tabs epm-settings-tabs"
@@ -18,7 +23,7 @@ export default function AdminSettingsTabs({ activeTab, onSelect, onKeyDown, perf
             aria-label="Admin settings sections"
             onKeyDown={onKeyDown}
         >
-            {ADMIN_TABS.filter(([id]) => (id !== 'performance' || performanceAvailable) && (id !== 'access' || accessAvailable)).map(([id, label]) => (
+            {ADMIN_TABS.filter(([id]) => visible.includes(id)).map(([id, label]) => (
                 <button
                     className={`group-modal-tab ${activeTab === id ? 'active' : ''}`}
                     onClick={() => onSelect(id)}

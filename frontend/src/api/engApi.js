@@ -1,4 +1,13 @@
 import { apiFetch, getJson, jsonOrStructuredError, trackedFetch } from './http.js';
+import { applyContextToParams } from '../workStructure/configurationContext.js';
+import { runInWorkContext, stampBody, stampParams } from '../workStructure/requestContext.js';
+
+// Work reads carry the accepted work-configuration context (id, revision, quarter) and are dropped as an
+// abort when that context changes before they complete. Catalog reads (`fetchSprints`) are stamped with the
+// context the controller captured for them instead.
+const scopedFetch = (url, init) => runInWorkContext(init, next => apiFetch(url, next));
+const scopedTracked = (surface, url, init, analytics) => runInWorkContext(init, next => trackedFetch(surface, url, next, analytics));
+const scopedJson = (url, label, options) => runInWorkContext(options, next => getJson(url, label, next));
 
 export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], components = [], signal } = {}) => {
     const params = new URLSearchParams({ sprint: String(sprintId), t: Date.now().toString() });
@@ -8,7 +17,8 @@ export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], c
     if (components.length) {
         params.set('components', components.join(','));
     }
-    return apiFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
+    stampParams(params);
+    return scopedFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -17,6 +27,7 @@ export const fetchMissingPlanningInfo = (backendUrl, { sprintId, teamIds = [], c
 };
 
 export const fetchSprints = (backendUrl, {
+    context = null,
     forceRefresh = false,
     completionAttemptId = null,
     catalogIdentity = null,
@@ -37,6 +48,7 @@ export const fetchSprints = (backendUrl, {
         params.set('completionAttemptId', String(completionAttemptId));
         params.set('catalogIdentity', String(catalogIdentity));
     }
+    applyContextToParams(params, context, { includeQuarter: false });
     const query = params.toString();
     return apiFetch(`${backendUrl}/api/sprints${query ? `?${query}` : ''}`, {
         method: 'GET',
@@ -77,7 +89,8 @@ export const fetchEngTasks = (backendUrl, { project, sprint, sprintName = '', gr
             params.set('epicKeys', uniqueEpicKeys.join(','));
         }
     }
-    return trackedFetch(apiSurface, `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
+    stampParams(params);
+    return scopedTracked(apiSurface, `${backendUrl}/api/tasks-with-team-name?${params.toString()}`, {
         method: 'GET',
         headers: {
             'Content-Type': 'application/json',
@@ -119,7 +132,8 @@ export const fetchStoryReadiness = async (backendUrl, {
         groupId: String(groupId ?? ''),
     });
     if (refresh) params.set('refresh', 'true');
-    const response = await trackedFetch(
+    stampParams(params);
+    const response = await scopedTracked(
         'eng_story_readiness',
         `${backendUrl}/api/eng/story-readiness?${params.toString()}`,
         {
@@ -143,7 +157,8 @@ export const fetchEpicReadiness = async (backendUrl, { sprint, sprintName, sprin
         epicKeys: String(epicKey ?? ''),
         refresh: 'true',
     });
-    const response = await trackedFetch(
+    stampParams(params);
+    const response = await scopedTracked(
         'epic_refresh',
         `${backendUrl}/api/eng/story-readiness?${params.toString()}`,
         { method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache', signal },
@@ -157,7 +172,8 @@ export const fetchEpicMissingInfo = (backendUrl, { sprintId, teamIds = [], compo
     const params = new URLSearchParams({ sprint: String(sprintId), epicKeys: String(epicKey ?? ''), refresh: 'true', t: Date.now().toString() });
     if (teamIds.length) params.set('teamIds', teamIds.join(','));
     if (components.length) params.set('components', components.join(','));
-    return apiFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
+    stampParams(params);
+    return scopedFetch(`${backendUrl}/api/missing-info?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -169,7 +185,8 @@ export const fetchEpicMissingInfo = (backendUrl, { sprintId, teamIds = [], compo
 export const fetchEpicBacklog = (backendUrl, { project, teamIds = [], epicKey, signal } = {}) => {
     const params = new URLSearchParams({ t: Date.now().toString(), project: project || 'all', epicKeys: String(epicKey ?? '') });
     if (teamIds.length > 0) params.set('teamIds', teamIds.join(','));
-    return getJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
+    stampParams(params);
+    return scopedJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -186,7 +203,8 @@ export const fetchStorySubtasks = (backendUrl, { parentKey, sprint, refresh = fa
     if (refresh) {
         params.set('refresh', 'true');
     }
-    return trackedFetch('eng_subtasks', `${backendUrl}/api/issues/subtasks?${params.toString()}`, {
+    stampParams(params);
+    return scopedTracked('eng_subtasks', `${backendUrl}/api/issues/subtasks?${params.toString()}`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -202,7 +220,8 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } 
     if (teamIds.length > 0) {
         params.set('teamIds', teamIds.join(','));
     }
-    return getJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
+    stampParams(params);
+    return scopedJson(`${backendUrl}/api/backlog-epics?${params.toString()}`, 'Backlog epics', {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache',
@@ -210,10 +229,11 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } 
     });
 };
 
-export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], refresh = false, signal } = {}) => {
-    const body = { sprintIds, teamIds };
+export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], refresh = false, signal, scoped = true } = {}) => {
+    // A mixed-era range is sent unstamped: the server admits each sprintId through its own source.
+    const body = scoped ? stampBody({ sprintIds, teamIds }) : { sprintIds, teamIds };
     if (refresh) body.refresh = true;
-    return apiFetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
+    return scopedFetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
@@ -226,12 +246,12 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
 };
 
 export const fetchDependencies = (backendUrl, keys, { signal, refresh = false } = {}) =>
-    apiFetch(`${backendUrl}/api/dependencies`, {
+    scopedFetch(`${backendUrl}/api/dependencies`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'jira-execution-planner',
         },
-        body: JSON.stringify(refresh ? { keys, refresh: true } : { keys }),
+        body: JSON.stringify(stampBody(refresh ? { keys, refresh: true } : { keys })),
         signal
     });

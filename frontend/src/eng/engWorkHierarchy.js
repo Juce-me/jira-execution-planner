@@ -3,6 +3,7 @@ import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
 import { shouldHideReadinessGhost } from './epicRefreshAlerts.js';
+import { isCombinedWorkModel } from './engWorkModel.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -146,6 +147,8 @@ function selectedTeamSet(filters) {
 }
 
 function projectVisible(epic, filters) {
+    // Combined model: one lane, no Product/Tech facet; its 'other' project class is always admitted.
+    if (filters.combinedLane) return true;
     const projectClass = normalized(epic?.projectClass);
     if (projectClass === 'tech') return filters.showTech !== false;
     if (projectClass === 'product') return filters.showProduct !== false;
@@ -246,8 +249,11 @@ export function buildEngWorkHierarchy({
     groupByInitiative: shouldGroupByInitiative = false,
     planningOriginals = null,
     readingPresentation = null,
+    workModel,
 } = {}) {
     const diagnostics = [];
+    const combinedLane = isCombinedWorkModel(workModel);
+    filters = combinedLane ? { ...filters, combinedLane } : filters;
     const scope = sprintScope(sprint, filters);
     const epicGroupsByKey = canonicalStoryGroups(storyEpicGroups, diagnostics);
     const snapshotIsCurrent = snapshotMatches(readinessSnapshot, scope);
@@ -271,7 +277,7 @@ export function buildEngWorkHierarchy({
             }
             readinessEpicKeys.add(epicKey);
             const projectClass = normalized(readinessEpic?.projectClass);
-            if (projectClass !== 'product' && projectClass !== 'tech') {
+            if (projectClass !== 'product' && projectClass !== 'tech' && !(combinedLane && projectClass === 'other')) {
                 diagnostics.push({ code: 'project_class_invalid', epicKey });
                 continue;
             }

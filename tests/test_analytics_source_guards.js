@@ -774,3 +774,49 @@ test('group review columns add no analytics event and document their no-event ro
         assert.doesNotMatch(analyticsSource, new RegExp(`'[a-z_]*${name}[a-z_]*'`));
     }
 });
+
+test('assignee capacity strip adds no analytics event and documents its no-event row (#323)', () => {
+    const analyticsDoc = read('docs/README_ANALYTICS.md');
+    const analyticsSource = read('frontend/src/analytics/dashboardAnalytics.js');
+    const row = 'Planning assignee capacity table, Team capacity (not in Jira) editor, reconcile banner and Add assignee';
+    const line = analyticsDoc.split('\n').find(candidate => candidate.startsWith(`| ${row} |`));
+    assert.ok(line, `Expected no-event allowlist row for ${row}`);
+    assert.ok(line.includes('trigger none'), `${row}: trigger`);
+    assert.ok(line.includes('`event_type=none`'), `${row}: event_type`);
+    assert.ok(line.includes('canonical `event_name=none`'), `${row}: event_name`);
+    assert.ok(line.includes('`feature_name=planning_review`'), `${row}: feature_name`);
+    assert.ok(line.includes('typed params none'), `${row}: typed params`);
+    assert.ok(line.includes('`api_surface=planning_assignee_capacity`'), `${row}: api surface`);
+    assert.ok(line.endsWith('| 2026-10-30 |'), `${row}: reviewed on`);
+    assert.ok(analyticsDoc.includes('`api_surface=planning_assignee_capacity` (the Planning assignee capacity document read and write and the Add assignee people search) sends only `feature_name=planning_review`'));
+    assert.ok(jsSetValues(read('frontend/src/analytics/analytics.js'), 'API_SURFACES').has('planning_assignee_capacity'));
+    // No new event or action name for the strip, the stored team number, the banner or Add assignee.
+    for (const name of ['assignee_capacity', 'planned_capacity', 'reconcile', 'add_assignee']) {
+        assert.doesNotMatch(analyticsSource, new RegExp(`'[a-z_]*${name}[a-z_]*'`));
+    }
+});
+
+test('assignee capacity modules import no analytics emitter; the API module reports only its api_result surface (#323)', () => {
+    const modules = [
+        'frontend/src/eng/PlanningAssigneeCapacity.jsx',
+        'frontend/src/eng/PlanningAssigneeCapacityBar.jsx',
+        'frontend/src/eng/usePlanningAssigneeCapacity.js',
+        'frontend/src/eng/planningAssigneeCapacityModel.js',
+        'frontend/src/eng/PlanningAssigneeAddPicker.jsx',
+        'frontend/src/api/assigneeCapacityApi.js',
+    ];
+    const emitter = /dataLayer|gtag\s*\(|JepAnalytics|analytics\/|\btrack[A-Z]\w*\s*\(|onAnalyticsAction|capacity_edit_open|capacity_change_(?:submit|result)/;
+    for (const relativePath of modules) {
+        const source = read(relativePath);
+        assert.doesNotMatch(source, emitter, `${relativePath} must not emit analytics`);
+    }
+    // Allowed plumbing: the API module's trackedFetch calls (api_result only), each on the dedicated surface
+    // with featureName planning_review; no other module calls trackedFetch.
+    const api = read('frontend/src/api/assigneeCapacityApi.js');
+    const calls = [...api.matchAll(/trackedFetch\(\s*'([a-z_]+)'/g)].map(match => match[1]);
+    assert.deepEqual(calls, ['planning_assignee_capacity', 'planning_assignee_capacity']);
+    assert.equal((api.match(/trackedFetch\(/g) || []).length, 2);
+    assert.equal((api.match(/featureName: 'planning_review'/g) || []).length, 2);
+    assert.doesNotMatch(api, /featureName: '(?!planning_review')/);
+    for (const relativePath of modules.slice(0, -1)) assert.doesNotMatch(read(relativePath), /trackedFetch|api\/http\.js/, relativePath);
+});

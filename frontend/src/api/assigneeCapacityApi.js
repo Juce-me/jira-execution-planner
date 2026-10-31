@@ -22,7 +22,7 @@ async function request(backendUrl, sprintId, query, method, payload, { signal, c
         ]);
         if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
         dispatched = true;
-        const response = await trackedFetch('planning_review', url(backendUrl, sprintId, query), {
+        const response = await trackedFetch('planning_assignee_capacity', url(backendUrl, sprintId, query), {
             method, signal: controller.signal, cache: 'no-cache',
             headers: {
                 'X-Requested-With': 'jira-execution-planner',
@@ -57,7 +57,7 @@ export const saveAssigneeCapacity = (backendUrl, sprintId, payload, options) => 
 export async function searchAssignableUsers(backendUrl, query, { signal } = {}) {
     const { csrfToken } = await fetchCsrfToken(backendUrl);
     if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
-    const response = await trackedFetch('planning_review', `${backendUrl}/api/eng/assignee-capacity/user-options`, {
+    const response = await trackedFetch('planning_assignee_capacity', `${backendUrl}/api/eng/assignee-capacity/user-options`, {
         method: 'POST', signal, cache: 'no-cache',
         headers: { 'X-Requested-With': 'jira-execution-planner', 'Content-Type': 'application/json', ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}) },
         body: JSON.stringify({ query: String(query || '').trim() }),

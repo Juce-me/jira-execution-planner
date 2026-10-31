@@ -146,6 +146,10 @@ Settings → Departments → Boards maps Jira statuses to columns. There you can
 
 If a Department has no usable Board configuration, Board renders one **All epics** column and offers the configuration path.
 
+## Quarterly work configuration
+
+Admin -> Project config holds one configuration per period (Legacy, then DELIVERY by default), each with an inclusive quarter range, Jira project scope, optional Board, and field and hierarchy mappings. The dashboard's viewed quarter (a private `selectedQuarter` preference) selects the configuration that answers every ENG read, independently of whether a physical Sprint exists for that quarter. In the combined model a Jira Epic is the planning leaf and an Initiative is the grouping parent, with one request lane, one total and no Product/Tech split (`other`). Catch Up and Planning read Epics under Initiatives; Board in Component scope matches Components on Epic leaves, hydrates their Initiative parents and renders and counts only matching Epics. Planning and Statistics on Legacy quarters behave as before. The feature is off unless `WORK_CONFIGURATIONS_ENABLED` is set and the workspace is promoted; see the ownership contract in `backend/security/CONFIGURATION_OWNERSHIP.md`. An own-key write (status, priority, field, Project Track) carries the configuration stamp and a stale one answers `409 configuration_scope_changed` while keeping the draft.
+
 ## Filters and search
 
 Catch Up and the applicable Planning, Scenario, and Statistics task-list modes use the hierarchy search: key and summary across Initiative, Epic, and Story; assignee on Epic and Story only. Initiative assignee is not searched. Priority, Status, Product/Tech, and Project Track filters recalculate that same visible hierarchy scope.

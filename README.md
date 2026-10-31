@@ -151,6 +151,8 @@ nano .env  # or use any text editor
 
 DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup and migrations live in [INSTALL.md](INSTALL.md).
 
+Quarterly project configurations (Admin -> Project config, which resolves the work structure from the viewed quarter) are controlled by `WORK_CONFIGURATIONS_ENABLED`. It defaults to off and applies only in DB/OAuth mode. The first successful Project config Save promotes the workspace and is not reversible by turning the flag off: a promoted workspace with the flag off fails structural reads and writes closed. Before any downgrade or rollback, run `.venv/bin/python scripts/check_work_configuration_rollback.py --workspace-id <id>` (read-only; it refuses any promoted bundle). Ownership details: [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md).
+
 Server-side API-token auth remains a legacy compatibility mode. Do not use legacy Jira/Home Basic credentials for the DB/OAuth EPM path.
 
 ### Step 4: Start the server

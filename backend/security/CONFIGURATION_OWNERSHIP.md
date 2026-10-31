@@ -20,7 +20,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
-| ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group; views (column order and hidden columns) per workspace + group + Sprint; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
+| ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group + review namespace (NULL `configuration_id` is the Legacy namespace; each quarterly work configuration has its own, see Quarterly Work Configurations); views (column order and hidden columns) per workspace + group + Sprint + namespace; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
@@ -146,6 +146,19 @@ never touches Capacity, its verification columns, priority weights, groups or pr
   `409 configuration_bundle_required`. Browser input never carries authority: ids, models, revisions,
   captured compatibility and display metadata and `promotionRevision` are server-owned; a non-empty to
   empty project scope needs an explicit `clearProjectsForConfigurationIds` entry.
+- `/api/config` is the intentional no-quarter metadata read: it adds `workConfigurationsEnabled`,
+  `workConfigurationsPromoted`, `workConfigurationSummaries` (id, name, revision, model, ranges and the
+  entry `digest`, which write stamps need) and `adminSettingsMissingByConfiguration`; after promotion it
+  omits the unscoped moved projections. `GET/POST /api/work-structure/config` are `authenticated_read` /
+  `shared_admin_write` (`backend/security/policy.py`).
+- Own-key Jira writes, write-option reads and Sprint review calls carry a `{id, revision, quarter, digest}`
+  stamp that `backend/services/work_write_scope.py` re-resolves against the current workspace before any Jira
+  call: a stale or wrong-model stamp answers `409 configuration_scope_changed`. The stamp is optional for an
+  unpromoted workspace and refused while the flag is off. New-model Scenario source work answers
+  `409 scenario_not_supported`. Capacity `PATCH` carries no stamp.
+- Sprint review rows are namespaced by `configuration_id` (migration `20261030_0022`): NULL is Legacy, a
+  configuration id is its own namespace. The storage key stays workspace + group (+ namespace); the group
+  is still the common fence and the 30/240/500 caps are per group across namespaces.
 - `scripts/check_work_configuration_rollback.py --workspace-id <id>` reads the selected workspace row
   read-only and refuses any promoted bundle. It never flattens or mutates.
 

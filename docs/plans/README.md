@@ -22,6 +22,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 - [Quarterly project configurations design](SUPPORT-quarterly-project-configurations-design.md): Settings hierarchy, component reuse, DB/OAuth-only quarterly configuration contracts, runnable mockup and accepted planning decisions.
 - [Quarterly work-structure migration](EXEC-quarterly-work-structure-migration.md): Tasks 0–6 with dependencies and acceptance journeys for DB/OAuth quarter ranges, reader enablement, isolated reviews, combined capacity and Legacy Scenario compatibility; separate extraction remains a release prerequisite.
+- [jira_server.py cohort and stats extraction](EXEC-jira-server-cohort-stats-extraction.md): Sliced, patch-preserving extraction of epic-cohort, statistics, excluded-capacity and Project Track phase code into services, with per-slice guards and a budget ratchet.
 
 - [Home OAuth public reads](DONE-home-oauth-public-reads.md): Home reads through the signed-in user's OAuth grant only; the stored personal API-token connection was removed. The [design/DoD](SUPPORT-home-oauth-public-read-design.md) uses a self-controlled private Enable EPM view checkbox, EPM-only Home scopes and a bounded Home-access signal; no-access Goals/Projects navigation stays hidden. It preserves non-empty Goals -> Home projects -> exact-label Jira entities and documents rollback without a credential switch. Validation against main `e99b7e2a` records F-01–F-39 dispositions; historical 141/190 baseline counts are not current-main test evidence. GATE-05 remains write-only.
 

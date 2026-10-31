@@ -7,6 +7,7 @@ import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
+import { createStripRowModeSync } from './planningRowModeChannel.js';
 import {
     applyChangesToDocument, assigneeAvatarUrls, assigneeRowColor, capacityMark, capacityMarkText, effectivePlanned, buildAssigneeColorMap, buildAssigneeRows, formatHundredths, handlesUndoKey, hiddenSelectedCount, isUndoShortcut, teamTasks,
     numberStringToHundredths, validateCellDraft,
@@ -159,12 +160,12 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
     return <>
         {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}. Editing any value saves this Sprint's own copy.</p>}
         {state.undoKept && !inheritedFromSprintId && <p className="planning-review-guidance" data-assignee-undo-kept>Undo kept this Sprint's own copy with the inherited values.</p>}
-        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Planned effort.</p>}
+        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Estimated effort.</p>}
         <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity" onKeyDown={onKeyDown}>
             <thead><tr>
                 <th className="planning-assignee-name">Assignee</th>
                 <th className="planning-review-storyPoints">Planned capacity</th>
-                <th className="planning-review-storyPoints">Planned effort</th>
+                <th className="planning-review-storyPoints">Estimated effort</th>
                 <th className="planning-review-storyPoints">Vacations</th>
                 <th className="planning-assignee-note">Notes</th>
             </tr></thead>
@@ -252,11 +253,16 @@ export default function PlanningAssigneeCapacity({
     const onDiscard = React.useCallback(() => controller.discard(), [controller]);
     const onUndo = React.useCallback(() => controller.undo(), [controller]);
     const sprintName = React.useCallback(id => (sprints || []).find(sprint => String(sprint.id) === String(id))?.name, [sprints]);
+    // Collapsing commits an open edit first and persists the preference, from the toggle or from the rows rule below.
+    const collapse = () => { [...editors].forEach(editor => editor()); setExpanded(false); writeExpanded(false); };
+    const collapseRef = React.useRef(collapse);
+    collapseRef.current = collapse;
+    // Epics selected -> strip collapsed; expanding the strip from its header -> Stories selected (#323).
+    const rowSync = React.useMemo(() => createStripRowModeSync({ collapse: () => collapseRef.current() }), []);
     const toggle = () => {
-        if (expanded) [...editors].forEach(editor => editor());
-        const next = !expanded;
-        setExpanded(next); writeExpanded(next);
-        if (next) setOpened(true);
+        if (expanded) { collapse(); rowSync.setOpen(false); return; }
+        setExpanded(true); writeExpanded(true); setOpened(true);
+        rowSync.setOpen(true, { byUser: true });
     };
     const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
     const loaded = Boolean(state.document);
@@ -282,7 +288,7 @@ export default function PlanningAssigneeCapacity({
         const shift = host.getBoundingClientRect().bottom - previous;
         if (previous <= visibleTop && Math.abs(shift) >= 1) window.scrollBy(0, shift);
     }, [host, state]);
-    // Only people with an underbar segment (Planned effort above 0) are tinted, and the strip exists only with a team
+    // Only people with an underbar segment (Estimated effort above 0) are tinted, and the strip exists only with a team
     // number (Jira or stored).
     const tinted = Number(rawCapacity) > 0;
     // The stored team number as shown (own, gray inherited or pending), for the team card's editor and reconcile banner.
@@ -306,6 +312,9 @@ export default function PlanningAssigneeCapacity({
             <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} />
         </>;
     }
+    const open = Boolean(oneTeam && !hidden && host && expanded);
+    React.useLayoutEffect(() => rowSync.connect(), [rowSync]);
+    React.useLayoutEffect(() => { rowSync.setOpen(open); }, [rowSync, open]);
     const strip = oneTeam && !hidden && host ? createPortal(
         <div className={`capacity-panel open${expanded ? '' : ' capacity-panel-collapsed'}`} data-assignee-capacity>
             <div className="capacity-header">

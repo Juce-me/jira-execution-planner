@@ -9,7 +9,7 @@ const formatValue = value => sp(Math.round(value * 100));
 // The strip's data, or null (no provider, several Teams, the document not loaded yet, or nothing selected).
 // `barCapacity` is the Product/Tech-adjusted totalCapacityAdjusted. With one Team it equals the raw team number times the
 // Product/Tech share, derived here only for the readout's source line; segments are the table's Planned capacity and
-// Planned effort and are never scaled.
+// Estimated effort and are never scaled.
 export function useAssigneeUnderbar(barCapacity) {
     const context = usePlanningAssigneeCapacityView();
     const loaded = context?.loaded, oneTeam = context?.oneTeam, view = context?.view, rawCapacity = context?.rawCapacity, capacitySource = context?.capacitySource;
@@ -24,7 +24,7 @@ export function useAssigneeUnderbar(barCapacity) {
 const percentOf = (part, whole) => `${whole > 0 ? Math.round((part / whole) * 100) : 0}% of Selected`;
 
 // The thin per-person strip inside the capacity track, on the bar's own `axis` (which includes the strip's total): each
-// person is max(Planned capacity, Planned effort) wide in two layers of their colour, tinted capacity and solid effort
+// person is max(Planned capacity, Estimated effort) wide in two layers of their colour, tinted capacity and solid effort
 // (underbarLayers decides which lies on top), then Unassigned effort. The wrapper covers the whole track and takes the
 // pointer, so the readout follows the segment under the pointer's x (a header-only readout past the last segment).
 function PlanningAssigneeCapacityBar({ underbar, axis, selectedCount, selectedSP }) {
@@ -45,7 +45,7 @@ function PlanningAssigneeCapacityBar({ underbar, axis, selectedCount, selectedSP
             if (segmentKey === UNDERBAR_UNASSIGNED_KEY) return [header, model.unassigned.name, `Selected ${sp(model.unassigned.selectedHundredths)}`, percentOf(model.unassigned.selectedHundredths, model.selectedHundredths), source];
             const person = byKey.get(segmentKey);
             const capacity = person.capacityHundredths > 0 ? person.capacityHundredths : null;
-            return [header, person.name, `Planned effort ${sp(person.selectedHundredths)}`,
+            return [header, person.name, `Estimated effort ${sp(person.selectedHundredths)}`,
                 ...(capacity ? [`Planned capacity ${sp(capacity)}`, capacityBalanceText(capacity, person.selectedHundredths)] : []), source];
         };
         return {

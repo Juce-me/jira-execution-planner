@@ -300,15 +300,18 @@ a no-op. `--list` reports `nothing to adopt`, `pending`, `needs-merge`, `adopted
 With exactly one Team selected in the Table layout, Planning shows a collapsible in-flow strip, "Assignee Capacity (Story
 Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams,
 All Teams and the List layout keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
-(`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points.
+(`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points. The strip and the table's Epics/Stories
+control follow each other: expanding the strip from its header selects Stories, and choosing Epics (a click or a link's rows)
+while it is expanded collapses it; the Epics a table mount starts with (reload, Sprint switch) yields to an expanded strip by
+selecting Stories. Neither direction emits analytics or adds a request.
 
-**Columns.** Assignee, Planned capacity, Planned effort, Vacations, Notes, with a Totals row summing the three numeric
+**Columns.** Assignee, Planned capacity, Estimated effort, Vacations, Notes, with a Totals row summing the three numeric
 columns. Planned capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500
 characters, single line); blank means unset. Vacations are informational and never subtracted from Planned capacity. Planned
 effort sums the checked Stories of the Team from the same selection the capacity bar uses (its total is the bar's Selected),
 so search, Team, Project and Project Track filters narrow it and a muted line says how many selected Stories filters hide.
 There is no Total effort column. The over/under cue uses the existing capacity thresholds (over above 120%, under below 90%)
-on rows with Planned capacity and on the Totals row, which compares the displayed Planned effort total (including Unassigned)
+on rows with Planned capacity and on the Totals row, which compares the displayed Estimated effort total (including Unassigned)
 with the Planned capacity sum. Sums run in integer hundredths. The table fills the strip's width: Assignee takes a quarter,
 the numeric columns are compact and right-aligned, Notes takes the rest; long names and notes stay on one line with an
 ellipsis and show in full on hover or focus. Below 680px the table scrolls inside the strip, never the page.
@@ -320,7 +323,7 @@ avatar URL, kept in memory by account id until reload); otherwise a person with 
 Unassigned row has the same slot empty, so its name lines up with the person names.
 
 **Marks.** Before the avatar every row has a fixed 14px mark slot, empty unless the person has a set Planned capacity (above
-0) and a Planned effort that is either on plan or over, compared in integer hundredths with both boundaries inclusive: on
+0) and a Estimated effort that is either on plan or over, compared in integer hundredths with both boundaries inclusive: on
 plan when 0.8 x capacity <= effort <= 1.2 x capacity (a rounded green square with a white check, in `--good`; readout "Effort
 M SP of capacity N SP: on plan"), over when effort > 1.2 x capacity (two bold rounded exclamation marks in `--warn`, the
 same threshold as the over cue; readout "Effort M SP, capacity N SP: X SP over capacity"). Spare capacity (effort below 80%,
@@ -332,7 +335,7 @@ tap, an outside tap or a scroll. It writes nothing; numbers are trimmed to at mo
 avatars and row heights where they were.
 
 **Unassigned.** Stories with no assignee account id get their own highlighted row, first, shown only while such non-Killed
-Stories of the Team exist; it shows Planned effort only and is neither editable nor removable.
+Stories of the Team exist; it shows Estimated effort only and is neither editable nor removable.
 
 **Rows, names and inheritance.** One person is one row, merged from the people with Stories in scope, the Sprint's own
 document and an inherited document. A Sprint without its own document reads the nearest earlier document of the same Team
@@ -366,10 +369,10 @@ Sprint change, on any failed or refused save, Retry or Discard, on a re-read tha
 auth session. Read-only strips show no Undo.
 
 **Underbar.** The pinned amber capacity bar carries a thin 5px strip at the bottom of its existing track, adding no height:
-one segment per person with Planned capacity or Planned effort above 0, in table order, plus a trailing Unassigned segment
+one segment per person with Planned capacity or Estimated effort above 0, in table order, plus a trailing Unassigned segment
 (one solid `--warn` layer sized by the Selected Stories with no assignee). A person's segment is max(capacity, effort) wide
 and draws two layers of the person's colour: a tinted layer (the colour at 45% over the surface) for Planned capacity and the
-solid layer for Planned effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
+solid layer for Estimated effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
 top, so the tinted rest is the capacity left; once effort reaches or passes capacity (equal included) the tinted capacity
 lies on top, so the tint ends where capacity is used up and the solid part beyond it is the work above capacity. A person
 with capacity only is purely tinted, with effort only purely solid, with neither has no segment. The strip's total (the sum
@@ -377,7 +380,7 @@ of max(capacity, effort) plus Unassigned) may exceed the Selected fill and run p
 is the largest of capacity, Selected and that total, times 1.15 (the team-card bar uses the same function with 1.3); the
 fill, the markers and the strip share it, so nothing clips and the Team Cap marker lines up. The whole track is hoverable
 and tappable: the segment under the pointer shows its readout under a "Selected N tasks · X SP" header that replaces the fill
-tooltip (person: name, Planned effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
+tooltip (person: name, Estimated effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
 is set, then the team number's source; "Unassigned (effort)" with Selected and its share of Selected), and the marker lines
 keep their own tooltips. Table rows of people with a segment are tinted with the person colour; others keep the normal row
 surface.

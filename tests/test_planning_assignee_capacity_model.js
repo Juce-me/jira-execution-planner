@@ -266,10 +266,10 @@ test('underbar: one segment per person with Planned capacity or effort, max(capa
         ['c', 200, 'solid', null],
     ]);
     assert.deepEqual(bar.unassigned, { key: m.UNDERBAR_UNASSIGNED_KEY, name: 'Unassigned (effort)', selectedHundredths: 400 });
-    // The total is what the strip spans: 8 + 6 + 2 + 4 = 20, more than the Planned effort total (9).
+    // The total is what the strip spans: 8 + 6 + 2 + 4 = 20, more than the Estimated effort total (9).
     assert.equal(bar.totalHundredths, 2000);
     assert.equal(view.totals.selectedHundredths, 900);
-    assert.equal(bar.selectedHundredths, 900, 'the strip still knows the Planned effort total it shows');
+    assert.equal(bar.selectedHundredths, 900, 'the strip still knows the Estimated effort total it shows');
     // Nothing checked still draws the capacity-only people; nobody with a number draws nothing.
     const none = m.buildAssigneeRows({ document: doc, teamTasksList: m.teamTasks(tasks, options), selectedTasks: [] });
     assert.deepEqual(m.buildUnderbar(none).people.map(person => person.key), ['a', 'b']);
@@ -338,7 +338,7 @@ test('mark: on plan within 20% of a set capacity (inclusive), over above 120%, n
 test('a person row tint equals the underbar segment colour for every person, and people with no segment get none', async () => {
     const m = await load();
     const row = (key, name, capacity, selectedHundredths) => ({ key, name, capacity, selectedHundredths });
-    // Bob and Ann carry Planned effort; Cy has Capacity but nothing selected (a tinted-only segment); Di neither.
+    // Bob and Ann carry Estimated effort; Cy has Capacity but nothing selected (a tinted-only segment); Di neither.
     const rows = [row('acc-b', 'Bob', '6', 300), row('acc-a', 'Ann', null, 500), row('acc-c', 'Cy', '4', 0), row('acc-d', 'Di', null, 0), row('acc-e', 'Eve', '0', 0)];
     const map = m.buildAssigneeColorMap(rows);
     // Sorted by name: Ann, Bob, Cy, Di, Eve take the palette in order.

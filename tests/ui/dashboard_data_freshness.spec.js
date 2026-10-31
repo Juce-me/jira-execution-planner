@@ -1220,19 +1220,21 @@ for (const dismissed of [false, true]) for (const native of ['auto', 'none']) te
     await expect.poll(() => state.gets).toBe(1);
     await page.locator('[data-assignee-capacity] .capacity-header-toggle').click();
     await expect(page.locator('table.planning-assignee-table')).toBeVisible();
+    // Expanding the strip switches the table to Stories (#323), so the reading row is a Story.
+    await expect(page.locator('[data-issue-key="STORY-20"][data-row-kind="story"]')).toHaveCount(1);
     await expect(page.locator('.planning-review-hint')).toHaveCount(dismissed ? 0 : 1);
     await expect.poll(() => page.evaluate(() => Boolean(window.__assigneeRef.assigneeCapacity))).toBe(true);
-    const anchor = page.locator('[data-planning-row-key="e20"]');
+    const anchor = page.locator('[data-issue-key="STORY-20"]');
     await anchor.evaluate(node => window.scrollBy(0, node.getBoundingClientRect().top - 400));
     await settle(page);
-    const before = await page.evaluate(() => ({ top: document.querySelector('[data-planning-row-key="e20"]').getBoundingClientRect().top,
+    const before = await page.evaluate(() => ({ top: document.querySelector('[data-issue-key="STORY-20"]').getBoundingClientRect().top,
         strip: document.getElementById('planning-assignee-capacity-host').getBoundingClientRect().toJSON(), stack: document.querySelector('.planning-review-sticky-stack').getBoundingClientRect().bottom }));
     expect(before.strip.bottom, 'the strip is scrolled away above the sticky stack').toBeLessThanOrEqual(before.stack);
     state.grow();
     expect(await page.evaluate(() => window.__assigneeRef.assigneeCapacity.refresh({ automatic: true }))).toEqual({ status: 'ok' });
     await expect(page.locator('table.planning-assignee-table tbody tr[data-assignee-key="saved-9"]')).toHaveCount(1);
     await settle(page);
-    const after = await page.evaluate(() => ({ top: document.querySelector('[data-planning-row-key="e20"]').getBoundingClientRect().top,
+    const after = await page.evaluate(() => ({ top: document.querySelector('[data-issue-key="STORY-20"]').getBoundingClientRect().top,
         strip: document.getElementById('planning-assignee-capacity-host').getBoundingClientRect().toJSON() }));
     expect(after.strip.height - before.strip.height, 'the strip grew').toBeGreaterThan(100);
     expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);

@@ -137,7 +137,7 @@ export function assigneeAvatarUrls(tasks) {
     return urls;
 }
 
-// Planned effort: the checked Stories (the same list the capacity bar sums).
+// Estimated effort: the checked Stories (the same list the capacity bar sums).
 export const selectedEffortByAssignee = selectedTasks => accumulate(selectedTasks || []);
 
 // The team's Stories in scope: every non-Killed Story of the team, independent of filters and checkboxes.
@@ -146,7 +146,7 @@ export function teamTasks(tasks, { teamId, getTeamInfo, normalizeStatus }) {
         && normalizeStatus(task?.fields?.status?.name) !== 'killed');
 }
 
-// Checked Stories of the Team that the filters keep out of Planned effort (and out of the capacity bar's Selected):
+// Checked Stories of the Team that the filters keep out of Estimated effort (and out of the capacity bar's Selected):
 // `selectedMap` is the Planning selection ({issueKey: true}), `selectedTasks` the filtered list both sum.
 export function hiddenSelectedCount(teamTasksList, selectedMap, selectedTasks) {
     if (!selectedMap) return 0;
@@ -227,7 +227,7 @@ export function buildAssigneeRows({
         capacityHundredths: capacityH,
         selectedHundredths: peopleSelectedH + selected.unassigned.hundredths,
         vacationsHundredths: sumHundredths(active.map(row => numberStringToHundredths(row.vacations) || 0)),
-        // the displayed Planned effort total (people plus Unassigned) against the Planned capacity sum, as the row shows them
+        // the displayed Estimated effort total (people plus Unassigned) against the Planned capacity sum, as the row shows them
         cue: active.some(row => numberStringToHundredths(row.capacity) != null) ? capacityCue(peopleSelectedH + selected.unassigned.hundredths, capacityH) : '',
     };
     return {
@@ -424,7 +424,7 @@ export function underbarLayers(capacityHundredths, effortHundredths) {
 
 // Segments of the thin bar under the capacity bar (#323): each non-removed person with Planned capacity or Planned
 // effort above 0, max(capacity, effort) wide in two layers (underbarLayers), plus a trailing Unassigned segment sized
-// by the Planned effort of Stories with no assignee (effort only). The total is what the strip spans on the bar's axis
+// by the Estimated effort of Stories with no assignee (effort only). The total is what the strip spans on the bar's axis
 // and may exceed the bar's Selected. Values are integer hundredths; null when no segment is drawn.
 export function buildUnderbar(view) {
     const people = (view?.rows || []).map(row => {
@@ -437,7 +437,7 @@ export function buildUnderbar(view) {
         : null;
     if (!people.length && !unassigned) return null;
     const totalHundredths = sumHundredths(people.map(person => person.widthHundredths)) + (unassigned?.selectedHundredths || 0);
-    // The Planned effort the strip shows (people plus Unassigned), the Selected of the bar: the Unassigned share's base.
+    // The Estimated effort the strip shows (people plus Unassigned), the Selected of the bar: the Unassigned share's base.
     const selectedHundredths = sumHundredths(people.map(person => person.selectedHundredths)) + (unassigned?.selectedHundredths || 0);
     return { people, unassigned, totalHundredths, selectedHundredths };
 }
@@ -453,7 +453,7 @@ export function capacityBalanceText(capacityHundredths, effortHundredths) {
 
 // A person's mark (#323), with Planned capacity set (above 0), in integer hundredths (no float drift), boundaries
 // inclusive: 'on-plan' when 0.8 x capacity <= effort <= 1.2 x capacity, 'over' when effort > 1.2 x capacity (the
-// Planned effort cell's over cue threshold); null otherwise: no or zero capacity, or spare capacity (effort below 80%,
+// Estimated effort cell's over cue threshold); null otherwise: no or zero capacity, or spare capacity (effort below 80%,
 // effort 0 included).
 export function capacityMark(capacityHundredths, effortHundredths) {
     if (!(capacityHundredths > 0)) return null;
@@ -490,7 +490,7 @@ export function resolveAssigneeColor(key, colorMap) {
     const id = String(key || '').trim();
     return (id && colorMap?.[id]) || ASSIGNEE_PALETTE[hashTeamId(id) % ASSIGNEE_PALETTE.length];
 }
-// Only people with an underbar segment (Planned capacity or Planned effort above 0) get a row tint (null otherwise).
+// Only people with an underbar segment (Planned capacity or Estimated effort above 0) get a row tint (null otherwise).
 export function assigneeRowColor(row, colorMap) {
     return underbarLayers(numberStringToHundredths(row.capacity), row.selectedHundredths) ? resolveAssigneeColor(row.key, colorMap) : null;
 }

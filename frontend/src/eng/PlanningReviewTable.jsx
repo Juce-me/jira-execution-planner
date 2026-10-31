@@ -18,6 +18,8 @@ import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
 import PlanningReviewDerivedCell from './PlanningReviewDerivedCell.jsx';
 import { usePlanningRowMotion } from './usePlanningRowMotion.js';
 import { takeInitialPlanningRowMode } from '../shareView/store.js';
+import { peekInitialPlanningRowMode } from '../shareView/store.js';
+import { publishPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
@@ -120,6 +122,8 @@ export function PlanningReviewScopeDialog({ review }) {
 }
 
 export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint }) {
+    // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
+    const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
@@ -237,7 +241,12 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
-    const changeMode = next => { releaseEngReadingContext(); if (editing) document.activeElement?.blur(); setEditing(null); setMode(next); setNewColumnId(''); trackedAction('row_mode_changed', { mode: next }); };
+    // The assignee capacity strip switches the rows through the same path without the analytics action (#323).
+    const switchMode = React.useRef(null);
+    switchMode.current = (next, chosen = false) => { releaseEngReadingContext(); if (editing) document.activeElement?.blur(); setEditing(null); chosenMode.current = chosen; setMode(next); setNewColumnId(''); };
+    const changeMode = next => { switchMode.current(next, true); trackedAction('row_mode_changed', { mode: next }); };
+    React.useLayoutEffect(() => { publishPlanningRowMode(mode, { setter: next => switchMode.current(next), chosen: chosenMode.current }); }, [mode]);
+    React.useLayoutEffect(() => () => publishPlanningRowMode(null), []);
     const changeSort = (column, additive) => {
         const current = sort.find(item => item.columnId === column.id);
         const direction = !current ? 'asc' : current.direction === 'asc' ? 'desc' : null;   // ascending, descending, off

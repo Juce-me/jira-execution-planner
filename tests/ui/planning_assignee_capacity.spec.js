@@ -220,15 +220,15 @@ test('rows merge by person, the Unassigned row leads, and totals add up', async 
     expect(new Set(list).size, 'no person appears twice').toBe(list.length);
     const cells = async key => rowOf(page, key).locator('td').evaluateAll(tds => tds.map(td => (td.querySelector('input')?.value ?? td.textContent).trim()));
     const ann = await cells('acc-ann');
-    // Columns: Assignee, Planned capacity, Planned effort, Vacations, Notes (no Total effort column).
-    expect(await table(page).locator('thead th').evaluateAll(ths => ths.map(th => th.textContent.trim()))).toEqual(['Assignee', 'Planned capacity', 'Planned effort', 'Vacations', 'Notes']);
+    // Columns: Assignee, Planned capacity, Estimated effort, Vacations, Notes (no Total effort column).
+    expect(await table(page).locator('thead th').evaluateAll(ths => ths.map(th => th.textContent.trim()))).toEqual(['Assignee', 'Planned capacity', 'Estimated effort', 'Vacations', 'Notes']);
     expect([ann[1], ann[2], ann[3], ann[4]]).toEqual(['8', '5 (under capacity)', '1', 'away Friday']);
     expect((await cells('unassigned'))[2]).toBe('4');
     expect(await rowOf(page, 'unassigned').locator('td').count()).toBe(5);
-    // Every Story of the Team is checked: Planned effort = people + Unassigned = 14; Planned capacity 11; Vacations 1.
+    // Every Story of the Team is checked: Estimated effort = people + Unassigned = 14; Planned capacity 11; Vacations 1.
     const totals = await table(page).locator('tfoot td').evaluateAll(tds => tds.map(td => td.textContent.trim()));
     expect(totals).toEqual(['Total', '11', '14 (over capacity)', '1', '']);
-    // The identity: every row's Planned effort plus Unassigned is the Total.
+    // The identity: every row's Estimated effort plus Unassigned is the Total.
     const rowEffort = await table(page).locator('tbody tr').evaluateAll(trs => trs.map(tr => Number(tr.children[2].firstChild?.textContent || 0)));
     expect(rowEffort.reduce((sum, value) => sum + value, 0)).toBe(14);
     await expect(strip(page).getByText(/may be incomplete/)).toHaveCount(0);
@@ -357,7 +357,7 @@ test('geometry and a settled screenshot of every control kind', async ({ page })
         expect(input.left, input.label).toBeGreaterThanOrEqual(input.cell.left - 0.5); expect(input.right, input.label).toBeLessThanOrEqual(input.cell.right + 0.5);
         if (!input.label.startsWith('Notes')) expect(input.align, input.label).toBe('right');
     }
-    expect(measure.headers.filter(header => ['Planned capacity', 'Planned effort', 'Vacations'].includes(header.text)).map(header => header.align)).toEqual(['right', 'right', 'right']);
+    expect(measure.headers.filter(header => ['Planned capacity', 'Estimated effort', 'Vacations'].includes(header.text)).map(header => header.align)).toEqual(['right', 'right', 'right']);
     expect(measure.headers.filter(header => ['Assignee', 'Notes'].includes(header.text)).map(header => header.align)).toEqual(['left', 'left']);
     expect(new Set(measure.body)).toEqual(new Set(['right']));
     for (const entry of measure.nameCells) { expect(entry.box.right).toBeLessThanOrEqual(entry.cell.right + 0.5); }
@@ -412,7 +412,7 @@ const underbarRows = [
     { assigneeKey: 'acc-bob', displayName: 'Bob Synthetic', capacity: '6', vacations: null, notes: null, removed: false },
     { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: null, vacations: null, notes: null, removed: false },
 ];
-// People Capacity 12 + 10 above Team Cap 20 (revision 4 drew a "+6 SP over" mark here; the strip is now Planned effort,
+// People Capacity 12 + 10 above Team Cap 20 (revision 4 drew a "+6 SP over" mark here; the strip is now Estimated effort,
 // so it ends with the Selected fill and nothing is drawn past it).
 const bigCapacityRows = [
     { assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '12', vacations: null, notes: null, removed: false },
@@ -474,7 +474,7 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     await showPanel(page).click();
     await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Team Cap\s*20\.0/);
     const headers = await table(page).locator('thead th').evaluateAll(ths => ths.map(th => th.textContent.trim()));
-    expect(headers).toEqual(['Assignee', 'Planned capacity', 'Planned effort', 'Vacations', 'Notes']);
+    expect(headers).toEqual(['Assignee', 'Planned capacity', 'Estimated effort', 'Vacations', 'Notes']);
     expect(Number(footer[1]), 'the Planned capacity sum is the people, not the team number').toBe(14);
 });
 
@@ -524,7 +524,7 @@ test('segments are one per person with Planned capacity or effort plus Unassigne
     expect(await readout(page).evaluate(node => node.hasAttribute('title') || node.closest('[title]') !== null)).toBe(false);
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
-    await expect(readout(page)).toContainText('Planned effort 5');
+    await expect(readout(page)).toContainText('Estimated effort 5');
     await expect(readout(page)).toContainText('Planned capacity 8');
     await expect(readout(page)).toContainText('3 SP capacity left');
     await expect(readout(page)).not.toContainText('% of Selected');
@@ -614,7 +614,7 @@ test('whole-track hover: any height resolves the segment under the pointer, past
     // A person segment resolves with the round-3 readout (Bob: effort 5, capacity 6).
     await page.mouse.move(5, 400);
     await page.mouse.move(bob.left + bob.width / 2, geometry.track.top + 2);
-    await expect(readout(page)).toHaveText(/Selected 4 tasks · 14\.0 SP\s*Bob Synthetic\s*Planned effort 5\s*Planned capacity 6\s*1 SP capacity left\s*Team capacity: Jira/);
+    await expect(readout(page)).toHaveText(/Selected 4 tasks · 14\.0 SP\s*Bob Synthetic\s*Estimated effort 5\s*Planned capacity 6\s*1 SP capacity left\s*Team capacity: Jira/);
     // Past the last segment and off the marker: the header-only readout.
     const pastX = (unassigned.right + geometry.marker.left) / 2;
     expect(pastX).toBeGreaterThan(unassigned.right + 2);
@@ -824,7 +824,7 @@ test('each person row with a segment (Planned capacity or effort) is tinted with
         expect(withTint.rows[key].expectedMix, key).not.toBe(withTint.rows[key].plain);
     }
     expect(withTint.rows['acc-ann'].expectedMix).not.toBe(withTint.rows['acc-bob'].expectedMix);
-    // Neither Capacity nor Planned effort (Cy): no segment, no tint. Unassigned keeps its warning-tone row.
+    // Neither Capacity nor Estimated effort (Cy): no segment, no tint. Unassigned keeps its warning-tone row.
     expect(withTint.rows['acc-cy'].tinted).toBe(false);
     expect(new Set(withTint.rows['acc-cy'].cellBackgrounds)).toEqual(new Set([withTint.rows['acc-cy'].plain]));
     expect(Object.keys(withTint.segmentColors)).not.toContain('Cy Former');
@@ -889,9 +889,10 @@ test('empty state: a Team with only Killed, unchecked Stories and no saved peopl
     const server = capacityServer();
     await install(page, { server, issues: [story('PLAN-1', 'acc-ann', 'Ann Synthetic', 3, { status: 'Killed' }), story('PLAN-2', 'acc-bob', 'Bob Synthetic', 2, { status: 'Killed' })] });
     await openPlanning(page);
-    // Killed Stories still count in Selected while checked (as in the capacity bar), so uncheck them first.
-    await expand(page);
+    // Killed Stories still count in Selected while checked (as in the capacity bar), so uncheck them first, through the
+    // Epic row: expanding the strip then switches the table to Stories (#323).
     await page.getByRole('checkbox', { name: 'Select PLAN-EPIC' }).first().click();
+    await stripToggle(page).click();
     await expect(strip(page).getByText('No Stories or saved people for this Team in this Sprint.')).toBeVisible();
     await expect(table(page)).toHaveCount(0);
 });
@@ -1002,7 +1003,7 @@ test('a muted line says when selected Stories of the Team are hidden by filters'
     await expand(page);
     await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveCount(0);
     await page.locator('.search-input:visible').fill('PLAN-3');
-    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveText('3 selected Stories of this Team are hidden by filters and not counted in Planned effort.');
+    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveText('3 selected Stories of this Team are hidden by filters and not counted in Estimated effort.');
     await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveClass(/planning-review-guidance/);
     await expect(footerSelected(page)).toHaveText(/^5/);
 });
@@ -1247,7 +1248,7 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     await expect.poll(() => assigneeWrites(calls).length).toBe(1);
     expect(assigneeWrites(calls)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'user' }, changes: [] });
     await expect(capacityTrack(page)).toBeVisible();
-    // Nothing is selected in this Sprint, so the strip (Planned effort by person) has no segment and is not drawn;
+    // Nothing is selected in this Sprint, so the strip (Estimated effort by person) has no segment and is not drawn;
     // selecting the Stories draws it.
     await expect(underbar(page)).toHaveCount(0);
     await page.locator('.planning-panel').getByRole('button', { name: 'Select All', exact: true }).click();
@@ -1573,7 +1574,7 @@ test('Add assignee: no selected projects and a failed search show a message, not
 
 // DoD 13 render and compute counts (opt-in, as tests/ui/app_render_counts.spec.js; the probe bundle is built in memory):
 //   JEP_RUNTIME_PROBE=1 npx playwright test tests/ui/planning_assignee_capacity.spec.js -g "render counts" --browser=chromium
-// teamTasks is the team list filter ("has Stories"); buildAssigneeRows runs once per derived view and accumulates Planned effort.
+// teamTasks is the team list filter ("has Stories"); buildAssigneeRows runs once per derived view and accumulates Estimated effort.
 test.describe('render counts (#323 DoD 13)', () => {
     test.skip(process.env.JEP_RUNTIME_PROBE !== '1', 'opt-in runtime probe (JEP_RUNTIME_PROBE=1)');
     let probeBundle;
@@ -2359,11 +2360,11 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw two layer
     // Whole-track hover resolves one segment per person, at the top of the track and on the strip pixels of either layer.
     const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
     for (const [name, lines] of [
-        ['Ann Synthetic', ['Planned effort 5', 'Planned capacity 3', '2 SP over capacity']],
-        ['Eve Synthetic', ['Planned effort 2', 'Planned capacity 4', '2 SP capacity left']],
-        ['Fay Synthetic', ['Planned effort 3', 'Planned capacity 2.5', '0.5 SP over capacity']],
-        ['Zoe Capacity Only', ['Planned effort 0', 'Planned capacity 5', '5 SP capacity left']],
-        ['Bob Synthetic', ['Planned effort 5']],
+        ['Ann Synthetic', ['Estimated effort 5', 'Planned capacity 3', '2 SP over capacity']],
+        ['Eve Synthetic', ['Estimated effort 2', 'Planned capacity 4', '2 SP capacity left']],
+        ['Fay Synthetic', ['Estimated effort 3', 'Planned capacity 2.5', '0.5 SP over capacity']],
+        ['Zoe Capacity Only', ['Estimated effort 0', 'Planned capacity 5', '5 SP capacity left']],
+        ['Bob Synthetic', ['Estimated effort 5']],
     ]) {
         const segment = by[name];
         for (const [x, y] of [[segment.left + 2, track.y + 2], [segment.right - 2, track.y + track.height - 2]]) {
@@ -2512,4 +2513,223 @@ for (const scale of [1, 2]) test.describe(`mark icon ink at ${scale}x`, () => {
             await mark.evaluate(node => { node.querySelector('svg').style.transform = ''; });
         }
     });
+});
+
+// ---- Epics/Stories follow the strip (#323 operator review) ------------------------------------------------------
+// Epics selected -> strip collapsed; expanding the strip from its header -> Stories selected. A chosen Epics (a click,
+// a link's rows) collapses an open strip; the Epics default a table mount starts with yields to an open strip.
+
+// Opened links carry a query, which the shared fixture's `/` route never matches.
+const linkHtml = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', '..', 'jira-dashboard.html'), 'utf8');
+const rowsControl = page => page.getByRole('radiogroup', { name: 'Planning review rows' });
+const rowsButton = (page, name) => rowsControl(page).getByRole('radio', { name, exact: true });
+const reviewRowKinds = page => page.locator('.planning-review-table:not(.planning-review-docked-table) tbody tr[data-row-kind]').evaluateAll(rows => [...new Set(rows.map(row => row.dataset.rowKind))]);
+const rowModeEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => JSON.stringify(entry).includes('row_mode')).length);
+const storedExpansion = page => page.evaluate(key => localStorage.getItem(key), 'jira_dashboard_planning_assignee_capacity_v1');
+// Counts every switch to Stories and every collapse of the strip from now on, so a settled check sees any ping-pong.
+async function countFlips(page) {
+    await page.evaluate(() => {
+        const counts = { stories: 0, epics: 0, collapses: 0, expansions: 0 };
+        window.__rowFlips = counts;
+        const watch = () => {
+            const stories = document.querySelector('[aria-label="Planning review rows"] [role="radio"]:nth-child(2)');
+            const panel = document.querySelector('[data-assignee-capacity]');
+            return { stories: stories?.getAttribute('aria-checked') === 'true', collapsed: Boolean(panel?.classList.contains('capacity-panel-collapsed')) };
+        };
+        let last = watch();
+        new MutationObserver(() => {
+            const now = watch();
+            if (now.stories !== last.stories) counts[now.stories ? 'stories' : 'epics'] += 1;
+            if (now.collapsed !== last.collapsed) counts[now.collapsed ? 'collapses' : 'expansions'] += 1;
+            last = now;
+        }).observe(document.body, { subtree: true, attributes: true, attributeFilter: ['aria-checked', 'class'], childList: true });
+    });
+}
+const flips = async page => { await page.waitForTimeout(300); return page.evaluate(() => ({ ...window.__rowFlips })); };
+const nonWriteCalls = (calls, since) => calls.slice(since).filter(call => call.method === 'GET').map(call => call.pathname);
+
+test('expanding the strip with Epics active selects Stories once, through the quiet path: no event, no read, focus and selection kept', async ({ page, browserName }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server, analytics: true });
+    await openPlanning(page);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await page.waitForTimeout(400);
+    const selectedBefore = await page.locator('.planning-panel').textContent();
+    const since = calls.length;
+    await countFlips(page);
+    await expand(page);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'false');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['story']);
+    expect(await flips(page)).toEqual({ stories: 1, epics: 0, collapses: 0, expansions: 1 });
+    // The switch moves no focus: the toggle keeps it (WebKit does not focus a clicked button, so nothing is focused there).
+    if (browserName === 'webkit') expect(await page.evaluate(() => document.activeElement === document.body)).toBe(true);
+    else await expect(stripToggle(page)).toBeFocused();
+    expect(await rowModeEvents(page), 'the automatic switch emits no analytics event').toBe(0);
+    expect(nonWriteCalls(calls, since), 'expansion and the automatic switch read nothing').toEqual([]);
+    expect(server.state.gets).toBe(1);
+    // Selection: every Story stays checked, and the overview reads the same.
+    for (const key of ['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-4']) await expect(page.getByRole('checkbox', { name: `Select ${key}`, exact: true }).first()).toBeChecked();
+    expect(await page.locator('.planning-panel').textContent()).toBe(selectedBefore);
+    // The Filters row with Stories active, settled.
+    await page.mouse.move(5, 5);
+    // The controls join the Filters row's view-controls slot (display: contents), so capture the row that holds the slot.
+    await page.locator('.fb-view-controls').locator('xpath=..').screenshot({ path: 'tmp/slice12-shots/filters-row-stories-after-expand.png', animations: 'disabled' });
+    // Collapsing does not switch back; with Stories active a re-expansion changes nothing.
+    await stripToggle(page).click();
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await stripToggle(page).click();
+    await expect(table(page)).toBeVisible();
+    expect(await flips(page)).toEqual({ stories: 1, epics: 0, collapses: 1, expansions: 2 });
+    expect(await rowModeEvents(page)).toBe(0);
+    expect(nonWriteCalls(calls, since)).toEqual([]);
+});
+
+test('switching to Epics while the strip is open collapses it to its 28px header once; expanding selects Stories again; no ping-pong', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    const { calls } = await install(page, { server, analytics: true });
+    await openPlanning(page);
+    await expect.poll(() => server.state.gets).toBe(1);
+    await expand(page);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await page.waitForTimeout(300);
+    const since = calls.length;
+    await countFlips(page);
+    for (let round = 1; round <= 2; round += 1) {
+        await rowsButton(page, 'Epics').click();
+        await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+        await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'false');
+        expect((await strip(page).boundingBox()).height).toBeCloseTo(28, 1);
+        await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+        await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+        await expect.poll(() => storedExpansion(page)).toBe('{"expanded":false}');
+        expect(await flips(page), `round ${round}: one switch to Epics, one collapse`).toEqual({ stories: round - 1, epics: round, collapses: round, expansions: round - 1 });
+        expect(await rowModeEvents(page), 'only the clicks are tracked').toBe(round);
+        await expand(page);
+        await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+        expect(await flips(page), `round ${round}: one expansion, one switch to Stories`).toEqual({ stories: round, epics: round, collapses: round, expansions: round });
+        expect(await rowModeEvents(page)).toBe(round);
+    }
+    // While Epics is active the strip stays collapsed until the user expands it.
+    await rowsButton(page, 'Epics').click();
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await page.waitForTimeout(400);
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    expect(nonWriteCalls(calls, since), 'collapse, expansion and the switches read nothing').toEqual([]);
+    expect(server.state.gets).toBe(1);
+});
+
+test('an open strip cell edit commits before the collapse that a switch to Epics causes', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('9');
+    await expect(capacity).toBeFocused();
+    await rowsButton(page, 'Epics').click();
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-ann', capacity: '9' }]);
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await expand(page);
+    await expect(capacity).toHaveValue('9');
+});
+
+test('a dirty review draft survives both directions: the switch to Stories is not skipped and the collapse loses nothing', async ({ page }) => {
+    const server = capacityServer();
+    await install(page, { server });
+    await openPlanning(page);
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await page.getByLabel('Column name', { exact: true }).fill('Synthetic review');
+    await page.getByRole('button', { name: 'Add column', exact: true }).click();
+    const cell = page.getByRole('textbox', { name: 'Synthetic review for PLAN-EPIC', exact: true });
+    await cell.fill('7'); await cell.press('Enter');
+    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await expand(page);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.planning-review-dialog')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await rowsButton(page, 'Epics').click();
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await expect(cell).toHaveValue('7');
+    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+});
+
+test('mount: a saved expanded strip and the table\'s Epics default select Stories once; a link\'s Stories keeps both; a link\'s Epics collapses the strip', async ({ page }) => {
+    const server = capacityServer();
+    await page.addInitScript(() => { if (!sessionStorage.getItem('seeded')) { sessionStorage.setItem('seeded', '1'); localStorage.setItem('jira_dashboard_planning_assignee_capacity_v1', '{"expanded":true}'); } });
+    const { calls } = await install(page, { server, analytics: true });
+    await page.route(url => url.href.startsWith(`${appBaseUrl}/?v=1&`), route => route.fulfill({ status: 200, contentType: 'text/html', body: linkHtml }));
+    await openPlanning(page);
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['story']);
+    expect(await rowModeEvents(page)).toBe(0);
+    // A Sprint switch remounts the table in its Epics default: the open strip keeps it on Stories, with no extra read.
+    await countFlips(page);
+    await switchSprint(page, activeSprintName);
+    await switchSprint(page, futureSprintName);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    expect((await flips(page)).collapses).toBe(0);
+    expect(await rowModeEvents(page)).toBe(0);
+    // A link with Stories rows: both kept.
+    await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=group-alpha&sprint=${futureSprintId}&teams=team-alpha&rows=stories`);
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await page.waitForTimeout(400);
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'true');
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    // A link with the Epics rows: the link's rows win and the strip collapses, persisted.
+    await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=group-alpha&sprint=${futureSprintId}&teams=team-alpha`);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    await page.waitForTimeout(400);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'false');
+    expect(await storedExpansion(page)).toBe('{"expanded":false}');
+    expect(calls.filter(call => call.method !== 'GET' && call.pathname.endsWith('/assignee-capacity'))).toEqual([]);
+});
+
+test('two Teams and All Teams: no strip, the rows stay Epics and the saved expansion is untouched', async ({ page }) => {
+    for (const selectedTeams of [['team-alpha', 'team-beta'], ['all']]) {
+        const server = capacityServer();
+        await page.addInitScript(() => localStorage.setItem('jira_dashboard_planning_assignee_capacity_v1', '{"expanded":true}'));
+        await install(page, { server, selectedTeams });
+        await openPlanning(page);
+        await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+        await expect(strip(page)).toHaveCount(0);
+        await page.waitForTimeout(300);
+        await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+        await rowsButton(page, 'Stories').click();
+        await rowsButton(page, 'Epics').click();
+        expect(await storedExpansion(page)).toBe('{"expanded":true}');
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
+});
+
+test('the pinned stack stays inside DoD 14 after the automatic switch and collapse at 1440x900 and 1280x720', async ({ page }) => {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(viewport);
+        const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+        await install(page, { server });
+        await openPlanning(page);
+        const before = await pinnedHeights(page);
+        await expand(page);
+        await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+        await rowsButton(page, 'Epics').click();
+        await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+        const after = await pinnedHeights(page);
+        for (const [label, heights] of [['before', before], ['after', after]]) {
+            expect(heights.panel, `${label} ${viewport.width}`).toBeLessThan(64);
+            expect(heights.stack, `${label} ${viewport.width}`).toBeLessThanOrEqual(175);
+        }
+        expect(after.stack, 'the round trip leaves the pinned stack as it was').toBeCloseTo(before.stack, 1);
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
 });

@@ -20,7 +20,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Planning Work
 
-- [Planning assignee capacity table #323](DONE-planning-assignee-capacity-table-323.md): with one team selected, Planning shows a per-assignee table (Planned capacity, Planned effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with a per-assignee strip in the pinned capacity bar, a stored planned team capacity and Add assignee.
+- [Planning assignee capacity table #323](DONE-planning-assignee-capacity-table-323.md): with one team selected, Planning shows a per-assignee table (Planned capacity, Estimated effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with a per-assignee strip in the pinned capacity bar, a stored planned team capacity and Add assignee.
 - [Planning assignee capacity deferred scope #323](FUTURE-planning-assignee-capacity-deferred-323.md): one-click push of the stored team number to Jira and the open verification items (EPM refresh flags, p50/p95, manual glyph check).
 
 - [Board status pill non-blocking #241](DONE-board-status-pill-nonblocking-241.md): Board status pill changes stop locking the Board and announce their outcome like drag, with strict-scope coverage (issue #241).

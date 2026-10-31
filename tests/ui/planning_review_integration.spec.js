@@ -533,6 +533,39 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
     await expect(table.locator('tfoot .planning-review-selection')).toBeInViewport();
 });
 
+test('Planning table Story Points save two decimals, round a third before the single POST, reject negatives and cancel on Escape', async ({page}) => {
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
+    const bodies=[];
+    await page.route('**/api/issues/PLAN-1/field',route=>{const body=route.request().postDataJSON();bodies.push(body);return json(route,{value:body.value,result:'updated',mappingRevision:'synthetic'});});
+    await openPlanning(page);
+    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const table=page.locator('.planning-review-table');
+    const points=table.locator('tbody tr[data-issue-key="PLAN-1"]').getByRole('textbox',{name:'Story Points',exact:true});
+    const feedback=table.locator('tbody tr[data-issue-key="PLAN-1"] .story-points-editor-feedback');
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('0.75');await points.press('Enter');
+    await expect.poll(()=>bodies.length).toBe(1);
+    expect(bodies[0].value).toBe(0.75);
+    await expect(points).toHaveValue('0.75');
+    await expect(points).toHaveAttribute('aria-invalid','false');
+    await expect(feedback).toHaveCount(0);
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('0.755');await points.press('Enter');
+    await expect.poll(()=>bodies.length).toBe(2);
+    expect(bodies[1].value).toBe(0.76);
+    await expect(points).toHaveValue('0.76');
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('-1');await points.press('Enter');
+    await expect(feedback).toHaveText('Enter a non-negative number.');
+    await expect(points).toHaveAttribute('aria-invalid','true');
+    await points.press('Escape');
+    await expect(points).toHaveValue('0.76');
+    expect(bodies).toHaveLength(2);
+});
+
 for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280]) test(`summaries truncate and reveal the full text without losing editing in ${authMode} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});

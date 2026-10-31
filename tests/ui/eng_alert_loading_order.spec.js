@@ -97,6 +97,7 @@ async function installFixture(page, {
             url: request.url(),
             pathname: url.pathname,
             params: Object.fromEntries(url.searchParams.entries()),
+            body: requestBody,
         };
         const source = url.pathname === '/api/tasks-with-team-name'
             ? url.searchParams.get('purpose') || ''
@@ -340,6 +341,24 @@ test('missing Story Points alert reveals the dashboard story and activates its i
     await expect(pointsInput).toHaveClass(/story-points-alert-highlight/);
     await expect.poll(() => calls.some(call => call.pathname === '/api/issues/PROD-1/editable-fields' && call.params.field === 'storyPoints')).toBe(true);
     await page.screenshot({ path: path.join(screenshotDir, 'missing-story-points-editor-focused.png') });
+});
+
+test('Catch Up issue card Story Points round a third decimal half-up before the single POST', async ({ page }) => {
+    const calls = await installFixture(page);
+    await seedMode(page, 'catchUp');
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await waitForCallCount(calls, isAlertCall, 5);
+    const pointsInput = page.locator('.task-item[data-issue-key="PROD-1"]').getByRole('textbox', { name: 'Story Points' });
+    await pointsInput.focus();
+    await expect(pointsInput).toBeEditable();
+    await pointsInput.fill('0.755');
+    await pointsInput.press('Enter');
+    await waitForCallCount(calls, call => call.pathname === '/api/issues/PROD-1/field' && call.method === 'POST', 1);
+    const posts = calls.filter(call => call.pathname === '/api/issues/PROD-1/field' && call.method === 'POST');
+    expect(posts).toHaveLength(1);
+    expect(posts[0].body.value).toBe(0.76);
+    await expect(pointsInput).toHaveValue('0.76');
+    await expect(pointsInput).toHaveAttribute('aria-invalid', 'false');
 });
 
 test('Catch Up waits for sprint metadata and sends its name with alert enrichment', async ({ page }) => {

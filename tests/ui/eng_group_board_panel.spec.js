@@ -742,8 +742,8 @@ test('the Board panel row computes six grid cells and Catch Up\'s computes four'
     expect(bare).toBe(4);
 });
 
-// #311: an SP header over a right-aligned one-decimal column, mirrored by every row.
-test('the panel shows an SP header aligned right over one-decimal Story Points', async ({ page }) => {
+// #311: an SP header over a right-aligned fixed column (at least one decimal; #323 allows a second), mirrored by every row.
+test('the panel shows an SP header aligned right over fixed one- or two-decimal Story Points', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
     await openPanel(page, 'PLAT-1');
@@ -752,7 +752,7 @@ test('the panel shows an SP header aligned right over one-decimal Story Points',
     await expect(head).toHaveText('SP');
     const cells = panel(page).locator('.story-subtask-row .story-subtask-sp');
     await expect(cells).toHaveCount(5);
-    for (const text of await cells.allTextContents()) expect(text).toMatch(/^\d+\.\d$/);
+    for (const text of await cells.allTextContents()) expect(text).toMatch(/^\d+\.\d{1,2}$/);
     const rights = await panel(page).evaluate((node) => [node.querySelector('.story-subtask-head .story-subtask-sp'), ...node.querySelectorAll('.story-subtask-row .story-subtask-sp')].map((el) => {
         const box = el.getBoundingClientRect();
         return { right: Math.round(box.right * 10) / 10, align: getComputedStyle(el).justifySelf, clipped: el.scrollWidth > el.clientWidth };

@@ -624,7 +624,7 @@ def validate_story_points(value):
     try:
         decimal_value = Decimal(str(value))
         if (not decimal_value.is_finite() or decimal_value < 0
-                or decimal_value != decimal_value.quantize(Decimal("0.1"))):
+                or decimal_value != decimal_value.quantize(Decimal("0.01"))):
             raise FieldEditInputError("invalid_value")
     except (InvalidOperation, ValueError, OverflowError):
         raise FieldEditInputError("invalid_value")

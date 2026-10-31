@@ -129,7 +129,7 @@ test('empty Ad Hoc set leaves selected stats classification unchanged', async ()
     );
 });
 
-test('all reducer totals normalize binary drift only for integer tenths', async () => {
+test('all reducer totals normalize binary drift only for integer hundredths', async () => {
     const {
         sumPlanningStoryPoints,
         buildSelectedTeamStats,
@@ -147,6 +147,14 @@ test('all reducer totals normalize binary drift only for integer tenths', async 
     assert.equal(buildSelectedProjectStats(tenths, techProjectKeys).PRODUCT, 0.3);
     assert.equal(buildSelectedTeamProjectStats(tenths, getTeamInfo, techProjectKeys)['team-a'].product, 0.3);
     assert.equal(buildExcludedProjectStats(tenths, new Set(['EP-1']), techProjectKeys, normalizeEpicKey).PRODUCT, 0.3);
+
+    const hundredths = [
+        task('PROD-5', { projectKey: 'PROD', teamId: 'team-a', teamName: 'Team A', customfield_10004: 0.07 }),
+        task('PROD-6', { projectKey: 'PROD', teamId: 'team-a', teamName: 'Team A', customfield_10004: 0.14 }),
+    ];
+    assert.notEqual(0.07 + 0.14, 0.21, 'the fixture drifts as a float sum');
+    assert.equal(sumPlanningStoryPoints(hundredths), 0.21);
+    assert.equal(buildSelectedTeamStats(hundredths, getTeamInfo)['team-a'].storyPoints, 0.21);
 
     const precise = [task('PROD-3', { customfield_10004: 1.234 }), task('PROD-4', { customfield_10004: 0.2 })];
     assert.equal(sumPlanningStoryPoints(precise), 1.434);

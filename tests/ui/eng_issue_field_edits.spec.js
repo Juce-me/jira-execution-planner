@@ -494,6 +494,37 @@ test('story points stays inline, rejects blank, saves Enter once, and discards o
     expect(await page.evaluate(() => window.__issueEditorHarness.pointSubmits)).toEqual([2]);
 });
 
+test('story points accept two decimals, round a third half-up before saving, reject negatives and cancel on Escape', async ({ page }) => {
+    await mountHarness(page, { width: 390, height: 844 });
+    const input = page.getByRole('textbox', { name: 'Story Points' });
+    const submits = () => page.evaluate(() => window.__issueEditorHarness.pointSubmits);
+    await input.click();
+    await expect(input).toBeEditable();
+    await input.fill('0.75');
+    await input.press('Enter');
+    await expect.poll(submits).toEqual([0.75]);
+    await expect(input).toHaveValue('0.75');
+    await expect(input).toHaveAttribute('aria-invalid', 'false');
+
+    await input.click();
+    await expect(input).toBeEditable();
+    await input.fill('0.755');
+    await input.press('Enter');
+    await expect.poll(submits).toEqual([0.75, 0.76]);
+    await expect(input).toHaveValue('0.76');
+
+    await input.click();
+    await expect(input).toBeEditable();
+    await input.fill('-1');
+    await input.press('Enter');
+    await expect(page.locator('.story-points-editor-feedback')).toHaveText('Enter a non-negative number.');
+    await expect(input).toHaveAttribute('aria-invalid', 'true');
+    await input.press('Escape');
+    await expect(input).toHaveValue('0.76');
+    await expect(page.locator('.story-points-editor-feedback')).toHaveCount(0);
+    expect(await submits()).toEqual([0.75, 0.76]);
+});
+
 test('missing Jira Story Points render as 0 in the inline input', async ({ page }) => {
     await mountHarness(page, { width: 390, height: 844 });
     await page.evaluate(() => window.__issueEditorHarness.setPoints(null));

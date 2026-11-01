@@ -75,6 +75,9 @@ export function setPendingPlanningRowMode(mode) {
     planningRowMode = ROW_MODES.has(mode) ? mode : null;
 }
 
+// Whether the next mount has a seed, without taking it (the table counts a link's rows as chosen, #323).
+export const peekInitialPlanningRowMode = () => planningRowMode;
+
 export function takeInitialPlanningRowMode() {
     const mode = planningRowMode;
     planningRowMode = null;

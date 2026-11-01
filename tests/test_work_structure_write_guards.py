@@ -173,7 +173,7 @@ class OwnKeyWriteTests(StampedRouteBase):
 
     def test_points_input_rejects_booleans_nulls_and_nonfinite_values_without_a_write(self):
         base = self.edit_body('storyPoints', 5, 3)
-        for value in (True, False, None, float('inf'), float('nan'), '5', -1, 1.25):
+        for value in (True, False, None, float('inf'), float('nan'), '5', -1, 1.255):
             response = self.post('/api/issues/DEMO-1/field', {**base, 'value': value})
             self.assertEqual((response.status_code, response.get_json()['error']), (400, 'invalid_value'), value)
         self.assertEqual(self.jira.puts, [])

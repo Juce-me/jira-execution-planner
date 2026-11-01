@@ -21,7 +21,7 @@ from backend.services import sprint_review as review
 from tests.test_sprint_review import ReviewFixture
 
 ROOT = Path(__file__).resolve().parents[1]
-PREVIOUS_HEAD, HEAD = '20261028_0021', '20261030_0022'
+PREVIOUS_HEAD, HEAD = '20261029_0022', '20261030_0022'
 CFG, OTHER_CFG = 'cfg-2027q1', 'cfg-2027q2'
 EPIC_TYPE, INITIATIVE_TYPE = '10001', '10002'
 TYPE_MAP = {'epic': (EPIC_TYPE, 1), 'initiative': (INITIATIVE_TYPE, 2)}

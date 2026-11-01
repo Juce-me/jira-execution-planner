@@ -145,15 +145,18 @@ def mapping_revision(context, field, field_id):
 
 
 class StoryPointValidationTests(unittest.TestCase):
-    def test_accepts_finite_non_negative_tenths(self):
-        for value in (0, 1.5, 2, 3, 2.0):
+    def test_accepts_finite_non_negative_hundredths(self):
+        for value in (0, 0.1, 1, 1.5, 2, 3, 2.0, 0.75, 1.25, 1.01):
             with self.subTest(value=value):
                 self.assertEqual(validate_story_points(value), value)
 
     def test_rejects_invalid_targets_before_jira(self):
-        for bad in (True, -1, 1.25, None, "1.5", float("inf"), float("nan"), 10 ** 1000):
-            with self.subTest(value=bad), self.assertRaises(FieldEditInputError):
+        # The client rounds to two decimals; a third decimal is rejected, never rounded here.
+        for bad in (True, False, -1, -0.01, 0.755, 1.005, None, "1.5", "0.75",
+                    float("inf"), float("-inf"), float("nan"), 10 ** 1000):
+            with self.subTest(value=bad), self.assertRaises(FieldEditInputError) as raised:
                 validate_story_points(bad)
+            self.assertEqual(raised.exception.code, "invalid_value")
 
 
 class EditableFieldMetadataTests(unittest.TestCase):

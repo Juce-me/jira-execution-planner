@@ -192,8 +192,9 @@ function statusHandlerPolicy(source) {
     const body = callbackBody(source, registry.status.handler);
     assert.doesNotMatch(body, /\b(?:for|while)\s*\(|\.(?:map|flatMap|forEach|reduce)\s*\(|\b(?:selectedTasks|selectedStories|children|childTasks|tasks|stories)\b/, 'Status handler cannot widen an Epic into children or selection');
     const calls = [...body.matchAll(/submitStatusTransition\(([^)]*)\)/g)];
-    assert.equal(calls.length, 2, 'App keeps its ordinary and Board own-key paths');
-    calls.forEach(call => assert.equal(compact(call[1]), 'targetStatus,issue.key', 'App forwards displayed issue key only'));
+    assert.equal(calls.length, 1, 'App has one own-key path for every surface');
+    // An optional trailing `options` (the Board panel's onSettled) may follow; the key stays `issue.key` alone.
+    calls.forEach(call => assert.ok(['targetStatus,issue.key', 'targetStatus,issue.key,options'].includes(compact(call[1])), 'App forwards displayed issue key only'));
 }
 
 function singletonWriterPolicy(source, api, property, key) {
@@ -326,7 +327,7 @@ test('mutation payloads and editor/capacity adapters retain singleton own-key ta
     for (const binding of registry.bindings) for (const [file, source] of sources) siblingSitePolicy(file, source, binding);
     const statusSource = read('frontend/src/eng/useEngStatusTransitions.js');
     const statusCode = normalize(statusSource);
-    assert.equal([...statusCode.matchAll(/\btransitionIssues\(/g)].length, 1);
+    assert.equal([...statusCode.matchAll(/\btransitionIssues\(/g)].length, 1, 'The status hook keeps one transitionIssues( call');
     assert.match(statusCode, /issueKeys: targets\.map\(\(target\) => target\.key\)/);
     singletonWriterPolicy(read('frontend/src/eng/useEngPriorityTransitions.js'), 'updateIssuePriorities', 'issueKeys', 'key');
     singletonWriterPolicy(read('frontend/src/eng/useEngProjectTrackTransitions.js'), 'updateIssueProjectTrack', 'issueKey', 'key');
@@ -392,7 +393,16 @@ test('adversarial Epic child/selection closures and bare-handler widening fail',
         'targetStatus => handleSubmitStatusTransition(targetStatus, selectedTasks)',
     ]) assert.throws(() => statusSitePolicy(site.path, `<StatusTransitionMenu issue={${issue}} onSubmit={${handler}} />`, site), /bare/);
     const original = read(registry.status.handlerPath);
-    assert.throws(() => statusHandlerPolicy(original.replace('submitStatusTransition(targetStatus, issue.key)', 'submitStatusTransition(targetStatus, issue.children.map(child => child.key))')), /widen|key/);
+    const forwarded = 'submitStatusTransition(targetStatus, issue.key, options)';
+    assert.ok(original.includes(forwarded));
+    assert.doesNotThrow(() => statusHandlerPolicy(original));
+    assert.doesNotThrow(() => statusHandlerPolicy(original.replace(forwarded, 'submitStatusTransition(targetStatus, issue.key)')));
+    for (const widened of [
+        'submitStatusTransition(targetStatus, issue.children.map(child => child.key))',
+        'submitStatusTransition(targetStatus, issue.key, selectedKeys)',
+        'submitStatusTransition(targetStatus, issue.key, options, issue.children)',
+        'submitStatusTransition(targetStatus, selectedKey, options)',
+    ]) assert.throws(() => statusHandlerPolicy(original.replace(forwarded, widened)), /widen|key/);
     assert.throws(() => singletonWriterPolicy("transitionIssues(backendUrl, { issueKeys: epic.children.map(child => child.key), targetStatus: 'Done' });", 'transitionIssues', 'issueKeys', 'singleIssueKey'), /own-key/);
     assert.throws(() => singletonWriterPolicy("transitionIssues(backendUrl, { issueKeys: [singleIssueKey, ...selectedKeys] });", 'transitionIssues', 'issueKeys', 'singleIssueKey'), /own-key|iteration/);
     assert.doesNotThrow(() => singletonWriterPolicy("const options = rows.map(row => row.option); queue.forEach(job => job.abort()); transitionIssues(backendUrl, { issueKeys: [singleIssueKey] });", 'transitionIssues', 'issueKeys', 'singleIssueKey'));

@@ -26,6 +26,11 @@ export function readFreshnessScopeGuards(input) {
 
 export function readFreshnessEnvironment(input) {
     const surface = resolveFreshnessSurface(input);
+    const surfaceLoading = surface === 'epm' ? input.epmLoading
+        : input.loading || input.productTasksLoading || input.techTasksLoading || input.alertCohortRef.current
+            || (surface === 'scenario' && input.scenarioLoading)
+            || (surface === 'planning' && (input.planningReview?.getState().loading || input.capacityLoading))
+            || (surface === 'stats' && input.statsLoading);
     return { surface, contextKey: JSON.stringify([input.authResumePrincipalRef.current, input.connectionRecoveryPrincipalRef.current,
         input.jiraUrl, input.authResumeStagedRevision, input.sharedConfigRevision, input.groupsConfig?.configRevision,
         surface, input.activeGroupId, input.selectedSprint, input.activeGroupTeamIds, input.sourceScope,
@@ -34,8 +39,8 @@ export function readFreshnessEnvironment(input) {
     bootstrapReady: Boolean(input.sharedConfigReady && input.acceptedBoardConfigRef.current && input.engWorkspaceConfigured && (input.selectedView !== 'eng' || input.isSprintCatalogValidated?.() !== false)),
     connectionOwned: input.connectionRecoveryBlocksRefresh || input.connectionUnavailableRef.current,
     terminalAuth: Boolean(input.terminalAuth), blocked: readFreshnessScopeGuards(input).blocked,
-    ownerBusy: Boolean(input.showGroupManage || input.onboardingActive || (input.showScenario && input.scenarioLoading) || input.loading || input.productTasksLoading || input.techTasksLoading || input.groupsLoading || input.catalogLoading
-        || (input.showPlanning && (input.planningReview?.getState().loading || input.capacityLoading)) || input.alertCohortRef.current || input.onboardingRequired || input.surfaceBusy || (surface === 'stats' && input.statsLoading) || (surface === 'epm' && input.epmLoading)) };
+    ownerBusy: Boolean(input.showGroupManage || input.onboardingActive || input.groupsLoading || input.catalogLoading
+        || input.onboardingRequired || input.surfaceBusy || surfaceLoading) };
 }
 
 const sameScope = (a, b) => a.epoch === b.epoch && a.version === b.version && a.scopeKey === b.scopeKey;
@@ -195,7 +200,11 @@ export function createPlanningFreshnessAdapter(readCurrent, stableOwner = {}) {
             catch (error) { entry.finish(true); throw error; }
             finally { entry.release(); }
         },
-        async followUp(job) { try { return await primary.followUp(job); } finally { holds.get(job)?.finish(); } },
+        async followUp(job) {
+            // The assignee capacity strip re-reads its own document beside the review and capacity follow-ups; it skips itself while busy.
+            const assignee = stableOwner.assigneeCapacity, read = assignee && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
+            try { return await primary.followUp(job); } finally { await read?.catch(() => {}); holds.get(job)?.finish(); }
+        },
     };
 }
 

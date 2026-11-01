@@ -3,7 +3,9 @@ import { createPortal } from 'react-dom';
 
 // `alwaysOn` (default off, existing users unchanged) opens the readout regardless of truncation: on mouse hover, on
 // focus-visible, or pinned by a click or tap; a second click or tap, an outside pointer-down or Escape closes it.
-export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, children }) {
+// `transient` (default off, with `alwaysOn`) makes the readout follow a mouse or pen by hover only: their click neither
+// pins it nor focuses the trigger; a touch tap still pins it, and a pinned readout also closes on scroll.
+export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, transient = false, children }) {
     const triggerRef = React.useRef(null);
     const readoutRef = React.useRef(null);
     const closeTimerRef = React.useRef(null);
@@ -11,6 +13,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     const readoutHoveredRef = React.useRef(false);
     const focusWithinRef = React.useRef(false);
     const pinnedRef = React.useRef(false);
+    const pressPointerRef = React.useRef('');
     const [truncated, setTruncated] = React.useState(false);
     const [visible, setVisible] = React.useState(false);
     const [position, setPosition] = React.useState({ left: 8, top: 8, placed: false, above: false });
@@ -151,6 +154,17 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     }, [alwaysOn, suppressed, visible]);
 
     React.useEffect(() => {
+        if (!transient || !visible || suppressed) return undefined;
+        const closePinnedOnScroll = () => {
+            if (!pinnedRef.current) return;
+            pinnedRef.current = false;
+            setVisible(false);
+        };
+        window.addEventListener('scroll', closePinnedOnScroll, true);
+        return () => window.removeEventListener('scroll', closePinnedOnScroll, true);
+    }, [transient, suppressed, visible]);
+
+    React.useEffect(() => {
         if (!suppressed) return;
         pinnedRef.current = false;
         setVisible(false);
@@ -190,8 +204,17 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             scheduleClose();
         },
     };
+    const hoverOnlyPress = () => transient && ['mouse', 'pen'].includes(pressPointerRef.current);
     const pinProps = alwaysOn ? {
+        ...(transient ? {
+            onPointerDown: event => { pressPointerRef.current = event.pointerType || ''; },
+            // A mouse or pen press does not focus the trigger, so no focus state outlives the hover.
+            onMouseDown: event => { if (hoverOnlyPress()) event.preventDefault(); },
+        } : {}),
         onClick: () => {
+            const ignored = hoverOnlyPress();
+            pressPointerRef.current = '';
+            if (ignored) return;
             pinnedRef.current = !pinnedRef.current;
             if (pinnedRef.current) show();
             else scheduleClose();

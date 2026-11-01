@@ -1,16 +1,28 @@
-const STORY_POINTS_LEXEME = /^(?:0|[1-9]\d*)(?:\.\d)?$/;
+const STORY_POINTS_LEXEME = /^(?:0|[1-9]\d*)(?:\.\d+)?$/;
+
+// Rounds decimal text half-up to hundredths on its digits, so 1.005 -> 1.01 where binary floats give 1.
+function roundStoryPointsText(text) {
+    const [whole, fraction = ''] = text.split('.');
+    let hundredths = BigInt(whole) * 100n + BigInt(fraction.slice(0, 2).padEnd(2, '0'));
+    if (fraction.length > 2 && fraction[2] >= '5') hundredths += 1n;
+    const cents = String(hundredths % 100n).padStart(2, '0').replace(/0+$/, '');
+    return `${hundredths / 100n}${cents ? `.${cents}` : ''}`;
+}
 
 export function parseStoryPointsDraft(draft) {
     const text = typeof draft === 'string' ? draft.trim() : '';
     if (!STORY_POINTS_LEXEME.test(text)) return { valid: false, value: null };
-    const value = Number(text);
+    const value = Number(roundStoryPointsText(text));
     return Number.isFinite(value) && value >= 0
         ? { valid: true, value }
         : { valid: false, value: null };
 }
 
+// A Story's own points: up to two decimals, trailing zeros trimmed (0.75, 1, 0.5).
 export function formatStoryPointsValue(value) {
-    return typeof value === 'number' && Number.isFinite(value) ? String(value) : '';
+    if (typeof value !== 'number' || !Number.isFinite(value)) return '';
+    const text = String(value);
+    return STORY_POINTS_LEXEME.test(text) ? roundStoryPointsText(text) : text;
 }
 
 export function unicodeLength(value) {

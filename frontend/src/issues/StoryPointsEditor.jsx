@@ -69,10 +69,11 @@ export default function StoryPointsEditor({
         if (submittedRef.current || readOnly) return;
         const parsed = parseStoryPointsDraft(inputRef.current?.value ?? draft);
         if (!parsed.valid) {
-            setValidationError('Enter a non-negative number with at most one decimal place.');
+            setValidationError('Enter a non-negative number.');
             return;
         }
         setValidationError('');
+        setDraft(displayStoryPoints(parsed.value));
         if (typeof metadata?.currentValue === 'number' && metadata.currentValue === parsed.value) {
             submittedRef.current = true;
             inputRef.current?.blur();

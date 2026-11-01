@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // Moving an epic by dragging its card (§6.4, §9.5, §10.1, §10.2, §10.3, D37, D42) — a second
 // TRIGGER for the status transition the app already performs: same hook, same route, same menu,
@@ -282,51 +283,6 @@ const liveRegion = (page) => page.locator('.eng-board .board-say');
 
 const transitionCalls = (calls) => calls.filter((call) => call.pathname === '/api/issues/transitions' && call.method === 'POST');
 const optionCalls = (calls) => calls.filter((call) => call.pathname === '/api/issues/transitions/options');
-
-// Playwright's native drag interception picks the drag source from the pointer position AFTER its
-// synthetic move rather than from the element the press landed on, and `dragTo` can only express a
-// completed drop — not the three shapes this feature needs: a dragover that must NOT be accepted,
-// a dragend with no drop, and a drop whose clientX/clientY place a fixed menu. So the gesture is
-// driven the faithful way instead: the DragEvent sequence a browser raises, dispatched on the real
-// nodes with real coordinates read from the live target rect. Every handler, the resolution, the
-// gate, the React state and the DOM are the real ones; only the browser's own drag loop is stood
-// in for — and the last test in this file drives that loop end to end with `dragTo` as well.
-//
-// Task 7's composer helper additionally holds a real pointer press, because its chip drag is gated
-// on the grip the press lands on. An epic card has no such gate: a press here only risks starting
-// Chromium's OWN drag alongside the dispatched one (two drops, one of them deduped to a null
-// options response) and synthesising a click that opens the epic panel. It is deliberately absent.
-async function dragCard(page, epicKey, targetColumnId, { drop = true, end = true, at = null } = {}) {
-    return page.evaluate(({ key, columnId, doDrop, doEnd, point }) => {
-        const source = document.querySelector(`.eng-board .ecard[data-epic-key="${key}"]`);
-        const target = columnId ? document.querySelector(`.eng-board .col[data-column-id="${columnId}"]`) : null;
-        const dataTransfer = new DataTransfer();
-        const box = target ? target.getBoundingClientRect() : null;
-        const spot = point || (box
-            ? { x: Math.round(box.left + box.width / 2), y: Math.round(box.top + Math.min(box.height / 2, 160)) }
-            : { x: 4, y: 4 });
-        const make = (type) => new DragEvent(type, {
-            bubbles: true, cancelable: true, dataTransfer, clientX: spot.x, clientY: spot.y,
-        });
-
-        const start = make('dragstart');
-        source.dispatchEvent(start);
-        if (start.defaultPrevented) {
-            source.dispatchEvent(make('dragend'));
-            return { started: false, spot };
-        }
-        let overAccepted = null;
-        if (target) {
-            target.dispatchEvent(make('dragenter'));
-            const over = make('dragover');
-            target.dispatchEvent(over);
-            overAccepted = over.defaultPrevented;
-            if (doDrop) target.dispatchEvent(make('drop'));
-        }
-        if (doEnd) source.dispatchEvent(make('dragend'));
-        return { started: true, overAccepted, spot };
-    }, { key: epicKey, columnId: targetColumnId, doDrop: drop, doEnd: end, point: at });
-}
 
 // The pointer leaving a column. `intoChild` is the case a naive handler gets wrong: dragleave also
 // fires on the column when the pointer moves onto one of its own descendants, and clearing there
@@ -937,4 +893,81 @@ test('the options request is the shared endpoint, asked once per dragged epic', 
     await dragCard(page, 'PLAT-1', 'col-done');
     await expect(dropMenu(page)).toBeVisible();
     expect(optionCalls(calls)).toHaveLength(1);
+});
+
+/* ── Concurrent drags: each releases only its own status target (#241) ──────────────────────── */
+
+// PLAT-1 -> Wrap up resolves straight to Release; CORE-2 -> Done offers Done and Incomplete, so it
+// opens the drop menu. The shared per-key mock holds each write until the test settles it.
+const HELD_STATUSES = ['Release', 'Done', 'Incomplete'];
+const heldPost = (calls, key) => calls.held.has(key);
+
+async function startHeldDragPair(page, calls) {
+    await openBoard(page, calls);
+    await installHeldTransitions(page, calls, { statuses: HELD_STATUSES });
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect.poll(() => heldPost(calls, 'PLAT-1')).toBe(true);
+    await dragCard(page, 'CORE-2', 'col-done');
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+}
+
+test('two drags back to back: the first completing does not disturb the second', async ({ page }) => {
+    const calls = [];
+    await startHeldDragPair(page, calls);
+
+    calls.held.get('PLAT-1').release();
+    await expect(liveRegion(page)).toContainText('PLAT-1 → Release');
+    // B's menu survives A's cleanup and still resolves to a write carrying B's own key.
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+    await menuOptions(page).filter({ hasText: 'Done' }).first().click();
+    await expect.poll(() => heldPost(calls, 'CORE-2')).toBe(true);
+    const posts = transitionCalls(calls).filter((call) => JSON.parse(call.body).issueKeys[0] === 'CORE-2');
+    expect(posts).toHaveLength(1);
+    expect(JSON.parse(posts[0].body)).toEqual({ issueKeys: ['CORE-2'], targetStatus: 'Done' });
+    calls.held.get('CORE-2').release();
+    await expect(columnCount(page, 'col-done')).toHaveText('2');
+});
+
+test('two drags back to back: a failed second write rolls back to its real prior status', async ({ page }) => {
+    const calls = [];
+    await startHeldDragPair(page, calls);
+
+    calls.held.get('PLAT-1').release();
+    await expect(liveRegion(page)).toContainText('PLAT-1 → Release');
+    await menuOptions(page).filter({ hasText: 'Done' }).first().click();
+    await expect.poll(() => heldPost(calls, 'CORE-2')).toBe(true);
+    calls.held.get('CORE-2').fail();
+    await expect(liveRegion(page)).toContainText('CORE-2 — the move to Done did not go through');
+    await expect(card(page, 'CORE-2')).toBeVisible();
+    await expect(column(page, 'col-doing').locator('.ecard[data-epic-key="CORE-2"]')).toHaveCount(1);
+    await expect(page.locator('.eng-board .col[data-column-id="board-unmapped"]')).toHaveCount(0);
+});
+
+test('a drop on another column closes an open drop menu for a different Epic', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await dragCard(page, 'CORE-2', 'col-done');
+    await expect(menuOptions(page)).toHaveText(['Done', 'Incomplete']);
+
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect(dropMenu(page)).toHaveCount(0);
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body).toEqual({ issueKeys: ['PLAT-1'], targetStatus: 'Release' });
+});
+
+test('starting a second drag while the first drop is still loading its options does not lose the first drop', async ({ page }) => {
+    const calls = [];
+    const gate = deferred();
+    await openBoard(page, calls, { optionsGate: gate.promise });
+
+    await dragCard(page, 'PLAT-1', 'col-wrap');
+    await expect.poll(() => optionCalls(calls).length).toBe(1);
+    // B starts dragging while A's options are still on the wire.
+    await dragCard(page, 'CORE-2', 'col-done', { drop: false, end: false });
+    gate.release();
+
+    await expect.poll(() => transitionCalls(calls).length).toBe(1);
+    expect(transitionCalls(calls)[0].body).toEqual({ issueKeys: ['PLAT-1'], targetStatus: 'Release' });
+    await endDrag(page, 'CORE-2');
+    expect(transitionCalls(calls)).toHaveLength(1);
 });

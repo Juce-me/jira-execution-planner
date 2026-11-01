@@ -825,3 +825,46 @@ test('only an enabled successful read records that zero Capacity issues were fet
     });
     assert.equal(disabled.capacityState.capacityIssueCount, null);
 });
+
+test('capacityAxis is one scale for the amber bar (1.15) and the team card (1.3): the largest drawn value times headroom', async () => {
+    const { capacityAxis, CAPACITY_BAR_HEADROOM, TEAM_CARD_HEADROOM } = await loadUtils();
+    assert.equal(CAPACITY_BAR_HEADROOM, 1.15);
+    assert.equal(TEAM_CARD_HEADROOM, 1.3);
+    // max(capacity, selected, stacked) x 1.15; the assignee strip's total (each person's max(capacity, effort) plus
+    // Unassigned) is the stacked term again (#323 round 3), so the strip never clips.
+    assert.equal(capacityAxis({ capacity: 20, selected: 12 }, CAPACITY_BAR_HEADROOM), 20 * 1.15);
+    assert.equal(capacityAxis({ capacity: 20, selected: 30 }, CAPACITY_BAR_HEADROOM), 30 * 1.15);
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 26 }, CAPACITY_BAR_HEADROOM), 26 * 1.15, 'the strip total widens the axis');
+    assert.equal(capacityAxis({ capacity: 20, selected: 12, stacked: 18 }, CAPACITY_BAR_HEADROOM), 20 * 1.15, 'a smaller strip total does not');
+    // Card: over capacity no longer saturates; the fill ends at 1/1.3 of the bar and the marker moves left of it.
+    const axis = capacityAxis({ capacity: 10, selected: 15 }, TEAM_CARD_HEADROOM);
+    assert.ok(15 / axis < 1);
+    assert.ok(Math.abs(15 / axis - 1 / 1.3) < 1e-9);
+    assert.ok(10 / axis < 15 / axis);
+    // Card without capacity keeps its old selected x 1.3 scale.
+    assert.equal(capacityAxis({ capacity: 0, selected: 8 }, TEAM_CARD_HEADROOM), 8 * 1.3);
+    assert.equal(capacityAxis({}, TEAM_CARD_HEADROOM), 0);
+});
+
+test('#323 resolvePlannedCapacity: the no-ticket predicate and the stored-number fallback entries', async () => {
+    const { resolvePlannedCapacity } = await import('../frontend/src/eng/planningCapacityUtils.js');
+    const settled = { capacityByTeam: { gamma: 5 }, capacityIssueCount: 2, capacityTargetsByTeam: {
+        beta: { state: 'matched', issueKey: 'CAP-2', teamName: 'Beta', capacity: null },
+        gamma: { state: 'matched', issueKey: 'CAP-3', teamName: 'Gamma', capacity: 5 },
+    } };
+    const ready = { capacityEnabled: true, capacityLoading: false, capacityReadError: '', capacityDataStale: false };
+    const planned = { alpha: 14, beta: 9, gamma: 7 };
+    const result = resolvePlannedCapacity({ ...ready, capacityState: settled, teamNames: ['Alpha', 'Beta', 'Gamma'], plannedCapacityByTeam: planned });
+    assert.deepEqual([...result.noTicketKeys], ['alpha'], 'only a team with no ticket and no Jira number is editable');
+    assert.deepEqual(result.capacityByTeam, { alpha: 14, beta: 9 }, 'no ticket and a blank ticket fall back; a Jira number wins');
+    const ambiguous = { ...settled, capacityTargetsByTeam: { alpha: { state: 'ambiguous' } } };
+    assert.deepEqual(resolvePlannedCapacity({ ...ready, capacityState: ambiguous, teamNames: ['Alpha'], plannedCapacityByTeam: planned }).capacityByTeam, {}, 'never for an ambiguous target');
+    for (const gate of [{ capacityEnabled: false }, { capacityLoading: true }, { capacityReadError: 'x' }, { capacityDataStale: true }]) {
+        const gated = resolvePlannedCapacity({ ...ready, ...gate, capacityState: settled, teamNames: ['Alpha'], plannedCapacityByTeam: planned });
+        assert.deepEqual([gated.capacityByTeam, gated.noTicketKeys.size], [{}, 0], JSON.stringify(gate));
+    }
+    const unknownCount = resolvePlannedCapacity({ ...ready, capacityState: { ...settled, capacityIssueCount: null }, teamNames: ['Alpha'], plannedCapacityByTeam: planned });
+    assert.equal(unknownCount.noTicketKeys.size, 0, 'an unknown issue count (failed or other-scope read) is not "no ticket"');
+    const none = resolvePlannedCapacity({ ...ready, capacityState: settled, teamNames: ['Alpha'], plannedCapacityByTeam: null });
+    assert.deepEqual([[...none.noTicketKeys], none.capacityByTeam], [['alpha'], {}], 'editable even before any number is stored');
+});

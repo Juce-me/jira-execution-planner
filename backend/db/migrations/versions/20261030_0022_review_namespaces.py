@@ -1,7 +1,7 @@
 """Isolated review namespaces for the quarterly work-structure model.
 
 Revision ID: 20261030_0022
-Revises: 20261028_0021
+Revises: 20261029_0022
 
 Adds a nullable `configuration_id` to review schemas and views, a nullable integer `quarter_ordinal` to views,
 widens the cell row kind to 16 characters and admits `initiative`. Every existing row keeps `configuration_id`
@@ -18,7 +18,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '20261030_0022'
-down_revision = '20261028_0021'
+down_revision = '20261029_0022'
 branch_labels = None
 depends_on = None
 

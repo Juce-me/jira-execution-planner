@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
-function harness(request) {
+function harness(request, overrides = {}) {
     const source = fs.readFileSync('frontend/src/eng/useEngSprintData.js', 'utf8')
         .replace(/^import\s+[^;]+;\s*$/gm, '').replaceAll('export const ', 'const ').replaceAll('export function ', 'function ');
     const effects = [], reads = [], finished = [], requests = [];
@@ -18,10 +18,34 @@ function harness(request) {
             capturePlanningBases: () => {}, notePlanningRawRead: () => {}, reconcileIssues: items => items, overlayPlanningIssues: items => items,
         } };
     for (const key of ['setLoading', 'setError', 'setEpicDetails', 'setProductEpicsInScope', 'setTechEpicsInScope']) props[key] = () => effects.push(key);
+    Object.assign(props, overrides);
     return { api: hook(props), props, effects, reads, finished, requests };
 }
 const response = payload => new Response(JSON.stringify(payload));
 const job = () => ({ signal: new AbortController().signal, pendingSources: ['eng_product', 'eng_tech'], shouldApply: () => true });
+
+for (const lane of ['Product', 'Tech']) test(`cancelled ${lane} read cannot clear a replacement ENG load or apply stale content`, async () => {
+    const pending = [], loading = [], laneLoading = [], applied = [];
+    const h = harness(() => new Promise(resolve => pending.push(resolve)), {
+        sprintLoadRef: { current: {} }, lastLoadedSprintRef: {},
+        setLoading: value => loading.push(value),
+        [`set${lane}TasksLoading`]: value => laneLoading.push(value),
+        [`set${lane}Tasks`]: items => applied.push(items), [`setLoaded${lane}Tasks`]: () => {},
+        setTasksFetched: () => {}, setTechLoaded: () => {},
+    });
+    let current = true;
+    const retired = h.api[`load${lane}Tasks`]({ shouldApplyResult: () => current });
+    current = false;
+    const replacement = h.api[`load${lane}Tasks`]({ shouldApplyResult: () => true });
+    pending[0](response({ issues: [{ key: 'SAMPLE-1' }] }));
+    assert.equal(await retired, 'ignored');
+    assert.deepEqual(loading, [true, true]); assert.deepEqual(laneLoading, [true, true]);
+    assert.deepEqual(applied, []);
+    pending[1](response({ issues: [] }));
+    assert.equal(await replacement, 'applied');
+    assert.deepEqual(loading, [true, true, false]); assert.deepEqual(laneLoading, [true, true, false]);
+    assert.deepEqual(applied, [[]]);
+});
 
 test('automatic collector is silent, forced and retains both leases until acceptance/disposal', async () => {
     const h = harness(() => response({ issues: [], epics: {}, epicsInScope: [] }));

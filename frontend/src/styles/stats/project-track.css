@@ -245,6 +245,59 @@
             flex-shrink: 0;
         }
 
+        /* Strip variant (variant="strip", #323): a 5px label-less segmented strip for embedding inside another track,
+           e.g. the Planning assignee underbar. The wrapper decides where it sits and whether it takes the pointer;
+           only the segments take the pointer here, so whatever lies under a gap stays hoverable. */
+        .stacked-bar--strip,
+        .stacked-bar--strip .stacked-bar-rows,
+        .stacked-bar--strip .stacked-bar-row {
+            display: block;
+        }
+
+        /* The strip fills its host (the Planning underbar wrapper sizes it to the capacity track) and takes the pointer
+           there; its single row is the bottom 5px. */
+        .stacked-bar--strip {
+            position: relative;
+            height: 100%;
+        }
+
+        .stacked-bar--strip .stacked-bar-rows {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+        }
+
+        .stacked-bar--strip .stacked-bar-meta,
+        .stacked-bar--strip .stacked-bar-segment span {
+            display: none;
+        }
+
+        .stacked-bar--strip .stacked-bar-track {
+            height: 5px;
+            border-radius: 0;
+        }
+
+        .stacked-bar--strip .stacked-bar-segment {
+            position: relative;
+            height: 5px;
+            pointer-events: auto;
+        }
+
+        /* A strip segment's optional top layer (#323): the existing part hook, laid over the segment from its left edge. */
+        .stacked-bar--strip .stacked-bar-segment > .stacked-bar-strip-part {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .stacked-bar--strip .stacked-bar-segment:focus-visible {
+            outline: 1px solid #1f6feb;
+            outline-offset: -1px;
+        }
+
         .stacked-bar-empty {
             color: var(--text-secondary);
             font-size: 0.78rem;

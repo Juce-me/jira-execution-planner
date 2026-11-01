@@ -37,7 +37,6 @@ export default function IssueCard({
     statusTransitionActiveKey = null,
     statusTransitionOptions = null,
     statusTransitionOptionsLoading = false,
-    statusTransitionSubmitting = false,
     statusTransitionError = '',
     statusTransitionErrorCode = '',
     statusTransitionResult = null,
@@ -285,7 +284,7 @@ export default function IssueCard({
                             isOpen={statusTransitionActiveKey === task.key}
                             options={statusTransitionOptions}
                             optionsLoading={statusTransitionOptionsLoading}
-                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(task.key)}
+                            submitting={!!statusTransitionPendingIssueKeys?.has(task.key)}
                             error={statusTransitionError}
                             errorCode={statusTransitionErrorCode}
                             result={statusTransitionResult}
@@ -394,7 +393,7 @@ export default function IssueCard({
                                             isOpen={statusTransitionActiveKey === subtask.key}
                                             options={statusTransitionOptions}
                                             optionsLoading={statusTransitionOptionsLoading}
-                                            submitting={statusTransitionSubmitting || !!statusTransitionPendingIssueKeys?.has(subtask.key)}
+                                            submitting={!!statusTransitionPendingIssueKeys?.has(subtask.key)}
                                             error={statusTransitionError}
                                             errorCode={statusTransitionErrorCode}
                                             result={statusTransitionResult}

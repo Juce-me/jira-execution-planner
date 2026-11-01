@@ -254,7 +254,11 @@ export function useEngStatusTransitions({
         void prefetchTransitionOptions(backendUrl, [target]);
     }, [backendUrl]);
 
-    const closeSingleIssueStatusControl = React.useCallback(() => {
+    // With a string `onlyIfKey` it closes only that issue's target, so one Board drag finishing
+    // cannot close the target another concurrent drag has taken; any other argument (an event from
+    // `onClick={close}`) is the unkeyed close.
+    const closeSingleIssueStatusControl = React.useCallback((onlyIfKey) => {
+        if (typeof onlyIfKey === 'string' && activeSingleIssueTargetRef.current?.key !== onlyIfKey) return;
         setActiveSingleIssueTarget(null);
         activeSingleIssueTargetRef.current = null;
         abortInFlightOptionsRequest();
@@ -265,8 +269,9 @@ export function useEngStatusTransitions({
     }, [abortInFlightOptionsRequest]);
 
     // Every surface passes one explicit target key; with no key nothing is written, so a pill
-    // can never fall back to the Planning selection.
-    const submitStatusTransition = React.useCallback(async (targetStatus, explicitTargetKey) => {
+    // can never fall back to the Planning selection. `options.onSettled(outcome)` hears the
+    // classified outcome at most once, in this scope visit, and never for a job that did not start.
+    const submitStatusTransition = React.useCallback(async (targetStatus, explicitTargetKey, options = {}) => {
         const status = String(targetStatus || '').trim();
         if (!status) return null;
 
@@ -334,6 +339,12 @@ export function useEngStatusTransitions({
                 onApplyLocalStatus?.(singleIssueKey, prior.name, { phase: 'provisional', expected: status });
             }
         };
+        let settledReported = false;
+        const reportSettled = (outcome) => {
+            if (settledReported || !sameVisit()) return;
+            settledReported = true;
+            options?.onSettled?.(outcome);
+        };
 
         let queueController = null;
         let started = false;
@@ -370,6 +381,7 @@ export function useEngStatusTransitions({
             });
             const entryResult = findIssueResult(response, singleIssueKey).entry?.result;
             settle(classified.outcome, classified.value, classified.currentStatus);
+            reportSettled(classified.outcome);
             const current = isCurrentVisit();
             if (current && classified.outcome !== 'unconfirmed') setTransitionResult({ ...summary, targetStatus: status });
             if (current && classified.outcome === 'unconfirmed') {
@@ -429,6 +441,7 @@ export function useEngStatusTransitions({
             }
             const outcome = classifyWriteError(err);
             settle(outcome);
+            if (outcome === 'unconfirmed' || started) reportSettled(outcome);
             if (outcome === 'unconfirmed' && isCurrentVisit()) {
                 setTransitionError(UNCONFIRMED_WRITE_MESSAGE);
                 setTransitionErrorCode('write_unconfirmed');

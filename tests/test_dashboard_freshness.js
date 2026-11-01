@@ -672,3 +672,28 @@ for (const mode of ['scope-before-apply', 'null-acceptance', 'scope-after-settle
     const result = await adapter.refreshScope({ shouldApply: () => true, pendingSources: ['eng_product', 'eng_tech'] }, null);
     assert.deepEqual(result, [{ source: 'eng_product', status: 'ignored' }, { source: 'eng_tech', status: 'ignored' }]);
 });
+
+test('Planning follow-up starts the assignee capacity re-read before the review follow-up, awaits it after, and skips it while busy', async () => {
+    const { createPlanningFreshnessAdapter } = await import('../frontend/src/dashboardFreshnessAdapters.js');
+    const order = [];
+    let release;
+    const input = { activeGroupId: 'synthetic', selectedSprint: 1, loadEpochRef: { current: 1 }, groupLoadVersionRef: { current: 1 }, planningAutomaticReadRef: { current: 0 }, planningLayout: 'table',
+        planningReview: { getState: () => ({}), refresh: async () => { order.push('review'); } }, refreshCapacity: async () => { order.push('capacity'); },
+        epicRefresh: { readState: () => ({ loadedProductTasks: [], loadedTechTasks: [], epicDetails: {} }), applyScopeSnapshot: () => null }, collectGroupRefresh: async () => ({ release() {} }) };
+    let busy = false;
+    const owner = { assigneeCapacity: { blocked: () => busy, refresh: options => { order.push(`assignee:${options.automatic}`); return new Promise(resolve => { release = () => { order.push('assignee-done'); resolve({ status: 'ok' }); }; }); } } };
+    const adapter = createPlanningFreshnessAdapter(() => input, owner);
+    const job = { signal: new AbortController().signal, shouldApply: () => true, pendingSources: ['eng_product', 'eng_tech'] };
+    await adapter.refreshScope(job, null);
+    let settled = false;
+    const done = adapter.followUp(job).then(() => { settled = true; });
+    await flush();
+    assert.deepEqual(order, ['assignee:true', 'review', 'capacity']);
+    assert.equal(settled, false, 'the follow-up waits for the assignee re-read');
+    release(); await done;
+    assert.deepEqual(order, ['assignee:true', 'review', 'capacity', 'assignee-done']);
+    order.length = 0; busy = true;
+    const next = { ...job, signal: new AbortController().signal };
+    await adapter.refreshScope(next, null); await adapter.followUp(next);
+    assert.deepEqual(order, ['review', 'capacity'], 'a busy strip is not read');
+});

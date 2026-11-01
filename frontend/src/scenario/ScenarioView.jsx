@@ -1,5 +1,6 @@
 import * as React from 'react';
 import ScenarioBar from './ScenarioBar.jsx';
+import { formatStoryPointsFixed } from '../eng/engTaskUtils.js';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, dateToPx, SCENARIO_BAR_HEIGHT } from './scenarioUtils.js';
 
 export function ScenarioView({
@@ -972,7 +973,7 @@ export function ScenarioView({
                                         <div className="scenario-tooltip-key">👥 {scenarioTooltip.team}</div>
                                     )}
                                     {Number.isFinite(scenarioTooltip.sp) && (
-                                        <div className="scenario-tooltip-key">SP: {scenarioTooltip.sp.toFixed(1)}</div>
+                                        <div className="scenario-tooltip-key">SP: {formatStoryPointsFixed({ fields: { customfield_10004: scenarioTooltip.sp } })}</div>
                                     )}
                                     {scenarioTooltip.note && (
                                         <div className="scenario-tooltip-note">{scenarioTooltip.note}</div>

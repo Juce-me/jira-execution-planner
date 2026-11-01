@@ -37,7 +37,6 @@ export function EpicBlock({
     showGroupManage,
     isGroupDraftDirty,
     statusTransitionEnabled,
-    statusTransitionSubmitting,
     handleSubmitStatusTransition,
     isEpicRefreshMode,
     epicRefresh,
@@ -278,7 +277,7 @@ export function EpicBlock({
                                                 isOpen={statusTransitionActiveKey === epicGroup.key}
                                                 options={transitionOptions}
                                                 optionsLoading={transitionOptionsLoading}
-                                                submitting={statusTransitionSubmitting || pendingStatusIssueKeys.has(epicGroup.key)}
+                                                submitting={pendingStatusIssueKeys.has(epicGroup.key)}
                                                 error={transitionError}
                                                 errorCode={transitionErrorCode}
                                                 result={transitionResult}
@@ -370,7 +369,6 @@ export function EpicBlock({
                         statusTransitionActiveKey={statusTransitionActiveKey}
                         statusTransitionOptions={transitionOptions}
                         statusTransitionOptionsLoading={transitionOptionsLoading}
-                        statusTransitionSubmitting={statusTransitionSubmitting}
                         statusTransitionError={transitionError}
                         statusTransitionErrorCode={transitionErrorCode}
                         statusTransitionResult={transitionResult}

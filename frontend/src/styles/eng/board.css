@@ -290,7 +290,8 @@
         /* A drop outcome must not push the board past the viewport bottom, so in pane mode it floats
            at the bottom of the board, which is the viewport bottom. Rail border, radius and
            surface; no new tokens. */
-        .eng-board.is-pane-mode .board-say.has-message {
+        .eng-board.is-pane-mode .board-say.has-message,
+        .eng-board:has(.epic-panel-backdrop) .board-say.has-message {
             position: absolute;
             left: 50%;
             bottom: 0.75rem;
@@ -301,6 +302,13 @@
             background: var(--bg-primary);
             border: 1px solid var(--border);
             border-radius: 8px;
+        }
+
+        /* While the Epic panel is open, a status-pill outcome floats at the viewport bottom above
+           the panel backdrop (D3), in both layouts; otherwise the backdrop or panel covers it. */
+        .eng-board:has(.epic-panel-backdrop) .board-say.has-message {
+            position: fixed;
+            z-index: calc(var(--modal-backdrop-z) + 1);
         }
 
         .eng-board.is-pane-mode {

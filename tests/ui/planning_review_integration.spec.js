@@ -114,6 +114,7 @@ async function installPlanningFixture(page, {
     planningLayout = 'list',
     longTable = false,
     groups = 1,
+    selectedTeams = null,
 } = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
@@ -158,7 +159,7 @@ async function installPlanningFixture(page, {
     };
 
     await installDashboardShell(page);
-    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: value})), planningLayout);
+    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), {planningLayout, ...(selectedTeams ? {selectedTeams, activeGroupId: 'group-alpha'} : {})});
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -284,6 +285,8 @@ async function installPlanningFixture(page, {
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
+        // The Assignee Capacity strip (#323) reads only after it is expanded; an unconfigured store answers empty rather than 404.
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return json(route, { teamId: url.searchParams.get('teamId'), sprintId: url.pathname.split('/')[4], revision: 0, rows: [], inherited: null, capabilities: { canRead: true, canSave: true } });
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
     return {
@@ -530,6 +533,39 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
     await expect(table.locator('tfoot .planning-review-selection')).toBeInViewport();
 });
 
+test('Planning table Story Points save two decimals, round a third before the single POST, reject negatives and cancel on Escape', async ({page}) => {
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
+    await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
+    const bodies=[];
+    await page.route('**/api/issues/PLAN-1/field',route=>{const body=route.request().postDataJSON();bodies.push(body);return json(route,{value:body.value,result:'updated',mappingRevision:'synthetic'});});
+    await openPlanning(page);
+    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    const table=page.locator('.planning-review-table');
+    const points=table.locator('tbody tr[data-issue-key="PLAN-1"]').getByRole('textbox',{name:'Story Points',exact:true});
+    const feedback=table.locator('tbody tr[data-issue-key="PLAN-1"] .story-points-editor-feedback');
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('0.75');await points.press('Enter');
+    await expect.poll(()=>bodies.length).toBe(1);
+    expect(bodies[0].value).toBe(0.75);
+    await expect(points).toHaveValue('0.75');
+    await expect(points).toHaveAttribute('aria-invalid','false');
+    await expect(feedback).toHaveCount(0);
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('0.755');await points.press('Enter');
+    await expect.poll(()=>bodies.length).toBe(2);
+    expect(bodies[1].value).toBe(0.76);
+    await expect(points).toHaveValue('0.76');
+    await points.click();await expect(points).toBeEditable();
+    await points.fill('-1');await points.press('Enter');
+    await expect(feedback).toHaveText('Enter a non-negative number.');
+    await expect(points).toHaveAttribute('aria-invalid','true');
+    await points.press('Escape');
+    await expect(points).toHaveValue('0.76');
+    expect(bodies).toHaveLength(2);
+});
+
 for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280]) test(`summaries truncate and reveal the full text without losing editing in ${authMode} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
@@ -669,30 +705,38 @@ test('table keeps uncreated Stories through Story filters while List retains its
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
 });
 
-for(const scopeTeamIds of [['team-alpha'],['team-alpha','team-beta']]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope and expands without losing selection`,async({page})=>{
-    const fixture=await installPlanningFixture(page,{scopeTeamIds,capacityProject:'CAP'});
+for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
+    const fixture=await installPlanningFixture(page,{scopeTeamIds,selectedTeams,capacityProject:'CAP'});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
     await openPlanning(page);
     const panel=page.locator('.planning-panel');
     const selected=await page.locator('.task-list input.task-checkbox:checked').count();
     await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await expect(panel).toHaveClass(/planning-panel-compact/);await expect(panel.getByRole('button',{name:'Select All',exact:true})).toHaveCount(0);
+    // One Team selected: the collapsed assignee strip is in the stack (the strip itself is #323).
+    await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const row=await panel.boundingBox();expect(row.height).toBeLessThan(64);
     await expect(panel.locator('.capacity-bar-graph')).toHaveCount(1);
     for(const readout of await panel.locator('.planning-compact-readout').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
     for(const selector of ['.capacity-bar-fill','.project-bar-fill.product']) {
-        const fill=panel.locator(selector).first();await fill.hover();
-        await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}-${selector.includes('product')?'project':'capacity'}.png`});
+        const fill=panel.locator(selector).first();
+        // One Team: the assignee strip (#323 D6, loaded without expanding) owns the capacity track's pointer and replaces the fill tooltip.
+        const strip=selector==='.capacity-bar-fill'&&await panel.locator('[data-assignee-underbar]').count()>0;
+        if(strip){const box=await fill.boundingBox();await page.mouse.move(box.x+4,box.y+box.height/2);}else await fill.hover();
+        await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}${selectedTeams?'-one':''}-${selector.includes('product')?'project':'capacity'}.png`});
         const label=fill.locator('..').locator('.planning-compact-readout');
         expect(await label.evaluate(node=>{
             // Include the normally pointer-transparent label in paint-order hit testing.
+            // The transparent strip wrapper takes the pointer above the label; leave it out of the paint-order check.
             node.style.pointerEvents='auto';
+            const under=document.querySelector('[data-assignee-underbar]');if(under)under.style.pointerEvents='none';
             const r=node.getBoundingClientRect();
             const top=document.elementFromPoint(r.left+4,r.top+r.height/2);
-            node.style.pointerEvents='';
+            node.style.pointerEvents='';if(under)under.style.pointerEvents='';
             return top===node;
         })).toBe(true);
-        expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
+        if(strip){await expect(page.locator('.stacked-bar-readout')).toContainText('Selected');expect(await fill.getAttribute('data-tooltip')).toBeNull();}
+        else expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
     }
     const geometry=await panel.locator('.planning-panel-capacity-graph,.planning-panel-project-graph').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().y));expect(Math.abs(geometry[0]-geometry[1])).toBeLessThan(8);
     const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;
@@ -799,14 +843,15 @@ for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row s
     await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
 });
 
-for (const [width,height] of [[1440,900],[1280,720]]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}`,async({page})=>{
+for (const [width,height] of [[1440,900],[1280,720]]) for (const selectedTeams of [null,['team-alpha']]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}${selectedTeams?' with one Team selected':''}`,async({page})=>{
     await page.setViewportSize({width,height});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta'],selectedTeams});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
     const docked=page.locator('.planning-review-docked-header');await expect(docked).toBeVisible();
     await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
     await expect.poll(async()=>{const d=await docked.boundingBox();return Math.round(d.y+d.height);}).toBeLessThanOrEqual(175);
+    await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const parts=await page.evaluate(()=>{const box=s=>{const n=document.querySelector(s);return n?Math.round(n.getBoundingClientRect().height*10)/10:null;};return {header:box('.compact-sticky-header.is-visible'),filters:box('.planning-review-sticky-stack .filterbar-wrap'),overview:box('.planning-review-sticky-stack .planning-panel'),docked:box('.planning-review-docked-header')};});
     const bottom=await docked.boundingBox();
     expect(bottom.y+bottom.height,JSON.stringify(parts)).toBeLessThanOrEqual(175);

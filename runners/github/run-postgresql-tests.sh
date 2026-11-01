@@ -29,4 +29,5 @@ python -m unittest -v \
   tests.test_workspace_catalog_postgresql \
   tests.test_token_refresh_race \
   tests.test_user_view_config_concurrency \
-  tests.test_sprint_review_postgresql
+  tests.test_sprint_review_postgresql \
+  tests.test_assignee_capacity_service

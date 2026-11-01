@@ -631,6 +631,39 @@ test('api_result accepts jira_team_capacity with the existing bucketed API contr
     }]);
 });
 
+test('api_result accepts planning_assignee_capacity with featureName planning_review (#323)', async () => {
+    const { initAnalytics, trackApiResult } = await loadAnalytics();
+    resetDom();
+    const pushed = [];
+    global.window.dataLayer = capturingDataLayer(pushed);
+
+    await initAnalytics({
+        fetchContext: async () => ({ enabled: true, gtmContainerId: 'GTM-NZJW2CFN' })
+    });
+    // Mirrors assigneeCapacityApi (document read/write and the Add assignee search). Guards the
+    // allowlist entry: a missing API_SURFACES entry loses the event without any visible failure.
+    trackApiResult('planning_assignee_capacity', {
+        featureName: 'planning_review', method: 'PATCH', status: 200, durationMs: 400,
+        teamId: 'private-team', sprintId: 'private-sprint', assigneeKey: 'private-account', query: 'private',
+    });
+    trackApiResult('planning_assignee_capacity', {
+        featureName: 'planning_review', method: 'POST', status: 503, durationMs: 1250, cacheState: 'miss',
+    });
+
+    assert.deepEqual(pushed, [
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'planning_review', api_surface: 'planning_assignee_capacity', method: 'PATCH',
+            status_bucket: '2xx', result: 'success', duration_bucket: 'under_1s', duration_ms: 400, cache_state: 'unknown',
+        },
+        {
+            event: 'userevent', trigger: 'userevent', event_type: 'event', event_name: 'api_result',
+            feature_name: 'planning_review', api_surface: 'planning_assignee_capacity', method: 'POST',
+            status_bucket: '5xx', result: 'failure', duration_bucket: '1_3s', duration_ms: 1250, cache_state: 'miss',
+        },
+    ]);
+});
+
 test('eng_board terminal api_result accepts only bounded scope and omits high-cardinality input', async () => {
     const { initAnalytics, trackApiResult } = await loadAnalytics();
     resetDom();

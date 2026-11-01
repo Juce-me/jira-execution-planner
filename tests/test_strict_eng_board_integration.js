@@ -86,3 +86,17 @@ test('automatic patch reconciliation compares accepted fields independently and 
     assert.deepEqual(reconcileStrictBoardPatches(patches, { epicsByKey: {}, childrenByKey: {} }), patches);
     assert.deepEqual(reconcileStrictBoardPatches({ 'SYN-1': { customfield_10004: null } }, { childrenByKey: { 'SYN-1': { storyPoints: null } } }), {});
 });
+
+test("retainPendingBoardPatches keeps a pending Epic's patch and drops a settled one", async () => {
+    const { retainPendingBoardPatches } = await import('../frontend/src/eng/useStrictEngBoardIntegration.js');
+    const patches = { 'SYN-1': { priority: { id: '2' } }, 'SYN-2': { status: { id: '3' } } };
+    assert.deepEqual(retainPendingBoardPatches(patches, new Set(['SYN-2'])), { 'SYN-2': { status: { id: '3' } } });
+    assert.deepEqual(retainPendingBoardPatches(patches, undefined), {});
+    assert.deepEqual(retainPendingBoardPatches(patches, new Set()), {});
+    assert.deepEqual(retainPendingBoardPatches(undefined, new Set(['SYN-2'])), {});
+});
+
+test('strict Board owner refresh retains pending patches instead of clearing all', () => {
+    const source = fs.readFileSync(new URL('../frontend/src/eng/useStrictEngBoardIntegration.js', import.meta.url), 'utf8');
+    assert.match(source, /options\?\.source !== 'automatic'\) setIssuePatchesByKey\(previous => retainPendingBoardPatches\(previous, freshnessBridge\?\.current\?\.pendingKeys\?\.\(\) \?\? new Set\(\)\)\);/);
+});

@@ -50,7 +50,6 @@ export default function EngBoardEpicPanel({
     statusTransitions = null,
     priorityTransitions = null,
     projectTrackTransitions = null,
-    statusTransitionSubmitting = false,
     workItemLabel = 'stories',
     workItemLabelSingular = 'story',
     onSubmitStatusTransition,
@@ -222,7 +221,7 @@ export default function EngBoardEpicPanel({
                 isOpen={statusTransitions.activeSingleIssueTarget?.key === task.key}
                 options={statusTransitions.transitionOptions}
                 optionsLoading={statusTransitions.transitionOptionsLoading}
-                submitting={statusTransitionSubmitting || !!statusTransitions.pendingIssueKeys?.has(task.key)}
+                submitting={!!statusTransitions.pendingIssueKeys?.has(task.key)}
                 error={statusTransitions.transitionError}
                 errorCode={statusTransitions.transitionErrorCode}
                 result={statusTransitions.transitionResult}
@@ -350,8 +349,7 @@ export default function EngBoardEpicPanel({
                                 isOpen={statusTransitions.activeSingleIssueTarget?.key === epicKey}
                                 options={statusTransitions.transitionOptions}
                                 optionsLoading={statusTransitions.transitionOptionsLoading}
-                                submitting={statusTransitionSubmitting
-                                    || !!statusTransitions.pendingIssueKeys?.has(epicKey)}
+                                submitting={!!statusTransitions.pendingIssueKeys?.has(epicKey)}
                                 error={statusTransitions.transitionError}
                                 errorCode={statusTransitions.transitionErrorCode}
                                 result={statusTransitions.transitionResult}

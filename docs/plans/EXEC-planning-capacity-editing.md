@@ -2,6 +2,8 @@
 
 > **Note (2026-10-27):** Superseded by the conflict-resistant architecture plan Task A1: `frontend/dist` is no longer committed, so its `make verify-dist-clean` and "commit `frontend/dist`" steps no longer apply.
 
+> **Note (2026-10-30):** Superseded in part by decision D7 of the assignee capacity table plan (`DONE-planning-assignee-capacity-table-323.md`, issue #323): the Global Constraint "Jira is the only source of capacity values" no longer holds. The app now stores a per-Sprint, per-Team "Team capacity (not in Jira)" number in `planning_team_sprint_capacity`; it is only a fallback when no Jira capacity ticket or value exists and an inheritance source for later Sprints. Jira stays the core number and wins on screen whenever a ticket exists, and nothing is written to Jira except through the existing capacity editor on the user's Save.
+
 > **Status:** Implemented with changes and verified on `feature/planning-capacity-editing`; pending integration into `main`.
 
 ## Outcome

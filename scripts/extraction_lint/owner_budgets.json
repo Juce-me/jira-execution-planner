@@ -4965,7 +4965,7 @@
       "exports": [
         "default"
       ],
-      "lineCeiling": 70,
+      "lineCeiling": 90,
       "interfaces": [
         {
           "exportName": "default",
@@ -4993,16 +4993,17 @@
             "mapping.required",
             "mapping.selected",
             "mapping.status",
+            "mapping.typedOption",
             "mappingHoverKey",
             "setMappingHoverKey",
             "showTechnicalFieldIds"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 17,
+          "expandedInputCount": 18,
           "returnCount": 0,
           "propCount": 5,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 17,
+          "expandedInputCeiling": 18,
           "returnCeiling": 0,
           "propCeiling": 5,
           "unresolved": [
@@ -5010,7 +5011,7 @@
             "bag mapping member alias hoverKey"
           ],
           "inventory": {
-            "sourceDigest": "8f67ae2e4eea31bd0c6f1dadafc843582d0efdd90a6917a76e78a0b58703d323",
+            "sourceDigest": "5dbe577b0d663eca38695cc94ac0e27b336eaae507353103201528895a04c92f",
             "reviewed": true,
             "memberNames": [
               "kind",
@@ -5027,11 +5028,12 @@
               "mapping.required",
               "mapping.selected",
               "mapping.status",
+              "mapping.typedOption",
               "mappingHoverKey",
               "setMappingHoverKey",
               "showTechnicalFieldIds"
             ],
-            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02: kind accepts 'sprint' (placeholder only) and an option may carry disabled/detail; both are option-object fields read for display, not interface members; the new Scope caller passes the same mapping shape."
+            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02: kind accepts 'sprint' (placeholder only) and an option may carry disabled/detail; both are option-object fields read for display, not interface members; the new Scope caller passes the same mapping shape. Re-reviewed 2026-11-02 (typed Sprint boundary): mapping.typedOption is an optional pure callback (query, options) returning one {id,name,detail} option or null, used only to append an extra result; results use a ref for scrollIntoView. No API, model inference or persistence."
           },
           "callers": [
             {
@@ -16951,7 +16953,7 @@
           "inventory": {
             "sourceDigest": "6bc634e4a342daa36ea7db67e12dfcccf7e95dc5dae735e64d7b005a0d4ecd6e",
             "reviewed": true,
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. #323 Task 8 (design A) reviewed change: plannedCapacity is the stored team number snapshot ({sprintId, teamId, value} or null) read in render from App's single useSyncExternalStore; capacityLoading, capacityReadError and capacityDataStale are the existing App read-lifecycle state values, read only to gate the stored-number fallback. The fallback is merged into capacityByTeam inside the effectiveCapacityState memo (explicit capacityState members, no spread); capacityTargetsByTeam, capacityIssueCount and mutationEnabled are copied unchanged. No mutation transport, getter or new effect dependency. Re-reviewed for the quarterly work-structure merge: workModel is the added forwarded work-model input, read only to derive labels; no mutation transport or new getter.",
             "memberNames": [
               "BACKEND_URL",
               "activeCapacityScopeRef",
@@ -17031,8 +17033,7 @@
               "showProduct",
               "showTech",
               "workModel"
-            ],
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. #323 Task 8 (design A) reviewed change: plannedCapacity is the stored team number snapshot ({sprintId, teamId, value} or null) read in render from App's single useSyncExternalStore; capacityLoading, capacityReadError and capacityDataStale are the existing App read-lifecycle state values, read only to gate the stored-number fallback. The fallback is merged into capacityByTeam inside the effectiveCapacityState memo (explicit capacityState members, no spread); capacityTargetsByTeam, capacityIssueCount and mutationEnabled are copied unchanged. No mutation transport, getter or new effect dependency. Re-reviewed for the quarterly work-structure merge: workModel is the added forwarded work-model input, read only to derive labels; no mutation transport or new getter."
+            ]
           },
           "callers": [
             {
@@ -18983,7 +18984,7 @@
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "07a97c24f682ac8b56bdae469d1d0a3280270c24d130facfafbdca5430cbda8e",
+            "sourceDigest": "c97f5f5ee19544f2cd56fa6eae8c4fb3b0d804ba320a858c2193da2d0b44b24d",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19248,6 +19249,7 @@
         "removeProjectFromEntry",
         "slotsFor",
         "sprintValueOptions",
+        "typedSprintOption",
         "validateBundle"
       ],
       "lineCeiling": 380,

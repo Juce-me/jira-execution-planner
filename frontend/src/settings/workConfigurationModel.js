@@ -3,6 +3,8 @@
 // (backend/services/work_structure.py); this module only edits the fields the editor owns and
 // derives the exact request bodies. No React, no I/O.
 
+import { canonicalQuarter } from '../workStructure/configurationContext.js';
+
 export const MODEL_LEGACY = 'legacy';
 export const MODEL_RND = 'rnd_2027';
 export const DELIVERY_PROJECT_LIMIT_MESSAGE = 'DELIVERY uses one Jira project';
@@ -35,6 +37,15 @@ export function sprintValueOptions(sprintValues) {
             Array.isArray(item.sprintIds) && item.sprintIds.length ? `Jira id ${item.sprintIds.join(', ')}` : null,
         ].filter(Boolean).join(' · ') || item.value,
     }));
+}
+
+// The way out when the Sprint list is missing, still loading or lacks the wanted value: typed text that is
+// exactly a canonical boundary (strict `YYYYQ1`-`YYYYQ4`, year 0001-9999) and not already an option becomes
+// one extra option. Anything else offers nothing.
+export function typedSprintOption(query, options = []) {
+    const value = typeof query === 'string' ? query.trim() : '';
+    if (!canonicalQuarter(value) || options.some(option => option.id === value)) return null;
+    return { id: value, name: `Use ${value}`, detail: 'not in the Sprint list' };
 }
 
 export const rangeLabel = entry => {

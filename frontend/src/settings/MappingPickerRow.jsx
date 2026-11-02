@@ -6,7 +6,10 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
     const [query, setQuery] = React.useState('');
     const [open, setOpen] = React.useState(false);
     const [index, setIndex] = React.useState(0);
-    const { items, total } = makeFieldSearchResults(query, mapping.options || []);
+    const { items: matches, total } = makeFieldSearchResults(query, mapping.options || []);
+    // An optional extra choice for typed text the list cannot offer (Scope boundaries: a canonical Sprint value).
+    const typed = mapping.typedOption ? mapping.typedOption(query, mapping.options || []) : null;
+    const items = typed ? [...matches, typed] : matches;
     const selected = mapping.selected;
     const hoverKey = mapping.previewKey;
     const select = option => {
@@ -17,6 +20,11 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
         setIndex(0);
     };
     React.useEffect(() => { if (index >= items.length) setIndex(0); }, [index, items.length]);
+    // The results list can open below a short scrolling panel (phone width); bring it into view.
+    const resultsRef = React.useRef(null);
+    React.useEffect(() => {
+        if (open && items.length && resultsRef.current?.scrollIntoView) resultsRef.current.scrollIntoView({ block: 'nearest' });
+    }, [open, items.length, query]);
     const handleKeyDown = makeFieldKeyDown(items, index, setIndex,
         id => select(items.find(option => option.id === id)), () => {}, setQuery, setOpen);
     return (
@@ -50,13 +58,13 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
                             </div>
                         )}
                         {open && items.length > 0 && (
-                            <div className="team-search-results" onMouseDown={event => event.preventDefault()}>
+                            <div className="team-search-results" ref={resultsRef} onMouseDown={event => event.preventDefault()}>
                                 {items.map((option, optionIndex) => (
                                     <div key={option.id} className={`team-search-result-item ${optionIndex === index ? 'active' : ''}`} aria-disabled={option.disabled || undefined} onClick={() => select(option)}>
                                         <strong>{option.name}</strong> <span style={{ opacity: 0.5 }}>({option.detail ?? option.id})</span>
                                     </div>
                                 ))}
-                                {total > items.length && <div className="team-search-more">+{total - items.length} more matches — keep typing to narrow.</div>}
+                                {total > matches.length && <div className="team-search-more">+{total - matches.length} more matches — keep typing to narrow.</div>}
                             </div>
                         )}
                     </div>

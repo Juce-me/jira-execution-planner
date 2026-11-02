@@ -4,7 +4,7 @@ import { searchBoards as requestBoardSearch, searchProjects as requestProjectSea
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, rangeLabel, sprintValueOptions } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, rangeLabel, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
 const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
@@ -52,7 +52,7 @@ function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery
     return { projects, projectLoading, boards, boardLoading };
 }
 
-// Scope boundaries are Jira Sprint values chosen from what the saved sources observed, never typed text.
+// Scope boundaries are Jira Sprint values chosen from what the saved sources observed; a canonical value that is not listed (list failed, loading or incomplete) can be typed and chosen.
 // The two open ends (Legacy's start, DELIVERY's end) stay fixed; inner boundaries reuse MappingPickerRow.
 function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit }) {
     const fixed = FIXED_BOUNDS[entry.model] || {};
@@ -64,7 +64,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit }
             {sprintValues.state === 'loading' && !options.length && <p className="group-field-helper" role="status" data-sprint-values-state="loading">Loading Sprint values from Jira&hellip;</p>}
             {sprintValues.state === 'error' && (
                 <p className="group-modal-warning" role="status" data-sprint-values-state="error">
-                    Could not load Sprint values. The saved boundaries are unchanged.
+                    Could not load Sprint values. The saved boundaries are unchanged. You can still type a boundary as a Sprint value such as 2027Q1.
                     <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>
                 </p>
             )}
@@ -89,6 +89,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit }
                                         selected: value ? { id: value, name: value } : null,
                                         options,
                                         emptyMessage: 'No matching Sprint value.',
+                                        typedOption: typedSprintOption,
                                         onSelect: option => onPatch({ [key]: option.id }),
                                         onRemove: () => onPatch({ [key]: null }),
                                     }}
@@ -281,7 +282,7 @@ export default function WorkConfigurationsEditor({
                         <ConfigurationRow key={item.id} entry={item} isActive={item.id === entry.id} error={errors[item.id]?.name} onSelect={workConfig.selectConfiguration} onPatch={workConfig.patch} />
                     ))}
                 </div>
-                <div className="group-field-helper work-config-summary">The viewed sprint selects the configuration automatically.</div>
+                <div className="group-field-helper work-config-summary">The viewed Sprint value selects the configuration automatically.</div>
             </aside>
             <section className="group-pane group-pane-right work-config-right" aria-label="Selected configuration">
                 <div className="group-pane-mobile-header">

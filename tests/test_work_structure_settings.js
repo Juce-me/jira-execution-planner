@@ -346,6 +346,38 @@ test('issue-type catalog: one cached answer per saved scope, failures retried, w
     }
 });
 
+test('Scope boundaries: an exact canonical typed value is offered when it is not in the Sprint list', async () => {
+    const { typedSprintOption, sprintValueOptions, patchBundleEntry, validateBundle } = await loadModel();
+    const listed = sprintValueOptions({ values: [{ value: '2027Q1', canonical: true, state: 'future', sprintIds: [], configurationIds: [] }] });
+    const option = typedSprintOption('2027Q2', listed);
+    assert.deepEqual([option.id, option.name, option.detail], ['2027Q2', 'Use 2027Q2', 'not in the Sprint list']);
+    assert.equal(typedSprintOption('2027Q1', listed), null, 'a listed value is chosen from the list, never duplicated');
+    assert.ok(typedSprintOption('2027Q2', []), 'a failed or empty list still offers the typed value');
+    assert.ok(typedSprintOption(' 2027Q2 ', []), 'surrounding whitespace is not part of the value');
+    assert.equal(typedSprintOption('0001Q1', []).id, '0001Q1');
+    assert.equal(typedSprintOption('9999Q4', []).id, '9999Q4');
+    for (const bad of ['', '2027q1', '2027Q5', '2027Q0', '0000Q1', '2027 Q1', '27Q1', '20271Q1', '2027Q1x', 'Q1', null, undefined, 20271]) {
+        assert.equal(typedSprintOption(bad, []), null, `${String(bad)} is not canonical`);
+    }
+    // A non-canonical value listed disabled is not a reason to offer the typed copy of it.
+    assert.equal(typedSprintOption('0000Q1', sprintValueOptions({ values: [{ value: '0000Q1', canonical: false }] })), null);
+    // Choosing it is an ordinary patch; validation still decides Save.
+    let draft = patchBundleEntry(bundle(), 'legacy', { throughQuarter: null });
+    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Both inner bounds are required/);
+    draft = patchBundleEntry(draft, 'legacy', { throughQuarter: option.id });
+    assert.ok(!validateBundle(draft).errors.legacy.throughQuarter?.includes('Both inner'));
+});
+
+test('Scope boundaries: removing one required boundary never blanks the other configuration', async () => {
+    const { patchBundleEntry } = await loadModel();
+    const before = bundle();
+    const after = patchBundleEntry(before, 'legacy', { throughQuarter: null });
+    const pick = id => after.configurations.find(entry => entry.id === id);
+    assert.equal(pick('legacy').throughQuarter, null);
+    assert.equal(pick('delivery').fromQuarter, before.configurations.find(entry => entry.id === 'delivery').fromQuarter);
+    assert.ok(pick('delivery').fromQuarter, 'DELIVERY keeps its From boundary');
+});
+
 test('Scope boundaries: options come from observed Sprint values; a non-canonical value is disabled', async () => {
     const { sprintValueOptions, validateBundle, patchBundleEntry } = await loadModel();
     const options = sprintValueOptions({ values: [

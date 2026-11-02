@@ -205,6 +205,79 @@ test('load failure and an empty list explain themselves and keep saved boundarie
     await expect(saveButton(dialog)).toBeDisabled();
 });
 
+const TYPED = /Use 2027Q1 \(not in the Sprint list\)/;
+
+for (const status of [501, 404]) {
+    test(`an older server (${status}) never strands the boundaries: a typed canonical value is chosen and saved`, async ({ page }) => {
+        const state = await mockApp(page, { sprintValuesStatus: status });
+        const dialog = await openScope(page);
+        await expect(dialog.locator('[data-sprint-values-state="error"]')).toContainText('type a boundary as a Sprint value such as 2027Q1');
+        await expect(dialog.locator('[data-sprint-values-state="error"]').getByRole('button', { name: 'Retry' })).toBeVisible();
+        // The saved boundary is shown, removable and replaceable although the list never loaded.
+        const through = rangeRow(dialog, 'throughQuarter');
+        await expect(through.locator('.selected-team-chip')).toHaveText(/2026Q3/);
+        await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+        await expect(through.locator('.work-config-range-error')).toContainText('Both inner bounds are required');
+        await expect(saveButton(dialog)).toBeDisabled();
+        const search = through.getByLabel('Search Through Sprint');
+        for (const text of ['2027q1', '2027Q5', '2027 Q', '0000Q1']) {
+            await search.fill(text);
+            await expect(through.locator('.team-search-result-item')).toHaveText('No matching Sprint value.');
+        }
+        await search.fill('2027Q1');
+        await expect(through.locator('.team-search-result-item')).toHaveCount(1);
+        await expect(through.locator('.team-search-result-item')).toHaveText(TYPED);
+        await search.press('Enter');
+        await expect(through.locator('.selected-team-chip')).toHaveText(/2027Q1/);
+        await expect(through.locator('.work-config-range-error')).toContainText('overlap');
+        // DELIVERY's From moves with it; the typed option works there too, picked by click.
+        await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
+        await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
+        const from = rangeRow(dialog, 'fromQuarter');
+        await from.getByLabel('Search From Sprint').fill('2027Q2');
+        await from.locator('.team-search-result-item', { hasText: 'Use 2027Q2' }).click();
+        await expect(from.locator('.selected-team-chip')).toHaveText(/2027Q2/);
+        await expect(dialog.locator('.work-config-range-error')).toHaveCount(0);
+        await expect(saveButton(dialog)).toBeEnabled();
+        await saveButton(dialog).click();
+        await expect(dialog).toHaveCount(0);
+        const [saved] = state.workPosts;
+        const byId = Object.fromEntries(saved.workConfigurations.configurations.map(entry => [entry.id, entry]));
+        expect([byId.legacy.fromQuarter, byId.legacy.throughQuarter]).toEqual([null, '2027Q1']);
+        expect([byId.delivery.fromQuarter, byId.delivery.throughQuarter]).toEqual(['2027Q2', null]);
+    });
+}
+
+test('the typed option also appears beside a loaded list, but never duplicates a listed value', async ({ page }) => {
+    await mockApp(page);
+    const dialog = await openScope(page);
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    const through = rangeRow(dialog, 'throughQuarter');
+    const search = through.getByLabel('Search Through Sprint');
+    await search.fill('2027Q1');
+    await expect(through.locator('.team-search-result-item')).toHaveCount(1);
+    await expect(through.locator('.team-search-result-item')).not.toContainText('not in the Sprint list');
+    await search.fill('2027Q3');
+    await expect(through.locator('.team-search-result-item')).toHaveCount(1);
+    await expect(through.locator('.team-search-result-item')).toHaveText(/Use 2027Q3 \(not in the Sprint list\)/);
+    await search.fill('2027');
+    await expect(through.locator('.team-search-result-item')).toHaveCount(2);
+    await expect(through.locator('.team-search-result-item', { hasText: 'not in the Sprint list' })).toHaveCount(0);
+    await search.fill('2027q3');
+    await expect(through.locator('.team-search-result-item')).toHaveText('No matching Sprint value.');
+});
+
+test('failed-list state with the typed option, settled screenshot', async ({ page }) => {
+    await mockApp(page, { sprintValuesStatus: 501 });
+    const dialog = await openScope(page);
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    const through = rangeRow(dialog, 'throughQuarter');
+    await through.getByLabel('Search Through Sprint').fill('2027Q1');
+    await expect(through.locator('.team-search-result-item')).toHaveText(TYPED);
+    await page.waitForTimeout(250);
+    await dialog.screenshot({ path: path.join(shotDir, 'scope-failed-list-typed-option.png'), animations: 'disabled' });
+});
+
 test('an empty list names the cause', async ({ page }) => {
     await mockApp(page, { values: [] });
     const dialog = await openScope(page);
@@ -242,6 +315,9 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 768, height: 1024 
         await topmost(from.locator('.team-search-result-item').first(), 'first option');
         await page.waitForTimeout(250);
         await page.screenshot({ path: path.join(shotDir, `scope-picker-open-${viewport.width}.png`), animations: 'disabled' });
+        await from.getByLabel('Search From Sprint').fill('2031Q2');
+        await topmost(from.locator('.team-search-result-item', { hasText: 'Use 2031Q2' }), 'typed option');
+        await from.getByLabel('Search From Sprint').fill('');
         await from.locator('.team-search-result-item', { hasText: '2026Q4' }).click();
         const geometry = await page.evaluate(() => {
             const footer = document.querySelector('.group-modal-footer');

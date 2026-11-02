@@ -20,6 +20,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Planning Work
 
+- [Shared Planning inclusion and clear controls #331](EXEC-planning-shared-plan-331.md): prerequisite app-wide DB/OAuth-only retirement, then shared Department/Sprint inclusion, atomic review save, scoped projection, recovery, wording, Table inspection and real persistence/concurrency acceptance.
 - [Planning assignee capacity table #323](DONE-planning-assignee-capacity-table-323.md): with one team selected, Planning shows a per-assignee table (Planned capacity, Estimated effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with a per-assignee strip in the pinned capacity bar, a stored planned team capacity and Add assignee.
 - [Planning assignee capacity deferred scope #323](FUTURE-planning-assignee-capacity-deferred-323.md): one-click push of the stored team number to Jira and the open verification items (EPM refresh flags, p50/p95, manual glyph check).
 

@@ -295,8 +295,12 @@ export function describeHierarchyRow({ entry, slot, index, types, catalogState }
     const offset = hierarchyLevelOffset(entry.model);
     const id = entry.hierarchy?.[slot] || null;
     const ready = catalogState === 'ready';
+    // Team-managed projects each own a same-named type with its own id, so only types the selected
+    // projects actually use are offered; `projectIds` is filled by the scoped catalog read.
+    const scoped = (entry.scope?.projects || []).length > 0;
+    const inScope = type => !scoped || type.projectIds.length > 0;
     const options = ready
-        ? types.filter(type => Number.isInteger(type.hierarchyLevel) && type.hierarchyLevel === index + offset && !type.subtask)
+        ? types.filter(type => Number.isInteger(type.hierarchyLevel) && type.hierarchyLevel === index + offset && !type.subtask && inScope(type))
         : [];
     const duplicateNames = new Set();
     const seen = new Set();
@@ -305,11 +309,16 @@ export function describeHierarchyRow({ entry, slot, index, types, catalogState }
         seen.add(type.name);
     }
     const display = type => (duplicateNames.has(type.name) ? { ...type, name: `${type.name} (${type.id})` } : type);
+    const outsideScope = type => ready && !inScope(type);
+    const chip = type => {
+        const shown = display(type);
+        return outsideScope(type) ? { ...shown, name: `${shown.name} · not used by the selected project` } : shown;
+    };
     const found = id ? types.find(type => type.id === id) : null;
     let selected = null;
     let status = 'empty';
     if (id) {
-        if (found && Number.isInteger(found.hierarchyLevel)) { selected = display(found); status = 'resolved'; }
+        if (found && Number.isInteger(found.hierarchyLevel)) { selected = chip(found); status = 'resolved'; }
         else if (found) { selected = display(found); status = 'unknown-level'; }
         else if (!ready) {
             const reason = catalogState === 'loading' ? 'Loading Jira type' : catalogState === 'error' ? 'Jira catalog unavailable' : 'Jira type not loaded';
@@ -317,7 +326,7 @@ export function describeHierarchyRow({ entry, slot, index, types, catalogState }
             status = catalogState;
         } else { selected = { id, name: `${id} · Not found in Jira` }; status = 'unresolved'; }
     }
-    return { id, label: labels[index], options: options.map(display), selected, status, required: index < 2 };
+    return { id, label: labels[index], options: options, selected, status, required: index < 2 };
 }
 
 // Identity of the saved entry a scoped metadata read answers for. The key (not only the id) retires a

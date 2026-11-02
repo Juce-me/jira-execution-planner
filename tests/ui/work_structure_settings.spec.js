@@ -33,12 +33,12 @@ const FIELDS = [
     { id: 'customfield_19908', name: 'Project Track' },
 ];
 const TYPES = [
-    { id: '19001', name: 'Story', hierarchyLevel: 0 },
-    { id: '19002', name: 'Epic', hierarchyLevel: 1 },
-    { id: '19003', name: 'Initiative', hierarchyLevel: 2 },
-    { id: '19004', name: 'Objective', hierarchyLevel: 3 },
-    { id: '19005', name: 'Strategy', hierarchyLevel: 4 },
-    { id: '19007', name: 'Unknown hierarchy type', hierarchyLevel: null },
+    { id: '19001', name: 'Story', hierarchyLevel: 0, projectIds: ['10'] },
+    { id: '19002', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'] },
+    { id: '19003', name: 'Initiative', hierarchyLevel: 2, projectIds: ['10'] },
+    { id: '19004', name: 'Objective', hierarchyLevel: 3, projectIds: ['10'] },
+    { id: '19005', name: 'Strategy', hierarchyLevel: 4, projectIds: ['10'] },
+    { id: '19007', name: 'Unknown hierarchy type', hierarchyLevel: null, projectIds: ['10'] },
 ];
 const PROJECTS = [
     { key: 'OLD', name: 'Example legacy' }, { key: 'PLAN', name: 'Example delivery' }, { key: 'EXTRA', name: 'Example extra' },
@@ -430,7 +430,7 @@ test('hierarchy pickers: loading, error with retry, resolved, unresolved, duplic
     const state = await mockApp(page, {
         promoted: true, revision: 6, typesDelay: 600,
         bundle: promotedBundle({ delivery: { hierarchy: { planningIssueTypeId: '19999', parentIssueTypeId: '19003', ancestorIssueTypeId: '19007', optionalAncestorIssueTypeId: null } } }),
-        types: [...TYPES, { id: '19008', name: 'Epic', hierarchyLevel: 1 }],
+        types: [...TYPES, { id: '19008', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'] }, { id: '19009', name: 'Epic', hierarchyLevel: 1, projectIds: [] }],
     });
     const dialog = await openSettings(page);
     await projectTab(dialog);

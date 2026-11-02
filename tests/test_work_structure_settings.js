@@ -180,17 +180,36 @@ test('a compatibility-retired 400 maps to a preserved-draft field error with con
     assert.equal(fieldErrorFromServer({ error: 'workspace_config_conflict', configurationId: 'legacy', slot: 'x' }), null);
 });
 
+test('hierarchy picker offers only types used by the selected project and flags a saved outside type', async () => {
+    const { describeHierarchyRow, normalizeIssueTypes } = await loadModel();
+    const types = normalizeIssueTypes([
+        { id: '6', name: 'Epic', hierarchyLevel: 1, projectIds: [] },
+        { id: '11709', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'] },
+        { id: '13401', name: 'Epic', hierarchyLevel: 1, projectIds: [] },
+    ]);
+    const row = entry => describeHierarchyRow({ entry, slot: 'planningIssueTypeId', index: 0, types, catalogState: 'ready' });
+    const scoped = delivery({ scope: { projects: [{ key: 'PLAN', type: 'other' }], boardId: '' }, hierarchy: { planningIssueTypeId: '13401', parentIssueTypeId: null, ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null } });
+    assert.deepEqual(row(scoped).options.map(option => option.id), ['11709']);
+    assert.equal(row(scoped).status, 'resolved');
+    assert.match(row(scoped).selected.name, /not used by the selected project/, 'a saved id outside the project stays visible and removable');
+    assert.equal(row(scoped).selected.id, '13401');
+    const noProjects = delivery({ scope: { projects: [], boardId: '' } });
+    assert.deepEqual(row(noProjects).options.map(option => option.id), ['6', '11709', '13401'], 'no selected project means no applicability filter');
+});
+
 test('hierarchy rows: loading, error, resolved, unresolved, duplicate names, unknown level', async () => {
     const { describeHierarchyRow, normalizeIssueTypes } = await loadModel();
     const types = normalizeIssueTypes([
-        { id: '2', name: 'Epic', hierarchyLevel: 1 }, { id: '8', name: 'Epic', hierarchyLevel: 1 },
-        { id: '3', name: 'Initiative', hierarchyLevel: 2 }, { id: '7', name: 'Mystery', hierarchyLevel: null },
-        { id: '9', name: 'Sub', hierarchyLevel: 1, subtask: true },
+        { id: '2', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'] }, { id: '8', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'] },
+        { id: '13', name: 'Epic', hierarchyLevel: 1, projectIds: [] },
+        { id: '3', name: 'Initiative', hierarchyLevel: 2, projectIds: ['10'] }, { id: '7', name: 'Mystery', hierarchyLevel: null, projectIds: ['10'] },
+        { id: '9', name: 'Sub', hierarchyLevel: 1, subtask: true, projectIds: ['10'] },
     ]);
-    const entry = delivery({ hierarchy: { planningIssueTypeId: '2', parentIssueTypeId: '999', ancestorIssueTypeId: '7', optionalAncestorIssueTypeId: null } });
+    const entry = delivery({ scope: { projects: [{ key: 'PLAN', type: 'other' }], boardId: '' }, hierarchy: { planningIssueTypeId: '2', parentIssueTypeId: '999', ancestorIssueTypeId: '7', optionalAncestorIssueTypeId: null } });
     const ready = slot => describeHierarchyRow({ entry, slot: ['planningIssueTypeId', 'parentIssueTypeId', 'ancestorIssueTypeId'][slot], index: slot, types, catalogState: 'ready' });
     assert.equal(ready(0).status, 'resolved');
-    assert.deepEqual(ready(0).options.map(option => option.name), ['Epic (2)', 'Epic (8)'], 'duplicate names show ids and subtasks are excluded');
+    assert.deepEqual(ready(0).options.map(option => option.id), ['2', '8'], 'only types used by the selected project are offered; subtasks are excluded');
+    assert.ok(ready(0).options.every(option => option.name === 'Epic'), 'the picker row appends the id, so the name is not repeated with it');
     assert.equal(ready(0).selected.name, 'Epic (2)');
     assert.equal(ready(1).status, 'unresolved');
     assert.equal(ready(1).selected.name, '999 · Not found in Jira');

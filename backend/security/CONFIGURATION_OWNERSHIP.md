@@ -151,7 +151,11 @@ never touches Capacity, its verification columns, priority weights, groups or pr
   `workConfigurationsPromoted`, `workConfigurationSummaries` (id, name, revision, model, ranges and the
   entry `digest`, which write stamps need) and `adminSettingsMissingByConfiguration`; after promotion it
   omits the unscoped moved projections. `GET/POST /api/work-structure/config` are `authenticated_read` /
-  `shared_admin_write` (`backend/security/policy.py`).
+  `shared_admin_write` (`backend/security/policy.py`). `GET /api/work-structure/sprint-values` is an `authenticated_read`
+  metadata read for the Scope boundary pickers: no query parameters (400 `unsupported_catalog_parameter`), no viewed quarter,
+  no Jira call (stored Sprint snapshots only), DB/OAuth only (409 `work_configuration_setup_required`), 409
+  `configuration_feature_disabled` while the flag is off and the workspace is unpromoted or promoted; it returns only Sprint
+  value, canonical flag, state, Jira Sprint ids and configuration ids.
 - Own-key Jira writes, write-option reads and Sprint review calls carry a `{id, revision, quarter, digest}`
   stamp that `backend/services/work_write_scope.py` re-resolves against the current workspace before any Jira
   call: a stale or wrong-model stamp answers `409 configuration_scope_changed`. The stamp is optional for an

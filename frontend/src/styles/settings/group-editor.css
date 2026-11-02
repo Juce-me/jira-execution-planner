@@ -208,6 +208,11 @@
             cursor: default;
         }
 
+        .team-search-result-item[aria-disabled="true"] {
+            color: var(--text-secondary);
+            cursor: not-allowed;
+        }
+
         .team-search-result-item:last-child {
             border-bottom: none;
         }
@@ -732,26 +737,9 @@
             padding: 0.65rem 1rem;
         }
 
-        .work-config-range-row {
-            display: grid;
-            grid-template-columns: 7rem minmax(0, 1fr) auto;
-            align-items: center;
-            gap: 0.5rem;
-            margin-bottom: 0.35rem;
-        }
-
-        .work-config-range-row .group-name-input {
-            min-width: 0;
-            width: 100%;
-        }
-
-        .work-config-range-row > .selected-team-chip {
-            justify-self: start;
-            max-width: 100%;
-        }
-
         .work-config-range-error {
-            grid-column: 2 / -1;
+            display: block;
+            margin-bottom: 0.35rem;
         }
 
         .work-config-summary {
@@ -793,10 +781,6 @@
                 width: calc(100vw - 1rem);
                 height: calc(100dvh - 1rem);
                 max-height: none;
-            }
-
-            .work-config-range-row {
-                grid-template-columns: 5.5rem minmax(0, 1fr) auto;
             }
 
             .work-config-header-row {

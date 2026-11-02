@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
+    fetchWorkSprintValues,
     fetchWorkStructureConfig,
     saveWorkStructureConfig,
     testWorkConfiguration,
@@ -81,6 +82,8 @@ export function useWorkConfigurationSettings({
     const onDraftReplacedRef = React.useRef(onDraftReplaced);
     onDraftReplacedRef.current = onDraftReplaced;
     const [catalogRetry, setCatalogRetry] = React.useState(0);
+    const [sprintValues, setSprintValues] = React.useState({ state: 'idle', values: [] });
+    const [sprintValuesTick, setSprintValuesTick] = React.useState(0);
 
     const setDraft = React.useCallback((next) => {
         draftRef.current = next;
@@ -134,6 +137,22 @@ export function useWorkConfigurationSettings({
     React.useEffect(() => {
         if (mode === 'enabled' && visible && loadState === 'idle') void reload();
     }, [mode, visible, loadState, reload]);
+
+    // Scope boundary options: every Sprint value the saved sources observed, whatever the current ranges.
+    // Re-read after a committed Save (a Board or project change can alter the sources) and on Retry.
+    React.useEffect(() => {
+        if (mode !== 'enabled' || !visible || loadState !== 'ready') return undefined;
+        const controller = new AbortController();
+        setSprintValues(previous => ({ state: 'loading', values: previous.values }));
+        fetchWorkSprintValues(BACKEND_URL, { signal: controller.signal }).then(result => {
+            if (controller.signal.aborted) return;
+            setSprintValues({ state: 'ready', values: Array.isArray(result?.sprintValues) ? result.sprintValues : [] });
+        }).catch(error => {
+            if (controller.signal.aborted || isAuthenticationRequiredError(error)) return;
+            setSprintValues({ state: 'error', values: [] });
+        });
+        return () => controller.abort();
+    }, [BACKEND_URL, mode, visible, loadState, revision, sprintValuesTick]);
 
     const entries = draft?.configurations || [];
     const active = entryById(draft, activeId) || entries[0] || null;
@@ -395,6 +414,8 @@ export function useWorkConfigurationSettings({
         saveFeedback,
         typeCatalogFor,
         retryTypeCatalog,
+        sprintValues,
+        retrySprintValues: () => setSprintValuesTick(value => value + 1),
         catalogHintFor,
         save,
         prepareKeepMine,

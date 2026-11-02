@@ -900,9 +900,32 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
     cache = _configuration_cache_envelope(auth_context, config, snapshot, refresh_started=started)
     rows = None
     if snapshot.payload is not None:
+        rows = in_range_sprints(config, snapshot.payload)
+    observed_rows = None
+    if config.observed_source is not None:
+        # A Board lists only its own Sprints: also scan the configuration's scoped issues so a
+        # Sprint carried by its work but absent from the Board is admitted. A failed or pending
+        # scan never degrades the Board result; the Board row wins a same-name tie.
+        observed = config.observed_source
+        scan, scan_started = _load_and_refresh_scoped_snapshot(
+            auth_context, observed, catalog_configuration_resolver(config.configuration_id, observed=True),
+            force_refresh,
+        )
+        if scan.payload is not None:
+            observed_rows = in_range_sprints(observed, scan.payload)
+            names = {item.get('name') for item in rows or []}
+            rows = (rows or []) + [item for item in observed_rows if item.get('name') not in names]
+            if snapshot.payload is None:
+                cache = {
+                    **_configuration_cache_envelope(auth_context, observed, scan, refresh_started=scan_started),
+                    'identity': cache['identity'], 'rowIdentity': cache['rowIdentity'],
+                    'sourceMode': config.source_mode, 'boardId': config.board_id or None,
+                }
+            cache['refreshStarted'] = bool(cache['refreshStarted'] or scan_started)
+    if rows is not None:
         rows = [
             {**item, 'configurationId': config.configuration_id, 'sourceIdentity': cache['identity']}
-            for item in in_range_sprints(config, snapshot.payload)
+            for item in rows
         ]
         state = 'ready'
     elif cache['refreshStatus'] == 'failed':

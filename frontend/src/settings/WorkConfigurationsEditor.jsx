@@ -2,12 +2,14 @@ import * as React from 'react';
 
 import { searchBoards as requestBoardSearch, searchProjects as requestProjectSearch } from '../api/jiraCatalogApi.js';
 import JiraFieldSettings from './JiraFieldSettings.jsx';
+import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, rangeLabel } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, rangeLabel, sprintValueOptions } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
-const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'All earlier quarters' }, [MODEL_RND]: { throughQuarter: 'No end' } };
-const RANGE_ROWS = [['fromQuarter', 'Start quarter'], ['throughQuarter', 'End quarter']];
+const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
+const noHover = () => {};
+const RANGE_ROWS = [['fromQuarter', 'From Sprint'], ['throughQuarter', 'Through Sprint']];
 
 export function WorkConfigurationUnavailable() {
     return (
@@ -50,36 +52,57 @@ function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery
     return { projects, projectLoading, boards, boardLoading };
 }
 
-function SprintRanges({ entry, errors, onPatch }) {
-    const [editing, setEditing] = React.useState({});
+// Scope boundaries are Jira Sprint values chosen from what the saved sources observed, never typed text.
+// The two open ends (Legacy's start, DELIVERY's end) stay fixed; inner boundaries reuse MappingPickerRow.
+function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit }) {
     const fixed = FIXED_BOUNDS[entry.model] || {};
+    const options = React.useMemo(() => sprintValueOptions(sprintValues), [sprintValues]);
+    const unusable = (sprintValues.values || []).some(item => !item.canonical);
     return (
         <div className="work-config-ranges">
-            <p className="group-field-helper">Each quarter is one Jira Sprint; move the shared boundary by changing Legacy&rsquo;s end quarter and DELIVERY&rsquo;s start quarter together.</p>
-            {RANGE_ROWS.map(([key, label]) => (
-                <div className="work-config-range-row" key={key}>
-                    <span className="team-selector-label">{label}</span>
-                    {editing[key] && !fixed[key] ? (
-                        <input
-                            className="group-name-input"
-                            aria-label={label}
-                            aria-invalid={Boolean(errors[key]) || undefined}
-                            aria-describedby={errors[key] ? `${entry.id}-${key}-error` : undefined}
-                            placeholder="YYYYQn"
-                            value={entry[key] || ''}
-                            onChange={event => onPatch({ [key]: event.target.value || null })}
-                        />
-                    ) : (
-                        <span className="selected-team-chip"><span className="team-name">{entry[key] || fixed[key] || 'None'}</span></span>
-                    )}
-                    {fixed[key] ? <span /> : (
-                        <button type="button" className="secondary compact" aria-label={`Change ${label.toLowerCase()}`} onClick={() => setEditing(previous => ({ ...previous, [key]: !previous[key] }))}>
-                            {editing[key] ? 'Done' : 'Change'}
-                        </button>
-                    )}
-                    {errors[key] && <span id={`${entry.id}-${key}-error`} className="group-modal-warning work-config-range-error" role="alert">{errors[key]}</span>}
-                </div>
-            ))}
+            <p className="group-field-helper">A boundary is a Jira Sprint value such as 2027Q1, chosen from the Sprints Jira reports for this workspace. Move the shared boundary by changing Legacy&rsquo;s last Sprint and DELIVERY&rsquo;s first Sprint together.</p>
+            {sprintValues.state === 'loading' && !options.length && <p className="group-field-helper" role="status" data-sprint-values-state="loading">Loading Sprint values from Jira&hellip;</p>}
+            {sprintValues.state === 'error' && (
+                <p className="group-modal-warning" role="status" data-sprint-values-state="error">
+                    Could not load Sprint values. The saved boundaries are unchanged.
+                    <button type="button" className="secondary compact" onClick={onRetry}>Retry</button>
+                </p>
+            )}
+            {sprintValues.state === 'ready' && !options.length && <p className="group-field-helper" role="status" data-sprint-values-state="empty">No Jira Sprint has been observed yet. Refresh the Sprint list or choose a source Board in Source, then reopen this tab.</p>}
+            {unusable && <p className="group-field-helper" data-sprint-values-note>Sprint values that are not YYYYQ1&ndash;YYYYQ4 are listed but cannot be used as a boundary.</p>}
+            {RANGE_ROWS.map(([key, label]) => {
+                const value = entry[key];
+                return (
+                    <div key={key} data-range-row={key}>
+                        {fixed[key] ? (
+                            <div className="group-projects-subsection">
+                                <div className="team-selector-label">{label}</div>
+                                <div className="capacity-inline-row"><div className="selected-team-chip"><span className="team-name">{fixed[key]}</span></div></div>
+                            </div>
+                        ) : (
+                            <fieldset className="team-catalog-edit-lock work-config-fieldset" disabled={!canEdit}>
+                                <MappingPickerRow
+                                    mapping={{
+                                        key,
+                                        label,
+                                        required: true,
+                                        selected: value ? { id: value, name: value } : null,
+                                        options,
+                                        emptyMessage: 'No matching Sprint value.',
+                                        onSelect: option => onPatch({ [key]: option.id }),
+                                        onRemove: () => onPatch({ [key]: null }),
+                                    }}
+                                    kind="sprint"
+                                    showTechnicalFieldIds={false}
+                                    mappingHoverKey={null}
+                                    setMappingHoverKey={noHover}
+                                />
+                            </fieldset>
+                        )}
+                        {errors[key] && <span id={`${entry.id}-${key}-error`} className="group-modal-warning work-config-range-error" role="alert">{errors[key]}</span>}
+                    </div>
+                );
+            })}
         </div>
     );
 }
@@ -161,7 +184,7 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
     const catalogUnavailable = typeCatalog.state !== 'ready';
     return (
         <div className="work-config-fields" data-work-config-form data-configuration={entry.id} data-model={entry.model}>
-            {tab === 'scope' && <SprintRanges entry={entry} errors={workConfig.validation.errors[entry.id] || {}} onPatch={update => workConfig.patch(entry.id, update)} />}
+            {tab === 'scope' && <SprintRanges entry={entry} errors={workConfig.validation.errors[entry.id] || {}} onPatch={update => workConfig.patch(entry.id, update)} sprintValues={workConfig.sprintValues} onRetry={workConfig.retrySprintValues} canEdit={workConfig.userCanEdit} />}
             {tab === 'scope' && limitMessage && <p className="group-field-helper work-config-note" role="status" data-project-limit-message>{limitMessage}</p>}
             {tab === 'scope' && workConfig.validation.errors[entry.id]?.projects && (
                 <p className="group-modal-warning work-config-note" role="alert">{workConfig.validation.errors[entry.id].projects}</p>
@@ -280,7 +303,7 @@ export default function WorkConfigurationsEditor({
                 <div id="work-config-panel" className="work-config-panel" role="tabpanel" aria-labelledby={`work-config-tab-${tab}`}>
                     {entry.model === MODEL_RND && !entry.scope.projects.length && (
                         <div className="group-modal-warning work-config-note" data-setup-guidance>
-                            Saving affects all sprints from {entry.fromQuarter || 'the start quarter'} onward. {entry.name} is incomplete: select its Jira project, Source and required mappings before using those views.
+                            Saving affects every Sprint from {entry.fromQuarter || 'its first Sprint'} onward. {entry.name} is incomplete: select its Jira project, Source and required mappings before using those views.
                         </div>
                     )}
                     <EntryForm key={`${entry.id}-${tab}`} {...{ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingProjects, jiraFields, loadingFields, resolveProjectName }} />

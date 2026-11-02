@@ -248,14 +248,24 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
         if not config.sprint_identity:
             continue
         snapshot = sprint_source_snapshot(auth_context, config)
-        if snapshot.payload is None:
-            pending = True
-            continue
-        for item in in_range_sprints(config, snapshot.payload):
+        rows = [] if snapshot.payload is None else [
+            (config, item) for item in in_range_sprints(config, snapshot.payload)]
+        incomplete = snapshot.payload is None
+        observed = config.observed_source
+        if observed is not None:
+            # Board rows win a same-name tie; the issue scan only adds quarters the Board lacks.
+            scanned = sprint_source_snapshot(auth_context, observed)
+            if scanned.payload is not None:
+                names = {item.get('name') for _source, item in rows}
+                rows += [(observed, item) for item in in_range_sprints(observed, scanned.payload)
+                         if item.get('name') not in names]
+                incomplete = snapshot.payload is None and not rows
+        for source, item in rows:
             if str(item.get('id')) == str(sprint_id):
                 if quarter is not None and item.get('name') != quarter:
                     raise WorkConfigError('sprint_catalog_mismatch')
-                return config, item
+                return source, item
+        pending = pending or incomplete
     if pending:
         raise SprintCatalogPending()
     raise WorkConfigError('sprint_catalog_mismatch')
@@ -331,6 +341,108 @@ def get_work_structure_config():
         return jsonify({
             'error': 'work_configuration_read_failed', 'status': 'error',
             'message': 'The work configuration could not be read.',
+        }), 500
+
+
+_STATE_RANK = {'active': 0, 'closed': 1, 'future': 2}
+
+
+def _sprint_value_sources(auth_context):
+    """Saved sources (or the unpromoted flat Board) for the metadata read; DB row only, no JSON."""
+    server = get_jira_server()
+    snapshot = workspace_snapshot(auth_context)
+    state = work_structure_service.work_configuration_state(
+        snapshot.payload, flag_enabled=work_structure_service.work_configurations_enabled(),
+    )
+    if not state.promoted and not state.flag_enabled:
+        raise WorkConfigError('configuration_feature_disabled')
+    with db_engine.session_scope() as session:
+        sources = server.resolve_request_catalog_sources(session, auth_context)
+        if sources is not None:
+            return list(sources), True
+        flat = server.resolve_effective_catalog_config(
+            session, auth_context, runtime_inputs=server.catalog_runtime_inputs(),
+            fallback_loader=None, legacy_site_url='',
+        )
+    return [flat], False
+
+
+def collect_sprint_values(auth_context, sources):
+    """Range-agnostic Sprint values observed by every saved source, one row per name.
+
+    Reads the stored snapshots only (never Jira) and merges Board rows with the issue-scan
+    supplement.  Names are the catalogs' quarter-shaped values; ``canonical`` says whether the
+    value is a valid range boundary.  Output carries no site, project, board or token data.
+    """
+    values, summaries = {}, []
+    for config in sources:
+        configuration_id = config.configuration_id
+        summary = {'configurationId': configuration_id, 'sourceMode': config.source_mode or 'board',
+                   'state': 'setup_required'}
+        if config.sprint_identity:
+            summary['state'] = 'pending'
+            for source in (config, config.observed_source):
+                if source is None or not source.sprint_identity:
+                    continue
+                snapshot = sprint_source_snapshot(auth_context, source)
+                if snapshot.payload is None:
+                    continue
+                summary['state'] = 'ready'
+                for item in snapshot.payload:
+                    name = str(item.get('name') or '') if isinstance(item, dict) else ''
+                    sprint_id = item.get('id') if isinstance(item, dict) else None
+                    if not name or isinstance(sprint_id, bool) or not isinstance(sprint_id, int):
+                        continue
+                    row = values.setdefault(name, {'states': set(), 'ids': set(), 'configs': set()})
+                    row['states'].add(str(item.get('state') or '').lower())
+                    row['ids'].add(sprint_id)
+                    row['configs'].add(configuration_id)
+        summaries.append(summary)
+    rows = []
+    for name, row in values.items():
+        try:
+            work_structure_service.parse_quarter(name)
+            canonical = True
+        except WorkConfigError:
+            canonical = False
+        state = min(row['states'], key=lambda value: _STATE_RANK.get(value, 9))
+        rows.append({
+            'value': name, 'canonical': canonical, 'state': state,
+            'sprintIds': sorted(row['ids']),
+            'configurationIds': sorted(item for item in row['configs'] if item),
+        })
+    rows.sort(key=lambda row: row['value'], reverse=True)
+    return rows, summaries
+
+
+@bp.route('/api/work-structure/sprint-values', methods=['GET'])
+def get_work_structure_sprint_values():
+    """Range-agnostic Sprint values for the Scope boundary pickers (metadata read, no viewed quarter)."""
+    try:
+        auth_context, failure = _feature_context()
+        if failure is not None:
+            return failure
+        if request.args:
+            return jsonify({
+                'error': 'unsupported_catalog_parameter', 'status': 'error',
+                'message': 'This read takes no parameters.',
+            }), 400
+        sources, promoted = _sprint_value_sources(auth_context)
+        rows, summaries = collect_sprint_values(auth_context, sources)
+        response = jsonify({'sprintValues': rows, 'sources': summaries, 'promoted': promoted})
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except AuthError:
+        return _auth_required_response()
+    except WorkConfigError as error:
+        return work_error_response(error)
+    except (ConfigStorageError, DatabaseConfigurationError, OperationalError, WorkspaceConfigFenceUnavailable):
+        return storage_unavailable_response()
+    except Exception:
+        _wsr_log.exception('Sprint value read failed')
+        return jsonify({
+            'error': 'sprint_values_read_failed', 'status': 'error',
+            'message': 'Sprint values could not be read.',
         }), 500
 
 

@@ -345,3 +345,47 @@ test('issue-type catalog: one cached answer per saved scope, failures retried, w
         catalogs.clearWorkCatalogCache();
     }
 });
+
+test('Scope boundaries: options come from observed Sprint values; a non-canonical value is disabled', async () => {
+    const { sprintValueOptions, validateBundle, patchBundleEntry } = await loadModel();
+    const options = sprintValueOptions({ values: [
+        { value: '2027Q1', canonical: true, state: 'future', sprintIds: [45459], configurationIds: ['delivery'] },
+        { value: '0000Q1', canonical: false, state: 'closed', sprintIds: [3], configurationIds: [] },
+        { value: '2019Q1', canonical: true, state: '', sprintIds: [], configurationIds: [] },
+    ] });
+    assert.deepEqual(options.map(option => [option.id, option.name, option.disabled]), [['2027Q1', '2027Q1', false], ['0000Q1', '0000Q1', true], ['2019Q1', '2019Q1', false]]);
+    assert.equal(options[0].detail, 'future · Jira id 45459');
+    assert.equal(options[1].detail, 'not a valid boundary · closed · Jira id 3');
+    assert.equal(options[2].detail, '2019Q1', 'no metadata falls back to the value, never an empty hint');
+    assert.deepEqual(sprintValueOptions(undefined), []);
+    assert.deepEqual(sprintValueOptions({ state: 'loading', values: [] }), []);
+    // A value outside the saved range is a valid pick; ordering, gaps and the Legacy-first rule still decide Save.
+    let draft = bundle();
+    draft = patchBundleEntry(draft, 'delivery', { fromQuarter: '2030Q4' });
+    assert.match(validateBundle(draft).errors.delivery.fromQuarter, /without a gap/);
+    draft = patchBundleEntry(patchBundleEntry(draft, 'legacy', { throughQuarter: '2030Q3' }), 'delivery', {});
+    assert.deepEqual(validateBundle(draft).messages, []);
+    draft = patchBundleEntry(draft, 'legacy', { throughQuarter: null });
+    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Both inner bounds are required/);
+    assert.ok(validateBundle(patchBundleEntry(bundle(), 'legacy', { throughQuarter: '0000Q1' })).errors.legacy.throughQuarter, 'a stored non-canonical boundary still fails validation');
+});
+
+test('Sprint values read: a plain GET with no query, no CSRF and structured failures', async () => {
+    const api = await loadApi();
+    const calls = [];
+    const original = globalThis.fetch;
+    const body = { sprintValues: [{ value: '2027Q1', canonical: true, state: 'future', sprintIds: [1], configurationIds: ['delivery'] }], sources: [], promoted: true };
+    let status = 200;
+    globalThis.fetch = async (url, options = {}) => {
+        calls.push({ url: String(url), method: options.method || 'GET' });
+        return status === 200 ? new Response(JSON.stringify(body), { status }) : new Response(JSON.stringify({ error: 'sprint_values_read_failed', message: 'x' }), { status });
+    };
+    try {
+        assert.deepEqual(await api.fetchWorkSprintValues('http://b'), body);
+        assert.deepEqual(calls, [{ url: 'http://b/api/work-structure/sprint-values', method: 'GET' }]);
+        status = 500;
+        await assert.rejects(api.fetchWorkSprintValues('http://b'), error => error.status === 500 && error.code === 'sprint_values_read_failed');
+    } finally {
+        globalThis.fetch = original;
+    }
+});

@@ -10,6 +10,7 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
     const selected = mapping.selected;
     const hoverKey = mapping.previewKey;
     const select = option => {
+        if (!option || option.disabled) return;
         mapping.onSelect(option);
         setQuery('');
         setOpen(false);
@@ -39,7 +40,7 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
                     <div className="team-search-wrapper capacity-inline-search">
                         <input
                             type="text" className="team-search-input" aria-label={`Search ${mapping.label}`}
-                            placeholder={kind === 'hierarchy' ? 'Search issue types...' : 'Search fields...'} value={query}
+                            placeholder={kind === 'hierarchy' ? 'Search issue types...' : kind === 'sprint' ? 'Search Sprint values...' : 'Search fields...'} value={query}
                             onChange={event => { setQuery(event.target.value); setOpen(true); setIndex(0); }}
                             onFocus={() => setOpen(true)} onBlur={() => { window.setTimeout(() => setOpen(false), 120); }} onKeyDown={handleKeyDown}
                         />
@@ -51,8 +52,8 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
                         {open && items.length > 0 && (
                             <div className="team-search-results" onMouseDown={event => event.preventDefault()}>
                                 {items.map((option, optionIndex) => (
-                                    <div key={option.id} className={`team-search-result-item ${optionIndex === index ? 'active' : ''}`} onClick={() => select(option)}>
-                                        <strong>{option.name}</strong> <span style={{ opacity: 0.5 }}>({option.id})</span>
+                                    <div key={option.id} className={`team-search-result-item ${optionIndex === index ? 'active' : ''}`} aria-disabled={option.disabled || undefined} onClick={() => select(option)}>
+                                        <strong>{option.name}</strong> <span style={{ opacity: 0.5 }}>({option.detail ?? option.id})</span>
                                     </div>
                                 ))}
                                 {total > items.length && <div className="team-search-more">+{total - items.length} more matches — keep typing to narrow.</div>}

@@ -15,11 +15,28 @@ export const REQUIRED_FIELDS = { sprint: 'Sprint', storyPoints: 'Story Points', 
 export const BLANK_FIELD = Object.freeze({ fieldId: '', fieldName: '' });
 
 const QUARTER = /^[0-9]{4}Q[1-4]$/;
-export const QUARTER_MESSAGE = 'Use YYYYQ1–YYYYQ4 with a calendar year from 0001 to 9999; no spaces or lowercase.';
+export const QUARTER_MESSAGE = 'Choose a Sprint value in the form YYYYQ1–YYYYQ4 with a calendar year from 0001 to 9999.';
 
 export const isValidQuarter = value => value === null
     || (typeof value === 'string' && QUARTER.test(value) && Number(value.slice(0, 4)) >= 1);
 export const quarterIndex = value => Number(value.slice(0, 4)) * 4 + Number(value.slice(-1)) - 1;
+const SPRINT_STATE_LABEL = { active: 'active', closed: 'closed', future: 'future' };
+
+// Picker options for the Scope boundaries: one per observed Sprint value (the stored value string is the
+// option id). A value that is not canonical `YYYYQn` stays listed but disabled, so it can never become a boundary.
+export function sprintValueOptions(sprintValues) {
+    return ((sprintValues && sprintValues.values) || []).map(item => ({
+        id: item.value,
+        name: item.value,
+        disabled: !item.canonical,
+        detail: [
+            item.canonical ? null : 'not a valid boundary',
+            SPRINT_STATE_LABEL[item.state] || null,
+            Array.isArray(item.sprintIds) && item.sprintIds.length ? `Jira id ${item.sprintIds.join(', ')}` : null,
+        ].filter(Boolean).join(' · ') || item.value,
+    }));
+}
+
 export const rangeLabel = entry => {
     if (entry.fromQuarter && entry.throughQuarter) return `${entry.fromQuarter} → ${entry.throughQuarter}`;
     if (entry.fromQuarter) return `${entry.fromQuarter} onward`;
@@ -114,7 +131,7 @@ export function validateBundle(bundle) {
         }
         if (isValidQuarter(entry.fromQuarter) && isValidQuarter(entry.throughQuarter)
             && entry.fromQuarter && entry.throughQuarter && quarterIndex(entry.fromQuarter) > quarterIndex(entry.throughQuarter)) {
-            errors[entry.id].throughQuarter = 'End sprint must not precede start sprint.';
+            errors[entry.id].throughQuarter = 'The through Sprint must not precede the from Sprint.';
         }
         if (entry.model === MODEL_RND && (entry.scope.projects || []).length > 1) {
             errors[entry.id].projects = DELIVERY_PROJECT_LIMIT_MESSAGE;

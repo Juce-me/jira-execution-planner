@@ -193,6 +193,16 @@ export const fetchWorkStructureConfig = (backendUrl, { signal } = {}) =>
         signal,
     }).then(workspaceConfigJson);
 
+// Range-agnostic Sprint values observed by the saved sources, for the Scope boundary pickers:
+// {sprintValues:[{value,canonical,state,sprintIds,configurationIds}],sources,promoted}. Metadata read; no quarter.
+export const fetchWorkSprintValues = (backendUrl, { signal } = {}) =>
+    apiFetch(`${backendUrl}/api/work-structure/sprint-values`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    }).then(workspaceConfigJson);
+
 export const saveWorkStructureConfig = (backendUrl, payload) =>
     postWorkspaceConfig(backendUrl, '/api/work-structure/config', payload);
 

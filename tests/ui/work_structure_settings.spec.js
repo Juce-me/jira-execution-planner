@@ -168,6 +168,9 @@ async function mockApp(page, {
             if (state.typesStatus !== 200) return json({ error: 'upstream_unavailable', message: 'Unavailable.' }, state.typesStatus);
             return json({ issueTypes: types, configurationId: url.searchParams.get('configurationId'), configurationRevision: Number(url.searchParams.get('configurationRevision')) });
         }
+        if (p === '/api/work-structure/sprint-values') {
+            return json({ sprintValues: ['2027Q2', '2027Q1', '2026Q4', '2026Q3', '0000Q1'].map(value => ({ value, canonical: value !== '0000Q1', state: 'closed', sprintIds: [Number(value.slice(0, 4)) * 10 + Number(value.slice(-1))], configurationIds: ['legacy'] })), sources: [], promoted: state.promoted });
+        }
         if (p === '/api/stats/priority-weights-config' && method === 'POST') {
             state.priorityPosts += 1;
             if (failPriorityOnce && state.priorityPosts === 1) return json({ error: 'save_failed', message: 'Priority weights could not be saved.' }, 500);
@@ -503,15 +506,19 @@ test('range validation blocks Save with inline errors; names are unique', async 
     await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
     const dialog = await openSettings(page);
     await projectTab(dialog);
-    await dialog.getByRole('button', { name: 'Change end quarter' }).click();
-    await dialog.getByLabel('End quarter', { exact: true }).fill('2026q4');
-    await expect(dialog.locator('.work-config-range-error')).toContainText('Use YYYYQ1');
+    const through = dialog.locator('[data-range-row="throughQuarter"]');
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    await expect(through.locator('.work-config-range-error')).toContainText('Both inner bounds are required');
     await expect(saveButton(dialog)).toBeDisabled();
-    await dialog.getByLabel('End quarter', { exact: true }).fill('2026Q3');
-    await expect(dialog.locator('.work-config-range-error')).toContainText('without a gap');
+    await through.getByLabel('Search Through Sprint').fill('2026Q3');
+    await through.locator('.team-search-result-item', { hasText: '2026Q3' }).click();
+    await expect(through.locator('.work-config-range-error')).toContainText('without a gap');
     await expect(dialog.locator('.group-modal-validation')).toContainText('without a gap');
     await expect(saveButton(dialog)).toBeDisabled();
-    await dialog.getByLabel('End quarter', { exact: true }).fill('2026Q4');
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    await through.getByLabel('Search Through Sprint').fill('2026Q4');
+    await through.locator('.team-search-result-item', { hasText: '2026Q4' }).click();
+    await expect(through.locator('.work-config-range-error')).toHaveCount(0);
     await dialog.getByLabel('Configuration name').fill('delivery');
     await expect(dialog.locator('.group-list-name-error')).toHaveText('Use a different name for each configuration.');
     await expect(saveButton(dialog)).toBeDisabled();
@@ -642,6 +649,7 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 
         await projectTab(dialog);
         await quiet(page);
         const minimum = async (locator, label) => {
+            await locator.first().scrollIntoViewIfNeeded();
             const box = await locator.first().boundingBox();
             expect(box, label).not.toBeNull();
             expect(box.width, `${label} width`).toBeGreaterThanOrEqual(24);

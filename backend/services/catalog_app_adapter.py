@@ -42,12 +42,12 @@ class CatalogAppAdapter:
             session, context, runtime_inputs=self._get('catalog_runtime_inputs')(),
         )
 
-    def configuration_resolver(self, configuration_id):
-        """``resolve_config`` callable bound to one saved configuration."""
+    def configuration_resolver(self, configuration_id, observed=False):
+        """``resolve_config`` callable bound to one saved configuration (or its observed supplement)."""
         def resolve(session, context):
             return self._get('resolve_configuration_catalog_config')(
                 session, context, runtime_inputs=self._get('catalog_runtime_inputs')(),
-                configuration_id=configuration_id,
+                configuration_id=configuration_id, observed=observed,
             )
         return resolve
 

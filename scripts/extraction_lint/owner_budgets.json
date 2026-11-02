@@ -5010,7 +5010,7 @@
             "bag mapping member alias hoverKey"
           ],
           "inventory": {
-            "sourceDigest": "4389207a82cc3ac8831b6aba9ca2b7c1c8f66953d9cbbb4bce0d80e6aba44712",
+            "sourceDigest": "8f67ae2e4eea31bd0c6f1dadafc843582d0efdd90a6917a76e78a0b58703d323",
             "reviewed": true,
             "memberNames": [
               "kind",
@@ -5031,7 +5031,7 @@
               "setMappingHoverKey",
               "showTechnicalFieldIds"
             ],
-            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02: kind accepts 'sprint' (placeholder only) and an option may carry disabled/detail; both are option-object fields read for display, not interface members; the new Scope caller passes the same mapping shape."
           },
           "callers": [
             {
@@ -5044,6 +5044,12 @@
               "path": "frontend/src/settings/JiraFieldSettings.jsx",
               "symbol": "MappingPickerRow",
               "line": 725,
+              "phase": "render"
+            },
+            {
+              "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
+              "symbol": "MappingPickerRow",
+              "line": 84,
               "phase": "render"
             }
           ],
@@ -18977,7 +18983,7 @@
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "053e282319d1ce1c51a6c32ab06ba96ec6af03b3077004fea1e429fd514559ec",
+            "sourceDigest": "07a97c24f682ac8b56bdae469d1d0a3280270c24d130facfafbdca5430cbda8e",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19070,6 +19076,7 @@
             "reload",
             "removeProject",
             "restoreDraft",
+            "retrySprintValues",
             "retryTypeCatalog",
             "revision",
             "save",
@@ -19080,6 +19087,7 @@
             "setSearch",
             "setTab",
             "setTechnicalIds",
+            "sprintValues",
             "summaries",
             "tabFor",
             "technicalIds",
@@ -19103,11 +19111,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 7,
-          "returnCount": 48,
+          "returnCount": 50,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 7,
-          "returnCeiling": 48,
+          "returnCeiling": 50,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -19115,7 +19123,7 @@
             "forwarded input onDraftReplaced"
           ],
           "inventory": {
-            "sourceDigest": "935a8c05dfacb69d8e68b0dca010ce028c91de8f10aebec20f3f59c8d3495904",
+            "sourceDigest": "2f6ddd5ee7d679e0f6cf809a14e03b6cd3900b241c5adb86a3ac566038b75007",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19239,6 +19247,7 @@
         "rebaseOntoLatest",
         "removeProjectFromEntry",
         "slotsFor",
+        "sprintValueOptions",
         "validateBundle"
       ],
       "lineCeiling": 380,

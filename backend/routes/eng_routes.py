@@ -2109,7 +2109,8 @@ def _get_configuration_teams(context, sources, *, sprint_id, team_ids, force_ref
     if config.team_scope_error:
         return _team_catalog_response({'error': config.team_scope_error}, 409, started_at)
     return _serve_db_teams(
-        context, config, catalog_configuration_resolver(config.configuration_id),
+        context, config, catalog_configuration_resolver(
+            config.configuration_id, observed=config.is_observed_supplement),
         sprint_id=sprint_id, team_ids=team_ids, force_refresh=force_refresh,
         completion_attempt_id=completion_attempt_id, expected_identity=expected_identity,
         started_at=started_at,

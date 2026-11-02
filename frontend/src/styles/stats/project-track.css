@@ -352,6 +352,11 @@
             vertical-align: middle;
         }
 
+        .stacked-bar-readout .stacked-bar-readout-delta.is-over {
+            color: var(--warn);
+            font-weight: 700;
+        }
+
         .project-track-sprint-chart {
             display: grid;
             gap: 0.45rem;

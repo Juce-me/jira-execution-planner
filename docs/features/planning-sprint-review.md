@@ -381,17 +381,18 @@ auth session. Read-only strips show no Undo.
 **Underbar.** The pinned amber capacity bar carries a thin 5px strip at the bottom of its existing track, adding no height:
 one segment per person with Planned capacity or Estimated effort above 0, in table order, plus a trailing Unassigned segment
 (one solid `--warn` layer sized by the Selected Stories with no assignee). A person's segment is max(capacity, effort) wide
-and draws two layers of the person's colour: a tinted layer (the colour at 45% over the surface) for Planned capacity and the
-solid layer for Estimated effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
-top, so the tinted rest is the capacity left; once effort reaches or passes capacity (equal included) the tinted capacity
-lies on top, so the tint ends where capacity is used up and the solid part beyond it is the work above capacity. A person
+and always reads left to right as solid effort (the colour at 70% over the surface), then the rest: tinted free
+capacity (28%) while effort is below capacity, or diagonal stripes of the two for the effort beyond capacity once it passes
+it (equal is fully solid). Both are drawn as a full-width base layer plus a solid layer on top from the left edge, close to
+the table row tint (12%). A person
 with capacity only is purely tinted, with effort only purely solid, with neither has no segment. The strip's total (the sum
 of max(capacity, effort) plus Unassigned) may exceed the Selected fill and run past the Team Cap marker, so the bar's scale
 is the largest of capacity, Selected and that total, times 1.15 (the team-card bar uses the same function with 1.3); the
 fill, the markers and the strip share it, so nothing clips and the Team Cap marker lines up. The whole track is hoverable
-and tappable: the segment under the pointer shows its readout under a "Selected N tasks · X SP" header that replaces the fill
-tooltip (person: name, Estimated effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
-is set, then the team number's source; "Unassigned (effort)" with Selected and its share of Selected), and the marker lines
+and tappable: the segment under the pointer shows a compact readout (person: swatch and name, "X SP effort · Y SP capacity", then
+"X SP capacity left" or, in the warning tone, "X SP over capacity" when capacity is set; "Unassigned (effort)" with its effort
+and share of selected), while past the last segment it shows the "Selected N tasks · X SP" header and the team number's
+source; and the marker lines
 keep their own tooltips. Table rows of people with a segment are tinted with the person colour; others keep the normal row
 surface.
 

@@ -421,19 +421,20 @@ export const handlesUndoKey = event => isUndoShortcut(event) && !event.repeat;
 
 export const UNDERBAR_UNASSIGNED_KEY = '__unassigned__';
 
-// Two layers of one person segment (#323), in integer hundredths: the segment is max(capacity, effort) wide; the layer
-// drawn on top is the effort (solid) while effort is below capacity, and the capacity (tinted) once effort reaches or
-// passes it, so the tinted part ends where capacity is used up. `base` is the full-width layer, `overlay` the one on
-// top (null when the person has only one of the two numbers).
+// Layers of one person segment (#323), in integer hundredths: the segment is max(capacity, effort) wide and always reads
+// left to right as solid effort, then the rest of it: tinted free capacity while effort is below capacity, or striped
+// ('over') effort beyond capacity once it passes it. `base` is the full-width layer, `overlay` the solid one on top from
+// the left edge (null when the person has only one of the two numbers, or effort equals capacity).
 export function underbarLayers(capacityHundredths, effortHundredths) {
     const capacity = capacityHundredths > 0 ? capacityHundredths : 0;
     const effort = effortHundredths > 0 ? effortHundredths : 0;
     if (!capacity && !effort) return null;
     if (!capacity) return { widthHundredths: effort, base: 'solid', overlay: null };
     if (!effort) return { widthHundredths: capacity, base: 'tint', overlay: null };
+    if (effort === capacity) return { widthHundredths: capacity, base: 'solid', overlay: null };
     return effort < capacity
         ? { widthHundredths: capacity, base: 'tint', overlay: { tone: 'solid', hundredths: effort } }
-        : { widthHundredths: effort, base: 'solid', overlay: { tone: 'tint', hundredths: capacity } };
+        : { widthHundredths: effort, base: 'over', overlay: { tone: 'solid', hundredths: capacity } };
 }
 
 // Segments of the thin bar under the capacity bar (#323): each non-removed person with Planned capacity or Planned

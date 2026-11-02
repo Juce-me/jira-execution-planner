@@ -127,3 +127,42 @@ class SprintValueReadTests(CatalogBase):
         self.assertNotIn('db', response.get_json().get('message', '').split())
         self.json_loader.assert_not_called()
         self.server_json_loader.assert_not_called()
+
+
+class SourceDiagnosticsTests(SprintValueReadTests):
+    KEYS = {'state', 'code', 'scannedIssueCount', 'issuesWithSprintValueCount', 'observedSprintCount'}
+
+    def test_sources_carry_numbers_only_diagnostics(self):
+        self.warm()
+        text = self.read().get_data(as_text=True)
+        by_id = {item['configurationId']: item['diagnostics'] for item in self.read().get_json()['sources']}
+        self.assertEqual(set(by_id['delivery']), self.KEYS)
+        # Delivery: the Board names one Sprint, the issue scan one issue carrying two more.
+        self.assertEqual(by_id['delivery'], {
+            'state': 'ready', 'code': None, 'scannedIssueCount': 1,
+            'issuesWithSprintValueCount': 1, 'observedSprintCount': 3})
+        # Legacy has no issue scan: its counts are unknown, never zero.
+        self.assertEqual(by_id['legacy'], {
+            'state': 'ready', 'code': None, 'scannedIssueCount': None,
+            'issuesWithSprintValueCount': None, 'observedSprintCount': 3})
+        for forbidden in ('PLAN-1', 'customfield', '19095', '7001'):
+            self.assertNotIn(forbidden, text)
+        catalog = self.sprints().get_json()['sources']
+        self.assertEqual({item['configurationId']: item['diagnostics'] for item in catalog}, by_id)
+
+    def test_a_failed_scan_names_its_code_and_a_complete_empty_scan_counts_zero(self):
+        self.seed_sources()
+        fake = FakeJira(board_values=[], scan_pages=[{'issues': [issue()], 'isLast': True}])
+        self.jira(fake)
+        sources = {item['configurationId']: item['diagnostics'] for item in self.sprints().get_json()['sources']}
+        self.assertEqual(sources['delivery']['observedSprintCount'], 0)
+        self.assertEqual(sources['delivery']['scannedIssueCount'], 1)
+        self.assertEqual(sources['delivery']['issuesWithSprintValueCount'], 0)
+
+    def test_setup_required_source_names_its_code(self):
+        self.seed_sources(delivery_ready=False)
+        self.jira(FakeJira(board_values=[]))
+        sources = {item['configurationId']: item['diagnostics'] for item in self.read().get_json()['sources']}
+        self.assertEqual(sources['delivery']['state'], 'setup_required')
+        self.assertTrue(sources['delivery']['code'])
+        self.assertIsNone(sources['delivery']['observedSprintCount'])

@@ -24,7 +24,7 @@ import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, selectSprintForScope, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey, sprintScopeOf } from './dashboardRuntime.js';
 import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission } from './workStructure/configurationContext.js';
-import { onWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
+import { onWorkContextStale, reportWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
 import { isCombinedWorkModel, normalizeWorkModel } from './eng/engWorkModel.js';
 import { describeStatsScope } from './stats/statsScope.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
@@ -408,7 +408,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setQuarterIntentState(quarterIntentRef.current);
             };
             const [workBootstrap, setWorkBootstrap] = useState(() => readWorkConfigBootstrap(null));
+            const applyWorkBootstrap = next => setWorkBootstrap(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
             const [observedQuarters, setObservedQuarters] = useState({});
+            // Numbers-only per-source read diagnostics from the last catalog answer, by configuration id.
+            const [catalogDiagnostics, setCatalogDiagnostics] = useState({});
             const [epmProjectSearch, setEpmProjectSearch] = useState('');
             const [epmProjectSort, setEpmProjectSort] = useState(normalizeEpmProjectSort(savedPrefsRef.current.epmProjectSort || DEFAULT_EPM_PROJECT_SORT));
             const [engEpicSort, setEngEpicSort] = useState(
@@ -446,6 +449,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [sprintCatalogState, setSprintCatalogState] = useState(sprintCatalogInitialStateRef.current);
             const sprintCatalogControllerRef = useRef(null);
             const sprintCatalogPersistedValidationRef = useRef('');
+            const staleCatalogReportedRef = useRef('');
             if (!sprintCatalogControllerRef.current) {
                 sprintCatalogControllerRef.current = createSprintCatalogController({
                     initialState: sprintCatalogInitialStateRef.current,
@@ -463,6 +467,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         markConnectionBootstrapHealthy('sprints');
                         // An abort that lands mid-body is a timed-out read, not an empty catalog.
                         const body = await response.json().catch(error => { if (signal?.aborted) throw error; return {}; });
+                        if (Array.isArray(body.sources)) {
+                            const next = Object.fromEntries(body.sources.filter(item => item?.configurationId && item.diagnostics).map(item => [item.configurationId, item.diagnostics]));
+                            setCatalogDiagnostics(previous => ({ ...previous, ...next }));
+                        }
                         return { httpStatus: response.status, ...body };
                     },
                     onState: nextState => {
@@ -524,6 +532,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             setSprintError(''); // the scoped quarter notice names the missing setup
                         } else if (nextState.errorReason === 'sprint_catalog_mismatch' || nextState.errorReason === 'configuration_scope_changed') {
                             setSprintError('Sprint catalog is unavailable. Retry.');
+                            // The catalog answered for a newer revision than the held summaries: re-read the app configuration once
+                            // per held context, which re-reads the catalog under the new revision.
+                            const heldKey = contextKey(nextState.context);
+                            if (nextState.errorReason === 'configuration_scope_changed' && staleCatalogReportedRef.current !== heldKey) {
+                                staleCatalogReportedRef.current = heldKey;
+                                reportWorkContextStale();
+                            }
                         } else if (nextState.errorReason === 'sprint_board_required') {
                             setSprintError('Choose a Jira source Board in Settings.');
                         } else if (nextState.errorReason === 'catalog_identity_changed') {
@@ -1018,7 +1033,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return (availableSprints || []).find(sprint => String(sprint.id) === String(selectedSprint)) || null;
             }, [availableSprints, selectedSprint]);
             const workConfig = useWorkConfigurationSettings({
-                BACKEND_URL, jiraFields, onDraftReplaced: () => { setSettingsSaveError(''); setGroupDraftError(''); }, selectedSprintName: selectedSprintInfo?.name, setGroupTestMessage, setGroupTesting, visible: showGroupManage,
+                BACKEND_URL, jiraFields, onDraftReplaced: () => { setSettingsSaveError(''); setGroupDraftError(''); }, onBootstrap: applyWorkBootstrap, selectedSprintName: selectedSprintInfo?.name, setGroupTestMessage, setGroupTesting, visible: showGroupManage,
             });
             const workConfigMode = workConfig.mode;
             const workCatalogScope = workConfig.promoted ? workConfig.scopeForQuarter(workConfig.quarterHint) : null;
@@ -3484,10 +3499,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     applyBootstrapPermissions(config);
                     applyAdminSettingsGateConfig(config);
                     workConfig.applyBootstrap(config);
-                    setWorkBootstrap(previous => {
-                        const next = readWorkConfigBootstrap(config);
-                        return JSON.stringify(previous) === JSON.stringify(next) ? previous : next;
-                    });
                     const sharedConfig = config.sharedConfig;
                     if (sharedConfig && Number.isInteger(config.sharedConfigRevision)) {
                         applySharedConfigBootstrap(config, shouldPreserveSettingsDraft, shouldPreserveEpmDraft);
@@ -4270,6 +4281,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 quarter: quarterAdmission.quarter, status: quarterAdmission.status,
                 configurationName: quarterAdmission.configuration?.name || '',
                 missing: workBootstrap.missingByConfiguration?.[quarterAdmission.configuration?.id] || [],
+                diagnostics: catalogDiagnostics[quarterAdmission.configuration?.id] || null,
             } : null;
             const statsA = useStatsDerivedA({
                 workContext, workSetupScope,
@@ -4406,6 +4418,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     quarter: quarterAdmission.quarter, status: quarterAdmission.status,
                     configurationName: quarterAdmission.configuration?.name || '',
                     missing: workBootstrap.missingByConfiguration?.[quarterAdmission.configuration?.id] || [],
+                    diagnostics: catalogDiagnostics[quarterAdmission.configuration?.id] || null,
                 } : null;
             const shouldRenderEngTaskList = selectedView === 'eng' && !showBoard && !isStatsSourceOnlyStatsView && engWorkspaceConfigured && !(quarterUnavailable && !showStats);
             const sprintCatalogWarning = sprintError && sprintCatalogState.validatedSnapshot

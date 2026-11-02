@@ -44,6 +44,7 @@ class CatalogSnapshot:
     retry_at: datetime | None
     refresh_lease_owner: str | None
     refresh_lease_until: datetime | None
+    scan: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -183,7 +184,7 @@ class ScopedSprintCatalogStore:
         return attempt is not None and attempt['status'] == 'pending' \
             and attempt['attempt_id'] == attempt_id and attempt['deadline'] > self._now()
 
-    def publish(self, identity, attempt_id, sprints, *, workspace_id, source_digest):
+    def publish(self, identity, attempt_id, sprints, *, workspace_id, source_digest, scan=None):
         with self._lock:
             if not self._owned(identity, attempt_id):
                 return False
@@ -192,7 +193,7 @@ class ScopedSprintCatalogStore:
                 'workspace_id': str(workspace_id), 'sprints': deepcopy(list(sprints or [])),
                 'version': str(uuid.uuid4()), 'validated_at': now,
                 'next_refresh_at': now + timedelta(seconds=SCOPED_CATALOG_TTL_SECONDS),
-                'source_digest': source_digest,
+                'source_digest': source_digest, 'scan': dict(scan) if scan else None,
             }
             self._attempts[identity]['status'] = 'completed'
             return True
@@ -230,6 +231,7 @@ class ScopedSprintCatalogStore:
                 retry_at=attempt['retry_at'] if attempt else None,
                 refresh_lease_owner=attempt['attempt_id'] if attempt and attempt['status'] == 'pending' else None,
                 refresh_lease_until=attempt['deadline'] if attempt and attempt['status'] == 'pending' else None,
+                scan=dict(entry['scan']) if entry and entry.get('scan') else None,
             )
 
     def proof(self, config, sprint_id):

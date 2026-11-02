@@ -48,8 +48,9 @@ const bundle = () => ({
     }],
 });
 
-async function mockApp(page, { sprintValuesStatus = 200, values = VALUES } = {}) {
-    const state = { revision: 6, bundle: bundle(), workPosts: [], valueRequests: [] };
+async function mockApp(page, { sprintValuesStatus = 200, values = VALUES, promoted = true, pendingRefresh = false, sources = [] } = {}) {
+    const state = { revision: 6, bundle: bundle(), workPosts: [], valueRequests: [], sprintCalls: [] };
+    if (!promoted) delete state.bundle.promotionRevision;
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(() => {
@@ -77,7 +78,7 @@ async function mockApp(page, { sprintValuesStatus = 200, values = VALUES } = {})
             });
         }
         if (p === '/api/work-structure/config' && request.method() === 'GET') {
-            return json({ workConfigurations: state.bundle, configRevision: state.revision, promoted: true, userCanEditSettings: true, featureEnabled: true });
+            return json({ workConfigurations: state.bundle, configRevision: state.revision, promoted, userCanEditSettings: true, featureEnabled: true });
         }
         if (p === '/api/work-structure/config' && request.method() === 'POST') {
             state.workPosts.push(body);
@@ -89,7 +90,7 @@ async function mockApp(page, { sprintValuesStatus = 200, values = VALUES } = {})
         if (p === '/api/work-structure/sprint-values') {
             state.valueRequests.push(url.search);
             if (sprintValuesStatus !== 200) return json({ error: 'sprint_values_read_failed', status: 'error', message: 'Sprint values could not be read.' }, sprintValuesStatus);
-            return json(sprintValueBody(values));
+            return json({ ...sprintValueBody(values), sources });
         }
         if (p === '/api/issue-types') return json({ issueTypes: [], configurationId: url.searchParams.get('configurationId'), configurationRevision: Number(url.searchParams.get('configurationRevision')) });
         if (p === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
@@ -99,7 +100,13 @@ async function mockApp(page, { sprintValuesStatus = 200, values = VALUES } = {})
                 preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: ['platform'], activeGroupId: 'platform', effectiveVisibleGroupIds: ['platform'] },
             });
         }
-        if (p === '/api/sprints') return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
+        if (p === '/api/sprints') {
+            const params = Object.fromEntries(url.searchParams.entries());
+            if (params.configurationId) state.sprintCalls.push(params);
+            if (pendingRefresh && params.refresh === 'true') return json({ error: 'catalog_refresh_pending', cache: { refreshStatus: 'pending', refreshAttemptId: `attempt-${params.configurationId}`, identity: `sc1:${params.configurationId}` } }, 503);
+            if (params.completionAttemptId) return json({ sprints: [], cache: { refreshStatus: 'completed', identity: params.catalogIdentity } });
+            return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }], cache: { refreshStatus: 'completed' } });
+        }
         if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' } }, meta: {} });
         if (p === '/api/teams') return json({ teams: [{ id: 'team-platform', name: 'Platform Team' }] });
         if (p === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope: [] });
@@ -153,7 +160,7 @@ test('From and Through are chosen from observed Sprint values, never typed; the 
     await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
     await chooseValue(dialog, 'fromQuarter', 'From Sprint', '2030Q4');
     await expect(rangeRow(dialog, 'fromQuarter').locator('.selected-team-chip')).toHaveText(/2030Q4/);
-    await expect(dialog.locator('.work-config-range-error')).toContainText('without a gap');
+    await expect(dialog.locator('.work-config-range-error')).toContainText('leave a gap');
     await expect(saveButton(dialog)).toBeDisabled();
     await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
     await chooseValue(dialog, 'fromQuarter', 'From Sprint', '2027Q2');
@@ -182,7 +189,7 @@ test('open ends stay fixed choices; a non-canonical value is listed but cannot b
     await expect(deliveryThrough.locator('.selected-team-chip')).toHaveText('No end');
     await expect(deliveryThrough.locator('.team-search-input, .remove-btn')).toHaveCount(0);
 
-    await expect(dialog.locator('[data-sprint-values-note]')).toContainText('cannot be used as a boundary');
+    await expect(dialog.locator('[data-sprint-values-note]')).toContainText('cannot be chosen');
     await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
     const from = rangeRow(dialog, 'fromQuarter');
     await from.getByLabel('Search From Sprint').fill('0000');
@@ -211,13 +218,13 @@ for (const status of [501, 404]) {
     test(`an older server (${status}) never strands the boundaries: a typed canonical value is chosen and saved`, async ({ page }) => {
         const state = await mockApp(page, { sprintValuesStatus: status });
         const dialog = await openScope(page);
-        await expect(dialog.locator('[data-sprint-values-state="error"]')).toContainText('type a boundary as a Sprint value such as 2027Q1');
+        await expect(dialog.locator('[data-sprint-values-state="error"]')).toContainText('type a Sprint value such as 2027Q1');
         await expect(dialog.locator('[data-sprint-values-state="error"]').getByRole('button', { name: 'Retry' })).toBeVisible();
         // The saved boundary is shown, removable and replaceable although the list never loaded.
         const through = rangeRow(dialog, 'throughQuarter');
         await expect(through.locator('.selected-team-chip')).toHaveText(/2026Q3/);
         await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
-        await expect(through.locator('.work-config-range-error')).toContainText('Both inner bounds are required');
+        await expect(through.locator('.work-config-range-error')).toContainText('Choose a Through Sprint');
         await expect(saveButton(dialog)).toBeDisabled();
         const search = through.getByLabel('Search Through Sprint');
         for (const text of ['2027q1', '2027Q5', '2027 Q', '0000Q1']) {
@@ -281,7 +288,7 @@ test('failed-list state with the typed option, settled screenshot', async ({ pag
 test('an empty list names the cause', async ({ page }) => {
     await mockApp(page, { values: [] });
     const dialog = await openScope(page);
-    await expect(dialog.locator('[data-sprint-values-state="empty"]')).toContainText('No Jira Sprint has been observed yet');
+    await expect(dialog.locator('[data-sprint-values-state="empty"]')).toContainText('No Sprint has been seen yet');
 });
 
 for (const viewport of [{ width: 375, height: 667 }, { width: 768, height: 1024 }]) {
@@ -296,6 +303,7 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 768, height: 1024 
             await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
         }
         const topmost = async (locator, label) => {
+            await locator.first().scrollIntoViewIfNeeded();
             const box = await locator.first().boundingBox();
             expect(box, label).not.toBeNull();
             expect(box.width, `${label} width`).toBeGreaterThanOrEqual(24);
@@ -335,5 +343,56 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 768, height: 1024 
         expect(geometry.footerBottom).toBeLessThanOrEqual(geometry.height + 0.5);
         expect(geometry.cancelHit).toBe(true);
         await page.screenshot({ path: path.join(shotDir, `scope-settled-${viewport.width}.png`), animations: 'disabled' });
+    });
+}
+
+const refreshButton = dialog => dialog.getByRole('button', { name: /^Refresh Sprint values/ });
+
+test('Refresh Sprint values reads each saved configuration from Jira, finishes pending reads by identity, then reloads the list', async ({ page }) => {
+    const state = await mockApp(page, { pendingRefresh: true });
+    const dialog = await openScope(page);
+    await expect(refreshButton(dialog)).toBeEnabled();
+    await expect(dialog.locator('[data-sprint-refresh-note]')).toHaveCount(0);
+    const before = state.valueRequests.length;
+    await refreshButton(dialog).click();
+    await expect.poll(() => state.valueRequests.length, { timeout: 15000 }).toBe(before + 1);
+    const started = state.sprintCalls.filter(call => call.refresh === 'true').map(call => call.configurationId);
+    expect(started).toEqual(['legacy', 'delivery']);
+    const completed = state.sprintCalls.filter(call => call.completionAttemptId);
+    expect(completed.map(call => [call.configurationId, call.completionAttemptId, call.catalogIdentity])).toEqual([
+        ['legacy', 'attempt-legacy', 'sc1:legacy'], ['delivery', 'attempt-delivery', 'sc1:delivery'],
+    ]);
+    await expect(refreshButton(dialog)).toHaveText('Refresh Sprint values');
+    await expect(dialog.locator('[data-sprint-refresh-failed]')).toHaveCount(0);
+});
+
+test('before the first Save Refresh Sprint values is disabled and says what to save', async ({ page }) => {
+    const state = await mockApp(page, { promoted: false });
+    const dialog = await openScope(page);
+    await expect(refreshButton(dialog)).toBeDisabled();
+    await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
+    await expect(dialog.locator('[data-sprint-refresh-note]')).toHaveText("Save DELIVERY's project and Sprint field first, or type the Sprint value (for example 2027Q1).");
+    expect(state.sprintCalls).toEqual([]);
+});
+
+for (const viewport of [{ width: 375, height: 667 }, { width: 1280, height: 800 }]) {
+    test(`Refresh Sprint values stays one reachable control at ${viewport.width}`, async ({ page }) => {
+        await page.setViewportSize(viewport);
+        await mockApp(page, { promoted: false });
+        const dialog = await openScope(page);
+        if (viewport.width <= 820) {
+            await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
+            await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
+        } else await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
+        const button = refreshButton(dialog);
+        const box = await button.boundingBox();
+        const panel = await dialog.locator('#work-config-panel').boundingBox();
+        expect(box.x).toBeGreaterThanOrEqual(panel.x);
+        expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+        const note = await dialog.locator('[data-sprint-refresh-note]').evaluate(element => ({ clipped: element.scrollWidth > element.clientWidth, right: element.getBoundingClientRect().right }));
+        expect(note.clipped).toBe(false);
+        expect(note.right).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
+        await page.waitForTimeout(250);
+        await dialog.screenshot({ path: path.join(shotDir, `refresh-sprint-values-${viewport.width}.png`), animations: 'disabled' });
     });
 }

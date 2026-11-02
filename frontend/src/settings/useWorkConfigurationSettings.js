@@ -2,6 +2,7 @@ import * as React from 'react';
 
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
+    fetchConfigurationSprints,
     fetchWorkSprintValues,
     fetchWorkStructureConfig,
     saveWorkStructureConfig,
@@ -24,8 +25,15 @@ import {
     patchBundleEntry,
     rebaseOntoLatest,
     removeProjectFromEntry,
+    savedSourceReady,
     validateBundle,
 } from './workConfigurationModel.js';
+
+const TECHNICAL_IDS_KEY = 'jira_work_config_ids_v1';
+const readTechnicalIds = () => { try { return window.localStorage.getItem(TECHNICAL_IDS_KEY) === '1'; } catch { return false; } };
+
+const SPRINT_REFRESH_POLLS = 12;
+const SPRINT_REFRESH_POLL_MS = 1500;
 
 // Which editor mounts for the current workspace state.
 //   legacy      unpromoted + flag off: the existing flat editor and Save are untouched
@@ -56,6 +64,7 @@ export function useWorkConfigurationSettings({
     setGroupTesting = () => {},
     setGroupTestMessage = () => {},
     onDraftReplaced = () => {},
+    onBootstrap = () => {},
 }) {
     const [flags, setFlags] = React.useState({ featureEnabled: false, promoted: false, summaries: [], missingByConfiguration: {} });
     const mode = resolveWorkConfigMode(flags);
@@ -74,13 +83,20 @@ export function useWorkConfigurationSettings({
     const [saveFeedback, setSaveFeedback] = React.useState('');
     const [activeId, setActiveId] = React.useState('legacy');
     const [ui, setUi] = React.useState({});
-    const [technicalIds, setTechnicalIds] = React.useState(false);
+    // One per-viewer convenience for the whole editor (never shared, never part of the saved preferences object).
+    const [technicalIds, setTechnicalIdsState] = React.useState(readTechnicalIds);
+    const setTechnicalIds = React.useCallback(value => {
+        setTechnicalIdsState(value);
+        try { window.localStorage.setItem(TECHNICAL_IDS_KEY, value ? '1' : '0'); } catch { /* storage unavailable */ }
+    }, []);
     const [drawerOpen, setDrawerOpen] = React.useState(false);
     const [limitMessages, setLimitMessages] = React.useState({});
     const [typeCatalogs, setTypeCatalogs] = React.useState({});
     const loadGenerationRef = React.useRef(0);
     const onDraftReplacedRef = React.useRef(onDraftReplaced);
     onDraftReplacedRef.current = onDraftReplaced;
+    const onBootstrapRef = React.useRef(onBootstrap);
+    onBootstrapRef.current = onBootstrap;
     const [catalogRetry, setCatalogRetry] = React.useState(0);
     const [sprintValues, setSprintValues] = React.useState({ state: 'idle', values: [] });
     const [sprintValuesTick, setSprintValuesTick] = React.useState(0);
@@ -97,6 +113,8 @@ export function useWorkConfigurationSettings({
     const applyBootstrap = React.useCallback((config) => {
         const next = readWorkConfigBootstrap(config);
         setFlags(previous => (stable(previous) === stable(next) ? previous : next));
+        // The dashboard's quarter context reads these same summaries; a Save re-read must reach it too.
+        onBootstrapRef.current(next);
         return next;
     }, []);
 
@@ -146,13 +164,41 @@ export function useWorkConfigurationSettings({
         setSprintValues(previous => ({ state: 'loading', values: previous.values }));
         fetchWorkSprintValues(BACKEND_URL, { signal: controller.signal }).then(result => {
             if (controller.signal.aborted) return;
-            setSprintValues({ state: 'ready', values: Array.isArray(result?.sprintValues) ? result.sprintValues : [] });
+            setSprintValues({ state: 'ready', values: Array.isArray(result?.sprintValues) ? result.sprintValues : [], sources: Array.isArray(result?.sources) ? result.sources : [] });
         }).catch(error => {
             if (controller.signal.aborted || isAuthenticationRequiredError(error)) return;
             setSprintValues({ state: 'error', values: [] });
         });
         return () => controller.abort();
     }, [BACKEND_URL, mode, visible, loadState, revision, sprintValuesTick]);
+
+    // Re-reads every saved source from Jira, finishing a pending attempt through the completion contract, then
+    // reloads the Sprint values. Only saved sources are read: the server never sees a draft.
+    const [sprintRefresh, setSprintRefresh] = React.useState({ status: 'idle', failed: 0 });
+    const refreshSprintValues = React.useCallback(async () => {
+        const targets = promotedRef.current ? (baselineRef.current?.configurations || []).filter(savedSourceReady) : [];
+        if (!targets.length) return;
+        setSprintRefresh({ status: 'running', failed: 0 });
+        let failed = 0;
+        for (const target of targets) {
+            try {
+                let body = await fetchConfigurationSprints(BACKEND_URL, { configurationId: target.id, refresh: true });
+                for (let attempt = 0; attempt < SPRINT_REFRESH_POLLS; attempt += 1) {
+                    const pendingId = body.cache?.refreshStatus === 'pending' && body.cache.refreshAttemptId;
+                    if (!pendingId) break;
+                    await new Promise(resolve => window.setTimeout(resolve, SPRINT_REFRESH_POLL_MS));
+                    body = await fetchConfigurationSprints(BACKEND_URL, { configurationId: target.id, completionAttemptId: pendingId, catalogIdentity: body.cache.identity });
+                }
+                if (body.httpStatus >= 400 && body.error !== 'catalog_refresh_pending') failed += 1;
+                else if (body.cache?.refreshStatus === 'pending' || body.cache?.refreshStatus === 'failed') failed += 1;
+            } catch (error) {
+                if (isAuthenticationRequiredError(error)) return;
+                failed += 1;
+            }
+        }
+        setSprintValuesTick(value => value + 1);
+        setSprintRefresh({ status: 'idle', failed });
+    }, [BACKEND_URL]);
 
     const entries = draft?.configurations || [];
     const active = entryById(draft, activeId) || entries[0] || null;
@@ -210,6 +256,25 @@ export function useWorkConfigurationSettings({
     }, [patch]);
 
     const validation = React.useMemo(() => validateBundle(draft), [draft]);
+    // Opens the first blocking issue: its configuration and tab, then scrolls to and focuses its message.
+    const focusFirstIssue = React.useCallback(() => {
+        const entryWithIssue = (draftRef.current?.configurations || []).find(item => Object.keys(validation.errors[item.id] || {}).length);
+        if (!entryWithIssue) return;
+        const keys = Object.keys(validation.errors[entryWithIssue.id]);
+        setActiveId(entryWithIssue.id);
+        setDrawerOpen(false);
+        if (!keys.includes('name')) setTab(entryWithIssue.id, 'scope');
+        window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+            const target = document.querySelector('[data-work-config-issue]');
+            target?.scrollIntoView?.({ block: 'center' });
+            target?.focus?.();
+        }));
+    }, [validation, setTab]);
+    // One footer message for every blocking issue; each issue's own text is shown once, at its field.
+    const issueCount = React.useMemo(() => Object.values(validation.errors).reduce((total, errors) => total + Object.keys(errors).length, 0), [validation]);
+    const validationMessages = React.useMemo(() => (issueCount
+        ? [{ text: `Save is blocked by ${issueCount} ${issueCount === 1 ? 'issue' : 'issues'}.`, actionLabel: 'Show first', onAction: focusFirstIssue }]
+        : []), [issueCount, focusFirstIssue]);
     const dirtyIds = React.useMemo(() => dirtyConfigurationIds(baseline, draft), [baseline, draft]);
     const dirty = dirtyIds.length > 0;
 
@@ -407,7 +472,7 @@ export function useWorkConfigurationSettings({
         removeProject,
         limitMessages,
         validation,
-        validationMessages: validation.messages,
+        validationMessages,
         fieldErrors,
         dirty,
         dirtyIds,
@@ -416,6 +481,8 @@ export function useWorkConfigurationSettings({
         retryTypeCatalog,
         sprintValues,
         retrySprintValues: () => setSprintValuesTick(value => value + 1),
+        sprintRefresh,
+        refreshSprintValues,
         catalogHintFor,
         save,
         prepareKeepMine,

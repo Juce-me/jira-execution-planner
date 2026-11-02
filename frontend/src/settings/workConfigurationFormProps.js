@@ -49,7 +49,8 @@ export function buildFieldSettingsProps({
         mappingHoverKey: hoverKey,
         setMappingHoverKey: setHoverKey,
         sourceFieldHelpers: {
-            board: 'If empty, list sprints already used by issues in the selected projects. Choose a board to include unused sprints.',
+            sprint: 'Where each work item\u2019s Sprint is read, for every issue type.',
+            board: ['No board: Sprints seen on this project\u2019s issues.', 'Board set: also Sprints on that board.'],
             requirement: { sprint: 'required' },
         },
     };
@@ -165,8 +166,8 @@ export function buildFieldSettingsProps({
             options: row.options,
             emptyMessage,
             status: row.status,
-            helper: index === 0 ? `Read Story Points, Team and Sprint from this Jira ${labels[0]} type.`
-                : index === 1 ? 'Sum the child issues using the existing calculation rules.' : 'Jira parent context.',
+            helper: index === 0 ? `Story Points and Team are read from this ${labels[0]}; the Sprint field is set in Source.`
+                : index === 1 ? 'Totals its child issues using the existing calculation rules.' : 'Jira parent context.',
             onSelect: option => (retiresFilter ? requestRetire({ pendingType: option.id }) : patch(id, { hierarchy: { [slot]: option.id } })),
             onRemove: () => (retiresFilter ? requestRetire({ pendingType: null }) : patch(id, { hierarchy: { [slot]: null } })),
             previewKey: index === 0 ? 'issueType' : index === 1 ? 'parent' : undefined,
@@ -202,6 +203,7 @@ export function buildFieldSettingsProps({
             childHierarchyLevel: child?.hierarchyLevel,
             parentIconUrl: parent?.iconUrl || undefined,
             childIconUrl: child?.iconUrl || undefined,
+            summary: child ? `${child.name} under ${parent?.name || 'an unmapped parent'}` : 'Mapping incomplete',
             description: child ? `Preview of ${child.name} under ${parent?.name || 'an unmapped parent'}.` : 'Incomplete mapping. Save is allowed; dependent views need configuration.',
         },
         mappingFieldHelpers: {

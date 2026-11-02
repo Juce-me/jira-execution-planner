@@ -28,6 +28,32 @@
             font-weight: normal;
         }
 
+        /* Fixed id slot on a label row: always laid out out of flow, only its visibility changes, so the Jira IDs setting moves nothing. */
+        .team-selector-label:has(> .field-id-slot) {
+            position: relative;
+        }
+
+        .field-id-slot {
+            position: absolute;
+            right: 0;
+            top: 0;
+            margin: 0;
+            max-width: 55%;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            text-transform: none;
+            pointer-events: none;
+        }
+
+        .field-id-slot::before {
+            content: attr(data-field-id);
+        }
+
+        .field-id-slot.is-hidden {
+            visibility: hidden;
+        }
+
         .project-result-label {
             flex: 1;
             min-width: 0;

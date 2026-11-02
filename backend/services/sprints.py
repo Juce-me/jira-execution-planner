@@ -345,6 +345,12 @@ SCOPED_SPRINT_MAX_PAGES = 200
 SCOPED_SPRINT_MAX_ROWS = 20000
 
 
+class ScopedScanResult(list):
+    """The Sprint rows of a complete scan plus its numbers-only ``scan`` counts (no keys, names or ids)."""
+
+    scan = None
+
+
 def fetch_scoped_issue_sprints(*, base_jql, sprint_field_id, jira_search, budget):
     """Observed Sprint catalog from the mapped Sprint field of scoped issues.
 
@@ -371,6 +377,7 @@ def fetch_scoped_issue_sprints(*, base_jql, sprint_field_id, jira_search, budget
     next_token = None
     page_count = 0
     row_count = 0
+    with_value = 0
     while True:
         budget.check('sprint_page')
         payload = {'jql': jql, 'fields': [field_id], 'maxResults': SCOPED_SPRINT_PAGE_SIZE}
@@ -418,6 +425,7 @@ def fetch_scoped_issue_sprints(*, base_jql, sprint_field_id, jira_search, budget
                 continue
             if not isinstance(value, list):
                 raise SprintCatalogFetchError('catalog_incomplete')
+            with_value += 1 if value else 0
             for sprint in value:
                 if not isinstance(sprint, dict):
                     raise SprintCatalogFetchError('catalog_incomplete')
@@ -461,7 +469,9 @@ def fetch_scoped_issue_sprints(*, base_jql, sprint_field_id, jira_search, budget
         if previous is None or rank < previous[0]:
             winners[sprint['name']] = (rank, sprint)
     budget.check('sprint_publish')
-    return sorted((entry[1] for entry in winners.values()), key=lambda item: item['name'], reverse=True)
+    result = ScopedScanResult(sorted((entry[1] for entry in winners.values()), key=lambda item: item['name'], reverse=True))
+    result.scan = {'scannedIssueCount': row_count, 'issuesWithSprintValueCount': with_value, 'observedSprintCount': len(winners)}
+    return result
 
 
 def _collect_sprints_by_jql(jql_query, sprints_dict, *, jira_search_request, get_sprint_field_id):

@@ -441,10 +441,10 @@ _ISSUE_TYPE_PROJECT_CHUNK_LIMIT = 20
 
 
 def _project_issue_type_applicability(project_keys):
-    """Map issue type id -> sorted project ids for the selected projects (all or raise)."""
+    """Map issue type id -> (sorted project ids, sorted project keys) for the selected projects (all or raise)."""
     if len(project_keys) > _ISSUE_TYPE_PROJECT_CHUNK * _ISSUE_TYPE_PROJECT_CHUNK_LIMIT:
         raise _IssueTypeCatalogUnavailable(0)
-    applicable = {}
+    applicable, keys = {}, {}
     for start in range(0, len(project_keys), _ISSUE_TYPE_PROJECT_CHUNK):
         chunk = project_keys[start:start + _ISSUE_TYPE_PROJECT_CHUNK]
         response = current_jira_get('/rest/api/3/project/search', params={
@@ -457,13 +457,19 @@ def _project_issue_type_applicability(project_keys):
             raise _IssueTypeCatalogUnavailable(0)
         for project in data.get('values') or []:
             project_id = str((project or {}).get('id') or '').strip()
+            project_key = str((project or {}).get('key') or '').strip()
             if not project_id.isdigit():
                 continue
             for issue_type in project.get('issueTypes') or []:
                 type_id = str((issue_type or {}).get('id') or '').strip()
                 if type_id.isdigit():
                     applicable.setdefault(type_id, set()).add(project_id)
-    return {type_id: sorted(ids, key=int) for type_id, ids in applicable.items()}
+                    if project_key:
+                        keys.setdefault(type_id, set()).add(project_key)
+    return {
+        type_id: (sorted(ids, key=int), sorted(keys.get(type_id, ())))
+        for type_id, ids in applicable.items()
+    }
 
 
 def _feature_issue_types(selection):
@@ -487,12 +493,13 @@ def _feature_issue_types(selection):
                 'hierarchyLevel': level if isinstance(level, int) and not isinstance(level, bool) else None,
                 'subtask': item.get('subtask') is True,
                 'iconUrl': work_routes.safe_icon_url(item.get('iconUrl'), site_url),
-                'projectIds': [],
+                'projectIds': [], 'projectKeys': [],
             }
         if selection is not None and selection['projects']:
-            for type_id, project_ids in _project_issue_type_applicability(selection['projects']).items():
+            for type_id, (project_ids, project_keys) in _project_issue_type_applicability(selection['projects']).items():
                 if type_id in types:
                     types[type_id]['projectIds'] = project_ids
+                    types[type_id]['projectKeys'] = project_keys
     except AuthError:
         raise
     except _IssueTypeCatalogUnavailable as error:
@@ -817,7 +824,7 @@ def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
             completion_attempt_id=completion_attempt_id,
             expected_identity=expected_identity, started_at=started_at,
         )
-    if 'configurationId' in request.args:
+    if {'configurationId', 'configurationRevision', 'configurationDigest'} & set(request.args):
         return _catalog_response({'error': 'unsupported_catalog_parameter'}, 400, started_at)
     if not config.board_id or not config.sprint_identity:
         return _catalog_response({'error': 'sprint_board_required'}, 409, started_at)
@@ -887,6 +894,7 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
             missingFields=list(config.missing_admin_settings),
             code=config.scope_error or 'configuration_incomplete',
         )
+        base['diagnostics'] = work_routes.source_diagnostics('setup_required', base['code'])
         return base, None, None
     resolve = catalog_configuration_resolver(config.configuration_id)
     if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
@@ -901,6 +909,7 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
     rows = None
     if snapshot.payload is not None:
         rows = in_range_sprints(config, snapshot.payload)
+    scanned = None
     observed_rows = None
     if config.observed_source is not None:
         # A Board lists only its own Sprints: also scan the configuration's scoped issues so a
@@ -911,6 +920,7 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
             auth_context, observed, catalog_configuration_resolver(config.configuration_id, observed=True),
             force_refresh,
         )
+        scanned = scan
         if scan.payload is not None:
             observed_rows = in_range_sprints(observed, scan.payload)
             names = {item.get('name') for item in rows or []}
@@ -935,6 +945,7 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
     base.update(
         state=state, cache=cache, sprints=rows or [], code=cache['failureCode'],
         sprintCount=len(rows) if rows is not None else None,
+        diagnostics=work_routes.source_diagnostics(state, cache['failureCode'], snapshot, scanned),
     )
     return base, snapshot, rows
 
@@ -990,6 +1001,13 @@ def _get_configuration_sprints(auth_context, sources, *, force_refresh,
             return _catalog_response(
                 work_routes.WorkConfigError('sprint_catalog_mismatch').response()[0], 409, started_at,
             )
+    try:
+        work_routes.check_catalog_stamp(
+            request.args, configuration_id=configuration_id,
+            revisions=[item.configuration_revision for item in selected])
+    except work_routes.WorkConfigError as error:
+        body, status = error.response()
+        return _catalog_response(body, status, started_at)
     if completion_attempt_id is not None:
         return _configuration_completion_response(
             auth_context, selected, configuration_id, completion_attempt_id, expected_identity,
@@ -1089,7 +1107,10 @@ def get_sprints():
     """Fetch the Sprint catalog from its selected compatibility backend."""
     started_at = time.perf_counter()
     try:
-        allowed_parameters = {'refresh', 'completionAttemptId', 'catalogIdentity', 'configurationId'}
+        allowed_parameters = {
+            'refresh', 'completionAttemptId', 'catalogIdentity', 'configurationId',
+            'configurationRevision', 'configurationDigest',
+        }
         if any(key not in allowed_parameters for key in request.args):
             return _catalog_response(
                 {'error': 'unsupported_catalog_parameter'}, 400, started_at,

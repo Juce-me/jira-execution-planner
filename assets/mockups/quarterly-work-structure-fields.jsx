@@ -130,6 +130,7 @@ function FixtureFields({ tab, configuration: draft, onPatch, technicalIds, onTec
     const [retireFilter, setRetireFilter] = React.useState(false);
     const [pendingType, setPendingType] = React.useState(null);
     const [mappingSearch, setMappingSearch] = React.useState(null);
+    const [previewOpen, setPreviewOpen] = React.useState(false);
     const typeCatalog = specimen === 'duplicate-types' ? [...TYPES, { id: '19008', name: 'Epic', hierarchyLevel: 1 }] : TYPES;
     const resolvedType = id => typeCatalog.find(item => item.id === id) || null;
     const catalogUnavailable = catalogState !== 'ready';
@@ -146,6 +147,7 @@ function FixtureFields({ tab, configuration: draft, onPatch, technicalIds, onTec
         groupManageTab: tab, loadingFields: false, jiraFields: FIELDS, loadingProjects: false, jiraProjects: PROJECTS,
         showTechnicalFieldIds: technicalIds, setShowTechnicalFieldIds: value => onTechnicalIds(resolve(value, technicalIds)),
         mappingHoverKey: hover, setMappingHoverKey: setHover,
+        mappingPreviewOpen: previewOpen, setMappingPreviewOpen: setPreviewOpen,
         sourceFieldHelpers: { board: 'If empty, list sprints already used by issues in the selected projects. Choose a board to include unused sprints.' },
     };
     for (const [prefix, nameKey] of FIELD_SLOTS) {
@@ -222,7 +224,7 @@ function FixtureFields({ tab, configuration: draft, onPatch, technicalIds, onTec
         mappingPreviewLabels: {
             childType: child?.name || 'Unmapped issue type', parentType: parent?.name || 'Unmapped parent type',
             childSummary: child ? `${child.name} Summary` : 'Select a Jira issue type', childKey: child ? `${child.name.toUpperCase().replaceAll(' ', '-')}-KEY` : 'UNMAPPED-KEY', parentKey: parent ? `${parent.name.toUpperCase()}-KEY` : 'UNMAPPED-PARENT',
-            childHierarchyLevel: child?.hierarchyLevel, description: child ? `Preview of ${child.name} under ${parent?.name || 'an unmapped parent'}.` : 'Incomplete mapping. Save is allowed; dependent views need configuration.',
+            summary: child ? `${child.name} under ${parent?.name || 'an unmapped parent'}` : 'Mapping incomplete', childHierarchyLevel: child?.hierarchyLevel, description: child ? `Preview of ${child.name} under ${parent?.name || 'an unmapped parent'}.` : 'Incomplete mapping. Save is allowed; dependent views need configuration.',
         },
         mappingFieldHelpers: { parentName: `Field used to name the parent ${parent?.name || 'issue'}.`, storyPoints: `Estimate on the ${child?.name || 'mapped issue'}; rollups use the existing rules.`, team: `Team on the ${child?.name || 'mapped issue'}.`, deliveryOwner: `Delivery owner on the ${parent?.name || 'parent issue'}.` },
     });
@@ -335,7 +337,7 @@ function Mockup() {
                 </aside>
                 <section className="group-pane group-pane-right" id="editor" aria-label="Selected configuration">
                     <div className="group-pane-mobile-header"><button type="button" className="secondary compact" onClick={() => setDrawer(true)}>Configurations</button><span className="group-pane-mobile-title">{config.name}</span></div>
-                    <div id="configuration-header"><div data-header-row><h2 className="group-pane-title" title={config.name}>{config.name || 'Unnamed configuration'}</h2><span className="group-modal-meta">{rangeLabel(config)}</span></div><div className="group-field-helper">Changes affect every sprint in this range. Earlier views read live Jira data; they are not snapshots.</div></div>
+                    <div id="configuration-header"><div data-header-row><h2 className="group-pane-title" title={config.name}>{config.name || 'Unnamed configuration'}</h2><label className="group-visible-control"><input type="checkbox" checked={technicalIds} onChange={event => setTechnicalIds(event.target.checked)} /><span>Jira IDs</span></label></div><div className="group-field-helper">Changes affect every sprint in this range. Earlier views read live Jira data; they are not snapshots.</div></div>
                     <nav className="group-modal-tabs epm-settings-tabs" id="tabs" role="tablist" aria-label="Configuration sections" data-config-tabs>{TABS.map(([key, label]) => <button type="button" key={key} id={`configuration-tab-${key}`} className={`group-modal-tab ${tab === key ? 'active' : ''}`} role="tab" aria-selected={tab === key} tabIndex={tab === key ? 0 : -1} aria-controls={`panel-${activeId}-${key}`} onClick={() => selectTab(key, 'configuration')} onKeyDown={event => tabKeys(event, TABS, tab, 'configuration')}>{label}</button>)}</nav>
                     <div id="settings-panel">{specimen === 'blank-delivery' && activeId === 'delivery' && <div className="group-modal-warning" data-setup-guidance>Saving affects all sprints from 2027Q1 onward. DELIVERY is incomplete: select its Jira project, Source and required mappings before using those views. This specimen changes no application configuration.</div>}{configs.flatMap(item => TABS.map(([section]) => <div key={`${item.id}-${section}`} id={`panel-${item.id}-${section}`} role="tabpanel" aria-labelledby={`configuration-tab-${section}`} data-fixture-panel data-configuration={item.id} data-section={section} data-model={item.model} hidden={item.id !== activeId || section !== tab}>
                         {section === 'scope' && <SprintRanges config={item} errors={errors[item.id]} onPatch={update => patch(item.id, update)} />}

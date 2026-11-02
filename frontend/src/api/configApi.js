@@ -203,6 +203,20 @@ export const fetchWorkSprintValues = (backendUrl, { signal } = {}) =>
         signal,
     }).then(workspaceConfigJson);
 
+// One saved configuration's Sprint catalog: `refresh` starts a read from Jira; a pending answer is completed by repeating
+// the read with the attempt and catalog identity it named (the existing Sprint catalog completion contract).
+export const fetchConfigurationSprints = (backendUrl, { configurationId, refresh = false, completionAttemptId = null, catalogIdentity = null, signal } = {}) => {
+    const params = new URLSearchParams({ configurationId });
+    if (refresh) params.set('refresh', 'true');
+    if (completionAttemptId) {
+        params.set('completionAttemptId', String(completionAttemptId));
+        params.set('catalogIdentity', String(catalogIdentity));
+    }
+    return apiFetch(`${backendUrl}/api/sprints?${params.toString()}`, {
+        method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache', signal,
+    }).then(async response => ({ httpStatus: response.status, ...(await response.json().catch(() => ({}))) }));
+};
+
 export const saveWorkStructureConfig = (backendUrl, payload) =>
     postWorkspaceConfig(backendUrl, '/api/work-structure/config', payload);
 

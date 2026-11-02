@@ -540,7 +540,7 @@ class SanitizedMetadataTests(WorkStructureRouteBase):
         self.assertIsNone(body['configurationId'])
         by_name = {item['name']: item for item in body['issueTypes']}
         for item in body['issueTypes']:
-            self.assertEqual(set(item), {'id', 'name', 'hierarchyLevel', 'subtask', 'iconUrl', 'projectIds'})
+            self.assertEqual(set(item), {'id', 'name', 'hierarchyLevel', 'subtask', 'iconUrl', 'projectIds', 'projectKeys'})
         self.assertTrue(by_name['Epic']['iconUrl'].startswith(SITE + '/'))
         for name in ('Initiative', 'Story', 'Sub-task', 'Bug'):
             self.assertEqual(by_name[name]['iconUrl'], '', name)
@@ -562,6 +562,8 @@ class SanitizedMetadataTests(WorkStructureRouteBase):
         self.assertEqual((body['configurationId'], body['configurationRevision']), ('delivery', 1))
         by_name = {item['name']: item['projectIds'] for item in body['issueTypes']}
         self.assertEqual((by_name['Initiative'], by_name['Story'], by_name['Epic']), (['501'], ['501'], []))
+        keys = {item['name']: item['projectKeys'] for item in body['issueTypes']}
+        self.assertEqual((keys['Initiative'], keys['Epic']), (['PLAN'], []))
         bad = self.client.get('/api/issue-types', query_string={'configurationId': 'zzz', 'configurationRevision': '1'})
         self.assertEqual((bad.status_code, bad.get_json()['error']), (400, 'invalid_configuration_id'))
         stale = self.client.get('/api/issue-types', query_string={'configurationId': 'delivery', 'configurationRevision': '7'})

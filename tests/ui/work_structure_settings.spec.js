@@ -241,7 +241,7 @@ test('first promotion: virtual bundle, inline rename, blank DELIVERY, one footer
     await dialog.getByLabel('Configuration name').fill('Legacy 2026');
     await expect(dialog.locator('.group-modal-dirty')).toHaveText('Unsaved changes · 1');
     await selectConfiguration(dialog, 'delivery');
-    await expect(dialog.locator('[data-setup-guidance]')).toContainText('DELIVERY is incomplete');
+    await expect(dialog.locator('[data-setup-guidance]')).toContainText('DELIVERY is not ready');
     await dialog.getByPlaceholder('Search projects to add...').fill('PLAN');
     await dialog.locator('.team-search-result-item', { hasText: 'PLAN' }).getByRole('button', { name: 'Add' }).click();
     await expect(dialog.locator('.selected-teams-list .selected-team-chip', { hasText: 'PLAN' })).toHaveCount(1);
@@ -508,12 +508,12 @@ test('range validation blocks Save with inline errors; names are unique', async 
     await projectTab(dialog);
     const through = dialog.locator('[data-range-row="throughQuarter"]');
     await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
-    await expect(through.locator('.work-config-range-error')).toContainText('Both inner bounds are required');
+    await expect(through.locator('.work-config-range-error')).toContainText('Choose a Through Sprint');
     await expect(saveButton(dialog)).toBeDisabled();
     await through.getByLabel('Search Through Sprint').fill('2026Q3');
     await through.locator('.team-search-result-item', { hasText: '2026Q3' }).click();
-    await expect(through.locator('.work-config-range-error')).toContainText('without a gap');
-    await expect(dialog.locator('.group-modal-validation')).toContainText('without a gap');
+    await expect(through.locator('.work-config-range-error')).toContainText('leave a gap');
+    await expect(dialog.locator('.group-modal-validation')).toContainText('Save is blocked by 2 issues.');
     await expect(saveButton(dialog)).toBeDisabled();
     await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
     await through.getByLabel('Search Through Sprint').fill('2026Q4');
@@ -700,6 +700,125 @@ test('production screenshots: Scope, Source, Field mapping and the mobile drawer
     await page.setViewportSize({ width: 375, height: 667 });
     await page.waitForTimeout(250);
     await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
+    await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
+    for (const [name, file] of [['Scope', 'scope'], ['Source', 'source'], ['Field mapping', 'mapping']]) {
+        await nested(dialog, name).click();
+        await page.waitForTimeout(250);
+        await dialog.screenshot({ path: path.join(shotDir, `delivery-${file}-375.png`), animations: 'disabled' });
+    }
+    await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
     await page.waitForTimeout(350);
     await page.screenshot({ path: path.join(shotDir, 'mobile-drawer-375.png'), animations: 'disabled' });
+});
+
+// --- Project config redesign: one global Jira IDs setting, one message per issue, collapsed preview ---------------
+
+const idsToggle = dialog => dialog.getByRole('checkbox', { name: 'Jira IDs' });
+const labelBoxes = dialog => dialog.locator('.work-config-panel .team-selector-label, .work-config-panel .selected-team-chip, .work-config-panel .group-field-helper, .work-config-panel .group-pane-title').evaluateAll(
+    nodes => nodes.map(node => { const box = node.getBoundingClientRect(); return [node.className, Math.round(box.x * 10) / 10, Math.round(box.y * 10) / 10, Math.round(box.width * 10) / 10, Math.round(box.height * 10) / 10]; }));
+
+test('one global Jira IDs setting: no per-tab buttons, ids in a fixed slot, nothing moves when toggled, remembered per viewer', async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    await selectConfiguration(dialog, 'delivery');
+    await expect(idsToggle(dialog)).toHaveCount(1);
+    await expect(idsToggle(dialog)).not.toBeChecked();
+    for (const name of ['Scope', 'Source', 'Field mapping']) {
+        await nested(dialog, name).click();
+        await expect(dialog.getByRole('button', { name: /technical IDs/ })).toHaveCount(0);
+    }
+    for (const name of ['Source', 'Field mapping']) {
+        await nested(dialog, name).click();
+        await page.waitForTimeout(150);
+        const before = await labelBoxes(dialog);
+        const panelBefore = await dialog.locator('#work-config-panel').evaluate(node => [node.scrollHeight, node.scrollWidth]);
+        await idsToggle(dialog).check();
+        await page.waitForTimeout(150);
+        const after = await labelBoxes(dialog);
+        expect(after, `${name}: toggling Jira IDs moves nothing`).toEqual(before);
+        expect(await dialog.locator('#work-config-panel').evaluate(node => [node.scrollHeight, node.scrollWidth])).toEqual(panelBefore);
+        // Each id is printed once, in its slot, never inside the chip or the name.
+        const visibleSlots = dialog.locator('.field-id-slot:not(.is-hidden)');
+        expect(await visibleSlots.count()).toBeGreaterThan(0);
+        await expect(dialog.locator('.selected-team-chip .field-id-hint')).toHaveCount(0);
+        for (const text of await dialog.locator('.selected-team-chip').allInnerTexts()) expect(text).not.toMatch(/\(\d+\)/);
+        // Hidden ids are laid out but invisible and unannounced.
+        await idsToggle(dialog).uncheck();
+        await expect(dialog.locator('.field-id-slot:not(.is-hidden)')).toHaveCount(0);
+        expect(await dialog.locator('.field-id-slot').first().evaluate(node => getComputedStyle(node).visibility)).toBe('hidden');
+    }
+    await idsToggle(dialog).check();
+    await page.keyboard.press('Escape');
+    expect(await page.evaluate(() => window.localStorage.getItem('jira_work_config_ids_v1'))).toBe('1');
+    expect(await page.evaluate(() => Object.keys(JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}')).includes('workConfigIds'))).toBe(false);
+});
+
+test('the Jira IDs setting is remembered on the next visit', async ({ page }) => {
+    await page.addInitScript(() => window.localStorage.setItem('jira_work_config_ids_v1', '1'));
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await expect(idsToggle(dialog)).toBeChecked();
+});
+
+test('same-named issue types are told apart by project, and the preview is one line until expanded', async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    await selectConfiguration(dialog, 'delivery');
+    await nested(dialog, 'Field mapping').click();
+    const section = dialog.locator('.mapping-preview-section');
+    await expect(section).toContainText('Epic under Initiative');
+    await expect(section.locator('.epic-block')).toHaveCount(0);
+    const collapsed = await section.boundingBox();
+    expect(collapsed.height).toBeLessThan(90);
+    await section.getByRole('button', { name: 'Show preview' }).click();
+    await expect(section.locator('.epic-block')).toBeVisible();
+    expect((await section.boundingBox()).height).toBeGreaterThan(collapsed.height + 100);
+    await section.getByRole('button', { name: 'Hide preview' }).click();
+    await expect(section.locator('.epic-block')).toHaveCount(0);
+    // Sprint is named where its field lives: the Epic card points to Source, Source names the Sprint field and Board rules.
+    await expect(dialog.locator('[data-mapping-key="planningIssueTypeId"]')).toContainText('the Sprint field is set in Source');
+    await nested(dialog, 'Source').click();
+    await expect(dialog.locator('.work-config-panel')).toContainText('No board: Sprints seen on this project’s issues.');
+    await expect(dialog.locator('.work-config-panel')).toContainText('Board set: also Sprints on that board.');
+});
+
+test('each blocking issue is stated once at its field; the footer carries one count that opens the first issue', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    const text = 'Choose a Through Sprint.';
+    await expect(dialog.getByText(text, { exact: true })).toHaveCount(1);
+    const footer = dialog.locator('.group-modal-validation');
+    await expect(footer).toContainText('Save is blocked by 1 issue.');
+    await expect(footer).not.toContainText('Through Sprint');
+    await expect(saveButton(dialog)).toBeDisabled();
+    await selectConfiguration(dialog, 'delivery');
+    await nested(dialog, 'Source').click();
+    await footer.getByRole('button', { name: 'Show first' }).click();
+    await expect(row(dialog, 'legacy')).toHaveClass(/active/);
+    await expect(nested(dialog, 'Scope')).toHaveAttribute('aria-selected', 'true');
+    await expect(dialog.locator('[data-work-config-issue]')).toBeFocused();
+    expect(text).toBeTruthy();
+});
+
+test('the one-time hint carries the live-data note, is dismissed for good, and the range is shown once', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await expect(dialog.locator('[data-work-config-hint]')).toContainText('past views read live Jira data');
+    await expect(dialog.locator('.work-config-header')).not.toContainText('onward');
+    await expect(dialog.getByText('configurations', { exact: false }).filter({ hasText: /^\d+ configurations$/ })).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Got it' }).click();
+    await expect(dialog.locator('[data-work-config-hint]')).toHaveCount(0);
+    expect(await page.evaluate(() => window.localStorage.getItem('jira_work_config_hint_v1'))).toBe('1');
 });

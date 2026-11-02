@@ -445,7 +445,7 @@ def refresh_scoped_sprint_catalog(
         budget.check('publication')
         store.publish(
             identity, attempt_id, payload, workspace_id=context.workspace_id,
-            source_digest=config.source_digest,
+            source_digest=config.source_digest, scan=getattr(payload, 'scan', None),
         )
     except Exception as error:
         code = classify_catalog_failure(error, budget=budget)

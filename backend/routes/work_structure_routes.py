@@ -216,6 +216,25 @@ def catalog_selectors(args):
     return (ids[0] if ids else None), (quarters[0] if quarters else None)
 
 
+def check_catalog_stamp(args, *, configuration_id, revisions):
+    """The viewed configuration's revision stamp on a catalog read.
+
+    The frontend stamps ``configurationRevision`` (and ``configurationDigest``, accepted but not compared: a
+    changed entry always bumps the revision) next to ``configurationId``.  A stamp without an id or with a
+    malformed revision is 400 ``invalid_configuration_id``; a revision that is no longer the stored one is
+    409 ``configuration_scope_changed``, which asks the dashboard to re-read ``/api/config``.
+    """
+    revision = args.get('configurationRevision')
+    if revision is None:
+        if 'configurationDigest' in args:
+            raise WorkConfigError('invalid_configuration_id')
+        return
+    if configuration_id is None or _REVISION_PATTERN.fullmatch(revision) is None:
+        raise WorkConfigError('invalid_configuration_id')
+    if any(item != int(revision) for item in revisions):
+        raise WorkConfigError('configuration_scope_changed')
+
+
 def sprint_source_snapshot(auth_context, config):
     """Read-only snapshot of one usable source (Board row or issue-scan store)."""
     if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
@@ -367,6 +386,31 @@ def _sprint_value_sources(auth_context):
     return [flat], False
 
 
+def source_diagnostics(state, code, *snapshots):
+    """Numbers-only per-source read diagnostics: state, code and counts; never keys, names, ids or JQL.
+
+    ``snapshots`` are the Board and/or issue-scan snapshots the source answered from; the scan counts come
+    from the issue scan only, ``observedSprintCount`` is the distinct Sprint names the stored rows hold
+    before any range filter, and a count is ``None`` while nothing is known.
+    """
+    scan, names, held = {}, set(), False
+    for snapshot in snapshots:
+        if snapshot is None:
+            continue
+        scan = getattr(snapshot, 'scan', None) or scan
+        if snapshot.payload is not None:
+            held = True
+            names |= {str(item.get('name') or '') for item in snapshot.payload if isinstance(item, dict)} - {''}
+        elif not code and snapshot.failure_code:
+            code = snapshot.failure_code
+    return {
+        'state': state, 'code': code or None,
+        'scannedIssueCount': scan.get('scannedIssueCount'),
+        'issuesWithSprintValueCount': scan.get('issuesWithSprintValueCount'),
+        'observedSprintCount': len(names) if held else None,
+    }
+
+
 def collect_sprint_values(auth_context, sources):
     """Range-agnostic Sprint values observed by every saved source, one row per name.
 
@@ -379,12 +423,14 @@ def collect_sprint_values(auth_context, sources):
         configuration_id = config.configuration_id
         summary = {'configurationId': configuration_id, 'sourceMode': config.source_mode or 'board',
                    'state': 'setup_required'}
+        snapshots = []
         if config.sprint_identity:
             summary['state'] = 'pending'
             for source in (config, config.observed_source):
                 if source is None or not source.sprint_identity:
                     continue
                 snapshot = sprint_source_snapshot(auth_context, source)
+                snapshots.append(snapshot)
                 if snapshot.payload is None:
                     continue
                 summary['state'] = 'ready'
@@ -397,6 +443,8 @@ def collect_sprint_values(auth_context, sources):
                     row['states'].add(str(item.get('state') or '').lower())
                     row['ids'].add(sprint_id)
                     row['configs'].add(configuration_id)
+        code = None if config.sprint_identity else (config.scope_error or 'configuration_incomplete')
+        summary['diagnostics'] = source_diagnostics(summary['state'], code, *snapshots)
         summaries.append(summary)
     rows = []
     for name, row in values.items():

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import EmptyState from '../ui/EmptyState.jsx';
+import { sourceCause } from './workConfigurationModel.js';
 
 const MISSING_LABELS = [
     [/^scope\.projects/, 'Jira projects'],
@@ -26,11 +27,10 @@ function missingSetupNames(paths) {
 }
 
 const OBSERVED_GUIDANCE = 'No Jira Sprint has been observed for this quarter; refresh or choose a source Board.';
-
 function ScopedGuidance({ scope }) {
     const names = missingSetupNames(scope.missing);
     const missingSource = (scope.missing || []).some(path => SOURCE_PATHS.test(String(path)));
-    if (scope.status === 'not_observed') return <p>{OBSERVED_GUIDANCE}</p>;
+    if (scope.status === 'not_observed') return <p>{sourceCause(scope.diagnostics, scope.quarter) || OBSERVED_GUIDANCE}</p>;
     if (scope.status === 'no_configuration') return <p>No project configuration covers {scope.quarter}.</p>;
     return (
         <>

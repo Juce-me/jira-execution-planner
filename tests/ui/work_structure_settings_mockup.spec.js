@@ -106,6 +106,7 @@ test('explicit ID mappings allow renamed Jira types without changing structure o
     await panel(page).locator('.team-search-result-item:visible').filter({ hasText: 'Custom Epic' }).click();
     await expect(panel(page).locator('[data-mapping-key=planningIssueTypeId]')).toContainText('Custom Epic');
     await expect(panel(page)).toHaveAttribute('data-model', 'rnd_2027');
+    await panel(page).getByRole('button', { name: 'Show preview', exact: true }).click();
     await expect(panel(page).locator('.mapping-preview-card')).toContainText('Custom Epic Summary');
     await tab(page, 'Scope');
     await expect(panel(page)).toContainText('PLAN');
@@ -190,9 +191,9 @@ test('Test configuration reports only saved synthetic readiness and never claims
 
 test('Source keeps real field and scoped Board pickers, IDs and the restricted preview server', async ({ page, request }) => {
     const failures = await open(page);
-    await panel(page).getByRole('button', { name: 'Show Jira technical IDs', exact: true }).click();
-    await expect(panel(page).locator('.field-id-hint').first()).toBeVisible();
-    await panel(page).getByRole('button', { name: 'Hide Jira technical IDs', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Jira IDs', exact: true }).check();
+    await expect(panel(page).locator('.field-id-slot:not(.is-hidden)').first()).toBeVisible();
+    await page.getByRole('checkbox', { name: 'Jira IDs', exact: true }).uncheck();
     await panel(page).getByRole('button', { name: 'Clear sprint board', exact: true }).click();
     const search = panel(page).getByPlaceholder('Search boards...', { exact: true });
     await search.fill('Legacy');
@@ -225,13 +226,14 @@ test('Scope uses the real project search and preserves stored classifications in
 test('mapping preview shows actual Epic and Initiative names and retains linked hover feedback', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await open(page, 'mapping');
+    await panel(page).getByRole('button', { name: 'Show preview', exact: true }).click();
     await expect(panel(page).locator('.mapping-preview-card')).toContainText('Epic Summary');
     await expect(panel(page).locator('.mapping-preview-card')).toContainText('INITIATIVE-KEY');
     await expect(panel(page).locator('.mapping-preview-card')).not.toContainText('Story Summary');
     await panel(page).locator('.mapping-config-grid [data-map-key=storyPoints]').hover();
     await expect(panel(page).locator('.mapping-preview-card [data-map-key=storyPoints].is-linked-hover')).toHaveCount(2);
     await page.mouse.move(0, 0);
-    await panel(page).getByRole('button', { name: 'Show Jira technical IDs', exact: true }).scrollIntoViewIfNeeded();
+    await page.getByRole('checkbox', { name: 'Jira IDs', exact: true }).scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'mapping.png'), animations: 'disabled' });
     await panel(page).locator('.mapping-preview-section').scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(output, 'mapping-preview.png'), animations: 'disabled' });

@@ -23,7 +23,7 @@
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,
-      "useRef": 85,
+      "useRef": 86,
       "useMemo": 72,
       "useCallback": 25,
       "useReducer": 0,
@@ -4594,6 +4594,7 @@
             "mappingPreviewLabels.parentKey",
             "mappingPreviewLabels.parentType",
             "mappingPreviewLabels.parentType.toUpperCase",
+            "mappingPreviewLabels.summary",
             "parentNameFieldIdDraft",
             "parentNameFieldNameDraft",
             "parentNameFieldSearchHidden",
@@ -4677,6 +4678,8 @@
             "showTechnicalFieldIds",
             "sourceFieldHelpers",
             "sourceFieldHelpers.board",
+            "sourceFieldHelpers.board.map",
+            "sourceFieldHelpers.sprint",
             "sprintFieldIdDraft",
             "sprintFieldNameDraft",
             "sprintFieldSearchHidden",
@@ -4710,20 +4713,27 @@
             "updatePriorityWeightDraft"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 208,
+          "expandedInputCount": 211,
           "returnCount": 0,
           "propCount": 158,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 208,
+          "expandedInputCeiling": 211,
           "returnCeiling": 0,
           "propCeiling": 158,
           "unresolved": [
+            "forwarded input sprintFieldIdDraft",
+            "forwarded input boardIdDraft",
+            "forwarded input parentNameFieldIdDraft",
+            "forwarded input storyPointsFieldIdDraft",
+            "forwarded input teamFieldIdDraft",
+            "forwarded input deliveryOwnerFieldIdDraft",
             "forwarded input capacityProjectDraft",
+            "forwarded input hierarchyMappings",
             "forwarded input mappingFieldHelpers",
             "forwarded input sourceFieldHelpers"
           ],
           "inventory": {
-            "sourceDigest": "9c15161e4455a2b147bedabff321718d3217442aeec9ba1d6ebcdeecff770634",
+            "sourceDigest": "99bdd29339ff3187cc2ddbc2322fe62340a6185825c66c1798612acfbe9c4770",
             "reviewed": true,
             "memberNames": [
               "addIssueType",
@@ -4820,6 +4830,7 @@
               "mappingPreviewLabels.parentKey",
               "mappingPreviewLabels.parentType",
               "mappingPreviewLabels.parentType.toUpperCase",
+              "mappingPreviewLabels.summary",
               "parentNameFieldIdDraft",
               "parentNameFieldNameDraft",
               "parentNameFieldSearchHidden",
@@ -4903,6 +4914,8 @@
               "showTechnicalFieldIds",
               "sourceFieldHelpers",
               "sourceFieldHelpers.board",
+              "sourceFieldHelpers.board.map",
+              "sourceFieldHelpers.sprint",
               "sprintFieldIdDraft",
               "sprintFieldNameDraft",
               "sprintFieldSearchHidden",
@@ -4935,7 +4948,7 @@
               "teamFieldSearchResults.map",
               "updatePriorityWeightDraft"
             ],
-            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
@@ -4947,7 +4960,7 @@
             {
               "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 196,
+              "line": 235,
               "phase": "render"
             }
           ],
@@ -5011,7 +5024,7 @@
             "bag mapping member alias hoverKey"
           ],
           "inventory": {
-            "sourceDigest": "5dbe577b0d663eca38695cc94ac0e27b336eaae507353103201528895a04c92f",
+            "sourceDigest": "274dc45e2b717de73e97f9ef6c4a70c90c40f760f600a85a3b74bd8270c8c06a",
             "reviewed": true,
             "memberNames": [
               "kind",
@@ -5033,25 +5046,25 @@
               "setMappingHoverKey",
               "showTechnicalFieldIds"
             ],
-            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02: kind accepts 'sprint' (placeholder only) and an option may carry disabled/detail; both are option-object fields read for display, not interface members; the new Scope caller passes the same mapping shape. Re-reviewed 2026-11-02 (typed Sprint boundary): mapping.typedOption is an optional pure callback (query, options) returning one {id,name,detail} option or null, used only to append an extra result; results use a ref for scrollIntoView. No API, model inference or persistence."
+            "rationale": "mapping is one closed local-form row: key/label/helper/optional and previewKey are scalar presentation values, selected contains id/name, options supply id/name for the existing pure search helpers, and onSelect/onRemove update only the caller-owned draft. selected and hoverKey are aliases for mapping.selected and mapping.previewKey; query/open/index are transient search state. No API, model inference or persistence is present. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02: kind accepts 'sprint' (placeholder only) and an option may carry disabled/detail; both are option-object fields read for display, not interface members; the new Scope caller passes the same mapping shape. Re-reviewed 2026-11-02 (typed Sprint boundary): mapping.typedOption is an optional pure callback (query, options) returning one {id,name,detail} option or null, used only to append an extra result; results use a ref for scrollIntoView. No API, model inference or persistence. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
               "path": "frontend/src/settings/JiraFieldSettings.jsx",
               "symbol": "MappingPickerRow",
-              "line": 542,
+              "line": 561,
               "phase": "render"
             },
             {
               "path": "frontend/src/settings/JiraFieldSettings.jsx",
               "symbol": "MappingPickerRow",
-              "line": 725,
+              "line": 744,
               "phase": "render"
             },
             {
               "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
               "symbol": "MappingPickerRow",
-              "line": 84,
+              "line": 96,
               "phase": "render"
             }
           ],
@@ -5232,7 +5245,7 @@
             "forwarded input validationActions"
           ],
           "inventory": {
-            "sourceDigest": "b437935f7a6030b5fc9f500c83a1e2508ffd638c97feb3e75462812c1c445161",
+            "sourceDigest": "17c5f11022b8d12db827169225dd128c16c1dd5cb8b81e54b5782619912f2fa4",
             "reviewed": true,
             "memberNames": [
               "activeTab",
@@ -5265,13 +5278,13 @@
               "validationMessages.length",
               "validationMessages.map"
             ],
-            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read."
+            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
               "path": "frontend/src/settings/SettingsModalContainer.jsx",
               "symbol": "SettingsModal",
-              "line": 46,
+              "line": 48,
               "phase": "render"
             }
           ],
@@ -18907,7 +18920,7 @@
         "WorkConfigurationUnavailable",
         "default"
       ],
-      "lineCeiling": 330,
+      "lineCeiling": 370,
       "interfaces": [
         {
           "exportName": "WorkConfigurationUnavailable",
@@ -18968,23 +18981,25 @@
             "workConfig.selectConfiguration",
             "workConfig.setDrawerOpen",
             "workConfig.setTab",
+            "workConfig.setTechnicalIds",
             "workConfig.tabFor",
+            "workConfig.technicalIds",
             "workConfig.validation",
             "workConfig.validation.errors"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 21,
+          "expandedInputCount": 23,
           "returnCount": 0,
           "propCount": 7,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 21,
+          "expandedInputCeiling": 23,
           "returnCeiling": 0,
           "propCeiling": 7,
           "unresolved": [
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "c97f5f5ee19544f2cd56fa6eae8c4fb3b0d804ba320a858c2193da2d0b44b24d",
+            "sourceDigest": "c6d6ea30849bdc09e418f3870eedc830b5056dd076f79d290f0242447dc8fefa",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19005,11 +19020,13 @@
               "workConfig.selectConfiguration",
               "workConfig.setDrawerOpen",
               "workConfig.setTab",
+              "workConfig.setTechnicalIds",
               "workConfig.tabFor",
+              "workConfig.technicalIds",
               "workConfig.validation",
               "workConfig.validation.errors"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
@@ -19035,13 +19052,14 @@
         "resolveWorkConfigMode",
         "useWorkConfigurationSettings"
       ],
-      "lineCeiling": 450,
+      "lineCeiling": 550,
       "interfaces": [
         {
           "exportName": "useWorkConfigurationSettings",
           "inputNames": [
             "BACKEND_URL",
             "jiraFields",
+            "onBootstrap",
             "onDraftReplaced",
             "selectedSprintName",
             "setGroupTestMessage",
@@ -19074,6 +19092,7 @@
             "prepareKeepMine",
             "promoted",
             "quarterHint",
+            "refreshSprintValues",
             "reload",
             "removeProject",
             "restoreDraft",
@@ -19088,6 +19107,7 @@
             "setSearch",
             "setTab",
             "setTechnicalIds",
+            "sprintRefresh",
             "sprintValues",
             "summaries",
             "tabFor",
@@ -19104,6 +19124,7 @@
           "expandedInputNames": [
             "BACKEND_URL",
             "jiraFields",
+            "onBootstrap",
             "onDraftReplaced",
             "selectedSprintName",
             "setGroupTestMessage",
@@ -19111,37 +19132,39 @@
             "visible"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 7,
-          "returnCount": 50,
+          "expandedInputCount": 8,
+          "returnCount": 52,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 7,
-          "returnCeiling": 50,
+          "expandedInputCeiling": 8,
+          "returnCeiling": 52,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
             "forwarded input jiraFields",
-            "forwarded input onDraftReplaced"
+            "forwarded input onDraftReplaced",
+            "forwarded input onBootstrap"
           ],
           "inventory": {
-            "sourceDigest": "2f6ddd5ee7d679e0f6cf809a14e03b6cd3900b241c5adb86a3ac566038b75007",
+            "sourceDigest": "d87dab7acea78527bbba3402a9ea91d42f06fa266285b7dd8802e82697b67fcf",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
               "jiraFields",
+              "onBootstrap",
               "onDraftReplaced",
               "selectedSprintName",
               "setGroupTestMessage",
               "setGroupTesting",
               "visible"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useWorkConfigurationSettings",
-              "line": 944,
+              "line": 1035,
               "phase": "hook execution"
             }
           ],
@@ -19149,14 +19172,14 @@
             {
               "name": "workConfig",
               "lines": [
-                947,
-                948,
-                1336,
-                2095,
-                2127,
-                2182,
-                3362,
-                6901
+                1038,
+                1039,
+                1428,
+                2219,
+                2251,
+                2306,
+                3501,
+                7061
               ]
             }
           ],
@@ -19164,7 +19187,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "onDraftReplaced",
-              "line": 945,
+              "line": 1036,
               "capturedBindings": [
                 "setGroupDraftError",
                 "setSettingsSaveError"
@@ -19247,12 +19270,15 @@
         "rangeLabel",
         "rebaseOntoLatest",
         "removeProjectFromEntry",
+        "savedSourceReady",
         "slotsFor",
+        "sourceCause",
+        "sprintRefreshLine",
         "sprintValueOptions",
         "typedSprintOption",
         "validateBundle"
       ],
-      "lineCeiling": 380,
+      "lineCeiling": 450,
       "interfaces": []
     }
   ],

@@ -444,6 +444,21 @@ class SelectorTests(CatalogBase):
                 self.assertEqual(response.status_code, status, response.get_data(as_text=True))
                 self.assertEqual(response.get_json()['error'], code)
 
+    def test_catalog_reads_accept_the_configuration_stamp_and_refuse_a_stale_revision(self):
+        # The frontend stamps every catalog read with the revision (and digest) of the viewed configuration.
+        revision = self.sprints('?configurationId=delivery').get_json()['cache']['configurationRevision']
+        stamp = f'configurationId=delivery&configurationRevision={revision}&configurationDigest=d'
+        self.assertEqual(self.sprints('?' + stamp).status_code, 200)
+        self.assertEqual(self.client.get(f'/api/teams?sprint=201&all=true&{stamp}').status_code, 200)
+        stale = f'configurationId=delivery&configurationRevision={revision + 1}'
+        for path in (f'/api/sprints?{stale}', f'/api/teams?sprint=201&all=true&{stale}'):
+            response = self.client.get(path)
+            self.assertEqual((response.status_code, response.get_json()['error']), (409, 'configuration_scope_changed'), path)
+        for path in ('/api/sprints?configurationRevision=1', '/api/sprints?configurationId=delivery&configurationRevision=x',
+                     '/api/sprints?configurationId=delivery&configurationDigest=d'):
+            response = self.client.get(path)
+            self.assertEqual((response.status_code, response.get_json()['error']), (400, 'invalid_configuration_id'), path)
+
     def test_teams_selector_codes_and_required_numeric_sprint(self):
         for query, status, code in (
             ('', 400, 'sprint_required'),

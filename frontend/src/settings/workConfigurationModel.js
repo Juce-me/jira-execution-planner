@@ -142,7 +142,7 @@ export function validateBundle(bundle) {
         }
         if (isValidQuarter(entry.fromQuarter) && isValidQuarter(entry.throughQuarter)
             && entry.fromQuarter && entry.throughQuarter && quarterIndex(entry.fromQuarter) > quarterIndex(entry.throughQuarter)) {
-            errors[entry.id].throughQuarter = 'The through Sprint must not precede the from Sprint.';
+            errors[entry.id].throughQuarter = 'Through Sprint must not be earlier than From Sprint.';
         }
         if (entry.model === MODEL_RND && (entry.scope.projects || []).length > 1) {
             errors[entry.id].projects = DELIVERY_PROJECT_LIMIT_MESSAGE;
@@ -151,14 +151,14 @@ export function validateBundle(bundle) {
     const legacy = entries.find(entry => entry.model === MODEL_LEGACY);
     const delivery = entries.find(entry => entry.model === MODEL_RND);
     if (legacy && delivery && entries.every(entry => !errors[entry.id].fromQuarter && !errors[entry.id].throughQuarter)) {
-        if (legacy.fromQuarter) errors[legacy.id].fromQuarter = 'The first configuration must include all earlier sprints.';
-        if (delivery.throughQuarter) errors[delivery.id].throughQuarter = 'The last configuration must have no end sprint.';
+        if (legacy.fromQuarter) errors[legacy.id].fromQuarter = 'The first configuration has no From Sprint.';
+        if (delivery.throughQuarter) errors[delivery.id].throughQuarter = 'The last configuration has no Through Sprint.';
         if (!legacy.throughQuarter || !delivery.fromQuarter) {
-            if (!legacy.throughQuarter) errors[legacy.id].throughQuarter = 'Both inner bounds are required.';
-            if (!delivery.fromQuarter) errors[delivery.id].fromQuarter = 'Both inner bounds are required.';
+            if (!legacy.throughQuarter) errors[legacy.id].throughQuarter = 'Choose a Through Sprint.';
+            if (!delivery.fromQuarter) errors[delivery.id].fromQuarter = 'Choose a From Sprint.';
         } else {
             const gap = quarterIndex(delivery.fromQuarter) - quarterIndex(legacy.throughQuarter);
-            const message = gap <= 0 ? 'Sprint ranges overlap.' : gap > 1 ? 'Sprint ranges must meet without a gap.' : '';
+            const message = gap <= 0 ? 'Through and From Sprint overlap.' : gap > 1 ? 'Through and From Sprint leave a gap; they must meet.' : '';
             if (message) {
                 errors[legacy.id].throughQuarter ||= message;
                 errors[delivery.id].fromQuarter ||= message;
@@ -315,6 +315,7 @@ export const normalizeIssueTypes = types => (Array.isArray(types) ? types : []).
     subtask: Boolean(type?.subtask),
     iconUrl: typeof type?.iconUrl === 'string' ? type.iconUrl : '',
     projectIds: Array.isArray(type?.projectIds) ? type.projectIds.map(String) : [],
+    projectKeys: Array.isArray(type?.projectKeys) ? type.projectKeys.map(String) : [],
 })).filter(type => type.id && type.name);
 
 // Hierarchy picker state for one slot. `catalogState`: loading | error | unscoped | ready.
@@ -336,7 +337,9 @@ export function describeHierarchyRow({ entry, slot, index, types, catalogState }
         if (seen.has(type.name)) duplicateNames.add(type.name);
         seen.add(type.name);
     }
-    const display = type => (duplicateNames.has(type.name) ? { ...type, name: `${type.name} (${type.id})` } : type);
+    // Same-named types (team-managed projects each own one) are told apart by their project; the id is shown once,
+    // by the global Jira IDs setting, never repeated in the name.
+    const display = type => (duplicateNames.has(type.name) && type.projectKeys.length ? { ...type, name: `${type.name} \u00b7 ${type.projectKeys.join(', ')}` } : type);
     const outsideScope = type => ready && !inScope(type);
     const chip = type => {
         const shown = display(type);
@@ -372,3 +375,27 @@ export function catalogScopeFor(entry, quarter = '') {
         quarter,
     };
 }
+
+const READ_FAILURES = {
+    jira_unavailable: 'Jira could not be reached when this source was last read; refresh to retry.',
+    catalog_incomplete: 'The last read of this source was incomplete; refresh to retry.',
+};
+
+// The concrete reason a source holds no Sprint for the quarter, from its numbers-only read diagnostics; null when unknown.
+export function sourceCause(diagnostics, quarter) {
+    if (!diagnostics) return null;
+    const { code, scannedIssueCount, issuesWithSprintValueCount, observedSprintCount } = diagnostics;
+    if (code) return READ_FAILURES[code] || 'The last read of this source failed; refresh to retry.';
+    if (scannedIssueCount === 0) return 'No issues matched this configuration\'s projects.';
+    if (scannedIssueCount > 0 && issuesWithSprintValueCount === 0) {
+        return `${scannedIssueCount} issues were read and none has a Sprint value; check the Sprint field.`;
+    }
+    if (observedSprintCount > 0) return `${observedSprintCount} Sprints were found, none for ${quarter}.`;
+    return null;
+}
+
+// A saved source can be read from Jira: a Board, or Jira projects with a mapped Sprint field.
+export const savedSourceReady = entry => Boolean(entry && (entry.scope?.boardId
+    || ((entry.scope?.projects || []).length > 0 && entry.fields?.sprint?.fieldId)));
+
+export const sprintRefreshLine = entry => `Save ${entry?.name || 'this configuration'}'s project and Sprint field first, or type the Sprint value (for example 2027Q1).`;

@@ -76,7 +76,7 @@ test('validation: quarter grammar, ordering, contiguity, names and one-project l
     for (const value of ['2026Q5', ' 2026Q4', '0000Q1', '20260Q1']) {
         assert.ok(validateBundle(bundle([legacy({ throughQuarter: value }), delivery()])).errors.legacy.throughQuarter, value);
     }
-    assert.match(validateBundle(bundle([legacy({ throughQuarter: '2026Q3' }), delivery()])).errors.delivery.fromQuarter, /without a gap/);
+    assert.match(validateBundle(bundle([legacy({ throughQuarter: '2026Q3' }), delivery()])).errors.delivery.fromQuarter, /leave a gap/);
     assert.match(validateBundle(bundle([legacy({ throughQuarter: '2027Q1' }), delivery()])).errors.legacy.throughQuarter, /overlap/);
     assert.match(validateBundle(bundle([legacy({ name: ' ' }), delivery()])).errors.legacy.name, /Enter a configuration name/);
     assert.match(validateBundle(bundle([legacy({ name: 'delivery' }), delivery()])).errors.legacy.name, /different name/);
@@ -210,7 +210,13 @@ test('hierarchy rows: loading, error, resolved, unresolved, duplicate names, unk
     assert.equal(ready(0).status, 'resolved');
     assert.deepEqual(ready(0).options.map(option => option.id), ['2', '8'], 'only types used by the selected project are offered; subtasks are excluded');
     assert.ok(ready(0).options.every(option => option.name === 'Epic'), 'the picker row appends the id, so the name is not repeated with it');
-    assert.equal(ready(0).selected.name, 'Epic (2)');
+    assert.equal(ready(0).selected.name, 'Epic', 'a duplicate name never repeats the id: the Jira IDs setting shows it once');
+    const keyed = normalizeIssueTypes([
+        { id: '2', name: 'Epic', hierarchyLevel: 1, projectIds: ['10'], projectKeys: ['PLAN'] },
+        { id: '8', name: 'Epic', hierarchyLevel: 1, projectIds: ['11'], projectKeys: ['OPS'] },
+    ]);
+    const keyedRow = describeHierarchyRow({ entry: delivery({ scope: { projects: [{ key: 'PLAN', type: 'other' }, { key: 'OPS', type: 'other' }], boardId: '' }, hierarchy: { planningIssueTypeId: '8', parentIssueTypeId: null, ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null } }), slot: 'planningIssueTypeId', index: 0, types: keyed, catalogState: 'ready' });
+    assert.equal(keyedRow.selected.name, 'Epic \u00b7 OPS', 'same-name types are told apart by project');
     assert.equal(ready(1).status, 'unresolved');
     assert.equal(ready(1).selected.name, '999 · Not found in Jira');
     assert.equal(ready(1).selected.id, '999', 'the raw id stays visible and removable');
@@ -363,7 +369,7 @@ test('Scope boundaries: an exact canonical typed value is offered when it is not
     assert.equal(typedSprintOption('0000Q1', sprintValueOptions({ values: [{ value: '0000Q1', canonical: false }] })), null);
     // Choosing it is an ordinary patch; validation still decides Save.
     let draft = patchBundleEntry(bundle(), 'legacy', { throughQuarter: null });
-    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Both inner bounds are required/);
+    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Choose a Through Sprint/);
     draft = patchBundleEntry(draft, 'legacy', { throughQuarter: option.id });
     assert.ok(!validateBundle(draft).errors.legacy.throughQuarter?.includes('Both inner'));
 });
@@ -394,11 +400,11 @@ test('Scope boundaries: options come from observed Sprint values; a non-canonica
     // A value outside the saved range is a valid pick; ordering, gaps and the Legacy-first rule still decide Save.
     let draft = bundle();
     draft = patchBundleEntry(draft, 'delivery', { fromQuarter: '2030Q4' });
-    assert.match(validateBundle(draft).errors.delivery.fromQuarter, /without a gap/);
+    assert.match(validateBundle(draft).errors.delivery.fromQuarter, /leave a gap/);
     draft = patchBundleEntry(patchBundleEntry(draft, 'legacy', { throughQuarter: '2030Q3' }), 'delivery', {});
     assert.deepEqual(validateBundle(draft).messages, []);
     draft = patchBundleEntry(draft, 'legacy', { throughQuarter: null });
-    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Both inner bounds are required/);
+    assert.match(validateBundle(draft).errors.legacy.throughQuarter, /Choose a Through Sprint/);
     assert.ok(validateBundle(patchBundleEntry(bundle(), 'legacy', { throughQuarter: '0000Q1' })).errors.legacy.throughQuarter, 'a stored non-canonical boundary still fails validation');
 });
 
@@ -420,4 +426,18 @@ test('Sprint values read: a plain GET with no query, no CSRF and structured fail
     } finally {
         globalThis.fetch = original;
     }
+});
+
+test('sourceCause names the concrete reason a source holds no Sprint for the quarter', async () => {
+    const { sourceCause } = await loadModel();
+    const diag = (overrides = {}) => ({ state: 'ready', code: null, scannedIssueCount: null, issuesWithSprintValueCount: null, observedSprintCount: null, ...overrides });
+    assert.equal(sourceCause(null, '2027Q1'), null);
+    assert.equal(sourceCause(diag(), '2027Q1'), null);
+    assert.match(sourceCause(diag({ code: 'jira_unavailable' }), '2027Q1'), /could not be reached/);
+    assert.match(sourceCause(diag({ code: 'catalog_incomplete' }), '2027Q1'), /incomplete/);
+    assert.match(sourceCause(diag({ code: 'other' }), '2027Q1'), /failed/);
+    assert.match(sourceCause(diag({ scannedIssueCount: 0, issuesWithSprintValueCount: 0, observedSprintCount: 0 }), '2027Q1'), /No issues matched/);
+    assert.equal(sourceCause(diag({ scannedIssueCount: 12, issuesWithSprintValueCount: 0, observedSprintCount: 0 }), '2027Q1'), '12 issues were read and none has a Sprint value; check the Sprint field.');
+    assert.equal(sourceCause(diag({ scannedIssueCount: 12, issuesWithSprintValueCount: 9, observedSprintCount: 4 }), '2027Q1'), '4 Sprints were found, none for 2027Q1.');
+    assert.equal(sourceCause(diag({ observedSprintCount: 3 }), '2027Q1'), '3 Sprints were found, none for 2027Q1.');
 });

@@ -166,6 +166,14 @@ export default function JiraFieldSettings(props) {
         sourceFieldHelpers,
     } = props;
     const requirementSuffix = (list, name) => (list?.requirement?.[name] ? ` (${list.requirement[name]})` : '');
+    // Project config (quarterly) mode: one Jira IDs setting for the whole editor shows each id once, in a fixed slot on the
+    // field's label row (never inside the chip), so toggling it moves nothing. The flat editor keeps its inline hints.
+    const workMode = Boolean(hierarchyMappings);
+    const inlineIds = showTechnicalFieldIds && !workMode;
+    const idSlot = id => (workMode ? <span className={`field-id-hint field-id-slot${showTechnicalFieldIds ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={id || ''} /> : null);
+    // The collapsed Project config preview is owned by the editor (`mappingPreviewOpen`).
+    const previewOpen = props.mappingPreviewOpen === true;
+    const setPreviewOpen = props.setMappingPreviewOpen || (() => {});
 
     return (
         <>
@@ -175,7 +183,7 @@ export default function JiraFieldSettings(props) {
                                         <>
                                         {groupManageTab === 'source' && (
                                         <div className="group-pane group-projects-pane-left group-single-pane" style={{ borderRight: 'none' }}>
-                                            <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
+                                            {!workMode && <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
                                                 <button
                                                     className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
                                                     onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
@@ -183,19 +191,19 @@ export default function JiraFieldSettings(props) {
                                                 >
                                                     {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
                                                 </button>
-                                            </div>
+                                            </div>}
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
-                                                <div className="group-pane-title">Jira Source</div>
-                                                <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>
+                                                <div className="group-pane-title">{workMode ? 'Sprint source' : 'Jira Source'}</div>
+                                                {!workMode && <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>}
                                             </div>
                                             <div className="settings-two-col-grid settings-source-grid" style={{ padding: '12px 16px 12px' }}>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Field{requirementSuffix(sourceFieldHelpers, 'sprint')}</div>
-                                                    <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
+                                                    <div className="team-selector-label">{idSlot(sprintFieldIdDraft)}Sprint Field{requirementSuffix(sourceFieldHelpers, 'sprint')}</div>
+                                                    <div className="group-field-helper">{sourceFieldHelpers?.sprint ?? 'Used to determine which sprint each ticket belongs to.'}</div>
                                                     <div className="capacity-inline-row">
                                                         {sprintFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{inlineIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
                                                                 <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
                                                             </div>
                                                         ) : (
@@ -218,8 +226,10 @@ export default function JiraFieldSettings(props) {
                                                     </div>
                                                 </div>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Board (optional)</div>
-                                                    <div className="group-field-helper">{sourceFieldHelpers?.board ?? 'Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.'}</div>
+                                                    <div className="team-selector-label">{idSlot(boardIdDraft)}Sprint Board (optional)</div>
+                                                    {Array.isArray(sourceFieldHelpers?.board)
+                                                        ? sourceFieldHelpers.board.map(line => <div key={line} className="group-field-helper">{line}</div>)
+                                                        : <div className="group-field-helper">{sourceFieldHelpers?.board ?? 'Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.'}</div>}
                                                     {!boardIdDraft && (
                                                         <div className="capacity-inline-row">
                                                             <div className="team-search-wrapper capacity-inline-search">
@@ -265,7 +275,7 @@ export default function JiraFieldSettings(props) {
                                                             <div className="selected-team-chip" title={boardIdDraft}>
                                                                 <span className="team-name">
                                                                     <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
-                                                                    {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
+                                                                    {inlineIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
                                                                 </span>
                                                                 <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
                                                             </div>
@@ -382,7 +392,7 @@ export default function JiraFieldSettings(props) {
                                         {(groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                         <div className="group-pane group-projects-pane-right group-single-pane">
                                             <div className="group-pane-tools group-pane-tools-right">
-                                                {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                                {!workMode && (groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                                     <button
                                                         className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
                                                         onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
@@ -395,9 +405,18 @@ export default function JiraFieldSettings(props) {
                                             {groupManageTab === 'mapping' && (
                                             <>
                                             <div className="mapping-preview-section group-config-card">
-                                                <div className="group-pane-title">Preview</div>
-                                                <div className="group-field-helper">{mappingPreviewLabels?.description ?? 'This is how a story will be shown with your current mapping.'}</div>
-                                                {(() => {
+                                                {workMode ? (
+                                                    <div className="work-config-preview-line">
+                                                        <div className="group-pane-title">{mappingPreviewLabels?.summary ?? 'Preview'}</div>
+                                                        <button type="button" className="secondary compact" aria-expanded={previewOpen} onClick={() => setPreviewOpen(open => !open)}>{previewOpen ? 'Hide preview' : 'Show preview'}</button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="group-pane-title">Preview</div>
+                                                        <div className="group-field-helper">{mappingPreviewLabels?.description ?? 'This is how a story will be shown with your current mapping.'}</div>
+                                                    </>
+                                                )}
+                                                {(!workMode || previewOpen) && (() => {
                                                     const previewIssueType = mappingPreviewLabels?.childType ?? (issueTypesDraft[0] || 'Issue Type');
                                                     const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
                                                     const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
@@ -597,12 +616,12 @@ export default function JiraFieldSettings(props) {
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="parent"
                                             >
-                                                <div className="team-selector-label">Parent Name Field{requirementSuffix(mappingFieldHelpers, 'parentName')}</div>
+                                                <div className="team-selector-label">{idSlot(parentNameFieldIdDraft)}Parent Name Field{requirementSuffix(mappingFieldHelpers, 'parentName')}</div>
                                                 <div className="group-field-helper">{mappingFieldHelpers?.parentName ?? 'Field used to map stories back to their parent epic name.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{inlineIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -630,12 +649,12 @@ export default function JiraFieldSettings(props) {
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="storyPoints"
                                             >
-                                                <div className="team-selector-label">Story Points Field{requirementSuffix(mappingFieldHelpers, 'storyPoints')}</div>
+                                                <div className="team-selector-label">{idSlot(storyPointsFieldIdDraft)}Story Points Field{requirementSuffix(mappingFieldHelpers, 'storyPoints')}</div>
                                                 <div className="group-field-helper">{mappingFieldHelpers?.storyPoints ?? 'Field used for effort, velocity, and capacity comparisons.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{inlineIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -663,12 +682,12 @@ export default function JiraFieldSettings(props) {
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="team"
                                             >
-                                                <div className="team-selector-label">Team Field{requirementSuffix(mappingFieldHelpers, 'team')}</div>
+                                                <div className="team-selector-label">{idSlot(teamFieldIdDraft)}Team Field{requirementSuffix(mappingFieldHelpers, 'team')}</div>
                                                 <div className="group-field-helper">{mappingFieldHelpers?.team ?? 'Field used to assign each ticket to a team.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{inlineIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -694,12 +713,12 @@ export default function JiraFieldSettings(props) {
                                                 className="group-projects-subsection"
                                                 data-map-key="deliveryOwner"
                                             >
-                                                <div className="team-selector-label">Delivery Owner Field{requirementSuffix(mappingFieldHelpers, 'deliveryOwner')}</div>
+                                                <div className="team-selector-label">{idSlot(deliveryOwnerFieldIdDraft)}Delivery Owner Field{requirementSuffix(mappingFieldHelpers, 'deliveryOwner')}</div>
                                                 <div className="group-field-helper">{mappingFieldHelpers?.deliveryOwner ?? 'Field naming the person accountable for delivering an epic.'}</div>
                                                 <div className="capacity-inline-row">
                                                     {deliveryOwnerFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-delivery-owner-chip" title={deliveryOwnerFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{deliveryOwnerFieldNameDraft}</strong>{showTechnicalFieldIds && deliveryOwnerFieldIdDraft && <span className="field-id-hint">({deliveryOwnerFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{deliveryOwnerFieldNameDraft}</strong>{inlineIds && deliveryOwnerFieldIdDraft && <span className="field-id-hint">({deliveryOwnerFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setDeliveryOwnerFieldIdDraft(''); setDeliveryOwnerFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove delivery owner field">&times;</button>
                                                         </div>
                                                     ) : (

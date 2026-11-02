@@ -2064,7 +2064,7 @@ def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
             force_refresh=force_refresh, completion_attempt_id=completion_attempt_id,
             expected_identity=expected_identity, started_at=started_at,
         )
-    if 'configurationId' in request.args or 'quarter' in request.args:
+    if {'configurationId', 'quarter', 'configurationRevision', 'configurationDigest'} & set(request.args):
         return _team_catalog_response({'error': 'unsupported_catalog_parameter'}, 400, started_at)
     if not config.board_id or not config.sprint_identity:
         return _team_catalog_response({'error': 'sprint_board_required'}, 409, started_at)
@@ -2095,6 +2095,8 @@ def _get_configuration_teams(context, sources, *, sprint_id, team_ids, force_ref
         config, sprint_row = work_routes.admit_sprint_source(
             context, sources, sprint_id, configuration_id=configuration_id, quarter=quarter,
         )
+        work_routes.check_catalog_stamp(
+            request.args, configuration_id=configuration_id, revisions=[config.configuration_revision])
     except work_routes.WorkConfigError as error:
         body, status = error.response()
         return _team_catalog_response(body, status, started_at)
@@ -2196,6 +2198,7 @@ def get_teams():
             allowed_parameters = {
                 'sprint', 'teamIds', 'all', 'refresh',
                 'completionAttemptId', 'catalogIdentity', 'configurationId', 'quarter',
+                'configurationRevision', 'configurationDigest',
             }
             if any(key not in allowed_parameters for key in request.args):
                 return _team_catalog_response(

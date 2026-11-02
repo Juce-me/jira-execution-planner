@@ -36,12 +36,12 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
             onMouseEnter={hoverKey ? () => setMappingHoverKey(hoverKey) : undefined}
             onMouseLeave={hoverKey ? () => setMappingHoverKey(null) : undefined}
         >
-            <div className="team-selector-label">{mapping.label}{mapping.optional ? ' (optional)' : mapping.required ? ' (required)' : ''}</div>
+            <div className="team-selector-label">{showTechnicalFieldIds !== undefined && <span className={`field-id-hint field-id-slot${showTechnicalFieldIds && selected?.id ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={selected?.id || ''} />}{mapping.label}{mapping.optional ? ' (optional)' : mapping.required ? ' (required)' : ''}</div>
             {mapping.helper && <div className="group-field-helper">{mapping.helper}</div>}
             <div className="capacity-inline-row">
                 {selected ? (
                     <div className={`selected-team-chip${kind === 'hierarchy' ? ' issue-type-chip' : ''}`} title={selected.id}>
-                        <span className="team-name"><strong>{selected.name}</strong>{showTechnicalFieldIds && selected.id && <span className="field-id-hint">({selected.id})</span>}</span>
+                        <span className="team-name"><strong>{selected.name}</strong></span>
                         <button className="remove-btn" type="button" title="Remove" aria-label={`Remove ${mapping.label}`} onClick={() => { setQuery(''); setOpen(false); setIndex(0); mapping.onRemove(); }}>&times;</button>
                     </div>
                 ) : (

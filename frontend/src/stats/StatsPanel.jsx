@@ -18,7 +18,7 @@ import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
 import UnconfiguredWorkspaceNotice from '../settings/UnconfiguredWorkspaceNotice.jsx';
 import { describeStatsScope, roleLabels, unavailablePeriodSpans } from './statsScope.js';
-import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from '../eng/engWorkModel.js';
+import { entityArticle, isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from '../eng/engWorkModel.js';
 import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
 
@@ -610,7 +610,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 <div className="cohort-section">
                                     <div className="cohort-section-title">Cross-Team {statWords.parent} Footprint</div>
                                     <div className="cohort-section-subtitle">
-                                        Cross = an {lowerEntityWord(statWords.parent)} has {lowerEntityWord(statWords.children)} from more than one team in the same sprint.
+                                        Cross = {entityArticle(statWords.parent)} {lowerEntityWord(statWords.parent)} has {lowerEntityWord(statWords.children)} from more than one team in the same sprint.
                                     </div>
                                     <div className="epic-mode-bars" role="img" aria-label={`Cross-team ${lowerEntityWord(statWords.parent)} share by sprint`}>
                                         {[

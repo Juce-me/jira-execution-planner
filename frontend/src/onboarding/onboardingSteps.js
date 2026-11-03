@@ -1,4 +1,4 @@
-import { resolveEntityNames } from '../eng/engWorkModel.js';
+import { entityArticle, resolveEntityNames } from '../eng/engWorkModel.js';
 
 const TARGET_PREFIX = '[data-onboarding-target=';
 
@@ -63,13 +63,8 @@ export function isOnboardingEngDataStep(stepOrId) {
 
 // Each built catalog's Work-hierarchy fallback step, worded with the same names (read by buildVisibleOnboardingSteps).
 const HIERARCHY_FALLBACKS = new WeakMap();
-// "An" before a vowel, or before an acronym (two leading capitals) whose first letter is spoken with a vowel sound
-// ("an OKR", "an SLA", but "a UX goal"); "A" otherwise.
-const An = (word) => {
-    const text = String(word || '');
-    return (/^[A-Z]{2}/.test(text) ? /^[AEFHILMNORSX]/ : /^[aeiou]/i).test(text) ? 'An' : 'A';
-};
-const an = word => An(word).toLowerCase();
+const An = word => (entityArticle(word) === 'an' ? 'An' : 'A');
+const an = entityArticle;
 
 // The tour's step catalogs worded with the viewed configuration's EntityNames (Legacy defaults when absent). Step ids,
 // groups, selectors and targets are tokens and never change; only titles and bodies name the work entities. In the new

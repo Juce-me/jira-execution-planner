@@ -98,12 +98,12 @@ test('readiness configuration messages name what is missing in the viewed model 
 
 test('readiness status lines name the planned level: Epic readiness for DELIVERY, Story readiness for Legacy', () => {
     const line = (status, workModel) => api.storyReadinessStatusMessage(status, '', { workModel });
-    assert.equal(line('invalid_scope', 'rnd_2027'), 'Epic readiness could not validate the selected sprint.');
+    assert.equal(line('invalid_scope', 'rnd_2027'), 'Epic readiness is unavailable for this Sprint: Jira reports a different name or state for it than this page has. Use Refresh to reload the Sprints.');
     assert.equal(line('unavailable', 'rnd_2027'), 'Epic readiness is temporarily unavailable. Jira Epics remain visible.');
     for (const status of ['invalid_scope', 'unavailable', 'access_denied', 'scope_too_large']) {
         assert.doesNotMatch(line(status, 'rnd_2027'), /Stor(y|ies)/, status);
     }
     // Legacy keeps its exact wording.
-    assert.equal(line('invalid_scope', 'legacy'), 'Story readiness could not validate the selected sprint.');
+    assert.equal(line('invalid_scope', 'legacy'), 'Story readiness is unavailable for this Sprint: Jira reports a different name or state for it than this page has. Use Refresh to reload the Sprints.');
     assert.equal(line('unavailable', 'legacy'), 'Story readiness is temporarily unavailable. Jira Stories remain visible.');
 });

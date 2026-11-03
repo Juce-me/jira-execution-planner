@@ -66,7 +66,8 @@ export function storyReadinessStatusMessage(status, navigationError = '', { erro
         unavailable: `${child} readiness is temporarily unavailable. Jira ${childPlural} remain visible.`,
         access_denied: `${child} readiness is unavailable because Jira project access could not be confirmed.`,
         scope_not_found: 'The selected Department is no longer available. Choose a valid Department.',
-        invalid_scope: `${child} readiness could not validate the selected sprint.`,
+        // The requested Sprint tuple no longer matches Jira (renamed, started or closed since the page loaded).
+        invalid_scope: `${child} readiness is unavailable for this Sprint: Jira reports a different name or state for it than this page has. Use Refresh to reload the Sprints.`,
         scope_too_large: `This Department is too large for the bounded ${child} readiness scan. Narrow the scope or contact support.`,
     }[status] || '';
 }

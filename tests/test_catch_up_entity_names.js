@@ -31,6 +31,7 @@ const names = async () => {
 };
 const tasks = count => Array.from({ length: count }, (_, index) => ({ key: `PLAN-${index + 1}`, fields: { status: { name: 'To Do' } } }));
 const BOLT_PATH = 'm10.271.050656';
+const DASHED_BOLT_PATH = 'M13.5 2.5 5 13.5h6l-1 8 8.5-11h-6l1-8Z';
 const BOOKMARK_PATH = 'M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z';
 
 test('Catch Up readout unit and subject follow the planning type and its count', async () => {
@@ -44,15 +45,19 @@ test('Catch Up readout unit and subject follow the planning type and its count',
     assert.equal(resolve(2).readoutUnit, 'of 2 stories');
     assert.equal(resolve(2).subject, 'Filtering stories');
     assert.equal(buildEngCatchUpFacetModel({ tasks: tasks(1), names: DELIVERY }).facets.find(facet => facet.id === 'projects').hidden, true);
+    const trackEmpty = entityNames => buildEngCatchUpFacetModel({ tasks: tasks(1), names: entityNames }).facets.find(facet => facet.id === 'track').emptyDescription;
+    assert.equal(trackEmpty(DELIVERY), 'No Project Track — showing epics under initiatives without a value');
+    assert.equal(trackEmpty(RENAMED), 'No Project Track — showing deliverables under themes without a value');
+    assert.equal(trackEmpty(), 'No Project Track — showing stories under epics without a value');
 });
 
 test('Stories Required reasons name the configured types; Legacy strings are unchanged', async () => {
     const { DELIVERY, RENAMED, LEGACY } = await names();
     const { getFuturePlanningNeedsStoriesReasonText: reason } = await import('../frontend/src/futurePlanningNeedsStories.mjs');
-    assert.equal(reason('no_stories', DELIVERY), 'No Epics yet for this sprint.');
-    assert.equal(reason('only_closed_stories', DELIVERY), 'Only closed Epics exist for this Initiative.');
+    assert.equal(reason('no_stories', DELIVERY), 'No epics yet for this sprint.');
+    assert.equal(reason('only_closed_stories', DELIVERY), 'Only closed epics exist for this initiative.');
     assert.equal(reason('team_uncovered', DELIVERY), 'This Team has no actionable Epic in the selected sprint.');
-    assert.equal(reason('no_stories', RENAMED), 'No Deliverables yet for this sprint.');
+    assert.equal(reason('no_stories', RENAMED), 'No deliverables yet for this sprint.');
     assert.equal(reason('stories_outside_sprint', RENAMED), 'Deliverables exist, but not in the selected sprint.');
     for (const legacyNames of [undefined, LEGACY]) {
         assert.equal(reason('no_stories', legacyNames), 'No stories yet for this sprint.');
@@ -83,14 +88,15 @@ test('the requirement card names the missing child and the parent it opens', asy
     const delivery = render(DELIVERY);
     assert.match(delivery, /<span class="story-requirement-title">Epic required<\/span>/);
     assert.ok(delivery.includes('aria-label="PLAN-100, Sample initiative: Epic required for Platform Team, target sprint 2027Q1. Opens the Initiative in Jira to create the Epic."'));
-    assert.ok(delivery.includes(BOLT_PATH), 'a level-1 child shows the bolt');
+    assert.ok(delivery.includes(DASHED_BOLT_PATH) && delivery.includes('stroke-dasharray="3 2"') && !delivery.includes(BOLT_PATH),
+        'a level-1 child shows the dashed placeholder bolt, never the solid one');
     const renamed = render(RENAMED);
     assert.match(renamed, /Deliverable required<\/span>/);
     assert.ok(renamed.includes('Opens the Theme in Jira to create the Deliverable.'));
     const legacy = render(undefined);
     assert.match(legacy, /Story required<\/span>/);
     assert.ok(legacy.includes('Opens the Epic in Jira to create the Story.'));
-    assert.ok(legacy.includes('stroke-dasharray="3 2"') && !legacy.includes(BOLT_PATH), 'Legacy keeps the dashed bookmark');
+    assert.ok(legacy.includes('stroke-dasharray="3 2"') && !legacy.includes(BOLT_PATH) && !legacy.includes(DASHED_BOLT_PATH), 'Legacy keeps the dashed bookmark');
 });
 
 test('IssueCard icon follows the planning level; without names (EPM) it renders exactly as before', async () => {
@@ -114,7 +120,35 @@ test('IssueCard field editing follows the planning-leaf role, not the Jira type 
     const task = { key: 'PLAN-1', fields: { summary: 'Sample', status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: 'Deliverable' }, customfield_10004: 3 } };
     const issueFieldEdits = { activeEditor: null, pendingIssueKeys: new Set(), status: 'idle' };
     const render = props => renderToStaticMarkup(React.createElement(IssueCard, { task, jiraUrl: 'https://jira.example', teamLabel: 'T', issueFieldEdits, ...props }));
-    assert.notEqual(render({ entityNames: RENAMED, isPlanningLeaf: true }), render({ entityNames: RENAMED }));
+    const editable = /class="story-points-editor"/;
+    assert.match(render({ entityNames: RENAMED, isPlanningLeaf: true }), editable, 'a new-model planning leaf opens the inline Story Points editor');
+    assert.doesNotMatch(render({ entityNames: RENAMED }), editable, 'without the role a non story|epic name stays read-only');
+    assert.match(render({ task: { ...task, fields: { ...task.fields, issuetype: { name: 'Story' } } } }), editable, 'EPM keeps the type-name test');
+});
+
+test('EpicBlock passes the planning-leaf role only in the new model; Legacy editability is unchanged', async () => {
+    const { LEGACY, RENAMED } = await names();
+    const { EpicBlock } = loadComponent('frontend/src/eng/EpicBlock.jsx');
+    const card = (key, type) => ({ key, fields: { summary: key, status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: type }, customfield_10004: 3 } });
+    const props = entityNames => ({
+        epicGroup: { key: 'SYN-1', epic: { summary: 'Synthetic parent', status: { name: 'In Progress' } }, storyPoints: 6, tasks: [card('SYN-2', 'Deliverable'), card('SYN-3', 'Bug'), card('SYN-4', 'Story')] },
+        statusTransitions: { activeSingleIssueTarget: null }, priorityTransitions: { activePriorityTarget: null }, projectTrackTransitions: { activeProjectTrackTarget: null },
+        issueFieldEdits: { activeEditor: null, pendingIssueKeys: new Set(), status: 'idle' }, issueFieldEditsEnabled: true, jiraUrl: 'https://jira.example',
+        excludedEpicSet: new Set(), normalizeEpicKey: String, stickyEpicFocusKey: null, epicRefMap: { current: new Map() }, statusTransitionEnabled: false,
+        renderPriorityIcon: () => null, showStats: false, showPlanning: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() },
+        selectedTasks: {}, getTeamInfo: () => ({}), shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false, entityNames,
+    });
+    const editableKeys = entityNames => {
+        const html = renderToStaticMarkup(React.createElement(EpicBlock, props(entityNames)));
+        return [...html.matchAll(/data-task-key="([^"]+)"/g)].map(match => match[1])
+            .filter(key => html.split(`data-task-key="${key}"`)[1].split('data-task-key=')[0].includes('class="story-points-editor"'));
+    };
+    assert.deepEqual(editableKeys(LEGACY), ['SYN-4'], 'Legacy edits only by the Story/Epic name test, as before');
+    assert.deepEqual(editableKeys(RENAMED), ['SYN-2', 'SYN-3', 'SYN-4'], 'every new-model planning row is the planning leaf');
+    const capacityTitle = entityNames => renderToStaticMarkup(React.createElement(EpicBlock, { ...props(entityNames), showPlanning: true, canEditSharedConfiguration: true }))
+        .match(/class="epic-stat-toggle[^"]*"[^>]*title="([^"]+)"/)[1];
+    assert.equal(capacityTitle(LEGACY), 'Include/exclude this epic in shared group capacity and reporting');
+    assert.equal(capacityTitle(RENAMED), 'Include/exclude this theme in shared group capacity and reporting');
 });
 
 test('alert pill counts are singular at 1 and the pin note is the plural label', async () => {

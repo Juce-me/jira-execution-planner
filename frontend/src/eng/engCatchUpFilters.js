@@ -182,7 +182,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
                 allowEmpty: true,
                 showZeroCountOptions: true,
                 emptyLabel: 'No Project Track',
-                emptyDescription: 'No Project Track — showing stories under epics without a value',
+                emptyDescription: `No Project Track — showing ${lowerEntityWord(names.childPlural)} under ${lowerEntityWord(names.parentPlural)} without a value`,
                 emptyTotal: unsetTrackEpicTotal,
                 neutralTotal: trackEpicTotal,
                 options: [

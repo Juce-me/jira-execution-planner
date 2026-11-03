@@ -1,4 +1,4 @@
-import { WORK_MODEL_LEGACY, isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './eng/engWorkModel.js';
+import { WORK_MODEL_LEGACY, lowerEntityWord, resolveEntityNames } from './eng/engWorkModel.js';
 
 const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
@@ -7,18 +7,16 @@ function isTerminalStory(task, normalizeStatus) {
     return status === 'blocked' || status === 'done' || status === 'killed' || status === 'incomplete';
 }
 
-// `names` is the viewed configuration's EntityNames. Legacy keeps its lowercase running text; the quarterly model writes the
-// configured Jira type names as Jira spells them.
+// `names` is the viewed configuration's EntityNames; running text lowercases them (acronyms such as OKR stay).
 export function getFuturePlanningNeedsStoriesReasonText(reason, names = LEGACY_NAMES) {
-    const word = isCombinedWorkModel(names.model) ? value => value : lowerEntityWord;
-    const children = word(names.childPlural);
+    const children = lowerEntityWord(names.childPlural);
     if (reason === 'no_stories') return `No ${children} yet for this sprint.`;
     if (reason === 'selected_stories_not_actionable') return `Selected-sprint ${children} exist, but none are actionable.`;
     if (reason === 'stories_outside_sprint') return `${names.childPlural} exist, but not in the selected sprint.`;
     if (reason === 'team_uncovered') return `This Team has no actionable ${names.child} in the selected sprint.`;
-    if (reason === 'only_closed_stories') return `Only closed ${children} exist for this ${word(names.parent)}.`;
+    if (reason === 'only_closed_stories') return `Only closed ${children} exist for this ${lowerEntityWord(names.parent)}.`;
     if (reason === 'stories_in_other_sprint') return `Open ${children} exist, but not in the selected sprint.`;
-    if (reason === 'team_missing_selected') return `This team has no ${word(names.child)} for the selected sprint.`;
+    if (reason === 'team_missing_selected') return `This team has no ${lowerEntityWord(names.child)} for the selected sprint.`;
     return `Needs sprint-ready ${children}.`;
 }
 

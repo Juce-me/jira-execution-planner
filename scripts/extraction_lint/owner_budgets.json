@@ -18073,7 +18073,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "d1e08156984c17f33d5cd89ad02c7233e11eccfc5048094d6e88f4fc13eb32d2",
+            "sourceDigest": "7e91102a979ff3dcd0fc4ec10a3629d0451f4898aebda276fd0e731c7877e24a",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",

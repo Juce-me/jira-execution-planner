@@ -12,7 +12,7 @@ import StoryRequirementCard from './StoryRequirementCard.jsx';
 import IssueCard from '../issues/IssueCard.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
 import WorkTypeGlyph from '../issues/WorkTypeGlyph.jsx';
-import { isCombinedWorkModel } from './engWorkModel.js';
+import { isCombinedWorkModel, lowerEntityWord } from './engWorkModel.js';
 
 export function EpicBlock({
     epicGroup,
@@ -243,7 +243,7 @@ export function EpicBlock({
                                     ? 'You do not have permission to edit shared group capacity settings'
                                     : (showGroupManage && isGroupDraftDirty)
                                         ? 'Save or discard open Department settings changes before changing excluded capacity'
-                                        : 'Include/exclude this epic in shared group capacity and reporting'}
+                                        : `Include/exclude this ${lowerEntityWord(entityNames.parent)} in shared group capacity and reporting`}
                             >
                                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />

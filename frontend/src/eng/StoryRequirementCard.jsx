@@ -6,11 +6,16 @@ import { WORK_MODEL_LEGACY, resolveEntityNames } from './engWorkModel.js';
 
 const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
-// The missing child's type glyph: the dashed placeholder bookmark at level 0, otherwise the level's own glyph.
+// The missing child's type glyph in the dashed placeholder treatment: the bookmark at level 0, the bolt at level 1; a level of
+// 2 or more draws the App's Initiative icon, which has no dashed variant.
 function StoryRequirementIcon({ level, InitiativeIcon }) {
     return (
         <span className="story-requirement-icon" aria-hidden="true">
-            {level >= 1 ? <WorkTypeGlyph level={level} InitiativeIcon={InitiativeIcon} /> : <svg viewBox="0 0 24 24" fill="none">
+            {level >= 2 ? <WorkTypeGlyph level={level} InitiativeIcon={InitiativeIcon} /> : level === 1 ? (
+                <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M13.5 2.5 5 13.5h6l-1 8 8.5-11h-6l1-8Z" stroke="currentColor" strokeWidth="2" strokeDasharray="3 2" strokeLinejoin="round" />
+                </svg>
+            ) : <svg viewBox="0 0 24 24" fill="none">
                 <path
                     d="M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2Z"
                     stroke="currentColor"

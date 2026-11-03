@@ -259,7 +259,7 @@ test('DELIVERY Catch Up names its counts, alerts, requirement card and icons by 
     await expect(card.locator('.story-requirement-title')).toHaveText('Epic required');
     await expect(card).toHaveAttribute('aria-label',
         'PLAN-100, Sample initiative: Epic required for Data Team, target sprint 2027Q1. Opens the Initiative in Jira to create the Epic.');
-    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No Epics yet for this sprint.');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No epics yet for this sprint.');
     await expect(page.locator('.task-item .story-icon').first()).toHaveAttribute('title', 'EPIC');
     await expect(page.locator('.epic-header .epic-icon').first()).toHaveAttribute('title', 'INITIATIVE');
     await expect(page.locator('.epic-header .epic-icon .initiative-icon')).toHaveCount(1);
@@ -285,5 +285,5 @@ test('a renamed DELIVERY configuration shows the captured Jira type names', asyn
     await expect(page.locator('.story-requirement-card')).toHaveAttribute('aria-label', /Deliverable required for Data Team, target sprint 2027Q1\. Opens the Theme in Jira to create the Deliverable\.$/);
     await expect(page.locator('.task-item .story-icon').first()).toHaveAttribute('title', 'DELIVERABLE');
     await expect(page.locator('.epic-header .epic-icon').first()).toHaveAttribute('title', 'THEME');
-    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No Deliverables yet for this sprint.');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No deliverables yet for this sprint.');
 });

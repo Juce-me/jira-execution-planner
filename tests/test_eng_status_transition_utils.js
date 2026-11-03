@@ -86,6 +86,12 @@ test('summarizeIssueTypeMix returns stories, epics, subtasks, or mixed', async (
     assert.equal(summarizeIssueTypeMix([{ issueType: 'Epic' }, { issueType: 'Story' }]), 'mixed');
     assert.equal(summarizeIssueTypeMix([{ issueType: 'Story' }, { issueType: 'Subtask' }]), 'mixed');
     assert.equal(summarizeIssueTypeMix([]), 'stories', 'empty input stays total with a harmless default');
+    // A target's role kind wins over its Jira type name; targets without one keep the name rule.
+    assert.equal(summarizeIssueTypeMix([{ issueType: 'Theme', issueKind: 'initiative' }, { issueType: 'Epic', issueKind: 'initiative' }]), 'initiatives');
+    assert.equal(summarizeIssueTypeMix([{ issueType: 'Goal', issueKind: 'objective' }]), 'objectives');
+    assert.equal(summarizeIssueTypeMix([{ issueType: 'Deliverable', issueKind: 'epic' }]), 'epics');
+    assert.equal(summarizeIssueTypeMix([{ issueType: 'Epic', issueKind: 'story' }]), 'stories');
+    assert.equal(summarizeIssueTypeMix([{ issueKind: 'epic' }, { issueType: 'Subtask' }]), 'mixed');
 });
 
 test('summarizeTransitionResults returns success/partial/failure counts without raw issue details', async () => {

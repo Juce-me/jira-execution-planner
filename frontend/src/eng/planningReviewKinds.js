@@ -50,3 +50,7 @@ export function toNativeChange(workModel, change) {
 }
 
 export const toNativeKind = (workModel, role) => mapKind(reviewKindMap(workModel).toNative, role);
+
+// The analytics `issue_kind` of a review row: the role's native kind from EntityNames (`names.*Kind`), never a Jira name.
+export const reviewRowIssueKind = (role, names = resolveEntityNames(WORK_MODEL_LEGACY)) => (
+    role === 'story' ? names.childKind : role === 'epic' ? names.parentKind : 'unknown');

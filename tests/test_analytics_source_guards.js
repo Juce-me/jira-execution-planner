@@ -121,7 +121,7 @@ test('issue field edit analytics stays typed, private, and mapped through the tw
     for (const token of [
         "new Set(['open', 'submit', 'result'])",
         "new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team'])",
-        "new Set(['initiative', 'epic', 'story'])",
+        "new Set(['initiative', 'epic', 'story', 'objective'])",
         "new Set(['catch_up', 'planning', 'board'])",
         "new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown'])",
     ]) assert.ok(dashboardAnalytics.includes(token), `Expected fixed issue-field enum ${token}`);

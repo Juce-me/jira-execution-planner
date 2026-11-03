@@ -21,7 +21,8 @@ import { takeInitialPlanningRowMode } from '../shareView/store.js';
 import { peekInitialPlanningRowMode } from '../shareView/store.js';
 import { publishPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
-import { reviewLabels } from './planningReviewKinds.js';
+import { reviewLabels, reviewRowIssueKind } from './planningReviewKinds.js';
+import { resolveEntityNames } from './engWorkModel.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
 function ReviewColumnPopover({ open, onClose, label, trigger, children, error, anchorClassName = '' }) {
@@ -127,8 +128,9 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel, entityNames = null }) {
     const labels = React.useMemo(() => reviewLabels(workModel), [workModel]);
+    const kindOf = role => reviewRowIssueKind(role, entityNames || resolveEntityNames(workModel)); // analytics kind of a row role
     // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
     const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
@@ -242,7 +244,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const title = <TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>;
         const awaited = row.rowKind === 'epic' ? row.requirements?.length || 0 : 0;
         // Without the Key column the Summary still reaches Jira: an icon link stands in for the key.
-        const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
+        const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf(row.rowKind), sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
         const share = !row.synthetic && (row.rowKind === 'epic' || row.rowKind === 'story') ? renderEpicShareControl?.(row.key, row.rowKind) : null;
         if (!awaited && !jiraLink && !share) return title;
         return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? labels.child : labels.childPlural} awaited`} /> : null}</span>;
@@ -405,14 +407,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.derived ? <PlanningReviewDerivedCell row={row} column={column} review={review} derivedContext={derivedContext} />
                         : column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
-                        : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
+                        : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf(row.rowKind), sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
                         : column.id === 'summary' ? summaryCell(row)
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
                         : column.id === 'accepted' ? row.accepted ?? ''
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />
                         : column.id === 'team' ? field(row, 'team', row.team?.name || 'Unknown Team')
-                        : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
+                        : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf('epic'), sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))

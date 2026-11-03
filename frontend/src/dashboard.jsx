@@ -59,6 +59,7 @@ import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
 import PlanningAssigneeCapacity, { getAssigneeCapacityController } from './eng/PlanningAssigneeCapacity.jsx';
 import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
 import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
+import { reviewRowIssueKind } from './eng/planningReviewKinds.js';
 import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
 import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
@@ -5027,7 +5028,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 sourceSurface: statusTransitionSourceSurface,
                 ...strictBoardMutationProps.status,
                 mutationScopeKey: engMutationScopeKey,
-                trackIssueStatusAction,
+                trackIssueStatusAction, leafKind: entityNames.childKind,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 issueEditState: issueEditStateRef.current,
                 onApplyLocalStatus: (issueKey, statusName, meta) => {
@@ -5066,7 +5067,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 sourceSurface: statusTransitionSourceSurface,
                 ...strictBoardMutationProps.projectTrack,
                 mutationScopeKey: engMutationScopeKey,
-                trackIssueProjectTrackAction,
+                trackIssueProjectTrackAction, issueKind: entityNames.parentKind,
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 onApplyLocalProjectTrack: (issueKey, value) => applyLocalEngIssueField(issueKey, 'projectTrack', value),
             });
@@ -5875,13 +5876,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     onOpen={projectTrackTransitions.openProjectTrackControl} onClose={closeProjectTrackControl} onSubmit={submitProjectTrackChange} />;
                 if (!issueFieldEditsEnabled) return null;
                 if (field === 'status') return <StatusTransitionMenu
-                    issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
+                    issue={{ key: row.key, status: row.status, summary: row.summary, storyPoints: row.issue?.fields?.customfield_10004 }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'} issueKind={reviewRowIssueKind(row.rowKind, entityNames)}
                     statusLabel={row.status} statusClassName={getIssueStatusClassName(row.status)} sourceSurface="planning" isOpen={statusTransitionActiveKey === row.key}
                     options={statusTransitions.transitionOptions} optionsLoading={statusTransitions.transitionOptionsLoading} submitting={statusTransitions.pendingIssueKeys.has(row.key)}
                     error={statusTransitions.transitionError} errorCode={statusTransitions.transitionErrorCode} result={statusTransitions.transitionResult}
                     portalTarget={document.body} onOpen={statusTransitions.openSingleIssueStatusControl} onPrefetch={statusTransitions.prefetchSingleIssueStatusOptions} onClose={closeSingleIssueStatusControl} onSubmit={handleSubmitStatusTransition} />;
                 if (field === 'priority') return <PriorityTransitionMenu
-                    issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'}
+                    issue={{ key: row.key, priority: row.priority, summary: row.summary }} fallbackIssueType={row.rowKind === 'epic' ? 'Epic' : 'Story'} issueKind={reviewRowIssueKind(row.rowKind, entityNames)}
                     priorityLabel={row.priority} currentPriorityLabel={row.priority} renderPriorityIcon={renderPriorityIcon}
                     isOpen={priorityTransitionActiveKey === row.key} options={priorityTransitions.priorityOptions} optionsLoading={priorityTransitions.priorityOptionsLoading}
                     submitting={priorityTransitions.prioritySubmitting || priorityTransitions.pendingIssueKeys.has(row.key)} error={priorityTransitions.priorityError} result={priorityTransitions.priorityResult}
@@ -5894,7 +5895,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     loading: active && issueFieldEdits.status === 'loading', submitting: active && ['queued', 'saving'].includes(issueFieldEdits.status),
                     pending: issueFieldEdits.pendingIssueKeys.has(row.key), error: active ? issueFieldEdits.errorMessage : '',
                     recoveryMode: active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : '',
-                    onOpen: () => issueFieldEdits.openEditor({ issueKey: row.key, field: editorField, issueKind: row.rowKind, sourceSurface: 'planning' }),
+                    onOpen: () => issueFieldEdits.openEditor({ issueKey: row.key, field: editorField, issueKind: reviewRowIssueKind(row.rowKind, entityNames), sourceSurface: 'planning' }),
                     onClose: issueFieldEdits.closeEditor, onReload: issueFieldEdits.reload, onCheckJira: issueFieldEdits.checkJira,
                     onSelect: async next => { const result = await issueFieldEdits.submit(next); if (result) issueFieldEdits.closeEditor('saved'); },
                 };
@@ -6884,7 +6885,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     {selectedView === 'eng' && showBoard && engWorkspaceConfigured && (
                         boardScopeRequested && !strictBoardActive && !((readPendingAuthenticationRequired() || sprintCatalogState.selectionPreserved) && strictBoardOwnerActive) ? renderBlockedBoardScope() : (
                             <EngBoardView
-                                workModel={workModel} workContext={workContext}
+                                workModel={workModel} workContext={workContext} entityNames={entityNames}
                                 board={activeGroup?.board || null}
                                 epicGroups={boardEpicGroupsFiltered}
                                 {...engBoardDataProps}
@@ -6925,7 +6926,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} workModel={workModel} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
+                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} workModel={workModel} entityNames={entityNames} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}

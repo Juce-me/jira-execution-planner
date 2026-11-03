@@ -11,7 +11,7 @@ import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
 import { epicStatusName, formatStoryPointsFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { computeEpicStoryProgress } from './engBoardCardModel.js';
-import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
+import { isCombinedWorkModel, resolveEntityNames, workEntityNames } from './engWorkModel.js';
 import { loadEpicDescription } from './engEpicDescriptionCache.js';
 import {
     DEFAULT_PANEL_SORT,
@@ -56,12 +56,15 @@ export default function EngBoardEpicPanel({
     onSubmitStatusTransition,
     issueFieldEdits = null,
     workModel = null,
+    entityNames = null,
     onSortChange,
     onClose,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
     const names = workEntityNames(workModel);
+    // Analytics kinds per role, from the configured hierarchy levels (never from a Jira name).
+    const kinds = entityNames || resolveEntityNames(workModel);
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
     const privateKeys = epicGroup.readingDepartureKeys;
@@ -218,6 +221,7 @@ export default function EngBoardEpicPanel({
             <StatusTransitionMenu
                 issue={task}
                 fallbackIssueType="Story"
+                issueKind={childEditable(task) ? kinds.childKind : undefined}
                 statusLabel={name}
                 statusClassName={className}
                 sourceSurface="board"
@@ -237,7 +241,7 @@ export default function EngBoardEpicPanel({
         );
     };
 
-    const renderPriorityControl = (issue, kind, label) => {
+    const renderPriorityControl = (issue, kind, label, issueKind) => {
         if (!transitionsEnabled || !priorityTransitions) {
             return renderPriorityIcon ? renderPriorityIcon(label, issue.key) : null;
         }
@@ -245,6 +249,7 @@ export default function EngBoardEpicPanel({
             <PriorityTransitionMenu
                 issue={issue}
                 fallbackIssueType={kind}
+                issueKind={issueKind}
                 priorityLabel={label}
                 renderPriorityIcon={renderPriorityIcon}
                 isOpen={priorityTransitions.activePriorityTarget?.key === issue.key}
@@ -268,7 +273,6 @@ export default function EngBoardEpicPanel({
         ? Boolean(issue?.fields?.issuetype) && issue.fields.issuetype.subtask !== true
         : String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story');
     const renderPersonEditor = (issue, role, field, label, value, triggerClassName = '') => {
-        const kind = role === 'parent' ? names.parent : names.child;
         if (!issueFieldEdits || (role !== 'parent' && !childEditable(issue))) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
         const active = issueFieldEdits.activeEditor?.issueKey === issue.key && issueFieldEdits.activeEditor.field === field;
         return (
@@ -282,7 +286,7 @@ export default function EngBoardEpicPanel({
                 statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''}
                 recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''}
                 configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                onOpen={() => issueFieldEdits.openEditor({ issueKey: issue.key, field, issueKind: kind.toLowerCase(), sourceSurface: 'board' })}
+                onOpen={() => issueFieldEdits.openEditor({ issueKey: issue.key, field, issueKind: role === 'parent' ? kinds.parentKind : kinds.childKind, sourceSurface: 'board' })}
                 onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit}
                 onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira}
                 portalTarget={panelRef.current} triggerClassName={triggerClassName}
@@ -323,6 +327,7 @@ export default function EngBoardEpicPanel({
                             { key: epicKey, priority: priorityLabel, summary },
                             names.parent,
                             priorityLabel,
+                            kinds.parentKind,
                         )}
                         {(transitionsEnabled && projectTrackTransitions) ? (
                             <ProjectTrackTransitionMenu
@@ -352,6 +357,7 @@ export default function EngBoardEpicPanel({
                             <StatusTransitionMenu
                                 issue={{ key: epicKey, summary, status: epic.status }}
                                 fallbackIssueType="Epic"
+                                issueKind={kinds.parentKind}
                                 statusLabel={statusLabel}
                                 statusClassName={getIssueStatusClassName(statusLabel)}
                                 sourceSurface="board"
@@ -498,7 +504,7 @@ export default function EngBoardEpicPanel({
                                     className="story-subtask-row has-priority"
                                     data-story-key={task.key}
                                 >
-                                    {renderPriorityControl(task, names.child, task?.fields?.priority?.name || '')}
+                                    {renderPriorityControl(task, names.child, task?.fields?.priority?.name || '', childEditable(task) ? kinds.childKind : undefined)}
                                     <a
                                         className="story-subtask-name"
                                         href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}

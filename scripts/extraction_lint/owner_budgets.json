@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7499,
+    "lineCeiling": 7500,
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,
@@ -17937,6 +17937,7 @@
             "entityNames.model",
             "entityNames.parent",
             "entityNames.parent.toUpperCase",
+            "entityNames.parentKind",
             "entityNames.parentLevel",
             "epicGroup",
             "epicGroup.epic",
@@ -18056,11 +18057,11 @@
             "toggleTaskSelection"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 124,
+          "expandedInputCount": 125,
           "returnCount": 0,
           "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 124,
+          "expandedInputCeiling": 125,
           "returnCeiling": 0,
           "propCeiling": 38,
           "unresolved": [
@@ -18073,7 +18074,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "7e91102a979ff3dcd0fc4ec10a3629d0451f4898aebda276fd0e731c7877e24a",
+            "sourceDigest": "99323b9b45e9f86c2ac42b446b4153f50c28bde0dd0ec278b67dcac5fd343b59",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",

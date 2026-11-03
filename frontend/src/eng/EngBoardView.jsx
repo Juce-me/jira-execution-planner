@@ -29,7 +29,7 @@ import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { useStatusColourStyle } from '../issues/StatusColourContext.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
-import { workEntityNames } from './engWorkModel.js';
+import { resolveEntityNames, workEntityNames } from './engWorkModel.js';
 
 // The ENG Group Board (§6.1). Presentational over engBoardColumns.js: every rule that can be
 // stated without a DOM lives there, so this file owns rendering, the centring measurement and the
@@ -108,9 +108,10 @@ export default function EngBoardView({
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
-    workModel, workContext = null,
+    workModel, workContext = null, entityNames = null,
 }) {
     const names = workEntityNames(workModel);
+    const kinds = entityNames || resolveEntityNames(workModel); // analytics kinds per role
     const statusStyle = useStatusColourStyle();
     const boardPresentationRef = React.useRef(null);
     const [readingRevision, setReadingRevision] = React.useState(0);
@@ -1304,6 +1305,7 @@ export default function EngBoardView({
                                             issueFieldEdits={epicGroup.epic ? issueFieldEdits : null}
                                             jiraUrl={jiraUrl}
                                             shareControl={renderEpicShareControl?.(epicGroup.key, column.id)}
+                                            issueKind={kinds.parentKind}
                                         />
                                     ))}
                                 </div>
@@ -1385,6 +1387,7 @@ export default function EngBoardView({
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
                     workModel={workModel}
+                    entityNames={kinds}
                     onSortChange={() => freshnessBridge?.current.release?.()}
                     workItemLabel={strictWorkItemLabel}
                     workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : names.child.toLowerCase()}

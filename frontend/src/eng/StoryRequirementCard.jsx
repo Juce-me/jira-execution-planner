@@ -82,7 +82,7 @@ export default function StoryRequirementCard({
             rel="noopener noreferrer"
             aria-label={accessibleName}
             analyticsMeta={buildJiraBrowseLinkAnalytics({
-                issueKind: 'epic',
+                issueKind: entityNames.parentKind,
                 sourceSurface,
             })}
         >

@@ -181,7 +181,7 @@ test('Story requirement card is one tracked external link with bounded Jira anal
     const source = fs.readFileSync(storyRequirementCardPath, 'utf8');
 
     assert.match(source, /<TrackedExternalLink[\s\S]*target="_blank"[\s\S]*rel="noopener noreferrer"/);
-    assert.match(source, /buildJiraBrowseLinkAnalytics\(\{[\s\S]*issueKind:\s*'epic'[\s\S]*sourceSurface/s);
+    assert.match(source, /buildJiraBrowseLinkAnalytics\(\{[\s\S]*issueKind:\s*entityNames\.parentKind[\s\S]*sourceSurface/s);
     assert.match(source, /aria-label=\{accessibleName\}/);
     assert.match(source, /data-story-requirement-id/);
     assert.doesNotMatch(source, /<(?:button|input|select|textarea)\b/);

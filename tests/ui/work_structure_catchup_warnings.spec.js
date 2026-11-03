@@ -38,21 +38,21 @@ const selectorsOf = params => ({
     configurationId: params.configurationId, configurationRevision: params.configurationRevision, quarter: params.quarter,
 });
 // The server's admission: no selectors on a promoted workspace is `configuration_required`, another revision is stale.
-function admission(params) {
+function admission(params, legacy = false) {
     if (!params.configurationId || !params.quarter) return { status: 409, error: 'configuration_required' };
-    if (params.configurationId !== 'delivery' || params.configurationRevision !== '2') return { status: 409, error: 'configuration_scope_changed' };
+    const [id, revision] = legacy ? ['legacy', '3'] : ['delivery', '2'];
+    if (params.configurationId !== id || params.configurationRevision !== revision) return { status: 409, error: 'configuration_scope_changed' };
     return null;
 }
 
-async function mockApp(page, { readinessReply = null } = {}) {
+async function mockApp(page, { readinessReply = null, workTypes = null, legacy = false } = {}) {
     const state = { log: [], configRequests: 0 };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
-    await page.addInitScript(() => {
-        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-            selectedView: 'eng', selectedSprint: 91, sprintName: '2027Q1', selectedQuarter: '2027Q1',
-        }));
-    });
+    await page.addInitScript(prefs => {
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
+    }, legacy ? { selectedView: 'eng', selectedSprint: 7, sprintName: '2026Q4', selectedQuarter: '2026Q4' }
+        : { selectedView: 'eng', selectedSprint: 91, sprintName: '2027Q1', selectedQuarter: '2027Q1' });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -94,7 +94,7 @@ async function mockApp(page, { readinessReply = null } = {}) {
         if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' } }, meta: {} });
         if (p === '/api/teams') return json({ teams: [{ id: 'team-platform', name: 'Platform Team' }] });
         if (WORK_PATHS.includes(p)) {
-            const rejected = admission(params);
+            const rejected = admission(params, legacy);
             if (rejected) return json({ error: rejected.error }, rejected.status);
         }
         if (p === '/api/tasks-with-team-name') {
@@ -103,6 +103,8 @@ async function mockApp(page, { readinessReply = null } = {}) {
                 issues: visible ? [epic('PLAN-1', 'First sample epic'), epic('PLAN-2', 'Second sample epic')] : [],
                 epics: { 'PLAN-100': { key: 'PLAN-100', summary: 'Sample initiative', status: { name: 'In Progress' }, teamId: 'team-platform', teamName: 'Platform Team' } },
                 epicsInScope: [], names: {},
+                // The server reports workTypes on full new-model reads only; Legacy never carries them.
+                ...(visible && workTypes && !legacy ? { workTypes } : {}),
             });
         }
         if (p === '/api/missing-info') return json({ issues: [], epics: [] });
@@ -173,4 +175,38 @@ test('a stale configuration answer re-reads the configuration silently instead o
     await expect.poll(() => state.configRequests).toBeGreaterThan(state.configRequestsAtReadiness);
     await page.waitForTimeout(500);
     await expect(page.locator('.story-readiness-notice')).toHaveCount(0);
+});
+
+const LINK_NOTICE = /in this quarter (has|have) a Jira parent that is not/;
+const mismatches = (parentCount, ancestorCount, keys) => ({
+    digest: 'digest-delivery', observed: { planning: 'Epic', parent: 'Initiative' },
+    linkMismatches: { parentCount, ancestorCount, keys },
+});
+
+test('a DELIVERY Epic whose Jira parent is not an Initiative shows one notice and keeps the row', async ({ page }) => {
+    await mockApp(page, { workTypes: mismatches(1, 0, ['PLAN-2']) });
+    await expect(page.locator('.task-item').first()).toBeVisible();
+    const notices = page.locator('.story-readiness-notice', { hasText: LINK_NOTICE });
+    await expect(notices).toHaveCount(1);
+    await expect(notices.first()).toHaveText(
+        '1 Epic in this quarter has a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.');
+    await expect(page.locator('.task-item', { hasText: 'Second sample epic' })).toBeVisible();
+});
+
+test('several mismatched links use the plural and an Initiative mismatch names the Objective', async ({ page }) => {
+    await mockApp(page, { workTypes: mismatches(2, 1, ['PLAN-1', 'PLAN-2', 'PLAN-100']) });
+    await expect(page.locator('.task-item').first()).toBeVisible();
+    const notices = page.locator('.story-readiness-notice', { hasText: LINK_NOTICE });
+    await expect(notices).toHaveText([
+        '2 Epics in this quarter have a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.',
+        '1 Initiative in this quarter has a Jira parent that is not an Objective. An administrator can review Field mapping in Settings.',
+    ]);
+});
+
+test('a Legacy quarter shows no link notice', async ({ page }) => {
+    const state = await mockApp(page, { legacy: true, workTypes: mismatches(1, 0, ['PLAN-2']) });
+    await expect.poll(() => work(state).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose).length).toBeGreaterThan(0);
+    await expect(page.locator('.task-item').first()).toBeVisible();
+    await page.waitForTimeout(500);
+    await expect(page.locator('.story-readiness-notice', { hasText: LINK_NOTICE })).toHaveCount(0);
 });

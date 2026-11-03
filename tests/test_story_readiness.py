@@ -695,6 +695,10 @@ class StoryReadinessConcurrentBatchTests(unittest.TestCase):
                 self.admission.slots.release()
         return all(acquired)
 
+    def test_legacy_compute_reports_no_ancestor_mismatch_count(self):
+        result, _timing, _wall = run_readiness_compute(_ReadinessJira(epics=2))
+        self.assertNotIn('ancestorMismatchCount', result)
+
     def test_compute_runs_child_and_enrichment_batches_with_a_cap_of_four(self):
         # The four child batches must be in flight together (a serial run breaks the barrier).
         first_wave = threading.Barrier(JIRA_BATCH_CONCURRENCY, timeout=5)
@@ -951,6 +955,38 @@ class NewModelStoryReadinessTests(unittest.TestCase):
         self.assertEqual(len(children), 1)
         self.assertNotIn('customfield_10014', children[0])  # Epic Link is Story->Epic only
         self.assertNotIn('issuetype = Story', children[0])
+
+    def ancestor_search(self, ancestor_type):
+        initiative = self.initiative('PLAN-1', ['alias_a', 'alias_b'])
+        ancestor_fields = {'summary': 'Objective one'}
+        if ancestor_type:
+            ancestor_fields['issuetype'] = {'id': ancestor_type, 'name': 'Synthetic'}
+        initiative['fields']['parent'] = {'key': 'OBJ-1', 'fields': ancestor_fields}
+
+        def search(payload):
+            jql = payload['jql']
+            if 'issuetype = 10001' in jql and 'labels in' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [initiative], 'isLast': True})
+        return search
+
+    def test_a_parent_of_the_ancestor_type_is_the_initiative(self):
+        result, _calls = self.compute(self.ancestor_search('10010'))
+        self.assertEqual(result['epics'][0]['initiative'], {'key': 'OBJ-1', 'summary': 'Objective one'})
+        self.assertEqual(result['ancestorMismatchCount'], 0)
+
+    def test_a_parent_of_another_type_is_counted_and_not_the_initiative(self):
+        result, _calls = self.compute(self.ancestor_search('10002'))
+        self.assertEqual([item['key'] for item in result['epics']], ['PLAN-1'])
+        self.assertIsNone(result['epics'][0]['initiative'])
+        self.assertEqual(result['ancestorMismatchCount'], 1)
+
+    def test_a_permission_reduced_parent_is_unknown_and_not_counted(self):
+        result, _calls = self.compute(self.ancestor_search(None))
+        self.assertEqual(result['ancestorMismatchCount'], 0)
 
     def test_actionable_epics_for_every_team_leave_nothing_missing(self):
         def search(payload):

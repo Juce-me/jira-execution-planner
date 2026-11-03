@@ -32,6 +32,12 @@ DEFAULT_MAX_PAGES = 101
 _TYPE_ID_RE = re.compile(r'[0-9]+')
 _CUSTOM_FIELD_RE = re.compile(r'customfield_([0-9]+)')
 _SPRINT_ID_RE = re.compile(r'[1-9][0-9]*')
+LINK_MISMATCH_KEY_LIMIT = 20  # issue keys a ``workTypes`` payload carries; counts stay complete
+
+
+def _type_name(issue_type):
+    name = (issue_type or {}).get('name') if isinstance(issue_type, dict) else None
+    return name.strip() if isinstance(name, str) and name.strip() else None
 
 
 class SearchUnavailable(Exception):
@@ -314,6 +320,35 @@ class WorkRoles:
         if not issue_type:
             return not self.is_legacy
         return str(issue_type.get('id') or '') == value
+
+    def summarize_links(self, issues, epic_details, ancestor_misses):
+        """New-model ``workTypes`` facts of one full read: observed role names and mismatched links.
+
+        ``observed.planning`` is the Jira name of the returned planning rows (queried by the planning type id);
+        ``observed.parent`` the name of an embedded parent that ``parent_ref_matches`` accepts with a type.  A
+        parent of another type is a parent mismatch; ``ancestor_misses`` are the hydrated parents (keys of
+        ``epic_details``) whose own parent is not of the ancestor type.  A parent without a type is unknown and
+        never counted, and no row is dropped.  Counts are complete; ``keys`` holds at most 20.
+        """
+        planning = parent = None
+        parent_misses = []
+        for issue in issues or []:
+            fields = (issue or {}).get('fields') or {}
+            planning = planning or _type_name(fields.get('issuetype'))
+            link = fields.get('parent')
+            link_type = ((link or {}).get('fields') or {}).get('issuetype') if isinstance(link, dict) else None
+            if not link or not link.get('key') or not link_type:
+                continue
+            if self.parent_ref_matches(link):
+                parent = parent or _type_name(link_type)
+            else:
+                parent_misses.append(issue.get('key'))
+        ancestors = [key for key in dict.fromkeys(ancestor_misses or ()) if key in (epic_details or {})]
+        keys = [key for key in dict.fromkeys(parent_misses + ancestors) if key][:LINK_MISMATCH_KEY_LIMIT]
+        return {
+            'observed': {'planning': planning, 'parent': parent},
+            'linkMismatches': {'parentCount': len(parent_misses), 'ancestorCount': len(ancestors), 'keys': keys},
+        }
 
     def epic_key_of(self, issue, epic_link_field_id=None):
         """Strict grouping key as ``fetch_tasks`` derives it: Epic Link, else a role-matching parent."""

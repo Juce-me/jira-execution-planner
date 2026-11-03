@@ -6972,6 +6972,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     onRetryReadiness={storyReadiness.retry}
                                     dependenciesIncomplete={dependencyIncomplete && Boolean(dependencyKeySignature)}
                                     onRetryDependencies={() => setDependencyRefreshNonce(value => value + 1)}
+                                    workTypes={workTypes} entityNames={entityNames}
                                     activeDependencyFocus={activeDependencyFocus}
                                     handleDependencyFocusClick={handleDependencyFocusClick}
                                     initiativeGroups={initiativeGroups}

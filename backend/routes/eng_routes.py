@@ -527,6 +527,12 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
         enrichment_fields)
 
+    # New model: the readiness parents' own parent is the Initiative slot only when it is of the ancestor type;
+    # a typed parent of another type is counted, an untyped (permission-reduced) one is unknown. No ancestor
+    # type configured: unchecked, as Legacy.
+    ancestor_term = roles.ancestor_term() if new_model else None
+    ancestor_misses = []
+
     def read_epics(batch):
         epics = []
         batch_set = set(batch)
@@ -545,6 +551,12 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
             initiative = None
             if parent and parent.get('key') and parent_fields.get('summary'):
                 initiative = {'key': str(parent['key']), 'summary': str(parent_fields['summary'])}
+            if ancestor_term is not None and parent and parent.get('key'):
+                parent_type = parent_fields.get('issuetype') or {}
+                if str(parent_type.get('id') or '') != ancestor_term[1]:
+                    initiative = None
+                    if parent_type:
+                        ancestor_misses.append(str(row.get('key') or ''))
             epics.append({
                 'id': str(row.get('id') or ''),
                 'team': fields.get(team_field),
@@ -598,6 +610,8 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         'epics': epics,
         'children': children,
     })
+    if new_model:
+        result['ancestorMismatchCount'] = len(ancestor_misses)
     total_ms = (time.monotonic() - started) * 1000
     timing = (
         f'discovery;dur={discovery_ms:.1f}, child-distribution;dur={child_ms:.1f}, '

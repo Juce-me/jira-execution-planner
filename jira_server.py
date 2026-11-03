@@ -2988,8 +2988,10 @@ def fetch_sprints_from_jira():
     )
 
 
-def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None):
-    """Fetch epic details in small batches to avoid per-epic network calls."""
+def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, ancestor_misses=None):
+    """Fetch epic details in small batches to avoid per-epic network calls.
+
+    ``ancestor_misses`` (promoted only) collects the keys whose typed parent is not of the ancestor type."""
     epic_details = {}
     if not epic_keys:
         return epic_details
@@ -3054,6 +3056,8 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None):
                         is_ancestor = (ancestor_term is not None and (
                             str(parent_type.get('id') or '') == ancestor_term[1] if ancestor_term[0] == 'id'
                             else type_name == ancestor_term[1].lower()))
+                        if ancestor_misses is not None and ancestor_term is not None and parent_type and not is_ancestor:
+                            ancestor_misses.append(key)
                     else:
                         is_ancestor = type_name == 'initiative' or hierarchy_level == 0
                     if is_ancestor:
@@ -3717,7 +3721,10 @@ def fetch_tasks(include_team_name=False):
                                  if roles is not None else
                                  (fetch_epics_for_empty_alert, fetch_story_counts_for_epics, fetch_story_distribution_for_epics))
         scoped_epics_fetcher, scoped_counts_fetcher, scoped_distribution_fetcher = scoped_alert_fetchers
-        scoped_details_fetcher = partial(fetch_epic_details_bulk, roles=roles) if roles is not None else fetch_epic_details_bulk
+        # Only a full new-model Catch Up read reports workTypes (observed names, mismatched links).
+        report_work_types = roles is not None and not roles.is_legacy and request_purpose == 'dashboard' and not epic_keys_filter
+        ancestor_misses = [] if report_work_types else None
+        scoped_details_fetcher = partial(fetch_epic_details_bulk, roles=roles, ancestor_misses=ancestor_misses) if roles is not None else fetch_epic_details_bulk
         scoped_derive_epic_jql = partial(derive_epic_jql, roles=roles) if roles is not None else derive_epic_jql
         scoped_counts_available = bool(epic_link_field_id) or (roles is not None and not roles.uses_epic_link)
 
@@ -3917,6 +3924,8 @@ def fetch_tasks(include_team_name=False):
                     epic_details = future_epic_details.result()
                     epics_in_scope = future_epics_in_scope.result()
         record_timing('epic_enrichment', enrich_epics_started)
+        if report_work_types:  # from the raw rows, before trimming; cached with the response
+            data['workTypes'] = {'digest': work_context.digest, **roles.summarize_links(collected_issues, epic_details, ancestor_misses)}
 
         if epic_keys_filter:
             epic_filter_set = set(epic_keys_filter)

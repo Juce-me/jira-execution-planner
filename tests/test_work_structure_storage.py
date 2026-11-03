@@ -109,6 +109,17 @@ FLAT = {
 }
 
 
+CATALOG = {
+    '6': {'name': 'Epic', 'hierarchyLevel': 1},
+    '11700': {'name': 'Initiative', 'hierarchyLevel': 2},
+    '12723': {'name': 'Objective', 'hierarchyLevel': 3},
+}
+
+
+def map_delivery(bundle, **hierarchy):
+    bundle['configurations'][1]['hierarchy'].update(hierarchy or {'planningIssueTypeId': '6', 'parentIssueTypeId': '11700'})
+
+
 class NoAmbientReadTests(StorageHarness):
     """Capture and first save read the DB row only (validation corrections 6 and 7)."""
 
@@ -309,6 +320,24 @@ class FirstSaveTests(StorageHarness):
         legacy = self.row().payload['workConfigurations']['configurations'][0]
         self.assertEqual(legacy['legacyDisplayTypes'], display)
 
+    def test_first_save_captures_type_names(self):
+        self.seed(FLAT)
+        envelope = self.envelope()
+        bundle = deepcopy(envelope['workConfigurations'])
+        map_delivery(bundle)
+        result = self.save(bundle, 4, legacy_edits=[], issue_type_catalog=CATALOG)
+        names = self.row().payload['workConfigurationTypeNames']
+        self.assertEqual(names['delivery'], {
+            'planning': {'id': '6', 'name': 'Epic', 'hierarchyLevel': 1},
+            'parent': {'id': '11700', 'name': 'Initiative', 'hierarchyLevel': 2},
+            'ancestor': None, 'optionalAncestor': None,
+        })
+        self.assertEqual(set(names), {'legacy', 'delivery'})
+        # Outside the bundle: the saved bundle and the editor envelope never carry the names.
+        self.assertNotIn('workConfigurationTypeNames', result['workConfigurations'])
+        self.assertNotIn('workConfigurationTypeNames', self.envelope())
+        self.assertNotIn('workConfigurationTypeNames', self.envelope()['workConfigurations'])
+
     def test_flag_off_blocks_save_without_mutation(self):
         self.seed(FLAT)
         envelope = self.envelope()
@@ -404,6 +433,59 @@ class LaterSaveTests(StorageHarness):
         self.assertEqual(self.row().revision, revision)
         self.assertEqual([e['revision'] for e in self.row().payload['workConfigurations']['configurations']], [1, 1])
         self.assertEqual(self.audit_count(), audits)
+
+    def names(self):
+        return self.row().payload.get('workConfigurationTypeNames')
+
+    def test_save_after_promotion_refreshes_type_names(self):
+        bundle, revision = self.promoted_bundle()
+        map_delivery(bundle)
+        result = self.save(bundle, revision, issue_type_catalog=CATALOG)
+        self.assertEqual(result['changedConfigurationIds'], ['delivery'])
+        self.assertEqual(self.names()['delivery']['planning'], {'id': '6', 'name': 'Epic', 'hierarchyLevel': 1})
+        # Remapping with a failed prefetch keeps the unchanged slot and nulls the changed one.
+        bundle['configurations'][1]['hierarchy']['parentIssueTypeId'] = '12723'
+        self.save(bundle, result['configRevision'], issue_type_catalog=None)
+        self.assertEqual(self.names()['delivery']['planning']['name'], 'Epic')
+        self.assertIsNone(self.names()['delivery']['parent'])
+
+    def test_names_only_change_keeps_entry_revisions(self):
+        bundle, revision = self.promoted_bundle()
+        map_delivery(bundle)
+        revision = self.save(bundle, revision, issue_type_catalog=CATALOG)['configRevision']
+        entry_revisions = [e['revision'] for e in self.row().payload['workConfigurations']['configurations']]
+        audits = self.audit_count()
+        renamed = {**CATALOG, '6': {'name': 'Capability', 'hierarchyLevel': 1}}
+        result = self.save(bundle, revision, issue_type_catalog=renamed)
+        self.assertEqual(result['changedConfigurationIds'], [])
+        self.assertEqual(result['configRevision'], revision + 1)
+        self.assertEqual(self.audit_count(), audits + 1)
+        self.assertEqual([e['revision'] for e in self.row().payload['workConfigurations']['configurations']],
+                         entry_revisions)
+        self.assertEqual([e['revision'] for e in result['workConfigurations']['configurations']], entry_revisions)
+        self.assertEqual(self.names()['delivery']['planning']['name'], 'Capability')
+
+    def test_unchanged_names_and_bundle_is_a_no_op(self):
+        bundle, revision = self.promoted_bundle()
+        map_delivery(bundle)
+        revision = self.save(bundle, revision, issue_type_catalog=CATALOG)['configRevision']
+        audits = self.audit_count()
+        for catalog in (CATALOG, None):
+            with self.subTest(catalog=catalog is not None):
+                result = self.save(bundle, revision, issue_type_catalog=catalog)
+                self.assertEqual((result['changedConfigurationIds'], result['configRevision']), ([], revision))
+                self.assertEqual(self.row().revision, revision)
+                self.assertEqual(self.audit_count(), audits)
+
+    def test_other_dashboard_config_writes_preserve_type_names(self):
+        bundle, revision = self.promoted_bundle()
+        map_delivery(bundle)
+        revision = self.save(bundle, revision, issue_type_catalog=CATALOG)['configRevision']
+        before = self.names()
+        storage.update_workspace_config_section(
+            self.ctx, 'statsPriorityWeights', [{'priority': 'Low', 'weight': 1}], revision,
+            database_url=self.database_url)
+        self.assertEqual(self.names(), before)
 
     def test_rename_only_advances_that_entry_and_global_once(self):
         bundle, revision = self.promoted_bundle()

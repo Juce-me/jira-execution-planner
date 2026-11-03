@@ -149,9 +149,15 @@ never touches Capacity, its verification columns, priority weights, groups or pr
   captured compatibility and display metadata and `promotionRevision` are server-owned; a non-empty to
   empty project scope needs an explicit `clearProjectsForConfigurationIds` entry.
 - `/api/config` is the intentional no-quarter metadata read: it adds `workConfigurationsEnabled`,
-  `workConfigurationsPromoted`, `workConfigurationSummaries` (id, name, revision, model, ranges and the
-  entry `digest`, which write stamps need) and `adminSettingsMissingByConfiguration`; after promotion it
-  omits the unscoped moved projections. `GET/POST /api/work-structure/config` are `authenticated_read` /
+  `workConfigurationsPromoted`, `workConfigurationSummaries` (id, name, revision, model, ranges, the
+  entry `digest`, which write stamps need, and `roleTypes`) and `adminSettingsMissingByConfiguration`; after
+  promotion it omits the unscoped moved projections. `roleTypes` (`planning`, `parent`, `ancestor`,
+  `optionalAncestor`, each `null` or `{id, name, hierarchyLevel}`) comes from the server-owned workspace key
+  `workConfigurationTypeNames`: every bundle Save reads `/rest/api/3/issuetype` outside the fence and captures
+  the names of the saved ids (a failed read keeps an unchanged id's previous capture). It is display metadata
+  beside the bundle: never browser input, never in a digest, the editor envelope or `sharedConfig`; a
+  names-only change writes it without moving any entry `revision`. Legacy compatibility slots report
+  `Epic`/`Initiative` and a name-filtered planning slot reports its single name or `Story`. `GET/POST /api/work-structure/config` are `authenticated_read` /
   `shared_admin_write` (`backend/security/policy.py`). `GET /api/work-structure/sprint-values` is an `authenticated_read`
   metadata read for the Scope boundary pickers: no query parameters (400 `unsupported_catalog_parameter`), no viewed quarter,
   no Jira call (stored Sprint snapshots only), DB/OAuth only (409 `work_configuration_setup_required`), 409

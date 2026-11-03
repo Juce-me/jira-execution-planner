@@ -18,6 +18,8 @@ import re
 from types import MappingProxyType
 
 WORK_CONFIGURATIONS_KEY = 'workConfigurations'
+# Jira type names captured on every Save, beside the bundle: display metadata, never authority or digest input.
+WORK_CONFIGURATION_TYPE_NAMES_KEY = 'workConfigurationTypeNames'
 BUNDLE_VERSION = 1
 
 MODEL_LEGACY = 'legacy'
@@ -47,6 +49,13 @@ ALWAYS_SHARED_FIELD_NAMES = ('team',)
 FIELD_MODE_SHARED = 'shared'
 FIELD_MODE_OWN = 'own'
 MODE_SLOTS = {'parent': 'parentIssueTypeId', 'ancestor': 'ancestorIssueTypeId'}
+ROLE_TYPE_SLOTS = {
+    'planning': 'planningIssueTypeId', 'parent': 'parentIssueTypeId',
+    'ancestor': 'ancestorIssueTypeId', 'optionalAncestor': 'optionalAncestorIssueTypeId',
+}
+# Legacy compatibility slots keep Jira's fixed names; a name-filtered planning type is a Story-level type.
+LEGACY_COMPATIBILITY_TYPES = {'parent': ('Epic', 1), 'ancestor': ('Initiative', 2)}
+LEGACY_PLANNING_DEFAULT = 'Story'
 
 # Effective Legacy defaults, mirroring jira_server's *_FIELD_DEFAULT constants.
 # Delivery owner and parent name intentionally have no default.
@@ -730,11 +739,64 @@ def project_keys(entry):
     return keys
 
 
-def entry_summary(entry, entries=None):
+def _role_type(type_id, name, level):
+    """``{id, name, hierarchyLevel}`` or None; a level is kept only as a non-bool int."""
+    if not type_id or not isinstance(name, str) or not name.strip() or len(name.strip()) > 255:
+        return None
+    level = level if isinstance(level, int) and not isinstance(level, bool) else None
+    return {'id': str(type_id), 'name': name.strip(), 'hierarchyLevel': level}
+
+
+def _captured_slot(captured, slot, type_id):
+    """The stored capture of ``slot`` when it still describes ``type_id``, else None."""
+    value = captured.get(slot) if isinstance(captured, dict) else None
+    if not type_id or not isinstance(value, dict) or value.get('id') != type_id:
+        return None
+    return _role_type(type_id, value.get('name'), value.get('hierarchyLevel'))
+
+
+def capture_role_types(entries, catalog_map, previous):
+    """``{configurationId: {slot: role type | None}}`` for the saved ids.
+
+    ``catalog_map`` is the prefetched ``id -> {name, hierarchyLevel}`` (None when the read failed); an id
+    it does not describe keeps its ``previous`` capture only while the id is unchanged.
+    """
+    previous = previous if isinstance(previous, dict) else {}
+    result = {}
+    for entry in entries:
+        slots = {}
+        for slot, key in ROLE_TYPE_SLOTS.items():
+            type_id = entry['hierarchy'][key]
+            found = (catalog_map or {}).get(type_id) if type_id else None
+            captured = None
+            if isinstance(found, dict):
+                captured = _role_type(type_id, found.get('name'), found.get('hierarchyLevel'))
+            slots[slot] = captured or _captured_slot(previous.get(entry['id']), slot, type_id)
+        result[entry['id']] = slots
+    return result
+
+
+def entry_role_types(entry, captured=None):
+    """Role types an entry displays: its captures, with the Legacy name rule for Legacy slots."""
+    slots = {slot: _captured_slot(captured, slot, entry['hierarchy'][key]) for slot, key in ROLE_TYPE_SLOTS.items()}
+    if entry['model'] != MODEL_LEGACY:
+        return slots
+    names = entry['legacyIssueTypeNames']
+    if names is not None:
+        name = names[0] if len(names) == 1 else LEGACY_PLANNING_DEFAULT
+        slots['planning'] = {'id': None, 'name': name, 'hierarchyLevel': 0}
+    for slot, (name, level) in LEGACY_COMPATIBILITY_TYPES.items():
+        if entry['legacyHierarchyModes'][slot] == 'compatibility':
+            slots[slot] = {'id': None, 'name': name, 'hierarchyLevel': level}
+    return slots
+
+
+def entry_summary(entry, entries=None, role_types=None):
     return {
         'id': entry['id'], 'name': entry['name'], 'revision': entry['revision'],
         'model': entry['model'], 'fromQuarter': entry['fromQuarter'],
         'throughQuarter': entry['throughQuarter'], 'digest': effective_digest(entries or [entry], entry),
+        'roleTypes': entry_role_types(entry, role_types),
     }
 
 
@@ -936,7 +998,7 @@ def _check_transition(stored, incoming):
             )
 
 
-def _save_first(payload, revision, incoming, edits, display_types, env_board_id):
+def _save_first(payload, revision, incoming, edits, display_types, env_board_id, catalog):
     legacy_in = _check_server_owned(incoming, 0, LEGACY_ID)
     delivery_in = _check_server_owned(incoming, 1, DELIVERY_ID)
     del legacy_in  # echoed Legacy is never authority; only explicit legacyEdits apply
@@ -954,10 +1016,12 @@ def _save_first(payload, revision, incoming, edits, display_types, env_board_id)
     })
     new_payload = _strip_moved(payload)
     new_payload[WORK_CONFIGURATIONS_KEY] = bundle
+    new_payload[WORK_CONFIGURATION_TYPE_NAMES_KEY] = capture_role_types(
+        bundle['configurations'], catalog, payload.get(WORK_CONFIGURATION_TYPE_NAMES_KEY))
     return new_payload, bundle, [LEGACY_ID, DELIVERY_ID]
 
 
-def _save_later(payload, incoming, clear_ids):
+def _save_later(payload, incoming, clear_ids, catalog):
     stored = stored_bundle(payload)
     stored_entries, incoming_entries = stored['configurations'], incoming['configurations']
     known = {entry['id'] for entry in stored_entries}
@@ -977,20 +1041,27 @@ def _save_later(payload, incoming, clear_ids):
             new = dict(new, revision=old['revision'] + 1)
             entries.append(new)
             changed.append(old['id'])
+    previous = payload.get(WORK_CONFIGURATION_TYPE_NAMES_KEY)
+    names = capture_role_types(entries, catalog, previous)
+    new_payload = dict(payload)
+    new_payload[WORK_CONFIGURATION_TYPE_NAMES_KEY] = names
     if not changed:
-        return None, stored, []
+        # Names-only refresh: no entry revision moves; identical names stay a no-op.
+        if names == capture_role_types(entries, None, previous):
+            return None, stored, []
+        return new_payload, stored, []
     bundle = normalize_work_configurations({
         'version': BUNDLE_VERSION, 'promotionRevision': stored['promotionRevision'],
         'configurations': entries,
     })
-    new_payload = dict(payload)
     new_payload[WORK_CONFIGURATIONS_KEY] = bundle
     return new_payload, bundle, changed
 
 
 def save_work_configurations(
     context, bundle, base_revision, *, legacy_edits=None, clear_projects_for_configuration_ids=None,
-    flag_enabled=None, env_board_id='', legacy_display_types=None, recheck=None, database_url=None,
+    flag_enabled=None, env_board_id='', legacy_display_types=None, issue_type_catalog=None, recheck=None,
+    database_url=None,
 ):
     """Atomic bundle save.
 
@@ -999,7 +1070,9 @@ def save_work_configurations(
     bundle CAS with ``clear_projects_for_configuration_ids``.  Returns the
     success envelope; raises ``WorkConfigError``, ``WorkspaceConfigConflict`` or
     ``WorkspaceConfigFenceUnavailable``.  ``legacy_display_types`` is bounded
-    display metadata the caller prefetched outside the fence; ``recheck`` is
+    display metadata the caller prefetched outside the fence; ``issue_type_catalog``
+    is the prefetched ``id -> {name, hierarchyLevel}`` map (None when unavailable)
+    whose names are captured for the saved ids; ``recheck`` is
     called inside the fence with ``(payload, revision)`` to re-verify actor.
     """
     from backend.services import workspace_dashboard_config as storage
@@ -1022,12 +1095,12 @@ def save_work_configurations(
         if promoted:
             if legacy_edits is not None:
                 _invalid('legacyEdits', 'legacyEdits apply to the first save only.')
-            new_payload, saved, changed = _save_later(payload, incoming, clear_ids)
+            new_payload, saved, changed = _save_later(payload, incoming, clear_ids, issue_type_catalog)
         else:
             if clear_ids:
                 _invalid('clearProjectsForConfigurationIds', 'Not supported on the first save.')
             new_payload, saved, changed = _save_first(
-                payload, revision, incoming, edits, legacy_display_types, env_board_id,
+                payload, revision, incoming, edits, legacy_display_types, env_board_id, issue_type_catalog,
             )
         return storage.KeysMutation(new_payload, {'changedConfigurationIds': changed, 'bundle': saved})
 

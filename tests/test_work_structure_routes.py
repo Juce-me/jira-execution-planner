@@ -102,6 +102,11 @@ class WorkStructureRouteBase(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return {'X-Requested-With': XRW, 'X-CSRF-Token': response.get_json()['csrfToken']}
 
+    def stub_issue_type_catalog(self):
+        """Every Save reads the issue-type catalog first; keep saves that do not test it hermetic."""
+        return self.stack.enter_context(patch.object(
+            jira_server, 'current_jira_get', return_value=jira_response(200, ISSUE_TYPES)))
+
     def row(self):
         with self.factory() as session:
             row = session.query(models.WorkspaceDashboardConfig).one_or_none()
@@ -226,6 +231,7 @@ class EditorRouteTests(WorkStructureRouteBase):
         self.assertIsNone(self.row())
 
     def test_stale_revision_conflict_carries_the_full_current_bundle(self):
+        self.stub_issue_type_catalog()
         self.promoted_seed(revision=5)
         stale = self.first_save_body(base_revision=2)
         response = self.client.post('/api/work-structure/config', json=stale, headers=self.headers())
@@ -278,6 +284,7 @@ class EditorRouteTests(WorkStructureRouteBase):
         self.assertEqual(response.get_json()['error'], 'work_configuration_setup_required')
 
     def test_later_save_increments_changed_entries_and_requires_explicit_project_clear(self):
+        self.stub_issue_type_catalog()
         self.promoted_seed(revision=3)
         current = self.client.get('/api/work-structure/config').get_json()
         bundle = deepcopy(current['workConfigurations'])
@@ -306,6 +313,53 @@ class EditorRouteTests(WorkStructureRouteBase):
             'baseRevision': 5, 'workConfigurations': forged})
         self.assertEqual(response.status_code, 400)
 
+    def later_save(self, **patch_kwargs):
+        current = self.client.get('/api/work-structure/config').get_json()
+        with patch.object(jira_server, 'current_jira_get', **patch_kwargs) as getter:
+            response = self.client.post('/api/work-structure/config', headers=self.headers(), json={
+                'baseRevision': current['configRevision'], 'workConfigurations': current['workConfigurations']})
+        return response, getter
+
+    def test_every_save_prefetches_and_captures_type_names(self):
+        self.promoted_seed(revision=3)
+        response, getter = self.later_save(return_value=jira_response(200, ISSUE_TYPES))
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(getter.call_args.args[0], '/rest/api/3/issuetype')
+        self.assertEqual(response.get_json()['changedConfigurationIds'], [])
+        self.assertNotIn('workConfigurationTypeNames', response.get_json())
+        payload, revision = self.row()
+        self.assertEqual(revision, 4)
+        self.assertEqual(payload['workConfigurationTypeNames']['delivery']['planning'],
+                         {'id': '10002', 'name': 'Story', 'hierarchyLevel': 0})
+        self.assertEqual(payload['workConfigurationTypeNames']['delivery']['parent'],
+                         {'id': '10001', 'name': 'Initiative', 'hierarchyLevel': 2})
+        self.assertEqual([e['revision'] for e in payload['workConfigurations']['configurations']], [1, 1])
+
+    def test_prefetch_failure_still_saves(self):
+        self.promoted_seed(revision=3)
+        self.later_save(return_value=jira_response(200, ISSUE_TYPES))
+        for kwargs in ({'return_value': jira_response(500, None, 'SECRET upstream')},
+                       {'side_effect': RuntimeError('SECRET boom')},
+                       {'return_value': jira_response(200, {'not': 'a list'})}):
+            with self.subTest(kwargs=str(kwargs)[:40]):
+                current = self.client.get('/api/work-structure/config').get_json()
+                bundle = deepcopy(current['workConfigurations'])
+                bundle['configurations'][1]['name'] = f"DELIVERY {current['configRevision']}"
+                with patch.object(jira_server, 'current_jira_get', **kwargs):
+                    response = self.client.post('/api/work-structure/config', headers=self.headers(), json={
+                        'baseRevision': current['configRevision'], 'workConfigurations': bundle})
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                self.assertNotIn('SECRET', response.get_data(as_text=True))
+                self.assertEqual(response.get_json()['changedConfigurationIds'], ['delivery'])
+                # Unchanged ids keep their previous capture.
+                self.assertEqual(self.row()[0]['workConfigurationTypeNames']['delivery']['parent']['name'], 'Initiative')
+
+    def test_expired_sign_in_during_later_prefetch_is_401_with_no_write(self):
+        self.promoted_seed(revision=3)
+        response, _ = self.later_save(side_effect=AuthError('auth_required', 'x'))
+        self.assertEqual((response.status_code, response.get_json()['error']), (401, 'auth_required'))
+        self.assertEqual(self.row()[1], 3)
+
     def test_four_flag_state_matrix(self):
         # unpromoted + off: editor read works, bundle write is denied, no row.
         with patch.dict(os.environ, {'WORK_CONFIGURATIONS_ENABLED': 'false'}):
@@ -330,6 +384,7 @@ class EditorRouteTests(WorkStructureRouteBase):
             self.assertTrue(self.client.get('/api/work-structure/config').get_json()['promoted'])
 
     def test_save_error_bodies_are_allowlisted(self):
+        self.stub_issue_type_catalog()
         self.promoted_seed()
         bundle = self.client.get('/api/work-structure/config').get_json()['workConfigurations']
         bundle['configurations'][1]['fields']['sprint']['fieldId'] = 'bad id!'
@@ -667,10 +722,29 @@ class BootstrapAndLegacySetterTests(WorkStructureRouteBase):
         for key in (*ws.MOVED_STRUCTURAL_KEYS, 'workConfigurations'):
             self.assertNotIn(key, body['sharedConfig'])
         self.assertEqual([s['id'] for s in body['workConfigurationSummaries']], ['legacy', 'delivery'])
-        self.assertEqual(set(body['workConfigurationSummaries'][0]), {'id', 'name', 'revision', 'model', 'fromQuarter', 'throughQuarter', 'digest'})
+        self.assertEqual(set(body['workConfigurationSummaries'][0]), {'id', 'name', 'revision', 'model', 'fromQuarter', 'throughQuarter', 'digest', 'roleTypes'})
         self.assertEqual(body['adminSettingsMissingByConfiguration']['delivery'], [])
         self.assertEqual(body['adminSettingsMissingByConfiguration']['legacy'], [])
         self.assertTrue(body['userCanEditSettings'])
+
+    def test_type_names_are_absent_from_shared_config_and_editor_envelope(self):
+        names = {'delivery': {'planning': {'id': '10002', 'name': 'Capability', 'hierarchyLevel': 1},
+                              'parent': {'id': '10001', 'name': 'Initiative', 'hierarchyLevel': 2},
+                              'ancestor': None, 'optionalAncestor': None}}
+        self.promoted_seed(payload={'workConfigurationTypeNames': names})
+        body = self.client.get('/api/config').get_json()
+        self.assertNotIn('workConfigurationTypeNames', body['sharedConfig'])
+        summaries = {s['id']: s for s in body['workConfigurationSummaries']}
+        self.assertEqual(summaries['delivery']['roleTypes'], names['delivery'])
+        self.assertEqual(summaries['legacy']['roleTypes'], {
+            'planning': {'id': None, 'name': 'Story', 'hierarchyLevel': 0},
+            'parent': {'id': None, 'name': 'Epic', 'hierarchyLevel': 1},
+            'ancestor': {'id': None, 'name': 'Initiative', 'hierarchyLevel': 2},
+            'optionalAncestor': None,
+        })
+        envelope = self.client.get('/api/work-structure/config').get_json()
+        self.assertNotIn('workConfigurationTypeNames', envelope)
+        self.assertNotIn('workConfigurationTypeNames', envelope['workConfigurations'])
 
     def test_blank_delivery_does_not_mark_legacy_missing(self):
         def mutate(bundle):

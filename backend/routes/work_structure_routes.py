@@ -518,33 +518,41 @@ def _parse_post(payload):
     return (base_revision, payload['workConfigurations'], payload.get('legacyEdits'), clear_ids), None
 
 
-def _prefetch_legacy_display_types(auth_context):
-    """Bounded, optional exact-name Epic/Initiative display metadata via the user's context.
+def _prefetch_issue_type_catalog(auth_context):
+    """Bounded issue-type catalog ``id -> {name, hierarchyLevel}`` via the user's context, or None.
 
-    Runs outside the DB fence.  Ambiguous, unavailable or non-numeric results are None;
+    Runs outside the DB fence on every Save.  An unavailable or malformed catalog is None;
     only ``AuthError`` (expired sign-in) escapes.
     """
-    result = {'parent': None, 'ancestor': None}
     try:
         response = get_jira_server().current_jira_get(
             '/rest/api/3/issuetype', timeout=_PREFETCH_TIMEOUT_SECONDS, context=auth_context,
         )
         if response.status_code != 200:
-            return result
+            return None
         data = response.json()
     except AuthError:
         raise
     except Exception:
-        return result
+        return None
+    if not isinstance(data, list):
+        return None
+    catalog = {}
+    for item in data:
+        if isinstance(item, dict):
+            catalog.setdefault(str(item.get('id') or ''), {
+                'name': item.get('name'), 'hierarchyLevel': item.get('hierarchyLevel'),
+            })
+    return catalog
+
+
+def _legacy_display_types(catalog):
+    """Exact-name Epic/Initiative display metadata; ambiguous, missing or non-numeric results are None."""
+    result = {'parent': None, 'ancestor': None}
     for slot, wanted in _DISPLAY_TYPE_NAMES.items():
-        matches = {}
-        for item in data if isinstance(data, list) else []:
-            if isinstance(item, dict) and str(item.get('name') or '') == wanted:
-                matches[str(item.get('id') or '')] = wanted
-        if len(matches) == 1:
-            type_id = next(iter(matches))
-            if type_id.isdigit():
-                result[slot] = {'id': type_id, 'name': wanted}
+        matches = [type_id for type_id, item in (catalog or {}).items() if str(item.get('name') or '') == wanted]
+        if len(matches) == 1 and matches[0].isdigit():
+            result[slot] = {'id': matches[0], 'name': wanted}
     return result
 
 
@@ -577,16 +585,18 @@ def save_work_structure_config():
         if failure is not None:
             return failure
         base_revision, bundle, legacy_edits, clear_ids = parsed
+        catalog = _prefetch_issue_type_catalog(auth_context)
         display_types = None
         if not work_structure_service.is_promoted(workspace_snapshot(auth_context).payload):
-            display_types = _prefetch_legacy_display_types(auth_context)
+            display_types = _legacy_display_types(catalog)
         server = get_jira_server()
         try:
             result = work_structure_service.save_work_configurations(
                 auth_context, bundle, base_revision,
                 legacy_edits=legacy_edits, clear_projects_for_configuration_ids=clear_ids,
                 flag_enabled=True, env_board_id=_env_board_id(),
-                legacy_display_types=display_types, recheck=_actor_recheck(auth_context),
+                legacy_display_types=display_types, issue_type_catalog=catalog,
+                recheck=_actor_recheck(auth_context),
             )
         except WorkspaceConfigConflict as conflict:
             body = work_structure_service.conflict_envelope(conflict, env_board_id=_env_board_id())

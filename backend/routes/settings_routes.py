@@ -1262,10 +1262,12 @@ def get_config():
             # bundle editor owns the full projection.
             board_cfg = {}
             work_bundle = work_structure_service.stored_bundle(shared_config)
+            work_type_names = shared_config.get(work_structure_service.WORK_CONFIGURATION_TYPE_NAMES_KEY)
             for moved_key in (*work_structure_service.MOVED_STRUCTURAL_KEYS,
                               work_structure_service.WORK_CONFIGURATIONS_KEY):
                 shared_config.pop(moved_key, None)
         shared_config.pop('epm', None)
+        shared_config.pop(work_structure_service.WORK_CONFIGURATION_TYPE_NAMES_KEY, None)
         if include_view_config and view_config is not None:
             epm_config = normalize_epm_config(
                 ((view_config or {}).get('view') or {}).get('epm') or {}
@@ -1315,7 +1317,10 @@ def get_config():
     if work_promoted:
         payload['environmentConfigExists'] = _environment_dashboard_config_exists(shared_config)
         entries = work_bundle['configurations']
-        payload['workConfigurationSummaries'] = [work_routes.entry_summary(entry, entries) for entry in entries]
+        type_names = work_type_names if isinstance(work_type_names, dict) else {}
+        payload['workConfigurationSummaries'] = [
+            work_routes.entry_summary(entry, entries, type_names.get(entry['id'])) for entry in entries
+        ]
         payload['adminSettingsMissingByConfiguration'] = {
             entry['id']: work_routes.entry_missing_fields(work_structure_service.effective_entry(entries, entry))
             for entry in entries

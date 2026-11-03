@@ -58,6 +58,26 @@ class KeyIdentityTests(unittest.TestCase):
             jira_server.work_configuration_cache_segment(context),
             jira_server.work_configuration_cache_segment(context.to_dict()))
 
+    def test_role_type_names_are_outside_every_digest(self):
+        bundle = ws.capture_virtual_bundle({})
+        bundle['promotionRevision'] = 1
+        bundle['configurations'][1]['hierarchy'].update(planningIssueTypeId='6', parentIssueTypeId='11700')
+        names = {'delivery': {'planning': {'id': '6', 'name': 'Epic', 'hierarchyLevel': 1},
+                              'parent': {'id': '11700', 'name': 'Initiative', 'hierarchyLevel': 2},
+                              'ancestor': None, 'optionalAncestor': None}}
+        renamed = deepcopy(names)
+        renamed['delivery']['planning']['name'] = 'Capability'
+        results = []
+        for payload in ({'workConfigurations': deepcopy(bundle)},
+                        {'workConfigurations': deepcopy(bundle), 'workConfigurationTypeNames': names},
+                        {'workConfigurations': deepcopy(bundle), 'workConfigurationTypeNames': renamed}):
+            snapshot = SimpleNamespace(payload=payload)
+            entries = ws.stored_bundle(payload)['configurations']
+            context = ws.resolve_work_configuration(snapshot, quarter='2027Q1', flag_enabled=True)
+            results.append((ws.effective_digest(entries, entries[1]), context.digest,
+                            jira_server.work_configuration_cache_segment(context)))
+        self.assertEqual(len(set(results)), 1, results)
+
     def test_work_key_keeps_the_auth_partition_prefix(self):
         context = SimpleNamespace(
             auth_mode='atlassian_oauth', workspace_id='w', auth_connection_id='c', user_id='u',
@@ -141,6 +161,7 @@ class RetirementTests(unittest.TestCase):
 
 class CommittedSaveRetirementTests(WorkStructureRouteBase):
     def test_committed_save_retires_work_caches_not_raw_metadata(self):
+        self.stub_issue_type_catalog()
         self.promoted_seed(revision=3)
         jira_server.TASKS_CACHE['k'] = {'timestamp': 1, 'data': 'x'}
         jira_server.EPM_PROJECTS_CACHE['home'] = {'data': 'raw'}
@@ -163,6 +184,7 @@ class CommittedSaveRetirementTests(WorkStructureRouteBase):
         self.assertIsNone(SCOPED_SPRINT_CATALOGS.snapshot('si1:x').payload)
 
     def test_rejected_save_retires_nothing(self):
+        self.stub_issue_type_catalog()
         self.promoted_seed(revision=3)
         jira_server.TASKS_CACHE['k'] = {'timestamp': 1, 'data': 'x'}
         self.addCleanup(jira_server.TASKS_CACHE.clear)

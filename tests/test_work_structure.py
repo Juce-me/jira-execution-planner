@@ -267,6 +267,9 @@ class ResolutionTests(unittest.TestCase):
         later = ws.resolve_work_configuration(promoted_snapshot(changed), quarter='2027Q1', flag_enabled=True)
         self.assertNotEqual(later.digest, context.digest)
         self.assertEqual(ws.entry_summary(stored[1], stored)['digest'], context.digest)
+        # Captured type names are display metadata outside every digest.
+        role_types = {'planning': {'id': '6', 'name': 'Capability', 'hierarchyLevel': 1}}
+        self.assertEqual(ws.entry_summary(stored[1], stored, role_types)['digest'], context.digest)
 
     def test_own_field_overrides_and_an_own_blank_is_a_deliberate_clear(self):
         bundle = virtual(board='5494')
@@ -375,6 +378,95 @@ class ResolutionTests(unittest.TestCase):
         self.assertEqual(flat['sprintField']['fieldId'], 'customfield_10101')
         delivery = ws.resolve_work_configuration(promoted_snapshot(), quarter='2027Q1', flag_enabled=True)
         self.assertNotIn('issueTypes', ws.project_legacy_admin_settings(delivery))
+
+
+CATALOG = {
+    '6': {'name': 'Epic', 'hierarchyLevel': 1},
+    '11700': {'name': 'Initiative', 'hierarchyLevel': 2},
+    '12723': {'name': 'Objective', 'hierarchyLevel': 3},
+}
+
+
+def delivery_entries(**hierarchy):
+    bundle = virtual()
+    bundle['configurations'][1]['hierarchy'].update(hierarchy)
+    return ws.normalize_work_configurations(bundle)['configurations']
+
+
+class RoleTypeTests(unittest.TestCase):
+    def test_capture_role_types_for_delivery(self):
+        entries = delivery_entries(planningIssueTypeId='6', parentIssueTypeId='11700', ancestorIssueTypeId='12723')
+        captured = ws.capture_role_types(entries, CATALOG, None)
+        self.assertEqual(set(captured), {'legacy', 'delivery'})
+        self.assertEqual(captured['delivery'], {
+            'planning': {'id': '6', 'name': 'Epic', 'hierarchyLevel': 1},
+            'parent': {'id': '11700', 'name': 'Initiative', 'hierarchyLevel': 2},
+            'ancestor': {'id': '12723', 'name': 'Objective', 'hierarchyLevel': 3},
+            'optionalAncestor': None,
+        })
+        self.assertEqual(captured['legacy'], dict.fromkeys(('planning', 'parent', 'ancestor', 'optionalAncestor')))
+        summary = ws.entry_summary(entries[1], entries, captured['delivery'])
+        self.assertEqual(summary['roleTypes'], captured['delivery'])
+
+    def test_capture_rejects_malformed_levels_and_names(self):
+        entries = delivery_entries(planningIssueTypeId='6', parentIssueTypeId='11700', ancestorIssueTypeId='12723')
+        catalog = {'6': {'name': 'Epic', 'hierarchyLevel': True}, '11700': {'name': ' ', 'hierarchyLevel': 2},
+                   '12723': {'name': 'x' * 256, 'hierarchyLevel': '3'}}
+        captured = ws.capture_role_types(entries, catalog, None)['delivery']
+        self.assertEqual(captured['planning'], {'id': '6', 'name': 'Epic', 'hierarchyLevel': None})
+        self.assertIsNone(captured['parent'])
+        self.assertIsNone(captured['ancestor'])
+
+    def test_capture_keeps_previous_only_for_unchanged_ids(self):
+        before = delivery_entries(planningIssueTypeId='6', parentIssueTypeId='11700')
+        previous = ws.capture_role_types(before, CATALOG, None)
+        # A failed prefetch keeps the capture of an unchanged id and stores null for a changed one.
+        after = delivery_entries(planningIssueTypeId='6', parentIssueTypeId='12723')
+        kept = ws.capture_role_types(after, None, previous)['delivery']
+        self.assertEqual(kept['planning'], {'id': '6', 'name': 'Epic', 'hierarchyLevel': 1})
+        self.assertIsNone(kept['parent'])
+        # A successful prefetch always wins, so a Jira rename refreshes the name.
+        renamed = ws.capture_role_types(before, {**CATALOG, '6': {'name': 'Capability', 'hierarchyLevel': 1}}, previous)
+        self.assertEqual(renamed['delivery']['planning']['name'], 'Capability')
+        # A cleared slot stores null even when the previous capture had a name.
+        cleared = delivery_entries(planningIssueTypeId='6')
+        self.assertIsNone(ws.capture_role_types(cleared, None, previous)['delivery']['parent'])
+
+    def legacy_role_types(self, names=('Story',), *, planning_id=None, captured=None, parent_mode='compatibility'):
+        bundle = virtual()
+        legacy = bundle['configurations'][0]
+        legacy['legacyIssueTypeNames'] = None if names is None else list(names)
+        legacy['hierarchy']['planningIssueTypeId'] = planning_id
+        if parent_mode == 'mapped':
+            legacy['legacyHierarchyModes']['parent'] = 'mapped'
+            legacy['hierarchy']['parentIssueTypeId'] = '11700'
+        entries = ws.normalize_work_configurations(bundle)['configurations']
+        role_types = ws.capture_role_types(entries, captured, None)['legacy'] if captured is not None else None
+        return ws.entry_summary(entries[0], entries, role_types)['roleTypes']
+
+    def test_legacy_role_types_follow_legacy_name_rule(self):
+        story = {'id': None, 'name': 'Story', 'hierarchyLevel': 0}
+        self.assertEqual(self.legacy_role_types(['Story'])['planning'], story)
+        self.assertEqual(self.legacy_role_types(['Task'])['planning'], {'id': None, 'name': 'Task', 'hierarchyLevel': 0})
+        self.assertEqual(self.legacy_role_types([])['planning'], story)
+        self.assertEqual(self.legacy_role_types(['Story', 'Bug'])['planning'], story)
+        catalog = {'10': {'name': 'User Story', 'hierarchyLevel': 0}, '11700': {'name': 'Feature', 'hierarchyLevel': 1}}
+        self.assertEqual(self.legacy_role_types(None, planning_id='10', captured=catalog)['planning'],
+                         {'id': '10', 'name': 'User Story', 'hierarchyLevel': 0})
+        self.assertIsNone(self.legacy_role_types(None, planning_id='10')['planning'])
+        today = self.legacy_role_types(['Story'])
+        self.assertEqual(today['parent'], {'id': None, 'name': 'Epic', 'hierarchyLevel': 1})
+        self.assertEqual(today['ancestor'], {'id': None, 'name': 'Initiative', 'hierarchyLevel': 2})
+        self.assertIsNone(today['optionalAncestor'])
+        mapped = self.legacy_role_types(['Story'], captured=catalog, parent_mode='mapped')
+        self.assertEqual(mapped['parent'], {'id': '11700', 'name': 'Feature', 'hierarchyLevel': 1})
+
+    def test_summary_ignores_a_capture_for_another_id(self):
+        entries = delivery_entries(planningIssueTypeId='6')
+        stale = {'planning': {'id': '7', 'name': 'Old', 'hierarchyLevel': 1}}
+        self.assertIsNone(ws.entry_summary(entries[1], entries, stale)['roleTypes']['planning'])
+        self.assertEqual(ws.entry_summary(entries[1], entries)['roleTypes'],
+                         dict.fromkeys(('planning', 'parent', 'ancestor', 'optionalAncestor')))
 
 
 class StateMatrixTests(unittest.TestCase):

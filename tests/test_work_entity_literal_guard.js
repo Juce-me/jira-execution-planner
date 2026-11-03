@@ -20,6 +20,8 @@ const VISIBLE_ATTRIBUTES = new Set(['title', 'aria-label', 'placeholder', 'alt',
 const SKIPPED_LINE = /issuetype|"Epic Link"|jql/i;
 // Selector, anchor and attribute-selector strings (`.epic-name`, `#story-KEY`, `[data-story-key]`) are not copy.
 const SELECTOR_LIKE = /^[.#\[]/;
+// The second argument of openSingleIssueStatusControl(issue, 'Epic') is the fallbackIssueType token (data-issue-kind).
+const FALLBACK_TYPE_CALL = /openSingleIssueStatusControl\??\.?\(\s*[^()]*,\s*$/;
 const SELECTOR_CALL = /(querySelector|querySelectorAll|closest|matches)\s*\(\s*$/;
 
 // Task 4 (Catch Up and alerts) and Task 6 (Planning, Board, Statistics, Scenario, onboarding) surfaces.
@@ -53,6 +55,11 @@ const FILES = [
     'frontend/src/stats/StatsTeamsView.jsx',
     'frontend/src/cohort/OpenEpicsChart.jsx',
     'frontend/src/stats/BurnoutChart.jsx',
+    'frontend/src/stats/ProjectTrackPhaseChart.jsx',
+    'frontend/src/stats/ProjectTrackBreakdownChart.jsx',
+    'frontend/src/stats/StatsPriorityView.jsx',
+    'frontend/src/cohort/CohortGrid.jsx',
+    'frontend/src/cohort/LeadTimesWorkflowStatusCard.jsx',
     'frontend/src/scenario/ScenarioView.jsx',
     'frontend/src/scenario/scenarioUtils.js',
     'frontend/src/components/JiraExportButton.jsx',
@@ -72,12 +79,11 @@ const DASHBOARD_RANGES = [
     { start: 'const buildPriorityStatusLink = ', end: 'const buildKeyListLink = ' },
 ];
 
-// {file, snippet, reason}: a finding whose literal contains `snippet` in `file` is not a display name.
+// {file, snippet, reason}: a finding in `file` whose whole literal equals `snippet` is not a display name.
 const ALLOWLIST = [
-    { file: 'frontend/src/eng/PlanningProjectSplitBar.jsx', snippet: 'Selected effort excludes excluded epics.',
+    { file: 'frontend/src/eng/PlanningProjectSplitBar.jsx',
+        snippet: 'Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.',
         reason: 'Legacy-only branch: the new model renders CombinedWorkBar instead' },
-    { file: 'frontend/src/eng/EngBoardView.jsx', snippet: 'Epic',
-        reason: 'fallbackIssueType token of openSingleIssueStatusControl (feeds data-issue-kind), not copy' },
     { file: 'frontend/src/stats/StatsPanel.jsx', snippet: 'Approximate, story-point based',
         reason: 'Story Points: the Jira estimate field, not a work entity' },
 ];
@@ -317,10 +323,10 @@ function classify(source, item) {
     if (item.attr === 'className' || item.attr === 'class' || item.attr === 'key') return null;
     if (item.kind === 'jsx') return 'jsx text';
     if (item.attr && VISIBLE_ATTRIBUTES.has(item.attr)) return `${item.attr} attribute`;
-    const before = source.slice(Math.max(0, item.index - 40), item.index);
+    const before = source.slice(Math.max(0, item.index - 80), item.index);
     if (/\btitle\s*=\s*$/.test(before)) return 'title default';
     if (/\bclassName\s*[:=]\s*$/.test(before)) return null;
-    if (SELECTOR_CALL.test(before) || SELECTOR_LIKE.test(value)) return null;
+    if (SELECTOR_CALL.test(before) || SELECTOR_LIKE.test(value) || FALLBACK_TYPE_CALL.test(before)) return null;
     // A template's placeholders join the text around them (`setBacklog${kind}Epics` is one identifier), while
     // `${n} stories` keeps its space and is text.
     const token = item.kind === 'template' ? item.value.replace(/\u0000/g, '') : value;
@@ -328,8 +334,7 @@ function classify(source, item) {
     return 'string literal';
 }
 
-function scanFile(relative, inRange = () => true) {
-    const source = fs.readFileSync(path.join(ROOT, relative), 'utf8');
+function scanSource(relative, source, inRange = () => true) {
     const { found, balanced } = lex(source);
     assert.ok(balanced, `${relative}: the guard lexer lost track of the source structure`);
     return found.flatMap((item) => {
@@ -339,6 +344,8 @@ function scanFile(relative, inRange = () => true) {
         return [{ file: relative, line: item.line, snippet: item.value.replace(/\u0000/g, '${…}').replace(/\s+/g, ' ').trim(), reason }];
     });
 }
+
+const scanFile = (relative, inRange) => scanSource(relative, fs.readFileSync(path.join(ROOT, relative), 'utf8'), inRange);
 
 function dashboardRanges() {
     const lines = fs.readFileSync(path.join(ROOT, DASHBOARD), 'utf8').split('\n');
@@ -359,7 +366,8 @@ function allFindings() {
     ];
 }
 
-const allowed = finding => ALLOWLIST.some(entry => entry.file === finding.file && finding.snippet.includes(entry.snippet));
+const allowedBy = (entry, finding) => entry.file === finding.file && finding.snippet === entry.snippet;
+const allowed = finding => ALLOWLIST.some(entry => allowedBy(entry, finding));
 
 test('the guard lexer finds JSX text, attributes, defaults and literals and ignores tokens, classes and selectors', () => {
     const source = [
@@ -369,6 +377,7 @@ test('the guard lexer finds JSX text, attributes, defaults and literals and igno
         "    const x = a < b ? `${n} stories left` : 'story';",
         "    document.querySelector('.epic-header');",
         "    const re = /story/i;",
+        "    statusTransitions?.openSingleIssueStatusControl?.(entry.group.epic, 'Epic');",
         "    return <div className=\"epic-row\" title=\"Story\" aria-label={`Open ${k} epic`}>",
         "        {/* Story */}",
         "        Story Points",
@@ -377,30 +386,22 @@ test('the guard lexer finds JSX text, attributes, defaults and literals and igno
         "    </div>;",
         "}",
     ].join('\n');
-    const relative = 'tests/fixtures/__entity_guard_probe__.jsx';
-    const file = path.join(ROOT, relative);
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(file, source);
-    try {
-        const findings = scanFile(relative).map(item => `${item.line}:${item.reason}:${item.snippet}`);
-        assert.deepEqual(findings, [
-            '1:title default:Epic',
-            '4:string literal:${…} stories left',
-            '7:title attribute:Story',
-            '7:aria-label attribute:Open ${…} epic',
-            '10:capitalised entity word:Initiatives',
-            '10:jsx text:Epics',
-            '11:label attribute:epic',
-        ]);
-    } finally {
-        fs.rmSync(file);
-    }
+    const findings = scanSource('probe.jsx', source).map(item => `${item.line}:${item.reason}:${item.snippet}`);
+    assert.deepEqual(findings, [
+        '1:title default:Epic',
+        '4:string literal:${…} stories left',
+        '8:title attribute:Story',
+        '8:aria-label attribute:Open ${…} epic',
+        '11:capitalised entity word:Initiatives',
+        '11:jsx text:Epics',
+        '12:label attribute:epic',
+    ]);
 });
 
 test('every allowlist entry still matches a finding', () => {
     const findings = allFindings();
     for (const entry of ALLOWLIST) {
-        assert.ok(findings.some(finding => finding.file === entry.file && finding.snippet.includes(entry.snippet)),
+        assert.ok(findings.some(finding => allowedBy(entry, finding)),
             `stale allowlist entry ${entry.file}: ${entry.snippet}`);
     }
 });

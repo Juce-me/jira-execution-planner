@@ -133,9 +133,25 @@ test('Lead Times and planning links use the configured type id in the new model 
     ];
     assert.equal(describeStatsScope({ id: 'delivery', quarter: '2027Q1' }, summaries).parentTypeId, '11700');
     assert.equal(describeStatsScope({ id: 'legacy', quarter: '2026Q4' }, summaries).parentTypeId, null);
+    // The App's planning-leaf clause, evaluated from its source line: new model by id, else by the configured name; Legacy none.
     const dashboard = read('frontend/src/dashboard.jsx');
-    assert.match(dashboard, /const planningTypeId = isCombinedWorkModel\(workModel\) && \/\^\\d\+\$\/\.test\(String\(activeConfiguration\?\.roleTypes\?\.planning\?\.id \?\? ''\)\) \? activeConfiguration\.roleTypes\.planning\.id : null;/);
-    assert.match(dashboard, /clauses\.push\(issueType === 'Story' && planningTypeId \? `issuetype = \$\{planningTypeId\}` : `issuetype = "\$\{issueType\}"`\);/);
+    const expression = dashboard.match(/const planningTypeClause = (.*?); \/\//)[1];
+    const clause = (workModel, id) => new Function('isCombinedWorkModel', 'workModel', 'activeConfiguration', 'entityNames', `return ${expression};`)(
+        model => model === 'rnd_2027', workModel, { roleTypes: { planning: { id } } }, { child: 'Deliverable' });
+    assert.equal(clause('rnd_2027', '6'), 'issuetype = 6');
+    assert.equal(clause('rnd_2027', null), 'issuetype = "Deliverable"');
+    assert.equal(clause('rnd_2027', '6 OR 1=1'), 'issuetype = "Deliverable"');
+    assert.equal(clause('legacy', '6'), null);
+    assert.match(dashboard, /clauses\.push\(issueType === 'Story' && planningTypeClause \? planningTypeClause : `issuetype = "\$\{issueType\}"`\);/);
+    // Lead Times: the new model passes the parent's id and name; a missing id links by the configured name.
+    assert.match(jql(buildJiraCohortIssueSearchUrl({ ...base, issueType: 'Theme', issueTypeId: null })), /^issuetype = "Theme" AND/);
+    const { buildJiraCohortStatusSearchUrl } = await import('../frontend/src/jiraExportUtils.mjs');
+    assert.match(jql(buildJiraCohortStatusSearchUrl({ ...base, issueType: 'Theme', issueTypeId: '11700' })), /^issuetype = 11700 AND/);
+    const panel = read('frontend/src/stats/StatsPanel.jsx');
+    assert.match(panel, /const parentLink = combinedScope \? \{ issueType: statWords\.parent, issueTypeId: workScope\.parentTypeId \} : \{\};/);
+    assert.match(panel, /const parentKind = combinedScope \? \(entityNames \|\| resolveEntityNames\(workScope\.model\)\)\.parentKind : 'epic';/);
+    assert.equal((panel.match(/\{\.\.\.parentLink\}/g) || []).length, 2, 'Lead Times charts and the Workflow Status card');
+    assert.match(panel, /<ProjectTrackBreakdownChart\n\s+issueKind=\{parentKind\}/);
 });
 
 test('Jira export, share links and Scenario name their levels; tokens stay', async () => {
@@ -169,6 +185,12 @@ test('the tour names the ancestor, parent and child; ids, groups and selectors n
     for (const entry of renamed.catalog) {
         assert.doesNotMatch(`${entry.title} ${entry.body} ${entry.loadingBody || ''} ${entry.fallbackBody || ''}`, /\b(stor(y|ies)|epics?)\b/i, entry.id);
     }
+    // Articles follow the spoken first sound: acronyms by letter name.
+    const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
+    const withAncestor = ancestor => steps.buildOnboardingSteps(resolveEntityNames('rnd_2027', { ancestor: { name: ancestor, hierarchyLevel: 3 } }));
+    assert.equal(step(withAncestor('OKR'), 'hierarchy-initiative').body, 'An OKR groups related Initiatives around a broader outcome.');
+    assert.equal(step(withAncestor('UX goal'), 'hierarchy-initiative').body, 'A UX goal groups related Initiatives around a broader outcome.');
+    assert.equal(step(withAncestor('Goal'), 'hierarchy-initiative').body, 'A Goal groups related Initiatives around a broader outcome.');
     // Legacy keeps today's copy.
     assert.equal(step({ catalog: steps.ONBOARDING_STEP_CATALOG }, 'hierarchy-epic').body, 'An Epic groups the Stories that contribute to a larger delivery outcome.');
 });

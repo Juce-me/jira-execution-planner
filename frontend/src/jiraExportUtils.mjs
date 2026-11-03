@@ -214,13 +214,15 @@ export function buildJiraCohortStatusSearchUrl({
     endQuarter,
     statuses = [],
     issueType = 'Epic',
+    issueTypeId = null,
 } = {}) {
     return buildJiraCohortIssueSearchUrl({
         jiraUrl,
         startQuarter,
         endQuarter,
         statuses,
-        issueType
+        issueType,
+        issueTypeId
     });
 }
 

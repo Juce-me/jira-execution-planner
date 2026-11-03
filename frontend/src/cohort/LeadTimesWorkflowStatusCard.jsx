@@ -11,7 +11,9 @@ export default function LeadTimesWorkflowStatusCard({
     cohortEndQuarter,
     cohortSummary,
     cohortWorkflowStatusTotal,
-    words = roleLabels(null)
+    words = roleLabels(null),
+    issueType = 'Epic',
+    issueTypeId = null
 }) {
     const jiraLink = React.useMemo(() => {
         if (!cohortWorkflowStatusTotal) return '';
@@ -20,9 +22,10 @@ export default function LeadTimesWorkflowStatusCard({
             startQuarter: cohortStartQuarter,
             endQuarter: cohortEndQuarter,
             statuses: ['In Progress', 'Postponed', 'Awaiting Validation'],
-            issueType: 'Epic',
+            issueType,
+            issueTypeId,
         });
-    }, [jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortWorkflowStatusTotal]);
+    }, [jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortWorkflowStatusTotal, issueType, issueTypeId]);
 
     return (
         <div className="stats-card">

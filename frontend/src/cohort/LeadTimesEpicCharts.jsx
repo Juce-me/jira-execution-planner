@@ -26,6 +26,7 @@ function buildCohortSearchUrl({
     cohortProjectFilter,
     activeGroupMissingComponents,
     burnoutScopedTeamIds,
+    issueType,
     issueTypeId
 }) {
     return buildJiraCohortIssueSearchUrl({
@@ -35,7 +36,7 @@ function buildCohortSearchUrl({
         groupBy: cohortGroupBy,
         rowKey: cohortSelectedRow,
         statuses: buildStatusList(rows),
-        issueType: 'Epic',
+        issueType,
         issueTypeId,
         projectKey: cohortProjectFilter,
         components: activeGroupMissingComponents,
@@ -57,6 +58,7 @@ export default function LeadTimesEpicCharts({
     cohortProjectFilter,
     activeGroupMissingComponents,
     burnoutScopedTeamIds,
+    issueType = 'Epic',
     issueTypeId = null
 }) {
     const { parent, parents } = roles || roleLabels(null);
@@ -71,18 +73,19 @@ export default function LeadTimesEpicCharts({
         cohortProjectFilter,
         activeGroupMissingComponents,
         burnoutScopedTeamIds,
+        issueType,
         issueTypeId
     };
     const openJiraSearchUrl = React.useMemo(
         () => buildCohortSearchUrl({ ...searchFilters, rows: cohortOpenBars }),
-        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueTypeId]
+        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueType, issueTypeId]
     );
     // Created describes its set by a created-date JQL; the closed modes link exactly the Epics the chart lists.
     const completedJiraSearchUrl = React.useMemo(
         () => (cohortMode === 'created'
             ? buildCohortSearchUrl({ ...searchFilters, rows: cohortCompletedBars })
             : buildJiraClosedEpicsSearchUrl(jiraUrl, cohortCompletedBars.map((item) => item.key))),
-        [cohortMode, cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueTypeId]
+        [cohortMode, cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueType, issueTypeId]
     );
 
     return (

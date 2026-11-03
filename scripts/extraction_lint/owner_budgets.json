@@ -1880,6 +1880,7 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
+            "entityNames",
             "excludedEpicSet",
             "normalizeEpicKey",
             "scenario",
@@ -1887,6 +1888,7 @@
             "selectedSprint"
           ],
           "expandedInputNames": [
+            "entityNames",
             "excludedEpicSet",
             "excludedEpicSet.has",
             "normalizeEpicKey",
@@ -1990,13 +1992,13 @@
             "selectedSprint"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 101,
+          "expandedInputCount": 102,
           "returnCount": 0,
-          "propCount": 5,
+          "propCount": 6,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 101,
+          "expandedInputCeiling": 102,
           "returnCeiling": 0,
-          "propCeiling": 5,
+          "propCeiling": 6,
           "unresolved": [],
           "inventory": {
             "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
@@ -2773,6 +2775,7 @@
         {
           "exportName": "useScenarioLayout",
           "inputNames": [
+            "entityNames",
             "excludedEpicSet",
             "isAllTeamsSelected",
             "normalizeEpicKey",
@@ -2835,6 +2838,7 @@
           ],
           "propNames": [],
           "expandedInputNames": [
+            "entityNames",
             "excludedEpicSet",
             "isAllTeamsSelected",
             "normalizeEpicKey",
@@ -2951,11 +2955,11 @@
             "showScenario"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 114,
+          "expandedInputCount": 115,
           "returnCount": 31,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 114,
+          "expandedInputCeiling": 115,
           "returnCeiling": 31,
           "propCeiling": 0,
           "unresolved": [
@@ -3086,7 +3090,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioLayout",
-              "line": 223,
+              "line": 228,
               "phase": "hook execution"
             }
           ],
@@ -3118,6 +3122,7 @@
             "cleanupSprintFetch",
             "connectionRecoveryScenarioStartedRef",
             "connectionRecoveryStagedRevision",
+            "entityNames",
             "excludedEpicSet",
             "groupsLoading",
             "isAllTeamsSelected",
@@ -3224,6 +3229,7 @@
             "cleanupSprintFetch",
             "connectionRecoveryScenarioStartedRef",
             "connectionRecoveryStagedRevision",
+            "entityNames",
             "excludedEpicSet",
             "groupsLoading",
             "isAllTeamsSelected",
@@ -3251,11 +3257,11 @@
             "visibleControlGroups"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 34,
+          "expandedInputCount": 35,
           "returnCount": 67,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 34,
+          "expandedInputCeiling": 35,
           "returnCeiling": 67,
           "propCeiling": 0,
           "unresolved": [],
@@ -3303,7 +3309,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 5274,
+              "line": 4313,
               "phase": "hook execution"
             }
           ],
@@ -16035,7 +16041,7 @@
           "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "f1fa98f6481f1f03b394dabe01d88a0072cf2b0698c9664ec2771c045d781658",
+            "sourceDigest": "fcb68cae0713e7ad40e98fffd5a9b2ce7d7fef2d46ea46e2473aee66a0dab44e",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
@@ -16367,7 +16373,7 @@
           "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "f1fa98f6481f1f03b394dabe01d88a0072cf2b0698c9664ec2771c045d781658",
+            "sourceDigest": "fcb68cae0713e7ad40e98fffd5a9b2ce7d7fef2d46ea46e2473aee66a0dab44e",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",

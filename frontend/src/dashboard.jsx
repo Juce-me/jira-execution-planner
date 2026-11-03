@@ -5234,7 +5234,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const quoted = keys.map(k => `"${k}"`).join(', ');
                 return `("Epic Link" in (${quoted}) OR parent in (${quoted}))`;
             };
-            const planningTypeId = isCombinedWorkModel(workModel) && /^\d+$/.test(String(activeConfiguration?.roleTypes?.planning?.id ?? '')) ? activeConfiguration.roleTypes.planning.id : null; // `issueType: 'Story'` = the planning leaf, linked by id in the new model
+            const planningTypeClause = !isCombinedWorkModel(workModel) ? null : /^\d+$/.test(String(activeConfiguration?.roleTypes?.planning?.id ?? '')) ? `issuetype = ${activeConfiguration.roleTypes.planning.id}` : `issuetype = "${String(entityNames.child).replace(/["\\]/g, '\\$&')}"`; // `issueType: 'Story'` = the planning leaf: by id in the new model, else its name
             const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses, excludeStatuses, priorityName, issueType, capacityType }) => {
                 const ids = teamIds || (teamId ? [teamId] : []);
                 if (!jiraUrl || !ids.length) return '';
@@ -5282,7 +5282,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clauses.push(`priority = "${priorityName}"`);
                 }
                 if (issueType) {
-                    clauses.push(issueType === 'Story' && planningTypeId ? `issuetype = ${planningTypeId}` : `issuetype = "${issueType}"`);
+                    clauses.push(issueType === 'Story' && planningTypeClause ? planningTypeClause : `issuetype = "${issueType}"`);
                 }
                 const jql = encodeURIComponent(clauses.join(' AND '));
                 return `${jiraUrl}/issues/?jql=${jql}`;

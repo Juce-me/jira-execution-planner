@@ -18,7 +18,7 @@ import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
 import UnconfiguredWorkspaceNotice from '../settings/UnconfiguredWorkspaceNotice.jsx';
 import { describeStatsScope, roleLabels, unavailablePeriodSpans } from './statsScope.js';
-import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from '../eng/engWorkModel.js';
 import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
 
@@ -42,6 +42,10 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
     // Role words for the copy below: the App's EntityNames (configured Jira type names), else the scope's captured names,
     // else Legacy Epic/Story.
     const statWords = entityNames ? roleLabels(entityNames) : (workScope?.roles || roleLabels(null));
+    // New-model Jira links name the parent by its configured type id (else its name) and its analytics kind; Legacy keeps Epic.
+    const combinedScope = isCombinedWorkModel(workScope?.model);
+    const parentLink = combinedScope ? { issueType: statWords.parent, issueTypeId: workScope.parentTypeId } : {};
+    const parentKind = combinedScope ? (entityNames || resolveEntityNames(workScope.model)).parentKind : 'epic';
     const {
         canRenderStatsPanel,
         statsView,
@@ -781,6 +785,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         <div className="stats-card project-track-card">
                             <h4>{projectTrackMode === 'team' ? 'By team' : 'By assignee'}</h4>
                             <ProjectTrackBreakdownChart
+                                issueKind={parentKind}
                                 words={statWords}
                                 data={projectTrackBreakdown}
                                 resolveColor={resolveProjectTrackColor}
@@ -975,6 +980,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                             {cohortMode === 'created' && (
                                 <LeadTimesWorkflowStatusCard
+                                    {...parentLink}
                                     words={statWords}
                                     jiraUrl={jiraUrl}
                                     cohortStartQuarter={cohortStartQuarter}
@@ -1049,7 +1055,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 <LeadTimesEpicCharts
                                     cohortMode={cohortMode}
                                     roles={statWords}
-                                    issueTypeId={workScope?.parentTypeId}
+                                    {...parentLink}
                                     cohortOpenBars={cohortOpenBars}
                                     cohortCompletedBars={cohortCompletedBars}
                                     cohortSelectedRowLabel={cohortSelectedRowLabel}

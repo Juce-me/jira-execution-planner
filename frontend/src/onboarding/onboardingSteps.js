@@ -63,7 +63,12 @@ export function isOnboardingEngDataStep(stepOrId) {
 
 // Each built catalog's Work-hierarchy fallback step, worded with the same names (read by buildVisibleOnboardingSteps).
 const HIERARCHY_FALLBACKS = new WeakMap();
-const An = word => (/^[aeiou]/i.test(word) ? 'An' : 'A');
+// "An" before a vowel, or before an acronym (two leading capitals) whose first letter is spoken with a vowel sound
+// ("an OKR", "an SLA", but "a UX goal"); "A" otherwise.
+const An = (word) => {
+    const text = String(word || '');
+    return (/^[A-Z]{2}/.test(text) ? /^[AEFHILMNORSX]/ : /^[aeiou]/i).test(text) ? 'An' : 'A';
+};
 const an = word => An(word).toLowerCase();
 
 // The tour's step catalogs worded with the viewed configuration's EntityNames (Legacy defaults when absent). Step ids,

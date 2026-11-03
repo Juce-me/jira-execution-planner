@@ -9,7 +9,7 @@ import { NO_TRACK_LABEL, projectTrackStripParts } from './projectTrackStats.js';
 // Per-assignee (Epic mode) / per-team (Team mode) breakdown: one stacked bar per row,
 // each split by track, rows already sorted by total in the Task 2 helper. Team mode passes
 // `columnSplit` for the Board-column strips under each track segment (#173).
-export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl, columnSplit, words = roleLabels(null) }) {
+export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl, columnSplit, words = roleLabels(null), issueKind = 'epic' }) {
     const tracks = Array.isArray(data?.tracks) ? data.tracks : [];
     const rows = (Array.isArray(data?.rows) ? data.rows : []).map((row) => ({
         id: row.id,
@@ -31,7 +31,7 @@ export default function ProjectTrackBreakdownChart({ data, resolveColor, jiraUrl
             title: `Open ${row.label}'s no-track ${lowerEntityWord(words.parents)} in Jira`,
             ariaLabel: `Open ${row.label}'s no-track ${lowerEntityWord(words.parents)} in Jira`,
             analyticsMeta: buildJiraIssueListLinkAnalytics({
-                issueKind: 'epic',
+                issueKind,
                 issueCount: segment.epicKeys.length,
                 sourceSurface: 'stats'
             })

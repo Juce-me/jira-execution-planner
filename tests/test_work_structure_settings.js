@@ -489,3 +489,45 @@ test('DELIVERY Sprint and Story Points share Legacy\'s mapping until overridden;
     assert.deepEqual(entryById(draft, 'legacy').fields.team, field('customfield_3', 'Team'));
     assert.equal(effectiveEntry(draft.configurations, entryById(draft, 'delivery')).fields.team.fieldId, 'customfield_3');
 });
+
+test('typeNamesNeedingSave asks to save when a configured type id has no captured name or Jira renamed it', async () => {
+    const { typeNamesNeedingSave } = await loadModel();
+    const types = [
+        { id: '19002', name: 'Epic', hierarchyLevel: 1 }, { id: '19003', name: 'Initiative', hierarchyLevel: 2 },
+        { id: '19001', name: 'Story', hierarchyLevel: 0 }, { id: '19009', name: 'Feature', hierarchyLevel: 1 },
+    ];
+    const ready = { state: 'ready', types };
+    const saved = delivery({ hierarchy: { planningIssueTypeId: '19002', parentIssueTypeId: '19003', ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null } });
+    const captured = { planning: { id: '19002', name: 'Epic', hierarchyLevel: 1 }, parent: { id: '19003', name: 'Initiative', hierarchyLevel: 2 }, ancestor: null, optionalAncestor: null };
+    const run = (roleTypes, catalog = ready, entries = [saved]) => typeNamesNeedingSave({
+        entries, summaries: [{ id: 'delivery', roleTypes }], catalogFor: () => catalog,
+    });
+    assert.deepEqual(run({ planning: null, parent: null, ancestor: null, optionalAncestor: null }), ['delivery'], 'null capture needs a save');
+    assert.deepEqual(run(null), ['delivery'], 'a summary without roleTypes needs a save');
+    assert.deepEqual(run(captured), [], 'a matching capture does not');
+    assert.deepEqual(run({ ...captured, parent: { id: '19003', name: 'Initiative (old)', hierarchyLevel: 2 } }), ['delivery'], 'a Jira rename needs a save');
+    assert.deepEqual(run({ ...captured, planning: { id: '19002', name: 'Epic', hierarchyLevel: 0 } }), ['delivery'], 'a level change needs a save');
+    assert.deepEqual(run({ ...captured, planning: { id: '19001', name: 'Story', hierarchyLevel: 0 } }), ['delivery'], 'a capture of another id needs a save');
+    for (const state of ['loading', 'error', 'unscoped']) {
+        assert.deepEqual(run(null, { state, types: [] }), [], `catalog ${state}: never nag`);
+    }
+    assert.deepEqual(typeNamesNeedingSave({ entries: [saved], summaries: [{ id: 'delivery', roleTypes: null }], catalogFor: () => undefined }), [], 'no catalog: never nag');
+    assert.deepEqual(run(null, { state: 'ready', types: [] }), [], 'an id Jira does not describe cannot be captured');
+    assert.deepEqual(typeNamesNeedingSave({ entries: [saved], summaries: [], catalogFor: () => ready }), [], 'no summary: unknown, never nag');
+
+    // Legacy: compatibility slots and the captured name filter are fixed names, never captured from the catalog.
+    const legacyNone = { planning: { id: null, name: 'Story', hierarchyLevel: 0 }, parent: { id: null, name: 'Epic', hierarchyLevel: 1 }, ancestor: { id: null, name: 'Initiative', hierarchyLevel: 2 }, optionalAncestor: null };
+    const compat = legacy();
+    assert.deepEqual(typeNamesNeedingSave({ entries: [compat], summaries: [{ id: 'legacy', roleTypes: legacyNone }], catalogFor: () => ready }), []);
+    // A compatibility slot keeps its fixed name even when a stale id lingers in the bundle.
+    const lingering = legacy({ hierarchy: { planningIssueTypeId: null, parentIssueTypeId: '19009', ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null } });
+    assert.deepEqual(typeNamesNeedingSave({ entries: [lingering], summaries: [{ id: 'legacy', roleTypes: legacyNone }], catalogFor: () => ready }), []);
+    // Mapped Legacy slots are compared by id like the new model.
+    const mapped = legacy({
+        legacyIssueTypeNames: null, legacyHierarchyModes: { parent: 'mapped', ancestor: 'compatibility' },
+        hierarchy: { planningIssueTypeId: '19001', parentIssueTypeId: '19009', ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null },
+    });
+    const mappedCaptured = { ...legacyNone, planning: { id: '19001', name: 'Story', hierarchyLevel: 0 }, parent: { id: '19009', name: 'Feature', hierarchyLevel: 1 } };
+    assert.deepEqual(typeNamesNeedingSave({ entries: [mapped], summaries: [{ id: 'legacy', roleTypes: mappedCaptured }], catalogFor: () => ready }), []);
+    assert.deepEqual(typeNamesNeedingSave({ entries: [mapped], summaries: [{ id: 'legacy', roleTypes: { ...mappedCaptured, parent: null } }], catalogFor: () => ready }), ['legacy']);
+});

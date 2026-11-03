@@ -87,9 +87,9 @@ function promotedBundle({ delivery = {}, legacy = {}, promotionRevision = 6 } = 
 // per-entry revision bumps, plus injectable failures.
 async function mockApp(page, {
     featureEnabled = true, promoted = false, revision = 3, bundle = virtualBundle(), typesDelay = 0, typesStatus = 200,
-    types = TYPES, failPriorityOnce = false,
+    types = TYPES, failPriorityOnce = false, summaries = [],
 } = {}) {
-    const state = { promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
+    const state = { summaries: clone(summaries), afterWorkPost: null, promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(() => {
@@ -125,7 +125,7 @@ async function mockApp(page, {
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: state.revision,
                 workConfigurationsEnabled: featureEnabled, workConfigurationsPromoted: state.promoted,
-                workConfigurationSummaries: [], adminSettingsMissingByConfiguration: {},
+                workConfigurationSummaries: state.summaries, adminSettingsMissingByConfiguration: {},
             });
         }
         if (p === '/api/work-structure/config' && method === 'GET') {
@@ -162,6 +162,7 @@ async function mockApp(page, {
             state.revision += 1;
             state.bundle = { version: 1, promotionRevision: state.promoted ? state.bundle.promotionRevision : state.revision, configurations };
             state.promoted = true;
+            state.afterWorkPost?.(state);
             return json({ workConfigurations: state.bundle, configRevision: state.revision, changedConfigurationIds: changed, promoted: true });
         }
         if (p === '/api/issue-types' && url.searchParams.get('configurationId')) {
@@ -975,4 +976,49 @@ test('DELIVERY shares the Legacy Sprint, Story Points and Team fields; Sprint an
     // Back to shared through the explicit action.
     await reopened.locator('[data-field-share="sprint"]').getByRole('button', { name: 'Same as Legacy' }).click();
     await expect(reopened.locator('[data-field-share="sprint"]')).toContainText('Same as Legacy');
+});
+
+test('a saved workspace without captured Jira type names asks for one Save of the unchanged bundle, then settles', async ({ page }) => {
+    const bundle = promotedBundle();
+    const summary = (id, roleTypes) => ({ id, name: id === 'legacy' ? 'Legacy' : 'DELIVERY', revision: 1, model: id === 'legacy' ? 'legacy' : 'rnd_2027', roleTypes });
+    const legacyNames = { planning: { id: null, name: 'Story', hierarchyLevel: 0 }, parent: { id: null, name: 'Epic', hierarchyLevel: 1 }, ancestor: { id: null, name: 'Initiative', hierarchyLevel: 2 }, optionalAncestor: null };
+    const state = await mockApp(page, {
+        promoted: true, revision: 6, bundle,
+        summaries: [summary('legacy', legacyNames), summary('delivery', { planning: null, parent: null, ancestor: null, optionalAncestor: null })],
+    });
+    // The server's names-only path: the unchanged bundle is stored as is and the names are captured.
+    state.afterWorkPost = current => {
+        current.summaries = [summary('legacy', legacyNames), summary('delivery', {
+            planning: { id: '19002', name: 'Epic', hierarchyLevel: 1 }, parent: { id: '19003', name: 'Initiative', hierarchyLevel: 2 }, ancestor: null, optionalAncestor: null,
+        })];
+    };
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    // Legacy keeps its compatibility names: with only its catalog loaded there is nothing to capture.
+    await nested(dialog, 'Field mapping').click();
+    await expect(dialog.locator('[data-catalog-state]')).toHaveCount(0);
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await expect(saveButton(dialog)).toBeDisabled();
+    await selectConfiguration(dialog, 'delivery');
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveText('Jira type names need saving.');
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveClass('group-field-helper work-config-note');
+    await expect(saveButton(dialog)).toBeEnabled();
+    await saveButton(dialog).click();
+    await expect(dialog).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(1);
+    expect(state.workPosts[0].workConfigurations).toEqual(bundle);
+    expect(state.workPosts[0].clearProjectsForConfigurationIds).toEqual([]);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Admin' }).click();
+    await projectTab(reopened);
+    await selectConfiguration(reopened, 'delivery');
+    await nested(reopened, 'Field mapping').click();
+    // The catalog is loaded and the captured names match it, so nothing is left to save.
+    await expect(reopened.locator('[data-catalog-state]')).toHaveCount(0);
+    await expect(reopened.locator('[data-mapping-key="parentIssueTypeId"]')).toContainText('Initiative');
+    await expect(reopened.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await expect(saveButton(reopened)).toBeDisabled();
+    expect(state.workPosts).toHaveLength(1);
 });

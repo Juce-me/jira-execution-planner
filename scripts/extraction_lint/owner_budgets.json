@@ -19007,22 +19007,24 @@
             "workConfig.setTechnicalIds",
             "workConfig.tabFor",
             "workConfig.technicalIds",
+            "workConfig.typeNamesToSave",
+            "workConfig.typeNamesToSave.length",
             "workConfig.validation",
             "workConfig.validation.errors"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 23,
+          "expandedInputCount": 25,
           "returnCount": 0,
           "propCount": 7,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 23,
+          "expandedInputCeiling": 25,
           "returnCeiling": 0,
           "propCeiling": 7,
           "unresolved": [
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "c6d6ea30849bdc09e418f3870eedc830b5056dd076f79d290f0242447dc8fefa",
+            "sourceDigest": "9910fd6364e7b2eda26e9cbead2729adeeeab54397dceadc70d9345476341593",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19046,10 +19048,12 @@
               "workConfig.setTechnicalIds",
               "workConfig.tabFor",
               "workConfig.technicalIds",
+              "workConfig.typeNamesToSave",
+              "workConfig.typeNamesToSave.length",
               "workConfig.validation",
               "workConfig.validation.errors"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here."
           },
           "callers": [
             {
@@ -19137,6 +19141,7 @@
             "technicalIds",
             "testSaved",
             "typeCatalogFor",
+            "typeNamesToSave",
             "uiFor",
             "unavailable",
             "userCanEdit",
@@ -19156,11 +19161,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 8,
-          "returnCount": 52,
+          "returnCount": 53,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 8,
-          "returnCeiling": 52,
+          "returnCeiling": 53,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -19169,7 +19174,7 @@
             "forwarded input onBootstrap"
           ],
           "inventory": {
-            "sourceDigest": "d87dab7acea78527bbba3402a9ea91d42f06fa266285b7dd8802e82697b67fcf",
+            "sourceDigest": "e4ef54dd615acaa10d8535db61ebc5d8a452c6acddf71c4265d4e5a8ba739967",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19181,7 +19186,7 @@
               "setGroupTesting",
               "visible"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added typeNamesToSave return is a derived display/dirty value from loaded summaries and catalogs; no new members."
           },
           "callers": [
             {
@@ -19258,8 +19263,11 @@
         "settings"
       ],
       "exports": [
+        "ALWAYS_SHARED_FIELDS",
         "BLANK_FIELD",
         "DELIVERY_PROJECT_LIMIT_MESSAGE",
+        "FIELD_MODE_OWN",
+        "FIELD_MODE_SHARED",
         "HIERARCHY_SLOTS",
         "LEGACY_FIELDS",
         "MODEL_LEGACY",
@@ -19268,6 +19276,7 @@
         "QUARTER_MESSAGE",
         "REQUIRED_FIELDS",
         "RND_FIELDS",
+        "SHARED_FIELDS",
         "addProjectToEntry",
         "adoptServerOwned",
         "applyEntryPatch",
@@ -19278,12 +19287,16 @@
         "deriveLegacyEdits",
         "describeHierarchyRow",
         "dirtyConfigurationIds",
+        "effectiveEntry",
         "entryById",
         "fieldErrorFromServer",
         "hierarchyLabels",
         "hierarchyLevelOffset",
+        "incompleteTabs",
+        "inheritedBoard",
         "isEntryDirty",
         "isPromotedBundle",
+        "isSharedField",
         "isValidQuarter",
         "missingMappings",
         "missingSummary",
@@ -19298,6 +19311,7 @@
         "sourceCause",
         "sprintRefreshLine",
         "sprintValueOptions",
+        "typeNamesNeedingSave",
         "typedSprintOption",
         "validateBundle"
       ],

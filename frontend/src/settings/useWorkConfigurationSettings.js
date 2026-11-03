@@ -26,6 +26,7 @@ import {
     rebaseOntoLatest,
     removeProjectFromEntry,
     savedSourceReady,
+    typeNamesNeedingSave,
     validateBundle,
 } from './workConfigurationModel.js';
 
@@ -312,6 +313,11 @@ export function useWorkConfigurationSettings({
         if (!current || current.key !== expected) return { state: (saved?.scope.projects || []).length ? 'loading' : 'unscoped', types: [] };
         return current;
     };
+    // A saved configuration whose Jira type names the server has not captured (or Jira renamed) is an unsaved
+    // re-verification state for editors: the footer Save posts the unchanged bundle and the server captures them.
+    const typeNamesToSave = mode === 'enabled' && promoted && userCanEdit
+        ? typeNamesNeedingSave({ entries: baseline?.configurations || [], summaries: flags.summaries, catalogFor: typeCatalogFor })
+        : [];
     const retryTypeCatalog = () => {
         setTypeCatalogs({});
         setCatalogRetry(value => value + 1);
@@ -474,8 +480,9 @@ export function useWorkConfigurationSettings({
         validation,
         validationMessages,
         fieldErrors,
-        dirty,
+        dirty: dirty || typeNamesToSave.length > 0,
         dirtyIds,
+        typeNamesToSave,
         saveFeedback,
         typeCatalogFor,
         retryTypeCatalog,

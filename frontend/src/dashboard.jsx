@@ -65,6 +65,7 @@ import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
+import { useWorkEntityNames } from './eng/useWorkEntityNames.js';
 import { storyReadinessAnswersAwaited, useStoryReadiness } from './eng/useStoryReadiness.js';
 import { storyReadinessStatusMessage, useEngWorkHierarchy } from './eng/useEngWorkHierarchy.js';
 import { strictEngBoardMutationProps, strictEngBoardViewProps, useStrictEngBoardOwner, useStrictEngBoardPresentation } from './eng/useStrictEngBoardIntegration.js';
@@ -3762,9 +3763,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 loadAlertEpics,
                 loadReadyToCloseProductTasks,
                 loadReadyToCloseTechTasks,
-                loadEpicRefresh, loadEpicAlerts, collectGroupRefresh,
+                loadEpicRefresh, loadEpicAlerts, collectGroupRefresh, workTypes,
             } = useEngSprintData({
-                workModel,
+                workModel, workContextKey,
                 backendUrl: BACKEND_URL,
                 performanceGate, issueEditState: issueEditStateRef.current,
                 selectedSprint,
@@ -3802,6 +3803,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 onAuthRecoveryRequired: () => trackAppError('auth', 'session_recovery', 'reauth'),
                 strictBoardActive: boardScopeRequested,
             });
+            const entityNames = useWorkEntityNames({ workModel, activeSummary: activeConfiguration, observed: workTypes && { digest: workTypes.digest, ...workTypes.observed } });
             const sprintWorkLoaded = tasksFetched
                 && !loading
                 && !productTasksLoading

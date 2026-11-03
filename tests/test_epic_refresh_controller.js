@@ -182,7 +182,8 @@ test('hidden changes are reported when the apply callback says no changed card i
 
 // Loader (useEngSprintData.loadEpicRefresh): a plain function, so it runs here against a fake fetch.
 async function runLoader(respond, { strictBoardActive = false } = {}) {
-    const { useEngSprintData } = await import('../frontend/src/eng/useEngSprintData.js');
+    // Bundled with a minimal React runtime: the hook owns state, so it cannot run as a bare function.
+    const { mountBundledHook } = (await import('./react_hook_harness.js')).default;
     const realFetch = globalThis.fetch;
     const realLog = console.log;
     const realError = console.error;
@@ -192,7 +193,7 @@ async function runLoader(respond, { strictBoardActive = false } = {}) {
     console.log = () => {};
     console.error = () => {};
     try {
-        const api = useEngSprintData({
+        const api = mountBundledHook({ entry: new URL('../frontend/src/eng/useEngSprintData.js', import.meta.url).pathname, exportName: 'useEngSprintData', makeProps: () => ({
             backendUrl: 'http://x', selectedSprint: '7', selectedSprintName: 'S', activeGroupId: 'g',
             activeGroupTeamIds: ['t1'], activeGroupTeamSet: new Set(['t1']), activeGroupTeamLabels: {},
             pageLoadRefreshRef: { current: false }, registerSprintFetch: () => new AbortController(), cleanupSprintFetch() {},
@@ -206,7 +207,7 @@ async function runLoader(respond, { strictBoardActive = false } = {}) {
                 reconcileIssues: issues => issues,
                 capturePlanningBases: () => {}, notePlanningRawRead: () => {}, overlayPlanningIssues: issues => issues,
             },
-        });
+        }) }).render();
         probe.lanes = await api.loadEpicRefresh({ epicKey: 'EPIC-1', shouldApplyResult: () => true });
     } finally {
         globalThis.fetch = realFetch;

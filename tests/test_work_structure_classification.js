@@ -174,6 +174,8 @@ function harness(workModel) {
     const requests = [], calls = { backlog: 0 };
     const response = () => new Response(JSON.stringify({ issues: [{ key: 'PLAN-E1', fields: { customfield_10004: 8 } }], epics: {}, epicsInScope: [] }));
     const dependencies = {
+        // The hook's own state, outside a React render: initial values, no-op setters.
+        React: { useState: initial => [initial, () => {}], useMemo: factory => factory() },
         fetchEngTasks: async (url, options) => { requests.push(options.project); return response(); },
         fetchEpicRefresh: async (url, options) => { requests.push(options.project); return response(); },
         fetchBacklogEpics: async () => { calls.backlog += 1; return { epics: [] }; },

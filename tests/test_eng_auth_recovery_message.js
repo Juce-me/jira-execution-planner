@@ -13,6 +13,8 @@ function loadUseEngSprintData(fetchEngTasks, refreshAuthSession = async () => ({
         .replaceAll('export function ', 'function ');
 
     const dependencies = {
+        // The hook's own state, outside a React render: initial values, no-op setters.
+        React: { useState: initial => [initial, () => {}], useMemo: factory => factory() },
         requestBacklogEpics: async () => ({ epics: [] }),
         fetchEngTasks,
         isAuthenticationRequiredError: (error) => error?.name === 'AuthenticationRequiredError',

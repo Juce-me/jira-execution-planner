@@ -8,7 +8,7 @@
 //
 // Native kinds select the stored namespace (NULL Legacy versus the configuration's own), so the controller translates
 // at its single request/response boundary and nothing else in the table knows the difference.
-import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
+import { WORK_MODEL_LEGACY, isCombinedWorkModel, resolveEntityNames } from './engWorkModel.js';
 
 export const REVIEW_ROLES = Object.freeze(['epic', 'story']);
 
@@ -17,12 +17,13 @@ const COMBINED = Object.freeze({ toNative: { epic: 'initiative', story: 'epic' }
 
 export const reviewKindMap = workModel => (isCombinedWorkModel(workModel) ? COMBINED : IDENTITY);
 
-export function reviewLabels(workModel) {
-    const names = workEntityNames(workModel);
+// `names` is EntityNames; a bare model string still resolves to that model's defaults until every caller passes names.
+export function reviewLabels(names = resolveEntityNames(WORK_MODEL_LEGACY)) {
+    const resolved = names && typeof names === 'object' ? names : resolveEntityNames(names);
     return {
-        parent: names.parent, parentPlural: names.parentPlural, child: names.child, childPlural: names.childPlural,
+        parent: resolved.parent, parentPlural: resolved.parentPlural, child: resolved.child, childPlural: resolved.childPlural,
         // The child-level builtin that names the parent: `epic` in Legacy, `initiative` for the combined model.
-        parentColumnId: isCombinedWorkModel(workModel) ? 'initiative' : 'epic',
+        parentColumnId: isCombinedWorkModel(resolved.model) ? 'initiative' : 'epic',
     };
 }
 

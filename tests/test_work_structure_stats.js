@@ -129,6 +129,13 @@ test('scope labels are model-aware and never claim SP equivalence', () => {
     assert.equal(/equivalen|convert/i.test(JSON.stringify(delivery)), false);
 });
 
+test('scope role words come from the summary roleTypes; roleLabels takes EntityNames', () => {
+    const roleTypes = { planning: { id: '6', name: 'Capability', hierarchyLevel: 1 }, parent: { id: '7', name: 'Theme', hierarchyLevel: 2 }, ancestor: null, optionalAncestor: null };
+    const summaries = [{ id: 'delivery', name: 'DELIVERY', model: 'rnd_2027', digest: 'dd', roleTypes }];
+    assert.deepEqual({ ...scope.describeStatsScope(DELIVERY, summaries).roles }, { parent: 'Theme', parents: 'Themes', child: 'Capability', children: 'Capabilities' });
+    assert.deepEqual({ ...scope.roleLabels(null) }, { parent: 'Epic', parents: 'Epics', child: 'Story', children: 'Stories' });
+});
+
 test('unavailable periods are distinct from zero and null points keep their missing marker', () => {
     const periods = scope.classifyPeriods([{ id: 1, name: '2026Q4 S1' }, { id: 2, name: '2027Q1 S1' }, { id: 3, name: '2027Q1 S2' }], ['1', '2'], ['2']);
     assert.deepEqual(periods.map(item => item.state), ['loaded', 'unavailable', 'unavailable']);

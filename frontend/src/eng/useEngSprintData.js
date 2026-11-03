@@ -1,3 +1,4 @@
+import * as React from 'react';
 import {
     fetchBacklogEpics as requestBacklogEpics,
     fetchEngTasks,
@@ -34,6 +35,23 @@ import {
     filterTasksForTeamSet,
     sortTasksByPriority,
 } from './engTaskUtils.js';
+
+const WORK_TYPE_MISMATCH_KEY_LIMIT = 20;
+
+// One `workTypes` from the lanes of a full Catch Up load: counts summed, keys unioned (at most 20), each observed
+// name from whichever lane reported it; null when no lane reported anything.
+function mergeWorkTypeLanes(lanes) {
+    const reported = Object.values(lanes || {}).filter(Boolean);
+    if (!reported.length) return null;
+    const keys = [...new Set(reported.flatMap(item => item.linkMismatches?.keys || []))].slice(0, WORK_TYPE_MISMATCH_KEY_LIMIT);
+    const sum = field => reported.reduce((total, item) => total + (Number(item.linkMismatches?.[field]) || 0), 0);
+    const observedName = role => reported.map(item => item.observed?.[role]).find(Boolean) || null;
+    return {
+        digest: reported.map(item => item.digest).find(Boolean) || null,
+        observed: { planning: observedName('planning'), parent: observedName('parent') },
+        linkMismatches: { parentCount: sum('parentCount'), ancestorCount: sum('ancestorCount'), keys },
+    };
+}
 
 const OAUTH_ROUTE_NOT_READY_TASKS_MESSAGE = 'OAuth login succeeded, but this dashboard data route has not been migrated to Atlassian OAuth yet.';
 
@@ -81,6 +99,8 @@ export function useEngSprintData({
     // The accepted configuration context itself is stamped on every request by the API layer (workStructure/requestContext.js);
     // this hook only needs the model, which defaults to Legacy.
     workModel,
+    // The viewed configuration context; `workTypes` from another context is never returned.
+    workContextKey = null,
     backendUrl,
     selectedSprint,
     selectedSprintName,
@@ -125,10 +145,17 @@ export function useEngSprintData({
     // Same test as engWorkModel.js `isCombinedWorkModel`, inlined: this module is source-loaded by the collector harness tests.
     const combinedLane = workModel === 'rnd_2027';
     const bothLanesLoaded = () => combinedLane || (sprintLoadRef.current.product && sprintLoadRef.current.tech);
+    // `workTypes` reported by full Catch Up reads, per lane, stamped with the context that requested them.
+    const [workTypeLanes, setWorkTypeLanes] = React.useState(null);
+    const workTypes = React.useMemo(
+        () => (workTypeLanes && workTypeLanes.contextKey === workContextKey ? mergeWorkTypeLanes(workTypeLanes.lanes) : null),
+        [workTypeLanes, workContextKey],
+    );
     // `project` names the lane; the combined model has one lane (`product` slots) whose request is project=all.
     const fetchTasks = async (lane, options = {}) => {
         const project = combinedLane ? 'all' : lane;
         if (strictBoardActive) return IGNORED_RESULT;
+        const requestContextKey = workContextKey;
         const readToken = issueEditState?.beginRead();
         let tokenRetained = false;
         const useLoading = options.useLoading !== false;
@@ -222,6 +249,13 @@ export function useEngSprintData({
             const reconciledEpicEntries = overlay(reconcile(epicEntries));
             const filteredEpics = filterEpicsByTaskEpicKeys(Object.fromEntries(reconciledEpicEntries.map(epic => [epic.key, epic])), filteredTasks);
             if (options.shouldApplyResult?.() === false) return IGNORED_RESULT;
+            // Only a full Catch Up read reports workTypes; automatic, background, per-epic and purposed reads never overwrite it.
+            if (!options.automatic && !options.background && !options.epicRefresh && !options.purpose) {
+                setWorkTypeLanes(prev => ({
+                    contextKey: requestContextKey,
+                    lanes: { ...(prev?.contextKey === requestContextKey ? prev.lanes : {}), [lane]: data.workTypes || null },
+                }));
+            }
 
             if (!options.automatic && options.updateEpics !== false) {
                 setEpicDetails(prev => ({ ...prev, ...filteredEpics }));
@@ -672,6 +706,7 @@ export function useEngSprintData({
     };
 
     return {
+        workTypes,
         loadGroupTasks,
         collectGroupRefresh,
         loadEpicRefresh,

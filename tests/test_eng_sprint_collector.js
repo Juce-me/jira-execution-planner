@@ -6,7 +6,7 @@ function harness(request, overrides = {}) {
     const source = fs.readFileSync('frontend/src/eng/useEngSprintData.js', 'utf8')
         .replace(/^import\s+[^;]+;\s*$/gm, '').replaceAll('export const ', 'const ').replaceAll('export function ', 'function ');
     const effects = [], reads = [], finished = [], requests = [];
-    const dependencies = { fetchEngTasks: async (url, options) => { requests.push(options); return request(options); },
+    const dependencies = { React: { useState: initial => [initial, () => {}], useMemo: factory => factory() }, fetchEngTasks: async (url, options) => { requests.push(options); return request(options); },
         fetchEpicRefresh: async (url, options) => request(options), isAuthenticationRequiredError: error => error.name === 'AuthenticationRequiredError',
         PRIORITY_ORDER: [], filterEpicsByTaskEpicKeys: epics => epics, filterEpicsInScopeForTeamSet: items => items,
         filterTasksForTeamSet: items => items, sortTasksByPriority: items => items, flattenTeamLabelAliases: () => [] };

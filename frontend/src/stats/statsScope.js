@@ -1,13 +1,13 @@
 // Pure labels for the work-configuration scope a statistics view answers for. No view claims that Story
 // Points of different configurations are equivalent; each names its own quarter, model and role words.
 
-import { MODEL_LEGACY, canonicalQuarter, quarterFromSprintName, quarterInRange } from '../workStructure/configurationContext.js';
+import { canonicalQuarter, quarterFromSprintName, quarterInRange } from '../workStructure/configurationContext.js';
+import { resolveEntityNames } from '../eng/engWorkModel.js';
 
-// Role words the grouping parent and its child carry in each model.
-export function roleLabels(model) {
-    return model === MODEL_LEGACY || !model
-        ? { parent: 'Epic', parents: 'Epics', child: 'Story', children: 'Stories' }
-        : { parent: 'Initiative', parents: 'Initiatives', child: 'Epic', children: 'Epics' };
+// Role words the grouping parent and its child carry, from EntityNames (a model string or null resolves to its defaults).
+export function roleLabels(names) {
+    const resolved = names && typeof names === 'object' ? names : resolveEntityNames(names);
+    return { parent: resolved.parent, parents: resolved.parentPlural, child: resolved.child, children: resolved.childPlural };
 }
 
 // "2027Q1 · DELIVERY" style label for the selected quarter; null before promotion (nothing to name).
@@ -20,7 +20,7 @@ export function describeStatsScope(workContext, summaries) {
         quarter: workContext.quarter,
         configurationName: name,
         model,
-        roles: model ? roleLabels(model) : null,
+        roles: model ? roleLabels(resolveEntityNames(model, summary.roleTypes, null, summary.digest)) : null,
         label: name ? `${workContext.quarter} · ${name}` : workContext.quarter,
     };
 }

@@ -16542,6 +16542,7 @@
             "dismissedStoryRequirementIds",
             "engCatchUpFilters",
             "engWorkHierarchy",
+            "entityNames",
             "epicDetails",
             "epicsInScope",
             "getTeamInfo",
@@ -16599,6 +16600,7 @@
             "engCatchUpFilters",
             "engWorkHierarchy",
             "engWorkHierarchy.alertTargets",
+            "entityNames",
             "epicDetails",
             "epicsInScope",
             "getTeamInfo",
@@ -16639,11 +16641,11 @@
             "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 48,
+          "expandedInputCount": 49,
           "returnCount": 21,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 48,
+          "expandedInputCeiling": 49,
           "returnCeiling": 21,
           "propCeiling": 0,
           "unresolved": [
@@ -16656,7 +16658,7 @@
             "forwarded input burnoutTaskFilter"
           ],
           "inventory": {
-            "sourceDigest": "cbc13c926c87b3693bf77d2e9acf997eaec09801dbc285d174ea82d07a6dac03",
+            "sourceDigest": "a0184b9445f6ca3cf859d3bdba0388dee0cbbd98c5e3e2eb2ff861b42239fb73",
             "reviewed": true,
             "rationale": "Reviewed exact Task 4 immutable closure ledger: priorityOrder aliases PRIORITY_ORDER and is indexed only by task priority names for numeric sorting (fallback 999); member paths name both consolidated item.task and task sort comparators. Spread backlogProductEpics/backlogTechEpics are the existing remote Backlog Epic arrays; readyToCloseEpicsInScope is the existing independently loaded ready-to-close Epic array. Each spread is iterated only as Epic metadata with existing key/status/team predicates. burnoutTaskFilter is converted only by Boolean() to the unchanged focusedFilterActive argument of useEngAlertFilters; no member or callback invocation. All six scope aliases are destructured directly and explicit App helpers remain synchronous predicates, with deferred dismissAlertItem/celebration callbacks staying App-owned. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
@@ -16714,7 +16716,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useEngAlerts",
-              "line": 5364,
+              "line": 5384,
               "phase": "hook execution"
             }
           ],
@@ -16722,10 +16724,10 @@
             {
               "name": "alerts",
               "lines": [
-                5376,
-                5610,
-                6938,
-                6946
+                5396,
+                5630,
+                6954,
+                6962
               ]
             }
           ],
@@ -17888,8 +17890,10 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
+            "InitiativeIcon",
             "canEditSharedConfiguration",
             "canToggleSharedGroupExcludedCapacity",
+            "entityNames",
             "epicGroup",
             "epicRefMap",
             "epicRefresh",
@@ -17926,8 +17930,14 @@
             "toggleTaskSelection"
           ],
           "expandedInputNames": [
+            "InitiativeIcon",
             "canEditSharedConfiguration",
             "canToggleSharedGroupExcludedCapacity",
+            "entityNames",
+            "entityNames.model",
+            "entityNames.parent",
+            "entityNames.parent.toUpperCase",
+            "entityNames.parentLevel",
             "epicGroup",
             "epicGroup.epic",
             "epicGroup.epic.assignee.displayName",
@@ -18046,13 +18056,13 @@
             "toggleTaskSelection"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 118,
+          "expandedInputCount": 124,
           "returnCount": 0,
-          "propCount": 36,
+          "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 118,
+          "expandedInputCeiling": 124,
           "returnCeiling": 0,
-          "propCeiling": 36,
+          "propCeiling": 38,
           "unresolved": [
             "bag epicGroup member alias epicInfo",
             "forwarded input epicGroup",
@@ -18063,7 +18073,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "b6ec6bc58f34762370cf4b59ca7315365222deeea9932a6c693786cbc5d67424",
+            "sourceDigest": "d1e08156984c17f33d5cd89ad02c7233e11eccfc5048094d6e88f4fc13eb32d2",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18155,7 +18165,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "EpicBlock",
-              "line": 5759,
+              "line": 5944,
               "phase": "render"
             }
           ],

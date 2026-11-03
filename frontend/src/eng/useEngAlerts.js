@@ -5,7 +5,7 @@ import { epicHasFuturePlanningTeamLabel, epicMatchesFuturePlanningTeamSelection,
 import { buildStoryReadinessAlertModel } from './useEngWorkHierarchy.js';
 import { getEpicTeamInfo } from './engTaskUtils.js';
 import { useEngAlertFilters } from './useEngAlertFilters.js';
-import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
+import { isCombinedWorkModel, resolveEntityNames } from './engWorkModel.js';
 
 // Empty, waiting and ready-to-close Initiatives are derived from their Epic children, so they need authoritative complete child data:
 // a parent the server marked incomplete is never read as empty or closable. The server (`mark_child_data_completeness` in
@@ -14,7 +14,7 @@ import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
 const hasCompleteChildData = epic => epic?.childDataComplete !== false;
 
 export function useEngAlerts({
-    scope, workModel,
+    scope, workModel, entityNames,
     dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
     missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
     activeGroupTeamLabels, resolveTeamName, tasks, alertScopeTooLarge, epicsInScope,
@@ -28,7 +28,7 @@ export function useEngAlerts({
     // Missing Labels parent-hygiene alerts are retired outright (no lists, so no requests); every other category keeps its rule at the
     // shifted role. Legacy is untouched.
     const combinedLane = isCombinedWorkModel(workModel);
-    const parentName = workEntityNames(workModel).parent;
+    const parentName = (entityNames || resolveEntityNames(workModel)).parent;
     const dismissedAlertSet = React.useMemo(() => new Set(dismissedAlertKeys || []), [dismissedAlertKeys]);
 
     const blockedTasks = visibleTasks.filter(task => {

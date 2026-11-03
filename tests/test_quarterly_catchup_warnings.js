@@ -14,6 +14,7 @@ const bundle = esbuild.buildSync({
             "export { buildConfigurationContext } from './frontend/src/workStructure/configurationContext.js';",
             "export { classifyStoryReadinessError, STORY_READINESS_STATUS } from './frontend/src/eng/useStoryReadiness.js';",
             "export { storyReadinessStatusMessage } from './frontend/src/eng/engWorkHierarchy.js';",
+            "export { resolveEntityNames } from './frontend/src/eng/engWorkModel.js';",
         ].join('\n'),
         resolveDir: root,
     },
@@ -79,7 +80,7 @@ test('only an explicit readiness configuration code is "incomplete"; context con
 });
 
 test('readiness configuration messages name what is missing in the viewed model and who can fix it', () => {
-    const message = (status, error, workModel = 'rnd_2027') => api.storyReadinessStatusMessage(status, '', { error, workModel });
+    const message = (status, error, workModel = 'rnd_2027') => api.storyReadinessStatusMessage(status, '', { error, names: api.resolveEntityNames(workModel) });
     const labels = message('invalid_configuration', { code: 'story_readiness_configuration_invalid', reason: 'team_labels_missing', teams: ['Alpha', 'Beta'] });
     assert.match(labels, /^Epics Required needs a Team label/);
     assert.match(labels, /missing for Alpha, Beta/);
@@ -97,7 +98,7 @@ test('readiness configuration messages name what is missing in the viewed model 
 });
 
 test('readiness status lines name the planned level: Epic readiness for DELIVERY, Story readiness for Legacy', () => {
-    const line = (status, workModel) => api.storyReadinessStatusMessage(status, '', { workModel });
+    const line = (status, workModel) => api.storyReadinessStatusMessage(status, '', { names: api.resolveEntityNames(workModel) });
     assert.equal(line('invalid_scope', 'rnd_2027'), 'Epic readiness is unavailable for this Sprint: Jira reports a different name or state for it than this page has. Use Refresh to reload the Sprints.');
     assert.equal(line('unavailable', 'rnd_2027'), 'Epic readiness is temporarily unavailable. Jira Epics remain visible.');
     for (const status of ['invalid_scope', 'unavailable', 'access_denied', 'scope_too_large']) {

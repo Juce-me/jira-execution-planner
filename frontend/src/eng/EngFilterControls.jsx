@@ -3,13 +3,16 @@ import EngFilterBar from './EngFilterBar.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import PlanningTableStickyStack from './PlanningTableStickyStack.jsx';
 import { ENG_EPIC_SORT_OPTIONS, getEngEpicSortLabel } from './engTaskUtils.js';
+import { WORK_MODEL_LEGACY, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
+
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 // The second controls row is shared by Catch Up and Planning; content and alerts render below it.
 export default function EngFilterControls({ engFilters, onFacetChange, onClearFacets,
     onFilterBarHeightChange, boardColumns = [], renderPriorityIcon, hasInitiativeData,
     groupByInitiative, setGroupByInitiative, InitiativeIcon, engEpicSort, setEngEpicSort,
     hierarchyCounts, visibleTasksForList = [], planningTable = false, planningOverview,
-    compactHeaderRef, onActivatePlanningSticky, planningToolbarRef }) {
+    compactHeaderRef, onActivatePlanningSticky, planningToolbarRef, entityNames = LEGACY_NAMES }) {
     const realStoryCount = Number.isFinite(hierarchyCounts?.realStories) ? hierarchyCounts.realStories : visibleTasksForList.length;
     const requirementCount = Number(hierarchyCounts?.requirements) || 0;
     const [showSortDropdown, setShowSortDropdown] = React.useState(false);
@@ -37,7 +40,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                         scopeTotal={engFilters.scopeTotal}
                         subject={engFilters.subject}
                         readoutCount={realStoryCount}
-                        readoutUnit={requirementCount > 0 ? `stories · ${requirementCount} required` : engFilters.readoutUnit}
+                        readoutUnit={requirementCount > 0 ? `${lowerEntityWord(realStoryCount === 1 ? entityNames.child : entityNames.childPlural)} · ${requirementCount} required` : engFilters.readoutUnit}
                         onChange={onFacetChange}
                         onClearAll={onClearFacets}
                         onHeightChange={onFilterBarHeightChange}
@@ -50,7 +53,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                         className={`sprint-dropdown-toggle ${showSortDropdown ? 'open' : ''}`}
                                         role="button"
                                         tabIndex={0}
-                                        aria-label="Sort epics"
+                                        aria-label={`Sort ${lowerEntityWord(entityNames.parentPlural)}`}
                                         aria-expanded={showSortDropdown}
                                         onClick={() => setShowSortDropdown(v => !v)}
                                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowSortDropdown(v => !v); } }}
@@ -83,7 +86,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                         <IconButton
                                             className="fb-trigger fb-trigger-icon"
                                             onClick={() => setGroupByInitiative(!groupByInitiative)}
-                                            aria-label="Group by Initiative"
+                                            aria-label={`Group by ${entityNames.ancestor}`}
                                             aria-pressed={groupByInitiative}
                                             aria-describedby="initiative-grouping-tooltip"
                                         >
@@ -94,7 +97,7 @@ export default function EngFilterControls({ engFilters, onFacetChange, onClearFa
                                             className="initiative-grouping-tooltip"
                                             role="tooltip"
                                         >
-                                            {`Group by Initiative — ${groupByInitiative ? 'On' : 'Off'}`}
+                                            {`Group by ${entityNames.ancestor} — ${groupByInitiative ? 'On' : 'Off'}`}
                                         </span>
                                     </span>
                                 )}

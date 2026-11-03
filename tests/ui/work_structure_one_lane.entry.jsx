@@ -7,6 +7,7 @@ import EngFilterBar from '../../frontend/src/eng/EngFilterBar.jsx';
 import PlanningProjectSplitBar from '../../frontend/src/eng/PlanningProjectSplitBar.jsx';
 import EngAlertsPanel from '../../frontend/src/eng/EngAlertsPanel.jsx';
 import { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } from '../../frontend/src/eng/engCatchUpFilters.js';
+import { resolveEntityNames } from '../../frontend/src/eng/engWorkModel.js';
 import { buildSelectedProjectStats, buildExcludedProjectStats, buildSelectedPlanningTasksList } from '../../frontend/src/eng/planningSelectionStats.js';
 import { buildSelectedProjectEntries } from '../../frontend/src/eng/planningCapacityUtils.js';
 import { classifyCapacityIssue } from '../../frontend/src/capacityClassification.mjs';
@@ -46,7 +47,7 @@ function AlertsHarness({ workModel }) {
 
 function FiltersHarness({ workModel }) {
     const tasks = [task('PLAN-E1', 8, 'PLAN-I1')];
-    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: () => false, workModel }), [workModel]);
+    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: () => false, names: resolveEntityNames(workModel) }), [workModel]);
     const resolved = React.useMemo(() => resolveEngCatchUpFilters({ model }), [model]);
     return (
         <EngFilterBar

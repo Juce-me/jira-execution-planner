@@ -45,14 +45,14 @@ function admission(params, legacy = false) {
     return null;
 }
 
-async function mockApp(page, { readinessReply = null, workTypes = null, legacy = false } = {}) {
+async function mockApp(page, { readinessReply = null, workTypes = null, legacy = false, epicCount = 2, readinessEpics = [], roleTypes = null, objective = null, prefs = {} } = {}) {
     const state = { log: [], configRequests: 0 };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(prefs => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
-    }, legacy ? { selectedView: 'eng', selectedSprint: 7, sprintName: '2026Q4', selectedQuarter: '2026Q4' }
-        : { selectedView: 'eng', selectedSprint: 91, sprintName: '2027Q1', selectedQuarter: '2027Q1' });
+    }, { ...(legacy ? { selectedView: 'eng', selectedSprint: 7, sprintName: '2026Q4', selectedQuarter: '2026Q4' }
+        : { selectedView: 'eng', selectedSprint: 91, sprintName: '2027Q1', selectedQuarter: '2027Q1' }), ...prefs });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -73,7 +73,8 @@ async function mockApp(page, { readinessReply = null, workTypes = null, legacy =
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: 3,
                 workConfigurationsEnabled: true, workConfigurationsPromoted: true,
-                workConfigurationSummaries: SUMMARIES, adminSettingsMissingByConfiguration: { legacy: [], delivery: [] },
+                workConfigurationSummaries: roleTypes ? SUMMARIES.map(summary => (summary.id === 'delivery' ? { ...summary, roleTypes } : summary)) : SUMMARIES,
+                adminSettingsMissingByConfiguration: { legacy: [], delivery: [] },
             });
         }
         if (p === '/api/work-structure/config') return json({ workConfigurations: { version: 1, promotionRevision: 6, configurations: [] }, configRevision: 3, promoted: true, userCanEditSettings: true, featureEnabled: true });
@@ -100,8 +101,9 @@ async function mockApp(page, { readinessReply = null, workTypes = null, legacy =
         if (p === '/api/tasks-with-team-name') {
             const visible = !params.purpose;
             return json({
-                issues: visible ? [epic('PLAN-1', 'First sample epic'), epic('PLAN-2', 'Second sample epic')] : [],
-                epics: { 'PLAN-100': { key: 'PLAN-100', summary: 'Sample initiative', status: { name: 'In Progress' }, teamId: 'team-platform', teamName: 'Platform Team' } },
+                issues: visible ? [epic('PLAN-1', 'First sample epic'), epic('PLAN-2', 'Second sample epic'),
+                    ...Array.from({ length: Math.max(0, epicCount - 2) }, (_, index) => epic(`PLAN-${index + 3}`, `Sample epic ${index + 3}`))] : [],
+                epics: { 'PLAN-100': { key: 'PLAN-100', summary: 'Sample initiative', status: { name: 'In Progress' }, teamId: 'team-platform', teamName: 'Platform Team', ...(objective ? { initiative: objective } : {}) } },
                 epicsInScope: [], names: {},
                 // The server reports workTypes on full new-model reads only; Legacy never carries them.
                 ...(visible && workTypes && !legacy ? { workTypes } : {}),
@@ -113,7 +115,7 @@ async function mockApp(page, { readinessReply = null, workTypes = null, legacy =
                 state.configRequestsAtReadiness ??= state.configRequests;
                 return json(readinessReply.body, readinessReply.status);
             }
-            return json({ schemaVersion: 1, complete: true, epics: [], scope: {
+            return json({ schemaVersion: 1, complete: true, epics: readinessEpics, scope: {
                 groupId: params.groupId, sprintId: params.sprint, sprintName: params.sprintName, sprintState: params.sprintState,
             } });
         }
@@ -209,4 +211,79 @@ test('a Legacy quarter shows no link notice', async ({ page }) => {
     await expect(page.locator('.task-item').first()).toBeVisible();
     await page.waitForTimeout(500);
     await expect(page.locator('.story-readiness-notice', { hasText: LINK_NOTICE })).toHaveCount(0);
+});
+
+// The user's DELIVERY bug: counts, alerts, the requirement card and the row icons follow the configured Jira types.
+const readinessParent = (key, summary) => ({
+    key, summary, status: { name: 'In Progress' }, priority: { name: 'High' }, projectKey: 'PLAN', projectClass: 'other', initiative: null,
+    missingTeams: [{ id: 'team-data', name: 'Data Team', reason: 'no_stories' }],
+});
+const ALERT_PREFS = { showAlertsPanel: true, showNeedsStoriesAlert: true };
+const OBJECTIVE = { key: 'OBJ-1', summary: 'Sample objective' };
+const RENAMED_ROLE_TYPES = {
+    planning: { id: '6', name: 'Deliverable', hierarchyLevel: 1 }, parent: { id: '11700', name: 'Theme', hierarchyLevel: 2 },
+    ancestor: { id: '12723', name: 'Objective', hierarchyLevel: 3 }, optionalAncestor: null,
+};
+const requiredPill = page => page.locator('.alerts-panel-summary-pill', { hasText: 'required' });
+
+async function expectOneRowHeaders(page, selector) {
+    const headers = page.locator(selector);
+    await expect(headers.first()).toBeVisible();
+    for (const header of await headers.all()) {
+        const metrics = await header.evaluate(element => {
+            const row = [...element.querySelectorAll('.epic-title-row > *, .epic-meta > *')]
+                .filter(node => getComputedStyle(node).display !== 'none').map(node => node.getBoundingClientRect());
+            const icon = element.querySelector('.epic-icon').getBoundingClientRect();
+            const name = element.querySelector('.epic-name').getBoundingClientRect();
+            return {
+                overflow: element.scrollWidth - element.clientWidth,
+                topSpread: Math.max(...row.map(box => box.top)) - Math.min(...row.map(box => box.top)),
+                iconHeight: icon.height, centerDelta: Math.abs((icon.top + icon.bottom) / 2 - (name.top + name.bottom) / 2),
+            };
+        });
+        expect(metrics.overflow).toBeLessThanOrEqual(1);
+        expect(metrics.topSpread).toBeLessThanOrEqual(8);
+        expect(metrics.iconHeight).toBe(24);
+        expect(metrics.centerDelta).toBeLessThanOrEqual(2);
+    }
+}
+
+test('DELIVERY Catch Up names its counts, alerts, requirement card and icons by the configured types', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await mockApp(page, { epicCount: 5, readinessEpics: [readinessParent('PLAN-100', 'Sample initiative')], objective: OBJECTIVE,
+        prefs: { ...ALERT_PREFS, groupByInitiativeChoice: true } });
+    await expect(page.locator('.task-item')).toHaveCount(5);
+    await expect(page.getByText(/5 epics · 1 required/i)).toBeVisible();
+    await expect(requiredPill(page)).toHaveText('1 Epic required');
+    const card = page.locator('.story-requirement-card');
+    await expect(card.locator('.story-requirement-title')).toHaveText('Epic required');
+    await expect(card).toHaveAttribute('aria-label',
+        'PLAN-100, Sample initiative: Epic required for Data Team, target sprint 2027Q1. Opens the Initiative in Jira to create the Epic.');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No Epics yet for this sprint.');
+    await expect(page.locator('.task-item .story-icon').first()).toHaveAttribute('title', 'EPIC');
+    await expect(page.locator('.epic-header .epic-icon').first()).toHaveAttribute('title', 'INITIATIVE');
+    await expect(page.locator('.epic-header .epic-icon .initiative-icon')).toHaveCount(1);
+    await expect(page.locator('.initiative-header .initiative-header-icon')).toHaveAttribute('title', 'OBJECTIVE');
+    await expectOneRowHeaders(page, '.initiative-body .epic-block > .epic-header');
+});
+
+test('DELIVERY direct Initiative headers keep one row and two requirements use the plural pill', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await mockApp(page, { epicCount: 5, readinessEpics: [readinessParent('PLAN-100', 'Sample initiative'), readinessParent('PLAN-200', 'Other initiative')],
+        prefs: ALERT_PREFS });
+    await expect(page.getByText(/5 epics · 2 required/i)).toBeVisible();
+    await expect(requiredPill(page)).toHaveText('2 Epics required');
+    await expectOneRowHeaders(page, '.task-list > .epic-block > .epic-header, .task-list > div > .epic-block > .epic-header');
+});
+
+test('a renamed DELIVERY configuration shows the captured Jira type names', async ({ page }) => {
+    await mockApp(page, { epicCount: 5, readinessEpics: [readinessParent('PLAN-100', 'Sample initiative')], roleTypes: RENAMED_ROLE_TYPES, objective: OBJECTIVE,
+        prefs: { ...ALERT_PREFS, groupByInitiativeChoice: true } });
+    await expect(page.getByText(/5 deliverables · 1 required/i)).toBeVisible();
+    await expect(requiredPill(page)).toHaveText('1 Deliverable required');
+    await expect(page.locator('.story-requirement-title')).toHaveText('Deliverable required');
+    await expect(page.locator('.story-requirement-card')).toHaveAttribute('aria-label', /Deliverable required for Data Team, target sprint 2027Q1\. Opens the Theme in Jira to create the Deliverable\.$/);
+    await expect(page.locator('.task-item .story-icon').first()).toHaveAttribute('title', 'DELIVERABLE');
+    await expect(page.locator('.epic-header .epic-icon').first()).toHaveAttribute('title', 'THEME');
+    await expect(page.locator('#eng-alert-needs-stories .alert-story-note')).toHaveText('No Deliverables yet for this sprint.');
 });

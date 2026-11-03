@@ -4,6 +4,7 @@ import { REMOVE_FADE_MS } from '../issues/IssueCard.jsx';
 import { sortTasksByPriority } from './engTaskUtils.js';
 import { projectPlanningOriginals, restorePlanningDisplay } from './engIssueEditState.js';
 import { createEpicRefreshController } from './epicRefreshController.js';
+import { WORK_MODEL_LEGACY, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { alertCallsFor, alertCallsForEdit, mergeEpicMissingIssues, mergeEpicScopeEntries, recomputeMissingPlanningInfo, replaceEpicStories } from './epicRefreshAlerts.js';
 import { createEpicRecheckScheduler, resolveEditEpicKeys } from './epicRefreshEditRecheck.js';
 import { glareDelayMs, playGlare, selectGlareKeys } from './epicRefreshGlare.js';
@@ -15,6 +16,7 @@ const STORY_COPY_LISTS = ['readyToCloseProductTasks', 'readyToCloseTechTasks'];
 const FRAME_TIMEOUT_MS = 250;
 const ALERT_LANES = [['product', 'Product'], ['tech', 'Tech']];
 const ALERT_CALLS = ['readyToClose', 'epicAlerts', 'missingInfo', 'backlog', 'readiness'];
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 const setterName = listName => `set${listName[0].toUpperCase()}${listName.slice(1)}`;
 const headerSelector = epicKey => `[data-epic-key="${epicKey}"] .epic-header`;
@@ -34,21 +36,23 @@ const twoFrames = () => new Promise(resolve => {
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => { window.clearTimeout(timer); resolve(); }));
 });
 
-function announcementFor(outcome) {
+// The live-region text of one refresh, in the viewed configuration's names (`names`, Legacy defaults when absent).
+export function epicRefreshAnnouncement(outcome, names = LEGACY_NAMES) {
     if (outcome.result === 'changed') {
-        const stories = (outcome.changedCount || 0) - (outcome.epicChanged ? 1 : 0);
-        if (stories <= 0) return 'Epic updated';
-        return stories === 1 ? '1 story updated' : `${stories} stories updated`;
+        const children = (outcome.changedCount || 0) - (outcome.epicChanged ? 1 : 0);
+        if (children <= 0) return `${names.parent} updated`;
+        return `${children} ${lowerEntityWord(children === 1 ? names.child : names.childPlural)} updated`;
     }
     if (outcome.result === 'hidden') return `${outcome.hiddenCount || outcome.changedCount || 0} changes hidden by filters`;
-    if (outcome.result === 'failure') return 'Epic refresh failed';
-    return 'Epic is up to date';
+    if (outcome.result === 'failure') return `${names.parent} refresh failed`;
+    return `${names.parent} is up to date`;
 }
 
 // Inputs (all read through a ref, so closures may change every render):
 //   getState() -> { productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks,
 //       missingPlanningInfoTasks, ...epic scope lists }   `missingPlanningInfoTasks` is read by the edit re-check's key-to-epic resolver
 //   active (optional, default true) false outside Catch Up and Planning clears the announcement
+//   entityNames (optional) the viewed configuration's EntityNames for the announcement; Legacy defaults when absent
 //   loadEpicRefresh, loadEpicAlerts, loadEpicReadiness, mergeReadinessEpic, readGuards(epicKey), getAlertVersion(), isFutureSprint, sourceSurface
 //   getSubtaskParentStoryKeys(keys) -> parent story keys of subtask keys (optional; `resolveSubtaskParentStoryKeys(keys, storySubtasksByKey)`)
 //   alertCohortInFlight() -> boolean   true while the department alert cohort loads (optional; absent means never in flight)
@@ -460,7 +464,7 @@ export function useEpicRefresh(inputs) {
             setEpicState,
             announce: outcome => {
                 announceCountRef.current += 1;
-                setAnnouncement(announcementFor(outcome) + (announceCountRef.current % 2 ? '' : '\u00a0'));
+                setAnnouncement(epicRefreshAnnouncement(outcome, latest.current.entityNames) + (announceCountRef.current % 2 ? '' : '\u00a0'));
                 setAnnouncementId(announceCountRef.current);
             },
             track: outcome => latest.current.track({

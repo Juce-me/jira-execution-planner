@@ -320,7 +320,7 @@ test('dashboard defines a persisted global alerts panel toggle', () => {
     );
     assert.match(
         alertsSource,
-        /const alertSummaryItems = ALERT_SUMMARY_CONFIG/
+        /const alertSummaryItems = summaryConfig/
     );
     assert.match(
         alertsSource,
@@ -392,13 +392,14 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
         'Backlog',
         'Missing team',
         'Missing labels',
-        'Stories required',
         'Waiting',
-        'Empty epic',
         'Ready to close',
     ].forEach(label => {
         assert.ok(alertsSource.includes(`label: '${label}'`), `Expected alert summary label ${label}`);
     });
+    // The two entity-named categories are built from the configured names; a count of 1 reads in the singular.
+    assert.ok(alertsSource.includes("label: `${names.childPlural} required`, one: `${names.child} required`"), 'Expected the named required label');
+    assert.ok(alertsSource.includes("label: `Empty ${lowerEntityWord(names.parent)}`"), 'Expected the named empty label');
 });
 
 test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {

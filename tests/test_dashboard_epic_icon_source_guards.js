@@ -14,7 +14,10 @@ test('dashboard epic headers use the purple 16x16 epic svg icon', () => {
         'utf8'
     );
     const epicBlockSource = readOwnerSource(['frontend/src/eng/EpicBlock.jsx'], { anchor: 'export function EpicBlock(' });
-    const source = `${dashboardSource}\n${epicBlockSource}\n${epmRollupSource}`;
+    // The ENG header draws its type glyph through the shared WorkTypeGlyph (the bolt at level 1).
+    const glyphSource = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'issues', 'WorkTypeGlyph.jsx'), 'utf8');
+    assert.ok(epicBlockSource.includes('<WorkTypeGlyph level={entityNames.parentLevel} InitiativeIcon={InitiativeIcon} />'));
+    const source = `${dashboardSource}\n${epicBlockSource}\n${glyphSource}\n${epmRollupSource}`;
 
     const iconViewBoxMatches = source.match(/<svg viewBox="0 0 16 16" fill="none">/g) || [];
     const iconFillMatches = source.match(/fill="#bf63f3"/g) || [];

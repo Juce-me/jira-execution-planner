@@ -3,7 +3,9 @@ import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
 import { shouldHideReadinessGhost } from './epicRefreshAlerts.js';
-import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
+import { WORK_MODEL_LEGACY, isCombinedWorkModel, resolveEntityNames } from './engWorkModel.js';
+
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -35,10 +37,10 @@ export function storyRequirementId({ groupId, sprintId, epicKey, teamId } = {}) 
     return buildStoryRequirementId({ groupId, sprintId, epicKey, teamId });
 }
 
-// What an invalid readiness configuration is missing, in the viewed model's names. Department settings are editable by
+// What an invalid readiness configuration is missing, in the viewed configuration's names. Department settings are editable by
 // every user ("Open Settings"); the work configuration is administrator-owned and says so.
-function readinessConfigurationMessage(error = {}, workModel) {
-    const { childPlural } = workEntityNames(workModel);
+function readinessConfigurationMessage(error = {}, names) {
+    const { childPlural } = names;
     const feature = `${childPlural} Required`;
     const teams = Array.isArray(error?.teams) ? error.teams.filter(Boolean) : [];
     const fields = Array.isArray(error?.missingFields) ? error.missingFields.filter(Boolean) : [];
@@ -52,16 +54,16 @@ function readinessConfigurationMessage(error = {}, workModel) {
         teams_duplicate: `${feature} found the same Team twice in this Department. Open Settings to review the Department's Teams.`,
         projects_missing: `${feature} needs Jira projects in this quarter's work configuration scope. An administrator can add them in Settings.`,
         fields_missing: `${feature} needs the Sprint and Team fields in this quarter's work configuration. An administrator can map them in Settings.`,
-    }[error?.reason] || `${workEntityNames(workModel).child} readiness configuration is incomplete. Open Settings to review the Department configuration.`;
+    }[error?.reason] || `${names.child} readiness configuration is incomplete. Open Settings to review the Department configuration.`;
 }
 
-export function storyReadinessStatusMessage(status, navigationError = '', { error = null, workModel } = {}) {
+export function storyReadinessStatusMessage(status, navigationError = '', { error = null, names = LEGACY_NAMES } = {}) {
     if (navigationError) return navigationError;
     if (status === 'invalid_configuration' || status === 'work_configuration_incomplete') {
-        return readinessConfigurationMessage(error || {}, workModel);
+        return readinessConfigurationMessage(error || {}, names);
     }
     // The planning level's own name: Story readiness in Legacy, Epic readiness when Epics are the planned items.
-    const { child, childPlural } = workEntityNames(workModel);
+    const { child, childPlural } = names;
     return {
         unavailable: `${child} readiness is temporarily unavailable. Jira ${childPlural} remain visible.`,
         access_denied: `${child} readiness is unavailable because Jira project access could not be confirmed.`,

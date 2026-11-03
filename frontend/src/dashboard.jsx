@@ -26,7 +26,7 @@ import { createSprintCatalogController, createSprintCatalogState, getCookie, get
 import { useSiblingQuarterStates } from './workStructure/useSiblingQuarterStates.js';
 import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission, sortSprintOptionRows } from './workStructure/configurationContext.js';
 import { onWorkContextStale, reportWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
-import { isCombinedWorkModel, normalizeWorkModel } from './eng/engWorkModel.js';
+import { WORK_MODEL_LEGACY, isCombinedWorkModel, normalizeWorkModel, resolveEntityNames } from './eng/engWorkModel.js';
 import { describeStatsScope } from './stats/statsScope.js';
 import OnboardingTour, { isDashboardMobileViewport } from './onboarding/OnboardingTour.jsx';
 import { isEngOnboardingModuleSurface } from './onboarding/onboardingModules.js';
@@ -227,7 +227,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
         // Backend server URL
         const BACKEND_URL = resolveBackendUrl(window);
 
-        function InitiativeIcon({ className = '', size = 14, title = 'INITIATIVE' }) {
+        function InitiativeIcon({ className = '', size = 14, title = resolveEntityNames(WORK_MODEL_LEGACY).ancestor.toUpperCase() }) {
             const classes = ['initiative-icon', className].filter(Boolean).join(' ');
 
             return (
@@ -4129,8 +4129,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             ]);
             // O6: counts recompute on scope change only, never on a facet tick.
             const engCatchUpFacetModel = React.useMemo(
-                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, workModel }),
-                [engFilterScopeTasks, isTechTask, epicDetails, workModel]
+                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, names: entityNames }),
+                [engFilterScopeTasks, isTechTask, epicDetails, entityNames]
             );
             const engCatchUpFilters = React.useMemo(() => resolveEngCatchUpFilters({
                 model: engCatchUpFacetModel,
@@ -4437,7 +4437,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 ? sprintError
                 : sprintCatalogState.selectionPreserved && !selectedSprintInfo ? 'Selected Sprint is unavailable. Choose a Sprint or refresh the catalog.' : '';
             const displayedEngError = sprintCatalogWarning ? error : (sprintError || error);
-            const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError, { error: storyReadiness.error, workModel });
+            const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError, { error: storyReadiness.error, names: entityNames });
             const onboardingEngReadiness = deriveOnboardingEngReadiness({
                 tasksFetched,
                 loading,
@@ -5382,7 +5382,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return blockersDone ? 'Unblocked' : baseLabel;
             };
             const alerts = useEngAlerts({
-                scope, workModel,
+                scope, workModel, entityNames,
                 dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
                 missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
                 activeGroupTeamLabels, resolveTeamName, tasks, alertScopeTooLarge, epicsInScope,
@@ -5606,9 +5606,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     requirementId: entry.id,
                     clearHidingFilters: clearStoryRequirementHidingFilters,
                     prefersReducedMotion,
-                    onMissing: () => setStoryRequirementNavigationError('The Story requirement could not be revealed. Retry Story readiness or adjust the selected Department.'),
+                    onMissing: () => setStoryRequirementNavigationError(`The ${entityNames.child} requirement could not be revealed. Retry ${entityNames.child} readiness or adjust the selected Department.`),
                 });
-            }, [clearStoryRequirementHidingFilters]);
+            }, [clearStoryRequirementHidingFilters, entityNames.child]);
             const dismissStoryRequirement = React.useCallback((entry) => {
                 if (!entry?.id) return;
                 setDismissedStoryRequirementIds(previous => previous.includes(entry.id) ? previous : [...previous, entry.id]);
@@ -6038,7 +6038,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return lanes;
             };
             const epicRefresh = useEpicRefresh({
-                workModel,
+                workModel, entityNames,
                 getSelectionState: () => ({ selectedTasks, selectedTeams, planningSelectionMode, engStatusFilter, engPriorityFilter, engProjectTrackFilter, showTech, showProduct, activeGroupTeamIds, isFutureSprintSelected }),
                 loadEpicRefresh: loadEpicRefreshWithDependencySkip,
                 getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks, missingPlanningInfoTasks, missingInfoEpics, backlogProductEpics, backlogTechEpics,
@@ -6236,7 +6236,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 </PlanningAssigneeCapacity>
             );
             const epicBlockProps = {
-                renderEpicShareControl,
+                renderEpicShareControl, entityNames, InitiativeIcon,
                 statusTransitions,
                 priorityTransitions,
                 projectTrackTransitions,
@@ -6418,7 +6418,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                     {shouldRenderEngTaskList && !sprintsLoading && <EngFilterControls planningToolbarRef={setPlanningToolbarHost}
                         engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon} onFacetChange={handleEngFacetChange} onClearFacets={clearEngFacetFilters} onFilterBarHeightChange={handleFilterBarHeightChange}
-                        hasInitiativeData={hasInitiativeData} groupByInitiative={groupByInitiative} setGroupByInitiative={setGroupByInitiativeChoice} InitiativeIcon={InitiativeIcon}
+                        hasInitiativeData={hasInitiativeData} groupByInitiative={groupByInitiative} setGroupByInitiative={setGroupByInitiativeChoice} InitiativeIcon={InitiativeIcon} entityNames={entityNames}
                         engEpicSort={engEpicSort} setEngEpicSort={handleEngEpicSortChange} hierarchyCounts={engWorkHierarchy.counts} visibleTasksForList={visibleTasksForList}
                         planningTable={showPlanning && planningLayout === 'table'} planningOverview={planningOverview} compactHeaderRef={compactHeaderRef} onActivatePlanningSticky={() => setCompactStickyVisible(true)} />}
 
@@ -6949,7 +6949,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     onPinOpen={openAlertPinTarget}
                                     alertsPanel={isCatchUpMode ? (
                                         <EngAlertsPanel
-                                            workModel={workModel}
+                                            workModel={workModel} entityNames={entityNames}
                                             selectedView={selectedView}
                                             alertItemCount={alerts.alertItemCount}
                                             alertCounts={alertCounts}

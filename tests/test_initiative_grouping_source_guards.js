@@ -42,7 +42,7 @@ test('grouping reuses the shared icon-button control', () => {
         'Expected grouping to use the filter-bar icon trigger'
     );
     assert.ok(
-        engViewSource.includes('aria-label="Group by Initiative"'),
+        engViewSource.includes('aria-label={`Group by ${entityNames.ancestor}`}'),
         'Expected the grouping button to have a stable accessible name'
     );
     assert.ok(

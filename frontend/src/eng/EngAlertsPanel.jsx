@@ -1,17 +1,18 @@
 import * as React from 'react';
 import { ALERT_CATEGORY_STYLE } from './alertPin.js';
-import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
+import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
-const ALERT_SUMMARY_CONFIG = [
+// The summary pills in panel order; `label` is the category name (also the pin note), `one` its singular for a count of 1.
+const alertSummaryConfig = names => [
     { key: 'missing', label: 'Missing info', tone: 'missing', sectionId: 'eng-alert-missing' },
     { key: 'blocked', label: 'Blocked', tone: 'blocked', sectionId: 'eng-alert-blocked' },
     { key: 'followup', label: 'Postponed', tone: 'following', sectionId: 'eng-alert-followup' },
     { key: 'backlog', label: 'Backlog', tone: 'following', sectionId: 'eng-alert-backlog' },
     { key: 'missingTeam', label: 'Missing team', tone: 'following', sectionId: 'eng-alert-missing-team' },
     { key: 'missingLabels', label: 'Missing labels', tone: 'following', sectionId: 'eng-alert-missing-labels' },
-    { key: 'needsStories', label: 'Stories required', tone: 'following', sectionId: 'eng-alert-needs-stories' },
+    { key: 'needsStories', label: `${names.childPlural} required`, one: `${names.child} required`, tone: 'following', sectionId: 'eng-alert-needs-stories' },
     { key: 'waiting', label: 'Waiting', tone: 'following', sectionId: 'eng-alert-waiting' },
-    { key: 'empty', label: 'Empty epic', tone: 'empty', sectionId: 'eng-alert-empty' },
+    { key: 'empty', label: `Empty ${lowerEntityWord(names.parent)}`, tone: 'empty', sectionId: 'eng-alert-empty' },
     { key: 'done', label: 'Ready to close', tone: 'done', sectionId: 'eng-alert-done' },
 ];
 
@@ -21,6 +22,7 @@ const RETIRED_COMBINED_SECTIONS = new Set(['eng-alert-backlog', 'eng-alert-missi
 
 export default function EngAlertsPanel({
     workModel,
+    entityNames = null,
     selectedView,
     alertItemCount,
     alertCounts = {},
@@ -111,8 +113,10 @@ export default function EngAlertsPanel({
     }, [focusAlertSection, setShowAlertsPanel]);
 
     // Pins the alert the user is acting on; a static snapshot (the category label as the note), never a live status.
+    const names = entityNames || resolveEntityNames(workModel);
+    const summaryConfig = alertSummaryConfig(names);
     const pinFor = (sectionId, key, title, { kind = 'issue', identity = key } = {}) => {
-        const note = ALERT_SUMMARY_CONFIG.find(item => item.sectionId === sectionId)?.label;
+        const note = summaryConfig.find(item => item.sectionId === sectionId)?.label;
         alertProps.pinAlert?.({ kind, identity, sectionId, key, title, note });
     };
     const openAlertStory = (sectionId, key, title, ...args) => {
@@ -121,8 +125,7 @@ export default function EngAlertsPanel({
     };
 
     const combined = isCombinedWorkModel(workModel);
-    const names = workEntityNames(workModel);
-    const [parentWord, parentWords, childWord, childWords] = [names.parent, names.parentPlural, names.child, names.childPlural].map(name => name.toLowerCase());
+    const [parentWord, parentWords, childWord, childWords] = [names.parent, names.parentPlural, names.child, names.childPlural].map(lowerEntityWord);
     const parentCount = count => `${count} ${count === 1 ? parentWord : parentWords}`;
     const retired = (sectionId) => combined && RETIRED_COMBINED_SECTIONS.has(sectionId);
     if (selectedView !== 'eng' || (alertItemCount <= 0 && !alertScopeTooLarge)) {
@@ -163,14 +166,11 @@ export default function EngAlertsPanel({
             : <div className="alert-chip">{text}</div>;
     };
 
-    const summaryLabel = (item) => ({
-        needsStories: `${names.childPlural} required`,
-        empty: `Empty ${names.parent.toLowerCase()}`,
-    }[item.key] || item.label);
-    const alertSummaryItems = ALERT_SUMMARY_CONFIG
+    const alertSummaryItems = summaryConfig
         .filter(item => !retired(item.sectionId))
-        .map(item => ({ ...item, label: summaryLabel(item), ...alertSummaryActions[item.key], count: Number(alertCounts[item.key] || 0) }))
-        .filter(item => item.count > 0);
+        .map(item => ({ ...item, ...alertSummaryActions[item.key], count: Number(alertCounts[item.key] || 0) }))
+        .filter(item => item.count > 0)
+        .map(item => ({ ...item, label: item.count === 1 && item.one ? item.one : item.label }));
 
     return (
         <div className="alerts-panel-shell">
@@ -230,7 +230,7 @@ export default function EngAlertsPanel({
 	                                                    </span>
 	                                                </button>
 	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing'].icon} Missing Info</div>
-	                                                <div className="alert-subtitle">These {names.childPlural.toLowerCase()} are missing planning essentials—fill the fields so they can be scheduled and estimated.</div>
+	                                                <div className="alert-subtitle">These {childWords} are missing planning essentials—fill the fields so they can be scheduled and estimated.</div>
 		                                                <a
 		                                                    className="alert-chip"
 		                                                    href={buildKeyListLink(consolidatedMissingStories.map(item => item.task.key))}
@@ -238,7 +238,7 @@ export default function EngAlertsPanel({
 		                                                    rel="noopener noreferrer"
 		                                                    title={`Open these ${childWords} in Jira`}
 		                                                >
-		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()}
+		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? childWord : childWords}
 		                                                </a>
 		                                            </div>
                                             <div className={`alert-card-body ${showMissingAlert ? '' : 'collapsed'}`}>
@@ -247,7 +247,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('missing', group, `${group.items.length} ${group.items.length === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()} not ready`)}
+                                                                    {renderTeamCount('missing', group, `${group.items.length} ${group.items.length === 1 ? childWord : childWords} not ready`)}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(({ task, missingFields }) => {
@@ -337,7 +337,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('blocked', group, `${group.items.length} ${group.items.length === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()} blocked`)}
+                                                                    {renderTeamCount('blocked', group, `${group.items.length} ${group.items.length === 1 ? childWord : childWords} blocked`)}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => {
@@ -415,7 +415,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('followup', group, `${group.items.length} ${group.items.length === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()}`)}
+                                                                    {renderTeamCount('followup', group, `${group.items.length} ${group.items.length === 1 ? childWord : childWords}`)}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(task => (
@@ -567,9 +567,9 @@ export default function EngAlertsPanel({
                                                                                 </a>
                                                                             </div>
                                                                             <div className="alert-story-note">
-                                                                                    {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child stor${epic.cleanupStoryCount === 1 ? 'y is' : 'ies are'} still sprinted.` : 'No sprinted child stories to clean up.'}
+                                                                                    {epic.cleanupStoryCount > 0 ? `${epic.cleanupStoryCount} child ${epic.cleanupStoryCount === 1 ? `${childWord} is` : `${childWords} are`} still sprinted.` : `No sprinted child ${childWords} to clean up.`}
                                                                                 </div>
-                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={() => pinFor('eng-alert-backlog', epic.key, epic.summary)}>Clean backlog stories →</a>
+                                                                            <a className="alert-action" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={() => pinFor('eng-alert-backlog', epic.key, epic.summary)}>Clean backlog {childWords} →</a>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
                                                                         </div>
                                                                     ))}
@@ -649,7 +649,7 @@ export default function EngAlertsPanel({
                                                                             <div className="alert-story-main" role="button" tabIndex={0} onClick={() => openAlertStory('eng-alert-missing-labels', epic.key, epic.summary)}>
                                                                                 <a className="alert-story-link" href={jiraUrl ? `${jiraUrl}/browse/${epic.key}` : '#'} target="_blank" rel="noopener noreferrer" onClick={(event) => { event.preventDefault(); event.stopPropagation(); openAlertStory('eng-alert-missing-labels', epic.key, epic.summary); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</a>
                                                                             </div>
-                                                                            <div className="alert-story-note">Add the selected sprint label or its _candidate form, plus the mapped team label on the epic.</div>
+                                                                            <div className="alert-story-note">Add the selected sprint label or its _candidate form, plus the mapped team label on the {parentWord}.</div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissAlertItem(epic.key); }} title="Dismiss from alerts" type="button">×</button>
                                                                         </div>
                                                                     ))}
@@ -691,7 +691,7 @@ export default function EngAlertsPanel({
                                                                             <div className="alert-story-main">
                                                                                 <button className="alert-story-link alert-story-local-link" type="button" onClick={() => { pinFor('eng-alert-needs-stories', epic.key, epic.summary, { kind: 'requirement', identity: entry.id }); handleStoryRequirementClick(entry); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</button>
                                                                             </div>
-                                                                            <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
+                                                                            <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason, names)}</div>
                                                                             <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title={`Dismiss this ${names.child} requirement from alerts`} type="button">×</button>
                                                                         </div>
                                                                     )})}
@@ -767,7 +767,7 @@ export default function EngAlertsPanel({
                                                                                 rel="noopener noreferrer"
                                                                                 onClick={() => pinFor('eng-alert-waiting', epic.key, epic.summary)}
                                                                             >
-                                                                                Open epic →
+                                                                                Open {parentWord} →
                                                                             </a>
                                                                             <button
                                                                                 className="task-remove alert-remove"
@@ -959,7 +959,7 @@ export default function EngAlertsPanel({
                                                                                 rel="noopener noreferrer"
                                                                                 onClick={() => pinFor('eng-alert-done', epic.key, epic.summary)}
                                                                             >
-                                                                                Close epic →
+                                                                                Close {parentWord} →
                                                                             </a>
                                                                             <button
                                                                                 className="task-remove alert-remove"

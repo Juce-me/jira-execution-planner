@@ -117,9 +117,10 @@ test('combined capacity: team stats use one `other` breakdown, project capacity 
 
 test('combined Catch Up and Board filter models hide the Projects facet and never count Product/Tech', async () => {
     const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
     const { buildEngBoardFacetModel, resolveEngBoardFilters } = await import('../frontend/src/eng/engBoardFilters.js');
     const tasks = [sp('PLAN-E1', 8), sp('PLAN-E2', 5)];
-    const catchUp = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true, workModel: NEW });
+    const catchUp = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true, names: resolveEntityNames(NEW) });
     assert.equal(catchUp.facets.find(facet => facet.id === 'projects').hidden, true);
     assert.deepEqual(catchUp.counts.projects, { tech: 0, product: 0 });
     const resolved = resolveEngCatchUpFilters({ model: catchUp });

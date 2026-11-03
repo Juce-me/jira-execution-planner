@@ -5,7 +5,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 
 // Server-renders the REAL ENG alerts panel with one team group in each of its eleven group lists (the Postponed card has two: Stories and
 // future-routed Epics). `ids` and `names` override a list's group id and display name by prop name, `moreGroups` appends groups with the given ids
-// to a list (adjacent groups sit 0.6rem apart), `collapsed` names the categories whose card starts collapsed.
+// to a list (adjacent groups sit 0.6rem apart), `collapsed` names the categories whose card starts collapsed, `props` sets top-level panel props.
 const DEFAULT_IDS = {
     missingAlertTeams: 't1', blockedAlertTeams: 't2', postponedAlertTeams: 't3', postponedEpicTeams: 't3', backlogEpicTeams: 't4', missingTeamEpicTeams: 't5',
     missingLabelEpicTeams: 't6', needsStoriesTeams: 't7', analysisEpicTeams: 't8', emptyEpicTeams: 't9', doneEpicTeams: 't10',
@@ -30,7 +30,7 @@ function loadPanel() {
     return panel;
 }
 
-function alertsPanelProps({ collapsed = [], ids = {}, names = {}, moreGroups = {}, overrides = {} } = {}) {
+function alertsPanelProps({ collapsed = [], ids = {}, names = {}, moreGroups = {}, overrides = {}, props = {} } = {}) {
     const id = { ...DEFAULT_IDS, ...ids };
     const epic = (key, teamId) => ({ key, summary: `Synthetic epic ${key}`, status: { name: 'To Do' }, cleanupStoryCount: 0, teamId, teamName: teamId });
     const story = key => ({ key, fields: { summary: `Synthetic story ${key}` } });
@@ -56,7 +56,7 @@ function alertsPanelProps({ collapsed = [], ids = {}, names = {}, moreGroups = {
     for (const [category, flag] of Object.entries(COLLAPSIBLE)) alertProps[flag] = !collapsed.includes(category);
     Object.assign(alertProps, overrides);
     return {
-        selectedView: 'eng', alertItemCount: 11, alertCounts: {}, showAlertsPanel: true, setShowAlertsPanel: () => {}, collapsed: false, alertProps,
+        selectedView: 'eng', alertItemCount: 11, alertCounts: {}, showAlertsPanel: true, setShowAlertsPanel: () => {}, collapsed: false, alertProps, ...props,
     };
 }
 

@@ -1,7 +1,12 @@
 import { makeFieldKeyDown, makeFieldSearchResults } from './useJiraFieldPickers.js';
 import {
+    ALWAYS_SHARED_FIELDS,
+    BLANK_FIELD,
+    FIELD_MODE_SHARED,
     MODEL_LEGACY,
     MODEL_RND,
+    SHARED_FIELDS,
+    isSharedField,
     DELIVERY_PROJECT_LIMIT_MESSAGE,
     describeHierarchyRow,
     hierarchyLabels,
@@ -31,7 +36,7 @@ export function buildFieldSettingsProps({
     entry, tab, search = {}, setSearch, patch, refs, technicalIds, setTechnicalIds,
     jiraFields, loadingFields, jiraProjects, loadingProjects, projectResults, projectLoading,
     boardResults, boardLoading, resolveProjectName, addProject, removeProject,
-    typeCatalog, hoverKey, setHoverKey, requestRetire, boardName,
+    typeCatalog, hoverKey, setHoverKey, requestRetire, boardName, inheritedBoard = null, entries = [],
 }) {
     const id = entry.id;
     const model = entry.model;
@@ -41,6 +46,23 @@ export function buildFieldSettingsProps({
     const parentName = rnd ? 'initiative' : 'epic';
     const childName = rnd ? 'Epic' : 'Story';
     const parentLabel = rnd ? 'Initiative' : 'Epic';
+    // A shared DELIVERY mapping shows Legacy's field (removing it starts DELIVERY's own, blank); an own mapping offers
+    // the way back. Both lines ride on the existing helper objects, keyed by field name.
+    const legacyEntry = (entries || []).find(item => item?.model === MODEL_LEGACY);
+    const share = {};
+    if (rnd) {
+        for (const name of SHARED_FIELDS) {
+            const donor = legacyEntry?.fields?.[name] || BLANK_FIELD;
+            const donorName = legacyEntry?.name || 'Legacy';
+            share[name] = ALWAYS_SHARED_FIELDS.includes(name)
+                ? { text: `Team is one field for every configuration: ${donorName}'s${donor.fieldId ? '' : ', not set there yet'}.`, locked: true }
+                : isSharedField(entry, name)
+                ? { text: `Same as ${donorName}${donor.fieldId ? '' : ' (not set there)'}. Remove it to give ${entry.name || 'this configuration'} its own field.` }
+                : { text: `${entry.name || 'This configuration'} uses its own field.`, actionLabel: `Same as ${donorName}`, onShare: () => patch(id, { fields: { [name]: { mode: FIELD_MODE_SHARED } } }) };
+        }
+    }
+    const shown = name => (isSharedField(entry, name) ? (legacyEntry?.fields?.[name] || BLANK_FIELD) : (entry.fields[name] || BLANK_FIELD));
+
     const props = {
         groupManageTab: tab,
         loadingFields,
@@ -55,6 +77,8 @@ export function buildFieldSettingsProps({
             sprint: 'Where each work item\u2019s Sprint is read, for every issue type.',
             board: ['No board: Sprints seen on this project\u2019s issues.', 'Board set: also Sprints on that board.'],
             requirement: { sprint: 'required' },
+            inheritedBoard,
+            share,
         },
     };
 
@@ -64,10 +88,12 @@ export function buildFieldSettingsProps({
         const resultSet = makeFieldSearchResults(query, jiraFields || []);
         const results = resultSet.items;
         const index = get(`${prefix}Index`, 0);
-        const setId = value => patch(id, current => ({ fields: { [name]: { ...current.fields[name], fieldId: resolve(value, current.fields[name]?.fieldId || '') } } }));
-        const setName = value => patch(id, current => ({ fields: { [name]: { ...current.fields[name], fieldName: resolve(value, current.fields[name]?.fieldName || '') } } }));
-        props[`${prefix}NameDraft`] = withFieldStatus(entry.fields[name]?.fieldName || '', entry.fields[name]?.fieldId, jiraFields, loadingFields);
-        props[`${prefix}IdDraft`] = entry.fields[name]?.fieldId || '';
+        // The value only, never the stored mode: an edit is what turns a shared DELIVERY mapping into its own.
+        const value = current => ({ fieldId: current.fields[name]?.fieldId || '', fieldName: current.fields[name]?.fieldName || '' });
+        const setId = next => patch(id, current => ({ fields: { [name]: { ...value(current), fieldId: resolve(next, current.fields[name]?.fieldId || '') } } }));
+        const setName = next => patch(id, current => ({ fields: { [name]: { ...value(current), fieldName: resolve(next, current.fields[name]?.fieldName || '') } } }));
+        props[`${prefix}NameDraft`] = withFieldStatus(shown(name).fieldName || '', shown(name).fieldId, jiraFields, loadingFields);
+        props[`${prefix}IdDraft`] = shown(name).fieldId || '';
         props[`set${cap}IdDraft`] = setId;
         props[`set${cap}NameDraft`] = setName;
         props[`${prefix}SearchQuery`] = query;
@@ -159,7 +185,10 @@ export function buildFieldSettingsProps({
     const hierarchyMappings = rows.map((row, index) => {
         const slot = slotsFor(model)[index];
         const retiresFilter = index === 0 && legacyFilter;
-        const selected = retiresFilter ? (capturedMatches.length === 1 ? capturedMatches[0] : null) : row.selected;
+        const capturedName = legacyFilter?.length === 1 ? { id: '', name: legacyFilter[0] } : null;
+        const compatibleParent = model === MODEL_LEGACY && index === 1 && !row.selected && entry.legacyHierarchyModes?.parent !== 'mapped'
+            ? { id: '', name: `${parentLabel} (built-in ${parentLabel} Link)` } : null;
+        const selected = retiresFilter ? (capturedMatches.length === 1 ? capturedMatches[0] : capturedName) : (row.selected || compatibleParent);
         return {
             key: slot,
             label: row.label,
@@ -217,6 +246,7 @@ export function buildFieldSettingsProps({
             team: `Team on the ${child?.name || childName}.`,
             deliveryOwner: `Delivery owner on the ${parent?.name || parentName}.`,
             requirement: REQUIREMENT[model],
+            share,
         },
     });
     return props;

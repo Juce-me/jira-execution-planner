@@ -22,6 +22,7 @@ import {
 } from './groupVisibilityUtils.js';
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
 import { catalogScopeKey } from './boardStatusCatalog.js';
+import { isCombinedWorkModel } from '../eng/engWorkModel.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchGroupsConfig as requestGroupsConfig } from '../api/configApi.js';
 import {
@@ -48,6 +49,7 @@ export function useTeamGroupSettings({
     teamCatalogState,
     teamMembershipState,
     trackSettingsAction,
+    workModel,
 }) {
     const [groupsConfig, setGroupsConfig] = useState({
         version: 1,
@@ -937,7 +939,8 @@ export function useTeamGroupSettings({
         membershipReady: teamMembershipState.status === 'ready'
             || teamMembershipState.validated === true,
         generation: teamMembershipState.generation,
-    }), [teamNameDirectory, teamMembershipState, configuredTeamIds]);
+        sprintGated: !isCombinedWorkModel(workModel),
+    }), [teamNameDirectory, teamMembershipState, configuredTeamIds, workModel]);
     const teamNameLookup = React.useMemo(() => Object.fromEntries(
         availableTeams.filter(team => team.name && team.name !== team.id).map(team => [team.id, team.name])
     ), [availableTeams]);

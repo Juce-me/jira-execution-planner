@@ -38,7 +38,7 @@ test('a field patch changes only its own value, so a stale mapping callback cann
     // A mapping callback created before the rename emits only its own field patch.
     draft = patchBundleEntry(draft, 'delivery', { fields: { sprint: field('customfield_1', 'Sprint') } });
     assert.equal(entryById(draft, 'delivery').name, 'DELIVERY Q1');
-    assert.deepEqual(entryById(draft, 'delivery').fields.sprint, field('customfield_1', 'Sprint'));
+    assert.deepEqual(entryById(draft, 'delivery').fields.sprint, { ...field('customfield_1', 'Sprint'), mode: 'own' }, 'an edit makes the mapping DELIVERY\'s own');
     assert.deepEqual(entryById(draft, 'delivery').fields.team, field(), 'untouched fields are preserved');
 });
 
@@ -88,16 +88,17 @@ test('validation: quarter grammar, ordering, contiguity, names and one-project l
 test('incomplete mappings are reported by Jira entity name, never block Save', async () => {
     const { missingMappings, missingSummary } = await loadModel();
     assert.deepEqual(missingMappings(delivery({ scope: { projects: [{ key: 'PLAN', type: 'other' }], boardId: '' } })),
-        ['Sprint', 'Story Points', 'Team', 'Epic', 'Initiative']);
+        ['Board', 'Sprint', 'Story Points', 'Team', 'Epic', 'Initiative']);
     const half = delivery({
         scope: { projects: [{ key: 'PLAN', type: 'other' }], boardId: '' },
         hierarchy: { planningIssueTypeId: '10002', parentIssueTypeId: null, ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null },
         fields: { ...delivery().fields, sprint: field('s', 'Sprint'), storyPoints: field('p', 'SP'), team: field('t', 'Team') },
     });
-    assert.deepEqual(missingMappings(half), ['Initiative']);
+    assert.deepEqual(missingMappings(half), ['Board', 'Initiative'], 'the Board is required');
+    // Within the bundle the Legacy Board is inherited, so only the Initiative is missing.
     assert.equal(missingSummary(bundle([legacy(), half])), 'DELIVERY: missing Initiative.');
     // An id absent from a loaded catalog is reported, never dropped.
-    assert.deepEqual(missingMappings(half, { types: { 10003: {} } }), ['Epic (10002: not found in Jira)', 'Initiative']);
+    assert.deepEqual(missingMappings(half, { types: { 10003: {} } }), ['Board', 'Epic (10002: not found in Jira)', 'Initiative']);
     // Captured Legacy filters and compatibility slots satisfy their rows.
     assert.deepEqual(missingMappings(legacy()), []);
     assert.deepEqual(missingMappings(legacy({ legacyHierarchyModes: { parent: 'mapped', ancestor: 'compatibility' } })), ['Epic']);
@@ -440,4 +441,51 @@ test('sourceCause names the concrete reason a source holds no Sprint for the qua
     assert.equal(sourceCause(diag({ scannedIssueCount: 12, issuesWithSprintValueCount: 0, observedSprintCount: 0 }), '2027Q1'), '12 issues were read and none has a Sprint value; check the Sprint field.');
     assert.equal(sourceCause(diag({ scannedIssueCount: 12, issuesWithSprintValueCount: 9, observedSprintCount: 4 }), '2027Q1'), '4 Sprints were found, none for 2027Q1.');
     assert.equal(sourceCause(diag({ observedSprintCount: 3 }), '2027Q1'), '3 Sprints were found, none for 2027Q1.');
+});
+
+test('a blank Board shows the nearest configuration\'s Board as inherited; an explicit Board wins and nothing is stored', async () => {
+    const { inheritedBoard } = await loadModel();
+    const entries = [
+        { id: 'legacy', name: 'Legacy', scope: { boardId: '7001' } },
+        { id: 'delivery', name: 'DELIVERY', scope: { boardId: '' } },
+    ];
+    assert.deepEqual(inheritedBoard(entries, 'delivery'), { boardId: '7001', fromId: 'legacy', fromName: 'Legacy' });
+    assert.equal(entries[1].scope.boardId, '', 'display only: the stored entry stays blank');
+    assert.equal(inheritedBoard(entries, 'legacy'), null, 'an explicit Board is its own');
+    entries[1].scope.boardId = '19095';
+    assert.equal(inheritedBoard(entries, 'delivery'), null, 'an override wins');
+    assert.equal(inheritedBoard([{ id: 'legacy', scope: { boardId: '' } }, { id: 'delivery', scope: { boardId: '' } }], 'delivery'), null);
+});
+
+test('DELIVERY Sprint and Story Points share Legacy\'s mapping until overridden; an own blank is a deliberate clear; Team is always shared', async () => {
+    const { effectiveEntry, missingMappings, patchBundleEntry, entryById } = await loadModel();
+    const shared = { fieldId: '', fieldName: '', mode: 'shared' };
+    const start = delivery({ scope: { projects: [{ key: 'PLAN', type: 'other' }], boardId: '' },
+        hierarchy: { planningIssueTypeId: '10002', parentIssueTypeId: '10001', ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null },
+        fields: { ...delivery().fields, sprint: shared, storyPoints: shared, team: shared } });
+    const entries = [legacy(), start];
+    // Initial setup: nothing to pick; Legacy's fields and Board are what DELIVERY runs with.
+    const effective = effectiveEntry(entries, start);
+    assert.equal(effective.fields.storyPoints.fieldId, 'customfield_10102');
+    assert.equal(effective.fields.team.fieldId, 'customfield_10103');
+    assert.equal(effective.scope.boardId, '7001');
+    assert.equal(start.fields.storyPoints.fieldId, '', 'the draft keeps no value of its own');
+    assert.deepEqual(missingMappings(start, {}, entries), []);
+    // Override: picking a field makes it DELIVERY's own.
+    let draft = patchBundleEntry(bundle(entries), 'delivery', { fields: { storyPoints: field('customfield_8', 'Epic Points') } });
+    assert.deepEqual(entryById(draft, 'delivery').fields.storyPoints, { fieldId: 'customfield_8', fieldName: 'Epic Points', mode: 'own' });
+    // Deliberate clear: removing it keeps it own and blank, so it is missing instead of falling back.
+    draft = patchBundleEntry(draft, 'delivery', { fields: { storyPoints: field() } });
+    assert.deepEqual(entryById(draft, 'delivery').fields.storyPoints, { fieldId: '', fieldName: '', mode: 'own' });
+    assert.deepEqual(missingMappings(entryById(draft, 'delivery'), {}, draft.configurations), ['Story Points']);
+    // Back to shared: the explicit action drops DELIVERY's own value.
+    draft = patchBundleEntry(draft, 'delivery', { fields: { storyPoints: { mode: 'shared' } } });
+    assert.deepEqual(entryById(draft, 'delivery').fields.storyPoints, shared);
+    // Team is one field for every configuration: an edit never gives DELIVERY its own.
+    draft = patchBundleEntry(draft, 'delivery', { fields: { team: field('customfield_8', 'Delivery Team') } });
+    assert.deepEqual(entryById(draft, 'delivery').fields.team, shared);
+    // Legacy mappings take no mode, and DELIVERY follows Legacy's Team.
+    draft = patchBundleEntry(draft, 'legacy', { fields: { team: field('customfield_3', 'Team') } });
+    assert.deepEqual(entryById(draft, 'legacy').fields.team, field('customfield_3', 'Team'));
+    assert.equal(effectiveEntry(draft.configurations, entryById(draft, 'delivery')).fields.team.fieldId, 'customfield_3');
 });

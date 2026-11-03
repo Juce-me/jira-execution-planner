@@ -14,6 +14,16 @@ export const MODE_SLOTS = { parent: 'parentIssueTypeId', ancestor: 'ancestorIssu
 export const LEGACY_FIELDS = ['sprint', 'storyPoints', 'parentName', 'team', 'projectTrack', 'deliveryOwner'];
 export const RND_FIELDS = [...LEGACY_FIELDS, 'allocation'];
 export const REQUIRED_FIELDS = { sprint: 'Sprint', storyPoints: 'Story Points', team: 'Team' };
+// DELIVERY mappings that default to Legacy's: `shared` keeps no value and reads Legacy's field; `own` is DELIVERY's
+// own mapping, where blank is a deliberate clear (`SHARED_FIELD_NAMES` in backend/services/work_structure.py).
+export const SHARED_FIELDS = ['sprint', 'storyPoints', 'team'];
+// Team is one field for every configuration (`ALWAYS_SHARED_FIELD_NAMES`): DELIVERY never maps its own.
+export const ALWAYS_SHARED_FIELDS = ['team'];
+export const FIELD_MODE_SHARED = 'shared';
+export const FIELD_MODE_OWN = 'own';
+// A mapping without a mode (saved before modes existed) reads as the server normalizes it: blank shares, set is own.
+export const isSharedField = (entry, name) => entry?.model === MODEL_RND && SHARED_FIELDS.includes(name)
+    && (ALWAYS_SHARED_FIELDS.includes(name) || entry.fields?.[name]?.mode === FIELD_MODE_SHARED || (entry.fields?.[name]?.mode === undefined && !entry.fields?.[name]?.fieldId));
 export const BLANK_FIELD = Object.freeze({ fieldId: '', fieldName: '' });
 
 const QUARTER = /^[0-9]{4}Q[1-4]$/;
@@ -91,6 +101,12 @@ export function applyEntryPatch(entry, patch) {
             next.fields = { ...entry.fields };
             for (const [name, mapping] of Object.entries(value)) {
                 next.fields[name] = { fieldId: mapping?.fieldId || '', fieldName: mapping?.fieldName || '' };
+                // Any edit makes a DELIVERY mapping its own (a removal is a deliberate clear); only the explicit
+                // "Same as Legacy" action, which sends `mode: shared` and no value, shares it again.
+                if (entry.model === MODEL_RND && SHARED_FIELDS.includes(name)) {
+                    const shared = mapping?.mode === FIELD_MODE_SHARED || ALWAYS_SHARED_FIELDS.includes(name);
+                    next.fields[name] = shared ? { fieldId: '', fieldName: '', mode: FIELD_MODE_SHARED } : { ...next.fields[name], mode: FIELD_MODE_OWN };
+                }
             }
         } else if (key === 'scope' && isPlain(value)) {
             next.scope = { ...entry.scope, ...value };
@@ -171,11 +187,42 @@ export function validateBundle(bundle) {
 }
 
 // Required rows an operational configuration still lacks. `catalog` entries are optional hints:
+// The Board a blank entry runs with: the nearest other configuration that has one, as the server's `inherit_board`
+// resolves it. Display only; the entry keeps its blank Board (and digest) until an admin chooses one, and its own Board wins.
+export function inheritedBoard(entries = [], entryId) {
+    const list = Array.isArray(entries) ? entries : [];
+    const position = Math.max(0, list.findIndex(item => item?.id === entryId));
+    if (list[position]?.scope?.boardId) return null;
+    const donors = list.map((item, index) => ({ item, distance: Math.abs(index - position) }))
+        .filter(({ item }) => item?.id !== entryId && item?.scope?.boardId);
+    if (!donors.length) return null;
+    const { item } = donors.reduce((best, next) => (next.distance < best.distance ? next : best));
+    return { boardId: String(item.scope.boardId), fromId: item.id, fromName: item.name || '' };
+}
+
+// What an entry runs with, as the server's `effective_entry` resolves it: shared mappings from Legacy and a blank
+// Board from the nearest configuration. Display and completeness only; the draft keeps its own values.
+export function effectiveEntry(entries = [], entry) {
+    const list = Array.isArray(entries) ? entries : [];
+    const legacy = list.find(item => item?.model === MODEL_LEGACY);
+    const shared = SHARED_FIELDS.filter(name => isSharedField(entry, name));
+    const board = inheritedBoard(list, entry.id);
+    if (!shared.length && !board) return entry;
+    const fields = { ...entry.fields };
+    shared.forEach((name) => {
+        const source = legacy?.fields?.[name] || BLANK_FIELD;
+        fields[name] = { fieldId: source.fieldId || '', fieldName: source.fieldName || '', mode: FIELD_MODE_SHARED };
+    });
+    return { ...entry, fields, scope: board ? { ...entry.scope, boardId: board.boardId } : entry.scope };
+}
+
 // {types: {id: type}|null, fields: [{id}]|null}; an id absent from a loaded catalog is reported
-// as not found, never silently dropped.
-export function missingMappings(entry, catalog = {}) {
+// as not found, never silently dropped. With `entries`, a shared mapping or an inherited Board counts as set.
+export function missingMappings(draftEntry, catalog = {}, entries = null) {
+    const entry = entries ? effectiveEntry(entries, draftEntry) : draftEntry;
     const missing = [];
     if (!(entry.scope.projects || []).length) missing.push('Jira project');
+    if (!entry.scope.boardId) missing.push('Board');
     for (const [name, label] of Object.entries(REQUIRED_FIELDS)) {
         const id = entry.fields?.[name]?.fieldId;
         if (!id) missing.push(label);
@@ -199,10 +246,10 @@ export function missingMappings(entry, catalog = {}) {
 
 // Which nested tabs still need the user: the first-save blockers plus every required row that is empty.
 // Pure and catalog-free, so the markers react to the draft only.
-export function incompleteTabs(entry, errors = {}, catalog = {}) {
-    const missing = missingMappings(entry, catalog);
+export function incompleteTabs(entry, errors = {}, catalog = {}, entries = null) {
+    const missing = missingMappings(entry, catalog, entries);
     const scopeErrors = ['name', 'fromQuarter', 'throughQuarter', 'projects'].some(key => errors[key]);
-    const isSprint = item => item === 'Sprint' || item.startsWith('Sprint (');
+    const isSprint = item => item === 'Board' || item === 'Sprint' || item.startsWith('Sprint (');
     return {
         scope: scopeErrors || missing.includes('Jira project'),
         source: missing.some(isSprint),
@@ -211,7 +258,7 @@ export function incompleteTabs(entry, errors = {}, catalog = {}) {
 }
 
 export const missingSummary = (bundle, catalogFor = () => ({})) => (bundle?.configurations || [])
-    .map(entry => ({ entry, missing: missingMappings(entry, catalogFor(entry)) }))
+    .map(entry => ({ entry, missing: missingMappings(entry, catalogFor(entry), bundle.configurations) }))
     .filter(item => item.missing.length)
     .map(({ entry, missing }) => `${String(entry.name || '').trim() || 'Unnamed configuration'}: missing ${missing.join(', ')}.`)
     .join(' ');

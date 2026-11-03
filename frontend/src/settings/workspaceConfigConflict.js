@@ -11,6 +11,7 @@ const SECTION_LABELS = [
     ['capacity', 'Capacity'],
     ['fieldConfigs', 'Field mapping'],
     ['issueTypes', 'Issue types'],
+    ['scenarioPlanner', 'Scenario planner access'],
 ];
 
 export const committedWorkspaceSectionLabels = (committed = {}) => SECTION_LABELS

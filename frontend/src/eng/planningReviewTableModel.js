@@ -65,7 +65,7 @@ function issueRow(issue, rowKind, getTeamInfo) {
 }
 
 export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mode = 'epic', getTeamInfo = getTaskTeamInfo, workModel } = {}) {
-    const parentName = reviewLabels(workModel).parent;
+    const { parent: parentName, child: childName } = reviewLabels(workModel);
     const visibleKeys = new Set(visibleTasks.map(task => task.key));
     const rows = [];
     const represented = new Set();
@@ -76,7 +76,7 @@ export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mo
         const realEpic = group.key && group.key !== 'NO_EPIC' && group.epic?.key && group.epic.key !== 'NO_EPIC';
         if (mode === 'story') {
             rows.push(...children.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: realEpic ? group.key : null, epicIssueId: realEpic ? rowIssueId(group.epic, group.epic) || null : null, epic: realEpic ? group.epic.summary || group.key : `No ${parentName}`, projectTrack: realEpic ? group.epic.projectTrack || '' : '' })));
-            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: Story awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : `No ${parentName}`, projectTrack: group.epic?.projectTrack || '' })));
+            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: ${childName} awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : `No ${parentName}`, projectTrack: group.epic?.projectTrack || '' })));
         } else if (realEpic) {
             const row = issueRow(group.epic, 'epic', getTeamInfo);
             row.children = children;

@@ -122,6 +122,8 @@ export default function EngAlertsPanel({
 
     const combined = isCombinedWorkModel(workModel);
     const names = workEntityNames(workModel);
+    const [parentWord, parentWords, childWord, childWords] = [names.parent, names.parentPlural, names.child, names.childPlural].map(name => name.toLowerCase());
+    const parentCount = count => `${count} ${count === 1 ? parentWord : parentWords}`;
     const retired = (sectionId) => combined && RETIRED_COMBINED_SECTIONS.has(sectionId);
     if (selectedView !== 'eng' || (alertItemCount <= 0 && !alertScopeTooLarge)) {
         return null;
@@ -129,7 +131,7 @@ export default function EngAlertsPanel({
 
     const alertScopeNotice = alertScopeTooLarge ? (
         <div className="story-readiness-notice" role="status">
-            <span>This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels.</span>
+            <span>This Department is too large for {names.parent} alerts: more than 2,000 open {names.parentPlural} match its Teams and labels in Product or Tech. {names.parent} alerts are hidden; {names.child} alerts are still shown. Narrow the Department's Teams or labels.</span>
         </div>
     ) : null;
 
@@ -234,7 +236,7 @@ export default function EngAlertsPanel({
 		                                                    href={buildKeyListLink(consolidatedMissingStories.map(item => item.task.key))}
 		                                                    target="_blank"
 		                                                    rel="noopener noreferrer"
-		                                                    title="Open these stories in Jira"
+		                                                    title={`Open these ${childWords} in Jira`}
 		                                                >
 		                                                    {consolidatedMissingStories.length} {consolidatedMissingStories.length === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()}
 		                                                </a>
@@ -324,7 +326,7 @@ export default function EngAlertsPanel({
 	                                                    href={buildKeyListLink(blockedTasks.map(t => t.key), { addSprint: true })}
 	                                                    target="_blank"
 	                                                    rel="noopener noreferrer"
-	                                                    title="Open blocked stories in Jira"
+	                                                    title={`Open blocked ${childWords} in Jira`}
 	                                                >
 	                                                    {blockedTasks.length} blocked
 	                                                </a>
@@ -395,7 +397,7 @@ export default function EngAlertsPanel({
                                                     <button
                                                         className="alert-toggle"
                                                         onClick={() => setShowPostponedAlert(prev => !prev)}
-                                                        title={showPostponedAlert ? 'Collapse postponed stories panel' : 'Expand postponed stories panel'}
+                                                        title={`${showPostponedAlert ? 'Collapse' : 'Expand'} postponed ${childWords} panel`}
                                                     >
                                                         <span className="alert-toggle-icon" aria-hidden="true">
                                                             <svg className={`alert-toggle-chevron ${showPostponedAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -473,12 +475,12 @@ export default function EngAlertsPanel({
                                                         })}
                                                     {futureRoutedEpics.length > 0 && (
                                                         <>
-                                                            <div className="alert-section-title">Epics with only future-sprint stories</div>
+                                                            <div className="alert-section-title">{names.parentPlural} with only future-sprint {childWords}</div>
                                                             {postponedEpicTeams.map(group => (
                                                                 <div key={`future-epic-${group.id}`} className="alert-team-group" data-alert-team={group.id} data-alert-kind="epic">
                                                                     <div className="alert-team-header">
                                                                         <span className="alert-pill team">{group.name}</span>
-                                                                        {renderTeamCount('followupEpics', group, `${group.items.length} epics`)}
+                                                                        {renderTeamCount('followupEpics', group, parentCount(group.items.length))}
                                                                     </div>
                                                                     <div className="alert-stories">
                                                                         {group.items.map(epic => (
@@ -498,7 +500,7 @@ export default function EngAlertsPanel({
                                                                                         <div className="alert-story-link"><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</div>
                                                                                     )}
                                                                                 </div>
-                                                                                <div className="alert-story-note">Move epic sprint to a future sprint (not in current scope).</div>
+                                                                                <div className="alert-story-note">Move {parentWord} sprint to a future sprint (not in current scope).</div>
                                                                                 <span className="alert-pill status">Move to future sprint</span>
                                                                                 <button
                                                                                     className="task-remove alert-remove"
@@ -533,19 +535,19 @@ export default function EngAlertsPanel({
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-backlog'].icon} Backlog</div>
-                                                    <div className="alert-subtitle">These epics are still backlog work. Keep child stories unsprinted unless they are already closed out.</div>
+                                                    <div className="alert-subtitle">These {parentWords} are still backlog work. Keep child {childWords} unsprinted unless they are already closed out.</div>
                                                     {buildKeyListLink(backlogEpics.map(e => e.key)) ? (
                                                         <a
                                                             className="alert-chip"
                                                             href={buildKeyListLink(backlogEpics.map(e => e.key))}
                                                             target="_blank"
                                                             rel="noopener noreferrer"
-                                                            title="Open these backlog epics in Jira"
+                                                            title={`Open these backlog ${parentWords} in Jira`}
                                                         >
-                                                            {backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}
+                                                            {parentCount(backlogEpics.length)}
                                                         </a>
                                                     ) : (
-                                                        <div className="alert-chip">{backlogEpics.length} {backlogEpics.length === 1 ? 'epic' : 'epics'}</div>
+                                                        <div className="alert-chip">{parentCount(backlogEpics.length)}</div>
                                                     )}
                                                 </div>
                                                 <div className={`alert-card-body ${showBacklogAlert ? '' : 'collapsed'}`}>
@@ -554,7 +556,7 @@ export default function EngAlertsPanel({
                                                             <div key={`backlog-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('backlog', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('backlog', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
@@ -590,8 +592,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing-team'].icon} Missing Team</div>
-                                                    <div className="alert-subtitle">Open epics that still need a Jira Team before planning labels can be evaluated.</div>
-                                                    {renderCategoryChip(missingTeamEpics.map(epic => epic.key), `${missingTeamEpics.length} ${missingTeamEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
+                                                    <div className="alert-subtitle">Open {parentWords} that still need a Jira Team before planning labels can be evaluated.</div>
+                                                    {renderCategoryChip(missingTeamEpics.map(epic => epic.key), parentCount(missingTeamEpics.length), `Open these ${parentWords} in Jira`)}
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingTeamAlert ? '' : 'collapsed'}`}>
                                                     {missingTeamEpicTeams.map(group => {
@@ -599,7 +601,7 @@ export default function EngAlertsPanel({
                                                             <div key={`missing-team-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('missingTeam', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('missingTeam', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
@@ -630,8 +632,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-missing-labels'].icon} Missing Labels</div>
-                                                    <div className="alert-subtitle">These epics need the selected sprint label or its _candidate form, plus the mapped team label.</div>
-                                                    {renderCategoryChip(missingLabelEpics.map(epic => epic.key), `${missingLabelEpics.length} ${missingLabelEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
+                                                    <div className="alert-subtitle">These {parentWords} need the selected sprint label or its _candidate form, plus the mapped team label.</div>
+                                                    {renderCategoryChip(missingLabelEpics.map(epic => epic.key), parentCount(missingLabelEpics.length), `Open these ${parentWords} in Jira`)}
                                                 </div>
                                                 <div className={`alert-card-body ${showMissingLabelsAlert ? '' : 'collapsed'}`}>
                                                     {missingLabelEpicTeams.map(group => {
@@ -639,7 +641,7 @@ export default function EngAlertsPanel({
                                                             <div key={`missing-labels-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('missingLabels', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('missingLabels', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
@@ -662,7 +664,7 @@ export default function EngAlertsPanel({
                                         {needsStoriesEntries.length > 0 && (
                                             <div className={`alert-card ${storyReadinessSprintState === 'active' ? 'blocked' : 'following'} ${showNeedsStoriesAlert ? '' : 'collapsed'}`} id="eng-alert-needs-stories" tabIndex={-1}>
                                                 <div className="alert-card-header">
-                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={showNeedsStoriesAlert ? 'Collapse Stories Required panel' : 'Expand Stories Required panel'}>
+                                                    <button className="alert-toggle" onClick={() => setShowNeedsStoriesAlert(prev => !prev)} title={`${showNeedsStoriesAlert ? 'Collapse' : 'Expand'} ${names.childPlural} Required panel`}>
                                                         <span className="alert-toggle-icon" aria-hidden="true">
                                                             <svg className={`alert-toggle-chevron ${showNeedsStoriesAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
                                                                 <path d="M2.5 4.5l3.5 3 3.5-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -670,8 +672,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-needs-stories'].icon} {names.childPlural} Required</div>
-                                                    <div className="alert-subtitle">These labeled Epics still need an actionable Story for the selected sprint and Team.</div>
-                                                    {renderCategoryChip(needsStoriesTeams.flatMap(group => group.items.map(entry => entry.epic.key)), `${needsStoriesEpics.length} ${needsStoriesEpics.length === 1 ? 'epic' : 'epics'}`, 'Open these epics in Jira')}
+                                                    <div className="alert-subtitle">These labeled {names.parentPlural} still need an actionable {names.child} for the selected sprint and Team.</div>
+                                                    {renderCategoryChip(needsStoriesTeams.flatMap(group => group.items.map(entry => entry.epic.key)), parentCount(needsStoriesEpics.length), `Open these ${parentWords} in Jira`)}
                                                 </div>
                                                 <div className={`alert-card-body ${showNeedsStoriesAlert ? '' : 'collapsed'}`}>
                                                     {needsStoriesTeams.map(group => {
@@ -679,7 +681,7 @@ export default function EngAlertsPanel({
                                                             <div key={`needs-stories-${group.id}`} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('needsStories', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('needsStories', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(entry => {
@@ -690,7 +692,7 @@ export default function EngAlertsPanel({
                                                                                 <button className="alert-story-link alert-story-local-link" type="button" onClick={() => { pinFor('eng-alert-needs-stories', epic.key, epic.summary, { kind: 'requirement', identity: entry.id }); handleStoryRequirementClick(entry); }}><span className="epic-key">{epic.key}</span>{' '}{epic.summary}</button>
                                                                             </div>
                                                                             <div className="alert-story-note">{getFuturePlanningNeedsStoriesReasonText(entry.reason)}</div>
-                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title="Dismiss this Story requirement from alerts" type="button">×</button>
+                                                                            <button className="task-remove alert-remove" onClick={(event) => { event.stopPropagation(); dismissStoryRequirement(entry); }} title={`Dismiss this ${names.child} requirement from alerts`} type="button">×</button>
                                                                         </div>
                                                                     )})}
                                                                 </div>
@@ -707,7 +709,7 @@ export default function EngAlertsPanel({
                                                     <button
                                                         className="alert-toggle"
                                                         onClick={() => setShowWaitingAlert(prev => !prev)}
-                                                        title={showWaitingAlert ? 'Collapse waiting for stories panel' : 'Expand waiting for stories panel'}
+                                                        title={`${showWaitingAlert ? 'Collapse' : 'Expand'} waiting for ${childWords} panel`}
                                                     >
                                                         <span className="alert-toggle-icon" aria-hidden="true">
                                                             <svg className={`alert-toggle-chevron ${showWaitingAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -716,8 +718,8 @@ export default function EngAlertsPanel({
                                                         </span>
                                                     </button>
                                                     <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-waiting'].icon} Waiting for {names.childPlural}</div>
-                                                    <div className="alert-subtitle">Analysis epics are waiting for stories next quarter.</div>
-                                                    {renderCategoryChip(waitingForStoriesEpics.map(epic => epic.key), `${waitingForStoriesEpics.length} ${waitingForStoriesEpics.length === 1 ? 'item' : 'items'}`, 'Open these epics in Jira')}
+                                                    <div className="alert-subtitle">Analysis {parentWords} are waiting for {childWords} next quarter.</div>
+                                                    {renderCategoryChip(waitingForStoriesEpics.map(epic => epic.key), `${waitingForStoriesEpics.length} ${waitingForStoriesEpics.length === 1 ? 'item' : 'items'}`, `Open these ${parentWords} in Jira`)}
                                                 </div>
                                                 <div className={`alert-card-body ${showWaitingAlert ? '' : 'collapsed'}`}>
                                                     {analysisEpicTeams.map(group => {
@@ -725,7 +727,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('waiting', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('waiting', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
@@ -756,7 +758,7 @@ export default function EngAlertsPanel({
                                                                                     <span className="epic-key">{epic.key}</span>{' '}{epic.summary}
                                                                                 </a>
                                                                             </div>
-                                                                            <div className="alert-story-note">Waiting for description to create stories.</div>
+                                                                            <div className="alert-story-note">Waiting for description to create {childWords}.</div>
                                                                             <span className="alert-pill status">{epic.status?.name || 'Waiting'}</span>
                                                                             <a
                                                                                 className="alert-action"
@@ -794,7 +796,7 @@ export default function EngAlertsPanel({
 	                                                <button
 	                                                    className="alert-toggle"
 	                                                    onClick={() => setShowEmptyEpicAlert(prev => !prev)}
-	                                                    title={showEmptyEpicAlert ? 'Collapse empty epic panel' : 'Expand empty epic panel'}
+	                                                    title={`${showEmptyEpicAlert ? 'Collapse' : 'Expand'} empty ${parentWord} panel`}
 	                                                >
 	                                                    <span className="alert-toggle-icon" aria-hidden="true">
 	                                                        <svg className={`alert-toggle-chevron ${showEmptyEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -803,15 +805,15 @@ export default function EngAlertsPanel({
 	                                                    </span>
 	                                                </button>
 	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-empty'].icon} Empty {names.parent}</div>
-	                                                <div className="alert-subtitle">These epics have zero stories—please review and create at least one story to make them actionable.</div>
+	                                                <div className="alert-subtitle">These {parentWords} have zero {childWords}—please review and create at least one {childWord} to make them actionable.</div>
 	                                                <a
 	                                                    className="alert-chip"
 	                                                    href={buildKeyListLink(emptyEpics.map(e => e.key))}
 	                                                    target="_blank"
 	                                                    rel="noopener noreferrer"
-	                                                    title="Open these epics in Jira"
+	                                                    title={`Open these ${parentWords} in Jira`}
 	                                                >
-                                                        {emptyEpicsForAlert.length} {emptyEpicsForAlert.length === 1 ? 'epic' : 'epics'}
+                                                        {parentCount(emptyEpicsForAlert.length)}
                                                     </a>
                                                 </div>
                                             <div className={`alert-card-body ${showEmptyEpicAlert ? '' : 'collapsed'}`}>
@@ -820,7 +822,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('empty', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('empty', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (
@@ -861,7 +863,7 @@ export default function EngAlertsPanel({
                                                                                 rel="noopener noreferrer"
                                                                                 onClick={() => pinFor('eng-alert-empty', epic.key, epic.summary)}
                                                                             >
-                                                                                Create story →
+                                                                                Create {childWord} →
                                                                             </a>
                                                                             <button
                                                                                 className="task-remove alert-remove"
@@ -890,7 +892,7 @@ export default function EngAlertsPanel({
 	                                                <button
 	                                                    className="alert-toggle"
 	                                                    onClick={() => setShowDoneEpicAlert(prev => !prev)}
-	                                                    title={showDoneEpicAlert ? 'Collapse ready-to-close epics panel' : 'Expand ready-to-close epics panel'}
+	                                                    title={`${showDoneEpicAlert ? 'Collapse' : 'Expand'} ready-to-close ${parentWords} panel`}
 	                                                >
 	                                                    <span className="alert-toggle-icon" aria-hidden="true">
 	                                                        <svg className={`alert-toggle-chevron ${showDoneEpicAlert ? '' : 'collapsed'}`} viewBox="0 0 12 12">
@@ -898,16 +900,16 @@ export default function EngAlertsPanel({
 	                                                        </svg>
 	                                                    </span>
 	                                                </button>
-	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-done'].icon} Epic Ready to Close</div>
-	                                                <div className="alert-subtitle">All stories are done, killed, or incomplete, but the epic is still open—time to close the loop.</div>
+	                                                <div className="alert-title">{ALERT_CATEGORY_STYLE['eng-alert-done'].icon} {names.parent} Ready to Close</div>
+	                                                <div className="alert-subtitle">All {childWords} are done, killed, or incomplete, but the {parentWord} is still open—time to close the loop.</div>
 	                                                <a
 	                                                    className="alert-chip"
 	                                                    href={buildKeyListLink(doneStoryEpics.map(e => e.key))}
 	                                                    target="_blank"
 	                                                    rel="noopener noreferrer"
-	                                                    title="Open these epics in Jira"
+	                                                    title={`Open these ${parentWords} in Jira`}
 	                                                >
-	                                                    {doneStoryEpics.length} {doneStoryEpics.length === 1 ? 'epic' : 'epics'}
+	                                                    {parentCount(doneStoryEpics.length)}
 	                                                </a>
 	                                            </div>
                                             <div className={`alert-card-body ${showDoneEpicAlert ? '' : 'collapsed'}`}>
@@ -916,7 +918,7 @@ export default function EngAlertsPanel({
                                                             <div key={group.id} className="alert-team-group" data-alert-team={group.id}>
                                                                 <div className="alert-team-header">
                                                                     <span className="alert-pill team">{group.name}</span>
-                                                                    {renderTeamCount('done', group, `${group.items.length} ${group.items.length === 1 ? 'epic' : 'epics'}`)}
+                                                                    {renderTeamCount('done', group, parentCount(group.items.length))}
                                                                 </div>
                                                                 <div className="alert-stories">
                                                                     {group.items.map(epic => (

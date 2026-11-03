@@ -208,7 +208,7 @@ class EpmAdmissionTests(WorkStructureRouteBase):
         with self.factory() as session:
             row = session.query(models.WorkspaceDashboardConfig).one()
             payload = json.loads(json.dumps(row.payload))
-            payload['workConfigurations']['configurations'][1]['fields']['sprint'] = {'fieldId': '', 'fieldName': ''}
+            payload['workConfigurations']['configurations'][1]['fields']['sprint'] = {'fieldId': '', 'fieldName': '', 'mode': 'own'}  # a deliberate clear, not shared
             row.payload = payload
             session.commit()
         response = self.client.get('/api/epm/projects/rollup/all?tab=backlog&quarter=2027Q1')

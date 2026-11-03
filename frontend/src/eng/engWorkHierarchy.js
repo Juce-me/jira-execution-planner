@@ -3,7 +3,7 @@ import { matchesEngEpicSearch, sortEpicGroups } from './engTaskUtils.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { buildStoryRequirementId } from './alertEpicNavigation.js';
 import { shouldHideReadinessGhost } from './epicRefreshAlerts.js';
-import { isCombinedWorkModel } from './engWorkModel.js';
+import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -35,15 +35,39 @@ export function storyRequirementId({ groupId, sprintId, epicKey, teamId } = {}) 
     return buildStoryRequirementId({ groupId, sprintId, epicKey, teamId });
 }
 
-export function storyReadinessStatusMessage(status, navigationError = '') {
-    if (navigationError) return navigationError;
+// What an invalid readiness configuration is missing, in the viewed model's names. Department settings are editable by
+// every user ("Open Settings"); the work configuration is administrator-owned and says so.
+function readinessConfigurationMessage(error = {}, workModel) {
+    const { childPlural } = workEntityNames(workModel);
+    const feature = `${childPlural} Required`;
+    const teams = Array.isArray(error?.teams) ? error.teams.filter(Boolean) : [];
+    const fields = Array.isArray(error?.missingFields) ? error.missingFields.filter(Boolean) : [];
+    if (error?.code === 'configuration_incomplete') {
+        return `${feature} needs a complete work configuration for this quarter${fields.length ? ` (missing: ${fields.join(', ')})` : ''}. An administrator can complete it in Settings.`;
+    }
     return {
-        unavailable: 'Story readiness is temporarily unavailable. Jira Stories remain visible.',
-        invalid_configuration: 'Story readiness configuration is incomplete. Open Settings to review the Department configuration.',
-        access_denied: 'Story readiness is unavailable because Jira project access could not be confirmed.',
+        team_labels_missing: `${feature} needs a Team label for every Team in this Department; ${teams.length ? `missing for ${teams.join(', ')}` : 'one or more Teams have none'}. Open Settings to add the Team labels in the Department configuration.`,
+        team_labels_shared: `${feature} needs each Team label to belong to one Team in this Department; two Teams share a label. Open Settings to review the Department's Team labels.`,
+        teams_missing: `${feature} needs at least one Team in this Department. Open Settings to add Teams to the Department.`,
+        teams_duplicate: `${feature} found the same Team twice in this Department. Open Settings to review the Department's Teams.`,
+        projects_missing: `${feature} needs Jira projects in this quarter's work configuration scope. An administrator can add them in Settings.`,
+        fields_missing: `${feature} needs the Sprint and Team fields in this quarter's work configuration. An administrator can map them in Settings.`,
+    }[error?.reason] || `${workEntityNames(workModel).child} readiness configuration is incomplete. Open Settings to review the Department configuration.`;
+}
+
+export function storyReadinessStatusMessage(status, navigationError = '', { error = null, workModel } = {}) {
+    if (navigationError) return navigationError;
+    if (status === 'invalid_configuration' || status === 'work_configuration_incomplete') {
+        return readinessConfigurationMessage(error || {}, workModel);
+    }
+    // The planning level's own name: Story readiness in Legacy, Epic readiness when Epics are the planned items.
+    const { child, childPlural } = workEntityNames(workModel);
+    return {
+        unavailable: `${child} readiness is temporarily unavailable. Jira ${childPlural} remain visible.`,
+        access_denied: `${child} readiness is unavailable because Jira project access could not be confirmed.`,
         scope_not_found: 'The selected Department is no longer available. Choose a valid Department.',
-        invalid_scope: 'Story readiness could not validate the selected sprint.',
-        scope_too_large: 'This Department is too large for the bounded Story readiness scan. Narrow the scope or contact support.',
+        invalid_scope: `${child} readiness could not validate the selected sprint.`,
+        scope_too_large: `This Department is too large for the bounded ${child} readiness scan. Narrow the scope or contact support.`,
     }[status] || '';
 }
 

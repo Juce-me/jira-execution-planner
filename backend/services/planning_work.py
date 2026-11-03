@@ -407,7 +407,7 @@ def resolve_work_request(args, auth_context, *, needed=(), sprint_id=None, snaps
             snapshot, quarter=quarter, configuration_id=configuration_id, flag_enabled=flag)
     except StopIteration:
         raise WorkConfigError('configuration_required') from None
-    entry = ws.get_stored_configuration(snapshot, context.configuration_id)
+    entry, _digest = ws.get_effective_configuration(snapshot, context.configuration_id)
     if revision is not None and int(revision) != entry['revision']:
         raise WorkConfigError('configuration_scope_changed')
     missing = [path for path in ws.entry_missing_fields(entry) if not needed or path in needed]

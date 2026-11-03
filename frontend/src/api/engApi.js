@@ -245,13 +245,17 @@ export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], t
     });
 };
 
-export const fetchDependencies = (backendUrl, keys, { signal, refresh = false } = {}) =>
-    scopedFetch(`${backendUrl}/api/dependencies`, {
+// The body is exactly `{ keys, refresh? }` (the server rejects any other field); the work selectors travel in the
+// query string, where the route admits them like every other work read.
+export const fetchDependencies = (backendUrl, keys, { signal, refresh = false } = {}) => {
+    const query = stampParams(new URLSearchParams()).toString();
+    return scopedFetch(`${backendUrl}/api/dependencies${query ? `?${query}` : ''}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'X-Requested-With': 'jira-execution-planner',
         },
-        body: JSON.stringify(stampBody(refresh ? { keys, refresh: true } : { keys })),
+        body: JSON.stringify(refresh ? { keys, refresh: true } : { keys }),
         signal
     });
+};

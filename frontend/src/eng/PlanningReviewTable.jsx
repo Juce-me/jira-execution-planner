@@ -67,7 +67,7 @@ const derivedSentence = (column, labels) => column.rowKind === 'story'
     ? `${labels.child} property, summed from this ${labels.parent}'s ${labels.childPlural} in this Sprint and the current filters`
     : `${labels.parent} property, inherited from the parent ${labels.parent}`;
 
-// The superscript S or E beside a derived column's heading: a zero-height button whose 24px hit area is its ::before,
+// The superscript initial of the source level (S or E in Legacy, E or I in the combined model) beside a derived column's heading: a zero-height button whose 24px hit area is its ::before,
 // so the 32px header and the label's alignment edge stay put. Only the copy the user can reach is focusable; the other
 // is hidden and suppressed, so one readout exists across the dock flip.
 function DerivedMarker({ column, docked }) {
@@ -324,7 +324,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {hiddenColumns.length > 0 && <div className="pop-group">
             <div className="pop-head"><span className="pop-facet">Show hidden</span></div>
             <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" aria-label={column.derived ? columnName(column, labels) : undefined} disabled={!editable} onClick={() => setColumnVisible(column.id, true, addAfter)}>
-                <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}{column.derived && <sup aria-hidden="true">{column.rowKind === 'story' ? 'S' : 'E'}</sup>}</span></span>
+                <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}{column.derived && <sup aria-hidden="true">{column.rowKind === 'story' ? labels.child[0] : labels.parent[0]}</sup>}</span></span>
             </button>)}</div>
         </div>}
     </>;

@@ -39,6 +39,13 @@ HIERARCHY_KEYS = (
 LEGACY_FIELD_NAMES = ('sprint', 'storyPoints', 'parentName', 'team', 'projectTrack', 'deliveryOwner')
 RND_FIELD_NAMES = LEGACY_FIELD_NAMES + ('allocation',)
 LEGACY_ONLY_KEYS = ('legacyIssueTypeNames', 'legacyDisplayTypes', 'legacyHierarchyModes')
+# DELIVERY mappings that default to Legacy's field: `shared` reads Legacy's mapping at runtime and keeps no value of
+# its own; `own` is this configuration's own mapping, where a blank field is a deliberate clear.
+SHARED_FIELD_NAMES = ('sprint', 'storyPoints', 'team')
+# Team is one field for every configuration: DELIVERY never maps its own (owner decision 2026-11-03).
+ALWAYS_SHARED_FIELD_NAMES = ('team',)
+FIELD_MODE_SHARED = 'shared'
+FIELD_MODE_OWN = 'own'
 MODE_SLOTS = {'parent': 'parentIssueTypeId', 'ancestor': 'ancestorIssueTypeId'}
 
 # Effective Legacy defaults, mirroring jira_server's *_FIELD_DEFAULT constants.
@@ -301,13 +308,14 @@ def _projects(value, path, model):
     return result
 
 
-def _field_mappings(value, path, names):
+def _field_mappings(value, path, names, shared_names=()):
     value = _dict(value, path, names, names)
     result = {}
     for name in names:
         entry = value.get(name, {'fieldId': '', 'fieldName': ''})
         entry_path = f'{path}.{name}'
-        _dict(entry, entry_path, {'fieldId', 'fieldName'}, {'fieldId', 'fieldName'})
+        allowed = {'fieldId', 'fieldName', 'mode'} if name in shared_names else {'fieldId', 'fieldName'}
+        _dict(entry, entry_path, allowed, {'fieldId', 'fieldName'})
         field_id = _string(entry.get('fieldId'), f'{entry_path}.fieldId')
         if field_id and _FIELD_ID_RE.fullmatch(field_id) is None:
             _invalid(f'{entry_path}.fieldId', 'Invalid field id.')
@@ -315,6 +323,18 @@ def _field_mappings(value, path, names):
             'fieldId': field_id,
             'fieldName': _string(entry.get('fieldName'), f'{entry_path}.fieldName'),
         }
+        if name in shared_names:
+            # An entry saved before modes existed: a blank mapping shares Legacy's, a set one is its own.
+            mode = entry.get('mode', FIELD_MODE_OWN if field_id else FIELD_MODE_SHARED)
+            if mode not in (FIELD_MODE_SHARED, FIELD_MODE_OWN):
+                _invalid(f'{entry_path}.mode', 'Mode must be shared or own.')
+            if name in ALWAYS_SHARED_FIELD_NAMES:
+                # A Team mapped before this rule (or echoed by an older client) is read as Legacy's, never its own.
+                result[name] = {'fieldId': '', 'fieldName': '', 'mode': FIELD_MODE_SHARED}
+                continue
+            if mode == FIELD_MODE_SHARED and (field_id or result[name]['fieldName']):
+                _invalid(f'{entry_path}.fieldId', 'A shared field keeps no value of its own.')
+            result[name]['mode'] = mode
     return result
 
 
@@ -376,6 +396,7 @@ def _normalize_entry(entry, index):
     result['hierarchy'] = {key: _numeric_id(hierarchy[key], f'{path}.hierarchy.{key}') for key in HIERARCHY_KEYS}
     result['fields'] = _field_mappings(
         entry['fields'], f'{path}.fields', LEGACY_FIELD_NAMES if legacy else RND_FIELD_NAMES,
+        () if legacy else SHARED_FIELD_NAMES,
     )
     if legacy:
         for slot, key in MODE_SLOTS.items():
@@ -425,8 +446,11 @@ def normalize_work_configurations(bundle):
 
 # --- virtual capture --------------------------------------------------------
 
-def _blank_fields(names):
-    return {name: {'fieldId': '', 'fieldName': ''} for name in names}
+def _blank_fields(names, shared_names=()):
+    fields = {name: {'fieldId': '', 'fieldName': ''} for name in names}
+    for name in shared_names:
+        fields[name]['mode'] = FIELD_MODE_SHARED
+    return fields
 
 
 def _blank_delivery(revision=0):
@@ -435,7 +459,7 @@ def _blank_delivery(revision=0):
         'fromQuarter': '2027Q1', 'throughQuarter': None, 'model': MODEL_RND_2027,
         'scope': {'projects': [], 'boardId': ''},
         'hierarchy': {key: None for key in HIERARCHY_KEYS},
-        'fields': _blank_fields(RND_FIELD_NAMES),
+        'fields': _blank_fields(RND_FIELD_NAMES, SHARED_FIELD_NAMES),
     }
 
 
@@ -587,11 +611,55 @@ def _entry_contains(entry, ordinal):
             and (high is None or ordinal <= quarter_ordinal(high)))
 
 
-def _context_for(entry, quarter):
+def inherit_board(entries, entry):
+    """``entry`` with a blank Board replaced by the Board of the nearest other configuration that has one.
+
+    Configurations differ by data level, not by Sprint source: a Board is stored only where it is
+    overridden.  The stored entry (and its digest) is untouched.
+    """
+    if entry['scope']['boardId']:
+        return entry
+    position = next((index for index, item in enumerate(entries) if item['id'] == entry['id']), 0)
+    donors = [(abs(index - position), item) for index, item in enumerate(entries)
+              if item['id'] != entry['id'] and item['scope']['boardId']]
+    if not donors:
+        return entry
+    inherited = deepcopy(entry)
+    inherited['scope']['boardId'] = min(donors, key=lambda pair: pair[0])[1]['scope']['boardId']
+    return inherited
+
+
+def share_fields(entries, entry):
+    """``entry`` with each ``shared`` mapping replaced by Legacy's.  The stored entry is untouched."""
+    if entry['model'] != MODEL_RND_2027:
+        return entry
+    shared = [name for name in SHARED_FIELD_NAMES if entry['fields'][name].get('mode') == FIELD_MODE_SHARED]
+    if not shared:
+        return entry
+    donor = next((item for item in entries if item['model'] == MODEL_LEGACY), None)
+    result = deepcopy(entry)
+    for name in shared:
+        source = donor['fields'][name] if donor else {'fieldId': '', 'fieldName': ''}
+        result['fields'][name] = {'fieldId': source['fieldId'], 'fieldName': source['fieldName'], 'mode': FIELD_MODE_SHARED}
+    return result
+
+
+def effective_entry(entries, entry):
+    """What ``entry`` runs with: shared mappings from Legacy, a blank Board from the nearest configuration."""
+    return inherit_board(entries, share_fields(entries, entry))
+
+
+def effective_digest(entries, entry):
+    """Digest of what ``entry`` reads and writes with: a shared field is part of it, so a Legacy mapping change
+    retires DELIVERY's caches and stamps; an inherited Board is not (``inherit_board``)."""
+    return _entry_digest(share_fields(entries, entry))
+
+
+def _context_for(entry, quarter, source=None):
     legacy = {key: entry[key] for key in LEGACY_ONLY_KEYS if key in entry}
     return WorkConfigurationContext(
         configuration_id=entry['id'], name=entry['name'], revision=entry['revision'],
-        model=entry['model'], quarter=quarter, digest=_entry_digest(entry),
+        model=entry['model'], quarter=quarter, digest=_entry_digest(source or entry),
         scope=_freeze(entry['scope']), hierarchy=_freeze(entry['hierarchy']),
         fields=_freeze(entry['fields']), legacy=_freeze(legacy),
     )
@@ -621,7 +689,7 @@ def resolve_work_configuration(snapshot, *, quarter, configuration_id=None, flag
             raise WorkConfigError('configuration_scope_changed')
     else:
         entry = next(item for item in entries if _entry_contains(item, ordinal))
-    return _context_for(entry, quarter)
+    return _context_for(effective_entry(entries, entry), quarter, source=share_fields(entries, entry))
 
 
 def entry_digest(entry):
@@ -641,6 +709,16 @@ def get_stored_configuration(snapshot, configuration_id):
     return deepcopy(entry)
 
 
+def get_effective_configuration(snapshot, configuration_id):
+    """``(entry, digest)`` a metadata selector reads with: the stored entry with its shared mappings and Board
+    resolved, and the digest the matching work context carries.  Never authorizes work."""
+    entries = editor_bundle(snapshot)['configurations']
+    entry = next((item for item in entries if item['id'] == configuration_id), None)
+    if entry is None:
+        raise WorkConfigError('invalid_configuration_id')
+    return deepcopy(effective_entry(entries, entry)), effective_digest(entries, entry)
+
+
 def project_keys(entry):
     """Distinct selected project keys of a stored entry, original spelling, in order."""
     seen, keys = set(), []
@@ -652,22 +730,24 @@ def project_keys(entry):
     return keys
 
 
-def entry_summary(entry):
+def entry_summary(entry, entries=None):
     return {
         'id': entry['id'], 'name': entry['name'], 'revision': entry['revision'],
         'model': entry['model'], 'fromQuarter': entry['fromQuarter'],
-        'throughQuarter': entry['throughQuarter'], 'digest': _entry_digest(entry),
+        'throughQuarter': entry['throughQuarter'], 'digest': effective_digest(entries or [entry], entry),
     }
 
 
 def entry_missing_fields(entry):
-    """Schema paths still needed before this entry can serve work reads."""
+    """Schema paths still needed before this entry can serve work reads.
+
+    Pass the ``effective_entry``: a shared mapping or an inherited Board then counts as set.  The Board is
+    required; its Sprints are the configuration's Sprints.
+    """
     missing = []
-    projects = bool(entry['scope']['projects'])
-    sprint = bool(entry['fields']['sprint']['fieldId'])
-    if not projects:
+    if not entry['scope']['projects']:
         missing.append('scope.projects')
-    if not entry['scope']['boardId'] and not (projects and sprint):
+    if not entry['scope']['boardId']:
         missing.append('scope.boardId')
     for name in ('sprint', 'storyPoints', 'team'):
         if not entry['fields'][name]['fieldId']:
@@ -721,7 +801,8 @@ def catalog_entries(snapshot, *, flag_enabled=None):
     enabled = work_configurations_enabled() if flag_enabled is None else bool(flag_enabled)
     if not enabled:
         raise WorkConfigError('configuration_feature_disabled')
-    return stored_bundle(snapshot.payload)['configurations']
+    entries = stored_bundle(snapshot.payload)['configurations']
+    return [effective_entry(entries, entry) for entry in entries]
 
 
 def quarter_in_entry_range(entry, quarter_name):

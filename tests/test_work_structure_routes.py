@@ -134,6 +134,9 @@ class WorkStructureRouteBase(unittest.TestCase):
             delivery['hierarchy'].update(planningIssueTypeId='10002', parentIssueTypeId='10001')
             for name in ('sprint', 'storyPoints', 'team'):
                 delivery['fields'][name] = {'fieldId': f'customfield_2{len(name)}', 'fieldName': name}
+            # Team is one field for every configuration: Legacy owns it and DELIVERY shares it.
+            legacy['fields']['team'] = dict(delivery['fields']['team'])
+            delivery['fields']['team'] = {'fieldId': '', 'fieldName': '', 'mode': 'shared'}
         return self.seed(mutate=mutate, **kwargs)
 
 
@@ -440,7 +443,8 @@ class SelectorRouteTests(WorkStructureRouteBase):
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['statuses'], [{'id': '1', 'name': 'Discovery'}, {'id': '2', 'name': 'Delivery'}])
-        self.assertIsNone(body['boardId'])
+        # The blank DELIVERY Board reports the Board it inherits; statuses still come from the projects alone.
+        self.assertEqual(body['boardId'], '7001')
         self.assertEqual((body['projectKeys'], body['projectKey']), (['PLAN'], 'PLAN'))
         self.assertEqual((body['configurationId'], body['configurationRevision']), ('delivery', 1))
         self.assertEqual(len(body['configurationDigest']), 32)
@@ -609,9 +613,9 @@ class SanitizedMetadataTests(WorkStructureRouteBase):
         with patch.object(jira_server, 'current_jira_get', return_value=self.myself()):
             blank = self.client.get('/api/test', query_string={'configurationId': 'delivery', 'configurationRevision': '1'})
             self.assertEqual(blank.get_json()['ok'], False)
+            # Sprint, Story Points and Team are shared from Legacy by default, so only DELIVERY's own rows are missing.
             self.assertEqual(blank.get_json()['missingFields'], [
-                'scope.projects', 'scope.boardId', 'fields.sprint.fieldId', 'fields.storyPoints.fieldId',
-                'fields.team.fieldId', 'hierarchy.planningIssueTypeId', 'hierarchy.parentIssueTypeId'])
+                'scope.projects', 'scope.boardId', 'hierarchy.planningIssueTypeId', 'hierarchy.parentIssueTypeId'])
             self.assertEqual(blank.get_json()['checks'][1],
                              {'kind': 'configuration', 'status': 'incomplete', 'code': 'configuration_incomplete'})
             complete = self.client.get('/api/test', query_string={'configurationId': 'legacy', 'configurationRevision': '1'})

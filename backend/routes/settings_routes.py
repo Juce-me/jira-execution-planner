@@ -1297,6 +1297,8 @@ def get_config():
             database_backed=is_db_auth_context(auth_context) and config_storage_db_enabled(),
         ),
         'userCanEditSettings': can_edit_shared_configuration,
+        # Scenario is for editors unless this workspace switch unlocks it; Scenario routes enforce the same rule.
+        'scenarioPlannerForEveryone': scenario_planner_for_everyone(shared_config),
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,
         'adminUserManagementAvailable': is_db_auth_context(auth_context),
@@ -1313,9 +1315,10 @@ def get_config():
     if work_promoted:
         payload['environmentConfigExists'] = _environment_dashboard_config_exists(shared_config)
         entries = work_bundle['configurations']
-        payload['workConfigurationSummaries'] = [work_routes.entry_summary(entry) for entry in entries]
+        payload['workConfigurationSummaries'] = [work_routes.entry_summary(entry, entries) for entry in entries]
         payload['adminSettingsMissingByConfiguration'] = {
-            entry['id']: work_routes.entry_missing_fields(entry) for entry in entries
+            entry['id']: work_routes.entry_missing_fields(work_structure_service.effective_entry(entries, entry))
+            for entry in entries
         }
     else:
         payload.update({
@@ -2335,6 +2338,37 @@ def save_stats_priority_weights_config_endpoint():
         return jsonify({'error': 'Failed to save stats priority weights', 'message': str(e)}), 500
 
     result = {'weights': normalized, 'source': 'config'}
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
+
+
+@bp.route('/api/scenario-access/config', methods=['GET'])
+def get_scenario_access_config_endpoint():
+    try:
+        payload = load_dashboard_config_snapshot().payload
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
+        return _config_fence_unavailable_response()
+    return jsonify(_with_config_revision({'enabledForEveryone': scenario_planner_for_everyone(payload)}))
+
+
+@bp.route('/api/scenario-access/config', methods=['POST'])
+def save_scenario_access_config_endpoint():
+    """Admin-owned workspace switch that unlocks Scenario Planner for every user; its own section."""
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'enabledForEveryone'})
+        normalized = normalize_shared_admin_section(
+            SCENARIO_PLANNER_SECTION, {'enabledForEveryone': payload.get('enabledForEveryone')})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
+        revision = _persist_shared_section(SCENARIO_PLANNER_SECTION, normalized, base_revision)
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
+    result = dict(normalized)
     if revision is not None:
         result['configRevision'] = revision
     return jsonify(result)

@@ -17,6 +17,7 @@ export default function AdminSettingsContainer({
     authMode,
     boardIdDraft,
     boardNameDraft,
+    canEditSharedConfiguration,
     boardSearchIndex,
     boardSearchInputRef,
     boardSearchOpen,
@@ -93,6 +94,7 @@ export default function AdminSettingsContainer({
     resetPriorityWeightsDraft,
     resolveCapacityProjectName,
     resolveProjectName,
+    scenarioPlannerAccess,
     selectAdminSettingsTab,
     selectedProjectsDraft,
     setBoardIdDraft,
@@ -214,6 +216,8 @@ export default function AdminSettingsContainer({
                 adminUsersError: adminAccess.error,
                 selectedAdminUserIds: adminAccess.selectedUserIds,
                 onToggleAdminUser: adminAccess.toggleUser,
+                scenarioPlannerAccess,
+                canEditScenarioPlannerAccess: canEditSharedConfiguration === true,
             }}
         />
         ) : (

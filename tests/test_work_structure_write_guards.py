@@ -88,6 +88,10 @@ class StampedRouteBase(WorkStructureRouteBase):
             for name, field_id in (('sprint', 'customfield_10101'), ('storyPoints', POINTS), ('team', TEAM),
                                    ('deliveryOwner', OWNER), ('projectTrack', TRACK)):
                 delivery['fields'][name] = {'fieldId': field_id, 'fieldName': name}
+            # The Board is required (DELIVERY inherits Legacy's) and Team is one field Legacy owns.
+            legacy['scope']['boardId'] = '7001'
+            legacy['fields']['team'] = dict(delivery['fields']['team'])
+            delivery['fields']['team'] = {'fieldId': '', 'fieldName': '', 'mode': 'shared'}
         self.seed(mutate=mutate)
 
     def mutate_row(self, change):
@@ -103,9 +107,12 @@ class StampedRouteBase(WorkStructureRouteBase):
         return ws.stored_bundle(payload)['configurations'][index]
 
     def stamp(self, index=1, quarter='2027Q1'):
-        entry = self.entry(index)
+        payload, _revision = self.row()
+        entries = ws.stored_bundle(payload)['configurations']
+        entry = entries[index]
+        # The digest the bootstrap summary carries: shared mappings (the Team field) are part of it.
         return {'id': entry['id'], 'revision': entry['revision'], 'quarter': quarter,
-                'digest': ws.entry_digest(entry)}
+                'digest': ws.effective_digest(entries, entry)}
 
     def query(self, stamp=None, **extra):
         stamp = stamp or self.stamp()

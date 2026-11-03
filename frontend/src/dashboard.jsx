@@ -23,7 +23,8 @@ import JiraExportButton from './components/JiraExportButton.jsx';
 import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, selectSprintForScope, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey, sprintScopeOf } from './dashboardRuntime.js';
-import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission } from './workStructure/configurationContext.js';
+import { useSiblingQuarterStates } from './workStructure/useSiblingQuarterStates.js';
+import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission, sortSprintOptionRows } from './workStructure/configurationContext.js';
 import { onWorkContextStale, reportWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
 import { isCombinedWorkModel, normalizeWorkModel } from './eng/engWorkModel.js';
 import { describeStatsScope } from './stats/statsScope.js';
@@ -568,6 +569,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const workContextCandidate = quarterMode ? buildConfigurationContext(activeConfiguration, activeQuarter) : null;
             const workContextKey = contextKey(workContextCandidate);
             const workContext = React.useMemo(() => workContextCandidate, [workContextKey]);
+            const siblingQuarterStates = useSiblingQuarterStates({ summaries: workBootstrap.summaries, currentContext: workContext, read: context => requestSprints(BACKEND_URL, { context }) });
             // The model comes from the viewed quarter's configuration summary. Unpromoted, flag-off and Legacy-era quarters
             // are `legacy`: every consumer below then behaves exactly as before the quarterly configurations existed.
             const workModel = quarterMode ? normalizeWorkModel(activeConfiguration?.model) : normalizeWorkModel(null);
@@ -639,6 +641,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 canEditSharedConfiguration,
                 performanceAdminAvailable,
                 preferredSettingsTab,
+                scenarioPlannerAccess,
+                scenarioPlannerAvailable,
                 setPerformanceAdminAvailable,
                 userCanEditSettings,
             } = useSettingsPermissions({
@@ -1224,6 +1228,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 scheduleJiraLabelSearch,
             } = useTeamGroupSettings({
                 BACKEND_URL,
+                workModel,
                 activeGroupId,
                 clearServerConnectionError,
                 firstRunConfigurationActive,
@@ -1379,6 +1384,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 activeGroupDraft,
                 activeGroupId,
                 adminAccess,
+                scenarioPlannerAccess,
                 boardIdDraft,
                 boardNameDraft,
                 capacityFieldIdDraft,
@@ -1491,10 +1497,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     quarterOptionRows({
                         search: normalizedSearch, rawSearch: sprintSearch, activeQuarter, selectedSprint, sprints: availableSprints || [],
                         summaries: workBootstrap.summaries, missingByConfiguration: workBootstrap.missingByConfiguration, observedByCatalog: observedQuarters,
-                        currentContext: workContext, currentCatalogSettled: sprintCatalogState.authority === 'validated',
+                        currentContext: workContext, currentCatalogSettled: sprintCatalogState.authority === 'validated', quarterStates: siblingQuarterStates, includeUnobserved: canEditSharedConfiguration,
                     }).forEach(row => options.push(row));
                 }
-                return options;
+                return quarterMode ? sortSprintOptionRows(options) : options;
             };
 
             const closeSprintSelector = ({ restoreFocus = false } = {}) => {
@@ -2167,6 +2173,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 saveSprintFieldConfig,
                 saveStoryPointsFieldConfig,
                 saveTeamFieldConfig,
+                scenarioPlannerAccess,
                 seedSharedFieldConfigs,
                 selectedProjectsDraft,
                 selectedSprint,
@@ -3119,11 +3126,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 lastLoadedSprintRef.current = null;
             }, [selectedSprint]);
 
+            // A locked Scenario (non-admin, workspace switch off) never opens, even from a saved or shared view.
             useEffect(() => {
-                if (isCompletedSprintSelected && showScenario) {
+                if ((isCompletedSprintSelected || scenarioPlannerAvailable === false) && showScenario) {
                     setShowScenario(false);
                 }
-            }, [isCompletedSprintSelected, showScenario]);
+            }, [isCompletedSprintSelected, scenarioPlannerAvailable, showScenario]);
 
             useEffect(() => {
                 if (showScenario && !restoringGroupRef.current) {
@@ -4334,6 +4342,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectedTeamSet,
                 isAllTeamsSelected,
                 excludedEpicSet,
+                workModel,
+                workConfigurationId: workContext?.id || '',
             });
             const {
                 runScenario,
@@ -4425,7 +4435,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 ? sprintError
                 : sprintCatalogState.selectionPreserved && !selectedSprintInfo ? 'Selected Sprint is unavailable. Choose a Sprint or refresh the catalog.' : '';
             const displayedEngError = sprintCatalogWarning ? error : (sprintError || error);
-            const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError);
+            const storyReadinessMessage = storyReadinessStatusMessage(storyReadiness.status, storyRequirementNavigationError, { error: storyReadiness.error, workModel });
             const onboardingEngReadiness = deriveOnboardingEngReadiness({
                 tasksFetched,
                 loading,
@@ -5676,6 +5686,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 <EngModeControl
                     activeMode={activeEngMode}
                     isCompletedSprintSelected={isCompletedSprintSelected}
+                    scenarioAvailable={scenarioPlannerAvailable === true}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
                         if (nextMode === 'board' && activeEngMode !== 'board' && engSprintSelectorState.componentReadiness === 'ready') {
@@ -6855,7 +6866,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     </LazyViewBoundary>
                     )}
 
-                    {selectedView === 'eng' && showScenario && engWorkspaceConfigured && (
+                    {selectedView === 'eng' && showScenario && engWorkspaceConfigured && scenarioPlannerAvailable === true && (
                         <LazyViewBoundary load={loadScenarioView} fallback={scenarioLoadingFallback}>
                         {ScenarioView => <ScenarioView
                             scenario={scenario}
@@ -6863,6 +6874,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             selectedSprint={selectedSprint}
                             normalizeEpicKey={normalizeEpicKey}
                             excludedEpicSet={excludedEpicSet}
+                            workModel={workModel}
                         />}
                         </LazyViewBoundary>
                     )}
@@ -7064,6 +7076,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     addProjectSelection={addProjectSelection}
                                     adminAccess={adminAccess}
                                     adminAccessAvailable={adminAccessAvailable}
+                                    scenarioPlannerAccess={scenarioPlannerAccess}
+                                    canEditSharedConfiguration={canEditSharedConfiguration}
                                     adminUserManagementAvailable={adminUserManagementAvailable}
                                     authMode={authMode}
                                     boardIdDraft={boardIdDraft}

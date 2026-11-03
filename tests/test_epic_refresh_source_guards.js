@@ -128,7 +128,7 @@ test('the epic refresh guards dependencies, subtasks and the alert cohort withou
         assert.equal(refreshBody.includes(token), false, `refreshEpicDependencies must not use ${token}`);
     }
     assert.ok(refreshBody.includes('refresh: true') && refreshBody.includes('isCurrentAggregateRead'));
-    assert.ok(read('api', 'engApi.js').includes('JSON.stringify(stampBody(refresh ? { keys, refresh: true } : { keys }))'), 'existing callers keep the plain { keys } body');
+    assert.ok(read('api', 'engApi.js').includes('JSON.stringify(refresh ? { keys, refresh: true } : { keys })'), 'existing callers keep the plain { keys } body');
 });
 
 test('Planning enablement: one mode gate, the Planning surface, and the capacity scope hold', () => {

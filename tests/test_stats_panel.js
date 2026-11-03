@@ -140,6 +140,12 @@ test('Lead Times titles, empty text and the Number aria label use the model role
     assert.match(lastN, /<select[^>]*aria-label="Number of initiatives"[^>]*>/);
     assert.match(lastN, /The most recently closed initiatives that pass/);
     assert.match(lastN, /Open all completed initiatives in Jira/);
+    assert.match(lastN, /Most recently closed initiatives/);
+    assert.match(lastN, /Middle lead time of the most recently closed initiatives/);
+    const closed = renderLeadTimes({ cohortMode: 'closed', cohortStatusControls: closedChips }, NEW_MODEL_SCOPE);
+    assert.match(closed, /Initiatives closed in the selected range/);
+    assert.match(renderLeadTimes({}, NEW_MODEL_SCOPE), /Terminal initiatives with lead time/);
+    assert.equal(/closed epics|epics closed|Terminal epics/.test(lastN + closed), false);
 });
 
 test('Lead Times Legacy output is unchanged by the role word wiring', () => {

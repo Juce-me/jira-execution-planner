@@ -140,6 +140,8 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("priority-weights-write", "/api/stats/priority-weights-config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("issue-types-config-read", "/api/issue-types/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("issue-types-config-write", "/api/issue-types/config", frozenset({"POST"}), "shared_admin_write"),
+    EndpointPolicy("scenario-access-config-read", "/api/scenario-access/config", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("scenario-access-config-write", "/api/scenario-access/config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("epm-config-read", "/api/epm/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("epm-config-write", "/api/epm/config", frozenset({"POST"}), "user_write"),
     EndpointPolicy("epm-preferences-write", "/api/epm/preferences", frozenset({"POST"}), "user_write"),

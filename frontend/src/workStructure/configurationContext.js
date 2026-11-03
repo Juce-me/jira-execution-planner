@@ -182,18 +182,27 @@ export function quarterAvailability({ quarter, summaries, missingByConfiguration
 export function quarterOptionRows({
     search = '', rawSearch = '', activeQuarter = null, selectedSprint = null, sprints = [], summaries = [],
     missingByConfiguration = {}, observedByCatalog = {}, currentContext = null, currentCatalogSettled = false, now = new Date(),
+    quarterStates = {}, includeUnobserved = true,
 }) {
     const inCatalog = new Set(sprints.map(sprint => quarterFromSprintName(sprint.name)).filter(Boolean));
     const exact = canonicalQuarter(rawSearch.trim());
     const quarters = new Set([
-        ...quarterCandidates({ observed: Object.values(observedByCatalog).flat(), privateQuarter: activeQuarter, summaries, now }),
+        ...quarterCandidates({ observed: [...Object.values(observedByCatalog).flat(), ...Object.keys(quarterStates)], privateQuarter: activeQuarter, summaries, now }),
         ...(exact ? [exact] : []),
     ]);
-    return [...quarters].filter(quarter => !inCatalog.has(quarter)).flatMap((quarter) => {
+    const observed = new Set([...Object.values(observedByCatalog).flat(), ...Object.keys(quarterStates)]);
+    return [...quarters].filter(quarter => !inCatalog.has(quarter) && (includeUnobserved || observed.has(quarter))).flatMap((quarter) => {
         const availability = quarterAvailability({ quarter, summaries, missingByConfiguration, observedByCatalog, currentContext, currentCatalogSettled });
         if (!availability) return [];
         const label = unavailableQuarterLabel(quarter, availability);
         if (search && !label.toLowerCase().includes(search)) return [];
-        return [{ kind: 'quarter', quarter, availability, label, selected: selectedSprint === null && quarter === activeQuarter }];
+        return [{ kind: 'quarter', quarter, availability, label, state: quarterStates[quarter] || '', selected: selectedSprint === null && quarter === activeQuarter }];
     });
+}
+
+// Sprint and placeholder-quarter rows read as one newest-first list, whichever configuration supplied them; scope rows stay first.
+export function sortSprintOptionRows(options) {
+    const key = option => (option.kind === 'sprint' ? (quarterFromSprintName(option.sprint.name) || option.label) : option.quarter);
+    const rows = options.filter(option => option.kind !== 'scope').sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
+    return [...options.filter(option => option.kind === 'scope'), ...rows];
 }

@@ -62,6 +62,7 @@ export function useFirstRunConfiguration({
     pendingFirstRunGroupPreferencesRef,
     priorityWeightsDraft,
     saveFirstRunGroupPreferences,
+    scenarioPlannerAccess,
     selectedProjectsDraft,
     setActiveGroupId,
     setDepartmentSettingsTab,
@@ -117,13 +118,14 @@ export function useFirstRunConfiguration({
             issueTypes: issueTypesDraft,
             workConfigurations: workConfigDraft,
             adminAccess: adminAccess.selectedUserIds,
+            scenarioPlanner: scenarioPlannerAccess.enabled,
         },
         epm: epmConfigDraft,
     }), [
         activeGroupId, adminAccess.selectedUserIds, boardIdDraft, boardNameDraft, capacityFieldIdDraft,
         capacityFieldNameDraft, capacityProjectDraft, deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft,
         epmConfigDraft, groupPreferences, groupsConfig, issueTypesDraft, parentNameFieldIdDraft,
-        parentNameFieldNameDraft, priorityWeightsDraft, selectedProjectsDraft, sprintFieldIdDraft,
+        parentNameFieldNameDraft, priorityWeightsDraft, scenarioPlannerAccess.enabled, selectedProjectsDraft, sprintFieldIdDraft,
         sprintFieldNameDraft, storyPointsFieldIdDraft, storyPointsFieldNameDraft, teamFieldIdDraft, teamFieldNameDraft,
         workConfigDraft,
     ]);

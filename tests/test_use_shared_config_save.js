@@ -149,6 +149,7 @@ function makeHarness({ overrides = {}, net = {}, groupDraft, dirty = {}, committ
         saveSprintFieldConfig: recAsync('saveSprintFieldConfig', () => ({ configRevision: 6 })),
         saveStoryPointsFieldConfig: recAsync('saveStoryPointsFieldConfig', () => ({ configRevision: 8 })),
         saveTeamFieldConfig: recAsync('saveTeamFieldConfig', () => ({ configRevision: 9 })),
+        scenarioPlannerAccess: { isDirty: false, enabled: false, save: recAsync('scenarioPlannerAccess.save', () => ({ enabledForEveryone: true, configRevision: 11 })), setEnabled: rec('scenarioPlannerAccess.setEnabled') },
         seedSharedFieldConfigs: rec('seedSharedFieldConfigs'),
         selectedProjectsDraft: [{ key: 'P' }],
         selectedSprint: 'sprint-1',
@@ -166,6 +167,7 @@ function makeHarness({ overrides = {}, net = {}, groupDraft, dirty = {}, committ
         if (dirty[section]) input[flag] = true;
     }
     if (dirty.adminAccess) input.adminAccess = { ...input.adminAccess, isDirty: true };
+    if (dirty.scenarioPlanner) input.scenarioPlannerAccess = { ...input.scenarioPlannerAccess, isDirty: true };
     globalThis.__net = {
         fetchAppConfig: async (url) => { log.push(['GET /api/config', url]); return net.config || { authMode: 'atlassian_oauth', userCanEditSettings: true, capacityProject: 'CAP', sprintCatalogSource: { id: 's' } }; },
         saveGroupsConfig: async (url, payload) => {
@@ -187,8 +189,8 @@ async function mount(options) {
 const sequence = (log) => log.map((entry) => entry[0]);
 const before = (log, first, second) => { const a = sequence(log).indexOf(first); const b = sequence(log).indexOf(second); return a !== -1 && b !== -1 && a < b; };
 
-test('interface: 128 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
-    assert.equal(INPUT_NAMES.length, 128);
+test('interface: 129 inputs, 11 returns, state layer 0 inputs and 12 returns, four getters', async () => {
+    assert.equal(INPUT_NAMES.length, 129);
     for (const getter of GETTERS) assert.ok(INPUT_NAMES.includes(getter), getter);
     for (const forbidden of ['loadConfig', 'loadSprints', 'activeDepartmentSettingsTab', ...(CLOSE_VIA_GETTER ? ['closeGroupManage'] : ['getCloseGroupManage'])]) assert.equal(INPUT_NAMES.includes(forbidden), false, `${forbidden} is reached through a getter`);
     const mod = await load();
@@ -220,23 +222,25 @@ test('state layer: defaults, per-instance refs, and commitSharedConfigRevision o
     assert.notStrictEqual(other.sharedConfigRevisionRef, state.sharedConfigRevisionRef);
 });
 
-test('full save sequence: admin sections sequential, adminAccess fixed step, groups POST with baseRevision, then refresh, then EPM nothing', async () => {
-    const all = Object.fromEntries(['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess'].map((key) => [key, true]));
+test('full save sequence: admin sections sequential, adminAccess and Scenario switch fixed steps, groups POST with baseRevision, then refresh, then EPM nothing', async () => {
+    const all = Object.fromEntries(['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess', 'scenarioPlanner'].map((key) => [key, true]));
     const { hook, log, refs } = await mount({ dirty: all });
     const outcome = await hook.saveAllSettings({});
     assert.equal(outcome.ok, true);
-    const order = sequence(log).filter((name) => /^save|^adminAccess\.save$|^POST |^GET /.test(name));
-    assert.deepEqual(order.slice(0, 12), [
+    const order = sequence(log).filter((name) => /^save|^adminAccess\.save$|^scenarioPlannerAccess\.save$|^POST |^GET /.test(name));
+    assert.deepEqual(order.slice(0, 13), [
         'saveProjectSelection', 'savePriorityWeightsConfig', 'saveBoardConfig', 'saveCapacityConfig',
         'saveSprintFieldConfig', 'saveParentNameFieldConfig', 'saveStoryPointsFieldConfig', 'saveTeamFieldConfig', 'saveDeliveryOwnerFieldConfig',
-        'saveIssueTypesConfig', 'adminAccess.save', 'POST /api/groups-config',
+        'saveIssueTypesConfig', 'adminAccess.save', 'scenarioPlannerAccess.save', 'POST /api/groups-config',
     ]);
+    // The Scenario switch posts its own section against the revision the field saves produced.
+    assert.deepEqual(log.find((entry) => entry[0] === 'scenarioPlannerAccess.save').slice(1), [10]);
     assert.ok(order.indexOf('POST /api/groups-config') < order.indexOf('GET /api/config'), 'the refresh follows the groups POST');
     // Field saves are handed the revision committed by the previous step (sequential, never parallel).
     assert.deepEqual(log.filter((entry) => /Field/.test(entry[0]) && entry[0].startsWith('save')).map((entry) => [entry[0], entry[1]]), [
         ['saveSprintFieldConfig', 5], ['saveParentNameFieldConfig', 6], ['saveStoryPointsFieldConfig', 7], ['saveTeamFieldConfig', 8], ['saveDeliveryOwnerFieldConfig', 9],
     ]);
-    assert.equal(refs.sharedConfigRevisionRef.current, 10);
+    assert.equal(refs.sharedConfigRevisionRef.current, 11);
     const post = log.find((entry) => entry[0] === 'POST /api/groups-config')[1];
     assert.equal(post.baseRevision, 11, 'the groups POST carries the draft baseRevision');
     assert.deepEqual(post.groups, [{ id: 'g1', teamIds: ['t1'], name: 'G1' }]);
@@ -255,12 +259,12 @@ test('full save sequence: admin sections sequential, adminAccess fixed step, gro
 });
 
 test('permission gating: without canEditSharedConfiguration no administrator write or admin POST is attempted', async () => {
-    const all = Object.fromEntries(['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess'].map((key) => [key, true]));
+    const all = Object.fromEntries(['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess', 'scenarioPlanner'].map((key) => [key, true]));
     for (const grant of [false, undefined, null, 0, '']) {
         const { hook, log } = await mount({ dirty: all, overrides: { canEditSharedConfiguration: grant } });
         const outcome = await hook.saveAllSettings({});
         assert.equal(outcome.ok, true);
-        const writes = sequence(log).filter((name) => /^save(?!First|Epm)|^adminAccess\.save$/.test(name));
+        const writes = sequence(log).filter((name) => /^save(?!First|Epm)|^adminAccess\.save$|^scenarioPlannerAccess\.save$/.test(name));
         assert.deepEqual(writes, [], `no admin section write for grant ${String(grant)}`);
         assert.ok(sequence(log).includes('POST /api/groups-config'), 'the shared Department groups still save for a normal user');
     }
@@ -283,10 +287,10 @@ test('only dirty sections are written and skipAdminSections excludes already com
     const resumed = await mount({ dirty: { board: true, capacity: true }, overrides: { firstRunConfigurationActive: true, firstRunConfigurationSession: { committedAdminSections: { board: true }, committedSections: { admin: true }, pendingGroupId: 'g1', guideComplete: true, status: 'configuring' } } });
     await resumed.hook.saveAllSettings({ firstRunSession: resumed.input.firstRunConfigurationSession });
     assert.deepEqual(sequence(resumed.log).filter((name) => /^saveBoardConfig|^saveCapacityConfig/.test(name)), ['saveCapacityConfig']);
-    for (const section of ['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess']) {
+    for (const section of ['projects', 'priorityWeights', 'board', 'capacity', ...FIELD_SECTIONS, 'issueTypes', 'adminAccess', 'scenarioPlanner']) {
         const skipped = await mount({ dirty: { [section]: true }, overrides: { firstRunConfigurationActive: true, firstRunConfigurationSession: { committedAdminSections: { [section]: true }, committedSections: {}, pendingGroupId: 'g1', guideComplete: true, status: 'configuring' } } });
         await skipped.hook.saveAllSettings({ firstRunSession: skipped.input.firstRunConfigurationSession });
-        assert.equal(sequence(skipped.log).some((name) => /^save(?!First|Epm)|^adminAccess\.save$/.test(name)), false, `${section} stays skipped once committed`);
+        assert.equal(sequence(skipped.log).some((name) => /^save(?!First|Epm)|^adminAccess\.save$|^scenarioPlannerAccess\.save$/.test(name)), false, `${section} stays skipped once committed`);
     }
 });
 
@@ -525,7 +529,7 @@ test('keep/discard/use-latest exits: Keep mine rebases on the reported revision;
 test('first-run recovery: restore only uncommitted sections, preserve committed ones, then return and close', async () => {
     const session = {
         status: 'preference_pending', capturedDrafts: {
-            admin: { projects: [{ key: 'OLD' }], board: { boardId: '7', boardName: 'B' }, capacity: { project: 'C', fieldId: 'f', fieldName: 'F' }, sprintField: { fieldId: 'sf', fieldName: 'SF' }, issueTypes: ['Epic'], adminAccess: ['u1'] },
+            admin: { projects: [{ key: 'OLD' }], board: { boardId: '7', boardName: 'B' }, capacity: { project: 'C', fieldId: 'f', fieldName: 'F' }, sprintField: { fieldId: 'sf', fieldName: 'SF' }, issueTypes: ['Epic'], adminAccess: ['u1'], scenarioPlanner: true },
             epm: { scope: 'e' }, private: { visibleGroupIds: ['a'] },
         },
         committedAdminSections: { board: true }, committedSections: {}, latestNormalizedGroups: { groups: [{ id: 'n' }] }, guideComplete: true,
@@ -537,6 +541,7 @@ test('first-run recovery: restore only uncommitted sections, preserve committed 
     assert.equal(names.includes('setBoardIdDraft'), false, 'a committed section is not restored');
     assert.ok(names.includes('setCapacityProjectDraft') && names.includes('setSprintFieldIdDraft') && names.includes('setIssueTypesDraft'));
     assert.deepEqual(log.filter((entry) => entry[0] === 'toggleUser').map((entry) => entry[1]).sort(), ['u1', 'u2']);
+    assert.deepEqual(log.find((entry) => entry[0] === 'scenarioPlannerAccess.setEnabled'), ['scenarioPlannerAccess.setEnabled', true]);
     assert.ok(names.includes('setEpmConfigDraft') && names.includes('setGroupPreferences'));
     assert.deepEqual(log.find((entry) => entry[0] === 'dispatchFirstRunConfigurationSession')[1], { type: 'return_after_preference' });
     assert.ok(before(log, 'applySavedGroupsConfig', 'setSelectedProjectsDraft'), 'the saved groups snapshot is applied before restore');
@@ -588,7 +593,7 @@ test('verbatim closures: no useCallback or latest-ref around the save functions;
     assert.equal(/React\.useCallback\(\(\) => saveAllSettings/.test(hookSource), false);
     assert.equal(/latest.*Ref|useLatest\(/i.test(mainSource.replace('useLatestWorkspaceConfig', '')), false);
     for (const name of ['saveGroupsConfig', 'saveAllSettingsOnce', 'saveAllSettings']) assert.ok(hookSource.includes(`const ${name} = async`), name);
-    assert.ok(hookSource.includes('}, [adminAccess, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);'));
+    assert.ok(hookSource.includes('}, [adminAccess, setScenarioPlannerAccessEnabled, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);'));
     assert.ok(hookSource.includes('}, [firstRunConfigurationSession, restoreSettingsDraftsToCommittedBaselines]);'));
     assert.equal((mainSource.match(/\buseEffect\(|React\.useEffect\(/g) || []).length, 0, 'the save hook registers no effect, so its call position crosses none');
 });

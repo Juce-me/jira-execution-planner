@@ -1,10 +1,11 @@
 import { useState } from 'react';
 
-import { useAdminAccessSettings } from './AdminAccessSettings.jsx';
+import { useAdminAccessSettings, useScenarioPlannerAccessSetting } from './AdminAccessSettings.jsx';
 
 // Settings permission cells, set only from the config bootstrap and the post-save refresh.
 // Editing the administrator sections is granted only by an explicit `userCanEditSettings === true`;
-// `settingsAdminOnly` is write-only metadata and never grants anything.
+// `settingsAdminOnly` is write-only metadata and never grants anything. Scenario planner is available to
+// editors and, once the workspace switch is explicitly on, to everyone; it stays null until the bootstrap answers.
 export function useSettingsPermissions({
     BACKEND_URL,
     groupManageTab,
@@ -18,12 +19,18 @@ export function useSettingsPermissions({
     const [userIsToolAdmin, setUserIsToolAdmin] = useState(false);
     const adminAccessAvailable = !adminUserManagementAvailable || userIsToolAdmin; // DB user directory: tool admins only
     const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
+    const [scenarioPlannerForEveryone, setScenarioPlannerForEveryone] = useState(null);
     const adminAccess = useAdminAccessSettings({
         backendUrl: BACKEND_URL,
         available: adminUserManagementAvailable && userIsToolAdmin,
         active: showGroupManage && groupManageTab === 'access',
     });
+    const scenarioPlannerAccess = useScenarioPlannerAccessSetting({
+        backendUrl: BACKEND_URL,
+        active: showGroupManage && groupManageTab === 'access',
+    });
     const canEditSharedConfiguration = userCanEditSettings === true;
+    const scenarioPlannerAvailable = scenarioPlannerForEveryone === null ? null : (canEditSharedConfiguration || scenarioPlannerForEveryone === true);
     const canEditEpmConfiguration = userCanEditEpmConfig === true;
     const preferredSettingsTab = canEditSharedConfiguration && !environmentConfigExists ? 'scope' : 'teams';
     const applyBootstrapPermissions = (config) => {
@@ -33,6 +40,8 @@ export function useSettingsPermissions({
         setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
         setUserIsToolAdmin(config.userIsToolAdmin === true);
         setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
+        setScenarioPlannerForEveryone(config.scenarioPlannerForEveryone === true);
+        scenarioPlannerAccess.applyConfig(config);
     };
     // The post-save refresh omits setUserIsToolAdmin (and, in loadConfig, the performance flag and Jira URL).
     const applySavePermissions = (config) => {
@@ -41,6 +50,8 @@ export function useSettingsPermissions({
         setUserCanEditEpmConfig(config.userCanEditEpmConfig === true);
         setAdminUserManagementAvailable(config.adminUserManagementAvailable === true);
         setEnvironmentConfigExists(Boolean(config.environmentConfigExists || config.projectsConfigured));
+        setScenarioPlannerForEveryone(config.scenarioPlannerForEveryone === true);
+        scenarioPlannerAccess.applyConfig(config);
     };
     return {
         adminAccess,
@@ -52,6 +63,8 @@ export function useSettingsPermissions({
         canEditSharedConfiguration,
         performanceAdminAvailable,
         preferredSettingsTab,
+        scenarioPlannerAccess,
+        scenarioPlannerAvailable,
         setPerformanceAdminAvailable,
         userCanEditSettings,
     };

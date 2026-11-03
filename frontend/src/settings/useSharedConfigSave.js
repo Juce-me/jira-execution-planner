@@ -129,6 +129,7 @@ export function useSharedConfigSave({
     saveSprintFieldConfig,
     saveStoryPointsFieldConfig,
     saveTeamFieldConfig,
+    scenarioPlannerAccess,
     seedSharedFieldConfigs,
     selectedProjectsDraft,
     selectedSprint,
@@ -193,6 +194,7 @@ export function useSharedConfigSave({
     const settingsSaveReadFenceSequenceRef = useRef(0);
 
     const isAdminAccessDirty = adminAccess.isDirty;
+    const { isDirty: isScenarioPlannerAccessDirty, setEnabled: setScenarioPlannerAccessEnabled } = scenarioPlannerAccess;
     const movedDirty = {
         projects: flatStructural && isProjectsDraftDirty,
         board: flatStructural && isBoardConfigDirty,
@@ -209,7 +211,7 @@ export function useSharedConfigSave({
         if (movedDirty.fields) return true;
         return false;
     }, [workConfigDirty, movedDirty.projects, isPriorityWeightsDirty, movedDirty.board, isCapacityDraftDirty, movedDirty.issueTypes, movedDirty.fields]);
-    const isSharedConfigurationDraftDirty = isCoreSharedConfigurationDraftDirty || isAdminAccessDirty;
+    const isSharedConfigurationDraftDirty = isCoreSharedConfigurationDraftDirty || isAdminAccessDirty || isScenarioPlannerAccessDirty;
     const isGroupDraftDirty = React.useMemo(() => {
         if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
         if (canEditEpmConfiguration && isEpmConfigDirty) return true;
@@ -227,12 +229,13 @@ export function useSharedConfigSave({
             canEditSharedConfiguration && isCapacityDraftDirty,
             canEditSharedConfiguration && movedDirty.issueTypes,
             canEditSharedConfiguration && isAdminAccessDirty,
+            canEditSharedConfiguration && isScenarioPlannerAccessDirty,
             canEditEpmConfiguration && isEpmConfigDirty,
             epmViewPreferenceDirty,
             Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current),
             isGroupVisibilityDraftDirty
         ].filter(Boolean).length + (canEditSharedConfiguration && flatStructural ? dirtyFieldConfigCount : 0);
-    }, [canEditSharedConfiguration, canEditEpmConfiguration, workConfigDirty, movedDirty.projects, isPriorityWeightsDirty, movedDirty.board, isCapacityDraftDirty, movedDirty.issueTypes, isAdminAccessDirty, dirtyFieldConfigCount, flatStructural, isEpmConfigDirty, epmViewPreferenceDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
+    }, [canEditSharedConfiguration, canEditEpmConfiguration, workConfigDirty, movedDirty.projects, isPriorityWeightsDirty, movedDirty.board, isCapacityDraftDirty, movedDirty.issueTypes, isAdminAccessDirty, isScenarioPlannerAccessDirty, dirtyFieldConfigCount, flatStructural, isEpmConfigDirty, epmViewPreferenceDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
     const shouldValidateAdminSettings = canEditSharedConfiguration
         && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
     const groupConfigValidationErrors = React.useMemo(() => {
@@ -314,10 +317,11 @@ export function useSharedConfigSave({
             deliveryOwnerField: canEditSharedConfiguration && flatStructural && isDeliveryOwnerFieldDirty && !skipAdminSections.deliveryOwnerField,
             issueTypes: canEditSharedConfiguration && movedDirty.issueTypes && !skipAdminSections.issueTypes,
             adminAccess: canEditSharedConfiguration && isAdminAccessDirty && !skipAdminSections.adminAccess,
+            scenarioPlanner: canEditSharedConfiguration && isScenarioPlannerAccessDirty && !skipAdminSections.scenarioPlanner,
         };
         const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
         const boardAffectingAdminSave = Object.entries(adminSectionsToSave)
-            .some(([section, pending]) => pending && section !== 'adminAccess');
+            .some(([section, pending]) => pending && section !== 'adminAccess' && section !== 'scenarioPlanner');
         if (boardAffectingAdminSave) {
             sprintCatalogControllerRef.current.invalidate('settings-save');
             invalidateTeamMembership();
@@ -455,6 +459,12 @@ export function useSharedConfigSave({
                 if (adminSectionsToSave.adminAccess) {
                     await adminAccess.save();
                     committedAdminSections.adminAccess = true;
+                }
+
+                // The Scenario planner switch is its own section and payload; it chains the shared revision.
+                if (adminSectionsToSave.scenarioPlanner) {
+                    commitSharedConfigRevision(await scenarioPlannerAccess.save(sharedConfigRevisionRef.current));
+                    committedAdminSections.scenarioPlanner = true;
                 }
             }
 
@@ -654,6 +664,7 @@ export function useSharedConfigSave({
                     fieldConfigs: ['sprintField', 'parentNameField', 'storyPointsField', 'teamField', 'deliveryOwnerField']
                         .some(key => adminSectionsToSave[key] && !committedAdminSections[key]),
                     issueTypes: movedDirty.issueTypes && !committedAdminSections.issueTypes,
+                    scenarioPlanner: isScenarioPlannerAccessDirty && !committedAdminSections.scenarioPlanner,
                 });
                 setWorkspaceConfigConflict({
                     ...workspaceConflictPayload,
@@ -942,10 +953,11 @@ export function useSharedConfigSave({
                 if (capturedIds.has(userId) !== currentIds.has(userId)) adminAccess.toggleUser(userId);
             });
         }
+        if (!committed.scenarioPlanner && typeof admin.scenarioPlanner === 'boolean') setScenarioPlannerAccessEnabled(admin.scenarioPlanner);
         if (!firstRunConfigurationSession.committedSections?.epm && captured.epm) setEpmConfigDraft(captured.epm);
         const capturedPrivate = captured.private;
         if (capturedPrivate) setGroupPreferences(capturedPrivate);
-    }, [adminAccess, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);
+    }, [adminAccess, setScenarioPlannerAccessEnabled, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);
 
     const returnFromFirstRunConfigurationRecovery = React.useCallback((snapshotOverride = null) => {
         const closeGroupManage = getCloseGroupManage();

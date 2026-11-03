@@ -1370,7 +1370,7 @@ export default function EngBoardView({
                 document.body,
             )}
 
-            {panelDeparting && departureTarget && createPortal(<div className="board-data-state board-reading-departure" role="status" data-board-reading-departure>{canonicalOpenGroup ? `Story ${retainedTask.key}` : `Epic ${openEpicKey}`} left the current Board scope.</div>, departureTarget)}
+            {panelDeparting && departureTarget && createPortal(<div className="board-data-state board-reading-departure" role="status" data-board-reading-departure>{canonicalOpenGroup ? `${names.child} ${retainedTask.key}` : `${names.parent} ${openEpicKey}`} left the current Board scope.</div>, departureTarget)}
             {openEpicGroup && (
                 <EngBoardEpicPanel
                     key={openEpicGroup.key}
@@ -1384,6 +1384,7 @@ export default function EngBoardView({
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
+                    workModel={workModel}
                     onSortChange={() => freshnessBridge?.current.release?.()}
                     workItemLabel={strictWorkItemLabel}
                     workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : names.child.toLowerCase()}

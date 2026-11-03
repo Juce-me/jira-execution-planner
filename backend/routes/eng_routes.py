@@ -101,6 +101,7 @@ _STORY_READINESS_MAX_CHILDREN = 20000
 _STORY_READINESS_DEADLINE_SECONDS = 25
 _STORY_READINESS_BATCH_CONCURRENCY = JIRA_BATCH_CONCURRENCY
 _DEPENDENCIES_DEADLINE_SECONDS = 25
+_DEPENDENCIES_BODY_KEYS = frozenset({'keys', 'refresh'})
 
 _STORY_READINESS_ERRORS = {
     'invalid_story_readiness_scope': (400, 'Story readiness scope is invalid.'),
@@ -112,7 +113,12 @@ _STORY_READINESS_ERRORS = {
 
 
 class _StoryReadinessConfigurationError(ValueError):
-    pass
+    """A Department or scope gap fixable in Settings: ``reason`` names it, ``teams`` the Team names involved."""
+
+    def __init__(self, reason, teams=()):
+        super().__init__(reason)
+        self.reason = reason
+        self.teams = tuple(teams)
 
 # One project key, letters/digits/underscore, then a numeric suffix, e.g. PROD-1, TECH_2-22.
 _ISSUE_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]+-\d+$')
@@ -146,9 +152,14 @@ def _story_readiness_response(payload, status=200, *, cache_result=None, timing=
     return response
 
 
-def _story_readiness_error(code):
+def _story_readiness_error(code, configuration_error=None):
     status, message = _STORY_READINESS_ERRORS[code]
-    return _story_readiness_response({'error': code, 'message': message}, status)
+    body = {'error': code, 'message': message}
+    if configuration_error is not None:  # label-free: a reason code and Team display names only
+        body['reason'] = configuration_error.reason
+        if configuration_error.teams:
+            body['teams'] = list(configuration_error.teams)
+    return _story_readiness_response(body, status)
 
 
 def _story_readiness_bool(value):
@@ -223,11 +234,15 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
     team_ids = [str(raw_id or '').strip() for raw_id in match.get('teamIds') or []]
     labels, _errors = normalize_group_team_labels(match.get('teamLabels'), team_ids)
     teams = []
+    unlabeled = []
     for team_id in team_ids:
-        if not team_id or not labels.get(team_id):
-            raise _StoryReadinessConfigurationError('missing_team_label')
         entry = catalog.get(team_id) or {}
+        if not team_id or not labels.get(team_id):
+            unlabeled.append(str(entry.get('name') or '').strip())  # a Team id is never shown as its name
+            continue
         teams.append({'id': team_id, 'name': str(entry.get('name') or team_id), 'labels': list(labels[team_id])})
+    if unlabeled:
+        raise _StoryReadinessConfigurationError('team_labels_missing', [name for name in unlabeled if name])
     return {
         'id': group_id,
         'revision': int(groups.get('configRevision') or 0),
@@ -304,9 +319,14 @@ def _story_readiness_search(context, transport, jql, fields, *, counters, key_bu
     )
 
 
-def _story_readiness_validate_sprint(context, transport, requested, board_id):
+def _story_readiness_validate_sprint(context, transport, requested, board_id, admitted_sprint=None):
     sprint_id, sprint_name, sprint_state = requested
     found = None
+    if admitted_sprint is not None:
+        # Admission already resolved the Sprint through the configuration's own catalog, which can include a Sprint
+        # its Epics carry but its Board does not list; re-reading the Board would reject that Sprint.
+        found = admitted_sprint
+        board_id = ''
     if board_id:
         start_at = 0
         seen_offsets = set()
@@ -332,7 +352,7 @@ def _story_readiness_validate_sprint(context, transport, requested, board_id):
                 raise RuntimeError('jira_unavailable')
             seen_offsets.add(next_offset)
             start_at = next_offset
-    else:
+    elif found is None:
         response = current_jira_get(
             f'/rest/agile/1.0/sprint/{sprint_id}', context=context,
             timeout=transport.budget.jira_retry_timeout(), diagnostic_transport=transport,
@@ -340,10 +360,13 @@ def _story_readiness_validate_sprint(context, transport, requested, board_id):
         if response.status_code == 404:
             raise LookupError('invalid_sprint_tuple')
         found = _story_readiness_response_json(response)
-    if (not isinstance(found, dict)
-            or str(found.get('id')) != sprint_id
+    if not isinstance(found, dict):
+        raise LookupError('invalid_sprint_tuple')
+    state = str(found.get('state') or '').strip().lower()
+    # An admitted catalog row may carry no state; its id and name are then the authority.
+    if (str(found.get('id')) != sprint_id
             or str(found.get('name') or '').strip() != sprint_name
-            or str(found.get('state') or '').strip().lower() != sprint_state):
+            or ((state or admitted_sprint is None) and state != sprint_state)):
         raise LookupError('invalid_sprint_tuple')
 
 
@@ -377,15 +400,16 @@ def _story_readiness_project_track(value):
     return str(value or '').strip() if isinstance(value, str) else ''
 
 
-def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport, epic_keys=(), roles=None):
+def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport, epic_keys=(), roles=None,
+                             admitted_sprint=None):
     started = time.monotonic()
     board = (config.get('board') or {}) if isinstance(config, dict) else {}
-    _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip())
+    _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip(), admitted_sprint)
     sprint_id, sprint_name, sprint_state = requested
     project_keys = [item['key'] for item in projects]
     project_map = {item['key']: item['type'] for item in projects}
     if not project_keys or not group_snapshot['teams']:
-        raise _StoryReadinessConfigurationError('configuration_incomplete')
+        raise _StoryReadinessConfigurationError('projects_missing' if not project_keys else 'teams_missing')
 
     if roles is not None:  # admitted configuration only: blank is missing, never a default
         sprint_field, team_field, track_field = roles.sprint_field_id, roles.team_field_id, roles.project_track_field_id
@@ -394,7 +418,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         team_field = str(((config.get('teamField') or {}).get('fieldId')) or get_team_field_id()).strip()
         track_field = str(((config.get('projectTrackField') or {}).get('fieldId')) or get_project_track_field_id()).strip()
     if not sprint_field or not team_field:
-        raise _StoryReadinessConfigurationError('configuration_incomplete')
+        raise _StoryReadinessConfigurationError('fields_missing')
     new_model = roles is not None and not roles.is_legacy
     parent_clause = roles.parent_clause() if roles is not None else 'issuetype = Epic'
     child_type_clause = roles.planning_clause() if new_model else 'issuetype = Story'
@@ -614,9 +638,12 @@ def get_story_readiness():
     except AuthError as exc:
         return _eng_auth_error_response(exc)
     except Exception:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        # A storage or loader failure is not something Settings can fix: retryable, never "incomplete".
+        logger.exception('Story readiness configuration could not be loaded')
+        return _story_readiness_error('story_readiness_unavailable')
     if not projects:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        return _story_readiness_error('story_readiness_configuration_invalid',
+                                      _StoryReadinessConfigurationError('projects_missing'))
     denied = _story_readiness_access_denied(
         context,
         {project['type'] for project in projects},
@@ -631,10 +658,12 @@ def get_story_readiness():
             return _story_readiness_error('story_readiness_scope_not_found')
         team_ids = [team['id'] for team in group_snapshot['teams']]
         team_labels = [label for team in group_snapshot['teams'] for label in team['labels']]
-        if (not group_snapshot['teams']
-                or len(set(team_ids)) != len(team_ids)
-                or len(set(team_labels)) != len(team_labels)):
-            return _story_readiness_error('story_readiness_configuration_invalid')
+        if not group_snapshot['teams']:
+            raise _StoryReadinessConfigurationError('teams_missing')
+        if len(set(team_ids)) != len(team_ids):
+            raise _StoryReadinessConfigurationError('teams_duplicate')
+        if len(set(team_labels)) != len(team_labels):
+            raise _StoryReadinessConfigurationError('team_labels_shared')
         issue_generation = get_jira_issue_cache_generation()
         requested = (sprint_id, sprint_name, sprint_state)
         cache_key = _story_readiness_cache_key(
@@ -643,8 +672,11 @@ def get_story_readiness():
         )
     except AuthError as exc:
         return _eng_auth_error_response(exc)
+    except _StoryReadinessConfigurationError as exc:
+        return _story_readiness_error('story_readiness_configuration_invalid', exc)
     except Exception:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        logger.exception('Story readiness Department scope could not be loaded')
+        return _story_readiness_error('story_readiness_unavailable')
 
     now = time.monotonic()
     # A per-epic result is never the department snapshot: skip the LRU read and write.
@@ -665,6 +697,7 @@ def get_story_readiness():
                 _story_readiness_compute, context, requested,
                 group_snapshot, projects, config, transport, epic_keys,
                 *(() if roles is None else (roles,)),
+                **({'admitted_sprint': work_request.sprint} if work_request is not None and work_request.sprint else {}),
             )
             _STORY_READINESS_INFLIGHT[cache_key] = future
             def retire(completed, *, expected_key=cache_key):
@@ -699,8 +732,8 @@ def get_story_readiness():
         if exc.code == 'board_scope_too_large':
             return _story_readiness_error('story_readiness_scope_too_large')
         return _story_readiness_error('story_readiness_unavailable')
-    except _StoryReadinessConfigurationError:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+    except _StoryReadinessConfigurationError as exc:
+        return _story_readiness_error('story_readiness_configuration_invalid', exc)
     except InvalidCompleteReadinessInput:
         return _story_readiness_error('story_readiness_unavailable')
     except (EngBoardRequestDeadline, TimeoutError):
@@ -1007,6 +1040,10 @@ def get_dependencies():
     """Fetch dependency links for a set of issues."""
     try:
         payload = request.get_json(silent=True) or {}
+        # The body is exactly `{keys, refresh}`; work selectors travel in the query string with every other work read.
+        if not isinstance(payload, dict) or set(payload) - _DEPENDENCIES_BODY_KEYS:
+            return jsonify({'error': 'invalid_dependencies_request',
+                            'message': 'The request body accepts only keys and refresh.'}), 400
         keys = sorted({str(key).strip() for key in (payload.get('keys') or []) if str(key).strip()})
         if not keys:
             return jsonify({'dependencies': {}})

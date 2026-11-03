@@ -4,6 +4,10 @@ The Scenario Planner builds a quarter timeline from Jira data so users can inspe
 
 Existing actions use the shared [hover vocabulary](../design-system.md): ordinary actions shade within their bounds and gain a ring, selected toggles keep their fill, clickable section headings and inline Exit underline. Lane labels retain their approved blue hover tint and an inset ring so existing green/red status text keeps its meaning and contrast. Resting typography, focus paint, bar/readout behavior, disabled locks and tap actions stay unchanged. This presentation migration adds no planning or Jira publication authority.
 
+## Who Can Use It
+
+Scenario Planner is for administrators (the shared settings-edit grant, `userCanEditSettings`). One workspace switch, Settings -> Admin -> Access -> **Scenario planner for everyone**, unlocks it for every user of the environment. It is stored in the workspace administrator configuration (`scenarioPlanner.enabledForEveryone`, default off), written only by `POST /api/scenario-access/config` (`shared_admin_write`, its own footer-Save section) and exposed as `scenarioPlannerForEveryone` in `/api/config`. While it is off, a non-admin sees no Scenario mode entry (no disabled button and no notice), a saved or shared Scenario view falls back to the default mode, and every Scenario route (`/api/scenario*`, including drafts and overrides) answers `403 scenario_locked` before any Jira work. Admins are never locked.
+
 ## What It Uses
 
 - sprint-scoped Jira work
@@ -23,7 +27,7 @@ Existing actions use the shared [hover vocabulary](../design-system.md): ordinar
 
 The planner can render lanes by:
 - team
-- epic
+- parent (Epic in Legacy, Initiative in the new model)
 - assignee
 
 ## Scheduling Model
@@ -73,7 +77,7 @@ Dependency neighbors are also included as context items so cross-epic relationsh
 Scenario Planner saves manual planning experiments as draft history. In DB-backed mode, each scope has one active draft and an immutable version list. A save creates a new `versionNumber` and advances `draftRevision`; rollback creates another version from an older snapshot instead of mutating prior history.
 
 API behavior in DB-backed mode:
-- `GET /api/scenario/drafts?scope_key=<sprint_id>:<group_id>` returns the active draft, version list, and `storage: "db"`
+- `GET /api/scenario/drafts?scope_key=<sprint_id>:<group_id>` returns the active draft, version list, and `storage: "db"`; a new-model draft uses `<configuration_id>:<sprint_id>:<group_id>` (see Quarterly project configurations)
 - `POST /api/scenario/drafts` saves a draft for that scope; updates must send the current `baseDraftRevision`
 - `GET /api/scenario/drafts/<draftId>/versions/<versionNumber>` returns one historical version
 - `POST /api/scenario/drafts/<draftId>/rollback` creates a new active version from `targetVersionNumber` and requires `baseDraftRevision`
@@ -281,4 +285,10 @@ if (!fromRect || !toRect) return;
 
 ## Quarterly project configurations
 
-Scenario history, save, reload and rollback are not rebuilt for the quarterly work structure. After promotion `POST /api/scenario` and a draft reload admit `filters.sprint` through its saved source and run only for a complete Legacy configuration, using its captured fields and scope; a new-model, unknown or unresolved source answers `409 scenario_not_supported` before the planner or any Jira query. A request that names a `quarter`/`configurationId` is checked the same way on the stored-draft routes; stored Legacy drafts, presence, locks and preview keep their current rights, actual writeback stays blocked and the legacy override POST stays unreachable in DB/OAuth. No Scenario stamp or snapshot format is stored.
+Scenario history, save, reload and rollback are not rebuilt for the quarterly work structure. After promotion `POST /api/scenario` and a draft reload admit `filters.sprint` through its saved source and run for a complete configuration of either model, using its captured fields and scope; an unknown or unresolved source answers `409 scenario_not_supported` and an incomplete one its own `409` (`configuration_incomplete`, `sprint_catalog_mismatch` and the other work-request codes) before the planner or any Jira query.
+
+In the new model (`rnd_2027`) Epics are the scheduled items and Initiatives their grouping parents: the source JQL uses the configuration's projects, its planning issue type id, and its mapped Sprint and Team fields (`cf[N]`); no Epic Link field is requested. Story Points come from the configured Story Points field, the Team from the configured Team field, dependencies are the Epics' own block/depend issue links, and `excluded_capacity_epics` matches the parent key, so exclusion applies at Initiative level. `sp_to_weeks` stays `2.0`. The parent lane toggle and the no-parent lane read `Initiative`/`No Initiative` (Legacy keeps `Epic`/`No Epic`), and the tooltip formats the Story Points value without a field id.
+
+Drafts are namespaced by configuration. Legacy drafts keep `<sprint_id>:<group_id>` and their stored scope unchanged. A new-model draft uses `<configuration_id>:<sprint_id>:<group_id>` and its stored scope carries `configurationId`; `POST /api/scenario/drafts` re-resolves that claim through the scope's Sprint and refuses a claim the source does not resolve to, a key outside the configuration's namespace, or a save that would change an existing draft's configuration, with `409 scenario_configuration_mismatch`. A reload resolves the stored Sprint (`sprintId` for new-model drafts) and refuses with the same code when it now belongs to another configuration than the draft's, before the planner runs. No migration is needed (`scope_key` is `String(255)`).
+
+A request that names a `quarter`/`configurationId` is checked by the same gate on the stored-draft routes; stored Legacy drafts, presence, locks and preview keep their current rights, actual writeback stays blocked and the legacy override POST stays unreachable in DB/OAuth.

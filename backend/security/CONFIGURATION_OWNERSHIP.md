@@ -10,6 +10,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | --- | --- | --- | --- | --- |
 | Administrator settings | `workspace_dashboard_configs` | Authenticated workspace users | `shared_admin_write` | One effective value per workspace; only tool admins configure it when `SETTINGS_ADMIN_ONLY=true` |
 | Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
+| Scenario planner access switch (`scenarioPlanner.enabledForEveryone`) | `workspace_dashboard_configs.payload` (its own admin section) | Authenticated workspace users (`/api/config` `scenarioPlannerForEveryone`, `GET /api/scenario-access/config`) | `shared_admin_write` via `POST /api/scenario-access/config` only | One value per workspace, default off; while off only editors (`userCanEditSettings`) may use Scenario and every other user's Scenario request answers `403 scenario_locked`; never stored in private views or group configuration |
 | Quarterly work configurations (`workConfigurations` bundle) | `workspace_dashboard_configs.payload` (one revisioned key, server-owned `promotionRevision`) | Authenticated workspace users (virtual capture before promotion; no write on GET) | `shared_admin_write` via the dedicated bundle transaction only | One bundle per workspace: exactly Legacy then DELIVERY; after promotion it replaces the flat projects/Board/Sprint/Story Points/parent-name/Team/Project Track/Delivery owner/issue-type keys; Capacity, priority weights, groups and private payloads stay where they are |
 | Group visibility, favorite/star, and active group | `user_group_preferences` | Current user | `user_write` | Private to one user in one workspace; never copied into shared group configuration |
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
@@ -27,8 +28,8 @@ write access, bootstrap precedence, and frontend edit gates must change together
 ## Exact Boundaries
 
 Administrator settings contain workspace Jira planning inputs: selected Jira projects, Jira source
-board, capacity mapping, Jira field mappings, priority weights, and dashboard issue-type
-configuration outside EPM.
+board, capacity mapping, Jira field mappings, priority weights, dashboard issue-type
+configuration outside EPM, and the Scenario planner access switch.
 They do **not** contain EPM settings, department groups, group preferences, personal view state,
 connections, credentials, or derived catalog payloads. The selected Jira source Board, projects,
 Sprint/Team fields, and base JQL remain administrator inputs; they identify derived catalogs but do
@@ -159,8 +160,10 @@ never touches Capacity, its verification columns, priority weights, groups or pr
 - Own-key Jira writes, write-option reads and Sprint review calls carry a `{id, revision, quarter, digest}`
   stamp that `backend/services/work_write_scope.py` re-resolves against the current workspace before any Jira
   call: a stale or wrong-model stamp answers `409 configuration_scope_changed`. The stamp is optional for an
-  unpromoted workspace and refused while the flag is off. New-model Scenario source work answers
-  `409 scenario_not_supported`. Capacity `PATCH` carries no stamp.
+  unpromoted workspace and refused while the flag is off. Scenario source work runs for a complete context of
+  either model; new-model drafts are namespaced `<configurationId>:<sprintId>:<groupId>` with a server-checked
+  `configurationId` in their scope and never save or reload under another configuration
+  (`409 scenario_configuration_mismatch`). Capacity `PATCH` carries no stamp.
 - Sprint review rows are namespaced by `configuration_id` (migration `20261030_0022`): NULL is Legacy, a
   configuration id is its own namespace. The storage key stays workspace + group (+ namespace); the group
   is still the common fence and the 30/240/500 caps are per group across namespaces.

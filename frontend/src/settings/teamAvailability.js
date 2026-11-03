@@ -44,6 +44,7 @@ export function buildTeamAvailability({
     configuredTeamIds = [],
     membershipReady = false,
     generation = null,
+    sprintGated = true,
 } = {}) {
     const names = new Map();
     const ids = new Set();
@@ -70,12 +71,14 @@ export function buildTeamAvailability({
     });
 
     return Array.from(ids, id => {
-        const availableInSprint = membershipReady ? members.has(id) : null;
+        // Ungated (a combined-model quarter), every directory Team stays addable: the Department's Teams are one
+        // workspace list whatever the viewed configuration, and new-quarter Epics need not carry a Team yet.
+        const availableInSprint = sprintGated && membershipReady ? members.has(id) : null;
         return {
             id,
             name: names.get(id) || id,
             availableInSprint,
-            canAdd: availableInSprint === true,
+            canAdd: sprintGated ? availableInSprint === true : true,
         };
     }).sort((left, right) => (
         left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })

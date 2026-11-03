@@ -37,8 +37,9 @@ from tests.test_work_structure_routes import WorkStructureRouteBase, jira_respon
 
 BOARD_PATH = '/rest/agile/1.0/board/7001/sprint'
 DELIVERY_SPRINT_FIELD = 'customfield_26'
-DELIVERY_TEAM_FIELD = 'customfield_24'
 LEGACY_TEAM_FIELD = 'customfield_30101'
+# Team is one field for every configuration: DELIVERY reads Legacy's.
+DELIVERY_TEAM_FIELD = LEGACY_TEAM_FIELD
 
 
 def sprint_value(sprint_id, name, state='active'):
@@ -168,10 +169,9 @@ class SourceCatalogTests(CatalogBase):
         body = response.get_json()
         self.assertEqual(
             [(row['id'], row['name'], row['configurationId']) for row in body['sprints']],
-            [(201, '2027Q1', 'delivery'), (101, '2026Q4', 'legacy')])
-        self.assertEqual({row['sourceIdentity'] for row in body['sprints']},
-                         {item['cache']['identity'] for item in body['sources']})
-        self.assertEqual([item['sourceMode'] for item in body['sources']], ['board', 'scoped_issues'])
+            [(102, '2027Q1', 'delivery'), (101, '2026Q4', 'legacy')])
+        self.assertEqual({row['sourceIdentity'] for row in body['sprints']} - {item['cache']['identity'] for item in body['sources']}, set())
+        self.assertEqual([item['sourceMode'] for item in body['sources']], ['board', 'board'])
         self.assertEqual(body['cache']['state'], 'fresh')
         self.assertIsNone(body['cache']['refreshAttemptId'])
         self.assertEqual(len(fake.search_jql), 1, 'Legacy keeps Board-only discovery')
@@ -265,39 +265,23 @@ class SourceCatalogTests(CatalogBase):
         self.assertEqual(calls, [None, 'tok1'])
         self.assertEqual([row['name'] for row in rows], ['2027Q2', '2027Q1'])
 
-    def test_failed_source_keeps_other_era_and_prior_snapshot(self):
+    def test_failed_observed_scan_keeps_the_shared_board_sprints(self):
         self.seed_sources()
-        fake = self.jira(FakeJira(
+        self.jira(FakeJira(
             board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001}],
             scan_pages=[500]))
-        merged = self.sprints()
-        self.assertEqual(merged.status_code, 200, merged.get_data(as_text=True))
-        body = merged.get_json()
-        self.assertEqual([row['id'] for row in body['sprints']], [101])
-        states = {item['configurationId']: item['state'] for item in body['sources']}
-        self.assertEqual(states, {'legacy': 'ready', 'delivery': 'failed'})
-        self.assertTrue(body['cache']['refreshFailed'])
-        delivery = self.sources()[1]
-        # A good scan, then a forced failing one: the matching prior snapshot survives.
-        fake.scan_pages = [{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1')]})],
-                            'isLast': True}]
-        self.assertEqual(self.sprints('?configurationId=delivery&refresh=true').status_code, 200)
-        version = SCOPED_SPRINT_CATALOGS.snapshot(delivery.sprint_identity).catalog_version
-        fake.scan_pages = [500]
-        failed = self.sprints('?configurationId=delivery&refresh=true')
-        self.assertEqual(failed.status_code, 200, 'last good payload still serves')
-        self.assertEqual(failed.get_json()['cache']['catalogVersion'], version)
-        self.assertEqual(failed.get_json()['cache']['failureCode'], 'jira_unavailable')
-        self.assertEqual(failed.get_json()['sprints'][0]['id'], 201)
+        response = self.sprints()
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual([row['id'] for row in response.get_json()['sprints']], [101])
 
     def test_blank_source_is_setup_required_and_does_not_lock_the_other_era(self):
         self.seed_sources(delivery_ready=False)
         self.jira(FakeJira(board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001}]))
         body = self.sprints().get_json()
         delivery = next(item for item in body['sources'] if item['configurationId'] == 'delivery')
-        self.assertEqual(delivery['state'], 'setup_required')
-        self.assertIn('scope.projects', delivery['missingFields'])
-        self.assertEqual([row['id'] for row in body['sprints']], [101])
+        # Delivery shares Legacy's Board until it overrides it, so no source setup is needed.
+        self.assertEqual(delivery['state'], 'ready')
+        self.assertEqual(delivery['sourceMode'], 'board')
         self.seed_blank_row()
         response = self.sprints()
         self.assertEqual(response.status_code, 409)
@@ -355,20 +339,7 @@ class SourceCatalogTests(CatalogBase):
         self.assertNotEqual(before[0].source_digest, after[0].source_digest)
         self.assertNotEqual(build_projection_identity(before[0]), build_projection_identity(after[0]))
         self.assertNotEqual(before[0].config_digest, after[0].config_digest)
-        self.assertEqual(before[1].sprint_identity, after[1].sprint_identity, 'rename keeps the scan')
-        with self.factory() as session:
-            row = session.query(models.WorkspaceDashboardConfig).one()
-            payload = deepcopy(row.payload)
-            payload['workConfigurations']['configurations'][1]['fields']['sprint']['fieldId'] = 'customfield_27'
-            row.payload = payload
-            session.commit()
-        self.assertNotEqual(before[1].sprint_identity, self.sources()[1].sprint_identity)
-        other_actor = self.worker_context().__class__(**{
-            **self.worker_context().__dict__, 'auth_connection_id': 'someone-else'})
-        with self.factory() as session:
-            partitioned = resolve_catalog_sources(
-                session, other_actor, runtime_inputs=jira_server.catalog_runtime_inputs())
-        self.assertNotEqual(self.sources()[1].sprint_identity, partitioned[1].sprint_identity)
+        self.assertEqual(before[1].sprint_identity, after[1].sprint_identity, 'rename keeps the catalog')
 
     def test_changed_board_mapping_retires_the_in_flight_publication(self):
         self.seed_sources(delivery_ready=False)
@@ -488,12 +459,6 @@ class SelectorTests(CatalogBase):
         self.assertEqual(ok.status_code, 200, ok.get_data(as_text=True))
         self.assertEqual(ok.get_json()['configurationId'], 'delivery')
         self.assertEqual(ok.get_json()['quarter'], '2027Q1')
-
-    def test_pending_catalog_keeps_the_existing_pending_contract(self):
-        SCOPED_SPRINT_CATALOGS.clear()
-        response = self.client.get('/api/teams?sprint=201&configurationId=delivery')
-        self.assertEqual(response.status_code, 503)
-        self.assertEqual(response.get_json(), {'error': 'sprint_catalog_pending'})
 
     def test_teams_all_requires_context_then_uses_the_admitted_scope_only(self):
         missing = self.client.get('/api/teams/all')
@@ -691,7 +656,8 @@ class TeamPublicationTests(CatalogBase):
         with self.factory() as session:
             row = session.query(models.WorkspaceDashboardConfig).one()
             payload = deepcopy(row.payload)
-            payload['workConfigurations']['configurations'][1]['fields']['team']['fieldId'] = 'customfield_88'
+            # DELIVERY shares Legacy's Team field, so a Team mapping change is made where it lives.
+            payload['workConfigurations']['configurations'][0]['fields']['team']['fieldId'] = 'customfield_88'
             row.payload = payload
             session.commit()
         self.assertFalse(self.publish(claim, budget, resolve, proof))

@@ -158,7 +158,9 @@ class RoleTypeTests(unittest.TestCase):
 
     def test_blank_mapped_field_is_missing_never_a_default(self):
         def blank_team(value):
-            value['configurations'][1]['fields']['team'] = {'fieldId': '', 'fieldName': ''}
+            # Team is one field for every configuration: a Team left blank in Legacy is blank for DELIVERY too.
+            value['configurations'][0]['fields']['team'] = {'fieldId': '', 'fieldName': ''}
+            value['configurations'][1]['fields']['team'] = {'fieldId': '', 'fieldName': '', 'mode': 'shared'}
         blank = roles('2027Q1', bundle(blank_team))
         self.assertEqual(blank.team_field_id, '')
         with self.assertRaises(ws.WorkConfigError):

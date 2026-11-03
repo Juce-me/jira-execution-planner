@@ -128,7 +128,7 @@ def admit_quarter_range(auth_context, start_quarter, end_quarter):
                 runs[-1]['endQuarter'] = label
             else:
                 runs.append({'startQuarter': label, 'endQuarter': label, 'configurationId': entry['id'],
-                             'revision': entry['revision'], 'digest': service.entry_digest(entry)})
+                             'revision': entry['revision'], 'digest': service.effective_digest(entries, entry)})
         for run in runs:
             selectors = MultiDict([('quarter', run['startQuarter']), ('configurationId', run['configurationId'])])
             try:

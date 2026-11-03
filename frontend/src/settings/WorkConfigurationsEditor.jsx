@@ -4,7 +4,7 @@ import { searchBoards as requestBoardSearch, searchProjects as requestProjectSea
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, rangeLabel, savedSourceReady, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, inheritedBoard, rangeLabel, savedSourceReady, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
 const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
@@ -170,9 +170,12 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
         boardQuery: tab === 'source' ? (search.boardQuery || '') : '',
         boardSelected: Boolean(entry.scope.boardId),
     });
-    // Only the board id is saved; its name is read back once so the chip never shows "Board 7001" after a reload.
-    const savedBoardId = entry.scope.boardId;
-    const savedBoardName = search.boardName;
+    // Only the board id is saved; its name is read back once so the chip never shows "Board 7001" after a reload. A blank
+    // Board shows the Board it inherits, named under the configuration that owns it.
+    const inherited = inheritedBoard(workConfig.entries, entry.id);
+    const savedBoardId = entry.scope.boardId || inherited?.boardId || '';
+    const boardNameOwner = entry.scope.boardId ? entry.id : inherited?.fromId;
+    const savedBoardName = entry.scope.boardId ? search.boardName : (inherited ? workConfig.uiFor(inherited.fromId).search?.boardName : '');
     React.useEffect(() => {
         if (tab !== 'source' || !savedBoardId || savedBoardName) return undefined;
         const controller = new AbortController();
@@ -180,11 +183,11 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
             .then(response => (response.ok ? response.json() : null))
             .then(data => {
                 const match = (data?.boards || []).find(board => String(board.id) === String(savedBoardId));
-                if (match?.name && !controller.signal.aborted) workConfig.setSearch(entry.id, 'boardName', match.name);
+                if (match?.name && !controller.signal.aborted) workConfig.setSearch(boardNameOwner, 'boardName', match.name);
             })
             .catch(() => {});
         return () => controller.abort();
-    }, [BACKEND_URL, tab, entry.id, savedBoardId, savedBoardName]);
+    }, [BACKEND_URL, tab, boardNameOwner, savedBoardId, savedBoardName]);
     const selectedKeys = new Set(entry.scope.projects.map(project => project.key));
     const projectQuery = String(search.projectQuery || '').toLowerCase().trim();
     const projectPool = remote.projects.length ? remote.projects : jiraProjects;
@@ -203,6 +206,8 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
         boardResults, boardLoading: remote.boardLoading, resolveProjectName,
         addProject: workConfig.addProject, removeProject: workConfig.removeProject,
         typeCatalog, hoverKey: hover, setHoverKey: setHover, requestRetire: setRetire,
+        inheritedBoard: inherited ? { ...inherited, name: savedBoardName || '' } : null,
+        entries: workConfig.entries,
         boardName: search.boardName || '',
     });
     props.mappingPreviewOpen = previewOpen;
@@ -293,7 +298,7 @@ export default function WorkConfigurationsEditor({
     }
     const tab = workConfig.tabFor(entry.id);
     const errors = workConfig.validation.errors;
-    const incomplete = incompleteTabs(entry, errors[entry.id], { fields: loadingFields ? null : jiraFields });
+    const incomplete = incompleteTabs(entry, errors[entry.id], { fields: loadingFields ? null : jiraFields }, workConfig.entries);
     const onTabKeys = event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();

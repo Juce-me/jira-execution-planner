@@ -14,7 +14,7 @@ from backend.config.view_validation import (
 ADMIN_CONFIG_SECTIONS = frozenset({
     'version', 'projects', 'board', 'capacity', 'sprintField',
     'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField',
-    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes',
+    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes', 'scenarioPlanner',
 })
 # The quarterly work-configuration bundle is workspace-owned and has its own
 # transactional save path; it is not a section of the single-key admin writer.
@@ -135,6 +135,13 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
             for index, item in enumerate(value):
                 _reject_unknown(item, {'priority', 'weight'}, f'{section}[{index}]')
             result[section] = deepcopy(value)
+        elif section == 'scenarioPlanner':
+            value = _require_dict(value, section)
+            _reject_unknown(value, {'enabledForEveryone'}, section)
+            enabled = value.get('enabledForEveryone', False)
+            if not isinstance(enabled, bool):
+                _raise('scenarioPlanner.enabledForEveryone', 'configuration field must be a boolean')
+            result[section] = {'enabledForEveryone': enabled}
         elif section == 'issueTypes':
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 _raise(section, 'configuration field must be a string array')

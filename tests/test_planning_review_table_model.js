@@ -59,6 +59,9 @@ test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthe
     assert.equal(placeholder.epic,'DEMO-20');
     assert.equal(placeholder.synthetic,true);
     assert.match(placeholder.summary,/Story awaiting creation for Beta/);
+    // The combined model's planning child is an Epic: its placeholder names the Epic awaiting creation under an Initiative.
+    const combined = buildPlanningReviewRows({ epicGroups, visibleTasks: stories, mode: 'story', workModel: 'rnd_2027' }).find(row => row.rowKind === 'requirement');
+    assert.match(combined.summary, /: Epic awaiting creation for Beta$/);
     assert.equal(reviewSelectionState(placeholder).disabled,true);
     assert.equal(rows.find(row => row.key === 'DEMO-3').epicKey, null);
 });

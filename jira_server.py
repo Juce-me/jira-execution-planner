@@ -3140,6 +3140,8 @@ def fetch_epics_for_empty_alert(jql, headers, team_field_id, epic_name_field, sp
     scope_clause = _group_config_service.build_epic_alert_scope_clause(scope_team_ids, scope_team_labels, normalize_team_ids)
     if scope_clause:
         epic_jql = add_clause_to_jql(epic_jql, scope_clause)
+    elif roles is not None and not roles.is_legacy:
+        return []  # no Team aliases: an unscoped query would list every open Initiative in the projects
     if epic_keys:
         epic_jql = add_clause_to_jql(epic_jql, f'issueKey in ({", ".join(quote_jql_value(key) for key in epic_keys)})')
     return fetch_epics_for_alert_scope_service(
@@ -4299,7 +4301,8 @@ def collect_dependencies(keys, context=None, max_concurrency=1, strict=False, de
                     'summary': linked_issue.get('fields', {}).get('summary'),
                     'issuetype': linked_issue.get('fields', {}).get('issuetype', {}).get('name'),
                     'status': linked_issue.get('fields', {}).get('status', {}).get('name'),
-                    'storyPoints': linked_issue.get('fields', {}).get(get_story_points_field_id()),
+                    'storyPoints': linked_issue.get('fields', {}).get(
+                        roles.story_points_field_id if roles is not None else get_story_points_field_id()),
                     'teamName': None,
                     'teamId': None,
                     'epicKey': None
@@ -4328,6 +4331,34 @@ def scenario_not_supported_response():
         'error': 'scenario_not_supported', 'status': 'error',
         'message': 'Scenario Planner is not available for this period.',
     }), 409
+
+
+SCENARIO_PLANNER_SECTION = 'scenarioPlanner'
+
+
+def scenario_planner_for_everyone(workspace_payload):
+    """Admin-owned workspace switch that unlocks Scenario for every user; off when absent."""
+    section = (workspace_payload or {}).get(SCENARIO_PLANNER_SECTION)
+    return isinstance(section, dict) and section.get('enabledForEveryone') is True
+
+
+def scenario_access_error(auth_context):
+    """``None`` when this user may use Scenario, else the 403 ``scenario_locked`` response.
+
+    Admins (the shared settings-edit grant) always may; everyone else only while the workspace switch
+    is on. Read from the workspace configuration before any Jira work.
+    """
+    if not SETTINGS_ADMIN_ONLY or bool(getattr(auth_context, 'is_admin', False)):
+        return None
+    try:
+        payload = load_dashboard_config_snapshot().payload
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
+        return jsonify({'error': 'config_storage_unavailable',
+                        'message': 'Configuration storage is temporarily unavailable.'}), 503
+    if scenario_planner_for_everyone(payload):
+        return None
+    return jsonify({'error': 'scenario_locked', 'status': 'error',
+                    'message': 'Scenario Planner is available to administrators only.'}), 403
 
 
 _SCENARIO_UNRESOLVED_CODES = frozenset({
@@ -4362,10 +4393,11 @@ def _scenario_resolve(auth_context, sprint_text, selectors):
 def scenario_work_gate(auth_context, *, sprint=None, selectors=None, require_source=False):
     """``(WorkRequest | None, error_response | None)`` for a Scenario entry point.
 
-    Unpromoted workspaces keep every path unchanged.  After promotion only a resolved, complete Legacy
-    context may run: new-model, unknown or unresolved source work answers 409 ``scenario_not_supported``
-    before the planner, a query or a reload.  Entry points that only carry stored-draft state pass when
-    they name no source (``require_source=False``); stored Legacy history keeps its current rights.
+    Unpromoted workspaces keep every path unchanged.  After promotion only a resolved, complete context
+    may run (Legacy, or the new model with Epics as the scheduled items); unknown or unresolved source
+    work answers 409 ``scenario_not_supported`` and an incomplete one its own 409 before the planner, a
+    query or a reload.  Entry points that only carry stored-draft state pass when they name no source
+    (``require_source=False``); stored Legacy history keeps its current rights.
     """
     from backend.routes import work_request as _work_request
     from backend.routes import work_structure_routes as work_routes
@@ -4390,8 +4422,6 @@ def scenario_work_gate(auth_context, *, sprint=None, selectors=None, require_sou
         return None, (jsonify({'error': 'sprint_catalog_pending'}), 503)
     except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
         return None, work_routes.storage_unavailable_response()
-    if not work_request.roles.is_legacy:
-        return None, scenario_not_supported_response()
     return work_request, None
 
 
@@ -4478,7 +4508,9 @@ def scenario_planner():
 
         headers = None
         team_field_id = roles.team_field_id if roles is not None else resolve_team_field_id(None, context=auth_context)
-        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
+        # Epic Link is only the Legacy Story->Epic relationship; a new-model Epic groups by its parent.
+        epic_link_field_id = (resolve_epic_link_field_id(None, context=auth_context)
+                              if roles is None or roles.uses_epic_link else None)
         story_points_field_id = roles.story_points_field_id if roles is not None else get_story_points_field_id()
 
         fields_list = [

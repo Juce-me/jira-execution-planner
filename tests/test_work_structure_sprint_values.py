@@ -79,13 +79,13 @@ class SprintValueReadTests(CatalogBase):
             self.assertNotIn(forbidden, text)
 
     def test_setup_required_and_pending_sources_are_reported_not_errors(self):
-        self.seed_sources(delivery_ready=False, legacy_ready=True)
+        self.seed_sources(delivery_ready=False, legacy_ready=True)  # Delivery shares Legacy's Board
         response = self.read()
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['sprintValues'], [])
         self.assertEqual([(item['configurationId'], item['state']) for item in body['sources']],
-                         [('legacy', 'pending'), ('delivery', 'setup_required')])
+                         [('legacy', 'pending'), ('delivery', 'pending')])
 
     def test_policy_errors_and_flag_states(self):
         self.warm()
@@ -160,7 +160,7 @@ class SourceDiagnosticsTests(SprintValueReadTests):
         self.assertEqual(sources['delivery']['issuesWithSprintValueCount'], 0)
 
     def test_setup_required_source_names_its_code(self):
-        self.seed_sources(delivery_ready=False)
+        self.seed_sources(delivery_ready=False, legacy_ready=False)  # no Board to share
         self.jira(FakeJira(board_values=[]))
         sources = {item['configurationId']: item['diagnostics'] for item in self.read().get_json()['sources']}
         self.assertEqual(sources['delivery']['state'], 'setup_required')

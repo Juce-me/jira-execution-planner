@@ -670,7 +670,7 @@ test('oversized alert notice reuses the Story readiness notice without actions',
     assert.notEqual(noticeStart, -1);
     const notice = panelSource.slice(noticeStart, panelSource.indexOf(': null;', noticeStart));
     assert.match(notice, /<div className="story-readiness-notice" role="status">/);
-    assert.ok(notice.includes("This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels."));
+    assert.ok(notice.includes("This Department is too large for {names.parent} alerts: more than 2,000 open {names.parentPlural} match its Teams and labels in Product or Tech. {names.parent} alerts are hidden; {names.child} alerts are still shown. Narrow the Department's Teams or labels."));
     assert.doesNotMatch(notice, /<button|onClick|Settings/);
     assert.match(panelSource, /if \(selectedView !== 'eng' \|\| \(alertItemCount <= 0 && !alertScopeTooLarge\)\) \{/);
 });

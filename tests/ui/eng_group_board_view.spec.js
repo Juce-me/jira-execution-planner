@@ -1094,6 +1094,12 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
 
                 const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
                 const activeMode = modes.getByRole('radio', { name: modeName, exact: true });
+                if (modeName === 'Scenario' && configProfile.configStatus) {
+                    // Without a config bootstrap the Scenario grant is unknown, so the locked default hides its entry.
+                    await expect(modes.getByRole('radio', { name: 'Catch Up', exact: true })).toHaveAttribute('aria-checked', 'true');
+                    await expect(activeMode).toHaveCount(0);
+                    return;
+                }
                 if (await activeMode.getAttribute('aria-checked') !== 'true') await activeMode.click();
                 await expect(activeMode).toHaveAttribute('aria-checked', 'true');
                 if (modeName === 'Statistics') {

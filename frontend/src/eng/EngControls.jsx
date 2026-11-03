@@ -224,7 +224,7 @@ export function SprintControl({
                                     : !boardStrictScope && String(option.sprint.id) === String(selectedSprint);
                                 const state = option.kind === 'sprint'
                                     ? (option.sprint.state || '').toLowerCase()
-                                    : '';
+                                    : option.kind === 'quarter' ? option.state : '';
                                 const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
                                 const readinessText = option.kind === 'scope'
                                     ? (option.readiness === 'ready' ? 'Ready'
@@ -251,7 +251,7 @@ export function SprintControl({
                                         onMouseMove={() => setSprintActiveOptionIndex(optionIndex)}
                                         onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
                                     >
-                                        <span>{option.kind === 'sprint' ? `${marker} ${option.label}` : option.label}</span>
+                                        <span>{option.kind === 'sprint' || (option.kind === 'quarter' && state) ? `${marker} ${option.label}` : option.label}</span>
                                         {option.kind === 'scope' && (
                                             <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
                                         )}

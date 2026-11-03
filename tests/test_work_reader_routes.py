@@ -102,7 +102,8 @@ class SelectorMatrixTests(WorkStructureRouteBase):
 
     def test_incomplete_selected_configuration_is_409_with_paths(self):
         def clear_team(bundle):
-            bundle['configurations'][1]['fields']['team'] = {'fieldId': '', 'fieldName': ''}
+            # Team is one field for every configuration: clearing it in Legacy leaves DELIVERY without one.
+            bundle['configurations'][0]['fields']['team'] = {'fieldId': '', 'fieldName': ''}
         with self.factory() as session:
             from backend.db import models
             row = session.query(models.WorkspaceDashboardConfig).one()
@@ -202,11 +203,12 @@ class PromotedTasksTests(WorkStructureRouteBase):
                                     initiative_row('PLAN-I2', labels=('alias',))]),
             (r'issueKey in', [initiative_row('PLAN-I1')]),
         )
-        response = self.run_tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts', 'teamIds': 't1'}, search)
+        response = self.run_tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts', 'teamIds': 't1', 'teamLabels': 'alias'}, search)
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         discovery = [jql for jql in search.calls if 'issuetype = 10001' in jql and 'status not in' in jql]
         self.assertTrue(discovery, search.calls)
         self.assertIn('status not in ("Done", "Killed", "Incomplete")', discovery[0])
+        self.assertIn('labels = "alias"', discovery[0])
         self.assertNotIn('cf[26]', discovery[0])
         self.assertNotIn('Sprint', discovery[0])
         self.assertNotIn('cf[24]', discovery[0])  # optional Initiative Team never filters
@@ -222,8 +224,20 @@ class PromotedTasksTests(WorkStructureRouteBase):
             if 'issuetype = 10001' in payload['jql'] and 'status not in' in payload['jql']:
                 return pages(payload)
             return jira_response(200, {'issues': [], 'isLast': True})
-        response = self.run_tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts'}, search)
+        response = self.run_tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts', 'teamLabels': 'alias'}, search)
         self.assertEqual((response.status_code, response.get_json()['error']), (422, 'alert_scope_too_large'))
+
+    def test_initiative_discovery_without_team_aliases_lists_no_initiatives(self):
+        search = FakeSearch(
+            (r'issuetype = 10002', [epic_row('PLAN-1', parent='PLAN-I1', sprint=5, team='t1')]),
+            (r'issuetype = 10001', [initiative_row('PLAN-I1', labels=('alias',))]),
+            (r'issueKey in', [initiative_row('PLAN-I1')]),
+        )
+        response = self.run_tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts', 'teamIds': 't1'}, search)
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        # No alias scopes the Department: a status-only query would list every open Initiative of the project.
+        self.assertEqual([jql for jql in search.calls if 'issuetype = 10001' in jql and 'status not in' in jql], [])
+        self.assertEqual(response.get_json()['epicsInScope'], [])
 
     def test_epic_refresh_gate_accepts_a_viewed_quarter_instead_of_a_product_tech_lane(self):
         from backend.services import epic_refresh

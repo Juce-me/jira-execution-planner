@@ -67,7 +67,8 @@ class CaptureTests(unittest.TestCase):
         self.assertEqual((legacy['revision'], delivery['revision']), (0, 0))
         self.assertEqual(delivery['scope'], {'projects': [], 'boardId': ''})
         self.assertTrue(all(v is None for v in delivery['hierarchy'].values()))
-        self.assertTrue(all(v == {'fieldId': '', 'fieldName': ''} for v in delivery['fields'].values()))
+        self.assertTrue(all(v == ({'fieldId': '', 'fieldName': '', 'mode': 'shared'} if k in ws.SHARED_FIELD_NAMES
+                                  else {'fieldId': '', 'fieldName': ''}) for k, v in delivery['fields'].items()))
         self.assertIsNone(bundle['promotionRevision'])
 
     def test_present_keys_win_over_defaults_even_when_blank(self):
@@ -176,10 +177,10 @@ class NormalizationTests(unittest.TestCase):
         bundle = virtual()
         delivery = bundle['configurations'][1]
         delivery['hierarchy']['planningIssueTypeId'] = '99999'
-        delivery['fields']['team'] = {'fieldId': 'customfield_88888', 'fieldName': 'Gone'}
+        delivery['fields']['storyPoints'] = {'fieldId': 'customfield_88888', 'fieldName': 'Gone'}
         saved = ws.normalize_work_configurations(bundle)['configurations'][1]
         self.assertEqual(saved['hierarchy']['planningIssueTypeId'], '99999')
-        self.assertEqual(saved['fields']['team']['fieldId'], 'customfield_88888')
+        self.assertEqual(saved['fields']['storyPoints']['fieldId'], 'customfield_88888')
 
     def test_malformed_identifier_syntax_rejected(self):
         for mutate in (
@@ -228,6 +229,89 @@ class ResolutionTests(unittest.TestCase):
         for quarter, expected in cases.items():
             context = ws.resolve_work_configuration(snapshot, quarter=quarter, flag_enabled=True)
             self.assertEqual((context.configuration_id, context.quarter), (expected, quarter))
+
+    def test_blank_board_inherits_from_other_configuration_without_changing_digest(self):
+        bundle = virtual(board='5494')
+        snapshot = promoted_snapshot(bundle)
+        stored = ws.stored_bundle(snapshot.payload)['configurations']
+        self.assertEqual(stored[1]['scope']['boardId'], '')
+        context = ws.resolve_work_configuration(snapshot, quarter='2027Q1', flag_enabled=True)
+        self.assertEqual(dict(context.scope)['boardId'], '5494')
+        self.assertEqual(context.digest, ws.effective_digest(stored, stored[1]))
+        self.assertEqual([e['scope']['boardId'] for e in ws.catalog_entries(snapshot, flag_enabled=True)], ['5494', '5494'])
+
+    def test_explicit_board_is_not_overridden_by_inheritance(self):
+        bundle = virtual(board='5494')
+        bundle['configurations'][1]['scope']['boardId'] = '19095'
+        entries = ws.catalog_entries(promoted_snapshot(bundle), flag_enabled=True)
+        self.assertEqual([e['scope']['boardId'] for e in entries], ['5494', '19095'])
+
+    def test_shared_fields_read_legacy_mapping_and_enter_the_digest(self):
+        legacy_fields = {'sprint': ('customfield_1', 'Sprint'), 'storyPoints': ('customfield_2', 'Story Points'), 'team': ('customfield_3', 'Team')}
+        bundle = virtual(board='5494')
+        for name, (field_id, field_name) in legacy_fields.items():
+            bundle['configurations'][0]['fields'][name] = {'fieldId': field_id, 'fieldName': field_name}
+        snapshot = promoted_snapshot(bundle)
+        stored = ws.stored_bundle(snapshot.payload)['configurations']
+        self.assertEqual({name: stored[1]['fields'][name] for name in ws.SHARED_FIELD_NAMES},
+                         {name: {'fieldId': '', 'fieldName': '', 'mode': 'shared'} for name in ws.SHARED_FIELD_NAMES})
+        context = ws.resolve_work_configuration(snapshot, quarter='2027Q1', flag_enabled=True)
+        fields = dict(context.fields)
+        self.assertEqual({name: dict(fields[name])['fieldId'] for name in ws.SHARED_FIELD_NAMES},
+                         {name: value[0] for name, value in legacy_fields.items()})
+        self.assertEqual(ws.entry_missing_fields(ws.effective_entry(stored, stored[1])),
+                         ['scope.projects', 'hierarchy.planningIssueTypeId', 'hierarchy.parentIssueTypeId'])
+        # A Legacy mapping change changes what DELIVERY reads, so its digest moves although its own entry did not.
+        changed = deepcopy(bundle)
+        changed['configurations'][0]['fields']['team'] = {'fieldId': 'customfield_9', 'fieldName': 'Team'}
+        later = ws.resolve_work_configuration(promoted_snapshot(changed), quarter='2027Q1', flag_enabled=True)
+        self.assertNotEqual(later.digest, context.digest)
+        self.assertEqual(ws.entry_summary(stored[1], stored)['digest'], context.digest)
+
+    def test_own_field_overrides_and_an_own_blank_is_a_deliberate_clear(self):
+        bundle = virtual(board='5494')
+        bundle['configurations'][0]['fields']['storyPoints'] = {'fieldId': 'customfield_2', 'fieldName': 'Story Points'}
+        bundle['configurations'][1]['fields']['storyPoints'] = {'fieldId': 'customfield_8', 'fieldName': 'Epic Points', 'mode': 'own'}
+        context = ws.resolve_work_configuration(promoted_snapshot(bundle), quarter='2027Q1', flag_enabled=True)
+        self.assertEqual(dict(dict(context.fields)['storyPoints'])['fieldId'], 'customfield_8')
+        bundle['configurations'][1]['fields']['storyPoints'] = {'fieldId': '', 'fieldName': '', 'mode': 'own'}
+        stored = ws.stored_bundle(promoted_snapshot(bundle).payload)['configurations']
+        self.assertIn('fields.storyPoints.fieldId', ws.entry_missing_fields(ws.effective_entry(stored, stored[1])))
+
+    def test_team_is_one_field_for_every_configuration(self):
+        bundle = virtual(board='5494')
+        bundle['configurations'][0]['fields']['team'] = {'fieldId': 'customfield_3', 'fieldName': 'Team'}
+        # An own DELIVERY Team (mapped before this rule, or sent by an older client) is read as Legacy's.
+        bundle['configurations'][1]['fields']['team'] = {'fieldId': 'customfield_8', 'fieldName': 'Delivery Team', 'mode': 'own'}
+        normalized = ws.normalize_work_configurations(bundle)['configurations'][1]['fields']['team']
+        self.assertEqual(normalized, {'fieldId': '', 'fieldName': '', 'mode': 'shared'})
+        context = ws.resolve_work_configuration(promoted_snapshot(bundle), quarter='2027Q1', flag_enabled=True)
+        self.assertEqual(dict(dict(context.fields)['team'])['fieldId'], 'customfield_3')
+
+    def test_field_modes_are_validated_and_legacy_takes_none(self):
+        bundle = virtual()
+        bundle['configurations'][1]['fields']['sprint'] = {'fieldId': 'customfield_8', 'fieldName': 'Sprint', 'mode': 'shared'}
+        invalid(self, bundle, 'fields.sprint')
+        bundle = virtual()
+        bundle['configurations'][1]['fields']['team'] = {'fieldId': '', 'fieldName': '', 'mode': 'later'}
+        invalid(self, bundle, 'fields.team.mode')
+        bundle = virtual()
+        bundle['configurations'][0]['fields']['team'] = {'fieldId': '', 'fieldName': '', 'mode': 'shared'}
+        invalid(self, bundle, 'fields.team')
+        # Saved before modes existed: a blank DELIVERY mapping shares Legacy's, a set one stays its own.
+        old = virtual()
+        old['configurations'][1]['fields']['sprint'] = {'fieldId': 'customfield_7', 'fieldName': 'Sprint'}
+        old['configurations'][1]['fields']['storyPoints'] = {'fieldId': '', 'fieldName': ''}
+        fields = ws.normalize_work_configurations(old)['configurations'][1]['fields']
+        self.assertEqual((fields['sprint']['mode'], fields['storyPoints']['mode']), ('own', 'shared'))
+
+    def test_board_is_required_and_an_inherited_board_counts(self):
+        bundle = virtual()
+        stored = ws.normalize_work_configurations(bundle)['configurations']
+        self.assertIn('scope.boardId', ws.entry_missing_fields(ws.effective_entry(stored, stored[1])))
+        stored[0]['scope']['boardId'] = '5494'
+        self.assertNotIn('scope.boardId', ws.entry_missing_fields(ws.effective_entry(stored, stored[1])))
+        self.assertNotIn('scope.boardId', ws.entry_missing_fields(ws.effective_entry(stored, stored[0])))
 
     def test_id_must_agree_with_quarter(self):
         snapshot = promoted_snapshot()

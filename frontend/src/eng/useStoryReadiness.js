@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';
 import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';
+import { reportWorkContextStale } from '../workStructure/requestContext.js';
 
 const SUPPORTED_SPRINT_STATES = new Set(['active', 'future']);
 
@@ -10,6 +11,7 @@ export const STORY_READINESS_STATUS = Object.freeze({
     READY: 'ready',
     UNAVAILABLE: 'unavailable',
     INVALID_CONFIGURATION: 'invalid_configuration',
+    WORK_CONFIGURATION_INCOMPLETE: 'work_configuration_incomplete',
     ACCESS_DENIED: 'access_denied',
     SCOPE_NOT_FOUND: 'scope_not_found',
     INVALID_SCOPE: 'invalid_scope',
@@ -57,11 +59,28 @@ export function storyReadinessAnswersAwaited(readiness) {
         || (readiness.status === STORY_READINESS_STATUS.READY && storyReadinessScopeMatches(readiness.snapshot, readiness.scope));
 }
 
+// Work-context conflicts are not configuration gaps: a stale context re-reads the configuration silently, and an
+// unconfigured quarter or a Sprint the configuration does not admit is named by the quarter notice, so readiness shows nothing.
+const QUARTER_NOTICE_CODES = new Set(['configuration_required', 'sprint_catalog_mismatch', 'sprint_catalog_pending']);
+const safeStrings = value => (Array.isArray(value) ? value.filter(item => typeof item === 'string' && item) : []);
+
 export function classifyStoryReadinessError(error = {}) {
     const status = Number(error.status) || 0;
     const code = String(error.code || '');
-    if (status === 409 || code === 'story_readiness_configuration_invalid') {
-        return { status: STORY_READINESS_STATUS.INVALID_CONFIGURATION, code: 'story_readiness_configuration_invalid', canRetry: false };
+    if (code === 'configuration_scope_changed') {
+        return { status: STORY_READINESS_STATUS.IDLE, code, canRetry: false, stale: true };
+    }
+    if (QUARTER_NOTICE_CODES.has(code)) {
+        return { status: STORY_READINESS_STATUS.IDLE, code, canRetry: false };
+    }
+    if (code === 'configuration_incomplete') {
+        return { status: STORY_READINESS_STATUS.WORK_CONFIGURATION_INCOMPLETE, code, canRetry: false, missingFields: safeStrings(error.missingFields) };
+    }
+    if (code === 'story_readiness_configuration_invalid') {
+        return {
+            status: STORY_READINESS_STATUS.INVALID_CONFIGURATION, code, canRetry: false,
+            reason: typeof error.reason === 'string' ? error.reason : '', teams: safeStrings(error.teams),
+        };
     }
     if (status === 403 || code === 'missing_project_access') {
         return { status: STORY_READINESS_STATUS.ACCESS_DENIED, code: 'missing_project_access', canRetry: false, recoveryUrl: error.recoveryUrl };
@@ -176,7 +195,9 @@ export function useStoryReadiness({
             if (!current || controller.signal.aborted || error?.name === 'AbortError') return;
             const classified = classifyStoryReadinessError(error);
             if (!classified.canRetry) completedRefreshRevisionRef.current = refreshRevision;
-            setState({ ...classified, snapshot: null, error: { code: classified.code, recoveryUrl: classified.recoveryUrl } });
+            const { stale, reason, teams, missingFields, ...rest } = classified;
+            setState({ ...rest, snapshot: null, error: { code: classified.code, recoveryUrl: classified.recoveryUrl, reason, teams, missingFields } });
+            if (stale) reportWorkContextStale(); // re-read the configuration summaries; the new context re-runs this read
         }).finally(finishRead);
 
         return () => {

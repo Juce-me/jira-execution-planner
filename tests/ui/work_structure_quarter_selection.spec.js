@@ -30,11 +30,12 @@ const clone = value => JSON.parse(JSON.stringify(value));
 
 async function mockApp(page, {
     prefs = { selectedView: 'eng' }, deliveryMissing = [], deliverySprints = [], legacySprints = [{ id: 7, name: '2026Q4', state: 'active' }],
+    editor = true,
 } = {}) {
     const state = {
         log: [], summaries: SUMMARIES(), missing: { legacy: [], delivery: deliveryMissing },
         catalogs: { legacy: clone(legacySprints), delivery: clone(deliverySprints) },
-        sprintDelay: {}, tasksDelay: 0, configRequests: 0,
+        sprintDelay: {}, catalogFail: {}, tasksDelay: 0, configRequests: 0,
     };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
@@ -55,7 +56,7 @@ async function mockApp(page, {
             const shared = { version: 1, capacity: {}, statsPriorityWeights: [], epm: { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] }, projects: {} } };
             return json({
                 jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: false,
-                userCanEditSettings: true, userCanEditEpmConfig: true, epm: shared.epm, adminContacts: ['Pat Admin'],
+                userCanEditSettings: editor, userCanEditEpmConfig: true, epm: shared.epm, adminContacts: ['Pat Admin'],
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: 3,
                 workConfigurationsEnabled: true, workConfigurationsPromoted: true,
@@ -76,10 +77,11 @@ async function mockApp(page, {
             const delay = state.sprintDelay[id] || 0;
             if (delay) await new Promise(resolve => setTimeout(resolve, delay));
             if (!id) return json({ error: 'configuration_required' }, 409);
+            if (state.catalogFail[id]) return json({ error: 'jira_unavailable' }, 503);
             if ((state.missing[id] || []).length) return json({ error: 'configuration_incomplete' }, 409);
-            return json({ sprints: state.catalogs[id] || [], context: { configurationId: id, configurationRevision: Number(url.searchParams.get('configurationRevision')) } });
+            return json({ sprints: (state.catalogs[id] || []).map(row => ({ ...row, configurationId: id })), context: { configurationId: id, configurationRevision: Number(url.searchParams.get('configurationRevision')) } });
         }
-        if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' } }, meta: {} });
+        if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' }, 'team-dist': { id: 'team-dist', name: 'Distribution Team' } }, meta: {} });
         if (p === '/api/teams') return json({ teams: [{ id: 'team-platform', name: 'Platform Team' }] });
         if (p === '/api/tasks-with-team-name') {
             if (state.tasksDelay) await new Promise(resolve => setTimeout(resolve, state.tasksDelay));
@@ -104,6 +106,15 @@ async function quiesce(page, state, ms = 700) {
     while (last !== state.log.length) { last = state.log.length; await page.waitForTimeout(ms); }
 }
 const catalogCalls = state => state.log.filter(call => call.pathname === '/api/sprints');
+// A catalog read always names one configuration with that configuration's own revision. The viewed configuration reads its
+// catalog; the other configuration's catalog is read only with its own context to mark its Sprints' states in the dropdown.
+const REVISIONS = { legacy: '3', delivery: '2' };
+const expectOwnContext = (call) => {
+    expect(Object.keys(REVISIONS)).toContain(call.params.configurationId);
+    expect(call.params.configurationRevision).toBe(REVISIONS[call.params.configurationId]);
+    expect(call.params.sprint).toBeUndefined();
+};
+const expectOwnContextCatalogCalls = state => catalogCalls(state).forEach(expectOwnContext);
 async function openSelector(page) {
     await trigger(page).click();
     await expect(page.locator('.sprint-dropdown-panel')).toBeVisible();
@@ -124,19 +135,19 @@ test('cold load restores 2027Q1 with only Legacy 2026Q4 admitted: no fabricated 
     await expect(notice).toContainText('No Jira Sprint has been observed for this quarter; refresh or choose a source Board.');
     await expect(notice.getByRole('button', { name: 'Open admin settings' })).toBeVisible();
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    // The retained 2026Q4 id is never sent; every catalog read names the DELIVERY configuration, none is unscoped.
+    // The retained 2026Q4 id is never sent; the viewed catalog is DELIVERY's and no catalog read is unscoped or cross-stamped.
     expect(work(state)).toEqual([]);
-    expect(catalogCalls(state).length).toBeGreaterThan(0);
-    for (const call of catalogCalls(state)) {
-        expect(call.params.configurationId).toBe('delivery');
-        expect(call.params.configurationRevision).toBe('2');
-    }
+    expect(catalogCalls(state).filter(call => call.params.configurationId === 'delivery').length).toBeGreaterThan(0);
+    expectOwnContextCatalogCalls(state);
     expect(state.log.filter(call => /^2027Q1$/.test(call.params.sprint || ''))).toEqual([]);
     await openSelector(page);
     const row = optionByQuarter(page, '2027Q1');
     await expect(row).toHaveText('2027Q1 — not observed');
     await expect(row).not.toHaveAttribute('data-sprint-id', /.*/);
     await expect(row).toHaveAttribute('aria-selected', 'true');
+    // Legacy's own catalog marks its Sprint's state; the row is a quarter, never Legacy's id.
+    await expect(optionByQuarter(page, '2026Q4')).toHaveText('[A] 2026Q4');
+    await expect(optionByQuarter(page, '2026Q4')).not.toHaveAttribute('data-sprint-id', /.*/);
     await page.screenshot({ path: path.join(shotDir, 'restored-2027q1-dropdown.png') });
     await page.keyboard.press('Escape');
     await page.locator('[data-quarter-notice]').scrollIntoViewIfNeeded();
@@ -169,7 +180,7 @@ test('explicit exact-quarter search selects an unavailable quarter without Setti
     await expect(page.getByRole('dialog')).toHaveCount(0);
     const afterSelection = state.log.slice(before);
     for (const call of afterSelection) {
-        if (call.pathname === '/api/sprints') expect(call.params.configurationId).toBe('delivery');
+        if (call.pathname === '/api/sprints') expectOwnContext(call);
         else if (['/api/tasks-with-team-name', '/api/missing-info'].includes(call.pathname)) throw new Error(`Sprint-bound work request after selecting an unavailable quarter: ${JSON.stringify(call)}`);
     }
     await page.screenshot({ path: path.join(shotDir, 'setup-required-notice.png') });
@@ -210,7 +221,7 @@ test('Legacy to DELIVERY to Legacy keeps each era on its own configuration and S
     await expect(trigger(page)).toHaveText('2026Q4');
     await expect.poll(() => work(state).filter(call => call.params.sprint === '7').length).toBeGreaterThan(0);
     await openSelector(page);
-    await expect(optionByQuarter(page, '2027Q1')).toHaveText('2027Q1');
+    await expect(optionByQuarter(page, '2027Q1')).toHaveText('[F] 2027Q1');
     await optionByQuarter(page, '2027Q1').click();
     await expect(trigger(page)).toHaveText('2027Q1');
     await expect.poll(() => work(state).filter(call => call.params.sprint === '91').length).toBeGreaterThan(0);
@@ -225,6 +236,28 @@ test('Legacy to DELIVERY to Legacy keeps each era on its own configuration and S
     }
     // Each configuration's catalog was read under its own revision.
     expect(new Set(catalogCalls(state).map(call => `${call.params.configurationId}:${call.params.configurationRevision}`))).toEqual(new Set(['legacy:3', 'delivery:2']));
+});
+
+test('a non-editor sees the other configuration\'s quarter only while its own catalog read observes it', async ({ page }) => {
+    const state = await start(page, { editor: false, deliverySprints: [{ id: 91, name: '2027Q1', state: 'future' }] });
+    state.catalogFail.delivery = true;
+    await expect(trigger(page)).toHaveText('2026Q4');
+    await quiesce(page, state);
+    await openSelector(page);
+    // DELIVERY's read failed: no marker survives and the unobserved quarter is not offered to a non-editor.
+    await expect(optionByQuarter(page, '2027Q1')).toHaveCount(0);
+    expectOwnContextCatalogCalls(state);
+    expect(work(state).filter(call => call.params.configurationId === 'delivery')).toEqual([]);
+});
+
+test('a non-editor sees an observed sibling quarter with its Sprint state', async ({ page }) => {
+    const state = await start(page, { editor: false, deliverySprints: [{ id: 91, name: '2027Q1', state: 'future' }] });
+    await expect(trigger(page)).toHaveText('2026Q4');
+    await openSelector(page);
+    await expect(optionByQuarter(page, '2027Q1')).toHaveText('[F] 2027Q1');
+    await expect(optionByQuarter(page, '2027Q1')).not.toHaveAttribute('data-sprint-id', /.*/);
+    expectOwnContextCatalogCalls(state);
+    expect(work(state).filter(call => call.params.configurationId === 'delivery')).toEqual([]);
 });
 
 test('a delayed catalog or task response for a configuration the user left is rejected', async ({ page }) => {
@@ -269,4 +302,29 @@ test('copy link: an unavailable quarter has no Sprint-backed payload; an admitte
     const disabled = page.getByRole('button', { name: 'Copy view link' }).first();
     await expect(disabled).toBeDisabled();
     await expect(disabled).toHaveAttribute('title', /Sharing is available once the view has loaded/);
+});
+
+async function departmentTeamResult(page, name) {
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByPlaceholder('Search teams to add...').fill(name);
+    const result = dialog.locator('.team-search-result-item', { hasText: name });
+    await expect(result).toBeVisible();
+    return result;
+}
+
+test('Department Teams in a Legacy quarter keep their rule: a Team without work in the selected Sprint is not addable', async ({ page }) => {
+    const state = await start(page, {});
+    await expect(trigger(page)).toHaveText('2026Q4');
+    await quiesce(page, state);
+    await expect(await departmentTeamResult(page, 'Distribution Team')).toBeDisabled();
+});
+
+test('Department Teams stay one list: a DELIVERY quarter never greys out Teams its Epics do not carry yet', async ({ page }) => {
+    const state = await start(page, { deliverySprints: [{ id: 91, name: '2027Q1', state: 'future' }], prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', sprintName: '2027Q1' } });
+    await expect(trigger(page)).toHaveText('2027Q1');
+    await quiesce(page, state);
+    const result = await departmentTeamResult(page, 'Distribution Team');
+    await expect(result).toBeEnabled();
+    await expect(result).not.toHaveAttribute('title', /.+/);
 });

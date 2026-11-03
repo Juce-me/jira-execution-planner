@@ -133,6 +133,9 @@ export const fetchPriorityWeightsConfig = (backendUrl) =>
 export const savePriorityWeightsConfig = (backendUrl, weights, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/stats/priority-weights-config', { weights, baseRevision });
 
+export const saveScenarioAccessConfig = (backendUrl, enabledForEveryone, baseRevision) =>
+    postWorkspaceConfig(backendUrl, '/api/scenario-access/config', { enabledForEveryone, baseRevision });
+
 export const fetchCapacityConfig = (backendUrl) =>
     apiFetch(`${backendUrl}/api/capacity/config`, {
         method: 'GET',

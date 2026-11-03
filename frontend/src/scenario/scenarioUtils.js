@@ -1,6 +1,8 @@
 // Scenario planner pure utility functions and constants.
 // Extracted from dashboard.jsx — zero closure dependencies.
 
+import { isCombinedWorkModel, workEntityNames } from '../eng/engWorkModel.js';
+
 export const SCENARIO_BAR_HEIGHT = 32;
 export const SCENARIO_BAR_GAP = 10;
 export const SCENARIO_COLLAPSED_ROWS = 2;
@@ -169,4 +171,19 @@ export function buildScenarioTooltipPayload(summary, key, sp, isExcluded = false
         assignee: assignee || null,
         team: team || null
     };
+}
+
+// Draft namespace: Legacy keeps `${sprintId}:${groupId}`; a new-model draft is `${configurationId}:${sprintId}:${groupId}`
+// and has no key (no draft) until its configuration id is known.
+export function buildScenarioDraftScopeKey({ sprintId, groupId, workModel, configurationId }) {
+    const sprint = sprintId ? String(sprintId) : '';
+    const group = groupId || 'default';
+    if (!sprint || !group) return '';
+    if (!isCombinedWorkModel(workModel)) return `${sprint}:${group}`;
+    return configurationId ? `${configurationId}:${sprint}:${group}` : '';
+}
+
+// Lane for issues without a grouping parent: `No Epic` (Legacy) or `No Initiative` (new model).
+export function scenarioNoParentLane(workModel) {
+    return `No ${workEntityNames(workModel).parent}`;
 }

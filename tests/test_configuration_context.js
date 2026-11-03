@@ -160,3 +160,19 @@ test('request context stamps work requests and drops a completion that outlives 
     assert.equal(requests.stampParams(new URLSearchParams()).toString(), '');
     void cancelled;
 });
+
+test('sibling Sprints list with their state for everyone; unobserved quarters are admin-only and rows sort newest first', () => {
+    const base = {
+        summaries: [LEGACY, DELIVERY], sprints: [{ id: 5, name: '2027Q1', state: 'future' }],
+        quarterStates: { '2026Q4': 'active', '2026Q3': 'closed' }, now: new Date('2027-05-01'),
+    };
+    const user = ctx.quarterOptionRows({ ...base, includeUnobserved: false });
+    assert.equal(JSON.stringify(user.map(row => [row.quarter, row.state, row.label])), JSON.stringify([['2026Q3', 'closed', '2026Q3'], ['2026Q4', 'active', '2026Q4']]));
+    const admin = ctx.quarterOptionRows({ ...base, includeUnobserved: true });
+    assert.ok(admin.length > user.length);
+    const sorted = ctx.sortSprintOptionRows([
+        { kind: 'quarter', quarter: '2026Q3' }, { kind: 'scope', scope: 'all_work' },
+        { kind: 'sprint', sprint: { name: '2027Q1' }, label: '2027Q1' }, { kind: 'quarter', quarter: '2026Q4' },
+    ]);
+    assert.equal(JSON.stringify(sorted.map(row => row.scope || row.quarter || row.label)), JSON.stringify(['all_work', '2027Q1', '2026Q4', '2026Q3']));
+});

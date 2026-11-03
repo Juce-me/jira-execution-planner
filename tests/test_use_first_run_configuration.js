@@ -19,7 +19,7 @@ const stateSource = hookSource.slice(hookSource.indexOf('export function useFirs
 const handlersSource = hookSource.slice(hookSource.indexOf('export function useFirstRunConfiguration({'));
 
 const STATE_RETURN_NAMES = ['dispatchFirstRunConfigurationSession', 'firstRunConfigurationActive', 'firstRunConfigurationSession', 'firstRunConfigurationTargetGroupId', 'firstRunSetupChoice', 'pendingFirstRunConfigurationRef', 'pendingFirstRunGroupPreferencesRef', 'setFirstRunConfigurationTargetGroupId', 'setFirstRunSetupChoice'];
-const INPUT_NAMES = ['activeGroupDraft', 'activeGroupId', 'adminAccess', 'boardIdDraft', 'boardNameDraft', 'capacityFieldIdDraft', 'capacityFieldNameDraft', 'capacityProjectDraft', 'deliveryOwnerFieldIdDraft', 'deliveryOwnerFieldNameDraft', 'dispatchFirstRunConfigurationSession', 'epmConfigDraft', 'firstRunConfigurationActive', 'firstRunConfigurationSession', 'firstRunSetupChoice', 'getCloseGroupManage', 'getSaveAllSettings', 'groupDraftBaselineRef', 'groupPreferences', 'groupsConfig', 'groupsConfigConflict', 'issueTypesDraft', 'parentNameFieldIdDraft', 'parentNameFieldNameDraft', 'pendingFirstRunConfigurationRef', 'pendingFirstRunGroupPreferencesRef', 'priorityWeightsDraft', 'saveFirstRunGroupPreferences', 'selectedProjectsDraft', 'setActiveGroupId', 'setDepartmentSettingsTab', 'setFirstRunConfigurationTargetGroupId', 'setFirstRunSetupChoice', 'setGroupDraft', 'setGroupManageTab', 'setGroupPreferences', 'setGroupsConfig', 'setSharedConfigRevision', 'setShowGroupListMobile', 'setShowGroupManage', 'setWorkspaceConfigConflict', 'sharedConfigRevisionRef', 'showGroupManage', 'sprintFieldIdDraft', 'sprintFieldNameDraft', 'storyPointsFieldIdDraft', 'storyPointsFieldNameDraft', 'teamFieldIdDraft', 'teamFieldNameDraft', 'workConfigDraft', 'workspaceConfigConflict'];
+const INPUT_NAMES = ['activeGroupDraft', 'activeGroupId', 'adminAccess', 'boardIdDraft', 'boardNameDraft', 'capacityFieldIdDraft', 'capacityFieldNameDraft', 'capacityProjectDraft', 'deliveryOwnerFieldIdDraft', 'deliveryOwnerFieldNameDraft', 'dispatchFirstRunConfigurationSession', 'epmConfigDraft', 'firstRunConfigurationActive', 'firstRunConfigurationSession', 'firstRunSetupChoice', 'getCloseGroupManage', 'getSaveAllSettings', 'groupDraftBaselineRef', 'groupPreferences', 'groupsConfig', 'groupsConfigConflict', 'issueTypesDraft', 'parentNameFieldIdDraft', 'parentNameFieldNameDraft', 'pendingFirstRunConfigurationRef', 'pendingFirstRunGroupPreferencesRef', 'priorityWeightsDraft', 'saveFirstRunGroupPreferences', 'scenarioPlannerAccess', 'selectedProjectsDraft', 'setActiveGroupId', 'setDepartmentSettingsTab', 'setFirstRunConfigurationTargetGroupId', 'setFirstRunSetupChoice', 'setGroupDraft', 'setGroupManageTab', 'setGroupPreferences', 'setGroupsConfig', 'setSharedConfigRevision', 'setShowGroupListMobile', 'setShowGroupManage', 'setWorkspaceConfigConflict', 'sharedConfigRevisionRef', 'showGroupManage', 'sprintFieldIdDraft', 'sprintFieldNameDraft', 'storyPointsFieldIdDraft', 'storyPointsFieldNameDraft', 'teamFieldIdDraft', 'teamFieldNameDraft', 'workConfigDraft', 'workspaceConfigConflict'];
 const RETURN_NAMES = ['advanceFirstRunConfigurationGuide', 'backFirstRunConfigurationGuide', 'cancelFirstRunConfiguration', 'closeFirstRunSetupChoice', 'configureFirstRunGroup', 'continueFirstRunSetupChoice', 'firstRunConfigurationGuideVisible', 'firstRunHasCommittedSection', 'openFirstRunSetupChoice', 'retryFirstRunConfiguration'];
 const GUIDE_STEPS = ['name', 'teams', 'components', 'favorite', 'visibility'];
 
@@ -96,6 +96,7 @@ async function handlers({ session = sessionOf(), overrides = {}, stateOverrides 
         pendingFirstRunGroupPreferencesRef: { current: { stale: true } },
         priorityWeightsDraft: { p: 1 },
         saveFirstRunGroupPreferences: async (args) => { log.push(['saveFirstRunGroupPreferences', args]); return { ok: true }; },
+        scenarioPlannerAccess: { enabled: true },
         selectedProjectsDraft: [{ key: 'A' }],
         setActiveGroupId: rec('setActiveGroupId'),
         setDepartmentSettingsTab: rec('setDepartmentSettingsTab'),
@@ -145,10 +146,10 @@ test('first-run configuration is active for every session status except idle and
     }
 });
 
-test('the handlers layer takes the 51 documented inputs and returns its 10 names in order', async () => {
+test('the handlers layer takes the 52 documented inputs and returns its 10 names in order', async () => {
     const signature = hookSource.slice(hookSource.indexOf('export function useFirstRunConfiguration({') + 'export function useFirstRunConfiguration({\n'.length, hookSource.indexOf('\n}) {'));
     assert.deepEqual(signature.split('\n').map((line) => line.trim().replace(/,$/, '')), INPUT_NAMES);
-    assert.equal(INPUT_NAMES.length, 51);
+    assert.equal(INPUT_NAMES.length, 52);
     const { result, input } = await handlers();
     assert.deepEqual(Object.keys(input), INPUT_NAMES);
     assert.deepEqual(Object.keys(result), RETURN_NAMES);
@@ -167,7 +168,7 @@ test('each useCallback keeps its original dependency array and no getter joins o
     assert.equal(callbacks.length, 10);
     const [open, openSettings, close, capture, configure, proceed, advance, back, cancel, retry] = callbacks;
     for (const callback of [open, openSettings, close]) assert.deepEqual(callback.deps, []);
-    assert.equal(capture.deps.length, 24, 'captureFirstRunSettingsDrafts');
+    assert.equal(capture.deps.length, 25, 'captureFirstRunSettingsDrafts');
     assert.deepEqual(configure.deps, [capture.fn, openSettings.fn], 'configureFirstRunGroup');
     assert.deepEqual(proceed.deps, [capture.fn, input.firstRunSetupChoice, input.groupsConfig.groups, openSettings.fn], 'continueFirstRunSetupChoice');
     assert.deepEqual(advance.deps, [input.firstRunConfigurationSession.guideStep]);
@@ -223,6 +224,7 @@ test('captured drafts map every administrator section, the shared, private and E
         issueTypes: ['Story'],
         workConfigurations: input.workConfigDraft,
         adminAccess: ['u1', 'u2'],
+        scenarioPlanner: true,
     });
 });
 

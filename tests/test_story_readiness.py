@@ -865,6 +865,9 @@ class NewModelStoryReadinessTests(unittest.TestCase):
         def jira_get(path, **_kwargs):
             if path.startswith('/rest/agile/1.0/sprint/'):
                 return _FakeResponse(200, {'id': 42, 'name': 'Q1', 'state': 'active'})
+            if path.endswith('/sprint') and path.startswith('/rest/agile/1.0/board/'):
+                # The quarterly model shares the Legacy Board until it overrides it.
+                return _FakeResponse(200, {'values': [{'id': 42, 'name': 'Q1', 'state': 'active'}], 'isLast': True})
             if path == '/rest/api/3/field':
                 return _FakeResponse(200, [{'id': 'customfield_10014', 'name': 'Epic Link'}])
             raise AssertionError(path)
@@ -880,6 +883,38 @@ class NewModelStoryReadinessTests(unittest.TestCase):
                 SimpleNamespace(auth_mode='atlassian_oauth'), ('42', 'Q1', 'active'), self.GROUP,
                 eng_routes._story_readiness_projects(config, allow_other=True), config, transport, (), roles)
         return result, calls
+
+    def test_an_admitted_sprint_the_board_does_not_list_is_validated_by_its_catalog_row(self):
+        # The DELIVERY Sprint was admitted from the Sprints its Epics carry; the Board lists another Sprint only.
+        eng_routes.bind_server_globals(vars(eng_routes))
+        roles = self.roles()
+        config = roles.flat_admin_settings()
+        board_reads = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/board/'):
+                board_reads.append(path)
+                return _FakeResponse(200, {'values': [{'id': 7, 'name': '2026Q4', 'state': 'closed'}], 'isLast': True})
+            if path == '/rest/api/3/field':
+                return _FakeResponse(200, [{'id': 'customfield_10014', 'name': 'Epic Link'}])
+            raise AssertionError(path)
+
+        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+        admitted = {'id': 45, 'name': '2027Q1', 'state': 'future'}
+        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+             patch.object(eng_routes, 'current_jira_search', side_effect=lambda payload, **_: _FakeResponse(200, {'issues': [], 'isLast': True})):
+            result, _timing = eng_routes._story_readiness_compute(
+                SimpleNamespace(auth_mode='atlassian_oauth'), ('45', '2027Q1', 'future'), self.GROUP,
+                eng_routes._story_readiness_projects(config, allow_other=True), config, transport, (), roles,
+                admitted_sprint=admitted)
+            self.assertEqual(result['scope']['sprintId'], '45')
+            self.assertEqual(board_reads, [])
+            # The admitted row still has to agree with the requested tuple.
+            with self.assertRaises(LookupError):
+                eng_routes._story_readiness_compute(
+                    SimpleNamespace(auth_mode='atlassian_oauth'), ('45', '2027Q1', 'active'), self.GROUP,
+                    eng_routes._story_readiness_projects(config, allow_other=True), config,
+                    EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25)), (), roles, admitted_sprint=admitted)
 
     @staticmethod
     def initiative(key, labels):

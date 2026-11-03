@@ -3,15 +3,16 @@ const assert = require('node:assert/strict');
 const { readOwnerSource } = require('./frontend_source_helpers');
 
 // Characterization for the Settings extraction (docs/plans/DONE-dashboard-scenario-settings-state-extraction.md,
-// ST1 R2): the five places that enumerate the 12 administrator sections must stay equal, and the
-// render-time draft snapshot must keep its 10-key projection (every section except adminAccess).
+// ST1 R2): the five places that enumerate the 13 administrator sections must stay equal, and the
+// render-time draft snapshot must keep its 10-key projection (every section except adminAccess, the
+// Scenario planner switch and the work-configuration bundle).
 // Each location is read through readOwnerSource with an anchor, so the pin follows the code when
 // ST4/ST5 move it out of dashboard.jsx and goes loud rather than vacuous if the anchor disappears.
 const OWNERS = ['frontend/src/dashboard.jsx', 'frontend/src/settings'];
 
 const ADMIN_SECTIONS = [
     'projects', 'priorityWeights', 'board', 'capacity', 'sprintField', 'parentNameField',
-    'storyPointsField', 'teamField', 'deliveryOwnerField', 'issueTypes', 'adminAccess', 'workConfigurations',
+    'storyPointsField', 'teamField', 'deliveryOwnerField', 'issueTypes', 'adminAccess', 'scenarioPlanner', 'workConfigurations',
 ];
 
 // Keys declared directly on the object literal that opens at `source[open]`.
@@ -57,25 +58,25 @@ test('the helper reads only top-level keys', () => {
     assert.deepEqual(topLevelKeys("{ a: 1, b: { c: 2 }, d: [e, { f: 3 }], g: fn({ h: 4 }), i: 'x, j: 5' }", 0), ['a', 'b', 'd', 'g', 'i']);
 });
 
-test('the first-run admin key list names the 12 administrator sections in order', () => {
+test('the first-run admin key list names the 13 administrator sections in order', () => {
     const source = readOwnerSource(OWNERS, { anchor: 'export const FIRST_RUN_ADMIN_SECTION_KEYS = [' });
     const start = source.indexOf('export const FIRST_RUN_ADMIN_SECTION_KEYS = [');
     const list = source.slice(start, source.indexOf('];', start));
     assert.deepEqual([...list.matchAll(/'(\w+)'/g)].map(match => match[1]), ADMIN_SECTIONS);
 });
 
-test('the save map covers the 12 administrator sections', () => {
+test('the save map covers the 13 administrator sections', () => {
     const source = readOwnerSource(OWNERS, { anchor: 'const adminSectionsToSave = {' });
     assert.deepEqual(objectKeysAfter(source, 'const adminSectionsToSave = {').sort(), [...ADMIN_SECTIONS].sort());
 });
 
-test('the first-run draft capture covers the 12 administrator sections', () => {
+test('the first-run draft capture covers the 13 administrator sections', () => {
     const source = readOwnerSource(OWNERS, { anchor: 'const captureFirstRunSettingsDrafts' });
     const capture = source.slice(source.indexOf('const captureFirstRunSettingsDrafts'));
     assert.deepEqual(objectKeysAfter(capture, 'admin: {').sort(), [...ADMIN_SECTIONS].sort());
 });
 
-test('the first-run draft restore covers the 12 administrator sections', () => {
+test('the first-run draft restore covers the 13 administrator sections', () => {
     const source = readOwnerSource(OWNERS, { anchor: 'const restoreSettingsDraftsToCommittedBaselines' });
     const start = source.indexOf('const restoreSettingsDraftsToCommittedBaselines');
     const end = source.indexOf('const returnFromFirstRunConfigurationRecovery', start);
@@ -93,6 +94,6 @@ test('the render-time draft snapshot projects the 10 sections that have a draft,
     const keys = objectKeysAfter(source, 'settingsDraftSnapshotRef.current = {');
     assert.equal(keys.length, 10);
     // workConfigurations keeps its own draft/baseline refs in useWorkConfigurationSettings, outside this projection.
-    assert.deepEqual([...keys].sort(), ADMIN_SECTIONS.filter(key => key !== 'adminAccess' && key !== 'workConfigurations').sort());
+    assert.deepEqual([...keys].sort(), ADMIN_SECTIONS.filter(key => !['adminAccess', 'scenarioPlanner', 'workConfigurations'].includes(key)).sort());
     assert.equal(keys.includes('adminAccess'), false);
 });

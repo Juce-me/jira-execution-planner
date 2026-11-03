@@ -44,6 +44,7 @@ const PROJECTS = [
     { key: 'OLD', name: 'Example legacy' }, { key: 'PLAN', name: 'Example delivery' }, { key: 'EXTRA', name: 'Example extra' },
 ];
 const blank = () => ({ fieldId: '', fieldName: '' });
+const sharedField = () => ({ fieldId: '', fieldName: '', mode: 'shared' });
 const field = name => { const found = FIELDS.find(item => item.name === name); return { fieldId: found.id, fieldName: found.name }; };
 const clone = value => JSON.parse(JSON.stringify(value));
 
@@ -63,7 +64,8 @@ function deliveryEntry(overrides = {}) {
         id: 'delivery', name: 'DELIVERY', revision: 0, fromQuarter: '2027Q1', throughQuarter: null, model: 'rnd_2027',
         scope: { projects: [], boardId: '' },
         hierarchy: { planningIssueTypeId: null, parentIssueTypeId: null, ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null },
-        fields: { sprint: blank(), storyPoints: blank(), parentName: blank(), team: blank(), projectTrack: blank(), deliveryOwner: blank(), allocation: blank() },
+        // As the server's virtual DELIVERY (`_blank_delivery`): Sprint, Story Points and Team share Legacy's fields.
+        fields: { sprint: sharedField(), storyPoints: sharedField(), parentName: blank(), team: sharedField(), projectTrack: blank(), deliveryOwner: blank(), allocation: blank() },
         ...overrides,
     };
 }
@@ -245,11 +247,12 @@ test('first promotion: virtual bundle, inline rename, blank DELIVERY, one footer
     await dialog.getByPlaceholder('Search projects to add...').fill('PLAN');
     await dialog.locator('.team-search-result-item', { hasText: 'PLAN' }).getByRole('button', { name: 'Add' }).click();
     await expect(dialog.locator('.selected-teams-list .selected-team-chip', { hasText: 'PLAN' })).toHaveCount(1);
+    // Sprint, Story Points and Team start shared with Legacy: nothing to pick.
     await nested(dialog, 'Source').click();
-    await pickField(dialog, /Sprint Field/, 'Sprint', 'Sprint');
+    await expect(dialog.locator('[data-field-share="sprint"]')).toContainText('Same as Legacy');
     await nested(dialog, 'Field mapping').click();
-    await pickField(dialog, /Story Points Field/, 'Story', 'Story Points');
-    await pickField(dialog, /Team Field/, 'Team', 'Team');
+    await expect(dialog.locator('[data-field-share="storyPoints"]')).toContainText('Same as Legacy');
+    await expect(dialog.locator('[data-field-share="team"]')).toContainText('Team is one field for every configuration');
     // Exactly one structural Save in the footer on every nested and upper tab.
     for (const name of ['Scope', 'Source', 'Field mapping']) { await nested(dialog, name).click(); await expect(saveButton(dialog)).toHaveCount(1); }
     await dialog.getByRole('tab', { name: 'Capacity' }).click();
@@ -268,9 +271,7 @@ test('first promotion: virtual bundle, inline rename, blank DELIVERY, one footer
     expect('clearProjectsForConfigurationIds' in post).toBe(false);
     const delivery = post.workConfigurations.configurations.find(entry => entry.id === 'delivery');
     expect(delivery.scope.projects).toEqual([{ key: 'PLAN', type: 'other' }]);
-    expect(delivery.fields.sprint.fieldName).toBe('Sprint');
-    expect(delivery.fields.storyPoints.fieldName).toBe('Story Points');
-    expect(delivery.fields.team.fieldName).toBe('Team');
+    for (const name of ['sprint', 'storyPoints', 'team']) expect(delivery.fields[name]).toEqual({ fieldId: '', fieldName: '', mode: 'shared' });
     expect(state.promoted).toBe(true);
 
     // The same save result names the incomplete configuration and rows on every upper tab.
@@ -846,13 +847,16 @@ test('tabs flag what is still missing and clear as the draft fills in; issue typ
     await quiet(page);
     await selectConfiguration(dialog, 'delivery');
     const flagged = name => nested(dialog, name).locator('.work-config-tab-flag');
-    for (const name of ['Scope', 'Source', 'Field mapping']) await expect(flagged(name)).toHaveCount(1);
+    // Source starts complete: the Sprint field is shared with Legacy and the Board is inherited.
+    for (const name of ['Scope', 'Field mapping']) await expect(flagged(name)).toHaveCount(1);
+    await expect(flagged('Source')).toHaveCount(0);
     await dialog.getByPlaceholder('Search projects to add...').fill('PLAN');
     await dialog.locator('.team-search-result-item', { hasText: 'PLAN' }).getByRole('button', { name: 'Add' }).click();
     await expect(flagged('Scope')).toHaveCount(0);
+    // A deliberate clear of the shared Sprint field flags Source again.
     await nested(dialog, 'Source').click();
-    await pickField(dialog, /Sprint Field/, 'Sprint', 'Sprint');
-    await expect(flagged('Source')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Remove sprint field' }).click();
+    await expect(flagged('Source')).toHaveCount(1);
     await nested(dialog, 'Field mapping').click();
     const epic = dialog.locator('[data-mapping-key="planningIssueTypeId"] .team-search-input');
     await expect(epic).toBeDisabled();
@@ -875,15 +879,15 @@ test('a saved board shows its name after a reload, not "Board <id>"', async ({ p
 
 test('a saved field that Jira no longer lists is shown as not found and flags its tab', async ({ page }) => {
     const bundle = promotedBundle();
-    bundle.configurations[1].fields.team = { fieldId: 'customfield_99999', fieldName: 'Old Team' };
+    bundle.configurations[1].fields.storyPoints = { fieldId: 'customfield_99999', fieldName: 'Old Points', mode: 'own' };
     await mockApp(page, { promoted: true, revision: 6, bundle });
     const dialog = await openSettings(page);
     await projectTab(dialog);
     await selectConfiguration(dialog, 'delivery');
     await expect(nested(dialog, 'Field mapping').locator('.work-config-tab-flag')).toHaveCount(1);
     await nested(dialog, 'Field mapping').click();
-    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Old Team · not found in Jira' })).toBeVisible();
-    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Story Points' })).not.toContainText('not found');
+    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Old Points · not found in Jira' })).toBeVisible();
+    await expect(dialog.locator('.work-config-panel .mapping-team-chip')).not.toContainText('not found');
 });
 
 test('the first edit does not change the Settings header height', async ({ page }) => {
@@ -899,4 +903,76 @@ test('the first edit does not change the Settings header height', async ({ page 
     await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
     expect(await header.evaluate(node => node.getBoundingClientRect().height)).toBe(clean);
     await expect(dialog.locator('#settings-onboarding-replay-disabled')).toBeVisible();
+});
+
+test('a blank DELIVERY Board shows the Legacy Board it inherits; choosing a Board overrides it and only that is saved', async ({ page }) => {
+    await mockApp(page);
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await nested(dialog, 'Source').click();
+    const inherited = dialog.locator('[data-inherited-board="7001"]');
+    await expect(inherited).toContainText('Legacy board');
+    await expect(inherited).toContainText('Inherited from Legacy. Choose a board above to override it here.');
+    await expect(inherited.getByRole('button', { name: 'Clear sprint board' })).toHaveCount(0);
+    await expect(dialog.getByText('No board selected (fallback mode).')).toHaveCount(0);
+    // Display only: nothing is dirty until an admin chooses a Board.
+    await expect(saveButton(dialog)).toBeDisabled();
+    await dialog.getByPlaceholder('Search boards...').fill('Delivery');
+    await dialog.locator('.team-search-result-item', { hasText: 'Delivery board' }).click();
+    await expect(inherited).toHaveCount(0);
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'Delivery board' })).toBeVisible();
+    await selectConfiguration(dialog, 'legacy');
+    await nested(dialog, 'Source').click();
+    await expect(dialog.locator('[data-inherited-board]')).toHaveCount(0);
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'Legacy board' })).toBeVisible();
+});
+
+test('DELIVERY shares the Legacy Sprint, Story Points and Team fields; Sprint and Story Points can be overridden or cleared, Team is always the one shared field', async ({ page }) => {
+    const shared = () => ({ fieldId: '', fieldName: '', mode: 'shared' });
+    const bundle = promotedBundle({ delivery: { fields: { sprint: shared(), storyPoints: shared(), parentName: blank(), team: shared(), projectTrack: blank(), deliveryOwner: blank(), allocation: blank() } } });
+    const state = await mockApp(page, { promoted: true, bundle });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    // Initial setup: nothing to pick; Legacy's fields show as DELIVERY's, marked shared.
+    await nested(dialog, 'Source').click();
+    await expect(dialog.locator('[data-field-share="sprint"]')).toHaveText('Same as Legacy. Remove it to give DELIVERY its own field.');
+    await nested(dialog, 'Field mapping').click();
+    // Team: one field for every configuration, shown without remove or search.
+    const teamRow = dialog.locator('[data-map-key="team"]');
+    await expect(teamRow.locator('[data-field-share="team"]')).toHaveText("Team is one field for every configuration: Legacy's.");
+    await expect(teamRow.locator('.mapping-team-chip')).toContainText('Team');
+    await expect(teamRow.getByRole('button', { name: 'Remove team field' })).toHaveCount(0);
+    await expect(teamRow.locator('.team-search-input')).toHaveCount(0);
+    await expect(saveButton(dialog)).toBeDisabled();
+    // Override: remove the shared Story Points value, pick DELIVERY's own field.
+    const pointsRow = dialog.locator('[data-map-key="storyPoints"]');
+    await pointsRow.getByRole('button', { name: 'Remove story points field' }).click();
+    await expect(pointsRow.locator('[data-field-share="storyPoints"]')).toContainText('DELIVERY uses its own field.');
+    await pickField(dialog, /Story Points Field/, 'Delivery', 'Delivery Owner');
+    // Deliberate clear of the Sprint field: own and blank, which is missing rather than shared.
+    await nested(dialog, 'Source').click();
+    await dialog.getByRole('button', { name: 'Remove sprint field' }).click();
+    await expect(dialog.locator('[data-field-share="sprint"]').getByRole('button', { name: 'Same as Legacy' })).toBeVisible();
+    await saveButton(dialog).click();
+    await expect.poll(() => state.workPosts.length).toBe(1);
+    const sent = state.workPosts[0].workConfigurations.configurations.find(entry => entry.id === 'delivery').fields;
+    expect(sent.team).toEqual(shared());
+    expect(sent.storyPoints).toEqual({ fieldId: 'customfield_19905', fieldName: 'Delivery Owner', mode: 'own' });
+    expect(sent.sprint).toEqual({ fieldId: '', fieldName: '', mode: 'own' });
+    // Reload: the saved states read back as they were chosen.
+    await page.reload();
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Admin' }).click();
+    await projectTab(reopened);
+    await selectConfiguration(reopened, 'delivery');
+    await nested(reopened, 'Field mapping').click();
+    await expect(reopened.locator('[data-map-key="storyPoints"] .mapping-sp-chip')).toContainText('Delivery Owner');
+    await nested(reopened, 'Source').click();
+    await expect(reopened.locator('[data-field-share="sprint"]')).toContainText('DELIVERY uses its own field.');
+    // Back to shared through the explicit action.
+    await reopened.locator('[data-field-share="sprint"]').getByRole('button', { name: 'Same as Legacy' }).click();
+    await expect(reopened.locator('[data-field-share="sprint"]')).toContainText('Same as Legacy');
 });

@@ -17,7 +17,7 @@ import ProjectTrackBreakdownChart from './ProjectTrackBreakdownChart.jsx';
 import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
 import UnconfiguredWorkspaceNotice from '../settings/UnconfiguredWorkspaceNotice.jsx';
-import { describeStatsScope, unavailablePeriodSpans } from './statsScope.js';
+import { describeStatsScope, roleLabels, unavailablePeriodSpans } from './statsScope.js';
 import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
 
@@ -38,6 +38,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
     // The dashboard may pass the model-aware scope; otherwise the viewed quarter alone is still named.
     const activeWorkContext = useActiveWorkContext();
     const workScope = workScopeProp !== undefined ? workScopeProp : describeStatsScope(activeWorkContext, null);
+    // Role words for the copy below: Legacy Epic/Story, the combined model's Initiative/Epic.
+    const statWords = workScope?.roles || roleLabels(null);
     const {
         canRenderStatsPanel,
         statsView,
@@ -182,7 +184,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
     const cohortBusy = cohortLoading || cohortAwaitingMode;
     const cohortScopeNote = cohortMode === 'created' ? '' : COHORT_SCOPE_NOTES[cohortScope] || '';
     const cohortShortfallNote = cohortLastNShortfall
-        ? `Showing ${cohortLastNShortfall.shown} of ${cohortLastNShortfall.requested}: filters leave fewer than ${cohortLastNShortfall.requested} Epics in ${cohortLastNShortfall.ceiling != null ? `the most recent ${cohortLastNShortfall.ceiling} closed` : 'the recent closed window'}.`
+        ? `Showing ${cohortLastNShortfall.shown} of ${cohortLastNShortfall.requested}: filters leave fewer than ${cohortLastNShortfall.requested} ${statWords.parents} in ${cohortLastNShortfall.ceiling != null ? `the most recent ${cohortLastNShortfall.ceiling} closed` : 'the recent closed window'}.`
         : '';
     const { buildStatLink, buildPriorityStatLink } = links;
     const { trackStatsAction, trackStatsAnalyticsAction } = analytics;
@@ -348,7 +350,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 active={statsView === 'excludedCapacity'}
                             />
                             <div className="stats-control-group excluded-capacity-epic-filter" ref={excludedCapacityEpicDropdownRef}>
-                                <label>Excluded Epics</label>
+                                <label>Excluded {statWords.parents}</label>
                                 <div className="team-dropdown excluded-capacity-epic-dropdown">
                                     <button
                                         type="button"
@@ -383,7 +385,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                                 </div>
                                             </div>
                                             {excludedCapacityEpicCatalog.length === 0 ? (
-                                                <div className="sprint-dropdown-option">No excluded epics configured.</div>
+                                                <div className="sprint-dropdown-option">No excluded {statWords.parents.toLowerCase()} configured.</div>
                                             ) : (
                                                 excludedCapacityEpicCatalog.map((entry) => {
                                                     const checked = excludedCapacityEffectiveFilters.includes(entry.key);
@@ -495,7 +497,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         )}
                         {!excludedCapacityLoading && !excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
-                            <div className="cohort-empty">No capacity-mix stories found in the selected sprint range.</div>
+                            <div className="cohort-empty">No capacity-mix {statWords.children.toLowerCase()} found in the selected sprint range.</div>
                         )}
                         {!excludedCapacityError && effortSplitTotals.totalPoints > 0 && (
                             <div className="excluded-capacity-panel">
@@ -521,11 +523,11 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
                                     {excludedCapacityEpicOptions.length === 0 ? (
                                         <div className="cohort-empty excluded-capacity-line-empty">
-                                            No excluded capacity epics are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
+                                            No excluded capacity {statWords.parents.toLowerCase()} are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
                                         </div>
                                     ) : excludedCapacityRows.length === 0 ? (
                                         <div className="cohort-empty excluded-capacity-line-empty">
-                                            No excluded capacity stories found in the selected sprint range.
+                                            No excluded capacity {statWords.children.toLowerCase()} found in the selected sprint range.
                                         </div>
                                     ) : (
                                         <ExcludedCapacityLineChart
@@ -567,14 +569,14 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 <div className="stats-note">Selected Jira sprints</div>
                             </div>
                             <div className="stats-card">
-                                <h4>Cross Epic SP</h4>
+                                <h4>Cross {statWords.parent} SP</h4>
                                 <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
-                                <div className="stats-note">In multi-team epic/sprint buckets</div>
+                                <div className="stats-note">In multi-team {statWords.parent.toLowerCase()}/sprint buckets</div>
                             </div>
                             <div className="stats-card">
                                 <h4>Total SP</h4>
                                 <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
-                                <div className="stats-note">Total scoped epic/sprint SP</div>
+                                <div className="stats-note">Total scoped {statWords.parent.toLowerCase()}/sprint SP</div>
                             </div>
                             <div className="stats-card">
                                 <h4>Cross Share</h4>
@@ -592,16 +594,16 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             <div className="stats-note cohort-error">{excludedCapacityError}</div>
                         )}
                         {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                            <div className="cohort-empty">No epic share available for the current selection.</div>
+                            <div className="cohort-empty">No {statWords.parent.toLowerCase()} share available for the current selection.</div>
                         )}
                         {!excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                             <div className="excluded-capacity-panel">
                                 <div className="cohort-section">
-                                    <div className="cohort-section-title">Cross-Team Epic Footprint</div>
+                                    <div className="cohort-section-title">Cross-Team {statWords.parent} Footprint</div>
                                     <div className="cohort-section-subtitle">
-                                        Cross = an epic has stories from more than one team in the same sprint.
+                                        Cross = an {statWords.parent.toLowerCase()} has {statWords.children.toLowerCase()} from more than one team in the same sprint.
                                     </div>
-                                    <div className="epic-mode-bars" role="img" aria-label="Cross-team epic share by sprint">
+                                    <div className="epic-mode-bars" role="img" aria-label={`Cross-team ${statWords.parent.toLowerCase()} share by sprint`}>
                                         {[
                                             { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
                                             ...excludedCapacityModeSprintRows
@@ -731,7 +733,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                         setProjectTrackMode(nextMode);
                                     }}
                                     options={[
-                                        { value: 'epic', label: 'Epic' },
+                                        { value: 'epic', label: statWords.parent },
                                         { value: 'team', label: 'Team' }
                                     ]}
                                 />
@@ -765,7 +767,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     series={projectTrackSeries}
                                     resolveColor={resolveProjectTrackColor}
                                     caption={projectTrackMode === 'epic'
-                                        ? 'Each epic is attributed to its dominant sprint; all of its story points land in that sprint.'
+                                        ? `Each ${statWords.parent.toLowerCase()} is attributed to its dominant sprint; all of its story points land in that sprint.`
                                         : ''}
                                 />
                             </div>
@@ -794,7 +796,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     <>
                                         {projectTrackPhaseData?.meta?.truncated && (
                                             <div className="project-track-phase-truncated">
-                                                Showing first {projectTrackPhaseData.meta.processedEpicCount} epics (truncated).
+                                                Showing first {projectTrackPhaseData.meta.processedEpicCount} {statWords.parents.toLowerCase()} (truncated).
                                             </div>
                                         )}
                                         <div className="project-track-phase-summary">
@@ -979,9 +981,9 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     {cohortAverageLeadDays === null ? '—' : `${cohortAverageLeadDays.toFixed(1)}d`}
                                 </div>
                                 <div className="stats-note">
-                                    {cohortMode === 'closed' ? 'Epics closed in the selected range'
-                                        : cohortMode === 'last_n' ? 'Most recently closed epics'
-                                            : 'Terminal epics with lead time'}
+                                    {cohortMode === 'closed' ? `${statWords.parents} closed in the selected range`
+                                        : cohortMode === 'last_n' ? `Most recently closed ${statWords.parents.toLowerCase()}`
+                                            : `Terminal ${statWords.parents.toLowerCase()} with lead time`}
                                 </div>
                             </div>
                             <div className="stats-card">
@@ -990,8 +992,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
                                 </div>
                                 <div className="stats-note">
-                                    {cohortMode === 'closed' ? 'Middle lead time of epics closed in the selected range'
-                                        : cohortMode === 'last_n' ? 'Middle lead time of the most recently closed epics'
+                                    {cohortMode === 'closed' ? `Middle lead time of ${statWords.parents.toLowerCase()} closed in the selected range`
+                                        : cohortMode === 'last_n' ? `Middle lead time of the most recently closed ${statWords.parents.toLowerCase()}`
                                             : 'Middle terminal lead time'}
                                 </div>
                             </div>

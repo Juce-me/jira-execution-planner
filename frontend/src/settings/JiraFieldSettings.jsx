@@ -165,6 +165,12 @@ export default function JiraFieldSettings(props) {
         mappingFieldHelpers,
         sourceFieldHelpers,
     } = props;
+    // A locked shared field (DELIVERY's Team) shows the shared value only: no remove and no search.
+    const teamFieldLocked = mappingFieldHelpers?.share?.team?.locked === true;
+    // Optional per-field sharing line (Project config DELIVERY mappings): its state and, for an own field, the way back.
+    const shareLine = (list, name) => (list?.share?.[name] ? (
+        <div className="group-field-helper" data-field-share={name}>{list.share[name].text}{list.share[name].onShare && <>{' '}<button type="button" className="secondary compact" onClick={list.share[name].onShare}>{list.share[name].actionLabel}</button></>}</div>
+    ) : null);
     const requirementSuffix = (list, name) => (list?.requirement?.[name] && !(workMode && list.requirement[name] === 'optional') ? ` (${list.requirement[name]})` : '');
     // Project config (quarterly) mode: one Jira IDs setting for the whole editor shows each id once, in a fixed slot on the
     // field's label row (never inside the chip), so toggling it moves nothing. The flat editor keeps its inline hints.
@@ -199,7 +205,7 @@ export default function JiraFieldSettings(props) {
                                             <div className="settings-two-col-grid settings-source-grid" style={{ padding: '12px 16px 12px' }}>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
                                                     <div className="team-selector-label">Sprint Field{requirementSuffix(sourceFieldHelpers, 'sprint')}</div>
-                                                    <div className="group-field-helper">{sourceFieldHelpers?.sprint ?? 'Used to determine which sprint each ticket belongs to.'}</div>
+                                                    <div className="group-field-helper">{sourceFieldHelpers?.sprint ?? 'Used to determine which sprint each ticket belongs to.'}</div>{shareLine(sourceFieldHelpers, 'sprint')}
                                                     <div className="capacity-inline-row">{idSlot(sprintFieldIdDraft)}
                                                         {sprintFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
@@ -279,6 +285,16 @@ export default function JiraFieldSettings(props) {
                                                                 </span>
                                                                 <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
                                                             </div>
+                                                        </div>
+                                                    ) : sourceFieldHelpers?.inheritedBoard ? (
+                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }} data-inherited-board={sourceFieldHelpers.inheritedBoard.boardId}>{idSlot(sourceFieldHelpers.inheritedBoard.boardId)}
+                                                            <div className="selected-team-chip" title={sourceFieldHelpers.inheritedBoard.boardId}>
+                                                                <span className="team-name">
+                                                                    <strong>{sourceFieldHelpers.inheritedBoard.name || `Board ${sourceFieldHelpers.inheritedBoard.boardId}`}</strong>
+                                                                    {inlineIds && sourceFieldHelpers.inheritedBoard.name ? ` (${sourceFieldHelpers.inheritedBoard.boardId})` : ''}
+                                                                </span>
+                                                            </div>
+                                                            <div className="group-field-helper">{`Inherited from ${sourceFieldHelpers.inheritedBoard.fromName || 'another configuration'}. Choose a board above to override it here.`}</div>
                                                         </div>
                                                     ) : (
                                                         <div className="team-selector-empty">No board selected (fallback mode).</div>
@@ -650,7 +666,7 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="storyPoints"
                                             >
                                                 <div className="team-selector-label">Story Points Field{requirementSuffix(mappingFieldHelpers, 'storyPoints')}</div>
-                                                <div className="group-field-helper">{mappingFieldHelpers?.storyPoints ?? 'Field used for effort, velocity, and capacity comparisons.'}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.storyPoints ?? 'Field used for effort, velocity, and capacity comparisons.'}</div>{shareLine(mappingFieldHelpers, 'storyPoints')}
                                                 <div className="capacity-inline-row">{idSlot(storyPointsFieldIdDraft)}
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
@@ -683,13 +699,15 @@ export default function JiraFieldSettings(props) {
                                                 data-map-key="team"
                                             >
                                                 <div className="team-selector-label">Team Field{requirementSuffix(mappingFieldHelpers, 'team')}</div>
-                                                <div className="group-field-helper">{mappingFieldHelpers?.team ?? 'Field used to assign each ticket to a team.'}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.team ?? 'Field used to assign each ticket to a team.'}</div>{shareLine(mappingFieldHelpers, 'team')}
                                                 <div className="capacity-inline-row">{idSlot(teamFieldIdDraft)}
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
                                                             <span className="team-name"><strong>{teamFieldNameDraft}</strong>{inlineIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
+                                                            {!teamFieldLocked && <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>}
                                                         </div>
+                                                    ) : teamFieldLocked ? (
+                                                        <div className="team-selector-empty">Not set.</div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={teamFieldSearchQuery} onChange={(e) => { setTeamFieldSearchQuery(e.target.value); setTeamFieldSearchOpen(true); setTeamFieldSearchIndex(0); }} onFocus={() => setTeamFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setTeamFieldSearchOpen(false), 120); }} onKeyDown={handleTeamFieldSearchKeyDown} ref={teamFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />

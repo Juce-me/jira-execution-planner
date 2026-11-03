@@ -182,18 +182,18 @@ def resolve_metadata_selection(args, auth_context, *, required, allow_quarter_on
             context = service.resolve_work_configuration(snapshot, quarter=raw_quarter, flag_enabled=flag)
         except StopIteration:
             raise WorkConfigError('configuration_required') from None
-        entry = service.get_stored_configuration(snapshot, context.configuration_id)
+        entry, digest = service.get_effective_configuration(snapshot, context.configuration_id)
     else:
         if raw_revision is None:
             raise WorkConfigError('configuration_required')
-        entry = service.get_stored_configuration(snapshot, raw_id)
+        entry, digest = service.get_effective_configuration(snapshot, raw_id)
         if int(raw_revision) != entry['revision']:
             raise WorkConfigError('configuration_scope_changed')
         if raw_quarter is not None and not service.entry_contains_quarter(entry, service.quarter_ordinal(raw_quarter)):
             raise WorkConfigError('configuration_scope_changed')
     return {
         'entry': entry, 'id': entry['id'], 'revision': entry['revision'],
-        'digest': service.entry_digest(entry), 'projects': project_keys(entry),
+        'digest': digest, 'projects': project_keys(entry),
         'promoted': state.promoted,
     }
 

@@ -1,8 +1,10 @@
-"""Scenario Planner under the quarterly work configuration (plan Task 6B): denial table and Legacy seam.
+"""Scenario Planner under the quarterly work configuration: source gate, draft namespaces and Legacy seam.
 
-Every route of the plan's Scenario table is exercised with direct requests (no UI): the stored Legacy
-history/presence/locks/preview keep their rights, new-model/unknown/unresolved source work answers
-409 ``scenario_not_supported`` before the planner, and actual writeback stays blocked.
+Every route of the Scenario table is exercised with direct requests (no UI): the stored Legacy
+history/presence/locks/preview keep their rights, a complete new-model source runs with Epics as the
+scheduled items and Initiatives as their groups, unknown/unresolved source work answers 409
+``scenario_not_supported`` before the planner, drafts are namespaced by configuration and never reload
+under another one, and actual writeback stays blocked.
 """
 import unittest
 from types import SimpleNamespace
@@ -19,8 +21,11 @@ from backend.scenario_drafts import ScenarioDraftReloadUnavailable
 from tests.test_work_structure_routes import WorkStructureRouteBase
 
 DENIED = (409, 'scenario_not_supported')
+MISMATCH = (409, 'scenario_configuration_mismatch')
 LEGACY_SCOPE = {'filters': {'sprint': '11'}}
 NEW_SCOPE = {'filters': {'sprint': '22'}}
+NEW_DRAFT_SCOPE = {'groupId': 'g1', 'groupName': 'Group', 'sprintId': '22', 'sprintName': '2027Q1',
+                   'configurationId': 'delivery'}
 
 
 def error_of(response):
@@ -42,8 +47,14 @@ class ScenarioBase(WorkStructureRouteBase):
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(work_routes, 'admit_sprint_source', side_effect=admit))
         self.queries = []
-        self.stack.enter_context(patch.object(
-            jira_server, 'fetch_issues_by_jql', side_effect=lambda jql, *a, **k: self.queries.append(jql) or []))
+        self.query_fields = []
+        self.issues = []
+
+        def fetch(jql, fields=None, *args, **kwargs):
+            self.queries.append(jql)
+            self.query_fields.append(list(fields or []))
+            return list(self.issues)
+        self.stack.enter_context(patch.object(jira_server, 'fetch_issues_by_jql', side_effect=fetch))
         self.stack.enter_context(patch.object(jira_server, 'collect_dependencies', return_value={}))
 
     def post(self, path, body=None, query=None):
@@ -69,10 +80,27 @@ class PlannerEntryTests(ScenarioBase):
 
     def test_quarter_name_source_is_resolved_directly(self):
         self.assertEqual(self.post('/api/scenario', {'filters': {'sprint': '2026Q4'}}).status_code, 200)
-        self.assertEqual(error_of(self.post('/api/scenario', {'filters': {'sprint': '2027Q1'}})), DENIED)
+        self.assertEqual(self.post('/api/scenario', {'filters': {'sprint': '2027Q1'}}).status_code, 200)
 
-    def test_new_model_unknown_and_unresolved_sources_are_denied_before_any_query(self):
-        for filters in ({'sprint': '22'}, {'sprint': '99'}, {'sprint': 'Sprint 12'}, {}):
+    def test_new_model_source_queries_planning_epics_through_its_mapped_fields(self):
+        with patch.object(jira_server, 'resolve_epic_link_field_id', return_value='customfield_10014') as epic_link:
+            response = self.post('/api/scenario', {'filters': {'sprint': '22', 'teams': ['t1']}})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        jql = self.queries[0]
+        self.assertIn('project in ("PLAN")', jql)
+        self.assertIn('issuetype = 10002', jql)
+        self.assertRegex(jql, r'cf\[\d+\] = 22')
+        self.assertRegex(jql, r'cf\[\d+\] = "t1"')
+        self.assertNotIn('Sprint = 22', jql)
+        self.assertNotIn('Team[Team]', jql)
+        self.assertNotIn('Epic Link', jql)
+        fields = self.query_fields[0]
+        self.assertNotIn('customfield_10014', fields)
+        self.assertIn('parent', fields)
+        epic_link.assert_not_called()
+
+    def test_unknown_and_unresolved_sources_are_denied_before_any_query(self):
+        for filters in ({'sprint': '99'}, {'sprint': 'Sprint 12'}, {}):
             before = len(self.queries)
             response = self.post('/api/scenario', {'filters': filters})
             self.assertEqual(error_of(response), DENIED, filters)
@@ -90,6 +118,48 @@ class PlannerEntryTests(ScenarioBase):
         self.assertEqual(error_of(response), (409, 'configuration_incomplete'))
         self.assertEqual(self.queries, [])
 
+    def test_incomplete_new_model_source_is_its_own_409(self):
+        import json
+        with self.factory() as session:
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            payload = json.loads(json.dumps(row.payload))
+            payload['workConfigurations']['configurations'][1]['hierarchy']['planningIssueTypeId'] = ''
+            row.payload = payload
+            session.commit()
+        response = self.post('/api/scenario', {'filters': {'sprint': '22'}})
+        self.assertEqual(error_of(response), (409, 'configuration_incomplete'))
+        self.assertEqual(self.queries, [])
+
+    def test_new_model_epics_are_grouped_and_excluded_at_initiative_level(self):
+        def epic(key, initiative, points):
+            return {'key': key, 'fields': {
+                'summary': f'{key} work', 'issuetype': {'id': '10002', 'name': 'Epic'},
+                'status': {'name': 'To Do'}, 'priority': {'name': 'Major'},
+                'parent': {'key': initiative, 'fields': {'issuetype': {'id': '10001', 'name': 'Initiative'}}},
+                **{field: points for field in self.story_points_fields()},
+            }}
+        self.issues = [epic('PLAN-1', 'PLAN-100', 3), epic('PLAN-2', 'PLAN-100', 2), epic('PLAN-3', 'PLAN-200', 1)]
+        summaries = [{'key': 'PLAN-100', 'fields': {'summary': 'First initiative'}},
+                     {'key': 'PLAN-200', 'fields': {'summary': 'Second initiative'}}]
+        with patch.object(jira_server, 'fetch_issues_by_keys', return_value=summaries) as by_keys:
+            response = self.post('/api/scenario', {
+                'filters': {'sprint': '22'},
+                'config': {'lane_mode': 'epic', 'excluded_capacity_epics': ['plan-200']}})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(sorted(by_keys.call_args[0][0]), ['PLAN-100', 'PLAN-200'])
+        issues = {item['key']: item for item in response.get_json()['issues']}
+        self.assertEqual(set(issues), {'PLAN-1', 'PLAN-2', 'PLAN-3'})
+        self.assertEqual(issues['PLAN-1']['epicKey'], 'PLAN-100')
+        self.assertEqual(issues['PLAN-1']['epicSummary'], 'First initiative')
+        self.assertEqual(issues['PLAN-1']['sp'], 3)
+        self.assertEqual(issues['PLAN-3']['scheduledReason'], 'excluded_capacity')
+        self.assertNotEqual(issues['PLAN-1']['scheduledReason'], 'excluded_capacity')
+
+    def story_points_fields(self):
+        with self.factory() as session:
+            entry = session.query(models.WorkspaceDashboardConfig).one().payload['workConfigurations']['configurations'][1]
+        return [entry['fields']['storyPoints']['fieldId']]
+
     def test_get_without_a_cached_scenario_is_unchanged(self):
         self.assertEqual(self.client.get('/api/scenario').status_code, 404)
 
@@ -105,8 +175,8 @@ class OverrideRouteTests(ScenarioBase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json()['storage'], 'db')
 
-    def test_selected_new_model_quarter_is_denied_and_legacy_or_malformed_follow_the_matrix(self):
-        self.assertEqual(error_of(self.client.get('/api/scenario/overrides?scope_key=k1&quarter=2027Q1')), DENIED)
+    def test_selected_quarters_and_malformed_selectors_follow_the_matrix(self):
+        self.assertEqual(self.client.get('/api/scenario/overrides?scope_key=k1&quarter=2027Q1').status_code, 200)
         self.assertEqual(self.client.get('/api/scenario/overrides?scope_key=k1&quarter=2026Q4').status_code, 200)
         self.assertEqual(error_of(self.client.get('/api/scenario/overrides?scope_key=k1&quarter=2027q1')),
                          (400, 'invalid_quarter'))
@@ -125,8 +195,9 @@ class OverrideRouteTests(ScenarioBase):
 class DraftRouteTests(ScenarioBase):
     def test_new_draft_names_its_source(self):
         self.create_legacy_draft()
+        # A new-model source outside its configuration namespace is refused.
         self.assertEqual(error_of(self.post('/api/scenario/drafts', {
-            'scope_key': 'k2', 'overrides': {}, 'baseDraftRevision': None, 'scope': NEW_SCOPE})), DENIED)
+            'scope_key': 'k2', 'overrides': {}, 'baseDraftRevision': None, 'scope': NEW_SCOPE})), MISMATCH)
         self.assertEqual(error_of(self.post('/api/scenario/drafts', {
             'scope_key': 'k2', 'overrides': {}, 'baseDraftRevision': None, 'scope': {'filters': {'sprint': '99'}}})),
             DENIED)
@@ -134,7 +205,7 @@ class DraftRouteTests(ScenarioBase):
         self.assertEqual(self.post('/api/scenario/drafts', {
             'scope_key': 'k3', 'overrides': {}, 'baseDraftRevision': None}).status_code, 200)
 
-    def test_selected_new_model_context_is_denied_on_every_draft_route(self):
+    def test_selected_new_model_context_is_accepted_on_every_draft_route(self):
         draft_id = self.create_legacy_draft()
         paths = (
             ('get', '/api/scenario/drafts?scope_key=k1'),
@@ -156,7 +227,7 @@ class DraftRouteTests(ScenarioBase):
                     response = self.client.get(path + '&quarter=2027Q1')
             else:
                 response = self.post(path, {'quarter': '2027Q1', 'baseDraftRevision': 1, 'targetVersionNumber': 1})
-            self.assertEqual(error_of(response), DENIED, path)
+            self.assertNotEqual(error_of(response)[1], 'scenario_not_supported', path)
 
     def test_stored_legacy_history_keeps_its_current_rights(self):
         draft_id = self.create_legacy_draft()
@@ -191,18 +262,21 @@ class DraftRouteTests(ScenarioBase):
                 jira_cloud_id='cloud-two')
             session.add(other_workspace)
             session.flush()
-            connection_id = self._connection(session, other_workspace, 'outsider', 'user')
+            # An admin elsewhere, so the Scenario lock does not mask the cross-workspace 404.
+            connection_id = self._connection(session, other_workspace, 'outsider', 'admin')
             session.commit()
             return connection_id
 
-    def test_non_editor_member_keeps_the_same_denial_and_stored_rights(self):
+    def test_unlocked_non_editor_member_keeps_the_same_gate_and_stored_rights(self):
         draft_id = self.create_legacy_draft()
         member = self.member
-        self.assertEqual(error_of(member.get('/api/scenario/drafts?scope_key=k1&quarter=2027Q1')), DENIED)
-        self.assertEqual(member.get('/api/scenario/drafts?scope_key=k1').status_code, 200)
-        denied = member.post('/api/scenario', json={'filters': {'sprint': '22'}}, headers=self.headers(member))
-        self.assertEqual(error_of(denied), DENIED)
-        self.assertEqual(member.get(f'/api/scenario/drafts/{draft_id}/versions/1').status_code, 200)
+        with patch.object(jira_server, 'scenario_planner_for_everyone', return_value=True):
+            self.assertEqual(error_of(member.get('/api/scenario/drafts?scope_key=k1&quarter=2026q4')),
+                             (400, 'invalid_quarter'))
+            self.assertEqual(member.get('/api/scenario/drafts?scope_key=k1').status_code, 200)
+            denied = member.post('/api/scenario', json={'filters': {'sprint': '99'}}, headers=self.headers(member))
+            self.assertEqual(error_of(denied), DENIED)
+            self.assertEqual(member.get(f'/api/scenario/drafts/{draft_id}/versions/1').status_code, 200)
 
     def test_unauthenticated_requests_still_answer_401(self):
         anonymous = jira_server.app.test_client()
@@ -211,6 +285,43 @@ class DraftRouteTests(ScenarioBase):
                              ('post', '/api/scenario')):
             response = getattr(anonymous, method)(path)
             self.assertEqual(response.status_code, 401, path)
+
+
+class DraftNamespaceTests(ScenarioBase):
+    """New-model drafts live under `<configurationId>:<sprintId>:<groupId>`; Legacy keys are unchanged."""
+
+    def save(self, scope_key, scope, base=None):
+        return self.post('/api/scenario/drafts', {
+            'scope_key': scope_key, 'name': 'Draft', 'overrides': {}, 'baseDraftRevision': base, 'scope': scope})
+
+    def test_legacy_and_new_model_drafts_are_separate_namespaces(self):
+        legacy_scope = {'groupId': 'g1', 'groupName': 'Group', 'sprintId': '11', 'sprintName': '2026Q4'}
+        legacy = self.save('11:g1', legacy_scope)
+        self.assertEqual(legacy.status_code, 200, legacy.get_data(as_text=True))
+        self.assertEqual(legacy.get_json()['activeDraft']['scopePayload'], legacy_scope)
+        new = self.save('delivery:22:g1', NEW_DRAFT_SCOPE)
+        self.assertEqual(new.status_code, 200, new.get_data(as_text=True))
+        self.assertEqual(new.get_json()['activeDraft']['scopePayload']['configurationId'], 'delivery')
+        self.assertNotEqual(legacy.get_json()['activeDraft']['draftId'], new.get_json()['activeDraft']['draftId'])
+        self.assertEqual(self.client.get('/api/scenario/drafts?scope_key=11:g1').get_json()['activeDraft']['scopePayload'],
+                         legacy_scope)
+        self.assertEqual(
+            self.client.get('/api/scenario/drafts?scope_key=delivery:22:g1').get_json()['activeDraft']['scopeKey'],
+            'delivery:22:g1')
+
+    def test_configuration_claims_must_match_the_resolved_source_and_key(self):
+        # Claimed delivery, but Sprint 11 resolves to Legacy.
+        self.assertEqual(error_of(self.save('delivery:11:g1', {**NEW_DRAFT_SCOPE, 'sprintId': '11'})), MISMATCH)
+        # Right configuration, wrong namespace.
+        self.assertEqual(error_of(self.save('22:g1', NEW_DRAFT_SCOPE)), MISMATCH)
+        # A configuration claim without a source.
+        self.assertEqual(error_of(self.save('delivery:x', {'configurationId': 'delivery'})), MISMATCH)
+
+    def test_a_stored_new_model_draft_is_never_saved_back_as_legacy(self):
+        saved = self.save('delivery:22:g1', NEW_DRAFT_SCOPE).get_json()['activeDraft']
+        legacy_shape = {key: value for key, value in NEW_DRAFT_SCOPE.items() if key != 'configurationId'}
+        response = self.save('delivery:22:g1', legacy_shape, base=saved['draftRevision'])
+        self.assertEqual(error_of(response), MISMATCH)
 
 
 class ReloadSeamTests(ScenarioBase):
@@ -249,11 +360,30 @@ class ReloadSeamTests(ScenarioBase):
         self.assertTrue(seen['done'])
         self.assertEqual(seen['request'].roles.configuration_id, 'legacy')
 
-    def test_new_model_unknown_and_unresolved_reload_never_reaches_the_planner(self):
-        for scope in (NEW_SCOPE, {'filters': {'sprint': '99'}}, {}):
+    def test_new_model_reload_runs_under_its_own_configuration(self):
+        data, seen = self.run_loader(NEW_DRAFT_SCOPE)
+        self.assertEqual(data, {'issues': []})
+        self.assertEqual(seen['request'].roles.configuration_id, 'delivery')
+
+    def test_unknown_and_unresolved_reload_never_reaches_the_planner(self):
+        for scope in ({'filters': {'sprint': '99'}}, {}):
             with self.assertRaises(ScenarioDraftReloadUnavailable) as raised:
                 self.run_loader(scope)
             self.assertEqual(str(raised.exception), 'scenario_not_supported')
+
+    def test_reload_under_another_configuration_is_refused_before_the_planner(self):
+        # A Legacy draft whose Sprint now resolves to the new model, and a new-model draft whose Sprint is Legacy.
+        for scope in (NEW_SCOPE, {**NEW_DRAFT_SCOPE, 'sprintId': '11'}):
+            with self.assertRaises(ScenarioDraftReloadUnavailable) as raised:
+                self.run_loader(scope)
+            self.assertEqual(str(raised.exception), 'scenario_configuration_mismatch')
+
+    def test_reload_route_maps_the_mismatch_to_409(self):
+        def mismatch(context, draft_id, **kwargs):
+            raise ScenarioDraftReloadUnavailable('scenario_configuration_mismatch')
+        with patch.object(scenario_draft_routes, 'reload_from_jira', side_effect=mismatch):
+            response = self.post('/api/scenario/drafts/any/reload-from-jira', {'baseDraftRevision': 1})
+        self.assertEqual(error_of(response), MISMATCH)
 
     def test_reload_route_maps_the_denial_to_409(self):
         # The route turns the loader's denial code into the scenario_not_supported envelope.

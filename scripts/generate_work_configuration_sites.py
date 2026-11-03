@@ -272,7 +272,7 @@ MIGRATED_QUERY_SITES = {
     ('jira_server.py', 'fetch_cached_excluded_capacity_epic_summaries'): 'roles',
     ('jira_server.py', 'get_project_track_phase_durations'): 'work_request',
     ('jira_server.py', 'scenario_planner'): 'roles',
-    ('jira_server.py', 'scenario_work_gate'): 'is_legacy',
+    ('jira_server.py', 'scenario_work_gate'): 'work_request',
     ('jira_server.py', 'build_epm_rollup_dependencies'): 'roles',
     ('jira_server.py', 'admit_epm_work_request'): 'admit_sprint_id_groups',
     ('backend/epm/rollup.py', 'build_per_project_rollup'): 'roles',

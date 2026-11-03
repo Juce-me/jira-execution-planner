@@ -14,7 +14,7 @@ const dashboardPath = path.join(__dirname, '../frontend/src/dashboard.jsx');
 const fixture = JSON.parse(fs.readFileSync(
     path.join(__dirname, 'fixtures/scenario-layout-oracle-example-sanitized.json'), 'utf8'));
 
-const VIEW_PROP_NAMES = ['scenario', 'scenarioState', 'selectedSprint', 'normalizeEpicKey', 'excludedEpicSet'];
+const VIEW_PROP_NAMES = ['scenario', 'scenarioState', 'selectedSprint', 'normalizeEpicKey', 'excludedEpicSet', 'workModel'];
 
 // ------------------------------------------------------------------ fixture decoding (mirrors tests/test_scenario_layout.js)
 const fnCache = new Map();
@@ -384,7 +384,7 @@ test('ScenarioView tooltip is absent without data, hidden by default and visible
 });
 
 // ------------------------------------------------------------------ (f) interface contract
-test('ScenarioView module exports only ScenarioView, which destructures exactly its five props', () => {
+test('ScenarioView module exports only ScenarioView, which destructures exactly its six props', () => {
     const source = fs.readFileSync(viewPath, 'utf8');
     assert.deepEqual([...source.matchAll(/^export\s+(?:default\s+)?(?:function|const|let|class)?\s*(\w+)/gm)].map(m => m[1]), ['ScenarioView']);
     assert.doesNotMatch(source, /^export\s*\{/m);
@@ -411,7 +411,7 @@ test('ScenarioView module exports only ScenarioView, which destructures exactly 
     for (const name of scenarioNames) assert.ok(name in scenario, `useScenarioPlanner returns ${name}`);
     for (const name of stateNames) assert.ok(name in base, `useScenarioState returns ${name}`);
 
-    // The dashboard passes exactly those five props, each under its own name.
+    // The dashboard passes exactly those six props, each under its own name.
     const dashboard = fs.readFileSync(dashboardPath, 'utf8');
     assert.match(dashboard, /const loadScenarioView = createLazyViewLoader\(\{ viewId: 'scenario',[\s\S]*?initialLoad: \(\) => import\('\.\/scenario\/ScenarioView\.jsx'\)\.then\([\s\S]*?module => \(\{ default: module\.ScenarioView \}\)\)/);
     assert.match(dashboard, /<LazyViewBoundary load=\{loadScenarioView\} fallback=\{scenarioLoadingFallback\}>\s*\{ScenarioView => <ScenarioView/);

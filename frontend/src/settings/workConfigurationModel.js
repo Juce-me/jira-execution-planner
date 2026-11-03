@@ -377,6 +377,19 @@ export function typeNamesNeedingSave({ entries = [], summaries = [], catalogFor 
     }).map(entry => entry.id);
 }
 
+// What a Discard acknowledges: the listed configurations with their summary captures and the catalog types their
+// slots name. A new capture, a Jira rename or another listed configuration changes it, so the request returns.
+export function typeNamesSignature({ ids = [], entries = [], summaries = [], catalogFor = () => null }) {
+    if (!ids.length) return '';
+    return JSON.stringify(ids.map(id => {
+        const entry = (entries || []).find(item => item.id === id);
+        const types = catalogFor(id)?.types || [];
+        const configured = Object.values(ROLE_TYPE_SLOTS).map(key => types.find(type => type.id === entry?.hierarchy?.[key]) || null)
+            .map(type => (type ? [type.id, type.name, type.hierarchyLevel] : null));
+        return [id, (summaries || []).find(item => item?.id === id)?.roleTypes ?? null, configured];
+    }));
+}
+
 // Unpromoted workspace seen through a promoted conflict, or any conflict: keep the user's draft,
 // retarget it at the latest bundle. Returns {draft, baseline, promoted}.
 export function rebaseOntoLatest(draft, latest) {

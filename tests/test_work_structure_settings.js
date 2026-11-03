@@ -531,3 +531,18 @@ test('typeNamesNeedingSave asks to save when a configured type id has no capture
     assert.deepEqual(typeNamesNeedingSave({ entries: [mapped], summaries: [{ id: 'legacy', roleTypes: mappedCaptured }], catalogFor: () => ready }), []);
     assert.deepEqual(typeNamesNeedingSave({ entries: [mapped], summaries: [{ id: 'legacy', roleTypes: { ...mappedCaptured, parent: null } }], catalogFor: () => ready }), ['legacy']);
 });
+
+test('typeNamesSignature changes when a capture arrives, Jira renames a type or another configuration is listed', async () => {
+    const { typeNamesSignature } = await loadModel();
+    const saved = delivery({ hierarchy: { planningIssueTypeId: '19002', parentIssueTypeId: '19003', ancestorIssueTypeId: null, optionalAncestorIssueTypeId: null } });
+    const types = [{ id: '19002', name: 'Epic', hierarchyLevel: 1 }, { id: '19003', name: 'Initiative', hierarchyLevel: 2 }];
+    const sign = ({ ids = ['delivery'], roleTypes = null, catalogTypes = types, entries = [saved, legacy()] } = {}) => typeNamesSignature({
+        ids, entries, summaries: [{ id: 'delivery', roleTypes }, { id: 'legacy', roleTypes: null }], catalogFor: () => ({ state: 'ready', types: catalogTypes }),
+    });
+    assert.equal(sign({ ids: [] }), '', 'nothing listed, nothing to acknowledge');
+    assert.equal(sign(), sign(), 'stable for the same inputs');
+    assert.notEqual(sign(), sign({ roleTypes: { planning: { id: '19002', name: 'Epic', hierarchyLevel: 1 } } }), 'a new capture re-arms');
+    assert.notEqual(sign(), sign({ catalogTypes: [{ ...types[0], name: 'Deliverable' }, types[1]] }), 'a Jira rename re-arms');
+    assert.notEqual(sign(), sign({ ids: ['delivery', 'legacy'] }), 'another listed configuration re-arms');
+    assert.equal(sign(), sign({ catalogTypes: [...types, { id: '19099', name: 'Unrelated', hierarchyLevel: 0 }] }), 'unconfigured catalog types do not');
+});

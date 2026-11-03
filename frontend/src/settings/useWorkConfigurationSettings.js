@@ -27,6 +27,7 @@ import {
     removeProjectFromEntry,
     savedSourceReady,
     typeNamesNeedingSave,
+    typeNamesSignature,
     validateBundle,
 } from './workConfigurationModel.js';
 
@@ -99,6 +100,8 @@ export function useWorkConfigurationSettings({
     const onBootstrapRef = React.useRef(onBootstrap);
     onBootstrapRef.current = onBootstrap;
     const [catalogRetry, setCatalogRetry] = React.useState(0);
+    // The type-name request a Discard acknowledged this session; it returns once its signature changes.
+    const [typeNamesAcknowledged, setTypeNamesAcknowledged] = React.useState('');
     const [sprintValues, setSprintValues] = React.useState({ state: 'idle', values: [] });
     const [sprintValuesTick, setSprintValuesTick] = React.useState(0);
 
@@ -315,9 +318,14 @@ export function useWorkConfigurationSettings({
     };
     // A saved configuration whose Jira type names the server has not captured (or Jira renamed) is an unsaved
     // re-verification state for editors: the footer Save posts the unchanged bundle and the server captures them.
-    const typeNamesToSave = mode === 'enabled' && promoted && userCanEdit
+    const typeNamesPending = mode === 'enabled' && promoted && userCanEdit
         ? typeNamesNeedingSave({ entries: baseline?.configurations || [], summaries: flags.summaries, catalogFor: typeCatalogFor })
         : [];
+    const typeNamesKey = typeNamesSignature({ ids: typeNamesPending, entries: baseline?.configurations || [], summaries: flags.summaries, catalogFor: typeCatalogFor });
+    const typeNamesToSave = typeNamesKey && typeNamesKey === typeNamesAcknowledged ? [] : typeNamesPending;
+    const typeNamesNote = typeNamesToSave.length
+        ? `Jira type names need saving: ${typeNamesToSave.map(id => entryById(baseline, id)?.name || id).join(', ')}.`
+        : '';
     const retryTypeCatalog = () => {
         setTypeCatalogs({});
         setCatalogRetry(value => value + 1);
@@ -390,6 +398,7 @@ export function useWorkConfigurationSettings({
     }, []);
 
     const discard = () => {
+        setTypeNamesAcknowledged(typeNamesKey);
         if (!baselineRef.current) return;
         setDraft(cloneBundle(baselineRef.current));
         explicitClearsRef.current = new Set();
@@ -481,8 +490,11 @@ export function useWorkConfigurationSettings({
         validationMessages,
         fieldErrors,
         dirty: dirty || typeNamesToSave.length > 0,
+        // Only captured type names are pending: Save posts the unchanged bundle and nothing structural changes.
+        namesOnly: !dirty && typeNamesToSave.length > 0,
         dirtyIds,
         typeNamesToSave,
+        typeNamesNote,
         saveFeedback,
         typeCatalogFor,
         retryTypeCatalog,

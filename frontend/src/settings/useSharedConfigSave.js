@@ -187,6 +187,8 @@ export function useSharedConfigSave({
     // validated while it is active, so the flat-editor checks below are skipped, not edited.
     const workConfigActive = workConfig?.active === true;
     const workConfigDirty = workConfigActive && workConfig.dirty === true;
+    // A names-only Save still posts the bundle, but changes no scope, Board or Sprint source.
+    const workConfigNamesOnly = workConfigActive && workConfig.namesOnly === true;
     // Only an unpromoted workspace with the feature off still edits the flat structural sections; a
     // promoted workspace with the feature off mounts none of their forms, so none can be dirty or validated.
     const flatStructural = !workConfig || workConfig.mode === 'legacy';
@@ -321,7 +323,8 @@ export function useSharedConfigSave({
         };
         const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
         const boardAffectingAdminSave = Object.entries(adminSectionsToSave)
-            .some(([section, pending]) => pending && section !== 'adminAccess' && section !== 'scenarioPlanner');
+            .some(([section, pending]) => pending && section !== 'adminAccess' && section !== 'scenarioPlanner'
+                && !(section === 'workConfigurations' && workConfigNamesOnly));
         if (boardAffectingAdminSave) {
             sprintCatalogControllerRef.current.invalidate('settings-save');
             invalidateTeamMembership();
@@ -389,7 +392,9 @@ export function useSharedConfigSave({
             && Object.values(firstRunConfigurationSession.committedAdminSections || {}).some(Boolean);
         try {
             const savingDepartmentSettings = sharedGroupsChanged || (!firstRunConfigurationActive && isGroupVisibilityDraftDirty);
-            analyticsSection = savingAdminSettings ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
+            const savingAdminChanges = Object.entries(adminSectionsToSave)
+                .some(([section, pending]) => pending && !(section === 'workConfigurations' && workConfigNamesOnly));
+            analyticsSection = savingAdminChanges ? 'admin' : (savingDepartmentSettings ? 'departments' : groupManageTab);
             if (!suppressRepeatedAdminAnalytics) {
                 trackSettingsAction(analyticsSection, 'save', { dirty_state: isGroupDraftDirty ? 'dirty' : 'clean', validation_count_bucket: bucketCount(groupConfigValidationErrors.length) });
             }
@@ -551,11 +556,12 @@ export function useSharedConfigSave({
             }
 
             // If projects or capacity changed, invalidate all group caches to refetch with new scope
-            if (workConfigurationsChanged || projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
+            const workConfigurationScopeChanged = workConfigurationsChanged && !workConfigNamesOnly;
+            if (workConfigurationScopeChanged || projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                 groupStateRef.current.clear();
             }
             const acceptedBoardConfigurationChanged = sharedGroupsChanged
-                || workConfigurationsChanged
+                || workConfigurationScopeChanged
                 || projectsChanged
                 || priorityWeightsChanged
                 || boardChanged

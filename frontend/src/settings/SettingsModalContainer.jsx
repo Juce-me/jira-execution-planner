@@ -41,6 +41,7 @@ export default function SettingsModalContainer({
     unsavedSectionsCount,
     useLatestWorkspaceConfig,
     workConfigMode,
+    workConfigTypeNamesNote,
     workspaceConfigConflict,
     children,
 }) {
@@ -76,6 +77,7 @@ export default function SettingsModalContainer({
             saveDisabled={settingsSaveDisabled}
             saveTitle={settingsSaveTitle}
             saveLabel={settingsSaveLabel}
+            saveNote={groupManageTab !== 'connections' && isGroupDraftDirty ? workConfigTypeNamesNote : ''}
             showDiscardConfirm={showGroupDiscardConfirm}
             onDiscard={discardGroupDraftChanges}
             onKeepEditing={() => setShowGroupDiscardConfirm(false)}

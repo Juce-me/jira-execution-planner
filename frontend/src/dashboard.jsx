@@ -1041,7 +1041,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const workConfig = useWorkConfigurationSettings({
                 BACKEND_URL, jiraFields, onDraftReplaced: () => { setSettingsSaveError(''); setGroupDraftError(''); }, onBootstrap: applyWorkBootstrap, selectedSprintName: selectedSprintInfo?.name, setGroupTestMessage, setGroupTesting, visible: showGroupManage,
             });
-            const workConfigMode = workConfig.mode;
+            const { mode: workConfigMode, typeNamesNote: workConfigTypeNamesNote } = workConfig;
             const workCatalogScope = workConfig.promoted ? workConfig.scopeForQuarter(workConfig.quarterHint) : null;
             const {
                 teamCatalogState,
@@ -7052,6 +7052,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             showGroupDiscardConfirm={showGroupDiscardConfirm}
                             testGroupsConfigConnection={testGroupsConfigConnection}
                             workConfigMode={workConfigMode}
+                            workConfigTypeNamesNote={workConfigTypeNamesNote}
                             unsavedSectionsCount={unsavedSectionsCount}
                             useLatestWorkspaceConfig={useLatestWorkspaceConfig}
                             workspaceConfigConflict={workspaceConfigConflict}

@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7501,
+    "lineCeiling": 7502,
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,
@@ -5194,6 +5194,7 @@
             "onTestConfiguration",
             "saveDisabled",
             "saveLabel",
+            "saveNote",
             "saveTitle",
             "showDiscardConfirm",
             "showSave",
@@ -5222,6 +5223,7 @@
             "onTestConfiguration",
             "saveDisabled",
             "saveLabel",
+            "saveNote",
             "saveTitle",
             "showDiscardConfirm",
             "showSave",
@@ -5240,18 +5242,18 @@
             "validationMessages.map"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 29,
+          "expandedInputCount": 30,
           "returnCount": 0,
-          "propCount": 26,
+          "propCount": 27,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 29,
+          "expandedInputCeiling": 30,
           "returnCeiling": 0,
-          "propCeiling": 26,
+          "propCeiling": 27,
           "unresolved": [
             "forwarded input validationActions"
           ],
           "inventory": {
-            "sourceDigest": "17c5f11022b8d12db827169225dd128c16c1dd5cb8b81e54b5782619912f2fa4",
+            "sourceDigest": "67fc1aba45947279c20b0d01f7654c6d4b14fdc7518c7761afcf7f458ab48b32",
             "reviewed": true,
             "memberNames": [
               "activeTab",
@@ -5267,6 +5269,7 @@
               "onTestConfiguration",
               "saveDisabled",
               "saveLabel",
+              "saveNote",
               "saveTitle",
               "showDiscardConfirm",
               "showSave",
@@ -5284,7 +5287,7 @@
               "validationMessages.length",
               "validationMessages.map"
             ],
-            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: saveNote is a display string beside Save."
           },
           "callers": [
             {
@@ -13180,6 +13183,7 @@
             "saveSprintFieldConfig",
             "saveStoryPointsFieldConfig",
             "saveTeamFieldConfig",
+            "scenarioPlannerAccess",
             "seedSharedFieldConfigs",
             "selectedProjectsDraft",
             "selectedSprint",
@@ -13349,6 +13353,10 @@
             "saveSprintFieldConfig",
             "saveStoryPointsFieldConfig",
             "saveTeamFieldConfig",
+            "scenarioPlannerAccess",
+            "scenarioPlannerAccess.isDirty",
+            "scenarioPlannerAccess.save",
+            "scenarioPlannerAccess.setEnabled",
             "seedSharedFieldConfigs",
             "selectedProjectsDraft",
             "selectedProjectsDraft.length",
@@ -13408,6 +13416,7 @@
             "workConfig.applyBootstrap",
             "workConfig.dirty",
             "workConfig.mode",
+            "workConfig.namesOnly",
             "workConfig.prepareKeepMine",
             "workConfig.reload",
             "workConfig.restoreDraft",
@@ -13418,11 +13427,11 @@
             "workspaceConfigConflict.workConfigurations"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 169,
+          "expandedInputCount": 174,
           "returnCount": 11,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 169,
+          "expandedInputCeiling": 174,
           "returnCeiling": 11,
           "propCeiling": 0,
           "unresolved": [
@@ -13448,7 +13457,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "06944a2d66cb9d40ee134d58ca3930c2dbd11ddfede332fe6d29eb975c2ed736",
+            "sourceDigest": "512c125d605be0fb27f796a3a617ee07ac71c757947e4c05740b4d4e0745ef82",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -13553,6 +13562,10 @@
               "saveSprintFieldConfig",
               "saveStoryPointsFieldConfig",
               "saveTeamFieldConfig",
+              "scenarioPlannerAccess",
+              "scenarioPlannerAccess.isDirty",
+              "scenarioPlannerAccess.save",
+              "scenarioPlannerAccess.setEnabled",
               "seedSharedFieldConfigs",
               "selectedProjectsDraft",
               "selectedProjectsDraft.length",
@@ -13612,6 +13625,7 @@
               "workConfig.applyBootstrap",
               "workConfig.dirty",
               "workConfig.mode",
+              "workConfig.namesOnly",
               "workConfig.prepareKeepMine",
               "workConfig.reload",
               "workConfig.restoreDraft",
@@ -13621,7 +13635,7 @@
               "workspaceConfigConflict.currentRevision",
               "workspaceConfigConflict.workConfigurations"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-03: workConfig.namesOnly keeps a names-only bundle Save out of Board invalidation and admin analytics; the scenarioPlannerAccess members were already read here and are now registered."
           },
           "callers": [
             {
@@ -13963,6 +13977,7 @@
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
             "workConfigMode",
+            "workConfigTypeNamesNote",
             "workspaceConfigConflict"
           ],
           "expandedInputNames": [
@@ -14002,16 +14017,17 @@
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
             "workConfigMode",
+            "workConfigTypeNamesNote",
             "workspaceConfigConflict"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 37,
+          "expandedInputCount": 38,
           "returnCount": 0,
-          "propCount": 37,
+          "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 37,
+          "expandedInputCeiling": 38,
           "returnCeiling": 0,
-          "propCeiling": 37,
+          "propCeiling": 38,
           "unresolved": [
             "spread input groupConfigValidationErrors",
             "forwarded input groupManageTab",
@@ -14020,7 +14036,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "b81445a162361237fc065faa9818e2ff117914bcce5727861b15ec3828158370",
+            "sourceDigest": "eb779e91b9ccdf54d750cccd98492f6f11d362cf0f398d2887809176eef481a0",
             "reviewed": true,
             "memberNames": [
               "activeSettingsModalTab",
@@ -14059,9 +14075,10 @@
               "unsavedSectionsCount",
               "useLatestWorkspaceConfig",
               "workConfigMode",
+              "workConfigTypeNamesNote",
               "workspaceConfigConflict"
             ],
-            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-03: workConfigTypeNamesNote is a display string forwarded as saveNote."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -19008,7 +19025,7 @@
             "workConfig.tabFor",
             "workConfig.technicalIds",
             "workConfig.typeNamesToSave",
-            "workConfig.typeNamesToSave.length",
+            "workConfig.typeNamesToSave.includes",
             "workConfig.validation",
             "workConfig.validation.errors"
           ],
@@ -19024,7 +19041,7 @@
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "9910fd6364e7b2eda26e9cbead2729adeeeab54397dceadc70d9345476341593",
+            "sourceDigest": "2a836484be58dd413c323ad32471786747c8c2069216499b45e95feac5ec2187",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19049,11 +19066,11 @@
               "workConfig.tabFor",
               "workConfig.technicalIds",
               "workConfig.typeNamesToSave",
-              "workConfig.typeNamesToSave.length",
+              "workConfig.typeNamesToSave.includes",
               "workConfig.validation",
               "workConfig.validation.errors"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here. Fix round 1: the status line is shown only on a listed configuration (typeNamesToSave.includes)."
           },
           "callers": [
             {
@@ -19115,6 +19132,7 @@
             "loadState",
             "missingByConfiguration",
             "mode",
+            "namesOnly",
             "patch",
             "prepareKeepMine",
             "promoted",
@@ -19141,6 +19159,7 @@
             "technicalIds",
             "testSaved",
             "typeCatalogFor",
+            "typeNamesNote",
             "typeNamesToSave",
             "uiFor",
             "unavailable",
@@ -19161,11 +19180,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 8,
-          "returnCount": 53,
+          "returnCount": 55,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 8,
-          "returnCeiling": 53,
+          "returnCeiling": 55,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -19174,7 +19193,7 @@
             "forwarded input onBootstrap"
           ],
           "inventory": {
-            "sourceDigest": "e4ef54dd615acaa10d8535db61ebc5d8a452c6acddf71c4265d4e5a8ba739967",
+            "sourceDigest": "020139739fd3f2c712e2608092fa1c80e9c2ef3de20d9c6d6aec224482636b56",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19186,7 +19205,7 @@
               "setGroupTesting",
               "visible"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added typeNamesToSave return is a derived display/dirty value from loaded summaries and catalogs; no new members."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added typeNamesToSave return is a derived display/dirty value from loaded summaries and catalogs; no new members. Fix round 1: namesOnly and typeNamesNote are derived display/save-classification values; Discard acknowledgement is hook-local state; no new members."
           },
           "callers": [
             {

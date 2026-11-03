@@ -71,14 +71,14 @@ export function useStrictEngBoardOwner({ active, backendUrl, departmentId, sprin
 }
 
 export function useStrictEngBoardPresentation({ active, owner, savedBoard, legacyFilterInput,
-    searchQuery, showBoard, visibleTaskCount, trackSearch, workModel }) {
+    searchQuery, showBoard, visibleTaskCount, trackSearch, workModel, entityNames }) {
     const model = React.useMemo(() => buildStrictEngBoardViewModel(owner.data.displayData, {
         savedBoard, issuePatchesByKey: owner.issuePatchesByKey,
     }), [owner.data.displayData, savedBoard, owner.issuePatchesByKey]);
     const filterState = useEngBoardFilters({ ...legacyFilterInput,
         isTechTask: active ? strictProjectClassifier : legacyFilterInput.isTechTask,
         strictEpicGroups: active ? model.epicGroups : null,
-        filtersEnabled: !active || model.authoritative, workModel,
+        filtersEnabled: !active || model.authoritative, workModel, names: entityNames || undefined,
     });
     React.useEffect(() => {
         if (active && !model.membershipAuthoritative) return;

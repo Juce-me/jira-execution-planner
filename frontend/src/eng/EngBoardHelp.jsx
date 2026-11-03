@@ -1,9 +1,11 @@
 import * as React from 'react';
+import { formatEntityCount, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
 const HELP_MAX_WIDTH = 512;
 const HELP_GUTTER = 12;
 
-export default function EngBoardHelp({ scaleMax = 1, workItemLabel = 'work items' }) {
+export default function EngBoardHelp({ scaleMax = 1, workItemLabel = 'work items', entityNames = null }) {
+    const names = entityNames || resolveEntityNames();
     const [open, setOpen] = React.useState(false);
     const hostRef = React.useRef(null);
     const triggerRef = React.useRef(null);
@@ -103,9 +105,9 @@ export default function EngBoardHelp({ scaleMax = 1, workItemLabel = 'work items
                         <li>Choose a folded column to centre it.</li>
                         <li>Star a column to keep it open for this session.</li>
                         <li>Cards are ordered highest priority first.</li>
-                        <li>Epic details include every eligible {workItemLabel}, not only Stories.</li>
-                        <li>The tallest bar represents {scaleMax} epics.</li>
-                        <li>Drag a card to another column to change its epic status.</li>
+                        <li>{names.parent} details include every eligible {workItemLabel}, not only {names.childPlural}.</li>
+                        <li>The tallest bar represents {lowerEntityWord(formatEntityCount(scaleMax, names, 'parent'))}.</li>
+                        <li>Drag a card to another column to change its {lowerEntityWord(names.parent)} status.</li>
                     </ul>
                     <p className="board-help-copy">
                         Shared columns, the default star, and Min/Max limits live in Group Board settings.

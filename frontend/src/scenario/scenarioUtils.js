@@ -1,7 +1,7 @@
 // Scenario planner pure utility functions and constants.
 // Extracted from dashboard.jsx — zero closure dependencies.
 
-import { isCombinedWorkModel, workEntityNames } from '../eng/engWorkModel.js';
+import { isCombinedWorkModel, resolveEntityNames } from '../eng/engWorkModel.js';
 
 export const SCENARIO_BAR_HEIGHT = 32;
 export const SCENARIO_BAR_GAP = 10;
@@ -183,7 +183,8 @@ export function buildScenarioDraftScopeKey({ sprintId, groupId, workModel, confi
     return configurationId ? `${configurationId}:${sprint}:${group}` : '';
 }
 
-// Lane for issues without a grouping parent: `No Epic` (Legacy) or `No Initiative` (new model).
-export function scenarioNoParentLane(workModel) {
-    return `No ${workEntityNames(workModel).parent}`;
+// Lane for issues without a grouping parent: `No Epic` (Legacy), `No Initiative` (new model defaults) or the configured
+// parent type name. Takes EntityNames, or a model string for its defaults.
+export function scenarioNoParentLane(names) {
+    return `No ${(names && typeof names === 'object' ? names : resolveEntityNames(names)).parent}`;
 }

@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7500,
+    "lineCeiling": 7501,
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,
@@ -15866,6 +15866,7 @@
           "propNames": [
             "activeGroupMissingComponents",
             "analytics",
+            "entityNames",
             "jiraUrl",
             "links",
             "onSelectBurnoutTask",
@@ -15881,6 +15882,7 @@
             "analytics",
             "analytics.trackStatsAction",
             "analytics.trackStatsAnalyticsAction",
+            "entityNames",
             "jiraUrl",
             "links",
             "links.buildPriorityStatLink",
@@ -16024,22 +16026,23 @@
             "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 145,
+          "expandedInputCount": 146,
           "returnCount": 0,
-          "propCount": 11,
+          "propCount": 12,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 145,
+          "expandedInputCeiling": 146,
           "returnCeiling": 0,
-          "propCeiling": 11,
+          "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "sourceDigest": "f1fa98f6481f1f03b394dabe01d88a0072cf2b0698c9664ec2771c045d781658",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
               "analytics",
               "analytics.trackStatsAction",
               "analytics.trackStatsAnalyticsAction",
+              "entityNames",
               "jiraUrl",
               "links",
               "links.buildPriorityStatLink",
@@ -16182,7 +16185,7 @@
               "workSetupNotice.onOpenSettings",
               "workSetupNotice.scope"
             ],
-            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-03: entityNames (the App's EntityNames) names the role words and is read only by the same copy."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -16195,6 +16198,7 @@
           "propNames": [
             "activeGroupMissingComponents",
             "analytics",
+            "entityNames",
             "jiraUrl",
             "links",
             "onSelectBurnoutTask",
@@ -16210,6 +16214,7 @@
             "analytics",
             "analytics.trackStatsAction",
             "analytics.trackStatsAnalyticsAction",
+            "entityNames",
             "jiraUrl",
             "links",
             "links.buildPriorityStatLink",
@@ -16353,22 +16358,23 @@
             "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 145,
+          "expandedInputCount": 146,
           "returnCount": 0,
-          "propCount": 11,
+          "propCount": 12,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 145,
+          "expandedInputCeiling": 146,
           "returnCeiling": 0,
-          "propCeiling": 11,
+          "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "sourceDigest": "f1fa98f6481f1f03b394dabe01d88a0072cf2b0698c9664ec2771c045d781658",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
               "analytics",
               "analytics.trackStatsAction",
               "analytics.trackStatsAnalyticsAction",
+              "entityNames",
               "jiraUrl",
               "links",
               "links.buildPriorityStatLink",
@@ -16511,7 +16517,7 @@
               "workSetupNotice.onOpenSettings",
               "workSetupNotice.scope"
             ],
-            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-03: entityNames (the App's EntityNames) names the role words and is read only by the same copy."
           },
           "callers": [],
           "remainingAppReaders": [],

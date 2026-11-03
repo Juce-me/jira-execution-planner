@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from '../stats/statsScope.js';
 import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import { buildJiraCohortStatusSearchUrl } from '../jiraExportUtils.mjs';
@@ -8,7 +10,8 @@ export default function LeadTimesWorkflowStatusCard({
     cohortStartQuarter,
     cohortEndQuarter,
     cohortSummary,
-    cohortWorkflowStatusTotal
+    cohortWorkflowStatusTotal,
+    words = roleLabels(null)
 }) {
     const jiraLink = React.useMemo(() => {
         if (!cohortWorkflowStatusTotal) return '';
@@ -34,8 +37,8 @@ export default function LeadTimesWorkflowStatusCard({
                     href={jiraLink}
                     target="_blank"
                     rel="noopener noreferrer"
-                    title="View in progress, postponed, and awaiting validation epics in Jira"
-                    aria-label="Open in progress, postponed, and awaiting validation epics in Jira"
+                    title={`View in progress, postponed, and awaiting validation ${lowerEntityWord(words.parents)} in Jira`}
+                    aria-label={`Open in progress, postponed, and awaiting validation ${lowerEntityWord(words.parents)} in Jira`}
                     analyticsMeta={buildJiraIssueListLinkAnalytics({
                         issueKind: 'epic',
                         issueCount: cohortWorkflowStatusTotal,

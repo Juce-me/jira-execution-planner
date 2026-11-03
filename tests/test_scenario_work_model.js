@@ -37,6 +37,9 @@ test('the no-parent lane is named after the model parent', async () => {
     assert.equal(scenarioNoParentLane('legacy'), 'No Epic');
     assert.equal(scenarioNoParentLane(undefined), 'No Epic');
     assert.equal(scenarioNoParentLane('rnd_2027'), 'No Initiative');
+    const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
+    const renamed = resolveEntityNames('rnd_2027', { planning: { name: 'Deliverable', hierarchyLevel: 1 }, parent: { name: 'Theme', hierarchyLevel: 2 }, ancestor: { name: 'Objective', hierarchyLevel: 3 } });
+    assert.equal(scenarioNoParentLane(renamed), 'No Theme');
 });
 
 test('parent lanes group new-model Epics by Initiative and keep the Legacy fallback', async () => {
@@ -73,7 +76,8 @@ test('the Scenario tooltip formats Story Points from the value, with no field id
     const view = read('frontend/src/scenario/ScenarioView.jsx');
     assert.doesNotMatch(view, /customfield_/);
     assert.match(view, /formatStoryPointsNumberFixed\(scenarioTooltip\.sp\)/);
-    assert.match(view, /\{entityNames\.parent\}/, 'the parent-lane toggle is named by the model');
+    assert.match(view, /const names = entityNames \|\| resolveEntityNames\(workModel\);/, 'EntityNames from the App, model defaults without them');
+    assert.match(view, /\{names\.parent\}/, 'the parent-lane toggle is named by the configured parent type');
 });
 
 test('the ENG mode control renders no Scenario entry while Scenario is locked', () => {

@@ -18,6 +18,7 @@ import ProjectTrackPhaseChart from './ProjectTrackPhaseChart.jsx';
 import StatsRangeControl from './StatsRangeControl.jsx';
 import UnconfiguredWorkspaceNotice from '../settings/UnconfiguredWorkspaceNotice.jsx';
 import { describeStatsScope, roleLabels, unavailablePeriodSpans } from './statsScope.js';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
 import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { analyticsToken } from '../analytics/dashboardAnalytics.js';
 
@@ -33,13 +34,14 @@ function cohortModeMeta(stats) {
 
 export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
     showStats, jiraUrl, activeGroupMissingComponents, priorityAxis, resolveStatsTeamColor,
-    workScope: workScopeProp, workSetupNotice = null
+    workScope: workScopeProp, workSetupNotice = null, entityNames = null
 }) {
     // The dashboard may pass the model-aware scope; otherwise the viewed quarter alone is still named.
     const activeWorkContext = useActiveWorkContext();
     const workScope = workScopeProp !== undefined ? workScopeProp : describeStatsScope(activeWorkContext, null);
-    // Role words for the copy below: Legacy Epic/Story, the combined model's Initiative/Epic.
-    const statWords = workScope?.roles || roleLabels(null);
+    // Role words for the copy below: the App's EntityNames (configured Jira type names), else the scope's captured names,
+    // else Legacy Epic/Story.
+    const statWords = entityNames ? roleLabels(entityNames) : (workScope?.roles || roleLabels(null));
     const {
         canRenderStatsPanel,
         statsView,
@@ -298,9 +300,11 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         computeRate={computeRate}
                         formatPercent={formatPercent}
                         getRateClass={getRateClass}
+                        words={statWords}
                     />
 
                     <StatsPriorityView
+                        words={statWords}
                         open={statsView === 'priority'}
                         priorityAxis={priorityAxis}
                         priorityHoverIndex={priorityHoverIndex}
@@ -336,6 +340,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         resolveBurnoutPointer={resolveBurnoutPointer}
                         buildBurnoutTaskFilter={buildBurnoutTaskFilter}
                         onAnalyticsAction={trackStatsAnalyticsAction}
+                        words={statWords}
                     />
                     <div className={`stats-view ${statsView === 'excludedCapacity' ? 'open' : ''}`}>
                         <div className="stats-controls excluded-capacity-controls excluded-capacity-filter-controls">
@@ -385,7 +390,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                                 </div>
                                             </div>
                                             {excludedCapacityEpicCatalog.length === 0 ? (
-                                                <div className="sprint-dropdown-option">No excluded {statWords.parents.toLowerCase()} configured.</div>
+                                                <div className="sprint-dropdown-option">No excluded {lowerEntityWord(statWords.parents)} configured.</div>
                                             ) : (
                                                 excludedCapacityEpicCatalog.map((entry) => {
                                                     const checked = excludedCapacityEffectiveFilters.includes(entry.key);
@@ -497,7 +502,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                         )}
                         {!excludedCapacityLoading && !excludedCapacityError && effortSplitTotals.totalPoints === 0 && (
-                            <div className="cohort-empty">No capacity-mix {statWords.children.toLowerCase()} found in the selected sprint range.</div>
+                            <div className="cohort-empty">No capacity-mix {lowerEntityWord(statWords.children)} found in the selected sprint range.</div>
                         )}
                         {!excludedCapacityError && effortSplitTotals.totalPoints > 0 && (
                             <div className="excluded-capacity-panel">
@@ -523,11 +528,11 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     <div className="cohort-section-title">Excluded Capacity by Team and Sprint</div>
                                     {excludedCapacityEpicOptions.length === 0 ? (
                                         <div className="cohort-empty excluded-capacity-line-empty">
-                                            No excluded capacity {statWords.parents.toLowerCase()} are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
+                                            No excluded capacity {lowerEntityWord(statWords.parents)} are configured for this team group. This chart tracks excluded capacity only; Ad Hoc is reported in the Effort Split above.
                                         </div>
                                     ) : excludedCapacityRows.length === 0 ? (
                                         <div className="cohort-empty excluded-capacity-line-empty">
-                                            No excluded capacity {statWords.children.toLowerCase()} found in the selected sprint range.
+                                            No excluded capacity {lowerEntityWord(statWords.children)} found in the selected sprint range.
                                         </div>
                                     ) : (
                                         <ExcludedCapacityLineChart
@@ -571,12 +576,12 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             <div className="stats-card">
                                 <h4>Cross {statWords.parent} SP</h4>
                                 <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.crossPoints)}</div>
-                                <div className="stats-note">In multi-team {statWords.parent.toLowerCase()}/sprint buckets</div>
+                                <div className="stats-note">In multi-team {lowerEntityWord(statWords.parent)}/sprint buckets</div>
                             </div>
                             <div className="stats-card">
                                 <h4>Total SP</h4>
                                 <div className="stat-value">{formatExcludedPoints(excludedCapacityModeOverall.sharedPoints)}</div>
-                                <div className="stats-note">Total scoped {statWords.parent.toLowerCase()}/sprint SP</div>
+                                <div className="stats-note">Total scoped {lowerEntityWord(statWords.parent)}/sprint SP</div>
                             </div>
                             <div className="stats-card">
                                 <h4>Cross Share</h4>
@@ -594,16 +599,16 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             <div className="stats-note cohort-error">{excludedCapacityError}</div>
                         )}
                         {!excludedCapacityLoading && !excludedCapacityError && excludedCapacityModeOverall.totalPoints === 0 && (
-                            <div className="cohort-empty">No {statWords.parent.toLowerCase()} share available for the current selection.</div>
+                            <div className="cohort-empty">No {lowerEntityWord(statWords.parent)} share available for the current selection.</div>
                         )}
                         {!excludedCapacityError && excludedCapacityModeOverall.totalPoints > 0 && (
                             <div className="excluded-capacity-panel">
                                 <div className="cohort-section">
                                     <div className="cohort-section-title">Cross-Team {statWords.parent} Footprint</div>
                                     <div className="cohort-section-subtitle">
-                                        Cross = an {statWords.parent.toLowerCase()} has {statWords.children.toLowerCase()} from more than one team in the same sprint.
+                                        Cross = an {lowerEntityWord(statWords.parent)} has {lowerEntityWord(statWords.children)} from more than one team in the same sprint.
                                     </div>
-                                    <div className="epic-mode-bars" role="img" aria-label={`Cross-team ${statWords.parent.toLowerCase()} share by sprint`}>
+                                    <div className="epic-mode-bars" role="img" aria-label={`Cross-team ${lowerEntityWord(statWords.parent)} share by sprint`}>
                                         {[
                                             { ...excludedCapacityModeOverall, sprintName: 'Total', sprintId: 'overall' },
                                             ...excludedCapacityModeSprintRows
@@ -741,7 +746,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         </div>
 
                         <div className="project-track-mode-title">
-                            {projectTrackMode === 'team' ? 'TEAM MODE' : `${(workScope?.roles?.parent || 'Epic').toUpperCase()} MODE`}
+                            {projectTrackMode === 'team' ? 'TEAM MODE' : `${statWords.parent.toUpperCase()} MODE`}
                         </div>
                         {scopeLine}
                         {unavailableCapacityNames.length > 0 && (
@@ -767,7 +772,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     series={projectTrackSeries}
                                     resolveColor={resolveProjectTrackColor}
                                     caption={projectTrackMode === 'epic'
-                                        ? `Each ${statWords.parent.toLowerCase()} is attributed to its dominant sprint; all of its story points land in that sprint.`
+                                        ? `Each ${lowerEntityWord(statWords.parent)} is attributed to its dominant sprint; all of its story points land in that sprint.`
                                         : ''}
                                 />
                             </div>
@@ -776,6 +781,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         <div className="stats-card project-track-card">
                             <h4>{projectTrackMode === 'team' ? 'By team' : 'By assignee'}</h4>
                             <ProjectTrackBreakdownChart
+                                words={statWords}
                                 data={projectTrackBreakdown}
                                 resolveColor={resolveProjectTrackColor}
                                 jiraUrl={jiraUrl}
@@ -796,7 +802,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     <>
                                         {projectTrackPhaseData?.meta?.truncated && (
                                             <div className="project-track-phase-truncated">
-                                                Showing first {projectTrackPhaseData.meta.processedEpicCount} {statWords.parents.toLowerCase()} (truncated).
+                                                Showing first {projectTrackPhaseData.meta.processedEpicCount} {lowerEntityWord(statWords.parents)} (truncated).
                                             </div>
                                         )}
                                         <div className="project-track-phase-summary">
@@ -808,6 +814,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                             )}
                                         </div>
                                         <ProjectTrackPhaseChart
+                                            words={statWords}
                                             rows={projectTrackPhaseEpics}
                                             resolveColor={resolveProjectTrackColor}
                                             jiraUrl={jiraUrl}
@@ -838,10 +845,10 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                             {cohortMode === 'last_n' ? (
                                 <div className="stats-control-group">
-                                    <div className="controls-label">{`Number of ${(workScope?.roles?.parents || 'Epics').toLowerCase()}`}</div>
+                                    <div className="controls-label">{`Number of ${lowerEntityWord(statWords.parents)}`}</div>
                                     <select
                                         className="scenario-input"
-                                        aria-label={`Number of ${(workScope?.roles?.parents || 'Epics').toLowerCase()}`}
+                                        aria-label={`Number of ${lowerEntityWord(statWords.parents)}`}
                                         value={cohortLastN}
                                         onChange={(event) => {
                                             setCohortLastN(resolveLeadTimesLastN(event.target.value));
@@ -960,7 +967,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
 
                         <div className="stats-summary cohort-summary">
                             <div className="stats-card">
-                                <h4>{`${workScope?.roles?.parents || 'Epics'} Overview`}</h4>
+                                <h4>{`${statWords.parents} Overview`}</h4>
                                 <div className="stat-value">{cohortSummary.total}</div>
                                 <div className="stats-note">
                                     {cohortSummary.done} done · {cohortSummary.killed} killed · {cohortSummary.incomplete} incomplete
@@ -968,6 +975,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                             </div>
                             {cohortMode === 'created' && (
                                 <LeadTimesWorkflowStatusCard
+                                    words={statWords}
                                     jiraUrl={jiraUrl}
                                     cohortStartQuarter={cohortStartQuarter}
                                     cohortEndQuarter={cohortEndQuarter}
@@ -982,8 +990,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 </div>
                                 <div className="stats-note">
                                     {cohortMode === 'closed' ? `${statWords.parents} closed in the selected range`
-                                        : cohortMode === 'last_n' ? `Most recently closed ${statWords.parents.toLowerCase()}`
-                                            : `Terminal ${statWords.parents.toLowerCase()} with lead time`}
+                                        : cohortMode === 'last_n' ? `Most recently closed ${lowerEntityWord(statWords.parents)}`
+                                            : `Terminal ${lowerEntityWord(statWords.parents)} with lead time`}
                                 </div>
                             </div>
                             <div className="stats-card">
@@ -992,8 +1000,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                     {cohortMedianLeadDays === null ? '—' : `${cohortMedianLeadDays.toFixed(1)}d`}
                                 </div>
                                 <div className="stats-note">
-                                    {cohortMode === 'closed' ? `Middle lead time of ${statWords.parents.toLowerCase()} closed in the selected range`
-                                        : cohortMode === 'last_n' ? `Middle lead time of the most recently closed ${statWords.parents.toLowerCase()}`
+                                    {cohortMode === 'closed' ? `Middle lead time of ${lowerEntityWord(statWords.parents)} closed in the selected range`
+                                        : cohortMode === 'last_n' ? `Middle lead time of the most recently closed ${lowerEntityWord(statWords.parents)}`
                                             : 'Middle terminal lead time'}
                                 </div>
                             </div>
@@ -1028,9 +1036,10 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                         )}
                                     </div>
                                     <CohortGrid
+                                        words={statWords}
                                         model={cohortGridModel}
                                         showOpen={cohortMode === 'created'}
-                                        emptyMessage={cohortMode !== 'created' && cohortScope !== null && cohortFetchedCount === 0 ? `No closed ${(workScope?.roles?.parents || 'epics').toLowerCase()} in this scope.` : undefined}
+                                        emptyMessage={cohortMode !== 'created' && cohortScope !== null && cohortFetchedCount === 0 ? `No closed ${lowerEntityWord(statWords.parents)} in this scope.` : undefined}
                                         selectedRowKey={cohortSelectedRow}
                                         onSelectRow={(rowKey) => {
                                             setCohortSelectedRow((prev) => (prev === rowKey ? null : rowKey));
@@ -1039,7 +1048,8 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 </div>
                                 <LeadTimesEpicCharts
                                     cohortMode={cohortMode}
-                                    roles={workScope?.roles}
+                                    roles={statWords}
+                                    issueTypeId={workScope?.parentTypeId}
                                     cohortOpenBars={cohortOpenBars}
                                     cohortCompletedBars={cohortCompletedBars}
                                     cohortSelectedRowLabel={cohortSelectedRowLabel}

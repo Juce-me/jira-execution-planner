@@ -129,8 +129,9 @@ export function PlanningReviewScopeDialog({ review }) {
 }
 
 export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel, entityNames = null }) {
-    const labels = React.useMemo(() => reviewLabels(workModel), [workModel]);
-    const kindOf = role => reviewRowIssueKind(role, entityNames || resolveEntityNames(workModel)); // analytics kind of a row role
+    const names = React.useMemo(() => entityNames || resolveEntityNames(workModel), [entityNames, workModel]);
+    const labels = React.useMemo(() => reviewLabels(names), [names]);
+    const kindOf = role => reviewRowIssueKind(role, names); // analytics kind of a row role
     // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
     const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
@@ -165,13 +166,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const stableOrder = React.useRef(null);
     // The dashboard passes a fresh Set every render; key the memo on its content instead.
     const selectionSignature = Array.from(selectedStoryKeys).sort().join('|');
-    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo, workModel }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature, workModel]);
+    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo, names }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature, names]);
     const scroller = React.useRef(null);
     const dockedHeader = React.useRef(null), dockedFooter = React.useRef(null);
     const [dock, setDock] = React.useState(null);
     // Derived columns come from both row kinds' definitions; their values read the loaded cells through `derivedContext`.
-    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived, workModel });
-    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived, workModel });
+    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived, names });
+    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived, names });
     const derivedContext = { isLoaded: (issueId, rowKind) => review.isRowReadable?.({ rowKind, issueId }) === true, forceLoading: Boolean(review.forceLoading) };
     const columns = allColumns.filter(column => column.required || !hidden.has(column.id));
     const keyHidden = !columns.some(column => column.id === 'key');
@@ -402,7 +403,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-planning-row-key={row.id || row.key} data-row-kind={row.rowKind} data-epic-key={row.synthetic ? undefined : row.rowKind === 'epic' ? row.key : row.epicKey} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
-                {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture /></td> : <>
+                {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture entityNames={names} /></td> : <>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.derived ? <PlanningReviewDerivedCell row={row} column={column} review={review} derivedContext={derivedContext} />

@@ -2,6 +2,7 @@ import * as React from 'react';
 import { createPortal } from 'react-dom';
 import {
     ONBOARDING_STEP_CATALOG,
+    buildOnboardingSteps,
     buildStepPresentation,
     buildTourProgress,
     buildVisibleOnboardingSteps,
@@ -13,7 +14,6 @@ import {
     resolveOnboardingSnapshot,
     revokeTourOwnedSuppressionForMutation,
     shouldUseInteractiveCoachmark,
-    ONBOARDING_STEPS_BY_MODULE,
 } from './onboardingSteps.js';
 import {
     appendAriaDescribedByToken,
@@ -213,9 +213,10 @@ function isVisibleInViewport(node, viewport, options) {
 function sameSnapshot(left, right) {
     if (left.steps.length !== right.steps.length) return false;
     if ((left.catchUpSteps || []).length !== (right.catchUpSteps || []).length) return false;
+    // Steps are frozen catalog entries, so identity also catches a catalog reworded for other entity names.
     return left.steps.every((step, index) => (
-        step.id === right.steps[index]?.id && left.targets[step.id] === right.targets[step.id]
-    )) && (left.catchUpSteps || []).every((step, index) => step.id === right.catchUpSteps[index]?.id);
+        step === right.steps[index] && left.targets[step.id] === right.targets[step.id]
+    )) && (left.catchUpSteps || []).every((step, index) => step === right.catchUpSteps[index]);
 }
 
 function sameRect(left, right) {
@@ -279,20 +280,24 @@ export default function OnboardingTour({
     moduleRequest = null,
     onModuleRequestConsumed,
     onModuleInterrupted,
+    entityNames = null,
 } = {}) {
+    // Step copy names the viewed configuration's work entities; ids and targets stay fixed.
+    const stepSet = React.useMemo(() => buildOnboardingSteps(entityNames || undefined), [entityNames]);
     const [snapshot, setSnapshot] = React.useState(() => (
         typeof document === 'undefined'
             ? (() => {
-                const steps = buildVisibleOnboardingSteps({}, { engReadiness });
+                const steps = buildVisibleOnboardingSteps({}, { engReadiness, catalog: stepSet.catalog });
                 return { steps, catchUpSteps: steps, targets: {} };
             })()
             : (() => {
-                const initialSnapshot = readSnapshot(eligibleTargets, engReadiness);
+                const initialSnapshot = readSnapshot(eligibleTargets, engReadiness, [], stepSet.catalog);
                 return { ...initialSnapshot, catchUpSteps: initialSnapshot.steps };
             })()
     ));
     const tour = useOnboardingTour({
         steps: snapshot.catchUpSteps,
+        stepsByModule: stepSet.byModule,
         run,
         completedModules,
         onSkip,
@@ -392,9 +397,7 @@ export default function OnboardingTour({
     const measure = React.useCallback(() => {
         if (!tour.isOpen || !tour.currentStep || tour.suspended || authLocked || mobileSuppressed) return;
         const tourOwnedSuppressionRecords = tourOwnedSuppressionRef.current;
-        const catalog = tour.moduleSession.activeModule === 'catch-up'
-            ? ONBOARDING_STEP_CATALOG
-            : (ONBOARDING_STEPS_BY_MODULE[tour.moduleSession.activeModule] || []);
+        const catalog = stepSet.byModule[tour.moduleSession.activeModule] || [];
         const nextSnapshot = readSnapshot(eligibleTargets, engReadiness, tourOwnedSuppressionRecords, catalog);
         setSnapshot((current) => {
             const activeSnapshot = tour.currentStep?.progression === 'menu-preview'
@@ -446,7 +449,7 @@ export default function OnboardingTour({
                 : DEFAULT_COACHMARK_SIZE,
         };
         setGeometry((current) => sameGeometry(current, nextGeometry) ? current : nextGeometry);
-    }, [authLocked, eligibleTargets, engReadiness, mobileSuppressed, tour.currentStep, tour.isOpen, tour.moduleSession.activeModule, tour.suspended]);
+    }, [authLocked, eligibleTargets, engReadiness, mobileSuppressed, stepSet, tour.currentStep, tour.isOpen, tour.moduleSession.activeModule, tour.suspended]);
 
     React.useLayoutEffect(() => {
         if (!tour.isOpen || tour.suspended || authLocked || mobileSuppressed) return undefined;

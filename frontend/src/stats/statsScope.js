@@ -2,7 +2,7 @@
 // Points of different configurations are equivalent; each names its own quarter, model and role words.
 
 import { canonicalQuarter, quarterFromSprintName, quarterInRange } from '../workStructure/configurationContext.js';
-import { resolveEntityNames } from '../eng/engWorkModel.js';
+import { isCombinedWorkModel, resolveEntityNames } from '../eng/engWorkModel.js';
 
 // Role words the grouping parent and its child carry, from EntityNames (a model string or null resolves to its defaults).
 export function roleLabels(names) {
@@ -21,6 +21,8 @@ export function describeStatsScope(workContext, summaries) {
         configurationName: name,
         model,
         roles: model ? roleLabels(resolveEntityNames(model, summary.roleTypes, null, summary.digest)) : null,
+        // The configured parent type id links Lead Times to Jira in the new model; Legacy links by type name.
+        parentTypeId: isCombinedWorkModel(model) ? summary?.roleTypes?.parent?.id ?? null : null,
         label: name ? `${workContext.quarter} · ${name}` : workContext.quarter,
     };
 }

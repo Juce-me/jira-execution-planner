@@ -1,5 +1,6 @@
 import * as React from 'react';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import { resolveEntityNames } from '../eng/engWorkModel.js';
 
 const DEFAULT_VISIBLE_ROWS = 30;
 
@@ -20,6 +21,7 @@ function OpenEpicsChart({
     emptyMessage,
     variant,
     itemWord = 'epics',
+    itemName = resolveEntityNames().parent,
     initialVisibleCount = DEFAULT_VISIBLE_ROWS,
     loadMoreCount = DEFAULT_VISIBLE_ROWS
 }) {
@@ -96,13 +98,13 @@ function OpenEpicsChart({
                                         rel="noopener noreferrer"
                                         title={`Open ${issueKey} in Jira`}
                                     >
-                                        <span className="cohort-open-key">{issueKey || 'Epic'}</span>
+                                        <span className="cohort-open-key">{issueKey || itemName}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
                                         <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </a>
                                 ) : (
                                     <>
-                                        <span className="cohort-open-key">{item.key || 'Epic'}</span>
+                                        <span className="cohort-open-key">{item.key || itemName}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
                                         <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </>

@@ -34,6 +34,7 @@ export function useScenarioLayout({
     scenarioTimelineIssueKeys,
     scenarioAssigneeConflicts,
     workModel,
+    entityNames = null,
 }) {
     const {
         scenarioData,
@@ -81,7 +82,7 @@ export function useScenarioLayout({
         }
     };
 
-    const noParentLane = scenarioNoParentLane(workModel);
+    const noParentLane = scenarioNoParentLane(entityNames || workModel);
     const scenarioLaneForIssue = (issue) => {
         if (scenarioEpicFocus?.key) {
             return scenarioEpicFocus.key;

@@ -136,8 +136,10 @@ test('combined Catch Up and Board filter models hide the Projects facet and neve
     assert.deepEqual(board.counts.projects, { tech: 0, product: 0, other: 0 });
     const boardResolved = resolveEngBoardFilters({ model: board });
     assert.equal(boardResolved.admitsEpic(groups[0]), true);
-    assert.equal(boardResolved.readoutUnit, 'of 1 initiatives');
-    assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups }) }).readoutUnit, 'of 1 epics');
+    // One is singular in every configuration (the count rule); the subject names the parent level.
+    assert.equal(boardResolved.readoutUnit, 'of 1 initiative');
+    assert.equal(boardResolved.subject, 'Filtering initiatives');
+    assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups }) }).readoutUnit, 'of 1 epic');
 });
 
 test('alert refresh calls: the combined model never asks for the retired Backlog request; Legacy unchanged', async () => {

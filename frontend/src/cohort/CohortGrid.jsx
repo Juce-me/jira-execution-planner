@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from '../stats/statsScope.js';
 import { createPortal } from 'react-dom';
 import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 
@@ -14,7 +16,7 @@ function getHeatLevel(count, maxValue) {
     return 1;
 }
 
-function CohortGrid({ model, selectedRowKey, onSelectRow, showOpen = true, emptyMessage = 'No cohort records for current filters.' }) {
+function CohortGrid({ model, selectedRowKey, onSelectRow, showOpen = true, emptyMessage = 'No cohort records for current filters.', words = roleLabels(null) }) {
     const [tooltip, setTooltip] = React.useState(null);
     const wrapRef = React.useRef(null);
     const frameRef = React.useRef(null);
@@ -143,7 +145,7 @@ function CohortGrid({ model, selectedRowKey, onSelectRow, showOpen = true, empty
                     style={{ left: tooltip.x, top: tooltip.y }}
                 >
                     <div className="cohort-grid-tooltip-title">{tooltip.row.label} · {tooltip.column.label}</div>
-                    <div className="cohort-grid-tooltip-meta">Resolved epics: <strong>{tooltip.cell.count}</strong></div>
+                    <div className="cohort-grid-tooltip-meta">Resolved {lowerEntityWord(words.parents)}: <strong>{tooltip.cell.count}</strong></div>
                     {resolvedSegments.map((segment) => (
                         <div key={segment.key} className="cohort-grid-tooltip-item">
                             <strong>{segment.label}</strong>

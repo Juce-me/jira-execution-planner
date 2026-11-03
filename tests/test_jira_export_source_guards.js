@@ -11,8 +11,9 @@ test('Jira export control is an icon menu instead of a split text button', () =>
     assert.ok(componentSource.includes('variant="secondary compact"'), 'Expected the shared compact secondary variant');
     assert.ok(componentSource.includes('className="header-icon-button jira-export-icon-button"'), 'Expected the shared header icon-button geometry');
     assert.ok(componentSource.includes('aria-label="Open Jira issue menu"'), 'Expected accessible icon button label');
-    assert.ok(componentSource.includes("renderMenuItem('epics', 'Open epics'"), 'Expected menu action for epics');
-    assert.ok(componentSource.includes("renderMenuItem('stories', 'Open stories'"), 'Expected menu action for stories');
+    // The export kinds stay tokens; the copy names the parent and child levels ("Open epics"/"Open stories" in Legacy).
+    assert.ok(componentSource.includes("renderMenuItem('epics', `Open ${parentWords}`"), 'Expected menu action for the parent level');
+    assert.ok(componentSource.includes("renderMenuItem('stories', `Open ${childWords}`"), 'Expected menu action for the child level');
     assert.ok(!componentSource.includes('jira-export-primary'), 'Did not expect split primary text button');
     assert.ok(!componentSource.includes('jira-export-caret'), 'Did not expect split caret button');
     assert.ok(!componentSource.includes('Open in Jira'), 'Did not expect visible text inside the trigger');
@@ -23,7 +24,7 @@ test('optional Board work-item export replaces Stories without changing legacy d
     assert.match(componentSource, /workItemLabels/);
     assert.match(componentSource, /issueKind:\s*issueKind === 'epics' \? 'epic' : issueKind === 'work_items' \? 'mixed' : 'story'/);
     assert.match(componentSource, /renderMenuItem\(\s*'work_items', resolvedWorkItemLabels\.label/);
-    assert.match(componentSource, /hasWorkItemExport[\s\S]*?renderMenuItem\('stories', 'Open stories'/);
+    assert.match(componentSource, /hasWorkItemExport[\s\S]*?renderMenuItem\('stories', `Open \$\{childWords\}`/);
 });
 
 test('Jira export control is mounted once in the shared dashboard header', () => {

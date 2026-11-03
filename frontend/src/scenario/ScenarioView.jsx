@@ -1,7 +1,7 @@
 import * as React from 'react';
 import ScenarioBar from './ScenarioBar.jsx';
 import { formatStoryPointsNumberFixed } from '../eng/engTaskUtils.js';
-import { workEntityNames } from '../eng/engWorkModel.js';
+import { resolveEntityNames } from '../eng/engWorkModel.js';
 import { parseScenarioDate, normalizeScenarioSummary, buildScenarioTooltipPayload, dateToPx, SCENARIO_BAR_HEIGHT } from './scenarioUtils.js';
 
 export function ScenarioView({
@@ -11,8 +11,9 @@ export function ScenarioView({
     normalizeEpicKey,
     excludedEpicSet,
     workModel,
+    entityNames = null,
 }) {
-    const entityNames = workEntityNames(workModel);
+    const names = entityNames || resolveEntityNames(workModel);
     const {
         registerScenarioIssueRef,
         runScenario,
@@ -144,7 +145,7 @@ export function ScenarioView({
                                             setScenarioLaneMode('epic');
                                         }}
                                     >
-                                        {entityNames.parent}
+                                        {names.parent}
                                     </button>
                                     <button
                                         className={`scenario-toggle ${scenarioLaneMode === 'assignee' ? 'active' : ''}`}

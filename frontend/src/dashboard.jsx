@@ -4345,7 +4345,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectedTeamSet,
                 isAllTeamsSelected,
                 excludedEpicSet,
-                workModel,
+                workModel, entityNames,
                 workConfigurationId: workContext?.id || '',
             });
             const {
@@ -4498,7 +4498,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             }), [capacityTasks, selectedTeamSet, isAllTeamsSelected, activeGroupTeamIds, savedSelectedProjects, storyReadiness.snapshot, getTeamInfo]);
             // Board's own epic-level filter pipeline (§7.1, D19, O6) — sprint/group/team scope
             // only, gated by neither surface's facets (the leak Task 11 flagged).
-            const strictBoardPresentation = useStrictEngBoardPresentation({ workModel, active: boardScopeRequested, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
+            const strictBoardPresentation = useStrictEngBoardPresentation({ workModel, entityNames, active: boardScopeRequested, owner: strictBoard, savedBoard: activeGroup?.board || null, searchQuery, showBoard, visibleTaskCount: visibleTasks.length, trackSearch, legacyFilterInput: { scopeTasks: engFilterScopeTasks, epicsInScope, epicDetails, isTechTask, searchQuery, groupTasksByEpic, selection: engBoardFilterSelection } });
             const { boardEpicGroups, boardFilters, boardEpicGroupsFiltered, model: strictBoardModel, workItemKeys: activeJiraExportWorkItemKeys } = strictBoardPresentation;
             const boardJiraEpicKeys = React.useMemo(
                 () => normalizeJiraExportKeys(boardEpicGroupsFiltered.filter(group => group.key !== 'NO_EPIC').map(group => group.key)),
@@ -5234,6 +5234,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const quoted = keys.map(k => `"${k}"`).join(', ');
                 return `("Epic Link" in (${quoted}) OR parent in (${quoted}))`;
             };
+            const planningTypeId = isCombinedWorkModel(workModel) && /^\d+$/.test(String(activeConfiguration?.roleTypes?.planning?.id ?? '')) ? activeConfiguration.roleTypes.planning.id : null; // `issueType: 'Story'` = the planning leaf, linked by id in the new model
             const buildTeamStatusLink = ({ teamId, teamIds, projectName, projectNames, statuses, excludeStatuses, priorityName, issueType, capacityType }) => {
                 const ids = teamIds || (teamId ? [teamId] : []);
                 if (!jiraUrl || !ids.length) return '';
@@ -5281,7 +5282,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     clauses.push(`priority = "${priorityName}"`);
                 }
                 if (issueType) {
-                    clauses.push(`issuetype = "${issueType}"`);
+                    clauses.push(issueType === 'Story' && planningTypeId ? `issuetype = ${planningTypeId}` : `issuetype = "${issueType}"`);
                 }
                 const jql = encodeURIComponent(clauses.join(' AND '));
                 return `${jiraUrl}/issues/?jql=${jql}`;
@@ -5705,7 +5706,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint, planningLayout]);
             const renderEpicShareControl = (epicKey, issueKind = 'epic') => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
-                <ShareViewButton surface="epic" epicKey={epicKey} issueKind={issueKind} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+                <ShareViewButton surface="epic" entityNames={entityNames} epicKey={epicKey} issueKind={issueKind} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             // A group named only by its display name has no stable id to share; the placeholders are the only name-ids a link may carry.
             const renderAlertShareControl = (anchor, group, labelText) => selectedView === 'eng' && activeEngMode === 'catch-up'
@@ -5713,7 +5714,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 <ShareViewButton surface="epic" alertTarget={{ anchor, id: String(group.id) }} labelText={labelText} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             const renderBoardEpicShareControl = (epicKey, columnId) => selectedView === 'eng' && activeEngMode === 'board' && (
-                <ShareViewButton surface="epic" epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
+                <ShareViewButton surface="epic" entityNames={entityNames} epicKey={epicKey} boardColumnId={columnId} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
             const renderShareViewControl = (surface) => selectedView === 'eng' && (activeEngMode === 'scenario'
                 ? <span className="header-icon-reserve" aria-hidden="true" />
@@ -6172,7 +6173,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
-                <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef}>
+                <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
                     <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — open panel to retry' : capacityReadError ? 'Capacity unavailable — open panel to retry' : ''} table={planningLayout === 'table'}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         onToggleLayout={() => { setPlanningLayout('list'); trackPlanningReviewAction('layout_list'); }}
@@ -6186,7 +6187,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             hasVisiblePlanningTasks={visibleTasksForList.length > 0}
                             hasPostponedTasks={planningPostponedTasks.length > 0}
                             hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
-                            selectedCount={selectedCount} selectedVisibleCount={selectedVisiblePlanningJiraKeys.length}
+                            selectedCount={selectedCount} selectedVisibleCount={selectedVisiblePlanningJiraKeys.length} entityNames={entityNames}
                             jiraUrl={jiraUrl}
                             onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
                             onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
@@ -6293,7 +6294,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                     {renderShareViewControl('main')}
                                     {!(boardScopeRequested && !strictBoardActive) && (
                                         <JiraExportButton
-                                            onboardingTarget="jira-export"
+                                            onboardingTarget="jira-export" entityNames={entityNames}
                                             jiraUrl={jiraUrl}
                                             epicKeys={activeJiraExportEpicKeys}
                                             storyKeys={activeJiraExportStoryKeys}
@@ -6864,7 +6865,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         jiraUrl={jiraUrl}
                         activeGroupMissingComponents={activeGroupMissingComponents}
                         priorityAxis={priorityAxis}
-                        resolveStatsTeamColor={resolveStatsTeamColor}
+                        resolveStatsTeamColor={resolveStatsTeamColor} entityNames={entityNames}
                     />}
                     </LazyViewBoundary>
                     )}
@@ -6877,7 +6878,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             selectedSprint={selectedSprint}
                             normalizeEpicKey={normalizeEpicKey}
                             excludedEpicSet={excludedEpicSet}
-                            workModel={workModel}
+                            workModel={workModel} entityNames={entityNames}
                         />}
                         </LazyViewBoundary>
                     )}
@@ -7472,7 +7473,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         />
                     )}
                     <OnboardingTour
-                        run={onboarding.run}
+                        run={onboarding.run} entityNames={entityNames}
                         completedModules={groupPreferences.completedOnboardingModules}
                         engReadiness={onboardingEngReadiness}
                         onSkip={onboarding.skip}

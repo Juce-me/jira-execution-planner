@@ -106,11 +106,13 @@ def check_schema_rows(schema_rows):
         raise ValueError(f'{malformed} group columns are malformed')
 
 
-def group_state(groups, schema_rows, cell_rows, view_rows):
+def group_state(groups, schema_rows, cell_rows, view_rows, other_namespaces=None):
     """Per group: schema columns and revision, cell identities, and the Sprint ids with a view. Plain values only.
 
     `schema_rows` are (schema_id, group, revision, columns), `cell_rows` (schema_id, issue_id, row_kind, column_id) and
-    `view_rows` (group, sprint_id)."""
+    `view_rows` (group, sprint_id). Callers pass NULL-Legacy-namespace rows only; KINDS excludes `initiative`.
+    `other_namespaces` is {group: (definitions, views)} held by quarterly-configuration namespaces: they are never
+    adoption targets but count toward the group-wide 240-definition and 500-view caps."""
     state = {group: {'exists': False, 'revision': 0, 'columns': [], 'cells': set(), 'view_sprints': []} for group in groups}
     check_schema_rows(schema_rows)
     schema_group = {}
@@ -125,6 +127,9 @@ def group_state(groups, schema_rows, cell_rows, view_rows):
         entry['view_sprints'].sort(key=int)
         # A row nothing has written to (revision 0, no columns, no views) counts as absent, so a run that fills it ends it at 1.
         entry['exists'] = entry['exists'] and bool(entry['revision'] or entry['columns'] or entry['view_sprints'])
+    for group, (definitions, views) in (other_namespaces or {}).items():
+        if definitions or views:
+            state[group].update(other_definitions=definitions, other_views=views)
     return state
 
 
@@ -237,7 +242,7 @@ def resolve_group(normalized, state, rules):
                         key=lambda c: c['latest'], reverse=True)
         kept += ranked[:slots]
         excluded += ranked[slots:]
-    room = max(0, MAX_TOTAL_COLUMNS - len(group_columns))
+    room = max(0, MAX_TOTAL_COLUMNS - len(group_columns) - state.get('other_definitions', 0))
     if len(kept) > room:
         ranked = sorted(kept, key=lambda c: c['latest'], reverse=True)
         kept, excluded = ranked[:room], excluded + ranked[room:]
@@ -310,7 +315,7 @@ def resolve_group(normalized, state, rules):
     # A live view wins whole; the rest take the free slots, highest Sprint order first (views[-0:] would be the whole list).
     live_views = set(state['view_sprints'])
     fresh_views = [(sprint, changes) for sprint, changes in views if sprint not in live_views]
-    slots = max(0, rules.MAX_GROUP_VIEWS - len(state['view_sprints']))
+    slots = max(0, rules.MAX_GROUP_VIEWS - len(state['view_sprints']) - state.get('other_views', 0))
     cut = max(0, len(fresh_views) - slots)
     skipped_views = [sprint for sprint, _ in fresh_views[:cut]]
     written_views = []

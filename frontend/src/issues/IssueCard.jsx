@@ -8,10 +8,13 @@ import { buildStorySubtaskProgress, formatSubtaskUpdatedDate } from './subtaskPr
 import IssuePersonEditor from './IssuePersonEditor.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
 import StoryPointsEditor from './StoryPointsEditor.jsx';
+import WorkTypeGlyph from './WorkTypeGlyph.jsx';
+import { WORK_MODEL_LEGACY, resolveEntityNames } from '../eng/engWorkModel.js';
 
 export const IssueCardContext = React.createContext({});
 export const REMOVE_FADE_MS = 240;
 const SUBTASK_PANEL_EXIT_MS = 140;
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 export default function IssueCard({
     task,
@@ -59,6 +62,11 @@ export default function IssueCard({
     onboardingPreviewSession = null,
     onPreviewLifecycleChange,
     issueFieldEdits = null,
+    // ENG passes the viewed configuration's EntityNames, the planning-leaf role and the App's Initiative icon; EPM passes none
+    // and keeps the Legacy defaults and the type-name leaf test.
+    entityNames = null,
+    isPlanningLeaf,
+    InitiativeIcon = null,
 }) {
     if (readingDeparture) { statusTransitionEnabled = false; priorityTransitionEnabled = false; issueFieldEdits = null; onRemove = null; onToggleSubtasks = null; onRetrySubtasks = null; subtaskState = null; }
     const statusName = task.fields.status?.name;
@@ -146,7 +154,9 @@ export default function IssueCard({
     });
     const storyPoints = task.fields.customfield_10004;
     const fieldEditingEnabled = issueFieldEdits
-        && String(task.fields.issuetype?.name || '').trim().toLowerCase() === 'story'
+        // A card is the planning leaf: ENG says so by role; without it, a Story or an Epic by type name (EPM). The server alone
+        // decides the write target from the mapped type; a parent never renders as a card, so this opens nothing new.
+        && (isPlanningLeaf ?? ['story', 'epic'].includes(String(task.fields.issuetype?.name || '').trim().toLowerCase()))
         && task.fields.issuetype?.subtask !== true;
     const fieldIsActive = field => fieldEditingEnabled
         && issueFieldEdits.activeEditor?.issueKey === task.key
@@ -222,10 +232,8 @@ export default function IssueCard({
                     </button>
                 )}
                 <div className="task-headline">
-                    <span className="story-icon" aria-hidden="true" title="STORY">
-                        <svg viewBox="0 0 24 24" fill="none">
-                            <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                        </svg>
+                    <span className="story-icon" aria-hidden="true" title={(entityNames || LEGACY_NAMES).child.toUpperCase()}>
+                        <WorkTypeGlyph level={(entityNames || LEGACY_NAMES).childLevel} InitiativeIcon={InitiativeIcon} />
                     </span>
                     {priorityTransitionEnabled ? (
                         <PriorityTransitionMenu

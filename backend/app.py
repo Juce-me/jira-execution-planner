@@ -54,6 +54,7 @@ def register_blueprints(flask_app):
     from backend.routes.stats_routes import bp as stats_bp
     from backend.routes.scenario_draft_routes import bp as scenario_draft_bp
     from backend.routes.views_routes import bp as views_bp
+    from backend.routes.work_structure_routes import bp as work_structure_bp
 
     flask_app.register_blueprint(auth_bp)
     flask_app.register_blueprint(analytics_bp)
@@ -67,6 +68,7 @@ def register_blueprints(flask_app):
     flask_app.register_blueprint(eng_board_bp)
     flask_app.register_blueprint(sprint_review_bp)
     flask_app.register_blueprint(settings_bp)
+    flask_app.register_blueprint(work_structure_bp)
     flask_app.register_blueprint(stats_bp)
     flask_app.register_blueprint(capacity_bp)
     flask_app.register_blueprint(diagnostic_bp)

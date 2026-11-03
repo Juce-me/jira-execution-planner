@@ -1,9 +1,11 @@
 import * as React from 'react';
 import GroupEpicSelector from './GroupEpicSelector.jsx';
 import { formatGroupBoardSummary } from './groupConfigUtils.js';
+import { workEntityNames } from '../eng/engWorkModel.js';
 
 export default function TeamGroupsSettings(props) {
     const {
+        workModel,
         groupManageTab,
         showGroupListMobile,
         setShowGroupListMobile,
@@ -95,6 +97,8 @@ export default function TeamGroupsSettings(props) {
         selectDepartmentSettingsTab,
         firstRunConfigurationActive,
     } = props;
+    // The new model's Excluded/Ad Hoc keys are Initiative keys (the grouping parent); Legacy keeps Epics.
+    const parentPlural = workEntityNames(workModel).parentPlural;
 
     const hasDuplicableGroup = (groupDraft?.groups || []).some(group => String(group?.id || '').trim());
     const nameFocusValueRef = React.useRef(new Map());
@@ -499,7 +503,7 @@ export default function TeamGroupsSettings(props) {
                                                     </div>
                                                 </div>
                                                 <GroupEpicSelector
-                                                    label="Epics for excluded capacity"
+                                                    label={`${parentPlural} for excluded capacity`}
                                                     selectedEpics={activeGroupDraft?.excludedCapacityEpics || []}
                                                     searchQuery={excludedEpicSearchQuery}
                                                     onSearchChange={handleExcludedEpicSearchChange}
@@ -516,7 +520,7 @@ export default function TeamGroupsSettings(props) {
                                                     chipLastRef={excludedEpicChipLastRef}
                                                 />
                                                 <GroupEpicSelector
-                                                    label="Epics for Ad Hoc capacity"
+                                                    label={`${parentPlural} for Ad Hoc capacity`}
                                                     selectedEpics={activeGroupDraft?.adHocCapacityEpics || []}
                                                     searchQuery={adHocEpicSearchQuery}
                                                     onSearchChange={handleAdHocEpicSearchChange}

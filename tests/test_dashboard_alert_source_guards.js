@@ -320,7 +320,7 @@ test('dashboard defines a persisted global alerts panel toggle', () => {
     );
     assert.match(
         alertsSource,
-        /const alertSummaryItems = ALERT_SUMMARY_CONFIG/
+        /const alertSummaryItems = summaryConfig/
     );
     assert.match(
         alertsSource,
@@ -392,13 +392,14 @@ test('ENG alerts toolbar summary lists every alert category in panel order', () 
         'Backlog',
         'Missing team',
         'Missing labels',
-        'Stories required',
         'Waiting',
-        'Empty epic',
         'Ready to close',
     ].forEach(label => {
         assert.ok(alertsSource.includes(`label: '${label}'`), `Expected alert summary label ${label}`);
     });
+    // The two entity-named categories are built from the configured names; a count of 1 reads in the singular.
+    assert.ok(alertsSource.includes("label: `${names.childPlural} required`, one: `${names.child} required`"), 'Expected the named required label');
+    assert.ok(alertsSource.includes("label: `Empty ${lowerEntityWord(names.parent)}`"), 'Expected the named empty label');
 });
 
 test('ENG alerts toolbar summary CSS is responsive and uses clickable chip styles', () => {
@@ -670,7 +671,7 @@ test('oversized alert notice reuses the Story readiness notice without actions',
     assert.notEqual(noticeStart, -1);
     const notice = panelSource.slice(noticeStart, panelSource.indexOf(': null;', noticeStart));
     assert.match(notice, /<div className="story-readiness-notice" role="status">/);
-    assert.ok(notice.includes("This Department is too large for Epic alerts: more than 2,000 open Epics match its Teams and labels in Product or Tech. Epic alerts are hidden; Story alerts are still shown. Narrow the Department's Teams or labels."));
+    assert.ok(notice.includes("This Department is too large for {names.parent} alerts: more than 2,000 open {names.parentPlural} match its Teams and labels in Product or Tech. {names.parent} alerts are hidden; {names.child} alerts are still shown. Narrow the Department's Teams or labels."));
     assert.doesNotMatch(notice, /<button|onClick|Settings/);
     assert.match(panelSource, /if \(selectedView !== 'eng' \|\| \(alertItemCount <= 0 && !alertScopeTooLarge\)\) \{/);
 });

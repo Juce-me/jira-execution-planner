@@ -1,6 +1,7 @@
 import * as React from 'react';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import MappingPickerRow from './MappingPickerRow.jsx';
 
 export default function JiraFieldSettings(props) {
     const {
@@ -156,7 +157,29 @@ export default function JiraFieldSettings(props) {
         priorityWeightsSum,
         resetPriorityWeightsDraft,
         priorityWeightsValidationError,
+        // Optional quarterly Project config props: omitted means the unchanged flat-editor markup.
+        hierarchyMappings,
+        extraFieldMappings,
+        classificationMode,
+        mappingPreviewLabels,
+        mappingFieldHelpers,
+        sourceFieldHelpers,
     } = props;
+    // A locked shared field (DELIVERY's Team) shows the shared value only: no remove and no search.
+    const teamFieldLocked = mappingFieldHelpers?.share?.team?.locked === true;
+    // Optional per-field sharing line (Project config DELIVERY mappings): its state and, for an own field, the way back.
+    const shareLine = (list, name) => (list?.share?.[name] ? (
+        <div className="group-field-helper" data-field-share={name}>{list.share[name].text}{list.share[name].onShare && <>{' '}<button type="button" className="secondary compact" onClick={list.share[name].onShare}>{list.share[name].actionLabel}</button></>}</div>
+    ) : null);
+    const requirementSuffix = (list, name) => (list?.requirement?.[name] && !(workMode && list.requirement[name] === 'optional') ? ` (${list.requirement[name]})` : '');
+    // Project config (quarterly) mode: one Jira IDs setting for the whole editor shows each id once, in a fixed slot on the
+    // field's label row (never inside the chip), so toggling it moves nothing. The flat editor keeps its inline hints.
+    const workMode = Boolean(hierarchyMappings);
+    const inlineIds = showTechnicalFieldIds && !workMode;
+    const idSlot = id => (workMode ? <span className={`field-id-hint field-id-slot${showTechnicalFieldIds ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={id || ''} /> : null);
+    // The collapsed Project config preview is owned by the editor (`mappingPreviewOpen`).
+    const previewOpen = props.mappingPreviewOpen === true;
+    const setPreviewOpen = props.setMappingPreviewOpen || (() => {});
 
     return (
         <>
@@ -166,7 +189,7 @@ export default function JiraFieldSettings(props) {
                                         <>
                                         {groupManageTab === 'source' && (
                                         <div className="group-pane group-projects-pane-left group-single-pane" style={{ borderRight: 'none' }}>
-                                            <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
+                                            {!workMode && <div className="group-pane-tools group-pane-tools-right" style={{ padding: '0.8rem 1rem 0 1rem' }}>
                                                 <button
                                                     className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
                                                     onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
@@ -174,19 +197,19 @@ export default function JiraFieldSettings(props) {
                                                 >
                                                     {showTechnicalFieldIds ? 'Hide Jira technical IDs' : 'Show Jira technical IDs'}
                                                 </button>
-                                            </div>
+                                            </div>}
                                             <div className="group-projects-subsection" style={{padding: '12px 16px 0'}}>
-                                                <div className="group-pane-title">Jira Source</div>
-                                                <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>
+                                                <div className="group-pane-title">{workMode ? 'Sprint source' : 'Jira Source'}</div>
+                                                {!workMode && <div className="group-field-helper">Configure how sprint data is discovered and read from Jira.</div>}
                                             </div>
                                             <div className="settings-two-col-grid settings-source-grid" style={{ padding: '12px 16px 12px' }}>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Field</div>
-                                                    <div className="group-field-helper">Used to determine which sprint each ticket belongs to.</div>
-                                                    <div className="capacity-inline-row">
+                                                    <div className="team-selector-label">Sprint Field{requirementSuffix(sourceFieldHelpers, 'sprint')}</div>
+                                                    <div className="group-field-helper">{sourceFieldHelpers?.sprint ?? 'Used to determine which sprint each ticket belongs to.'}</div>{shareLine(sourceFieldHelpers, 'sprint')}
+                                                    <div className="capacity-inline-row">{idSlot(sprintFieldIdDraft)}
                                                         {sprintFieldNameDraft ? (
                                                             <div className="selected-team-chip" title={sprintFieldIdDraft || ''}>
-                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{showTechnicalFieldIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
+                                                                <span className="team-name"><strong>{sprintFieldNameDraft}</strong>{inlineIds && sprintFieldIdDraft && <span className="field-id-hint">({sprintFieldIdDraft})</span>}</span>
                                                                 <button className="remove-btn" onClick={() => { setSprintFieldIdDraft(''); setSprintFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove sprint field">&times;</button>
                                                             </div>
                                                         ) : (
@@ -209,8 +232,10 @@ export default function JiraFieldSettings(props) {
                                                     </div>
                                                 </div>
                                                 <div className="group-projects-subsection" style={{marginTop: 0}}>
-                                                    <div className="team-selector-label">Sprint Board (optional)</div>
-                                                    <div className="group-field-helper">Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.</div>
+                                                    <div className="team-selector-label">Sprint Board{workMode ? '' : ' (optional)'}</div>
+                                                    {Array.isArray(sourceFieldHelpers?.board)
+                                                        ? sourceFieldHelpers.board.map(line => <div key={line} className="group-field-helper">{line}</div>)
+                                                        : <div className="group-field-helper">{sourceFieldHelpers?.board ?? 'Used for faster sprint loading. If empty, the server falls back to env/default issue-based sprint discovery.'}</div>}
                                                     {!boardIdDraft && (
                                                         <div className="capacity-inline-row">
                                                             <div className="team-search-wrapper capacity-inline-search">
@@ -252,14 +277,24 @@ export default function JiraFieldSettings(props) {
                                                         </div>
                                                     )}
                                                     {boardIdDraft ? (
-                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>
+                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }}>{idSlot(boardIdDraft)}
                                                             <div className="selected-team-chip" title={boardIdDraft}>
                                                                 <span className="team-name">
                                                                     <strong>{boardNameDraft || `Board ${boardIdDraft}`}</strong>
-                                                                    {showTechnicalFieldIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
+                                                                    {inlineIds && boardNameDraft ? ` (${boardIdDraft})` : ''}
                                                                 </span>
                                                                 <button className="remove-btn" onClick={clearBoardSelection} type="button" title="Clear board" aria-label="Clear sprint board">&times;</button>
                                                             </div>
+                                                        </div>
+                                                    ) : sourceFieldHelpers?.inheritedBoard ? (
+                                                        <div className="selected-teams-list" style={{ marginTop: '0.45rem' }} data-inherited-board={sourceFieldHelpers.inheritedBoard.boardId}>{idSlot(sourceFieldHelpers.inheritedBoard.boardId)}
+                                                            <div className="selected-team-chip" title={sourceFieldHelpers.inheritedBoard.boardId}>
+                                                                <span className="team-name">
+                                                                    <strong>{sourceFieldHelpers.inheritedBoard.name || `Board ${sourceFieldHelpers.inheritedBoard.boardId}`}</strong>
+                                                                    {inlineIds && sourceFieldHelpers.inheritedBoard.name ? ` (${sourceFieldHelpers.inheritedBoard.boardId})` : ''}
+                                                                </span>
+                                                            </div>
+                                                            <div className="group-field-helper">{`Inherited from ${sourceFieldHelpers.inheritedBoard.fromName || 'another configuration'}. Choose a board above to override it here.`}</div>
                                                         </div>
                                                     ) : (
                                                         <div className="team-selector-empty">No board selected (fallback mode).</div>
@@ -271,10 +306,10 @@ export default function JiraFieldSettings(props) {
                                         {groupManageTab === 'scope' && (
                                         <div className={`group-pane group-projects-pane-right group-single-pane ${groupManageTab === 'mapping' ? 'mapping-config-pane' : ''}`}>
                                             <div className="group-pane-header group-projects-pane-header">
-                                                <div className="group-pane-title">Dashboard Projects</div>
-                                                <div className="group-projects-desc">
-                                                    Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.
-                                                </div>
+                                                <div className="group-pane-title">{workMode ? 'Jira projects' : 'Dashboard Projects'}</div>
+                                                {!workMode && <div className="group-projects-desc">
+                                                    {classificationMode === 'combined' ? 'Select which Jira projects to include in dashboard queries.' : 'Select which Jira projects to include in dashboard queries and assign each to Product or Tech for the planning split.'}
+                                                </div>}
                                                 <div className="team-search-wrapper">
                                                     <input
                                                         type="text"
@@ -301,8 +336,12 @@ export default function JiraFieldSettings(props) {
                                                                 >
                                                                     <span className="project-result-label"><strong>{p.key}</strong> &mdash; {p.name}</span>
                                                                     <span className="project-result-actions">
+                                                                        {classificationMode === 'combined' ? (
+                                                                            <button type="button" className="secondary compact" onClick={() => addProjectSelection(p.key, 'other')}>Add</button>
+                                                                        ) : <>
                                                                         <button type="button" className="project-type-btn product" onClick={() => addProjectSelection(p.key, 'product')}>Product</button>
                                                                         <button type="button" className="project-type-btn tech" onClick={() => addProjectSelection(p.key, 'tech')}>Tech</button>
+                                                                        </>}
                                                                     </span>
                                                                 </div>
                                                             ))}
@@ -312,6 +351,21 @@ export default function JiraFieldSettings(props) {
                                             </div>
                                             <div className="group-pane-list group-projects-pane-list">
                                                 <div className="settings-two-col-grid settings-scope-grid">
+                                                {classificationMode === 'combined' ? (
+                                                <div className="group-projects-subsection">
+                                                    {!workMode && <div className="team-selector-label">Projects</div>}
+                                                    {selectedProjectsDraft.length === 0 ? (!workMode && <div className="team-selector-empty">No projects selected.</div>) : (
+                                                        <div className="selected-teams-list">
+                                                            {selectedProjectsDraft.map(p => (
+                                                                <div key={p.key} className={`selected-team-chip${p.type === 'product' ? ' product-chip' : p.type === 'tech' ? ' tech-chip' : ''}`}>
+                                                                    <span className="team-name"><strong>{p.key}</strong>{resolveProjectName(p.key) !== p.key ? ` \u2014 ${resolveProjectName(p.key)}` : ''}</span>
+                                                                    <button className="remove-btn" onClick={() => removeProjectSelection(p.key)} type="button" title="Remove project" aria-label={`Remove project ${p.key}`}>&times;</button>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                ) : <>
                                                 <div className="group-projects-subsection">
                                                     <div className="team-selector-label">Product</div>
                                                     <div className="group-field-helper">Projects counted as Product work in planning and stats.</div>
@@ -344,6 +398,7 @@ export default function JiraFieldSettings(props) {
                                                         </div>
                                                     )}
                                                 </div>
+                                                </>}
                                                 </div>
                                             </div>
                                         </div>
@@ -353,7 +408,7 @@ export default function JiraFieldSettings(props) {
                                         {(groupManageTab === 'mapping' || groupManageTab === 'capacity' || groupManageTab === 'priorityWeights') && (
                                         <div className="group-pane group-projects-pane-right group-single-pane">
                                             <div className="group-pane-tools group-pane-tools-right">
-                                                {(groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
+                                                {!workMode && (groupManageTab === 'mapping' || groupManageTab === 'capacity') && (
                                                     <button
                                                         className={`secondary compact ${showTechnicalFieldIds ? 'active' : ''}`}
                                                         onClick={() => setShowTechnicalFieldIds((prev) => !prev)}
@@ -366,10 +421,19 @@ export default function JiraFieldSettings(props) {
                                             {groupManageTab === 'mapping' && (
                                             <>
                                             <div className="mapping-preview-section group-config-card">
-                                                <div className="group-pane-title">Preview</div>
-                                                <div className="group-field-helper">This is how a story will be shown with your current mapping.</div>
-                                                {(() => {
-                                                    const previewIssueType = issueTypesDraft[0] || 'Issue Type';
+                                                {workMode ? (
+                                                    <div className="work-config-preview-line">
+                                                        <div className="group-pane-title">{mappingPreviewLabels?.summary ?? 'Preview'}</div>
+                                                        <button type="button" className="secondary compact" aria-expanded={previewOpen} onClick={() => setPreviewOpen(open => !open)}>{previewOpen ? 'Hide preview' : 'Show preview'}</button>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="group-pane-title">Preview</div>
+                                                        <div className="group-field-helper">{mappingPreviewLabels?.description ?? 'This is how a story will be shown with your current mapping.'}</div>
+                                                    </>
+                                                )}
+                                                {(!workMode || previewOpen) && (() => {
+                                                    const previewIssueType = mappingPreviewLabels?.childType ?? (issueTypesDraft[0] || 'Issue Type');
                                                     const previewParentFieldName = parentNameFieldNameDraft || 'Parent Name Field';
                                                     const previewStoryPointsFieldName = storyPointsFieldNameDraft || 'Story Points Field';
                                                     const previewTeamFieldName = teamFieldNameDraft || 'Team Field';
@@ -377,13 +441,13 @@ export default function JiraFieldSettings(props) {
                                                     const previewStoryPointsFieldId = storyPointsFieldIdDraft || '';
                                                     const previewTeamFieldId = teamFieldIdDraft || '';
                                                     const previewEpic = {
-                                                        key: 'Parent-Key',
-                                                        parentValue: parentNameFieldNameDraft || 'Parent Name Field'
+                                                        key: mappingPreviewLabels?.parentKey ?? 'Parent-Key',
+                                                        parentValue: mappingPreviewLabels?.parentType ? `${mappingPreviewLabels.parentType} Summary` : parentNameFieldNameDraft || 'Parent Name Field'
                                                     };
                                                     const previewStories = [
                                                         {
-                                                            key: 'STORY-KEY',
-                                                            summary: 'Story Summary',
+                                                            key: mappingPreviewLabels?.childKey ?? 'STORY-KEY',
+                                                            summary: mappingPreviewLabels?.childSummary ?? (mappingPreviewLabels?.childType ? `${mappingPreviewLabels.childType} Summary` : 'Story Summary'),
                                                             status: 'Status',
                                                             statusClass: 'accepted',
                                                             updated: 'Last Updated Date',
@@ -402,15 +466,15 @@ export default function JiraFieldSettings(props) {
                                                                 <div className="epic-header">
                                                                     <div className="epic-title">
                                                                         <div className="epic-title-row">
-                                                                            <span className="epic-icon" aria-hidden="true" title="EPIC">
-                                                                                <svg viewBox="0 0 16 16" fill="none">
+                                                                            <span className="epic-icon" aria-hidden="true" title={mappingPreviewLabels?.parentType?.toUpperCase() ?? "EPIC"}>
+                                                                                {mappingPreviewLabels?.parentIconUrl ? <img src={mappingPreviewLabels.parentIconUrl} width="16" height="16" alt="" /> : mappingPreviewLabels?.parentType ? null : <svg viewBox="0 0 16 16" fill="none">
                                                                                     <path
                                                                                         clipRule="evenodd"
                                                                                         d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
                                                                                         fill="#bf63f3"
                                                                                         fillRule="evenodd"
                                                                                     />
-                                                                                </svg>
+                                                                                </svg>}
                                                                             </span>
                                                                         <a
                                                                             className={`epic-link mapping-preview-dimmable mapping-preview-linkable mapping-preview-link-parent ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
@@ -444,10 +508,10 @@ export default function JiraFieldSettings(props) {
                                                                 >
                                                                     <div className="task-header">
                                                                         <div className="task-headline">
-                                                                            <span className="story-icon" aria-hidden="true" title="STORY">
-                                                                                <svg viewBox="0 0 24 24" fill="none">
-                                                                                    <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>
-                                                                                </svg>
+                                                                            <span className="story-icon" aria-hidden="true" title={mappingPreviewLabels?.childType?.toUpperCase() ?? "STORY"}>
+                                                                                {mappingPreviewLabels?.childIconUrl ? <img src={mappingPreviewLabels.childIconUrl} width="16" height="16" alt="" /> : <svg viewBox={mappingPreviewLabels?.childHierarchyLevel === 1 ? "0 0 16 16" : "0 0 24 24"} fill="none">
+                                                                                    {mappingPreviewLabels?.childHierarchyLevel === 1 ? <path d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z" fill="#bf63f3" fillRule="evenodd" /> : <path d="M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z" stroke="#55A630" strokeWidth="2" strokeLinejoin="round"/>}
+                                                                                </svg>}
                                                                             </span>
                                                                             <h3 className="task-title">
                                                                                 <a
@@ -509,6 +573,9 @@ export default function JiraFieldSettings(props) {
                                                 })()}
                                             </div>
                                             <div className="mapping-config-grid">
+                                            {hierarchyMappings ? hierarchyMappings.map(mapping => (
+                                                <MappingPickerRow key={mapping.key} mapping={mapping} kind="hierarchy" showTechnicalFieldIds={showTechnicalFieldIds} mappingHoverKey={mappingHoverKey} setMappingHoverKey={setMappingHoverKey} />
+                                            )) : (
                                             <div
                                                 className={`group-projects-section group-config-card ${mappingHoverKey === 'issueType' ? 'is-linked-hover' : ''}`}
                                                 onMouseEnter={() => setMappingHoverKey('issueType')}
@@ -558,18 +625,19 @@ export default function JiraFieldSettings(props) {
                                                     <div className="team-selector-empty">No filter — all issue types will be included.</div>
                                                 )}
                                             </div>
+                                            )}
                                             <div
                                                 className={`group-projects-subsection ${mappingHoverKey === 'parent' ? 'is-linked-hover' : ''}`}
                                                 onMouseEnter={() => setMappingHoverKey('parent')}
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="parent"
                                             >
-                                                <div className="team-selector-label">Parent Name Field</div>
-                                                <div className="group-field-helper">Field used to map stories back to their parent epic name.</div>
-                                                <div className="capacity-inline-row">
+                                                <div className="team-selector-label">Parent Name Field{requirementSuffix(mappingFieldHelpers, 'parentName')}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.parentName ?? 'Field used to map stories back to their parent epic name.'}</div>
+                                                <div className="capacity-inline-row">{idSlot(parentNameFieldIdDraft)}
                                                     {parentNameFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-parent-chip" title={parentNameFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{showTechnicalFieldIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{parentNameFieldNameDraft}</strong>{inlineIds && parentNameFieldIdDraft && <span className="field-id-hint">({parentNameFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setParentNameFieldIdDraft(''); setParentNameFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove parent name field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -597,12 +665,12 @@ export default function JiraFieldSettings(props) {
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="storyPoints"
                                             >
-                                                <div className="team-selector-label">Story Points Field</div>
-                                                <div className="group-field-helper">Field used for effort, velocity, and capacity comparisons.</div>
-                                                <div className="capacity-inline-row">
+                                                <div className="team-selector-label">Story Points Field{requirementSuffix(mappingFieldHelpers, 'storyPoints')}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.storyPoints ?? 'Field used for effort, velocity, and capacity comparisons.'}</div>{shareLine(mappingFieldHelpers, 'storyPoints')}
+                                                <div className="capacity-inline-row">{idSlot(storyPointsFieldIdDraft)}
                                                     {storyPointsFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-sp-chip" title={storyPointsFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{showTechnicalFieldIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{storyPointsFieldNameDraft}</strong>{inlineIds && storyPointsFieldIdDraft && <span className="field-id-hint">({storyPointsFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setStoryPointsFieldIdDraft(''); setStoryPointsFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove story points field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -630,14 +698,16 @@ export default function JiraFieldSettings(props) {
                                                 onMouseLeave={() => setMappingHoverKey(null)}
                                                 data-map-key="team"
                                             >
-                                                <div className="team-selector-label">Team Field</div>
-                                                <div className="group-field-helper">Field used to assign each ticket to a team.</div>
-                                                <div className="capacity-inline-row">
+                                                <div className="team-selector-label">Team Field{requirementSuffix(mappingFieldHelpers, 'team')}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.team ?? 'Field used to assign each ticket to a team.'}</div>{shareLine(mappingFieldHelpers, 'team')}
+                                                <div className="capacity-inline-row">{idSlot(teamFieldIdDraft)}
                                                     {teamFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-team-chip" title={teamFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{showTechnicalFieldIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
-                                                            <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>
+                                                            <span className="team-name"><strong>{teamFieldNameDraft}</strong>{inlineIds && teamFieldIdDraft && <span className="field-id-hint">({teamFieldIdDraft})</span>}</span>
+                                                            {!teamFieldLocked && <button className="remove-btn" onClick={() => { setTeamFieldIdDraft(''); setTeamFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove team field">&times;</button>}
                                                         </div>
+                                                    ) : teamFieldLocked ? (
+                                                        <div className="team-selector-empty">Not set.</div>
                                                     ) : (
                                                     <div className="team-search-wrapper capacity-inline-search">
                                                         <input type="text" className="team-search-input" placeholder={loadingFields ? 'Loading fields...' : 'Search fields...'} value={teamFieldSearchQuery} onChange={(e) => { setTeamFieldSearchQuery(e.target.value); setTeamFieldSearchOpen(true); setTeamFieldSearchIndex(0); }} onFocus={() => setTeamFieldSearchOpen(true)} onBlur={() => { window.setTimeout(() => setTeamFieldSearchOpen(false), 120); }} onKeyDown={handleTeamFieldSearchKeyDown} ref={teamFieldSearchInputRef} disabled={loadingFields && !jiraFields.length} />
@@ -661,12 +731,12 @@ export default function JiraFieldSettings(props) {
                                                 className="group-projects-subsection"
                                                 data-map-key="deliveryOwner"
                                             >
-                                                <div className="team-selector-label">Delivery Owner Field</div>
-                                                <div className="group-field-helper">Field naming the person accountable for delivering an epic.</div>
-                                                <div className="capacity-inline-row">
+                                                <div className="team-selector-label">Delivery Owner Field{requirementSuffix(mappingFieldHelpers, 'deliveryOwner')}</div>
+                                                <div className="group-field-helper">{mappingFieldHelpers?.deliveryOwner ?? 'Field naming the person accountable for delivering an epic.'}</div>
+                                                <div className="capacity-inline-row">{idSlot(deliveryOwnerFieldIdDraft)}
                                                     {deliveryOwnerFieldNameDraft ? (
                                                         <div className="selected-team-chip mapping-delivery-owner-chip" title={deliveryOwnerFieldIdDraft || ''}>
-                                                            <span className="team-name"><strong>{deliveryOwnerFieldNameDraft}</strong>{showTechnicalFieldIds && deliveryOwnerFieldIdDraft && <span className="field-id-hint">({deliveryOwnerFieldIdDraft})</span>}</span>
+                                                            <span className="team-name"><strong>{deliveryOwnerFieldNameDraft}</strong>{inlineIds && deliveryOwnerFieldIdDraft && <span className="field-id-hint">({deliveryOwnerFieldIdDraft})</span>}</span>
                                                             <button className="remove-btn" onClick={() => { setDeliveryOwnerFieldIdDraft(''); setDeliveryOwnerFieldNameDraft(''); }} type="button" title="Remove" aria-label="Remove delivery owner field">&times;</button>
                                                         </div>
                                                     ) : (
@@ -688,6 +758,9 @@ export default function JiraFieldSettings(props) {
                                                     )}
                                                 </div>
                                             </div>
+                                            {extraFieldMappings?.map(mapping => (
+                                                <MappingPickerRow key={mapping.key} mapping={mapping} showTechnicalFieldIds={showTechnicalFieldIds} mappingHoverKey={mappingHoverKey} setMappingHoverKey={setMappingHoverKey} />
+                                            ))}
                                             </div>
                                             </>
                                             )}

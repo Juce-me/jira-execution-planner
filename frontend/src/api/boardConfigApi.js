@@ -14,8 +14,18 @@ export function fetchEpicDescription(backendUrl, { key, signal } = {}) {
     }, { featureName: 'eng_epic_description' }).then(response => jsonOrStructuredError(response, 'Epic description'));
 }
 
-export function fetchBoardStatuses(backendUrl, { signal } = {}) {
-    return trackedFetch('board_config_statuses', `${backendUrl}/api/board-config/statuses`, {
+// After promotion the statuses read names its stored entry explicitly: id, revision and, when the
+// caller knows it, the quarter that must resolve to that id. Without a selector the request is the
+// unchanged Legacy flat read.
+export function fetchBoardStatuses(backendUrl, { signal, configurationId = '', configurationRevision = null, quarter = '' } = {}) {
+    const params = new URLSearchParams();
+    if (configurationId) {
+        params.set('configurationId', String(configurationId));
+        params.set('configurationRevision', String(configurationRevision ?? ''));
+        if (quarter) params.set('quarter', String(quarter));
+    }
+    const query = params.toString();
+    return trackedFetch('board_config_statuses', `${backendUrl}/api/board-config/statuses${query ? `?${query}` : ''}`, {
         method: 'GET',
         cache: 'no-cache',
         signal,

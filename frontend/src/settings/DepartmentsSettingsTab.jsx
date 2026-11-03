@@ -127,6 +127,8 @@ export default function DepartmentsSettingsTab({
     updateGroupDraftBoard,
     updateGroupDraftName,
     visibleGroupDraftIds,
+    workCatalogScope,
+    workModel,
 }) {
     // Group Board composer props (Boards tab, GroupBoardsTab.jsx). The Save gate validates
     // groupDraft directly (see groupConfigValidationErrors above); GroupBoardSettings reports
@@ -192,6 +194,7 @@ export default function DepartmentsSettingsTab({
         >
         <TeamGroupsSettings
             {...{
+                workModel,
                 groupManageTab,
                 showGroupListMobile,
                 setShowGroupListMobile,
@@ -481,6 +484,7 @@ export default function DepartmentsSettingsTab({
                 backendUrl,
                 boardId,
                 projectScopeKey,
+                catalogScope: workCatalogScope || null,
                 groupName,
                 epicsByStatus,
                 onChange,

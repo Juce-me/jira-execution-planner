@@ -36,6 +36,21 @@ class CatalogAppAdapter:
             legacy_site_url=self._get('JIRA_URL') or '',
         )
 
+    def resolve_request_sources(self, session, context):
+        """Saved configurations as Sprint sources, or None while unpromoted (DB row only)."""
+        return self._get('resolve_catalog_sources')(
+            session, context, runtime_inputs=self._get('catalog_runtime_inputs')(),
+        )
+
+    def configuration_resolver(self, configuration_id, observed=False):
+        """``resolve_config`` callable bound to one saved configuration (or its observed supplement)."""
+        def resolve(session, context):
+            return self._get('resolve_configuration_catalog_config')(
+                session, context, runtime_inputs=self._get('catalog_runtime_inputs')(),
+                configuration_id=configuration_id, observed=observed,
+            )
+        return resolve
+
     @staticmethod
     def browser_context_id(context):
         canonical = json.dumps([
@@ -97,6 +112,29 @@ class CatalogAppAdapter:
             budget=budget,
         )
 
+    def fetch_scoped_issue_sprints(self, *, config, context, diagnostic_transport, budget):
+        if diagnostic_transport.budget is not budget:
+            raise ValueError('Sprint catalog transport must use the refresh budget')
+
+        def jira_search(payload):
+            return self._get('current_jira_search')(
+                payload,
+                context=context,
+                diagnostic_transport=diagnostic_transport,
+                timeout=min(15, budget.remaining('sprint_page')),
+            )
+
+        return self._get('_sprints_service').fetch_scoped_issue_sprints(
+            base_jql=config.base_jql, sprint_field_id=config.sprint_field_id,
+            jira_search=jira_search, budget=budget,
+        )
+
+    def refresh_scoped_sprint_catalog(self, context, *, config, resolve_config, force=False):
+        return self._get('_refresh_scoped_sprint_catalog')(
+            context, config=config, resolve_config=resolve_config, force=force,
+            fetch_sprints=self._get('fetch_scoped_issue_sprints'),
+        )
+
     def fetch_catalog_sprint_teams(self, *, sprint_id, config, context,
                                    diagnostic_transport, budget):
         if diagnostic_transport.budget is not budget:
@@ -120,6 +158,8 @@ class CatalogAppAdapter:
             jira_search=jira_search,
             directory=directory,
             budget=budget,
+            **({'sprint_field_id': config.sprint_field_id}
+               if getattr(config, 'configuration_id', None) is not None else {}),
         )
 
     def refresh_runtime(self):

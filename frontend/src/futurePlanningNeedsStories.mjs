@@ -1,17 +1,23 @@
+import { WORK_MODEL_LEGACY, lowerEntityWord, resolveEntityNames } from './eng/engWorkModel.js';
+
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
+
 function isTerminalStory(task, normalizeStatus) {
     const status = normalizeStatus(task?.fields?.status?.name);
     return status === 'blocked' || status === 'done' || status === 'killed' || status === 'incomplete';
 }
 
-export function getFuturePlanningNeedsStoriesReasonText(reason) {
-    if (reason === 'no_stories') return 'No stories yet for this sprint.';
-    if (reason === 'selected_stories_not_actionable') return 'Selected-sprint stories exist, but none are actionable.';
-    if (reason === 'stories_outside_sprint') return 'Stories exist, but not in the selected sprint.';
-    if (reason === 'team_uncovered') return 'This Team has no actionable Story in the selected sprint.';
-    if (reason === 'only_closed_stories') return 'Only closed stories exist for this epic.';
-    if (reason === 'stories_in_other_sprint') return 'Open stories exist, but not in the selected sprint.';
-    if (reason === 'team_missing_selected') return 'This team has no story for the selected sprint.';
-    return 'Needs sprint-ready stories.';
+// `names` is the viewed configuration's EntityNames; running text lowercases them (acronyms such as OKR stay).
+export function getFuturePlanningNeedsStoriesReasonText(reason, names = LEGACY_NAMES) {
+    const children = lowerEntityWord(names.childPlural);
+    if (reason === 'no_stories') return `No ${children} yet for this sprint.`;
+    if (reason === 'selected_stories_not_actionable') return `Selected-sprint ${children} exist, but none are actionable.`;
+    if (reason === 'stories_outside_sprint') return `${names.childPlural} exist, but not in the selected sprint.`;
+    if (reason === 'team_uncovered') return `This Team has no actionable ${names.child} in the selected sprint.`;
+    if (reason === 'only_closed_stories') return `Only closed ${children} exist for this ${lowerEntityWord(names.parent)}.`;
+    if (reason === 'stories_in_other_sprint') return `Open ${children} exist, but not in the selected sprint.`;
+    if (reason === 'team_missing_selected') return `This team has no ${lowerEntityWord(names.child)} for the selected sprint.`;
+    return `Needs sprint-ready ${children}.`;
 }
 
 export function classifyFuturePlanningNeedsStories({

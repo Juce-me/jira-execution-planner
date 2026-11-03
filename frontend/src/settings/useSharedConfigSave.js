@@ -129,6 +129,7 @@ export function useSharedConfigSave({
     saveSprintFieldConfig,
     saveStoryPointsFieldConfig,
     saveTeamFieldConfig,
+    scenarioPlannerAccess,
     seedSharedFieldConfigs,
     selectedProjectsDraft,
     selectedSprint,
@@ -178,22 +179,39 @@ export function useSharedConfigSave({
     storyPointsFieldIdDraft,
     teamFieldIdDraft,
     trackSettingsAction,
+    workConfig = null,
     workspaceConfigConflict,
 }) {
+    // Project config owns every moved structural section (projects, Board, issue types, the five
+    // field mappings) as one `workConfigurations` unit; their old flags can never be dirty or
+    // validated while it is active, so the flat-editor checks below are skipped, not edited.
+    const workConfigActive = workConfig?.active === true;
+    const workConfigDirty = workConfigActive && workConfig.dirty === true;
+    // Only an unpromoted workspace with the feature off still edits the flat structural sections; a
+    // promoted workspace with the feature off mounts none of their forms, so none can be dirty or validated.
+    const flatStructural = !workConfig || workConfig.mode === 'legacy';
     const settingsSaveInFlightRef = useRef(false);
     const settingsSaveReadFenceSequenceRef = useRef(0);
 
     const isAdminAccessDirty = adminAccess.isDirty;
+    const { isDirty: isScenarioPlannerAccessDirty, setEnabled: setScenarioPlannerAccessEnabled } = scenarioPlannerAccess;
+    const movedDirty = {
+        projects: flatStructural && isProjectsDraftDirty,
+        board: flatStructural && isBoardConfigDirty,
+        issueTypes: flatStructural && isIssueTypesDraftDirty,
+        fields: flatStructural && anyFieldConfigDirty,
+    };
     const isCoreSharedConfigurationDraftDirty = React.useMemo(() => {
-        if (isProjectsDraftDirty) return true;
+        if (workConfigDirty) return true;
+        if (movedDirty.projects) return true;
         if (isPriorityWeightsDirty) return true;
-        if (isBoardConfigDirty) return true;
+        if (movedDirty.board) return true;
         if (isCapacityDraftDirty) return true;
-        if (isIssueTypesDraftDirty) return true;
-        if (anyFieldConfigDirty) return true;
+        if (movedDirty.issueTypes) return true;
+        if (movedDirty.fields) return true;
         return false;
-    }, [isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, anyFieldConfigDirty]);
-    const isSharedConfigurationDraftDirty = isCoreSharedConfigurationDraftDirty || isAdminAccessDirty;
+    }, [workConfigDirty, movedDirty.projects, isPriorityWeightsDirty, movedDirty.board, isCapacityDraftDirty, movedDirty.issueTypes, movedDirty.fields]);
+    const isSharedConfigurationDraftDirty = isCoreSharedConfigurationDraftDirty || isAdminAccessDirty || isScenarioPlannerAccessDirty;
     const isGroupDraftDirty = React.useMemo(() => {
         if (canEditSharedConfiguration && isSharedConfigurationDraftDirty) return true;
         if (canEditEpmConfiguration && isEpmConfigDirty) return true;
@@ -204,37 +222,44 @@ export function useSharedConfigSave({
     }, [groupDraftSignature, groupDraft, canEditSharedConfiguration, canEditEpmConfiguration, isSharedConfigurationDraftDirty, isEpmConfigDirty, epmViewPreferenceDirty, isGroupVisibilityDraftDirty]);
     const unsavedSectionsCount = React.useMemo(() => {
         return [
-            canEditSharedConfiguration && isProjectsDraftDirty,
+            canEditSharedConfiguration && workConfigDirty,
+            canEditSharedConfiguration && movedDirty.projects,
             canEditSharedConfiguration && isPriorityWeightsDirty,
-            canEditSharedConfiguration && isBoardConfigDirty,
+            canEditSharedConfiguration && movedDirty.board,
             canEditSharedConfiguration && isCapacityDraftDirty,
-            canEditSharedConfiguration && isIssueTypesDraftDirty,
+            canEditSharedConfiguration && movedDirty.issueTypes,
             canEditSharedConfiguration && isAdminAccessDirty,
+            canEditSharedConfiguration && isScenarioPlannerAccessDirty,
             canEditEpmConfiguration && isEpmConfigDirty,
             epmViewPreferenceDirty,
             Boolean(groupDraft && groupDraftSignature !== groupDraftBaselineRef.current),
             isGroupVisibilityDraftDirty
-        ].filter(Boolean).length + (canEditSharedConfiguration ? dirtyFieldConfigCount : 0);
-    }, [canEditSharedConfiguration, canEditEpmConfiguration, isProjectsDraftDirty, isPriorityWeightsDirty, isBoardConfigDirty, isCapacityDraftDirty, isIssueTypesDraftDirty, isAdminAccessDirty, dirtyFieldConfigCount, isEpmConfigDirty, epmViewPreferenceDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
+        ].filter(Boolean).length + (canEditSharedConfiguration && flatStructural ? dirtyFieldConfigCount : 0);
+    }, [canEditSharedConfiguration, canEditEpmConfiguration, workConfigDirty, movedDirty.projects, isPriorityWeightsDirty, movedDirty.board, isCapacityDraftDirty, movedDirty.issueTypes, isAdminAccessDirty, isScenarioPlannerAccessDirty, dirtyFieldConfigCount, flatStructural, isEpmConfigDirty, epmViewPreferenceDirty, groupDraft, groupDraftSignature, isGroupVisibilityDraftDirty]);
     const shouldValidateAdminSettings = canEditSharedConfiguration
         && ((ADMIN_SETTINGS_TAB_IDS.has(groupManageTab) && !['access', 'performance'].includes(groupManageTab)) || isCoreSharedConfigurationDraftDirty);
     const groupConfigValidationErrors = React.useMemo(() => {
         const errors = [];
         if (shouldValidateAdminSettings) {
-            if (!selectedProjectsDraft.length) {
-                errors.push('Add at least one dashboard project before saving.');
-            }
-            if (!sprintFieldIdDraft) {
-                errors.push('Sprint field is required.');
-            }
-            if (!parentNameFieldIdDraft) {
-                errors.push('Parent name field is required.');
-            }
-            if (!storyPointsFieldIdDraft) {
-                errors.push('Story points field is required.');
-            }
-            if (!teamFieldIdDraft) {
-                errors.push('Team field is required.');
+            if (workConfigActive) {
+                // Shape, range, name and one-project errors block Save; incomplete mappings do not.
+                errors.push(...workConfig.validationMessages);
+            } else if (flatStructural) {
+                if (!selectedProjectsDraft.length) {
+                    errors.push('Add at least one dashboard project before saving.');
+                }
+                if (!sprintFieldIdDraft) {
+                    errors.push('Sprint field is required.');
+                }
+                if (!parentNameFieldIdDraft) {
+                    errors.push('Parent name field is required.');
+                }
+                if (!storyPointsFieldIdDraft) {
+                    errors.push('Story points field is required.');
+                }
+                if (!teamFieldIdDraft) {
+                    errors.push('Team field is required.');
+                }
             }
             if (capacityProjectDraft && !capacityFieldIdDraft) {
                 errors.push('Capacity field is required when a capacity project is selected.');
@@ -263,7 +288,7 @@ export function useSharedConfigSave({
         }
         errors.push(...validatePresentGroupBoards(groupDraft?.groups));
         return errors;
-    }, [shouldValidateAdminSettings, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive]);
+    }, [shouldValidateAdminSettings, workConfigActive, flatStructural, workConfig?.validationMessages, selectedProjectsDraft, sprintFieldIdDraft, parentNameFieldIdDraft, storyPointsFieldIdDraft, teamFieldIdDraft, capacityProjectDraft, capacityFieldIdDraft, priorityWeightsValidationError, groupDraft, favoriteGroupValidationError, firstRunConfigurationActive]);
     const saveBlockedReason = React.useMemo(() => {
         if (groupSaving || epmConfigSaving) return 'Save in progress';
         if (firstRunConfigurationActive && !firstRunConfigurationSession.guideComplete) return 'Complete the configuration guide before saving';
@@ -280,21 +305,23 @@ export function useSharedConfigSave({
         const loadSprints = getLoadSprints();
         const closeGroupManage = getCloseGroupManage();
         const adminSectionsToSave = {
-            projects: canEditSharedConfiguration && isProjectsDraftDirty && !skipAdminSections.projects,
+            workConfigurations: canEditSharedConfiguration && workConfigDirty && !skipAdminSections.workConfigurations,
+            projects: canEditSharedConfiguration && movedDirty.projects && !skipAdminSections.projects,
             priorityWeights: canEditSharedConfiguration && isPriorityWeightsDirty && !skipAdminSections.priorityWeights,
-            board: canEditSharedConfiguration && isBoardConfigDirty && !skipAdminSections.board,
+            board: canEditSharedConfiguration && movedDirty.board && !skipAdminSections.board,
             capacity: canEditSharedConfiguration && isCapacityDraftDirty && !skipAdminSections.capacity,
-            sprintField: canEditSharedConfiguration && isSprintFieldDirty && !skipAdminSections.sprintField,
-            parentNameField: canEditSharedConfiguration && isParentNameFieldDirty && !skipAdminSections.parentNameField,
-            storyPointsField: canEditSharedConfiguration && isStoryPointsFieldDirty && !skipAdminSections.storyPointsField,
-            teamField: canEditSharedConfiguration && isTeamFieldDirty && !skipAdminSections.teamField,
-            deliveryOwnerField: canEditSharedConfiguration && isDeliveryOwnerFieldDirty && !skipAdminSections.deliveryOwnerField,
-            issueTypes: canEditSharedConfiguration && isIssueTypesDraftDirty && !skipAdminSections.issueTypes,
+            sprintField: canEditSharedConfiguration && flatStructural && isSprintFieldDirty && !skipAdminSections.sprintField,
+            parentNameField: canEditSharedConfiguration && flatStructural && isParentNameFieldDirty && !skipAdminSections.parentNameField,
+            storyPointsField: canEditSharedConfiguration && flatStructural && isStoryPointsFieldDirty && !skipAdminSections.storyPointsField,
+            teamField: canEditSharedConfiguration && flatStructural && isTeamFieldDirty && !skipAdminSections.teamField,
+            deliveryOwnerField: canEditSharedConfiguration && flatStructural && isDeliveryOwnerFieldDirty && !skipAdminSections.deliveryOwnerField,
+            issueTypes: canEditSharedConfiguration && movedDirty.issueTypes && !skipAdminSections.issueTypes,
             adminAccess: canEditSharedConfiguration && isAdminAccessDirty && !skipAdminSections.adminAccess,
+            scenarioPlanner: canEditSharedConfiguration && isScenarioPlannerAccessDirty && !skipAdminSections.scenarioPlanner,
         };
         const savingAdminSettings = Object.values(adminSectionsToSave).some(Boolean);
         const boardAffectingAdminSave = Object.entries(adminSectionsToSave)
-            .some(([section, pending]) => pending && section !== 'adminAccess');
+            .some(([section, pending]) => pending && section !== 'adminAccess' && section !== 'scenarioPlanner');
         if (boardAffectingAdminSave) {
             sprintCatalogControllerRef.current.invalidate('settings-save');
             invalidateTeamMembership();
@@ -368,6 +395,7 @@ export function useSharedConfigSave({
             }
 
             let projectsChanged = false;
+            let workConfigurationsChanged = false;
             let priorityWeightsChanged = false;
             let boardChanged = false;
             let capacityChanged = false;
@@ -380,6 +408,14 @@ export function useSharedConfigSave({
             }
 
             if (savingAdminSettings) {
+                // The structural bundle is one atomic section; chain its returned revision so the
+                // sections after it post against the revision it produced.
+                workConfigurationsChanged = adminSectionsToSave.workConfigurations;
+                if (workConfigurationsChanged) {
+                    commitSharedConfigRevision(await workConfig.save(sharedConfigRevisionRef.current));
+                    committedAdminSections.workConfigurations = true;
+                }
+
                 // Save project selection if changed
                 projectsChanged = adminSectionsToSave.projects;
                 if (projectsChanged) {
@@ -424,6 +460,12 @@ export function useSharedConfigSave({
                     await adminAccess.save();
                     committedAdminSections.adminAccess = true;
                 }
+
+                // The Scenario planner switch is its own section and payload; it chains the shared revision.
+                if (adminSectionsToSave.scenarioPlanner) {
+                    commitSharedConfigRevision(await scenarioPlannerAccess.save(sharedConfigRevisionRef.current));
+                    committedAdminSections.scenarioPlanner = true;
+                }
             }
 
             // Capture the current active group's team IDs before saving
@@ -445,7 +487,7 @@ export function useSharedConfigSave({
                         // leaving nothing to retry with. Sections above already committed.
                         setGroupsConfigConflict({
                             current: errorPayload.current,
-                            savedSections: committedSectionLabels({ projects: projectsChanged, priorityWeights: priorityWeightsChanged, board: boardChanged, capacity: capacityChanged, fieldConfigs: fieldConfigsChanged, issueTypes: issueTypesChanged })
+                            savedSections: committedSectionLabels({ workConfigurations: workConfigurationsChanged, projects: projectsChanged, priorityWeights: priorityWeightsChanged, board: boardChanged, capacity: capacityChanged, fieldConfigs: fieldConfigsChanged, issueTypes: issueTypesChanged })
                         });
                     }
                     const error = new Error(errorMessage);
@@ -509,10 +551,11 @@ export function useSharedConfigSave({
             }
 
             // If projects or capacity changed, invalidate all group caches to refetch with new scope
-            if (projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
+            if (workConfigurationsChanged || projectsChanged || priorityWeightsChanged || boardChanged || capacityChanged || issueTypesChanged || fieldConfigsChanged) {
                 groupStateRef.current.clear();
             }
             const acceptedBoardConfigurationChanged = sharedGroupsChanged
+                || workConfigurationsChanged
                 || projectsChanged
                 || priorityWeightsChanged
                 || boardChanged
@@ -539,6 +582,7 @@ export function useSharedConfigSave({
                         applySavePermissions(cfg);
                         applyEpmCapabilityConfig(cfg);
                         setBoardAllWorkAvailable(cfg.boardAllWorkAvailable);
+                        workConfig?.applyBootstrap?.(cfg);
                         const nextAdminSettingsGate = applyAdminSettingsGateConfig(cfg);
                         sprintCatalogControllerRef.current.acceptSource(cfg.sprintCatalogSource || null);
                         acceptedBoardConfigRef.current = true;
@@ -612,13 +656,15 @@ export function useSharedConfigSave({
             } : err?.payload;
             if (err?.status === 409 && workspaceConflictPayload?.error === 'workspace_config_conflict') {
                 const pendingSections = committedWorkspaceSectionLabels({
-                    projects: isProjectsDraftDirty && !committedAdminSections.projects,
+                    workConfigurations: workConfigDirty && !committedAdminSections.workConfigurations,
+                    projects: movedDirty.projects && !committedAdminSections.projects,
                     priorityWeights: isPriorityWeightsDirty && !committedAdminSections.priorityWeights,
-                    board: isBoardConfigDirty && !committedAdminSections.board,
+                    board: movedDirty.board && !committedAdminSections.board,
                     capacity: isCapacityDraftDirty && !committedAdminSections.capacity,
                     fieldConfigs: ['sprintField', 'parentNameField', 'storyPointsField', 'teamField', 'deliveryOwnerField']
                         .some(key => adminSectionsToSave[key] && !committedAdminSections[key]),
-                    issueTypes: isIssueTypesDraftDirty && !committedAdminSections.issueTypes,
+                    issueTypes: movedDirty.issueTypes && !committedAdminSections.issueTypes,
+                    scenarioPlanner: isScenarioPlannerAccessDirty && !committedAdminSections.scenarioPlanner,
                 });
                 setWorkspaceConfigConflict({
                     ...workspaceConflictPayload,
@@ -877,6 +923,7 @@ export function useSharedConfigSave({
         const captured = firstRunConfigurationSession.capturedDrafts || {};
         const admin = captured.admin || {};
         const committed = firstRunConfigurationSession.committedAdminSections || {};
+        if (workConfigActive && !committed.workConfigurations && admin.workConfigurations) workConfig.restoreDraft(admin.workConfigurations);
         if (!committed.projects && admin.projects) setSelectedProjectsDraft(admin.projects);
         if (!committed.priorityWeights && admin.priorityWeights) setPriorityWeightsDraft(admin.priorityWeights);
         if (!committed.board && admin.board) {
@@ -906,10 +953,11 @@ export function useSharedConfigSave({
                 if (capturedIds.has(userId) !== currentIds.has(userId)) adminAccess.toggleUser(userId);
             });
         }
+        if (!committed.scenarioPlanner && typeof admin.scenarioPlanner === 'boolean') setScenarioPlannerAccessEnabled(admin.scenarioPlanner);
         if (!firstRunConfigurationSession.committedSections?.epm && captured.epm) setEpmConfigDraft(captured.epm);
         const capturedPrivate = captured.private;
         if (capturedPrivate) setGroupPreferences(capturedPrivate);
-    }, [adminAccess, firstRunConfigurationSession]);
+    }, [adminAccess, setScenarioPlannerAccessEnabled, firstRunConfigurationSession, workConfigActive, workConfig?.restoreDraft]);
 
     const returnFromFirstRunConfigurationRecovery = React.useCallback((snapshotOverride = null) => {
         const closeGroupManage = getCloseGroupManage();
@@ -952,6 +1000,9 @@ export function useSharedConfigSave({
 
     const keepMineOnWorkspaceConfigConflict = async () => {
         if (!workspaceConfigConflict) return;
+        // A conflict that carried the latest bundle retargets the whole Project config draft at it
+        // (server-owned parts adopted, user edits kept) before the single retry.
+        if (workConfigDirty && workspaceConfigConflict.workConfigurations) workConfig.prepareKeepMine(workspaceConfigConflict);
         sharedConfigRevisionRef.current = Number(workspaceConfigConflict.currentRevision || 0);
         setSharedConfigRevision(sharedConfigRevisionRef.current);
         setWorkspaceConfigConflict(null);
@@ -965,6 +1016,7 @@ export function useSharedConfigSave({
         setWorkspaceConfigConflict(null);
         setGroupDraftError('');
         await loadConfig({ preserveEpmDraft: isEpmConfigDirty, replaceWorkspaceDrafts: true });
+        if (workConfigActive) await workConfig.reload();
         if (firstRunConfigurationActive) returnFromFirstRunConfigurationRecovery();
     };
 

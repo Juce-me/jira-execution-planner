@@ -117,7 +117,7 @@ test('the StatsPanel stats prop is built only from the four Stats hook handles',
 
 test('every name StatsPanel destructures from stats exists on the merged model', () => {
     const names = statsPanelNames();
-    assert.equal(names.length, 123, 'StatsPanel destructure size changed; review the model');
+    assert.equal(names.length, 124, 'StatsPanel destructure size changed; review the model');
     assert.equal(new Set(names).size, names.length);
     const handles = appBindings();
     const provided = providedKeys(statsPanelPropMembers().map((member) => member.argument.name), handles);

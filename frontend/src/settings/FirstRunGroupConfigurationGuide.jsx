@@ -14,6 +14,8 @@ export const FIRST_RUN_ADMIN_SECTION_KEYS = [
     'deliveryOwnerField',
     'issueTypes',
     'adminAccess',
+    'scenarioPlanner',
+    'workConfigurations',
 ];
 
 const normalizeCommittedSections = (sections = {}) => ({

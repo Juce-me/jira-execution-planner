@@ -16,7 +16,7 @@ const mainSource = hookSource.slice(hookSource.indexOf('export function useTeamG
 const STATE_NAMES = [...mainSource.matchAll(/const \[(\w+), (\w+)\] = (?:React\.)?useState\(/g)].map((match) => [match[1], match[2]]);
 const REF_NAMES = [...mainSource.matchAll(/const (\w+) = (?:React\.)?useRef\(/g)].map((match) => match[1]);
 
-const INPUT_NAMES = ["BACKEND_URL", "activeGroupId", "clearServerConnectionError", "firstRunConfigurationActive", "getTeamOptions", "groupChangeGuardRef", "markConnectionBootstrapHealthy", "reportServerConnectionError", "savedPrefsRef", "selectedSprintInfo", "setActiveGroupId", "setGroupDraftError", "setShowGroupListMobile", "showGroupManage", "teamCatalogState", "teamMembershipState", "trackSettingsAction"];
+const INPUT_NAMES = ["BACKEND_URL", "activeGroupId", "clearServerConnectionError", "firstRunConfigurationActive", "getTeamOptions", "groupChangeGuardRef", "markConnectionBootstrapHealthy", "reportServerConnectionError", "savedPrefsRef", "selectedSprintInfo", "setActiveGroupId", "setGroupDraftError", "setShowGroupListMobile", "showGroupManage", "teamCatalogState", "teamMembershipState", "trackSettingsAction", "workModel"];
 const RETURN_NAMES = ["groupsConfig", "setGroupsConfig", "groupsLoading", "setGroupsLoading", "groupsError", "setGroupsError", "boardGroupsReadFailed", "setBoardGroupsReadFailed", "acceptedGroupsConfigRef", "groupsReadGenerationRef", "groupsSaveReadFenceRef", "groupWarnings", "groupConfigSource", "groupDraft", "setGroupDraft", "groupsConfigConflict", "setGroupsConfigConflict", "groupImportText", "setGroupImportText", "showGroupImport", "setShowGroupImport", "showGroupAdvanced", "setShowGroupAdvanced", "setTeamNameInputs", "setTeamSearchQuery", "teamSearchOpen", "setTeamSearchOpen", "setTeamSearchIndex", "teamSearchFeedback", "setTeamSearchFeedback", "teamSearchInputRefs", "teamChipLastRef", "labelSearchQuery", "setLabelSearchQuery", "labelSearchOpen", "setLabelSearchOpen", "labelSearchResults", "setLabelSearchResults", "labelSearchLoading", "setLabelSearchLoading", "labelSearchIndex", "setLabelSearchIndex", "labelAddOpen", "setLabelAddOpen", "labelAddButtonRefs", "labelSearchRequestIdRef", "labelSearchDebounceRef", "groupSearchQuery", "setGroupSearchQuery", "activeGroupDraftId", "setActiveGroupDraftId", "groupDraftBaselineRef", "componentSearchQuery", "setComponentSearchQuery", "setComponentSearchResults", "componentSearchOpen", "setComponentSearchOpen", "componentSearchIndex", "setComponentSearchIndex", "componentSearchLoading", "setComponentSearchLoading", "excludedEpicSearchQuery", "setExcludedEpicSearchQuery", "setExcludedEpicSearchResults", "excludedEpicSearchOpen", "setExcludedEpicSearchOpen", "excludedEpicSearchIndex", "setExcludedEpicSearchIndex", "excludedEpicSearchLoading", "setExcludedEpicSearchLoading", "excludedEpicSearchInputRef", "excludedEpicChipLastRef", "adHocEpicSearchQuery", "setAdHocEpicSearchResults", "adHocEpicSearchOpen", "adHocEpicSearchIndex", "setAdHocEpicSearchIndex", "adHocEpicSearchLoading", "setAdHocEpicSearchLoading", "adHocEpicSearchInputRef", "adHocEpicChipLastRef", "personalGroupPreferencesEnabled", "groupPreferences", "setGroupPreferences", "visibleGroupDraftIds", "setVisibleGroupDraftIds", "favoriteGroupDraftId", "setFavoriteGroupDraftId", "setFavoriteGroupDraft", "favoriteGroupValidationError", "setGroupPreferencesSaving", "groupVisibilitySaving", "isGroupVisibilityDraftDirty", "visibleControlGroups", "initializeGroupPreferencesDraft", "isGroupVisibleInControls", "toggleGroupVisibleInControls", "firstRunFavoriteGroupId", "selectFirstRunFavoriteGroup", "saveFirstRunGroupPreferences", "firstRunSaving", "firstRunError", "persistGroupPreferences", "loadGroupsConfig", "loadTeamsFromCurrentView", "groupDraftSignature", "isGroupBoardDraftDirty", "closeAllTeamSearchDropdowns", "addGroupDraftRow", "updateGroupDraftName", "duplicateGroupDraft", "updateGroupDraftBoard", "addTeamToGroup", "removeTeamFromGroup", "removeTeamLabelFromGroup", "handleTeamSearchChange", "handleTeamSearchFocus", "handleTeamSearchBlur", "handleTeamSearchKeyDown", "removeGroupDraft", "toggleDefaultGroupDraft", "applySavedGroupsConfig", "filteredComponentSearchResults", "filteredExcludedEpicSearchResults", "filteredAdHocEpicSearchResults", "handleComponentSearchKeyDown", "addGroupMissingInfoComponent", "removeGroupMissingInfoComponent", "addGroupExcludedCapacityEpic", "removeGroupExcludedCapacityEpic", "addGroupAdHocCapacityEpic", "removeGroupAdHocCapacityEpic", "handleExcludedEpicSearchKeyDown", "handleAdHocEpicSearchKeyDown", "handleExcludedEpicSearchChange", "handleExcludedEpicSearchFocus", "handleExcludedEpicSearchBlur", "handleAdHocEpicSearchChange", "handleAdHocEpicSearchFocus", "handleAdHocEpicSearchBlur", "exportGroupsConfig", "importGroupsConfig", "availableTeams", "teamNameLookup", "resolveTeamName", "activeGroupDraft", "filteredGroupDrafts", "teamCacheLabel", "teamCatalogCanRefresh", "activeTeamQuery", "activeTeamResultsLimited", "activeTeamAvailabilityKey", "activeTeamIndex", "getLabelSearchResults", "closeTeamLabelSearch", "selectTeamLabel", "handleLabelSearchKeyDown", "scheduleJiraLabelSearch"];
 
 function loadHooks({ state = {}, ref = {}, setterCalls = [], effects = [] } = {}) {
@@ -64,6 +64,7 @@ function appInputs(overrides = {}) {
         teamCatalogState: { catalog: {}, meta: {} },
         teamMembershipState: { status: 'idle', snapshot: null, generation: null, validated: false },
         trackSettingsAction: record('trackSettingsAction'),
+        workModel: 'legacy',
         ...overrides,
     };
     return { inputs, calls };
@@ -92,10 +93,10 @@ const DRAFT = {
     ],
 };
 
-test('the hook takes the 17 documented inputs and returns its 158 names in order', () => {
+test('the hook takes the 18 documented inputs and returns its 158 names in order', () => {
     const signature = hookSource.slice(hookSource.indexOf('export function useTeamGroupSettings({') + 'export function useTeamGroupSettings({\n'.length, hookSource.indexOf('\n}) {'));
     assert.deepEqual(signature.split('\n').map((line) => line.trim().replace(/,$/, '')), INPUT_NAMES);
-    assert.equal(INPUT_NAMES.length, 17);
+    assert.equal(INPUT_NAMES.length, 18);
     assert.equal(RETURN_NAMES.length, 158);
     assert.equal(STATE_NAMES.length, 39);
     const { result, inputs } = renderHook();
@@ -376,5 +377,5 @@ test('the search and label effects layers keep their clamps, cleanups and depend
     global.window = previousWindow;
     assert.deepEqual(cleared, [7]);
     assert.deepEqual(debounceRef.current, {}, 'unmount drops the pending label search timers');
-    assert.deepEqual(effects.map((effect) => effect.deps), [[true, 'teams', ''], [true, 'teams', ''], [true, 'teams', ''], [2], [0], [1], [], [2, 'a', { id: 'g1' }]]);
+    assert.deepEqual(effects.map((effect) => effect.deps), [[true, 'teams', '', ''], [true, 'teams', ''], [true, 'teams', ''], [2], [0], [1], [], [2, 'a', { id: 'g1' }]]);
 });

@@ -178,3 +178,13 @@ test('edited fractional story points recalculate selected fixtures without chang
     assert.deepEqual(selectedKeys, { 'DEMO-1': true, 'DEMO-2': true });
     assert.equal(stories[0].fields.customfield_10004, 1.5);
 });
+
+test('combined model buckets selected, team-project and excluded stats under one OTHER lane', async () => {
+    const { buildSelectedProjectStats, buildSelectedTeamProjectStats, buildExcludedProjectStats } = await loadUtils();
+    const tasks = [task('PLAN-E1', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I1', customfield_10004: 8 })];
+
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(), 'rnd_2027'), { OTHER: 8 });
+    assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, new Set(), 'rnd_2027'), { 'team-a': { product: 0, tech: 0, other: 8 } });
+    assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I1']), techProjectKeys, normalizeEpicKey, 'rnd_2027'), { OTHER: 8 });
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys), { PRODUCT: 8 });
+});

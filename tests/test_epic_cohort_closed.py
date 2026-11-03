@@ -286,5 +286,45 @@ class TestWindowCeiling(unittest.TestCase):
         self.assertEqual(closed.last_n_window(None), 200)
 
 
+class TestLeafQualification(unittest.TestCase):
+    """New-model Team/Component scope lives on Epic leaves; the grouping parents are qualified through them."""
+
+    def test_leaf_jql_never_filters_the_parent_type_or_parent_components(self):
+        jql = closed.build_leaf_scope_jql('"PLAN"', 'issuetype = 10002', 'component = "A"')
+        self.assertEqual(jql, 'project in ("PLAN") AND issuetype = 10002 AND parent is not EMPTY AND component = "A"')
+        self.assertNotIn('Epic', closed.build_leaf_scope_jql('"PLAN"', 'issuetype = 10002', ''))
+
+    def test_parent_keys_are_deduplicated_sorted_and_cap_is_reported(self):
+        calls = []
+
+        def search(jql, *, stop_when=None, search_fields=None):
+            calls.append((jql, search_fields))
+            rows = {'a': [{'k': 'PLAN-2'}, {'k': 'PLAN-1'}], 'b': [{'k': 'PLAN-1'}, {'k': ''}]}[jql]
+            return rows, 'page_cap' if jql == 'b' else 'done'
+
+        keys, capped = closed.collect_parent_keys(
+            search, [('A',), ('B',)], lambda batch: 'a' if batch == ('A',) else 'b', lambda row: row['k'])
+        self.assertEqual(keys, ['PLAN-1', 'PLAN-2'])
+        self.assertTrue(capped)
+        self.assertEqual({fields for _jql, fields in calls}, {('parent',)})
+
+    def test_key_batches_respect_the_encoded_budget(self):
+        keys = [f'PLAN-{n}' for n in range(1, 200)]
+        build = lambda batch, since: {'resolved': 'key in (' + ','.join(f'"{key}"' for key in batch) + ')'}
+        batches = closed.key_batches(keys, build, ['summary'])
+        self.assertGreater(len(batches), 1)
+        self.assertEqual([key for batch in batches for key in batch], keys)
+        self.assertTrue(all(len(batch) <= eng_board.MAX_BATCH_SIZE for batch in batches))
+
+    def test_leaf_page_cap_seeds_the_truncated_flag(self):
+        search = FakeSearch([('resolved', [raw_epic('PLAN-1')], 'done'), ('unresolved', [], 'done')])
+        result = closed.fetch_closed_epics(
+            search, normalizer(), mode='last_n', start_date=None, end_date=None, batches=[()],
+            make_pair=lambda batch, since: {'resolved': 'resolved', 'unresolved': 'unresolved'},
+            ceiling=60, warnings=[], page_capped=True)
+        self.assertTrue(result['truncated'])
+        self.assertIn('result truncated at 80 pages', result['warnings'])
+
+
 if __name__ == '__main__':
     unittest.main()

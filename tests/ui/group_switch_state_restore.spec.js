@@ -1,4 +1,4 @@
-// Group A to B to A restores per-group App state, and the saved-preferences object keeps its 62 keys (B0b).
+// Group A to B to A restores per-group App state, and the saved-preferences object keeps its 63 keys (B0b, plus selectedQuarter).
 // Mocked pages only: the host just scopes localStorage, and it must never be the live 5050 server.
 process.env.JEP_TEST_BASE_URL ||= 'http://localhost:5051';
 const { test, expect } = require('@playwright/test');
@@ -8,13 +8,15 @@ const PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
 const savedPrefs = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), PREFS_KEY);
 
 // FROZEN copy of the object passed to saveUiPrefs({...}) in the ui-prefs save useEffect of dashboard.jsx
-// (62 keys, read from the source once at the B0b baseline). saveUiPrefs replaces the whole stored object, so a
+// (62 keys read from the source at the B0b baseline, plus `selectedQuarter` added deliberately by the quarterly
+// work-structure migration: the quarter is private UI state in this same owner as `selectedSprint`, never shared
+// configuration; see docs/plans/EXEC-quarterly-work-structure-migration.md). saveUiPrefs replaces the whole stored object, so a
 // dropped key silently loses that preference; an added key must be added here on purpose. Keys marked "group"
 // are also part of the per-group snapshot; the rest (device or session preferences) are not.
 const FROZEN_SAVED_PREF_KEYS = [
     'selectedView', 'epmTab', 'epmSelectedProjectId', 'epmProjectSort', 'engEpicSort',
     'planningLayout', 'planningTeamsEffortExpanded', 'planningInheritedHintDismissals',
-    'selectedSprint', 'sprintName', 'sprintCatalog', 'selectedTeams', 'activeGroupId',
+    'selectedSprint', 'selectedQuarter', 'sprintName', 'sprintCatalog', 'selectedTeams', 'activeGroupId',
     'showPlanning', 'showStats', 'showScenario', 'showBoard', 'showDependencies', 'showTech', 'showProduct',
     'engStatusFilter', 'engPriorityFilter', 'groupByInitiativeChoice', 'searchQuery',
     'statsView', 'statsGraphMode', 'burnoutAssigneeFilter', 'burndownMetric',
@@ -108,10 +110,10 @@ async function closeFilters(page) {
 }
 const facetOption = (page, facet, option) => page.locator(`.pop-group[data-facet="${facet}"] [data-option="${option}"]`);
 
-test('the saved-preferences object keeps exactly its frozen 62 keys', async ({ page }) => {
-    // The frozen list itself: 62 distinct keys, at least 8 of them outside the per-group state.
-    expect(FROZEN_SAVED_PREF_KEYS).toHaveLength(62);
-    expect(new Set(FROZEN_SAVED_PREF_KEYS).size).toBe(62);
+test('the saved-preferences object keeps exactly its frozen 63 keys', async ({ page }) => {
+    // The frozen list itself: 63 distinct keys, at least 8 of them outside the per-group state.
+    expect(FROZEN_SAVED_PREF_KEYS).toHaveLength(63);
+    expect(new Set(FROZEN_SAVED_PREF_KEYS).size).toBe(63);
     expect(NON_GROUP_PREF_KEYS.length).toBeGreaterThanOrEqual(8);
     for (const key of NON_GROUP_PREF_KEYS) expect(FROZEN_SAVED_PREF_KEYS, key).toContain(key);
 

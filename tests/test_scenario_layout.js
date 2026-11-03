@@ -31,14 +31,15 @@ const loadMatchesScenarioSearch = () => {
     return vm.runInNewContext(`${match[0]}\nmatchesScenarioSearch`);
 };
 
-// The lane selector stays in useScenarioLayout.js as a closure over scenarioEpicFocus/scenarioLaneMode and is
-// passed into four cores; rebuild that closure per case from the hook's own source.
+// The lane selector stays in useScenarioLayout.js as a closure over scenarioEpicFocus/scenarioLaneMode (and the
+// model's no-parent lane, `No Epic` for these Legacy oracles) and is passed into four cores; rebuild that closure
+// per case from the hook's own source.
 const loadMakeLaneForIssue = () => {
     const source = fs.readFileSync(layoutHookPath, 'utf8');
     const match = source.match(/const scenarioLaneForIssue = \(issue\) => \{[\s\S]*?\n\s*\};/);
     assert.ok(match, 'Expected scenarioLaneForIssue in useScenarioLayout.js');
     return (scenarioEpicFocus, scenarioLaneMode) =>
-        vm.runInNewContext(`${match[0]}\nscenarioLaneForIssue`, { scenarioEpicFocus, scenarioLaneMode });
+        vm.runInNewContext(`${match[0]}\nscenarioLaneForIssue`, { scenarioEpicFocus, scenarioLaneMode, noParentLane: 'No Epic' });
 };
 
 // ------------------------------------------------------------------ fixture codec

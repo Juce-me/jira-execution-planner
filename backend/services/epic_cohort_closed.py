@@ -56,7 +56,8 @@ def _status_history_bound(clauses: Sequence[str]) -> str:
 
 def build_closed_epic_jqls(project_clause: str, scope_clause: str, *, mode: str,
                            start_date: date | None, end_date: date | None,
-                           unresolved_since: date | None = None) -> dict[str, str]:
+                           unresolved_since: date | None = None,
+                           parent_clause: str = 'issuetype = Epic') -> dict[str, str]:
     """Return the ``resolved`` and ``unresolved`` JQL for one scope batch.
 
     ``closed`` widens the resolved window by one day on each side (JQL dates use the requesting user's
@@ -64,7 +65,7 @@ def build_closed_epic_jqls(project_clause: str, scope_clause: str, *, mode: str,
     """
     if mode not in ('closed', 'last_n'):
         raise ValueError(f'unsupported closed mode: {mode}')
-    base = f'issuetype = Epic AND project in ({project_clause})'
+    base = f'{parent_clause} AND project in ({project_clause})'
     if scope_clause:
         base += f' AND {scope_clause}'
     base += ' AND status in (' + ','.join(_quote(status) for status in CLOSED_EPIC_STATUSES) + ')'
@@ -106,6 +107,49 @@ def scope_batches(components: Sequence[str],
         raise EpicCohortScopeError('scope is too large for one Jira search request') from exc
 
 
+def build_leaf_scope_jql(project_clause: str, planning_clause: str, scope_clause: str) -> str:
+    """Epic-leaf discovery JQL for the new model: the Component/Team carrier is the leaf, never the parent."""
+    parts = [f'project in ({project_clause})']
+    if planning_clause:
+        parts.append(planning_clause)
+    parts.append('parent is not EMPTY')
+    if scope_clause:
+        parts.append(scope_clause)
+    return ' AND '.join(parts)
+
+
+def collect_parent_keys(search_pages: Callable, leaf_batches: Sequence[Sequence[str]],
+                        build_leaf: Callable[[Sequence[str]], str],
+                        parent_key_of: Callable[[dict], str]) -> tuple[list[str], bool]:
+    """Qualify grouping parents through their matching leaves; returns ``(sorted keys, page_capped)``.
+
+    ``search_pages`` is the shared bounded pager (leaf rows carry only ``parent``). A pass that hit the
+    shared page budget marks the result capped, so the caller reports it as truncated, never as complete.
+    """
+    keys: set[str] = set()
+    capped = False
+    for batch in leaf_batches:
+        rows, stop = search_pages(build_leaf(batch), search_fields=('parent',))
+        capped = capped or stop == 'page_cap'
+        for row in rows:
+            key = parent_key_of(row)
+            if key:
+                keys.add(key)
+    return sorted(keys), capped
+
+
+def key_batches(keys: Sequence[str], build_pair: Callable[[Sequence[str], date | None], dict[str, str]],
+                fields: Sequence[str]) -> list[tuple[str, ...]]:
+    """Batch qualified parent keys under the same paged-search budget as Component batches."""
+    def longest(batch: Sequence[str]) -> str:
+        return max(build_pair(batch, SIZING_SINCE).values(), key=len)
+
+    try:
+        return [tuple(batch) for batch in eng_board.split_epic_batches(keys, longest, fields)]
+    except eng_board.EngBoardError as exc:
+        raise EpicCohortScopeError('scope is too large for one Jira search request') from exc
+
+
 def select_closed_epics(issues: list[dict], *, mode: str, start_date: date | None, end_date: date | None,
                         ceiling: int) -> tuple[list[dict], bool]:
     """Keep closed Epics with a terminal date; ``closed`` filters to the range, ``last_n`` ranks and trims.
@@ -143,7 +187,7 @@ def fetch_closed_epics(search_pages: Callable, normalize: Callable[[list[dict]],
                        mode: str, start_date: date | None, end_date: date | None,
                        batches: Sequence[Sequence[str]],
                        make_pair: Callable[[Sequence[str], date | None], dict[str, str]],
-                       ceiling: int, warnings: list[str]) -> dict:
+                       ceiling: int, warnings: list[str], page_capped: bool = False) -> dict:
     """Run every batch's resolved pass, then the bounded unresolved passes, normalize and select.
 
     ``search_pages(jql, *, stop_when=None) -> (rows, stop)`` returns the raw Jira Epics and why it
@@ -156,7 +200,6 @@ def fetch_closed_epics(search_pages: Callable, normalize: Callable[[list[dict]],
         # boundary and the kept set is the first N by day then key, not by time of day.
         return len(rows) > ceiling and _resolution_day(rows[-1]) != _resolution_day(rows[ceiling - 1])
 
-    page_capped = False
     resolved: dict[str, dict] = {}
     for batch in batches:
         rows, stop = search_pages(make_pair(batch, None)['resolved'],

@@ -1,11 +1,21 @@
 import * as React from 'react';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import WorkTypeGlyph from '../issues/WorkTypeGlyph.jsx';
+import { WORK_MODEL_LEGACY, resolveEntityNames } from './engWorkModel.js';
 
-function StoryRequirementIcon() {
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
+
+// The missing child's type glyph in the dashed placeholder treatment: the bookmark at level 0, the bolt at level 1; a level of
+// 2 or more draws the App's Initiative icon, which has no dashed variant.
+function StoryRequirementIcon({ level, InitiativeIcon }) {
     return (
         <span className="story-requirement-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
+            {level >= 2 ? <WorkTypeGlyph level={level} InitiativeIcon={InitiativeIcon} /> : level === 1 ? (
+                <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M13.5 2.5 5 13.5h6l-1 8 8.5-11h-6l1-8Z" stroke="currentColor" strokeWidth="2" strokeDasharray="3 2" strokeLinejoin="round" />
+                </svg>
+            ) : <svg viewBox="0 0 24 24" fill="none">
                 <path
                     d="M7 4h10a2 2 0 0 1 2 2v14l-7-4-7 4V6a2 2 0 0 1 2-2Z"
                     stroke="currentColor"
@@ -14,7 +24,7 @@ function StoryRequirementIcon() {
                     strokeLinejoin="round"
                 />
                 <path d="M9 9h6M9 12h4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+            </svg>}
         </span>
     );
 }
@@ -31,6 +41,8 @@ export default function StoryRequirementCard({
     jiraUrl,
     sourceSurface = 'catch_up',
     highlighted = false,
+    entityNames = LEGACY_NAMES,
+    InitiativeIcon = null,
 }) {
     const requirementId = requirementIdProp ?? requirement?.targetId ?? requirement?.id;
     const epicKey = epicKeyProp ?? requirement?.epicKey ?? requirement?.epic?.key;
@@ -55,7 +67,8 @@ export default function StoryRequirementCard({
     const accessibleEpic = String(epicSummary || '').trim()
         ? `${normalizedEpicKey}, ${String(epicSummary).trim()}`
         : normalizedEpicKey;
-    const accessibleName = `${accessibleEpic}: Story required for ${normalizedTeamName}, target sprint ${normalizedSprintName}. Opens the Epic in Jira to create the Story.`;
+    const { child, parent } = entityNames;
+    const accessibleName = `${accessibleEpic}: ${child} required for ${normalizedTeamName}, target sprint ${normalizedSprintName}. Opens the ${parent} in Jira to create the ${child}.`;
 
     return (
         <TrackedExternalLink
@@ -74,9 +87,9 @@ export default function StoryRequirementCard({
             })}
         >
             <span className="story-requirement-primary">
-                <StoryRequirementIcon />
+                <StoryRequirementIcon level={entityNames.childLevel} InitiativeIcon={InitiativeIcon} />
                 <span className="story-requirement-title-line">
-                    <span className="story-requirement-title">Story required</span>
+                    <span className="story-requirement-title">{child} required</span>
                     <span className="story-requirement-instruction">
                         Create in Jira.
                     </span>

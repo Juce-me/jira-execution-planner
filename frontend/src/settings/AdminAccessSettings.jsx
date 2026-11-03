@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchAdminUsers, saveAdminMembership } from '../api/adminApi.js';
+import { saveScenarioAccessConfig } from '../api/configApi.js';
 
 export function useAdminAccessSettings({ backendUrl, available, active }) {
     const [users, setUsers] = React.useState([]);
@@ -60,6 +61,58 @@ export function useAdminAccessSettings({ backendUrl, available, active }) {
     return { users, loading, error, selectedUserIds, isDirty, toggleUser, save };
 }
 
+// The workspace "Scenario planner for everyone" switch: its own admin section and endpoint, saved by the
+// footer Save only. The saved value comes from the config bootstrap.
+export function useScenarioPlannerAccessSetting({ backendUrl, active }) {
+    const [savedEnabled, setSavedEnabled] = React.useState(false);
+    const [enabled, setEnabled] = React.useState(false);
+    const isDirty = enabled !== savedEnabled;
+
+    const applyConfig = React.useCallback((config) => {
+        const next = config?.scenarioPlannerForEveryone === true;
+        setSavedEnabled(next);
+        setEnabled(next);
+    }, []);
+
+    React.useEffect(() => {
+        if (active) setEnabled(savedEnabled);
+    }, [active]);
+
+    const save = React.useCallback(async (baseRevision) => {
+        const payload = await saveScenarioAccessConfig(backendUrl, enabled, baseRevision);
+        const next = payload?.enabledForEveryone === true;
+        setSavedEnabled(next);
+        setEnabled(next);
+        return payload;
+    }, [backendUrl, enabled]);
+
+    return { enabled, isDirty, setEnabled, applyConfig, save };
+}
+
+function ScenarioPlannerAccessCard({ scenarioPlannerAccess, canEdit }) {
+    if (!scenarioPlannerAccess) return null;
+    return (
+        <div className="admin-access-card">
+            <h2 className="group-pane-title">Scenario planner</h2>
+            <div className="group-preference-row">
+                <label className="group-visible-control">
+                    <input
+                        type="checkbox"
+                        checked={scenarioPlannerAccess.enabled === true}
+                        disabled={!canEdit}
+                        aria-describedby="scenario-planner-access-helper"
+                        onChange={(event) => scenarioPlannerAccess.setEnabled(event.target.checked)}
+                    />
+                    <span>Scenario planner for everyone</span>
+                </label>
+                <span id="scenario-planner-access-helper" className="group-visible-helper">
+                    When off, only administrators see Scenario planner.
+                </span>
+            </div>
+        </div>
+    );
+}
+
 function displayNameForUser(user) {
     return String(user?.displayName || user?.email || 'Atlassian user');
 }
@@ -73,7 +126,10 @@ export default function AdminAccessSettings(props) {
         adminUsersError,
         selectedAdminUserIds,
         onToggleAdminUser,
+        scenarioPlannerAccess,
+        canEditScenarioPlannerAccess,
     } = props;
+    const scenarioCard = <ScenarioPlannerAccessCard scenarioPlannerAccess={scenarioPlannerAccess} canEdit={canEditScenarioPlannerAccess} />;
 
     if (authMode !== 'atlassian_oauth') {
         return (
@@ -82,6 +138,7 @@ export default function AdminAccessSettings(props) {
                     <h2 className="group-pane-title">App administrators</h2>
                     <div className="group-field-helper">Basic authentication gives every user administrator access.</div>
                 </div>
+                {scenarioCard}
             </div>
         );
     }
@@ -93,6 +150,7 @@ export default function AdminAccessSettings(props) {
                     <h2 className="group-pane-title">App administrators</h2>
                     <div className="group-field-helper">This OAuth setup gives every signed-in user administrator access.</div>
                 </div>
+                {scenarioCard}
             </div>
         );
     }
@@ -143,6 +201,7 @@ export default function AdminAccessSettings(props) {
                     </div>
                 )}
             </div>
+            {scenarioCard}
         </div>
     );
 }

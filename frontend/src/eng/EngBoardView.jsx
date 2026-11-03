@@ -29,6 +29,7 @@ import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { useStatusColourStyle } from '../issues/StatusColourContext.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
+import { workEntityNames } from './engWorkModel.js';
 
 // The ENG Group Board (§6.1). Presentational over engBoardColumns.js: every rule that can be
 // stated without a DOM lives there, so this file owns rendering, the centring measurement and the
@@ -107,7 +108,9 @@ export default function EngBoardView({
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
+    workModel, workContext = null,
 }) {
+    const names = workEntityNames(workModel);
     const statusStyle = useStatusColourStyle();
     const boardPresentationRef = React.useRef(null);
     const [readingRevision, setReadingRevision] = React.useState(0);
@@ -1064,7 +1067,7 @@ export default function EngBoardView({
     // State-specific returns live after every hook so loading/error changes never alter hook order.
     // Match EngView's fetch-state precedence and presentation: loading wins over an older error.
     const hasStrictContent = Array.isArray(strictColumns) && strictColumns.length > 0;
-    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : 'stories';
+    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : names.childPlural.toLowerCase();
     // §7.1/D19: Board owns its facet set, sharing Catch Up's chip grammar only.
     const filterBar = (
             <EngFilterBar
@@ -1081,7 +1084,7 @@ export default function EngBoardView({
                 boardColumns={board?.columns || []}
                 renderPriorityIcon={renderPriorityIcon}
                 disabled={authorityPending || (!hasStrictContent && (loading || Boolean(error)))}
-                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : 'Stories'} />}
+                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : names.childPlural} />}
             />
     );
     if (loading && (!hasStrictContent || (authorityPending && epicGroups.length === 0))) {
@@ -1118,12 +1121,15 @@ export default function EngBoardView({
             )}
             {filterBar}
             <div className="eng-board" role="region" aria-label="Group board" ref={rootRef}>
+                {workContext?.quarter && (
+                    <div className="board-head-sub" data-board-quarter>Quarter {workContext.quarter}</div>
+                )}
                 {firstRun && (
                     <div className="board-head">
                         <div>
-                            <span className="board-head-title">Epics by column</span>
+                            <span className="board-head-title">{names.parentPlural} by column</span>
                             <div className="board-head-sub board-first-run">
-                                This group&apos;s board is not set up yet, so every epic in scope sits in one column.
+                                This group&apos;s board is not set up yet, so every {names.parent.toLowerCase()} in scope sits in one column.
                                 Compose columns in Settings → Departments → Boards.
                             </div>
                         </div>
@@ -1248,7 +1254,7 @@ export default function EngBoardView({
                                     )}
                                     <span className="nm">{column.name}</span>
                                     <span className="ct">{column.epicCount}</span>
-                                    <span className="sp">epics · {column.epicGroups.some(group => group.childrenIncomplete)
+                                    <span className="sp">{names.parentPlural.toLowerCase()} · {column.epicGroups.some(group => group.childrenIncomplete)
                                         ? (column.epicGroups.some(group => group.childrenLoading) ? 'SP pending' : 'SP unavailable')
                                         : `${column.storyPoints.toFixed(1)} sp`}</span>
                                     <span className="col-breach" title="Min/Max is set in Group Board settings">
@@ -1331,7 +1337,7 @@ export default function EngBoardView({
                         menuLabel={drop.confirm ? `Move ${drop.epicKey} to ${drop.confirm.status}?` : `Move ${drop.epicKey} to ${dropColumn.name}`}
                         leadingContent={drop.confirm ? (
                             <div className="status-transition-menu-note eng-board-drop-warn" role="alert">
-                                {`${drop.epicKey} has ${drop.confirm.open} open ${drop.confirm.open === 1 ? 'story' : 'stories'}`}
+                                {`${drop.epicKey} has ${drop.confirm.open} open ${drop.confirm.open === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()}`}
                             </div>
                         ) : null}
                         options={dropOptions}
@@ -1364,7 +1370,7 @@ export default function EngBoardView({
                 document.body,
             )}
 
-            {panelDeparting && departureTarget && createPortal(<div className="board-data-state board-reading-departure" role="status" data-board-reading-departure>{canonicalOpenGroup ? `Story ${retainedTask.key}` : `Epic ${openEpicKey}`} left the current Board scope.</div>, departureTarget)}
+            {panelDeparting && departureTarget && createPortal(<div className="board-data-state board-reading-departure" role="status" data-board-reading-departure>{canonicalOpenGroup ? `${names.child} ${retainedTask.key}` : `${names.parent} ${openEpicKey}`} left the current Board scope.</div>, departureTarget)}
             {openEpicGroup && (
                 <EngBoardEpicPanel
                     key={openEpicGroup.key}
@@ -1378,9 +1384,10 @@ export default function EngBoardView({
                     priorityTransitions={priorityTransitions}
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
+                    workModel={workModel}
                     onSortChange={() => freshnessBridge?.current.release?.()}
                     workItemLabel={strictWorkItemLabel}
-                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : 'story'}
+                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : names.child.toLowerCase()}
                     onSubmitStatusTransition={submitPanelStatus}
                     onClose={closePanel}
                 />

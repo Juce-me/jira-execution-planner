@@ -2,6 +2,7 @@ import * as React from 'react';
 import { useEffect, useRef, useState } from 'react';
 
 import { createSettingsDraftReadGuard } from './settingsConfigReadState.js';
+import { addProjectToEntry } from './workConfigurationModel.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import {
     fetchSelectedProjects as requestSelectedProjects,
@@ -168,10 +169,12 @@ export function useJiraProjectSettings({
         return payload;
     };
 
-    const addProjectSelection = (key, type = 'product') => {
+    // One shared rule with the Project config editor: the default model is the flat Legacy editor
+    // (Product/Tech, `product` default); a single-project model refuses a second project.
+    const addProjectSelection = (key, type, model = 'legacy') => {
         setSelectedProjectsDraft(prev => {
-            if (prev.some(p => p.key === key)) return prev;
-            return [...prev, { key, type }];
+            const { projects } = addProjectToEntry({ model, scope: { projects: prev } }, key, type);
+            return projects === prev ? prev : projects;
         });
         setProjectSearchQuery('');
         setProjectSearchOpen(true);

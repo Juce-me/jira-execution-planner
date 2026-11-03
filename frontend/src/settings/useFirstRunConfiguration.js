@@ -62,6 +62,7 @@ export function useFirstRunConfiguration({
     pendingFirstRunGroupPreferencesRef,
     priorityWeightsDraft,
     saveFirstRunGroupPreferences,
+    scenarioPlannerAccess,
     selectedProjectsDraft,
     setActiveGroupId,
     setDepartmentSettingsTab,
@@ -83,6 +84,7 @@ export function useFirstRunConfiguration({
     storyPointsFieldNameDraft,
     teamFieldIdDraft,
     teamFieldNameDraft,
+    workConfigDraft,
     workspaceConfigConflict,
 }) {
     const openFirstRunSetupChoice = React.useCallback(() => {
@@ -97,6 +99,8 @@ export function useFirstRunConfiguration({
     const closeFirstRunSetupChoice = React.useCallback(() => {
         setFirstRunSetupChoice(null);
     }, []);
+    // After promotion the structural sections are one bundle draft (`workConfigurations`); unpromoted
+    // workspaces keep the flat drafts.
     const captureFirstRunSettingsDrafts = React.useCallback(() => ({
         shared: groupsConfig,
         private: groupPreferences,
@@ -112,15 +116,18 @@ export function useFirstRunConfiguration({
             teamField: { fieldId: teamFieldIdDraft, fieldName: teamFieldNameDraft },
             deliveryOwnerField: { fieldId: deliveryOwnerFieldIdDraft, fieldName: deliveryOwnerFieldNameDraft },
             issueTypes: issueTypesDraft,
+            workConfigurations: workConfigDraft,
             adminAccess: adminAccess.selectedUserIds,
+            scenarioPlanner: scenarioPlannerAccess.enabled,
         },
         epm: epmConfigDraft,
     }), [
         activeGroupId, adminAccess.selectedUserIds, boardIdDraft, boardNameDraft, capacityFieldIdDraft,
         capacityFieldNameDraft, capacityProjectDraft, deliveryOwnerFieldIdDraft, deliveryOwnerFieldNameDraft,
         epmConfigDraft, groupPreferences, groupsConfig, issueTypesDraft, parentNameFieldIdDraft,
-        parentNameFieldNameDraft, priorityWeightsDraft, selectedProjectsDraft, sprintFieldIdDraft,
+        parentNameFieldNameDraft, priorityWeightsDraft, scenarioPlannerAccess.enabled, selectedProjectsDraft, sprintFieldIdDraft,
         sprintFieldNameDraft, storyPointsFieldIdDraft, storyPointsFieldNameDraft, teamFieldIdDraft, teamFieldNameDraft,
+        workConfigDraft,
     ]);
     const configureFirstRunGroup = React.useCallback((sourceGroupId) => {
         pendingFirstRunConfigurationRef.current = beginFirstRunGroupConfiguration({

@@ -1370,5 +1370,117 @@ GOLDEN_LAYOUT_ONLY = (_LAYOUT_ONLY_REPORT + 'dry-run only; no database changes a
                       ((2, '2227f9ae11ea6f9d'), (0, '4f53cda18c2baa0c'), (2, 'd503cd3128994d50')))
 
 
+class AdoptionWithQuarterlyNamespaceTests(unittest.TestCase):
+    """Both review namespaces hold data: adoption reads, counts and writes only the NULL Legacy namespace (#5C)."""
+    setUp, tearDown = AdoptionTests.setUp, AdoptionTests.tearDown
+    legacy, adopt, digest, apply = AdoptionTests.legacy, AdoptionTests.adopt, AdoptionTests.digest, AdoptionTests.apply
+    merge, merge_digest, merge_apply = AdoptionTests.merge, AdoptionTests.merge_digest, AdoptionTests.merge_apply
+    live_group, set_groups, legacy_state, simple = (AdoptionTests.live_group, AdoptionTests.set_groups,
+                                                    AdoptionTests.legacy_state, AdoptionTests.simple)
+    CFG = 'cfg-2027q1'
+
+    def quarterly(self, group='group-x', columns=(), cells=(), views=(), workspace=None, cfg=None):
+        workspace = workspace or self.workspace
+        with db_engine.session_scope(self.url) as session:
+            schema = models.WorkspaceGroupReviewSchema(id=str(uuid.uuid4()), workspace_id=workspace, group_id=group,
+                                                       configuration_id=cfg or self.CFG, schema_revision=7, columns=list(columns))
+            session.add(schema)
+            session.flush()
+            session.add_all([models.GroupReviewCell(schema_id=schema.id, issue_id=issue, row_kind=kind, column_id=column_id,
+                                                    value=value, revision=3) for issue, kind, column_id, value in cells])
+            session.add_all([models.GroupSprintReviewView(workspace_id=workspace, group_id=group, sprint_id=sprint, configuration_id=cfg or self.CFG,
+                                                          quarter_ordinal=8104, sprint_order=review.sprint_order(sprint), layouts=layouts,
+                                                          view_revision=4) for sprint, layouts in views])
+
+    def quarterly_state(self):
+        with db_engine.session_scope(self.url) as session:
+            schemas = session.query(models.WorkspaceGroupReviewSchema).filter(models.WorkspaceGroupReviewSchema.configuration_id.is_not(None)).all()
+            ids = [s.id for s in schemas]
+            return (sorted((s.group_id, s.configuration_id, s.schema_revision, repr(s.columns)) for s in schemas),
+                    sorted((c.issue_id, c.row_kind, c.column_id, c.value, c.revision)
+                           for c in session.query(models.GroupReviewCell).filter(models.GroupReviewCell.schema_id.in_(ids)).all()),
+                    sorted((v.group_id, v.sprint_id, v.quarter_ordinal, v.view_revision, repr(v.layouts))
+                           for v in session.query(models.GroupSprintReviewView).filter(models.GroupSprintReviewView.configuration_id.is_not(None)).all()))
+
+    def legacy_group_state(self):
+        with db_engine.session_scope(self.url) as session:
+            return (sorted((s.group_id, s.schema_revision, repr(s.columns)) for s in session.query(models.WorkspaceGroupReviewSchema).filter(
+                        models.WorkspaceGroupReviewSchema.configuration_id.is_(None)).all()),
+                    sorted((v.group_id, v.sprint_id, v.view_revision) for v in session.query(models.GroupSprintReviewView).filter(
+                        models.GroupSprintReviewView.configuration_id.is_(None)).all()))
+
+    def quarterly_fixture(self):
+        epic = {'id': uid(50), 'rowKind': 'epic', 'label': 'Estimate', 'type': 'number', 'aggregation': 'sum',
+                'archived': False, 'order': 0, 'after': None}
+        self.quarterly(columns=[epic], cells=[('101', 'epic', uid(50), '4.000'), ('900', 'initiative', uid(50), '9.000')],
+                       views=[('17', {'epic': {'order': ['status', uid(50)], 'hidden': []}})])
+
+    def test_merge_leaves_every_quarterly_row_byte_identical_and_writes_only_legacy_rows(self):
+        self.quarterly_fixture()
+        before = self.quarterly_state()
+        column = col('Estimate', identity=uid(1))
+        self.legacy('17', [column], {'story': {'order': ['status', column['id']], 'hidden': []}}, [('101', 'story', column['id'], '1.000')])
+        self.live_group('group-x', [{'id': uid(2), 'rowKind': 'story', 'label': 'Estimate', 'type': 'number', 'aggregation': 'sum',
+                                     'archived': False, 'order': 0, 'after': None}], revision=2)
+        code, _output = self.merge_apply()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.quarterly_state(), before)
+        legacy_after = self.legacy_group_state()
+        self.assertEqual([row[0] for row in legacy_after[0]], ['group-x', 'group-y'])
+        self.assertTrue(any(view[0] == 'group-x' and view[1] == '17' for view in legacy_after[1]))
+        with db_engine.session_scope(self.url) as session:
+            matched = session.query(models.GroupReviewCell).join(models.WorkspaceGroupReviewSchema).filter(
+                models.WorkspaceGroupReviewSchema.configuration_id.is_(None), models.WorkspaceGroupReviewSchema.group_id == 'group-x',
+                models.GroupReviewCell.row_kind == 'story').all()
+            self.assertEqual([(c.issue_id, c.column_id, c.value) for c in matched], [('101', uid(2), '1.000')])
+        # A second merge is a no-op and the quarterly rows still do not move.
+        self.assertIn('nothing to merge', self.merge_apply()[1])
+        self.assertEqual(self.quarterly_state(), before)
+
+    def test_merge_ignores_quarterly_rows_when_deciding_that_a_group_is_empty(self):
+        self.quarterly_fixture()
+        before = self.quarterly_state()
+        column = col('Estimate', identity=uid(1))
+        self.legacy('17', [column], {}, [('101', 'story', column['id'], '1.000')])
+        code, output = self.merge_apply()
+        self.assertEqual(code, 0)
+        self.assertEqual(self.quarterly_state(), before)
+        with db_engine.session_scope(self.url) as session:
+            legacy_rows = session.query(models.WorkspaceGroupReviewSchema).filter(models.WorkspaceGroupReviewSchema.configuration_id.is_(None)).count()
+        self.assertEqual(legacy_rows, 2)
+
+    def test_the_group_wide_caps_count_quarterly_definitions_and_views(self):
+        archived = [{'id': str(uuid.UUID(int=n + 1000)), 'rowKind': 'epic', 'label': f'Old{n}', 'type': 'number', 'aggregation': 'sum',
+                     'archived': True, 'order': n, 'after': None} for n in range(239)]
+        self.quarterly(columns=archived)
+        legacy_columns = [col(f'Legacy {n}', identity=uid(100 + n)) for n in range(3)]
+        self.legacy('17', legacy_columns, {}, [])
+        self.live_group('group-x', [], revision=1)
+        code, output = self.merge_apply()
+        self.assertEqual(code, 0)
+        self.assertIn('cap excluded: keys 2', output)
+        with db_engine.session_scope(self.url) as session:
+            row = session.query(models.WorkspaceGroupReviewSchema).filter(
+                models.WorkspaceGroupReviewSchema.configuration_id.is_(None), models.WorkspaceGroupReviewSchema.group_id == 'group-x').one()
+            self.assertEqual(len(row.columns), 1)
+
+    def test_fresh_apply_refuses_when_quarterly_rows_exist_and_writes_nothing(self):
+        self.quarterly_fixture()
+        before = self.quarterly_state()
+        self.simple()
+        with self.assertRaisesRegex(ValueError, 'use --merge; no database changes applied'):
+            self.apply()
+        self.assertEqual(self.quarterly_state(), before)
+        self.assertEqual(self.legacy_group_state(), ([], []))
+
+    def test_list_counts_only_the_legacy_namespace(self):
+        self.quarterly_fixture()
+        self.simple()
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(adopt.main(['--list']), 0)
+        self.assertIn('group_schemas=0 group_views=0 status=pending', output.getvalue())
+
+
 if __name__ == '__main__':
     unittest.main()

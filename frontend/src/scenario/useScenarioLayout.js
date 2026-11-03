@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { parseScenarioDate, normalizeScenarioSummary, SCENARIO_BAR_GAP } from './scenarioUtils.js';
+import { parseScenarioDate, normalizeScenarioSummary, scenarioNoParentLane, SCENARIO_BAR_GAP } from './scenarioUtils.js';
 import { buildLaneIssues } from './scenarioLaneUtils.js';
 import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { collectJiraExportKeysFromScenarioIssues } from '../jiraExportUtils.mjs';
@@ -33,6 +33,7 @@ export function useScenarioLayout({
     scenarioTimelineWithSegments,
     scenarioTimelineIssueKeys,
     scenarioAssigneeConflicts,
+    workModel,
 }) {
     const {
         scenarioData,
@@ -80,12 +81,13 @@ export function useScenarioLayout({
         }
     };
 
+    const noParentLane = scenarioNoParentLane(workModel);
     const scenarioLaneForIssue = (issue) => {
         if (scenarioEpicFocus?.key) {
             return scenarioEpicFocus.key;
         }
         if (scenarioLaneMode === 'epic') {
-            return issue.epicKey || 'No Epic';
+            return issue.epicKey || noParentLane;
         }
         if (scenarioLaneMode === 'assignee') {
             return issue.assignee || 'Unassigned';
@@ -93,8 +95,8 @@ export function useScenarioLayout({
         return issue.team || 'Unassigned';
     };
     const scenarioLaneInfo = React.useMemo(
-        () => buildScenarioLaneInfo({ scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts, scenarioLaneForIssue }),
-        [scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts]
+        () => buildScenarioLaneInfo({ scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts, scenarioLaneForIssue, noParentLane }),
+        [scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts, noParentLane]
     );
     const scenarioSearchFilterEnabled = Boolean(scenarioSearchQuery && !scenarioEpicFocus);
     const scenarioLateItems = React.useMemo(
@@ -376,8 +378,8 @@ export function useScenarioLayout({
     );
 
     const scenarioEpicEdges = React.useMemo(
-        () => buildScenarioEpicEdges({ scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey, scenarioEpicFocus }),
-        [scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey]
+        () => buildScenarioEpicEdges({ scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey, scenarioEpicFocus, noParentLane }),
+        [scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey, noParentLane]
     );
 
 

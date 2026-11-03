@@ -365,7 +365,9 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         jira_server.OAUTH_TOKEN_STORE['session-1'].pop('db_auth_connection_id', None)
         jira_server.OAUTH_TOKEN_STORE['session-1'].pop('db_token_version', None)
 
-        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+        # The member is not an admin: unlock Scenario so the CSRF/auth path is what is exercised.
+        with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'scenario_planner_for_everyone', return_value=True):
             csrf_response = self.client.get('/api/auth/csrf')
             self.assertEqual(csrf_response.status_code, 200, csrf_response.get_data(as_text=True))
             response = self.client.post(
@@ -1043,6 +1045,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
 
     def test_draft_write_unmocked_auth_csrf_does_not_use_local_oauth_token_store(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(jira_server, 'scenario_planner_for_everyone', return_value=True), \
              patch.object(jira_server, 'oauth_session_data', side_effect=AssertionError('local token store read forbidden')):
             response = self.client.post(
                 '/api/scenario/drafts',

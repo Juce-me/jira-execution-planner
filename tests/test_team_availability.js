@@ -160,3 +160,21 @@ test('Team failures retain authority only for the exact validated identity and s
         }), false, key);
     }
 });
+
+test('in a combined-model quarter every directory and saved Team stays addable and nothing reads as absent', () => {
+    const rows = buildTeamAvailability({
+        directory: {
+            'team-a': { id: 'team-a', name: 'Alpha' },
+            'team-b': { id: 'team-b', name: 'Beta' },
+        },
+        sprintTeams: [{ id: 'team-a', name: 'Alpha' }],
+        configuredTeamIds: ['team-c'],
+        membershipReady: true,
+        sprintGated: false,
+    });
+    assert.deepEqual(Array.from(rows, row => ({ ...row })), [
+        { id: 'team-a', name: 'Alpha', availableInSprint: null, canAdd: true },
+        { id: 'team-b', name: 'Beta', availableInSprint: null, canAdd: true },
+        { id: 'team-c', name: 'team-c', availableInSprint: null, canAdd: true },
+    ]);
+});

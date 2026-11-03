@@ -695,6 +695,10 @@ class StoryReadinessConcurrentBatchTests(unittest.TestCase):
                 self.admission.slots.release()
         return all(acquired)
 
+    def test_legacy_compute_reports_no_ancestor_mismatch_count(self):
+        result, _timing, _wall = run_readiness_compute(_ReadinessJira(epics=2))
+        self.assertNotIn('ancestorMismatchCount', result)
+
     def test_compute_runs_child_and_enrichment_batches_with_a_cap_of_four(self):
         # The four child batches must be in flight together (a serial run breaks the barrier).
         first_wave = threading.Barrier(JIRA_BATCH_CONCURRENCY, timeout=5)
@@ -841,6 +845,182 @@ class StoryReadinessConcurrentBatchTests(unittest.TestCase):
                         worker.join(2)
                     self.assertEqual([worker for worker in workers if worker.is_alive()], [])
                     self.assertTrue(self._slots_all_free())
+
+
+class NewModelStoryReadinessTests(unittest.TestCase):
+    """Initiative aliases need one actionable selected-Sprint Team Epic per Team (plan 4C)."""
+
+    GROUP = {'id': 'dept', 'revision': 1, 'teams': [
+        {'id': 'team-a', 'name': 'Alpha', 'labels': ['alias_a']},
+        {'id': 'team-b', 'name': 'Beta', 'labels': ['alias_b']},
+    ]}
+
+    def roles(self):
+        from tests.test_planning_work_profiles import bundle, context
+        from backend.services.planning_work import WorkRoles
+        return WorkRoles(context('2027Q1', bundle()))
+
+    def compute(self, search):
+        eng_routes.bind_server_globals(vars(eng_routes))
+        roles = self.roles()
+        config = roles.flat_admin_settings()
+        calls = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/sprint/'):
+                return _FakeResponse(200, {'id': 42, 'name': 'Q1', 'state': 'active'})
+            if path.endswith('/sprint') and path.startswith('/rest/agile/1.0/board/'):
+                # The quarterly model shares the Legacy Board until it overrides it.
+                return _FakeResponse(200, {'values': [{'id': 42, 'name': 'Q1', 'state': 'active'}], 'isLast': True})
+            if path == '/rest/api/3/field':
+                return _FakeResponse(200, [{'id': 'customfield_10014', 'name': 'Epic Link'}])
+            raise AssertionError(path)
+
+        def jira_search(payload, **_kwargs):
+            calls.append(payload)
+            return search(payload)
+
+        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+             patch.object(eng_routes, 'current_jira_search', side_effect=jira_search):
+            result, _timing = eng_routes._story_readiness_compute(
+                SimpleNamespace(auth_mode='atlassian_oauth'), ('42', 'Q1', 'active'), self.GROUP,
+                eng_routes._story_readiness_projects(config, allow_other=True), config, transport, (), roles)
+        return result, calls
+
+    def test_an_admitted_sprint_the_board_does_not_list_is_validated_by_its_catalog_row(self):
+        # The DELIVERY Sprint was admitted from the Sprints its Epics carry; the Board lists another Sprint only.
+        eng_routes.bind_server_globals(vars(eng_routes))
+        roles = self.roles()
+        config = roles.flat_admin_settings()
+        board_reads = []
+
+        def jira_get(path, **_kwargs):
+            if path.startswith('/rest/agile/1.0/board/'):
+                board_reads.append(path)
+                return _FakeResponse(200, {'values': [{'id': 7, 'name': '2026Q4', 'state': 'closed'}], 'isLast': True})
+            if path == '/rest/api/3/field':
+                return _FakeResponse(200, [{'id': 'customfield_10014', 'name': 'Epic Link'}])
+            raise AssertionError(path)
+
+        transport = EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25))
+        admitted = {'id': 45, 'name': '2027Q1', 'state': 'future'}
+        with patch.object(eng_routes, 'current_jira_get', side_effect=jira_get), \
+             patch.object(eng_routes, 'current_jira_search', side_effect=lambda payload, **_: _FakeResponse(200, {'issues': [], 'isLast': True})):
+            result, _timing = eng_routes._story_readiness_compute(
+                SimpleNamespace(auth_mode='atlassian_oauth'), ('45', '2027Q1', 'future'), self.GROUP,
+                eng_routes._story_readiness_projects(config, allow_other=True), config, transport, (), roles,
+                admitted_sprint=admitted)
+            self.assertEqual(result['scope']['sprintId'], '45')
+            self.assertEqual(board_reads, [])
+            # The admitted row still has to agree with the requested tuple.
+            with self.assertRaises(LookupError):
+                eng_routes._story_readiness_compute(
+                    SimpleNamespace(auth_mode='atlassian_oauth'), ('45', '2027Q1', 'active'), self.GROUP,
+                    eng_routes._story_readiness_projects(config, allow_other=True), config,
+                    EngBoardRequestTransport(budget=EngBoardRequestBudget.start(25)), (), roles, admitted_sprint=admitted)
+
+    @staticmethod
+    def initiative(key, labels):
+        return {'id': key[-1], 'key': key, 'fields': {
+            'summary': key, 'status': {'name': 'To Do'}, 'labels': labels, 'components': [],
+            'project': {'key': 'PLAN'}, 'parent': None}}
+
+    @staticmethod
+    def epic(key, parent, team, sprint, status='To Do'):
+        return {'key': key, 'fields': {
+            'status': {'name': status}, 'parent': {'key': parent},
+            'customfield_10101': [{'id': sprint}] if sprint else [], 'customfield_30101': {'id': team}}}
+
+    def test_one_team_epic_in_the_selected_sprint_covers_that_team_only(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'issuetype = 10001' in jql and 'labels in' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a', 'alias_b'])], 'isLast': True})
+        result, calls = self.compute(search)
+        self.assertEqual([item['key'] for item in result['epics']], ['PLAN-1'])
+        self.assertEqual(result['epics'][0]['missingTeams'],
+                         [{'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'}])
+        self.assertEqual(result['epics'][0]['projectClass'], 'other')
+        discovery = calls[0]['jql']
+        self.assertIn('issuetype = 10001', discovery)
+        self.assertIn('status not in (Done, Killed, Incomplete, Postponed)', discovery)
+        self.assertNotIn('customfield_10101', discovery)   # Initiatives carry no Sprint
+        self.assertNotIn('_candidate', discovery)       # quarter labels are not required by the new source
+        children = [call['jql'] for call in calls if 'issuetype = 10002' in call['jql']]
+        self.assertEqual(len(children), 1)
+        self.assertNotIn('customfield_10014', children[0])  # Epic Link is Story->Epic only
+        self.assertNotIn('issuetype = Story', children[0])
+
+    def ancestor_search(self, ancestor_type):
+        initiative = self.initiative('PLAN-1', ['alias_a', 'alias_b'])
+        ancestor_fields = {'summary': 'Objective one'}
+        if ancestor_type:
+            ancestor_fields['issuetype'] = {'id': ancestor_type, 'name': 'Synthetic'}
+        initiative['fields']['parent'] = {'key': 'OBJ-1', 'fields': ancestor_fields}
+
+        def search(payload):
+            jql = payload['jql']
+            if 'issuetype = 10001' in jql and 'labels in' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [initiative], 'isLast': True})
+        return search
+
+    def test_a_parent_of_the_ancestor_type_is_the_initiative(self):
+        result, _calls = self.compute(self.ancestor_search('10010'))
+        self.assertEqual(result['epics'][0]['initiative'], {'key': 'OBJ-1', 'summary': 'Objective one'})
+        self.assertEqual(result['ancestorMismatchCount'], 0)
+
+    def test_a_parent_of_another_type_is_counted_and_not_the_initiative(self):
+        result, _calls = self.compute(self.ancestor_search('10002'))
+        self.assertEqual([item['key'] for item in result['epics']], ['PLAN-1'])
+        self.assertIsNone(result['epics'][0]['initiative'])
+        self.assertEqual(result['ancestorMismatchCount'], 1)
+
+    def test_a_permission_reduced_parent_is_unknown_and_not_counted(self):
+        result, _calls = self.compute(self.ancestor_search(None))
+        self.assertEqual(result['ancestorMismatchCount'], 0)
+
+    def test_actionable_epics_for_every_team_leave_nothing_missing(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'labels in' in jql and 'issuetype = 10001' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [self.epic('PLAN-11', 'PLAN-1', 'team-a', '42'),
+                                                       self.epic('PLAN-12', 'PLAN-1', 'team-b', '42')], 'isLast': True})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a', 'alias_b'])], 'isLast': True})
+        result, _calls = self.compute(search)
+        self.assertEqual(result['epics'], [])
+
+    def test_partial_child_source_never_yields_missing_child_requirements(self):
+        def search(payload):
+            jql = payload['jql']
+            if 'labels in' in jql and 'issuetype = 10001' in jql:
+                return _FakeResponse(200, {'issues': [{'key': 'PLAN-1', 'fields': {'project': {'key': 'PLAN'}}}],
+                                            'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(500, {})
+            return _FakeResponse(200, {'issues': [self.initiative('PLAN-1', ['alias_a'])], 'isLast': True})
+        with self.assertRaises(RuntimeError):
+            self.compute(search)
+
+    def test_single_other_scope_is_accepted_and_empty_or_partial_access_is_not(self):
+        payload = _complete_input(projectAccessSnapshot={'other': 'accessible'})
+        payload['epics'][0]['projectClass'] = 'other'
+        self.assertTrue(project_story_readiness(payload)['complete'])
+        for access in ({}, {'other': 'unknown'}, {'product': 'accessible'},
+                       {'product': 'accessible', 'tech': 'accessible', 'other': 'inaccessible'}):
+            with self.subTest(access=access), self.assertRaises(InvalidCompleteReadinessInput):
+                project_story_readiness(_complete_input(projectAccessSnapshot=access))
 
 
 if __name__ == "__main__":

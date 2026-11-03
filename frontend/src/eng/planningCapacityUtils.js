@@ -1,4 +1,5 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { isCombinedWorkModel } from './engWorkModel.js';
 
 export function normalizeCapacityTeamName(name) {
     if (!name) return '';
@@ -379,8 +380,14 @@ export function buildProjectCapacity({
     getTeamNetCapacity,
     capacitySplit,
     showProduct,
-    showTech
+    showTech,
+    workModel
 }) {
+    if (isCombinedWorkModel(workModel)) {
+        // One combined lane: the whole planning capacity belongs to it, with no Product/Tech split.
+        if (!showPlanning || !capacityEnabled) return { OTHER: 0 };
+        return { OTHER: displayedTeamOptions.reduce((sum, team) => sum + (getTeamNetCapacity(team) || 0), 0) };
+    }
     if (!showPlanning || !capacityEnabled) {
         return { PRODUCT: 0, TECH: 0 };
     }
@@ -422,9 +429,11 @@ export function buildTeamCapacityStats({
     normalizeStatus,
     getTeamInfo,
     techProjectKeys,
-    adHocEpicSet = new Set()
+    adHocEpicSet = new Set(),
+    workModel
 }) {
     if (!showPlanning || !capacityEnabled) return {};
+    const combined = isCombinedWorkModel(workModel);
     return capacityTasks.reduce((acc, task) => {
         const status = normalizeStatus(task.fields.status?.name);
         const sp = parseFloat(task.fields.customfield_10004 || 0);
@@ -437,11 +446,13 @@ export function buildTeamCapacityStats({
             acc[teamInfo.id] = {
                 name: teamInfo.name,
                 product: emptyCapacityBreakdown(),
-                tech: emptyCapacityBreakdown()
+                tech: emptyCapacityBreakdown(),
+                ...(combined ? { other: emptyCapacityBreakdown() } : {})
             };
         }
 
-        const bucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType === 'tech' ? 'tech' : 'product';
+        const projectType = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel }).projectType;
+        const bucket = projectType === 'tech' ? 'tech' : projectType === 'other' ? 'other' : 'product';
         if (status === 'to do' || status === 'pending') {
             acc[teamInfo.id][bucket].todoPending += sp;
         }
@@ -463,10 +474,11 @@ export function buildTeamCapacityEntries(teamCapacityStats) {
             name: info.name,
             product: info.product,
             tech: info.tech,
+            ...(info.other ? { other: info.other } : {}),
             total: {
-                todoPending: info.product.todoPending + info.tech.todoPending,
-                accepted: info.product.accepted + info.tech.accepted,
-                postponed: info.product.postponed + info.tech.postponed
+                todoPending: info.product.todoPending + info.tech.todoPending + (info.other?.todoPending || 0),
+                accepted: info.product.accepted + info.tech.accepted + (info.other?.accepted || 0),
+                postponed: info.product.postponed + info.tech.postponed + (info.other?.postponed || 0)
             }
         }))
         .sort((a, b) => a.name.localeCompare(b.name));
@@ -533,6 +545,7 @@ export function buildSelectedProjectEntries({
             const order = (key) => {
                 if (key === 'PRODUCT') return 0;
                 if (key === 'TECH') return 1;
+                if (key === 'OTHER') return 2;
                 return 99;
             };
             const diff = order(a.id) - order(b.id);

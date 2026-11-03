@@ -239,7 +239,7 @@ export function buildScenarioDepViolatedKeys({ scenarioDepViolations }) {
     return keys;
 }
 
-export function buildScenarioLaneInfo({ scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts, scenarioLaneForIssue }) {
+export function buildScenarioLaneInfo({ scenarioTimelineIssues, scenarioLaneMode, scenarioCapacityByTeam, scenarioEpicFocus, scenarioFocusIssueKeys, scenarioExcludedIssueKeys, scenarioAssigneeConflicts, scenarioLaneForIssue, noParentLane = 'No Epic' }) {
     const info = new Map();
     if (!scenarioTimelineIssues || scenarioTimelineIssues.length === 0) {
         if (scenarioEpicFocus?.key) {
@@ -281,8 +281,8 @@ export function buildScenarioLaneInfo({ scenarioTimelineIssues, scenarioLaneMode
             }
         }
         if (scenarioLaneMode === 'epic') {
-            current.key = issue.epicKey || 'No Epic';
-            current.label = issue.epicSummary || issue.epicKey || 'No Epic';
+            current.key = issue.epicKey || noParentLane;
+            current.label = issue.epicSummary || issue.epicKey || noParentLane;
         }
         if (scenarioLaneMode === 'team') {
             const capacity = scenarioCapacityByTeam[issue.team || '']?.size;
@@ -679,15 +679,15 @@ export function buildScenarioEpicBars({ scenarioIssuesByLane, scenarioLanes, sce
     return bars;
 }
 
-export function buildScenarioEpicEdges({ scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey, scenarioEpicFocus }) {
+export function buildScenarioEpicEdges({ scenarioDependencies, scenarioLaneMeta, scenarioLaneMode, scenarioIssueByKey, scenarioEpicFocus, noParentLane = 'No Epic' }) {
     if (scenarioLaneMode !== 'epic' || scenarioEpicFocus) return [];
     const grouped = new Map();
     (scenarioDependencies || []).forEach(edge => {
         const fromIssue = scenarioIssueByKey.get(edge.from);
         const toIssue = scenarioIssueByKey.get(edge.to);
         if (!fromIssue || !toIssue) return;
-        const fromEpic = fromIssue.epicKey || 'No Epic';
-        const toEpic = toIssue.epicKey || 'No Epic';
+        const fromEpic = fromIssue.epicKey || noParentLane;
+        const toEpic = toIssue.epicKey || noParentLane;
         if (fromEpic === toEpic) return;
         const key = `${fromEpic}::${toEpic}`;
         const current = grouped.get(key) || { fromEpic, toEpic, count: 0 };

@@ -226,13 +226,13 @@ def build_scope_version(key, captured_scope, *, token_version):
     return hmac.new(key, payload, hashlib.sha256).hexdigest()
 
 
-def build_epic_index_jql(projects, components, terminal_statuses, retention_days=28):
+def build_epic_index_jql(projects, components, terminal_statuses, retention_days=28, parent_clause='issuetype = Epic'):
     if isinstance(retention_days, bool) or not isinstance(retention_days, int) or not 1 <= retention_days <= 90:
         raise EngBoardError('board_config_invalid')
     project_clause = ','.join(_quote(key) for key, _kind in projects)
     if not project_clause:
         raise EngBoardError('board_project_scope_required')
-    clauses = [f'project in ({project_clause})', 'issuetype = Epic']
+    clauses = [f'project in ({project_clause})', parent_clause]
     components = tuple(dict.fromkeys(str(value).strip() for value in components or () if str(value).strip()))
     if components:
         clauses.append('component in (' + ','.join(_quote(value) for value in components) + ')')
@@ -376,7 +376,7 @@ def build_team_discovery_jql(projects, issue_type_ids, *, team_ids,
 def iter_team_epic_batches(search, *, projects, issue_type_ids, team_ids, existing_epics,
                            epic_fields, terminal_statuses, retention_days=28,
                            team_field_id='customfield_30101', epic_link_field_id=None,
-                           counters=None, cancel_check=lambda: None):
+                           counters=None, cancel_check=lambda: None, parent_clause='issuetype = Epic'):
     """Yield the eligible Team-parent Epic union after each bounded lookup.
 
     The story scan is capped at MAX_CHILDREN, parent searches are key batches,
@@ -431,7 +431,7 @@ def iter_team_epic_batches(search, *, projects, issue_type_ids, team_ids, existi
             )
         if key and key not in epics:
             parent_keys.add(key)
-    base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days)
+    base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days, parent_clause)
     def parent_jql(keys):
         return base_jql + ' AND key in (' + ','.join(_quote(key) for key in keys) + ')'
     for batch in split_epic_batches(sorted(parent_keys), parent_jql, epic_fields):
@@ -464,7 +464,7 @@ def iter_team_epic_batches(search, *, projects, issue_type_ids, team_ids, existi
 def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_epics,
                         epic_fields, terminal_statuses, retention_days=28,
                         team_field_id='customfield_30101', epic_link_field_id=None,
-                        counters=None, cancel_check=lambda: None):
+                        counters=None, cancel_check=lambda: None, parent_clause='issuetype = Epic'):
     """Collect the complete eligible Team-parent Epic union."""
     epics = []
     for epics, _complete in iter_team_epic_batches(
@@ -473,7 +473,7 @@ def discover_team_epics(search, *, projects, issue_type_ids, team_ids, existing_
             epic_fields=epic_fields, terminal_statuses=terminal_statuses,
             retention_days=retention_days, team_field_id=team_field_id,
             epic_link_field_id=epic_link_field_id, counters=counters,
-            cancel_check=cancel_check):
+            cancel_check=cancel_check, parent_clause=parent_clause):
         pass
     return epics
 
@@ -540,6 +540,145 @@ def discover_component_epics(search, **kwargs):
     for epics, _complete in iter_component_epic_batches(search, **kwargs):
         pass
     return epics
+
+
+class LeafCohort:
+    """Admitted Component/Team leaf membership of one Board generation (new work model).
+
+    In the new model Components belong to the planning leaves (Epics); a grouping parent
+    (Initiative) is admitted only through at least one matching leaf, and only those leaves
+    are fetched, counted and rendered.  The same record serves the index, the stream, the
+    counts and card expansion, so none of them can disagree about membership.
+    """
+
+    def __init__(self):
+        self.leaf_parent = {}        # leaf key -> parent key (leaves with a parent only)
+        self.parentless = set()      # matching leaves that have no grouping parent
+        self.excluded_parents = set()  # readable parents the Board's terminal/retention rule excludes
+        self.orphans = {}            # unreadable parent key -> shell row (leaf stays visible)
+
+    def add_leaf(self, leaf_key, parent_key):
+        if parent_key:
+            self.leaf_parent[leaf_key] = parent_key
+        else:
+            self.parentless.add(leaf_key)
+
+    def parent_keys(self):
+        return sorted(set(self.leaf_parent.values()))
+
+    def leaf_keys_for(self, parent_keys):
+        wanted = {_normalized_key(key) for key in parent_keys}
+        return sorted(leaf for leaf, parent in self.leaf_parent.items()
+                      if parent in wanted and parent not in self.excluded_parents)
+
+    def signature(self):
+        """Stable membership signature for checkpoints and cache identity."""
+        return hashlib.sha256(canonical_bytes({
+            'leaves': sorted(self.leaf_parent.items()),
+            'excluded': sorted(self.excluded_parents),
+            'orphans': sorted(self.orphans),
+        })).hexdigest()
+
+
+def build_leaf_component_jql(projects, planning_type_ids, components):
+    """Planning leaves by Component under the selected configuration's projects only."""
+    project_clause = ','.join(_quote(key) for key, _kind in projects)
+    type_clause = ','.join(_quote(value) for value in planning_type_ids)
+    names = tuple(dict.fromkeys(str(value).strip() for value in components or () if str(value).strip()))
+    if not project_clause or not type_clause or not names:
+        raise EngBoardError('board_config_invalid')
+    return (f'project in ({project_clause}) AND issuetype in ({type_clause}) AND '
+            'component in (' + ','.join(_quote(value) for value in names) + ')')
+
+
+def build_leaf_key_jql(projects, planning_type_ids, leaf_keys):
+    project_clause = ','.join(_quote(key) for key, _kind in projects)
+    type_clause = ','.join(_quote(value) for value in planning_type_ids)
+    key_clause = ','.join(_quote(_normalized_key(key)) for key in leaf_keys)
+    if not project_clause or not type_clause or not key_clause:
+        raise EngBoardError('board_config_invalid')
+    return (f'project in ({project_clause}) AND issuetype in ({type_clause}) AND '
+            f'key in ({key_clause})')
+
+
+def orphan_parent_row(parent_key):
+    """Shell for a leaf whose grouping parent cannot be read: key only, no Jira metadata."""
+    return {
+        'key': parent_key,
+        'fields': {'summary': parent_key, 'status': {'id': 'unavailable', 'name': 'Unavailable'},
+                   'priority': None, 'assignee': None, 'updated': None, 'parent': None},
+    }
+
+
+def iter_leaf_cohort_batches(search, *, projects, planning_type_ids, components, team_ids=(),
+                             team_field_id=None, parent_clause, parent_fields, terminal_statuses,
+                             retention_days=28, cohort, counters=None, cancel_check=lambda: None):
+    """Yield cumulative admitted parent rows (and completeness) for leaf-owned Components.
+
+    Membership is decided on the leaves *before* any parent is admitted: matching leaves are
+    discovered (Components, plus Team leaves for Component-backed all-work), then their parents
+    are batch-hydrated under the Board's terminal/retention rule.  A parent the rule excludes
+    drops its leaves; an unreadable parent keeps them under an orphan shell.
+    """
+    counters = counters or PagerCounters()
+    leaf_budget = UnionKeyBudget(MAX_CHILDREN)
+    leaf_fields = ('parent',)
+
+    def leaf_queries():
+        def component_jql(batch):
+            return build_leaf_component_jql(projects, planning_type_ids, batch)
+        for batch in split_component_batches(components, component_jql, leaf_fields):
+            yield component_jql(batch)
+        if team_ids:
+            yield build_team_discovery_jql(projects, planning_type_ids, team_ids=team_ids,
+                                           team_field_id=team_field_id)
+
+    for jql in leaf_queries():
+        for page_rows, _is_last in iter_strict_search_pages(
+                search, jql, leaf_fields, counters=counters, cancel_check=cancel_check,
+                max_unique_keys=MAX_CHILDREN, key_budget=leaf_budget):
+            for row in page_rows:
+                fields = row.get('fields')
+                if not isinstance(fields, dict):
+                    raise EngBoardError('board_projection_invalid', phase='shape', reason='leaf.fields')
+                parent = fields.get('parent')
+                if parent is not None and not isinstance(parent, dict):
+                    raise EngBoardError('board_projection_invalid', phase='shape', reason='leaf.parent')
+                cohort.add_leaf(
+                    _strict_normalized_key(row.get('key'), phase='shape', reason='leaf.key'),
+                    _normalized_key((parent or {}).get('key')))
+
+    parent_keys = cohort.parent_keys()
+    base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days, parent_clause)
+
+    def parent_jql(keys):
+        return base_jql + ' AND key in (' + ','.join(_quote(key) for key in keys) + ')'
+
+    admitted = {}
+    for batch in split_epic_batches(parent_keys, parent_jql, parent_fields):
+        rows = strict_search(search, parent_jql(batch), parent_fields, counters=counters,
+                             cancel_check=cancel_check, max_unique_keys=MAX_EPICS)
+        for row in rows:
+            key = _validate_epic_required_row(row)
+            if key not in batch:
+                raise EngBoardError('board_projection_invalid', phase='page')
+            admitted[key] = row
+        yield [admitted[key] for key in sorted(admitted)], False
+
+    missing = [key for key in parent_keys if key not in admitted]
+
+    def plain_jql(keys):
+        return 'key in (' + ','.join(_quote(key) for key in keys) + ')'
+
+    for batch in split_epic_batches(missing, plain_jql, ('summary',)):
+        rows = strict_search(search, plain_jql(batch), ('summary',), counters=counters,
+                             cancel_check=cancel_check, max_unique_keys=MAX_EPICS)
+        cohort.excluded_parents.update(_normalized_key(row.get('key')) for row in rows)
+    for key in missing:
+        if key not in cohort.excluded_parents:
+            cohort.orphans[key] = orphan_parent_row(key)
+    final = {**admitted, **cohort.orphans}
+    yield [final[key] for key in sorted(final)], True
 
 
 def split_epic_batches(epic_keys, build_jql, fields):

@@ -14,9 +14,13 @@ from backend.config.view_validation import (
 ADMIN_CONFIG_SECTIONS = frozenset({
     'version', 'projects', 'board', 'capacity', 'sprintField',
     'storyPointsField', 'parentNameField', 'teamField', 'projectTrackField',
-    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes',
+    'deliveryOwnerField', 'statsPriorityWeights', 'issueTypes', 'scenarioPlanner',
 })
+# The quarterly work-configuration bundle is workspace-owned and has its own
+# transactional save path; it is not a section of the single-key admin writer.
+WORK_CONFIGURATIONS_SECTION = 'workConfigurations'
 PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS = ADMIN_CONFIG_SECTIONS - {'version'}
+_PRIVATE_VIEW_STRIPPED_SECTIONS = PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS | {WORK_CONFIGURATIONS_SECTION}
 LEGACY_EXCLUDED_TOP_LEVEL_SECTIONS = frozenset({'filters', 'eng', 'epm', 'teamGroups', 'teamCatalog'})
 
 
@@ -131,6 +135,13 @@ def normalize_workspace_admin_payload(payload, *, allow_legacy_excluded_fields=F
             for index, item in enumerate(value):
                 _reject_unknown(item, {'priority', 'weight'}, f'{section}[{index}]')
             result[section] = deepcopy(value)
+        elif section == 'scenarioPlanner':
+            value = _require_dict(value, section)
+            _reject_unknown(value, {'enabledForEveryone'}, section)
+            enabled = value.get('enabledForEveryone', False)
+            if not isinstance(enabled, bool):
+                _raise('scenarioPlanner.enabledForEveryone', 'configuration field must be a boolean')
+            result[section] = {'enabledForEveryone': enabled}
         elif section == 'issueTypes':
             if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
                 _raise(section, 'configuration field must be a string array')
@@ -147,7 +158,7 @@ def normalize_shared_admin_section(section, value):
 
 def strip_shared_sections_from_private_view(payload):
     payload = deepcopy(payload) if isinstance(payload, dict) else {}
-    for key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS:
+    for key in _PRIVATE_VIEW_STRIPPED_SECTIONS:
         payload.pop(key, None)
     return payload
 
@@ -168,7 +179,7 @@ def validate_private_view_ownership(payload, *, validate_sensitive=True):
     paths = []
     if validate_sensitive:
         paths.extend(_collect_forbidden_paths(payload))
-    paths.extend(key for key in payload if key in PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS)
+    paths.extend(key for key in payload if key in _PRIVATE_VIEW_STRIPPED_SECTIONS)
     if paths:
         raise ViewPayloadValidationError(paths)
     return normalize_user_view_payload(payload)

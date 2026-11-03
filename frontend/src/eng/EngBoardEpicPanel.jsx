@@ -11,6 +11,7 @@ import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
 import { epicStatusName, formatStoryPointsFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { computeEpicStoryProgress } from './engBoardCardModel.js';
+import { isCombinedWorkModel, workEntityNames } from './engWorkModel.js';
 import { loadEpicDescription } from './engEpicDescriptionCache.js';
 import {
     DEFAULT_PANEL_SORT,
@@ -54,11 +55,13 @@ export default function EngBoardEpicPanel({
     workItemLabelSingular = 'story',
     onSubmitStatusTransition,
     issueFieldEdits = null,
+    workModel = null,
     onSortChange,
     onClose,
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
+    const names = workEntityNames(workModel);
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
     const privateKeys = epicGroup.readingDepartureKeys;
@@ -258,9 +261,15 @@ export default function EngBoardEpicPanel({
         );
     };
 
-    const renderPersonEditor = (issue, kind, field, label, value, triggerClassName = '') => {
-        const literalKind = kind === 'Epic' || String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story';
-        if (!issueFieldEdits || !literalKind) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
+    // The grouping row is the configured parent (Legacy Epic, new model Initiative). A child row is editable when it is the
+    // planning level: a literal Story in Legacy, any non-subtask row in the new model, whose Board query admits only the
+    // configured planning type. The server re-checks the issue's own type and role before any write.
+    const childEditable = issue => (isCombinedWorkModel(workModel)
+        ? Boolean(issue?.fields?.issuetype) && issue.fields.issuetype.subtask !== true
+        : String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story');
+    const renderPersonEditor = (issue, role, field, label, value, triggerClassName = '') => {
+        const kind = role === 'parent' ? names.parent : names.child;
+        if (!issueFieldEdits || (role !== 'parent' && !childEditable(issue))) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
         const active = issueFieldEdits.activeEditor?.issueKey === issue.key && issueFieldEdits.activeEditor.field === field;
         return (
             <IssuePersonEditor
@@ -312,7 +321,7 @@ export default function EngBoardEpicPanel({
                     <div className="m-controls">
                         {renderPriorityControl(
                             { key: epicKey, priority: priorityLabel, summary },
-                            'Epic',
+                            names.parent,
                             priorityLabel,
                         )}
                         {(transitionsEnabled && projectTrackTransitions) ? (
@@ -366,8 +375,8 @@ export default function EngBoardEpicPanel({
                             {incomplete ? (loading ? `Loading ${workItemLabel}…` : `${workItemLabel} incomplete`)
                                 : `${storyPoints} sp · ${progress.done} of ${progress.total} ${workItemLabel} done`}
                         </span>
-                        <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'assignee', 'Assignee', epic.assignee)}</b></span>
-                        <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'Epic', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
+                        <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'parent', 'assignee', 'Assignee', epic.assignee)}</b></span>
+                        <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'parent', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
                 </div>
@@ -489,7 +498,7 @@ export default function EngBoardEpicPanel({
                                     className="story-subtask-row has-priority"
                                     data-story-key={task.key}
                                 >
-                                    {renderPriorityControl(task, 'Story', task?.fields?.priority?.name || '')}
+                                    {renderPriorityControl(task, names.child, task?.fields?.priority?.name || '')}
                                     <a
                                         className="story-subtask-name"
                                         href={jiraUrl ? `${jiraUrl}/browse/${task.key}` : '#'}
@@ -499,7 +508,7 @@ export default function EngBoardEpicPanel({
                                         {privateKeys?.includes(task.key) && 'Outside scope · '}{task?.fields?.summary || task.key}
                                     </a>
                                     {renderStoryStatus(task)}
-                                    <span className="story-subtask-assignee">{renderPersonEditor(task, 'Story', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
+                                    <span className="story-subtask-assignee">{renderPersonEditor(task, 'child', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
                                     {task?.fields?.updated ? (
                                         <time className="story-subtask-updated" dateTime={task.fields.updated}>
                                             {formatSubtaskUpdatedDate(task.fields.updated)}

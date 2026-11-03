@@ -6,6 +6,8 @@ import { settingsDiscardedRecoveryNotice } from '../api/useConnectionRecovery.js
 import { fetchScenarioDraft as requestScenarioDraft, fetchScenarioDraftVersion as requestScenarioDraftVersion, fetchScenarioRun as requestScenarioRun, pollScenarioDraftEvents as requestScenarioDraftEvents, postScenarioRealtimeJson as requestScenarioRealtimeJson, reloadScenarioDraftFromJira as requestReloadScenarioDraftFromJira, rollbackScenarioDraft as requestRollbackScenarioDraft, saveScenarioDraftVersion as requestSaveScenarioDraftVersion } from '../api/scenarioApi.js';
 import { fetchCsrfToken } from '../api/authApi.js';
 import { analyticsToken, bucketCount } from '../analytics/dashboardAnalytics.js';
+import { isCombinedWorkModel } from '../eng/engWorkModel.js';
+import { buildScenarioDraftScopeKey } from './scenarioUtils.js';
 import { useEffect } from 'react';
 
 export function useScenarioDraft({
@@ -36,6 +38,8 @@ export function useScenarioDraft({
     selectedTeamSet,
     isAllTeamsSelected,
     excludedEpicSet,
+    workModel,
+    workConfigurationId,
 }) {
     const {
         setScenarioLoading,
@@ -168,7 +172,8 @@ export function useScenarioDraft({
         groupId: activeGroupId || '',
         groupName: activeGroup?.name || '',
         sprintId: selectedSprint ? String(selectedSprint) : '',
-        sprintName: selectedSprintInfo?.name || ''
+        sprintName: selectedSprintInfo?.name || '',
+        ...(isCombinedWorkModel(workModel) && workConfigurationId ? { configurationId: workConfigurationId } : {})
     });
 
     const buildScenarioPayload = () => {
@@ -363,11 +368,9 @@ export function useScenarioDraft({
         }
         return Array.from(selectedTeamSet);
     }, [isAllTeamsSelected, selectedTeamSet, teamOptions]);
-    const scenarioScopeKey = React.useMemo(() => {
-        const sprintId = selectedSprint ? String(selectedSprint) : '';
-        const groupId = activeGroupId || 'default';
-        return sprintId && groupId ? `${sprintId}:${groupId}` : '';
-    }, [selectedSprint, activeGroupId]);
+    const scenarioScopeKey = React.useMemo(() => buildScenarioDraftScopeKey({
+        sprintId: selectedSprint, groupId: activeGroupId, workModel, configurationId: workConfigurationId,
+    }), [selectedSprint, activeGroupId, workModel, workConfigurationId]);
     const scenarioOverridesSignature = React.useMemo(
         () => scenarioDraftOverridesSignature(scenarioOverrides),
         [scenarioOverrides]

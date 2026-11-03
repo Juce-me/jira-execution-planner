@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
+import { contextKey } from '../workStructure/configurationContext.js';
+import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import {
     fetchEpmProjects,
     fetchEpmProjectRollup,
@@ -52,6 +54,7 @@ export function useEpmViewData({
     hasSavedEpmScope,
     savedEpmSubGoalKeys = [],
     selectedSprint,
+    workContext: workContextInput,
     epmProjectSearch,
     epmProjectSort,
     searchQuery,
@@ -122,7 +125,10 @@ export function useEpmViewData({
         setEpmProjectRollupLoadingIds(new Set());
     }, []);
 
-    const automaticScopeKey = JSON.stringify([epmTab, epmSelectedProjectId, selectedSprint, runtimeEpmSubGoalKeys]);
+    // The accepted work-configuration context scopes every rollup; a change refetches and drops late answers.
+    const activeWorkContext = useActiveWorkContext();
+    const workContextKey = contextKey(workContextInput === undefined ? activeWorkContext : workContextInput);
+    const automaticScopeKey = JSON.stringify([epmTab, epmSelectedProjectId, selectedSprint, runtimeEpmSubGoalKeys, workContextKey]);
     const refreshEpmProjects = React.useCallback(async (options = {}) => {
         const background = Boolean(options.background);
         const tab = options.tab || epmTab;
@@ -241,7 +247,7 @@ export function useEpmViewData({
                 recordAggregateProjectLanes(measurement, payload);
                 void measurement?.finish();
             } catch (err) {
-                if (isAuthenticationRequiredError(err) || epmRollupRequestIdRef.current !== requestId) {
+                if (isAuthenticationRequiredError(err) || err?.code === 'configuration_context_changed' || epmRollupRequestIdRef.current !== requestId) {
                     measurement?.cancel();
                     return;
                 }
@@ -305,7 +311,7 @@ export function useEpmViewData({
             measurement?.lane(currentProjectId, getEpmProjectDisplayName(currentProject), epmRollupMilliseconds() - projectStartedMs);
             void measurement?.finish();
         } catch (err) {
-            if (isAuthenticationRequiredError(err) || epmRollupRequestIdRef.current !== requestId) {
+            if (isAuthenticationRequiredError(err) || err?.code === 'configuration_context_changed' || epmRollupRequestIdRef.current !== requestId) {
                 measurement?.cancel();
                 return;
             }
@@ -322,7 +328,7 @@ export function useEpmViewData({
                 setEpmRollupLoading(false);
             }
         }
-    }, [backendUrl, epmConfigLoaded, epmLoadReporter, epmSelectedProjectId, epmTab, hasSavedEpmScope, invalidateEpmRollupRequest, onHomeAccessDenied, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView]);
+    }, [backendUrl, epmConfigLoaded, epmLoadReporter, epmSelectedProjectId, epmTab, hasSavedEpmScope, invalidateEpmRollupRequest, onHomeAccessDenied, onServerConnectionFailure, runtimeEpmSubGoalKeys, selectedEpmProject, selectedSprint, selectedView, workContextKey]);
 
     const loadArchivedEpmProjectRollup = React.useCallback(async (project) => {
         if (epmTab !== 'archived') return;
@@ -355,7 +361,7 @@ export function useEpmViewData({
                 ))
                 : prev);
         } catch (err) {
-            if (isAuthenticationRequiredError(err)) return;
+            if (isAuthenticationRequiredError(err) || err?.code === 'configuration_context_changed') return;
             if (epmRollupRequestIdRef.current === requestId) {
                 if (classifyEpmReadError(err).invalidateHomeAvailability) onHomeAccessDenied?.(err);
                 const handledServerConnection = onServerConnectionFailure?.(err) === true;
@@ -511,7 +517,7 @@ export function useEpmViewData({
     useEffect(() => {
         if (automaticProjectsRef.current === epmProjects && automaticRollupScopeRef.current === automaticScopeKey) return;
         void refreshEpmRollup();
-    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, runtimeEpmSubGoalKeys, selectedSprint]);
+    }, [selectedView, epmConfigLoaded, hasSavedEpmScope, epmSelectedProjectId, selectedEpmProject, epmTab, runtimeEpmSubGoalKeys, selectedSprint, workContextKey]);
 
     useEffect(() => {
         if (!epmRollupRetryAfterProjectsRef.current) return;

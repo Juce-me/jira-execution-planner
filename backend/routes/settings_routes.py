@@ -1,5 +1,7 @@
 """Settings, config, and catalog route blueprint."""
 
+from urllib.parse import quote as _url_quote
+
 from flask import Blueprint
 from werkzeug.exceptions import BadRequest
 
@@ -16,6 +18,7 @@ from backend.config.repository import ConfigStorageError, config_storage_db_enab
 from backend.config.shared_config import normalize_shared_admin_section
 from backend.db.engine import DatabaseConfigurationError
 from backend.services import eng_board, shared_group_config
+from backend.services import work_structure as work_structure_service
 from backend.services import shared_capacity_config
 from backend.services.capacity import CapacityUpstreamUnauthorized
 from backend.services.user_view_config import UserViewConfigStorageError
@@ -24,12 +27,24 @@ from backend.services.workspace_dashboard_config import (
     WorkspaceConfigConflict,
     WorkspaceConfigFenceUnavailable,
 )
+import re as _re
+
 from backend.services.catalog_refresh_runtime import CatalogCompletionError
-from backend.services.workspace_catalog_cache import load_sprint_catalog
+from backend.services.workspace_catalog_cache import (
+    in_range_sprints,
+    load_scoped_sprint_catalog,
+    load_sprint_catalog,
+)
+from backend.services.workspace_catalog_config import (
+    build_merged_catalog_identity,
+    build_projection_identity,
+)
 from . import bind_server_globals
+from . import work_structure_routes as work_routes
 
 
 bp = Blueprint("settings_routes", __name__)
+_CONFIGURATION_ID_PATTERN = _re.compile(r'[A-Za-z0-9_-]{1,64}')
 
 
 @bp.before_request
@@ -198,8 +213,9 @@ def _clear_capacity_field_cache():
         CAPACITY_FIELD_CACHE = None
 
 
-def _environment_dashboard_config_exists():
-    config = load_dashboard_config() or {}
+def _environment_dashboard_config_exists(config=None):
+    if config is None:
+        config = load_dashboard_config() or {}
     if not isinstance(config, dict):
         return False
 
@@ -232,6 +248,270 @@ def _load_team_catalog_dashboard_config():
     if config_storage_db_enabled():
         return db_repository().load_team_catalog(current_request_auth_context()) or {}
     return load_dashboard_config() or {}
+
+
+def _metadata_selection(*, required, allow_quarter_only=False):
+    """``(selection, error_response)``; selection is None on the unscoped legacy path."""
+    try:
+        return work_routes.resolve_metadata_selection(
+            request.args, current_request_auth_context(),
+            required=required, allow_quarter_only=allow_quarter_only,
+        ), None
+    except work_structure_service.WorkConfigError as error:
+        return None, work_routes.work_error_response(error)
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
+        return None, work_routes.storage_unavailable_response()
+
+
+def _selection_incomplete(selection, *needed):
+    """Error response when the selected entry lacks a needed mapping, else None."""
+    try:
+        work_routes.require_complete(selection, *needed)
+    except work_structure_service.WorkConfigError as error:
+        return work_routes.work_error_response(error)
+    return None
+
+
+def _scoped_jira_failure(code='jira_unavailable'):
+    return jsonify({'error': code, 'status': 'error', 'message': 'Jira could not complete the request.'}), 502
+
+
+def _scoped_components(selection, query, limit):
+    incomplete = _selection_incomplete(selection, 'scope.projects')
+    if incomplete is not None:
+        return incomplete
+    seen_names, all_components = set(), []
+    for project_key in selection['projects']:
+        try:
+            resp = current_jira_get(
+                f'/rest/api/3/project/{_url_quote(project_key, safe="")}/components', timeout=10,
+            )
+            if resp.status_code != 200:
+                return work_routes.upstream_error_response(resp.status_code)
+            components = resp.json() or []
+        except AuthError:
+            raise
+        except Exception:
+            return _scoped_jira_failure()
+        for comp in components if isinstance(components, list) else []:
+            name = str((comp or {}).get('name') or '').strip()
+            if not name or name.lower() in seen_names:
+                continue
+            seen_names.add(name.lower())
+            all_components.append({'id': comp.get('id', ''), 'name': name, 'projectKey': project_key})
+    all_components.sort(key=lambda c: c['name'].lower())
+    if query:
+        all_components = [c for c in all_components if query in c['name'].lower()]
+    return jsonify({
+        'components': all_components[:limit],
+        'configurationId': selection['id'], 'configurationRevision': selection['revision'],
+    })
+
+
+def _scoped_epic_search(selection, query, limit):
+    incomplete = _selection_incomplete(selection, 'scope.projects', 'hierarchy.parentIssueTypeId')
+    if incomplete is not None:
+        return incomplete
+    authority = work_routes.parent_type_authority(selection['entry'])
+    if authority is None:
+        return work_routes.work_error_response(work_structure_service.WorkConfigError(
+            'configuration_incomplete', paths=['hierarchy.parentIssueTypeId'],
+            configuration_id=selection['id'],
+        ))
+    kind, value = authority
+    projects = selection['projects']
+    escaped_projects = ', '.join(f'"{_escape_jql_literal(project)}"' for project in projects)
+    escaped_query = _escape_jql_literal(query)
+    escaped_key = _escape_jql_literal(query.upper())
+    if re.match(r'^[A-Za-z][A-Za-z0-9_]+-\d+$', query) is not None:
+        query_clause = f'key = "{escaped_key}"'
+    else:
+        query_clause = f'(summary ~ "\\"{escaped_query}\\"" OR key ~ "{escaped_key}*")'
+    type_clause = 'issuetype = Epic' if kind == 'name' else f'issuetype = "{_escape_jql_literal(value)}"'
+    try:
+        response = jira_search_request({
+            'jql': f'{type_clause} AND project in ({escaped_projects}) AND {query_clause} ORDER BY updated DESC',
+            'maxResults': limit,
+            'fields': ['summary', 'status', 'project', 'issuetype'],
+        })
+        if response.status_code != 200:
+            return work_routes.upstream_error_response(response.status_code)
+        issues = (response.json() or {}).get('issues') or []
+    except AuthError:
+        raise
+    except Exception:
+        return _scoped_jira_failure()
+    project_set = set(projects)
+    epics = []
+    for issue in issues:
+        key = str(issue.get('key') or '').strip().upper()
+        fields = issue.get('fields') or {}
+        project_key = str((fields.get('project') or {}).get('key') or '').strip()
+        issue_type = fields.get('issuetype') or {}
+        if kind == 'id':
+            matches_type = str(issue_type.get('id') or '') == value
+        else:
+            matches_type = (str(issue_type.get('name') or '').strip().lower() == 'epic'
+                            or str(issue_type.get('hierarchyLevel')) == '1')
+        if not key or not matches_type or (project_key and project_key not in project_set):
+            continue
+        epics.append({
+            'key': key,
+            'summary': str(fields.get('summary') or '').strip(),
+            'status': ((fields.get('status') or {}).get('name') or ''),
+            'projectKey': project_key,
+        })
+    return jsonify({
+        'epics': epics, 'configurationId': selection['id'], 'configurationRevision': selection['revision'],
+    })
+
+
+def _scoped_board_statuses(selection):
+    incomplete = _selection_incomplete(selection, 'scope.projects')
+    if incomplete is not None:
+        return incomplete
+    authority = work_routes.parent_type_authority(selection['entry'])
+    if authority is None:
+        return work_routes.work_error_response(work_structure_service.WorkConfigError(
+            'configuration_incomplete', paths=['hierarchy.parentIssueTypeId'],
+            configuration_id=selection['id'],
+        ))
+    kind, value = authority
+    project_keys = selection['projects']
+    statuses, seen_status_ids = [], set()
+    for project_key in project_keys:
+        try:
+            response = current_jira_get(
+                f'/rest/api/3/project/{_url_quote(project_key, safe="")}/statuses',
+            )
+            if response.status_code in (401, 403):
+                return jsonify({
+                    'error': 'board_statuses_forbidden', 'status': 'error',
+                    'message': 'Jira refused the project statuses read.',
+                }), 502
+            if response.status_code != 200:
+                return _scoped_jira_failure('board_statuses_fetch_failed')
+            issue_types = response.json() or []
+        except AuthError:
+            raise
+        except Exception:
+            return _scoped_jira_failure('board_statuses_fetch_failed')
+        for issue_type in issue_types if isinstance(issue_types, list) else []:
+            if not isinstance(issue_type, dict):
+                continue
+            if kind == 'id':
+                if str(issue_type.get('id') or '').strip() != value:
+                    continue
+            elif str(issue_type.get('name') or '').strip().lower() != 'epic':
+                continue
+            for status in issue_type.get('statuses') or []:
+                if not isinstance(status, dict):
+                    continue
+                status_id = str(status.get('id') or '').strip()
+                name = str(status.get('name') or '').strip()
+                if status_id and name and status_id not in seen_status_ids:
+                    seen_status_ids.add(status_id)
+                    statuses.append({'id': status_id, 'name': name})
+    if not statuses:
+        return jsonify({
+            'error': 'board_statuses_unavailable', 'status': 'error',
+            'message': 'Jira returned no usable statuses for the selected projects.',
+        }), 502
+    payload = {
+        'boardId': selection['entry']['scope']['boardId'] or None,
+        'projectKeys': project_keys,
+        'statuses': statuses,
+        'configurationId': selection['id'],
+        'configurationRevision': selection['revision'],
+        'configurationDigest': selection['digest'],
+    }
+    if len(project_keys) == 1:
+        payload['projectKey'] = project_keys[0]
+    return jsonify(payload)
+
+
+class _IssueTypeCatalogUnavailable(Exception):
+    def __init__(self, status_code):
+        super().__init__(status_code)
+        self.status_code = status_code
+
+
+_ISSUE_TYPE_PROJECT_CHUNK = 50
+_ISSUE_TYPE_PROJECT_CHUNK_LIMIT = 20
+
+
+def _project_issue_type_applicability(project_keys):
+    """Map issue type id -> (sorted project ids, sorted project keys) for the selected projects (all or raise)."""
+    if len(project_keys) > _ISSUE_TYPE_PROJECT_CHUNK * _ISSUE_TYPE_PROJECT_CHUNK_LIMIT:
+        raise _IssueTypeCatalogUnavailable(0)
+    applicable, keys = {}, {}
+    for start in range(0, len(project_keys), _ISSUE_TYPE_PROJECT_CHUNK):
+        chunk = project_keys[start:start + _ISSUE_TYPE_PROJECT_CHUNK]
+        response = current_jira_get('/rest/api/3/project/search', params={
+            'keys': chunk, 'expand': 'issueTypes', 'maxResults': _ISSUE_TYPE_PROJECT_CHUNK,
+        }, timeout=15)
+        if response.status_code != 200:
+            raise _IssueTypeCatalogUnavailable(response.status_code)
+        data = response.json() or {}
+        if data.get('isLast') is False:
+            raise _IssueTypeCatalogUnavailable(0)
+        for project in data.get('values') or []:
+            project_id = str((project or {}).get('id') or '').strip()
+            project_key = str((project or {}).get('key') or '').strip()
+            if not project_id.isdigit():
+                continue
+            for issue_type in project.get('issueTypes') or []:
+                type_id = str((issue_type or {}).get('id') or '').strip()
+                if type_id.isdigit():
+                    applicable.setdefault(type_id, set()).add(project_id)
+                    if project_key:
+                        keys.setdefault(type_id, set()).add(project_key)
+    return {
+        type_id: (sorted(ids, key=int), sorted(keys.get(type_id, ())))
+        for type_id, ids in applicable.items()
+    }
+
+
+def _feature_issue_types(selection):
+    try:
+        response = current_jira_get('/rest/api/3/issuetype', timeout=15)
+        if response.status_code != 200:
+            return work_routes.upstream_error_response(response.status_code)
+        data = response.json()
+        site_url = current_request_auth_context().site_url
+        types = {}
+        for item in data if isinstance(data, list) else []:
+            if not isinstance(item, dict):
+                continue
+            type_id = str(item.get('id') or '').strip()
+            name = str(item.get('name') or '').strip()[:255]
+            if not type_id.isdigit() or not name or type_id in types:
+                continue
+            level = item.get('hierarchyLevel')
+            types[type_id] = {
+                'id': type_id, 'name': name,
+                'hierarchyLevel': level if isinstance(level, int) and not isinstance(level, bool) else None,
+                'subtask': item.get('subtask') is True,
+                'iconUrl': work_routes.safe_icon_url(item.get('iconUrl'), site_url),
+                'projectIds': [], 'projectKeys': [],
+            }
+        if selection is not None and selection['projects']:
+            for type_id, (project_ids, project_keys) in _project_issue_type_applicability(selection['projects']).items():
+                if type_id in types:
+                    types[type_id]['projectIds'] = project_ids
+                    types[type_id]['projectKeys'] = project_keys
+    except AuthError:
+        raise
+    except _IssueTypeCatalogUnavailable as error:
+        return work_routes.upstream_error_response(error.status_code)
+    except Exception:
+        return _scoped_jira_failure()
+    return jsonify({
+        'issueTypes': sorted(types.values(), key=lambda item: (item['name'].lower(), item['id'])),
+        'configurationId': selection['id'] if selection else None,
+        'configurationRevision': selection['revision'] if selection else None,
+    })
+
 
 
 @bp.route('/api/boards', methods=['GET'])
@@ -454,10 +734,98 @@ def _catalog_auth_required_response(started_at):
     return _catalog_response(payload, status, started_at)
 
 
+def _load_and_refresh_board_snapshot(auth_context, config, resolve_config, force_refresh):
+    """Board row: load, start a due refresh, reload; returns ``(snapshot, refresh_started)``."""
+    snapshot = load_sprint_catalog(auth_context, config=config)
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    if deadline is not None and deadline.tzinfo is None:
+        deadline = deadline.replace(tzinfo=timezone.utc)
+    live_attempt = snapshot.refresh_status == 'pending' and deadline is not None and deadline > now
+    retry_at = snapshot.retry_at
+    if retry_at is not None and retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    next_refresh = snapshot.next_refresh_at
+    if next_refresh is not None and next_refresh.tzinfo is None:
+        next_refresh = next_refresh.replace(tzinfo=timezone.utc)
+    due = snapshot.payload is not None and (next_refresh is None or next_refresh <= now)
+    should_refresh = (
+        not live_attempt
+        and (force_refresh or snapshot.payload is None or due)
+        and (force_refresh or retry_at is None or retry_at <= now)
+    )
+    refresh_started = False
+    if should_refresh:
+        background = snapshot.payload is not None
+        claim = catalog_refresh_runtime().refresh(
+            auth_context, kind='sprints', config=config, background=background,
+            resolve_config=resolve_config,
+        )
+        refresh_started = claim is not None
+        snapshot = load_sprint_catalog(auth_context, config=config)
+        reload_deadline = snapshot.attempt_deadline_at
+        if reload_deadline is not None and reload_deadline.tzinfo is None:
+            reload_deadline = reload_deadline.replace(tzinfo=timezone.utc)
+        matching_live_attempt = bool(
+            snapshot.refresh_status == 'pending'
+            and snapshot.refresh_attempt_id
+            and reload_deadline is not None
+            and reload_deadline > datetime.now(timezone.utc)
+        )
+        if (
+            not background and claim is None and snapshot.payload is None
+            and matching_live_attempt
+        ):
+            deadline_at = time.monotonic() + 2
+            while time.monotonic() < deadline_at:
+                time.sleep(0.1)
+                snapshot = load_sprint_catalog(auth_context, config=config)
+                if snapshot.payload is not None or snapshot.refresh_status != 'pending':
+                    break
+    return snapshot, refresh_started
+
+
+def _load_and_refresh_scoped_snapshot(auth_context, config, resolve_config, force_refresh):
+    """Issue-scanned source: same refresh rules, scanned in the request thread."""
+    snapshot = load_scoped_sprint_catalog(auth_context, config=config)
+    now = datetime.now(timezone.utc)
+    deadline = snapshot.attempt_deadline_at
+    live_attempt = snapshot.refresh_status == 'pending' and deadline is not None and deadline > now
+    due = snapshot.payload is not None and (
+        snapshot.next_refresh_at is None or snapshot.next_refresh_at <= now
+    )
+    retry_at = snapshot.retry_at
+    should_refresh = (
+        not live_attempt
+        and (force_refresh or snapshot.payload is None or due)
+        and (force_refresh or retry_at is None or retry_at <= now)
+    )
+    refresh_started = False
+    if should_refresh:
+        attempt = refresh_scoped_sprint_catalog(
+            auth_context, config=config, resolve_config=resolve_config, force=force_refresh,
+        )
+        refresh_started = attempt is not None
+        snapshot = load_scoped_sprint_catalog(auth_context, config=config)
+    return snapshot, refresh_started
+
+
 def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
                     expected_identity, started_at):
     with session_scope() as catalog_session:
-        config = resolve_request_effective_catalog_config(catalog_session, auth_context)
+        sources = resolve_request_catalog_sources(catalog_session, auth_context)
+        config = (
+            None if sources is not None
+            else resolve_request_effective_catalog_config(catalog_session, auth_context)
+        )
+    if sources is not None:
+        return _get_configuration_sprints(
+            auth_context, sources, force_refresh=force_refresh,
+            completion_attempt_id=completion_attempt_id,
+            expected_identity=expected_identity, started_at=started_at,
+        )
+    if {'configurationId', 'configurationRevision', 'configurationDigest'} & set(request.args):
+        return _catalog_response({'error': 'unsupported_catalog_parameter'}, 400, started_at)
     if not config.board_id or not config.sprint_identity:
         return _catalog_response({'error': 'sprint_board_required'}, 409, started_at)
 
@@ -487,63 +855,250 @@ def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
         )
 
     try:
-        snapshot = load_sprint_catalog(auth_context, config=config)
+        snapshot, refresh_started = _load_and_refresh_board_snapshot(
+            auth_context, config, resolve_request_effective_catalog_config, force_refresh,
+        )
     except AuthError:
         return _catalog_auth_required_response(started_at)
-    now = datetime.now(timezone.utc)
-    deadline = snapshot.attempt_deadline_at
-    if deadline is not None and deadline.tzinfo is None:
-        deadline = deadline.replace(tzinfo=timezone.utc)
-    live_attempt = snapshot.refresh_status == 'pending' and deadline is not None and deadline > now
-    retry_at = snapshot.retry_at
-    if retry_at is not None and retry_at.tzinfo is None:
-        retry_at = retry_at.replace(tzinfo=timezone.utc)
-    next_refresh = snapshot.next_refresh_at
-    if next_refresh is not None and next_refresh.tzinfo is None:
-        next_refresh = next_refresh.replace(tzinfo=timezone.utc)
-    due = snapshot.payload is not None and (next_refresh is None or next_refresh <= now)
-    should_refresh = (
-        not live_attempt
-        and (force_refresh or snapshot.payload is None or due)
-        and (force_refresh or retry_at is None or retry_at <= now)
-    )
-    refresh_started = False
-    if should_refresh:
-        background = snapshot.payload is not None
-        try:
-            claim = catalog_refresh_runtime().refresh(
-                auth_context, kind='sprints', config=config, background=background,
-                resolve_config=resolve_request_effective_catalog_config,
-            )
-        except AuthError:
-            return _catalog_auth_required_response(started_at)
-        refresh_started = claim is not None
-        try:
-            snapshot = load_sprint_catalog(auth_context, config=config)
-        except AuthError:
-            return _catalog_auth_required_response(started_at)
-        reload_deadline = snapshot.attempt_deadline_at
-        if reload_deadline is not None and reload_deadline.tzinfo is None:
-            reload_deadline = reload_deadline.replace(tzinfo=timezone.utc)
-        matching_live_attempt = bool(
-            snapshot.refresh_status == 'pending'
-            and snapshot.refresh_attempt_id
-            and reload_deadline is not None
-            and reload_deadline > datetime.now(timezone.utc)
-        )
-        if (
-            not background and claim is None and snapshot.payload is None
-            and matching_live_attempt
-        ):
-            deadline_at = time.monotonic() + 2
-            while time.monotonic() < deadline_at:
-                time.sleep(0.1)
-                snapshot = load_sprint_catalog(auth_context, config=config)
-                if snapshot.payload is not None or snapshot.refresh_status != 'pending':
-                    break
     return _db_sprint_response(
         auth_context, config, snapshot, refresh_started=refresh_started,
         started_at=started_at,
+    )
+
+
+def _configuration_cache_envelope(auth_context, config, snapshot, *, refresh_started=False):
+    cache = _catalog_cache_envelope(auth_context, config, snapshot, refresh_started=refresh_started)
+    cache.update({
+        'identity': build_projection_identity(config),
+        'rowIdentity': config.sprint_identity,
+        'configurationId': config.configuration_id,
+        'configurationRevision': config.configuration_revision,
+        'sourceMode': config.source_mode,
+        'sourceDigest': config.source_digest,
+        'boardId': config.board_id or None,
+    })
+    return cache
+
+
+def _configuration_source_result(auth_context, config, *, force_refresh):
+    """One saved configuration's source: rows inside its range, envelope, usability state."""
+    base = {
+        'configurationId': config.configuration_id,
+        'configurationRevision': config.configuration_revision,
+        'fromQuarter': config.from_quarter, 'throughQuarter': config.through_quarter,
+        'sourceMode': config.source_mode, 'sprints': [], 'cache': None,
+    }
+    if not config.sprint_identity:
+        base.update(
+            state='setup_required',
+            missingFields=list(config.missing_admin_settings),
+            code=config.scope_error or 'configuration_incomplete',
+        )
+        base['diagnostics'] = work_routes.source_diagnostics('setup_required', base['code'])
+        return base, None, None
+    resolve = catalog_configuration_resolver(config.configuration_id)
+    if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
+        snapshot, started = _load_and_refresh_scoped_snapshot(
+            auth_context, config, resolve, force_refresh,
+        )
+    else:
+        snapshot, started = _load_and_refresh_board_snapshot(
+            auth_context, config, resolve, force_refresh,
+        )
+    cache = _configuration_cache_envelope(auth_context, config, snapshot, refresh_started=started)
+    rows = None
+    if snapshot.payload is not None:
+        rows = in_range_sprints(config, snapshot.payload)
+    scanned = None
+    observed_rows = None
+    if config.observed_source is not None:
+        # A Board lists only its own Sprints: also scan the configuration's scoped issues so a
+        # Sprint carried by its work but absent from the Board is admitted. A failed or pending
+        # scan never degrades the Board result; the Board row wins a same-name tie.
+        observed = config.observed_source
+        scan, scan_started = _load_and_refresh_scoped_snapshot(
+            auth_context, observed, catalog_configuration_resolver(config.configuration_id, observed=True),
+            force_refresh,
+        )
+        scanned = scan
+        if scan.payload is not None:
+            observed_rows = in_range_sprints(observed, scan.payload)
+            names = {item.get('name') for item in rows or []}
+            rows = (rows or []) + [item for item in observed_rows if item.get('name') not in names]
+            if snapshot.payload is None:
+                cache = {
+                    **_configuration_cache_envelope(auth_context, observed, scan, refresh_started=scan_started),
+                    'identity': cache['identity'], 'rowIdentity': cache['rowIdentity'],
+                    'sourceMode': config.source_mode, 'boardId': config.board_id or None,
+                }
+            cache['refreshStarted'] = bool(cache['refreshStarted'] or scan_started)
+    if rows is not None:
+        rows = [
+            {**item, 'configurationId': config.configuration_id, 'sourceIdentity': cache['identity']}
+            for item in rows
+        ]
+        state = 'ready'
+    elif cache['refreshStatus'] == 'failed':
+        state = 'failed'
+    else:
+        state = 'refreshing'
+    base.update(
+        state=state, cache=cache, sprints=rows or [], code=cache['failureCode'],
+        sprintCount=len(rows) if rows is not None else None,
+        diagnostics=work_routes.source_diagnostics(state, cache['failureCode'], snapshot, scanned),
+    )
+    return base, snapshot, rows
+
+
+def _merged_cache_envelope(auth_context, configs, results, *, refresh_started):
+    ready = [item for item in results if item['state'] == 'ready']
+    if ready:
+        state = 'stale' if any(item['cache']['state'] == 'stale' for item in ready) else 'fresh'
+    elif any(item['state'] == 'refreshing' for item in results):
+        state = 'refreshing'
+    elif any(item['state'] == 'failed' for item in results):
+        state = 'failed'
+    else:
+        state = 'missing'
+    failed = [item['cache'] for item in results if item['state'] == 'failed']
+    pending = [item['cache'] for item in results if item['state'] == 'refreshing']
+    versions = sorted(str(item['cache']['catalogVersion']) for item in ready)
+    validated = [item['cache']['validatedAt'] for item in ready if item['cache']['validatedAt']]
+    return {
+        'backend': 'postgresql',
+        'identity': build_merged_catalog_identity(configs),
+        'browserContextId': catalog_browser_context_id(auth_context),
+        'boardId': None,
+        'scopeDigest': None,
+        'catalogVersion': ':'.join(versions) if versions else None,
+        'validatedAt': min(validated) if validated else None,
+        'state': state,
+        'refreshStarted': bool(refresh_started),
+        'refreshFailed': bool(failed),
+        'refreshAttemptId': None,
+        'refreshStatus': 'failed' if failed else 'pending' if pending else 'completed' if ready else 'idle',
+        'refreshDeadlineAt': None,
+        'failureCode': failed[0]['failureCode'] if failed else None,
+        'retryAt': failed[0]['retryAt'] if failed else None,
+    }
+
+
+def _get_configuration_sprints(auth_context, sources, *, force_refresh,
+                               completion_attempt_id, expected_identity, started_at):
+    """Promoted workspace: merge configuration-scoped rows with original physical ids."""
+    ids = request.args.getlist('configurationId')
+    configuration_id = ids[0] if ids else None
+    if len(ids) > 1 or (
+        configuration_id is not None and _CONFIGURATION_ID_PATTERN.fullmatch(configuration_id) is None
+    ):
+        return _catalog_response(
+            work_routes.WorkConfigError('invalid_configuration_id').response()[0], 400, started_at,
+        )
+    selected = list(sources)
+    if configuration_id is not None:
+        selected = [item for item in sources if item.configuration_id == configuration_id]
+        if not selected:
+            return _catalog_response(
+                work_routes.WorkConfigError('sprint_catalog_mismatch').response()[0], 409, started_at,
+            )
+    try:
+        work_routes.check_catalog_stamp(
+            request.args, configuration_id=configuration_id,
+            revisions=[item.configuration_revision for item in selected])
+    except work_routes.WorkConfigError as error:
+        body, status = error.response()
+        return _catalog_response(body, status, started_at)
+    if completion_attempt_id is not None:
+        return _configuration_completion_response(
+            auth_context, selected, configuration_id, completion_attempt_id, expected_identity,
+            started_at,
+        )
+    try:
+        results, refreshed = [], False
+        for config in selected:
+            result, _snapshot, _rows = _configuration_source_result(
+                auth_context, config, force_refresh=force_refresh,
+            )
+            results.append(result)
+            refreshed = refreshed or bool(result['cache'] and result['cache']['refreshStarted'])
+    except AuthError:
+        return _catalog_auth_required_response(started_at)
+    rows = sorted(
+        (row for result in results if result['state'] == 'ready' for row in result['sprints']),
+        key=lambda item: item['name'], reverse=True,
+    )
+    summaries = [{key: value for key, value in result.items() if key != 'sprints'} for result in results]
+    if len(results) == 1 and results[0]['cache'] is not None:
+        cache = results[0]['cache']
+    else:
+        cache = _merged_cache_envelope(auth_context, selected, results, refresh_started=refreshed)
+    body = {'sources': summaries, 'cache': cache}
+    if any(result['state'] == 'ready' for result in results):
+        return _catalog_response({**body, 'sprints': rows}, 200, started_at)
+    if all(result['state'] == 'setup_required' for result in results):
+        missing = sorted({path for result in results for path in result['missingFields']})
+        error = work_routes.WorkConfigError('configuration_incomplete', paths=missing)
+        error_body, status = error.response()
+        return _catalog_response({**error_body, **body}, status, started_at)
+    if any(result['state'] == 'refreshing' for result in results):
+        attempts = [
+            result['cache']['refreshAttemptId'] for result in results if result['state'] == 'refreshing'
+        ]
+        return _catalog_response(
+            {**body, 'error': 'catalog_refresh_pending'}, 503, started_at,
+            retry_after=any(attempts),
+        )
+    return _catalog_response({**body, 'error': 'sprint_catalog_unavailable'}, 502, started_at)
+
+
+def _configuration_completion_response(auth_context, selected, configuration_id,
+                                       attempt_id, expected_identity, started_at):
+    """Read one identified attempt of one configuration source; never admits Jira work."""
+    if configuration_id is None or len(selected) != 1:
+        return _catalog_response({'error': 'invalid_catalog_completion'}, 400, started_at)
+    config = selected[0]
+    projection = build_projection_identity(config)
+    source = {
+        'backend': 'postgresql', 'identity': projection, 'boardId': config.board_id or None,
+        'browserContextId': catalog_browser_context_id(auth_context),
+        'configurationId': config.configuration_id,
+    }
+    if not config.sprint_identity:
+        return _catalog_response(
+            {'error': 'catalog_identity_changed', 'sprintCatalogSource': source}, 409, started_at,
+        )
+    row_identity = config.sprint_identity if expected_identity == projection else expected_identity
+    resolve = catalog_configuration_resolver(config.configuration_id)
+    try:
+        if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
+            snapshot = read_scoped_sprint_completion(
+                auth_context, attempt_id=attempt_id, expected_identity=row_identity, config=config,
+            )
+        else:
+            snapshot = read_catalog_completion(
+                auth_context, kind='sprints', attempt_id=attempt_id,
+                expected_identity=row_identity, resolve_config=resolve,
+            )
+    except AuthError:
+        return _catalog_auth_required_response(started_at)
+    except CatalogCompletionError as error:
+        if error.code == 'invalid_catalog_completion':
+            return _catalog_response({'error': error.code}, 400, started_at)
+        return _catalog_response(
+            {'error': error.code, 'sprintCatalogSource': source}, 409, started_at,
+        )
+    cache = _configuration_cache_envelope(auth_context, config, snapshot, refresh_started=False)
+    if snapshot.payload is not None:
+        rows = [
+            {**item, 'configurationId': config.configuration_id, 'sourceIdentity': cache['identity']}
+            for item in in_range_sprints(config, snapshot.payload)
+        ]
+        return _catalog_response({'sprints': rows, 'cache': cache}, 200, started_at)
+    if cache['refreshStatus'] == 'failed':
+        return _catalog_response({'error': 'sprint_catalog_unavailable', 'cache': cache}, 502, started_at)
+    return _catalog_response(
+        {'error': 'catalog_refresh_pending', 'cache': cache}, 503, started_at,
+        retry_after=bool(cache['refreshAttemptId']),
     )
 
 
@@ -552,7 +1107,10 @@ def get_sprints():
     """Fetch the Sprint catalog from its selected compatibility backend."""
     started_at = time.perf_counter()
     try:
-        allowed_parameters = {'refresh', 'completionAttemptId', 'catalogIdentity'}
+        allowed_parameters = {
+            'refresh', 'completionAttemptId', 'catalogIdentity', 'configurationId',
+            'configurationRevision', 'configurationDigest',
+        }
         if any(key not in allowed_parameters for key in request.args):
             return _catalog_response(
                 {'error': 'unsupported_catalog_parameter'}, 400, started_at,
@@ -563,7 +1121,7 @@ def get_sprints():
         expected_identity = request.args.get('catalogIdentity')
         has_completion = completion_attempt_id is not None or expected_identity is not None
         if (
-            any(len(request.args.getlist(key)) != 1 for key in request.args)
+            any(len(request.args.getlist(key)) != 1 for key in request.args if key != 'configurationId')
             or force_value is not None and force_value != 'true'
             or has_completion and (
                 force_refresh or not completion_attempt_id or not expected_identity
@@ -573,6 +1131,12 @@ def get_sprints():
                 {'error': 'invalid_catalog_completion'}, 400, started_at,
             )
         auth_context = current_request_auth_context()
+        if 'configurationId' in request.args and not (
+            config_storage_db_enabled() and is_db_auth_context(auth_context)
+        ):
+            return _catalog_response(
+                {'error': 'unsupported_catalog_parameter'}, 400, started_at,
+            )
         if config_storage_db_enabled() and is_db_auth_context(auth_context):
             return _get_db_sprints(
                 auth_context, force_refresh=force_refresh,
@@ -631,6 +1195,9 @@ def get_sprints():
             return _catalog_auth_required_response(started_at)
         payload, status = oauth_auth_required_payload()
         return _catalog_response(payload, status, started_at)
+    except work_routes.WorkConfigError as error:
+        body, status = error.response()
+        return _catalog_response(body, status, started_at)
     except (ConfigStorageError, DatabaseConfigurationError):
         logger.warning('Sprint catalog storage is unavailable')
         return _catalog_response({'error': 'catalog_storage_unavailable'}, 503, started_at)
@@ -687,7 +1254,20 @@ def get_config():
             shared_config = dict(shared_snapshot.payload or {})
             shared_config_revision = shared_snapshot.config_revision
             board_cfg = get_board_config()
+        db_oauth_bootstrap = effective_catalog_config is not None
+        work_flag = work_structure_service.work_configurations_enabled() and db_oauth_bootstrap
+        work_promoted = db_oauth_bootstrap and work_structure_service.is_promoted(shared_config)
+        if work_promoted:
+            # No moved-key getter, Board or Jira work on a promoted bootstrap; the
+            # bundle editor owns the full projection.
+            board_cfg = {}
+            work_bundle = work_structure_service.stored_bundle(shared_config)
+            work_type_names = shared_config.get(work_structure_service.WORK_CONFIGURATION_TYPE_NAMES_KEY)
+            for moved_key in (*work_structure_service.MOVED_STRUCTURAL_KEYS,
+                              work_structure_service.WORK_CONFIGURATIONS_KEY):
+                shared_config.pop(moved_key, None)
         shared_config.pop('epm', None)
+        shared_config.pop(work_structure_service.WORK_CONFIGURATION_TYPE_NAMES_KEY, None)
         if include_view_config and view_config is not None:
             epm_config = normalize_epm_config(
                 ((view_config or {}).get('view') or {}).get('epm') or {}
@@ -709,9 +1289,6 @@ def get_config():
         'capacityProject': capacity_config.get('project', ''),
         'capacityConfigRequiresResolution': capacity_config.get('requiresResolution') is True,
         'capacityMutationEnabled': capacity_config.get('mutationEnabled') is True,
-        'boardId': board_cfg.get('boardId', ''),
-        'boardName': board_cfg.get('boardName', ''),
-        'boardConfigSource': board_cfg.get('source', 'default'),
         'settingsAdminOnly': bool(SETTINGS_ADMIN_ONLY),
         'performanceDebugEnabled': collection_enabled(),
         'performanceAdminAvailable': bool(auth_context.is_admin),
@@ -722,23 +1299,56 @@ def get_config():
             database_backed=is_db_auth_context(auth_context) and config_storage_db_enabled(),
         ),
         'userCanEditSettings': can_edit_shared_configuration,
+        # Scenario is for editors unless this workspace switch unlocks it; Scenario routes enforce the same rule.
+        'scenarioPlannerForEveryone': scenario_planner_for_everyone(shared_config),
         'userCanEditViewConfig': True,
         'userCanEditEpmConfig': True,
         'adminUserManagementAvailable': is_db_auth_context(auth_context),
         'userIsToolAdmin': bool(auth_context.is_admin),
         'groupsConfigPath': resolve_groups_config_path(),
         'groupQueryTemplateEnabled': bool(JQL_QUERY_TEMPLATE),
-        'projectsConfigured': bool(get_selected_projects()),
-        'environmentConfigExists': _environment_dashboard_config_exists(),
         'epm': epm_config,
         'epmViewEnabled': epm_view_enabled,
+        'workConfigurationsEnabled': work_flag,
+        'workConfigurationsPromoted': work_promoted,
+        'workConfigurationSummaries': [],
+        'adminSettingsMissingByConfiguration': {},
     }
+    if work_promoted:
+        payload['environmentConfigExists'] = _environment_dashboard_config_exists(shared_config)
+        entries = work_bundle['configurations']
+        type_names = work_type_names if isinstance(work_type_names, dict) else {}
+        payload['workConfigurationSummaries'] = [
+            work_routes.entry_summary(entry, entries, type_names.get(entry['id'])) for entry in entries
+        ]
+        payload['adminSettingsMissingByConfiguration'] = {
+            entry['id']: work_routes.entry_missing_fields(work_structure_service.effective_entry(entries, entry))
+            for entry in entries
+        }
+    else:
+        payload.update({
+            'boardId': board_cfg.get('boardId', ''),
+            'boardName': board_cfg.get('boardName', ''),
+            'boardConfigSource': board_cfg.get('source', 'default'),
+            'projectsConfigured': bool(get_selected_projects()),
+            'environmentConfigExists': _environment_dashboard_config_exists(),
+        })
     # Readiness from the provider-confirmed grant only; bootstrap makes no Home call.
     epm_home_profile = select_epm_home_read_profile(auth_context, view_enabled=epm_view_enabled)
     payload['epmHomeReadAvailable'] = epm_home_profile == HOME_READ_PROFILE_PUBLIC_READ_V1
     if epm_home_profile == HOME_READ_PROFILE_SCOPE_REQUIRED:
         payload['epmHomeReadLoginUrl'] = SCOPE_LOGIN_URL
-    if effective_catalog_config is not None:
+    if effective_catalog_config is not None and work_promoted:
+        # Per-entry missing setup; blank DELIVERY must not lock Legacy, so no AND.
+        missing_admin_settings = [
+            path for paths in payload['adminSettingsMissingByConfiguration'].values() for path in paths
+        ]
+        if missing_admin_settings and not can_edit_shared_configuration:
+            with session_scope() as admin_session:
+                payload['adminContacts'] = workspace_tool_admin_display_names(
+                    admin_session, auth_context.workspace_id,
+                )
+    elif effective_catalog_config is not None:
         payload['sprintCatalogSource'] = {
             'backend': 'postgresql',
             'identity': effective_catalog_config.sprint_identity,
@@ -1111,6 +1721,12 @@ def get_jira_components():
             except ValueError:
                 return jsonify({'error': 'limit must be an integer'}), 400
 
+        selection, failure = _metadata_selection(required=True)
+        if failure is not None:
+            return failure
+        if selection is not None:
+            return _scoped_components(selection, query, limit)
+
         # Return cached data when no query is specified and cache is fresh
         if cache_enabled:
             with _cache_lock:
@@ -1182,6 +1798,12 @@ def search_epics():
                 limit = max(1, min(int(limit_raw), 100))
             except ValueError:
                 return jsonify({'error': 'limit must be an integer'}), 400
+
+        selection, failure = _metadata_selection(required=True, allow_quarter_only=True)
+        if failure is not None:
+            return failure
+        if selection is not None:
+            return _scoped_epic_search(selection, query, limit)
 
         projects = get_selected_projects()
         if not projects:
@@ -1385,6 +2007,8 @@ def save_selected_projects():
         return _workspace_conflict_response(error)
     except WorkspaceConfigFenceUnavailable:
         return _config_fence_unavailable_response()
+    except work_structure_service.WorkConfigError as error:
+        return work_routes.work_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save project selection', 'message': str(e)}), 500
 
@@ -1449,6 +2073,8 @@ def save_board_config_endpoint():
         return _workspace_conflict_response(error)
     except WorkspaceConfigFenceUnavailable:
         return _config_fence_unavailable_response()
+    except work_structure_service.WorkConfigError as error:
+        return work_routes.work_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save board config', 'message': str(e)}), 500
 
@@ -1462,6 +2088,11 @@ def save_board_config_endpoint():
 def get_board_config_statuses():
     """Fetch Epic workflow statuses for the projects rendered by Group Board."""
     try:
+        selection, failure = _metadata_selection(required=True)
+        if failure is not None:
+            return failure
+        if selection is not None:
+            return _scoped_board_statuses(selection)
         board_id = get_board_config().get('boardId', '').strip()
         if not board_id:
             return jsonify({'error': 'no_board_configured'}), 400
@@ -1717,10 +2348,50 @@ def save_stats_priority_weights_config_endpoint():
     return jsonify(result)
 
 
+@bp.route('/api/scenario-access/config', methods=['GET'])
+def get_scenario_access_config_endpoint():
+    try:
+        payload = load_dashboard_config_snapshot().payload
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
+        return _config_fence_unavailable_response()
+    return jsonify(_with_config_revision({'enabledForEveryone': scenario_planner_for_everyone(payload)}))
+
+
+@bp.route('/api/scenario-access/config', methods=['POST'])
+def save_scenario_access_config_endpoint():
+    """Admin-owned workspace switch that unlocks Scenario Planner for every user; its own section."""
+    payload = request.get_json(silent=True)
+    try:
+        base_revision = _parse_shared_write(payload, {'enabledForEveryone'})
+        normalized = normalize_shared_admin_section(
+            SCENARIO_PLANNER_SECTION, {'enabledForEveryone': payload.get('enabledForEveryone')})
+    except ValueError as error:
+        return jsonify({'error': str(error)}), 400
+    try:
+        revision = _persist_shared_section(SCENARIO_PLANNER_SECTION, normalized, base_revision)
+    except WorkspaceConfigConflict as error:
+        return _workspace_conflict_response(error)
+    except WorkspaceConfigFenceUnavailable:
+        return _config_fence_unavailable_response()
+    result = dict(normalized)
+    if revision is not None:
+        result['configRevision'] = revision
+    return jsonify(result)
+
+
 @bp.route('/api/issue-types', methods=['GET'])
 def get_jira_issue_types():
     """Fetch available Jira issue types with caching."""
     try:
+        selection, failure = _metadata_selection(required=False)
+        if failure is not None:
+            return failure
+        try:
+            feature_active = work_routes.work_feature_active(current_request_auth_context())
+        except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable):
+            return work_routes.storage_unavailable_response()
+        if feature_active:
+            return _feature_issue_types(selection)
         cache_enabled = _settings_process_cache_enabled()
         if cache_enabled:
             with _cache_lock:
@@ -1783,6 +2454,8 @@ def save_issue_types_config_endpoint():
         return _workspace_conflict_response(error)
     except WorkspaceConfigFenceUnavailable:
         return _config_fence_unavailable_response()
+    except work_structure_service.WorkConfigError as error:
+        return work_routes.work_error_response(error)
     except Exception as e:
         return jsonify({'error': 'Failed to save issue types config', 'message': str(e)}), 500
 

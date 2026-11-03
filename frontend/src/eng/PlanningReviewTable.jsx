@@ -21,6 +21,7 @@ import { takeInitialPlanningRowMode } from '../shareView/store.js';
 import { peekInitialPlanningRowMode } from '../shareView/store.js';
 import { publishPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
+import { reviewLabels } from './planningReviewKinds.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
 function ReviewColumnPopover({ open, onClose, label, trigger, children, error, anchorClassName = '' }) {
@@ -58,20 +59,25 @@ function TrimmedValue({ value, children = value }) {
 }
 
 // A derived column is named after its source kind, everywhere its label appears, so twin labels stay distinguishable.
-const derivedKind = column => column.rowKind === 'story' ? 'Story property' : 'Epic property';
-const columnName = column => column.derived ? `${column.label}, ${derivedKind(column)}` : column.label;
-const DERIVED_SENTENCES = { story: "Story property, summed from this Epic's Stories in this Sprint and the current filters", epic: 'Epic property, inherited from the parent Epic' };
+// Role names follow the configuration: `story` rows are the child level (Story, or Epic in the combined model), `epic` rows the parent level.
+const ReviewLabelsContext = React.createContext(reviewLabels());
+const derivedKind = (column, labels) => column.rowKind === 'story' ? `${labels.child} property` : `${labels.parent} property`;
+const columnName = (column, labels) => column.derived ? `${column.label}, ${derivedKind(column, labels)}` : column.label;
+const derivedSentence = (column, labels) => column.rowKind === 'story'
+    ? `${labels.child} property, summed from this ${labels.parent}'s ${labels.childPlural} in this Sprint and the current filters`
+    : `${labels.parent} property, inherited from the parent ${labels.parent}`;
 
-// The superscript S or E beside a derived column's heading: a zero-height button whose 24px hit area is its ::before,
+// The superscript initial of the source level (S or E in Legacy, E or I in the combined model) beside a derived column's heading: a zero-height button whose 24px hit area is its ::before,
 // so the 32px header and the label's alignment edge stay put. Only the copy the user can reach is focusable; the other
 // is hidden and suppressed, so one readout exists across the dock flip.
 function DerivedMarker({ column, docked }) {
     const descriptionId = `planning-review-derived-${React.useId().replace(/:/g, '')}`;
-    const sentence = DERIVED_SENTENCES[column.rowKind] || DERIVED_SENTENCES.epic;
+    const labels = React.useContext(ReviewLabelsContext);
+    const sentence = derivedSentence(column, labels);
     return <EpicHeaderValueReadout value={sentence} alwaysOn suppressed={docked}>
         {({ triggerRef, pointerProps, focusProps, pinProps }) => <>
             <button ref={triggerRef} type="button" className="planning-review-derived-marker" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined}
-                aria-label={columnName(column)} aria-describedby={descriptionId} {...pointerProps} {...focusProps} {...pinProps}><span>{column.rowKind === 'story' ? 'S' : 'E'}</span></button>
+                aria-label={columnName(column, labels)} aria-describedby={descriptionId} {...pointerProps} {...focusProps} {...pinProps}><span>{column.rowKind === 'story' ? labels.child[0] : labels.parent[0]}</span></button>
             <span id={descriptionId} className="planning-review-sr-only">{sentence}</span>
         </>}
     </EpicHeaderValueReadout>;
@@ -121,7 +127,8 @@ export function PlanningReviewScopeDialog({ review }) {
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel }) {
+    const labels = React.useMemo(() => reviewLabels(workModel), [workModel]);
     // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
     const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
@@ -156,13 +163,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const stableOrder = React.useRef(null);
     // The dashboard passes a fresh Set every render; key the memo on its content instead.
     const selectionSignature = Array.from(selectedStoryKeys).sort().join('|');
-    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature]);
+    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo, workModel }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature, workModel]);
     const scroller = React.useRef(null);
     const dockedHeader = React.useRef(null), dockedFooter = React.useRef(null);
     const [dock, setDock] = React.useState(null);
     // Derived columns come from both row kinds' definitions; their values read the loaded cells through `derivedContext`.
-    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived });
-    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived });
+    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived, workModel });
+    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived, workModel });
     const derivedContext = { isLoaded: (issueId, rowKind) => review.isRowReadable?.({ rowKind, issueId }) === true, forceLoading: Boolean(review.forceLoading) };
     const columns = allColumns.filter(column => column.required || !hidden.has(column.id));
     const keyHidden = !columns.some(column => column.id === 'key');
@@ -238,7 +245,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
         const share = !row.synthetic && (row.rowKind === 'epic' || row.rowKind === 'story') ? renderEpicShareControl?.(row.key, row.rowKind) : null;
         if (!awaited && !jiraLink && !share) return title;
-        return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? 'Story' : 'Stories'} awaited`} /> : null}</span>;
+        return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? labels.child : labels.childPlural} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
     // The assignee capacity strip switches the rows through the same path without the analytics action (#323).
@@ -292,7 +299,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     // Rendered into the Filters row's view-controls slot; without a host (local harnesses) it sits above the table instead.
     const toolbar = (
         <div className="planning-review-controls">
-            <SegmentedControl className="eng-mode-control segmented-control-compact" ariaLabel="Planning review rows" options={[{ value: 'epic', label: 'Epics' }, { value: 'story', label: 'Stories' }]} value={mode} onChange={changeMode} />
+            <SegmentedControl className="eng-mode-control segmented-control-compact" ariaLabel="Planning review rows" options={[{ value: 'epic', label: labels.parentPlural }, { value: 'story', label: labels.childPlural }]} value={mode} onChange={changeMode} />
             <PlanningReviewStateCluster review={review} editable={editable}
                 onSave={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}
                 onDiscard={() => { review.discard(); trackedAction('discard_review'); }} />
@@ -303,7 +310,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const hiddenColumns = allColumns.filter(column => !column.required && hidden.has(column.id));
     const closeAdd = () => { setOpenMenu(null); setAddAfter(null); setFormError(''); };
     const addContent = <>
-        <div className="pop-subject">Add column · {mode === 'epic' ? 'Epics' : 'Stories'}</div>
+        <div className="pop-subject">Add column · {mode === 'epic' ? labels.parentPlural : labels.childPlural}</div>
         <div className="pop-group">
             <form className="planning-review-add" onSubmit={addColumn}>
                 <input data-autofocus required maxLength={80} className="planning-review-column-name" aria-label="Column name" placeholder="Column name" value={name} onChange={event => setName(event.target.value)} />
@@ -316,8 +323,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         </div>
         {hiddenColumns.length > 0 && <div className="pop-group">
             <div className="pop-head"><span className="pop-facet">Show hidden</span></div>
-            <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" aria-label={column.derived ? columnName(column) : undefined} disabled={!editable} onClick={() => setColumnVisible(column.id, true, addAfter)}>
-                <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}{column.derived && <sup aria-hidden="true">{column.rowKind === 'story' ? 'S' : 'E'}</sup>}</span></span>
+            <div className="pop-list">{hiddenColumns.map(column => <button key={column.id} type="button" className="pop-opt" aria-pressed="false" aria-label={column.derived ? columnName(column, labels) : undefined} disabled={!editable} onClick={() => setColumnVisible(column.id, true, addAfter)}>
+                <span className="box" aria-hidden="true" /><span className="pop-opt-content"><span className="pop-opt-label" title={column.label}>{column.label}{column.derived && <sup aria-hidden="true">{column.rowKind === 'story' ? labels.child[0] : labels.parent[0]}</sup>}</span></span>
             </button>)}</div>
         </div>}
     </>;
@@ -334,12 +341,12 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         </ReviewColumnPopover>;
         return <thead><tr><th className="planning-review-selection planning-review-text" aria-label="Select">{corner}</th>{columns.map(column => {
         // The grip sits in a right-hand gutter outside the content box, so headings, values and totals share their alignment edge.
-        const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${columnName(column)} column`} title="Drag to move column"
+        const grip = !['key', 'summary'].includes(column.id) && <button type="button" className="planning-review-drag" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} draggable={editable} disabled={!editable} aria-label={`Move ${columnName(column, labels)} column`} title="Drag to move column"
             onDragStart={event => { draggedColumn.current = column.id; setDragging(true); event.dataTransfer.setData('text/plain', column.id); event.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => { draggedColumn.current = null; setDropColumn(null); setDragging(false); }}
             onKeyDown={event => { if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); reorder(column, event.key === 'ArrowLeft' ? -1 : 1); } }}>⠿</button>;
         const index = visibleMovable.indexOf(column.id);
-        const menu = (index >= 0 || column.id === 'key') && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${columnName(column)} column options`} error={openMenu === column.id ? formError : ''}
-            trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${columnName(column)} column options`}
+        const menu = (index >= 0 || column.id === 'key') && <ReviewColumnPopover open={openMenu === column.id && interactive} onClose={() => { setOpenMenu(null); setFormError(''); }} label={`${columnName(column, labels)} column options`} error={openMenu === column.id ? formError : ''}
+            trigger={<IconButton size="sm" className="planning-review-column-action planning-review-colmenu" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} disabled={!editable} aria-label={`${columnName(column, labels)} column options`}
                 onClick={() => { const open = openMenu !== column.id; setOpenMenu(open ? column.id : null); if (open) { setFormError(''); trackedAction('columns_opened'); } }}>
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
             </IconButton>}>
@@ -351,11 +358,11 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const boundary = column.id !== 'key' && <ReviewColumnPopover open={openMenu === 'add' && addAfter === column.id && interactive} onClose={closeAdd} label="Add review column" error={formError} anchorClassName="planning-review-boundary-popover"
             trigger={<span className="planning-review-boundary-anchor" aria-hidden="true" />}>{addContent}</ReviewColumnPopover>;
         const position = sort.findIndex(item => item.columnId === column.id);
-        const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} aria-label={column.derived ? columnName(column) : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
+        const heading = <button type="button" className="planning-review-heading" tabIndex={docked ? -1 : undefined} aria-hidden={docked ? true : undefined} aria-label={column.derived ? columnName(column, labels) : undefined} onClick={event => changeSort(column, event.shiftKey)}>{column.label}{position >= 0 && <span> {sort.length > 1 ? position + 1 : ''}{sort[position].direction === 'desc' ? '↓' : '↑'}</span>}</button>;
         // The marker leads a right-aligned (numeric) label and trails a left-aligned one, so the label keeps the edge it shares with its values.
         const marker = column.derived && <DerivedMarker column={column} docked={!interactive} />;
         const leading = column.type === 'number';
-        return <th key={column.id} aria-label={columnName(column)} data-column-id={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${hotBoundary === column.id ? ' planning-review-boundary-hot' : ''}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
+        return <th key={column.id} aria-label={columnName(column, labels)} data-column-id={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}${hotBoundary === column.id ? ' planning-review-boundary-hot' : ''}${dropColumn === column.id ? ' planning-review-drop' : ''}`}
             onDragOver={event => { if (editable && draggedColumn.current && !['key', 'summary'].includes(column.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setDropColumn(column.id); } }}
             onDrop={event => { event.preventDefault(); const source = draggedColumn.current; moveColumn(source, column.id, event.clientX > event.currentTarget.getBoundingClientRect().left + event.currentTarget.offsetWidth / 2); draggedColumn.current = null; setDropColumn(null); setDragging(false); }}>
             <span className="planning-review-head">{leading && marker}{heading}{!leading && marker}{grip}{menu}</span>{boundary}</th>;
@@ -376,7 +383,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             <colgroup>{dock.widths.map((width, index) => <col key={index} style={{ width }} />)}</colgroup>{content}
         </table>
     </div>;
-    return <section className="planning-review-region" aria-label="Planning Sprint review">
+    return <ReviewLabelsContext.Provider value={labels}><section className="planning-review-region" aria-label="Planning Sprint review">
         {toolbarHost ? createPortal(toolbar, toolbarHost) : toolbar}
         <PlanningReviewBoundaryPlus getLive={liveHeader} suspended={dragging || Boolean(openMenu) || !editable} onHover={setHotBoundary}
             onOpen={afterId => { setAddAfter(afterId); setOpenMenu('add'); setFormError(''); trackedAction('add_column_opened'); }} />
@@ -405,7 +412,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />
                         : column.id === 'team' ? field(row, 'team', row.team?.name || 'Unknown Team')
-                        : column.id === 'epic' ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
+                        : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))
@@ -417,5 +424,5 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         {dock?.header && createPortal(dockedTable('header', header(true), dockedHeader), document.body)}
         {dock?.footer && createPortal(dockedTable('footer', footer, dockedFooter), document.body)}
         {!rows.length && <p className="planning-review-guidance">No rows in this scope.</p>}
-    </section>;
+    </section></ReviewLabelsContext.Provider>;
 }

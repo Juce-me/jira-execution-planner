@@ -4,12 +4,14 @@ export const rebaseWorkspaceConfigSave = (payload, conflict) => ({
 });
 
 const SECTION_LABELS = [
+    ['workConfigurations', 'Project config'],
     ['projects', 'Scope projects'],
     ['priorityWeights', 'Priority weights'],
     ['board', 'Jira board'],
     ['capacity', 'Capacity'],
     ['fieldConfigs', 'Field mapping'],
     ['issueTypes', 'Issue types'],
+    ['scenarioPlanner', 'Scenario planner access'],
 ];
 
 export const committedWorkspaceSectionLabels = (committed = {}) => SECTION_LABELS

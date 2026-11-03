@@ -22,7 +22,7 @@ class SharedAdminConfigValidationTests(unittest.TestCase):
                 'version', 'projects', 'board', 'capacity', 'sprintField',
                 'storyPointsField', 'parentNameField', 'teamField',
                 'projectTrackField', 'deliveryOwnerField', 'statsPriorityWeights',
-                'issueTypes',
+                'issueTypes', 'scenarioPlanner',
             }),
         )
         self.assertEqual(PRIVATE_FORBIDDEN_TOP_LEVEL_SECTIONS, ADMIN_CONFIG_SECTIONS - {'version'})

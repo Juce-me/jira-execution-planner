@@ -150,7 +150,7 @@ test('Planning enablement: one mode gate, the Planning surface, and the capacity
     for (const forbidden of ['clearAggregateSources', 'scrollBy', 'playGlare', 'schedulerRef']) assert.equal(automatic.includes(forbidden), false);
     assert.ok(apply.indexOf('capacityScopeHoldRef.current += 1') > -1 && apply.indexOf('capacityScopeHoldRef.current += 1') < apply.indexOf('flushSync(() => {'), 'the hold is set before the merge');
     assert.match(apply, /await twoFrames\(\);\s*\} finally \{\s*if \(capacityScopeHoldRef\) capacityScopeHoldRef\.current -= 1;/, 'the hold is cleared two frames after the merge, on every path');
-    assert.equal(hook.includes('alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === \'catch_up\' })'), true, 'Planning issues no alert request');
+    assert.equal(hook.includes('alertCallsFor({ ...update, epicChangedFields }, { isFutureSprint: latest.current.isFutureSprint === true, isCatchUp: sourceSurface === \'catch_up\', workModel: latest.current.workModel })'), true, 'Planning issues no alert request');
 });
 
 test('EPM surfaces carry no epic-refresh or glare hooks', () => {

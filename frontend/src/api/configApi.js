@@ -133,6 +133,9 @@ export const fetchPriorityWeightsConfig = (backendUrl) =>
 export const savePriorityWeightsConfig = (backendUrl, weights, baseRevision) =>
     postWorkspaceConfig(backendUrl, '/api/stats/priority-weights-config', { weights, baseRevision });
 
+export const saveScenarioAccessConfig = (backendUrl, enabledForEveryone, baseRevision) =>
+    postWorkspaceConfig(backendUrl, '/api/scenario-access/config', { enabledForEveryone, baseRevision });
+
 export const fetchCapacityConfig = (backendUrl) =>
     apiFetch(`${backendUrl}/api/capacity/config`, {
         method: 'GET',
@@ -181,3 +184,64 @@ export const fetchAvailableIssueTypes = (backendUrl) =>
         headers: { 'Content-Type': 'application/json' },
         cache: 'no-cache'
     });
+
+// Quarterly Project config bundle. GET returns {workConfigurations,configRevision,promoted,
+// userCanEditSettings,featureEnabled}; POST carries the whole bundle (first save adds legacyEdits,
+// later saves add clearProjectsForConfigurationIds). Failures throw with .status/.payload/.code.
+export const fetchWorkStructureConfig = (backendUrl, { signal } = {}) =>
+    apiFetch(`${backendUrl}/api/work-structure/config`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    }).then(workspaceConfigJson);
+
+// Range-agnostic Sprint values observed by the saved sources, for the Scope boundary pickers:
+// {sprintValues:[{value,canonical,state,sprintIds,configurationIds}],sources,promoted}. Metadata read; no quarter.
+export const fetchWorkSprintValues = (backendUrl, { signal } = {}) =>
+    apiFetch(`${backendUrl}/api/work-structure/sprint-values`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    }).then(workspaceConfigJson);
+
+// One saved configuration's Sprint catalog: `refresh` starts a read from Jira; a pending answer is completed by repeating
+// the read with the attempt and catalog identity it named (the existing Sprint catalog completion contract).
+export const fetchConfigurationSprints = (backendUrl, { configurationId, refresh = false, completionAttemptId = null, catalogIdentity = null, signal } = {}) => {
+    const params = new URLSearchParams({ configurationId });
+    if (refresh) params.set('refresh', 'true');
+    if (completionAttemptId) {
+        params.set('completionAttemptId', String(completionAttemptId));
+        params.set('catalogIdentity', String(catalogIdentity));
+    }
+    return apiFetch(`${backendUrl}/api/sprints?${params.toString()}`, {
+        method: 'GET', headers: { 'Content-Type': 'application/json' }, cache: 'no-cache', signal,
+    }).then(async response => ({ httpStatus: response.status, ...(await response.json().catch(() => ({}))) }));
+};
+
+export const saveWorkStructureConfig = (backendUrl, payload) =>
+    postWorkspaceConfig(backendUrl, '/api/work-structure/config', payload);
+
+// Saved-configuration Test: sanitized {ok,status,code,configurationId,configurationRevision,
+// missingFields,checks}; the server reads only the saved entry.
+export const testWorkConfiguration = (backendUrl, { configurationId, configurationRevision }) => {
+    const params = new URLSearchParams({
+        configurationId: String(configurationId),
+        configurationRevision: String(configurationRevision),
+    });
+    return apiFetch(`${backendUrl}/api/test?${params.toString()}`, { method: 'GET', cache: 'no-cache' });
+};
+
+export const fetchWorkIssueTypes = (backendUrl, { configurationId, configurationRevision, signal } = {}) => {
+    const params = new URLSearchParams({
+        configurationId: String(configurationId),
+        configurationRevision: String(configurationRevision),
+    });
+    return apiFetch(`${backendUrl}/api/issue-types?${params.toString()}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal,
+    });
+};

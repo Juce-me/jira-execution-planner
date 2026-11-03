@@ -17,7 +17,9 @@ from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.auth.project_access import project_access_denied_response, project_access_status
 from backend.epm.home import adf_to_html
-from backend.services import eng_board, epic_refresh, shared_group_config
+from backend.services import eng_board, epic_refresh, planning_work, shared_group_config
+from backend.services import work_structure as work_structure_service
+from backend.services import work_write_scope
 from backend.services.eng_board_stream import (
     EngBoardRequestBudget,
     EngBoardRequestDeadline,
@@ -68,6 +70,7 @@ from backend.services.jira_issue_transitions import (
 from backend.auth.db_context import is_db_auth_context
 from backend.config.repository import ConfigStorageError, config_storage_db_enabled
 from backend.db.engine import DatabaseConfigurationError
+from sqlalchemy.exc import OperationalError
 from backend.services.catalog_refresh_runtime import CatalogCompletionError
 from backend.services.workspace_catalog_cache import (
     load_sprint_catalog,
@@ -75,11 +78,12 @@ from backend.services.workspace_catalog_cache import (
 )
 from backend.services.workspace_catalog_config import (
     build_team_catalog_identity,
-    build_team_scope_digest,
+    team_scope_digest,
 )
 from backend.services.workspace_dashboard_config import load_workspace_team_catalog
 
 from . import bind_server_globals
+from . import work_structure_routes as work_routes
 
 
 bp = Blueprint("eng_routes", __name__)
@@ -97,6 +101,7 @@ _STORY_READINESS_MAX_CHILDREN = 20000
 _STORY_READINESS_DEADLINE_SECONDS = 25
 _STORY_READINESS_BATCH_CONCURRENCY = JIRA_BATCH_CONCURRENCY
 _DEPENDENCIES_DEADLINE_SECONDS = 25
+_DEPENDENCIES_BODY_KEYS = frozenset({'keys', 'refresh'})
 
 _STORY_READINESS_ERRORS = {
     'invalid_story_readiness_scope': (400, 'Story readiness scope is invalid.'),
@@ -108,7 +113,12 @@ _STORY_READINESS_ERRORS = {
 
 
 class _StoryReadinessConfigurationError(ValueError):
-    pass
+    """A Department or scope gap fixable in Settings: ``reason`` names it, ``teams`` the Team names involved."""
+
+    def __init__(self, reason, teams=()):
+        super().__init__(reason)
+        self.reason = reason
+        self.teams = tuple(teams)
 
 # One project key, letters/digits/underscore, then a numeric suffix, e.g. PROD-1, TECH_2-22.
 _ISSUE_KEY_RE = re.compile(r'^[A-Z][A-Z0-9_]+-\d+$')
@@ -142,9 +152,14 @@ def _story_readiness_response(payload, status=200, *, cache_result=None, timing=
     return response
 
 
-def _story_readiness_error(code):
+def _story_readiness_error(code, configuration_error=None):
     status, message = _STORY_READINESS_ERRORS[code]
-    return _story_readiness_response({'error': code, 'message': message}, status)
+    body = {'error': code, 'message': message}
+    if configuration_error is not None:  # label-free: a reason code and Team display names only
+        body['reason'] = configuration_error.reason
+        if configuration_error.teams:
+            body['teams'] = list(configuration_error.teams)
+    return _story_readiness_response(body, status)
 
 
 def _story_readiness_bool(value):
@@ -191,8 +206,9 @@ def _story_readiness_dashboard_snapshot(context, *, fresh=False):
     return load_dashboard_config_snapshot()
 
 
-def _story_readiness_projects(config):
+def _story_readiness_projects(config, *, allow_other=False):
     selected = ((config or {}).get('projects') or {}).get('selected') or []
+    kinds = {'product', 'tech', 'other'} if allow_other else {'product', 'tech'}
     projects = []
     seen = set()
     for raw in selected:
@@ -204,7 +220,7 @@ def _story_readiness_projects(config):
             continue
         key = str(key or '').strip().upper()
         kind = str(kind or '').strip().lower()
-        if key and kind in {'product', 'tech'} and key not in seen:
+        if key and kind in kinds and key not in seen:
             projects.append({'key': key, 'type': kind})
             seen.add(key)
     return projects
@@ -218,11 +234,15 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
     team_ids = [str(raw_id or '').strip() for raw_id in match.get('teamIds') or []]
     labels, _errors = normalize_group_team_labels(match.get('teamLabels'), team_ids)
     teams = []
+    unlabeled = []
     for team_id in team_ids:
-        if not team_id or not labels.get(team_id):
-            raise _StoryReadinessConfigurationError('missing_team_label')
         entry = catalog.get(team_id) or {}
+        if not team_id or not labels.get(team_id):
+            unlabeled.append(str(entry.get('name') or '').strip())  # a Team id is never shown as its name
+            continue
         teams.append({'id': team_id, 'name': str(entry.get('name') or team_id), 'labels': list(labels[team_id])})
+    if unlabeled:
+        raise _StoryReadinessConfigurationError('team_labels_missing', [name for name in unlabeled if name])
     return {
         'id': group_id,
         'revision': int(groups.get('configRevision') or 0),
@@ -230,11 +250,20 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
     }
 
 
+def _story_readiness_config(config_snapshot, work_request):
+    """Flat config view; a promoted request reads its admitted configuration, never moved keys."""
+    config = dict(config_snapshot.payload or {})
+    if work_request is not None:
+        config.update(work_request.roles.flat_admin_settings())
+    return config
+
+
 def _story_readiness_cache_key(
         context, requested, group_snapshot, projects, config_snapshot, config, catalog,
-        issue_generation, epic_keys=()):
+        issue_generation, epic_keys=(), work_context=None):
     project_types = sorted({project['type'] for project in projects})
     return _story_readiness_digest({
+        **({'workConfiguration': work_configuration_cache_segment(work_context)} if work_context is not None else {}),
         'auth': build_jira_home_process_cache_key(context, 'story-readiness'),
         **({'epicKeys': list(epic_keys)} if epic_keys else {}),
         'group': group_snapshot,
@@ -290,9 +319,14 @@ def _story_readiness_search(context, transport, jql, fields, *, counters, key_bu
     )
 
 
-def _story_readiness_validate_sprint(context, transport, requested, board_id):
+def _story_readiness_validate_sprint(context, transport, requested, board_id, admitted_sprint=None):
     sprint_id, sprint_name, sprint_state = requested
     found = None
+    if admitted_sprint is not None:
+        # Admission already resolved the Sprint through the configuration's own catalog, which can include a Sprint
+        # its Epics carry but its Board does not list; re-reading the Board would reject that Sprint.
+        found = admitted_sprint
+        board_id = ''
     if board_id:
         start_at = 0
         seen_offsets = set()
@@ -318,7 +352,7 @@ def _story_readiness_validate_sprint(context, transport, requested, board_id):
                 raise RuntimeError('jira_unavailable')
             seen_offsets.add(next_offset)
             start_at = next_offset
-    else:
+    elif found is None:
         response = current_jira_get(
             f'/rest/agile/1.0/sprint/{sprint_id}', context=context,
             timeout=transport.budget.jira_retry_timeout(), diagnostic_transport=transport,
@@ -326,10 +360,13 @@ def _story_readiness_validate_sprint(context, transport, requested, board_id):
         if response.status_code == 404:
             raise LookupError('invalid_sprint_tuple')
         found = _story_readiness_response_json(response)
-    if (not isinstance(found, dict)
-            or str(found.get('id')) != sprint_id
+    if not isinstance(found, dict):
+        raise LookupError('invalid_sprint_tuple')
+    state = str(found.get('state') or '').strip().lower()
+    # An admitted catalog row may carry no state; its id and name are then the authority.
+    if (str(found.get('id')) != sprint_id
             or str(found.get('name') or '').strip() != sprint_name
-            or str(found.get('state') or '').strip().lower() != sprint_state):
+            or ((state or admitted_sprint is None) and state != sprint_state)):
         raise LookupError('invalid_sprint_tuple')
 
 
@@ -363,23 +400,32 @@ def _story_readiness_project_track(value):
     return str(value or '').strip() if isinstance(value, str) else ''
 
 
-def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport, epic_keys=()):
+def _story_readiness_compute(context, requested, group_snapshot, projects, config, transport, epic_keys=(), roles=None,
+                             admitted_sprint=None):
     started = time.monotonic()
     board = (config.get('board') or {}) if isinstance(config, dict) else {}
-    _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip())
+    _story_readiness_validate_sprint(context, transport, requested, str(board.get('boardId') or '').strip(), admitted_sprint)
     sprint_id, sprint_name, sprint_state = requested
     project_keys = [item['key'] for item in projects]
     project_map = {item['key']: item['type'] for item in projects}
     if not project_keys or not group_snapshot['teams']:
-        raise _StoryReadinessConfigurationError('configuration_incomplete')
+        raise _StoryReadinessConfigurationError('projects_missing' if not project_keys else 'teams_missing')
 
-    sprint_field = str(((config.get('sprintField') or {}).get('fieldId')) or get_sprint_field_id()).strip()
-    team_field = str(((config.get('teamField') or {}).get('fieldId')) or get_team_field_id()).strip()
-    track_field = str(((config.get('projectTrackField') or {}).get('fieldId')) or get_project_track_field_id()).strip()
+    if roles is not None:  # admitted configuration only: blank is missing, never a default
+        sprint_field, team_field, track_field = roles.sprint_field_id, roles.team_field_id, roles.project_track_field_id
+    else:
+        sprint_field = str(((config.get('sprintField') or {}).get('fieldId')) or get_sprint_field_id()).strip()
+        team_field = str(((config.get('teamField') or {}).get('fieldId')) or get_team_field_id()).strip()
+        track_field = str(((config.get('projectTrackField') or {}).get('fieldId')) or get_project_track_field_id()).strip()
     if not sprint_field or not team_field:
-        raise _StoryReadinessConfigurationError('configuration_incomplete')
+        raise _StoryReadinessConfigurationError('fields_missing')
+    new_model = roles is not None and not roles.is_legacy
+    parent_clause = roles.parent_clause() if roles is not None else 'issuetype = Epic'
+    child_type_clause = roles.planning_clause() if new_model else 'issuetype = Story'
 
     counters = eng_board.PagerCounters()
+    access_snapshot = ({'other': 'accessible'} if new_model
+                       else {'product': 'accessible', 'tech': 'accessible'})
     project_jql = ', '.join(_story_readiness_quote(key) for key in project_keys)
     # Exact-distinct union: readiness matching is exact, so case variants stay in the JQL.
     team_labels = dict.fromkeys(label for team in group_snapshot['teams'] for label in team['labels'])
@@ -388,11 +434,15 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         ' AND key in (' + ', '.join(_story_readiness_quote(key) for key in epic_keys) + ')'
         if epic_keys else ''
     )
-    discovery_jql = (
-        f'project in ({project_jql}) AND issuetype = Epic '
-        f'AND status not in (Done, Killed, Incomplete, Postponed) '
+    # New model: Initiatives carry no Sprint, so discovery is open parents with a Team alias;
+    # the selected-Sprint Team Epics they must have are read as children below.
+    sprint_scope = '' if new_model else (
         f'AND ({sprint_field} = {sprint_id} OR labels in '
-        f'({_story_readiness_quote(sprint_name)}, {_story_readiness_quote(sprint_name + "_candidate")})) '
+        f'({_story_readiness_quote(sprint_name)}, {_story_readiness_quote(sprint_name + "_candidate")})) ')
+    discovery_jql = (
+        f'project in ({project_jql}) AND {parent_clause} '
+        f'AND status not in (Done, Killed, Incomplete, Postponed) '
+        f'{sprint_scope}'
         f'AND labels in ({label_jql}){key_clause} ORDER BY key ASC'
     )
     discovery_started = time.monotonic()
@@ -408,7 +458,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
             'status': 'complete',
             'canonicalSprint': {'id': sprint_id, 'name': sprint_name, 'state': sprint_state},
             'groupSnapshot': group_snapshot,
-            'projectAccessSnapshot': {'product': 'accessible', 'tech': 'accessible'},
+            'projectAccessSnapshot': access_snapshot,
             'epics': [],
             'children': [],
         })
@@ -436,6 +486,8 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 break
     else:
         raise RuntimeError('jira_unavailable')
+    if new_model:  # Epic Link is only the Story->Epic relationship; Epic->Initiative is `parent`
+        epic_link_field = None
 
     child_budget = eng_board.UniqueKeyBudget(_STORY_READINESS_MAX_CHILDREN)
     child_fields = ['status', 'parent', sprint_field, team_field]
@@ -443,7 +495,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         child_fields.append(epic_link_field)
     child_batches = eng_board.split_epic_batches(
         epic_keys,
-        lambda keys: 'issuetype = Story AND parent in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
+        lambda keys: f'{child_type_clause} AND parent in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
         child_fields)
 
     def read_children(batch):
@@ -452,7 +504,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         if epic_link_field:
             clauses.append(f'{epic_link_field} in (' + ','.join(_story_readiness_quote(key) for key in batch) + ')')
         rows = _story_readiness_search(
-            context, transport, f'issuetype = Story AND ({" OR ".join(clauses)})', child_fields,
+            context, transport, f'{child_type_clause} AND ({" OR ".join(clauses)})', child_fields,
             counters=counters, key_budget=child_budget,
         )
         for row in rows:
@@ -475,6 +527,12 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
         enrichment_fields)
 
+    # New model: the readiness parents' own parent is the Initiative slot only when it is of the ancestor type;
+    # a typed parent of another type is counted, an untyped (permission-reduced) one is unknown. No ancestor
+    # type configured: unchecked, as Legacy.
+    ancestor_term = roles.ancestor_term() if new_model else None
+    ancestor_misses = []
+
     def read_epics(batch):
         epics = []
         batch_set = set(batch)
@@ -493,6 +551,12 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
             initiative = None
             if parent and parent.get('key') and parent_fields.get('summary'):
                 initiative = {'key': str(parent['key']), 'summary': str(parent_fields['summary'])}
+            if ancestor_term is not None and parent and parent.get('key'):
+                parent_type = parent_fields.get('issuetype') or {}
+                if str(parent_type.get('id') or '') != ancestor_term[1]:
+                    initiative = None
+                    if parent_type:
+                        ancestor_misses.append(str(row.get('key') or ''))
             epics.append({
                 'id': str(row.get('id') or ''),
                 'team': fields.get(team_field),
@@ -542,10 +606,12 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
         'status': 'complete',
         'canonicalSprint': {'id': sprint_id, 'name': sprint_name, 'state': sprint_state},
         'groupSnapshot': group_snapshot,
-        'projectAccessSnapshot': {'product': 'accessible', 'tech': 'accessible'},
+        'projectAccessSnapshot': access_snapshot,
         'epics': epics,
         'children': children,
     })
+    if new_model:
+        result['ancestorMismatchCount'] = len(ancestor_misses)
     total_ms = (time.monotonic() - started) * 1000
     timing = (
         f'discovery;dur={discovery_ms:.1f}, child-distribution;dur={child_ms:.1f}, '
@@ -575,15 +641,23 @@ def get_story_readiness():
     except AuthError as exc:
         return _eng_auth_error_response(exc)
     try:
+        work_request, work_error = admit_work_request(context, sprint_id)
+        if work_error is not None:
+            return work_error
+        roles = work_request.roles if work_request is not None else None
+        work_context = work_request.context if work_request is not None else None
         config_snapshot = _story_readiness_dashboard_snapshot(context)
-        config = dict(config_snapshot.payload or {})
-        projects = _story_readiness_projects(config)
+        config = _story_readiness_config(config_snapshot, work_request)
+        projects = _story_readiness_projects(config, allow_other=roles is not None and not roles.is_legacy)
     except AuthError as exc:
         return _eng_auth_error_response(exc)
     except Exception:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        # A storage or loader failure is not something Settings can fix: retryable, never "incomplete".
+        logger.exception('Story readiness configuration could not be loaded')
+        return _story_readiness_error('story_readiness_unavailable')
     if not projects:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        return _story_readiness_error('story_readiness_configuration_invalid',
+                                      _StoryReadinessConfigurationError('projects_missing'))
     denied = _story_readiness_access_denied(
         context,
         {project['type'] for project in projects},
@@ -598,20 +672,25 @@ def get_story_readiness():
             return _story_readiness_error('story_readiness_scope_not_found')
         team_ids = [team['id'] for team in group_snapshot['teams']]
         team_labels = [label for team in group_snapshot['teams'] for label in team['labels']]
-        if (not group_snapshot['teams']
-                or len(set(team_ids)) != len(team_ids)
-                or len(set(team_labels)) != len(team_labels)):
-            return _story_readiness_error('story_readiness_configuration_invalid')
+        if not group_snapshot['teams']:
+            raise _StoryReadinessConfigurationError('teams_missing')
+        if len(set(team_ids)) != len(team_ids):
+            raise _StoryReadinessConfigurationError('teams_duplicate')
+        if len(set(team_labels)) != len(team_labels):
+            raise _StoryReadinessConfigurationError('team_labels_shared')
         issue_generation = get_jira_issue_cache_generation()
         requested = (sprint_id, sprint_name, sprint_state)
         cache_key = _story_readiness_cache_key(
             context, requested, group_snapshot, projects, config_snapshot, config,
-            catalog, issue_generation, epic_keys,
+            catalog, issue_generation, epic_keys, work_context,
         )
     except AuthError as exc:
         return _eng_auth_error_response(exc)
+    except _StoryReadinessConfigurationError as exc:
+        return _story_readiness_error('story_readiness_configuration_invalid', exc)
     except Exception:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+        logger.exception('Story readiness Department scope could not be loaded')
+        return _story_readiness_error('story_readiness_unavailable')
 
     now = time.monotonic()
     # A per-epic result is never the department snapshot: skip the LRU read and write.
@@ -631,6 +710,8 @@ def get_story_readiness():
             future = _STORY_READINESS_EXECUTOR.submit(
                 _story_readiness_compute, context, requested,
                 group_snapshot, projects, config, transport, epic_keys,
+                *(() if roles is None else (roles,)),
+                **({'admitted_sprint': work_request.sprint} if work_request is not None and work_request.sprint else {}),
             )
             _STORY_READINESS_INFLIGHT[cache_key] = future
             def retire(completed, *, expected_key=cache_key):
@@ -644,18 +725,18 @@ def get_story_readiness():
             raise RuntimeError('stale_generation')
         try:
             fresh_config_snapshot = _story_readiness_dashboard_snapshot(context, fresh=True)
-            fresh_config = dict(fresh_config_snapshot.payload or {})
+            fresh_config = _story_readiness_config(fresh_config_snapshot, work_request)
             fresh_groups = _story_readiness_effective_groups(context)
             fresh_catalog = _story_readiness_team_catalog(context)
             fresh_group = _story_readiness_group_snapshot(fresh_groups, group_id, fresh_catalog)
-            fresh_projects = _story_readiness_projects(fresh_config)
+            fresh_projects = _story_readiness_projects(fresh_config, allow_other=roles is not None and not roles.is_legacy)
         except AuthError:
             raise
         except Exception as exc:
             raise RuntimeError('stale_scope') from exc
         if fresh_group is None or _story_readiness_cache_key(
                 context, requested, fresh_group, fresh_projects, fresh_config_snapshot,
-                fresh_config, fresh_catalog, issue_generation, epic_keys) != cache_key:
+                fresh_config, fresh_catalog, issue_generation, epic_keys, work_context) != cache_key:
             raise RuntimeError('stale_scope')
     except AuthError as exc:
         return _eng_auth_error_response(exc)
@@ -665,8 +746,8 @@ def get_story_readiness():
         if exc.code == 'board_scope_too_large':
             return _story_readiness_error('story_readiness_scope_too_large')
         return _story_readiness_error('story_readiness_unavailable')
-    except _StoryReadinessConfigurationError:
-        return _story_readiness_error('story_readiness_configuration_invalid')
+    except _StoryReadinessConfigurationError as exc:
+        return _story_readiness_error('story_readiness_configuration_invalid', exc)
     except InvalidCompleteReadinessInput:
         return _story_readiness_error('story_readiness_unavailable')
     except (EngBoardRequestDeadline, TimeoutError):
@@ -732,7 +813,39 @@ _ISSUE_FIELD_ERROR_DETAIL_KEYS = {
 }
 
 
-def _issue_field_ids():
+def _write_scope_or_failure(auth_context, raw_stamp, *, digest_required=True):
+    """``(scope, None)`` or ``(None, error_response)``; runs before any Jira call on a stamped route.
+
+    ``scope`` is None on the unscoped (unpromoted/flag-off) path, which keeps its request shape.
+    """
+    try:
+        scope = work_write_scope.resolve_scope(
+            raw_stamp, db_request=work_routes.db_oauth_request(auth_context),
+            snapshot_loader=lambda: work_routes.workspace_snapshot(auth_context),
+            digest_required=digest_required)
+    except work_routes.WorkConfigError as error:
+        return None, work_routes.work_error_response(error)
+    except (ConfigStorageError, DatabaseConfigurationError, OperationalError):
+        return None, work_routes.storage_unavailable_response()
+    return scope, None
+
+
+def _scope_kwargs(scope):
+    """Unscoped requests call the services exactly as before; only a resolved scope is passed on."""
+    return {} if scope is None else {'scope': scope}
+
+
+def _stamp_args_or_failure():
+    try:
+        return work_write_scope.stamp_from_args(request.args), None
+    except work_routes.WorkConfigError as error:
+        return None, work_routes.work_error_response(error)
+
+
+def _issue_field_ids(scope=None):
+    if scope is not None:
+        # Scoped requests never read ambient flat getters: ids come from the resolved configuration.
+        return dict(scope.field_ids)
     return {
         'assignee': 'assignee',
         'summary': 'summary',
@@ -799,18 +912,25 @@ def get_editable_issue_field(issue_key):
             'error': 'csrf_required',
             'message': 'OAuth metadata requests require X-Requested-With: jira-execution-planner',
         }), 403
-    if set(request.args) != {'field'}:
+    if set(request.args) - {'field'} - set(work_write_scope.QUERY_STAMP_KEYS) or 'field' not in request.args:
         return jsonify({'error': 'invalid_field'}), 400
     field = request.args.get('field')
+    raw_stamp, failure = _stamp_args_or_failure()
+    if failure is not None:
+        return failure
     try:
         auth_context = _issue_field_auth_context(field)
+        scope, failure = _write_scope_or_failure(auth_context, raw_stamp, digest_required=False)
+        if failure is not None:
+            return failure
         _require_issue_field_scopes(auth_context, field)
         result = load_editable_field(
             issue_key,
             field,
             jira_request=current_jira_request,
             context=auth_context,
-            field_ids=_issue_field_ids(),
+            field_ids=_issue_field_ids(scope),
+            **_scope_kwargs(scope),
         )
     except AuthError as error:
         return _eng_auth_error_response(error)
@@ -832,16 +952,21 @@ def post_issue_field_user_options(issue_key):
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({'error': 'invalid_json'}), 400
+    payload, raw_stamp = work_write_scope.split_body_stamp(payload)
     try:
         field = payload.get('field')
         auth_context = _issue_field_auth_context(field)
+        scope, failure = _write_scope_or_failure(auth_context, raw_stamp)
+        if failure is not None:
+            return failure
         _require_issue_field_scopes(auth_context, field)
         result = search_field_users(
             issue_key,
             payload,
             jira_request=current_jira_request,
             context=auth_context,
-            field_ids=_issue_field_ids(),
+            field_ids=_issue_field_ids(scope),
+            **_scope_kwargs(scope),
         )
     except AuthError as error:
         return _eng_auth_error_response(error)
@@ -895,17 +1020,22 @@ def post_issue_field(issue_key):
     payload = request.get_json(silent=True)
     if not isinstance(payload, dict):
         return jsonify({'error': 'invalid_json'}), 400
+    payload, raw_stamp = work_write_scope.split_body_stamp(payload)
     try:
         field = payload.get('field')
         auth_context = _issue_field_auth_context(field)
+        scope, failure = _write_scope_or_failure(auth_context, raw_stamp)
+        if failure is not None:
+            return failure
         _require_issue_field_scopes(auth_context, field, write=True)
         result = update_issue_field(
             issue_key,
             payload,
             jira_request=current_jira_request,
             context=auth_context,
-            field_ids=_issue_field_ids(),
+            field_ids=_issue_field_ids(scope),
             invalidate=clear_jira_issue_status_caches,
+            **_scope_kwargs(scope),
         )
     except AuthError as error:
         return _eng_auth_error_response(error)
@@ -924,6 +1054,10 @@ def get_dependencies():
     """Fetch dependency links for a set of issues."""
     try:
         payload = request.get_json(silent=True) or {}
+        # The body is exactly `{keys, refresh}`; work selectors travel in the query string with every other work read.
+        if not isinstance(payload, dict) or set(payload) - _DEPENDENCIES_BODY_KEYS:
+            return jsonify({'error': 'invalid_dependencies_request',
+                            'message': 'The request body accepts only keys and refresh.'}), 400
         keys = sorted({str(key).strip() for key in (payload.get('keys') or []) if str(key).strip()})
         if not keys:
             return jsonify({'dependencies': {}})
@@ -934,9 +1068,13 @@ def get_dependencies():
         started_at = time.perf_counter()
         deadline = time.monotonic() + _DEPENDENCIES_DEADLINE_SECONDS
         auth_context = current_request_auth_context()
+        work_request, work_error = admit_work_request(auth_context)
+        if work_error is not None:
+            return work_error
         cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
-        cache_key = build_jira_home_process_cache_key(auth_context, 'dependencies', ','.join(keys))
+        cache_key = build_work_cache_key(auth_context, work_request.context if work_request is not None else None,
+                                         'dependencies', ','.join(keys))
         cached_entry = None
         if cache_enabled and not force_refresh:
             with _cache_lock:
@@ -950,7 +1088,8 @@ def get_dependencies():
         incomplete = None
         try:
             dependencies = collect_dependencies(keys, context=auth_context, max_concurrency=JIRA_BATCH_CONCURRENCY,
-                                                strict=True, deadline=deadline)
+                                                strict=True, deadline=deadline,
+                                                **({'roles': work_request.roles} if work_request is not None else {}))
         except JiraBatchIncomplete as error:
             # A failed, cut-short, rate-limited or late batch: answer with what completed, flagged, never cached.
             incomplete = error
@@ -987,15 +1126,23 @@ def lookup_issues():
             return jsonify({'issues': []})
 
         auth_context = current_request_auth_context()
-        team_field_id = resolve_team_field_id(None, context=auth_context)
-        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
+        work_request, work_error = admit_work_request(auth_context)
+        if work_error is not None:
+            return work_error
+        roles = work_request.roles if work_request is not None else None
+        if roles is not None:
+            team_field_id = roles.team_field_id
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context) if roles.uses_epic_link else None
+        else:
+            team_field_id = resolve_team_field_id(None, context=auth_context)
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
 
         fields_list = [
             'summary',
             'status',
             'issuetype',
             'assignee',
-            get_story_points_field_id(),
+            roles.story_points_field_id if roles is not None else get_story_points_field_id(),
             'parent'
         ]
         if epic_link_field_id and epic_link_field_id not in fields_list:
@@ -1025,7 +1172,7 @@ def lookup_issues():
 
         snapshots = []
         for issue in issues:
-            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id)
+            snapshot = build_issue_snapshot(issue, team_field_id, epic_link_field_id, roles=roles)
             snapshot['id'] = issue.get('id')
             snapshots.append(snapshot)
 
@@ -1055,10 +1202,14 @@ def get_story_subtasks():
 
         started_at = time.perf_counter()
         auth_context = current_request_auth_context()
+        work_request, work_error = admit_work_request(auth_context, sprint_id)
+        if work_error is not None:
+            return work_error
         cache_generation = get_jira_issue_cache_generation()
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
-        cache_key = build_jira_home_process_cache_key(
+        cache_key = build_work_cache_key(
             auth_context,
+            work_request.context if work_request is not None else None,
             'story-subtasks',
             parent_key.upper(),
             sprint_id,
@@ -1081,7 +1232,8 @@ def get_story_subtasks():
                 return response
 
         issues = fetch_subtask_issues_by_jql(
-            build_subtasks_jql(parent_key, sprint_id),
+            build_subtasks_jql(parent_key, sprint_id,
+                               sprint_clause=work_request.roles.sprint_clause(sprint_id) if work_request is not None else None),
             SUBTASK_FIELDS,
             search_request=jira_search_request,
             context=auth_context,
@@ -1161,6 +1313,9 @@ def get_issue_transition_options():
 
     try:
         auth_context = current_request_auth_context()
+        _scope, failure = _write_scope_or_failure(auth_context, work_write_scope.split_body_stamp(payload)[1])
+        if failure is not None:
+            return failure
         result = load_transition_options(
             payload.get('issueKeys'),
             jira_request=current_jira_request,
@@ -1192,6 +1347,9 @@ def post_issue_transitions():
 
     try:
         auth_context = current_request_auth_context()
+        _scope, failure = _write_scope_or_failure(auth_context, work_write_scope.split_body_stamp(payload)[1])
+        if failure is not None:
+            return failure
         if _missing_write_jira_work_scope(auth_context):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
         result = transition_issues(
@@ -1229,9 +1387,16 @@ def get_issue_priority_options():
         return jsonify({'error': 'jira_oauth_required'}), 403
 
     issue_key = (request.args.get('issueKey') or '').strip()
+    raw_stamp, failure = _stamp_args_or_failure()
+    if failure is not None:
+        return failure
     try:
         auth_context = current_request_auth_context()
         if issue_key:
+            # The no-issue site catalog stays unscoped; the per-issue scheme is a stamped read.
+            _scope, failure = _write_scope_or_failure(auth_context, raw_stamp, digest_required=False)
+            if failure is not None:
+                return failure
             result = load_priority_options_for_issue(
                 issue_key, jira_request=current_jira_request, context=auth_context
             )
@@ -1265,6 +1430,9 @@ def post_issue_priorities():
 
     try:
         auth_context = current_request_auth_context()
+        _scope, failure = _write_scope_or_failure(auth_context, work_write_scope.split_body_stamp(payload)[1])
+        if failure is not None:
+            return failure
         if _missing_write_jira_work_scope(auth_context):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
         result = update_issue_priorities(
@@ -1291,8 +1459,12 @@ def post_issue_priorities():
 
 
 _PROJECT_TRACK_CONFLICT_CODES = {
-    'issue_not_epic', 'project_track_not_editable', 'project_track_option_unavailable',
+    'issue_not_epic', 'issue_not_parent', 'project_track_not_editable', 'project_track_option_unavailable',
 }
+
+
+def _project_track_field_getter(scope):
+    return (lambda: scope.field_ids.get('projectTrack', '')) if scope is not None else get_project_track_field_id
 
 
 def _project_track_service_error_response(error, failure_code):
@@ -1312,13 +1484,20 @@ def get_issue_project_track_options():
     issue_key = (request.args.get('issueKey') or '').strip()
     if not issue_key:
         return jsonify({'error': 'invalid_issue_key'}), 400
+    raw_stamp, failure = _stamp_args_or_failure()
+    if failure is not None:
+        return failure
     try:
         auth_context = current_request_auth_context()
+        scope, failure = _write_scope_or_failure(auth_context, raw_stamp, digest_required=False)
+        if failure is not None:
+            return failure
         result = load_project_track_options_for_issue(
             issue_key,
             jira_request=current_jira_request,
-            get_project_track_field_id=get_project_track_field_id,
+            get_project_track_field_id=_project_track_field_getter(scope),
             context=auth_context,
+            **_scope_kwargs(scope),
         )
     except AuthError as error:
         return _eng_auth_error_response(error)
@@ -1342,14 +1521,18 @@ def post_issue_project_track():
         return jsonify({'error': 'jira_oauth_required'}), 403
     try:
         auth_context = current_request_auth_context()
+        scope, failure = _write_scope_or_failure(auth_context, work_write_scope.split_body_stamp(payload)[1])
+        if failure is not None:
+            return failure
         if _missing_write_jira_work_scope(auth_context):
             raise AuthError('missing_oauth_scope', 'Your Jira sign-in needs updated permissions.')
         result = update_issue_project_track(
             payload.get('issueKey'),
             payload.get('targetTrack'),
             jira_request=current_jira_request,
-            get_project_track_field_id=get_project_track_field_id,
+            get_project_track_field_id=_project_track_field_getter(scope),
             context=auth_context,
+            **_scope_kwargs(scope),
         )
     except AuthError as error:
         return _eng_auth_error_response(error)
@@ -1387,6 +1570,110 @@ def get_issue_status_catalog():
     return jsonify(result)
 
 
+def _roles_search_json(payload):
+    """Jira search as parsed JSON for ``planning_work``; a non-200 is a recoverable SearchUnavailable."""
+    response = jira_search_request(payload)
+    if response.status_code != 200:
+        raise planning_work.SearchUnavailable(str(response.status_code))
+    return response.json() or {}
+
+
+def _missing_info_for_new_model(roles, sprint, team_ids, components, scoped_epic_key):
+    """Missing-info for the rnd_2027 model: Epics (planning) missing Sprint / Story Points / Team.
+
+    Discovery is the selected-Sprint Epics scoped by Component/Team (the leaves own both);
+    their Initiatives are hydrated, then every Epic under them is checked regardless of its
+    Sprint.  A failed page is reported through ``complete`` and never as a clean empty scan.
+    """
+    team_field_id, sprint_field_id, points_field_id = roles.team_field_id, roles.sprint_field_id, roles.story_points_field_id
+    scope_clause = build_missing_info_scope_clause(team_ids, components, team_field_name=team_field_id)
+    discovery_jql = planning_work._add_clause(roles.project_clause(), roles.planning_clause())
+    discovery_jql = add_clause_to_jql(discovery_jql, roles.sprint_clause(sprint))
+    if scope_clause:
+        discovery_jql = add_clause_to_jql(discovery_jql, scope_clause)
+    discovery_jql = add_clause_to_jql(discovery_jql, 'status not in ("Killed","Done","Incomplete")')
+    if scoped_epic_key:
+        discovery_jql = add_clause_to_jql(discovery_jql, f'issueKey in ("{scoped_epic_key}")')
+    fields = ['summary', 'status', 'priority', 'issuetype', 'assignee', 'updated', 'parent', 'components',
+              points_field_id, sprint_field_id, team_field_id]
+    selected, complete = planning_work.search_all(
+        lambda payload: _roles_search_json(payload), lambda: None, discovery_jql, fields, work=None)
+    parent_keys = sorted({roles.parent_key_of(issue) for issue in selected if roles.parent_key_of(issue)})
+    parents, parents_ok = {}, True
+    if parent_keys:
+        parents, parents_ok = planning_work._hydrate(
+            _roles_search_json, lambda: None, parent_keys,
+            ('summary', 'status', 'assignee', 'parent', 'components', team_field_id),
+            planning_work.PlanningWork(), ceiling_pages=planning_work.DEFAULT_MAX_PAGES)
+    epics_summary = []
+    for key, parent in sorted(parents.items()):
+        pf = parent.get('fields') or {}
+        raw_team = pf.get(team_field_id) if pf.get(team_field_id) is not None else None
+        team_value = build_team_value(raw_team) if raw_team else None
+        epics_summary.append({
+            'key': key, 'summary': pf.get('summary', ''), 'status': (pf.get('status') or {}).get('name') or '',
+            'components': [c.get('name', '') for c in (pf.get('components') or []) if c.get('name')],
+            'teamName': extract_team_name(raw_team) if raw_team else '',
+            'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+        })
+    missing, children_ok = [], True
+    if parent_keys:
+        batches = eng_board.split_epic_batches(
+            parent_keys,
+            lambda keys: planning_work._add_clause(
+                roles.children_clause([planning_work.quote_jql(k) for k in keys]),
+                roles.planning_clause() + ' AND status not in (Killed, Done, Postponed)'),
+            tuple(fields))
+        for batch in batches:
+            jql = planning_work._add_clause(
+                roles.children_clause([planning_work.quote_jql(k) for k in batch]),
+                roles.planning_clause() + ' AND status not in (Killed, Done, Postponed)')
+            try:
+                found, page_complete = planning_work.search_all(_roles_search_json, lambda: None, jql, fields)
+            except planning_work.SearchUnavailable:
+                children_ok = False
+                continue
+            children_ok = children_ok and page_complete
+            for issue in found:
+                f = issue.get('fields') or {}
+                status = (f.get('status') or {}).get('name') or ''
+                if str(status).strip().lower() == 'postponed':
+                    continue
+                raw_team = f.get(team_field_id)
+                team_value = build_team_value(raw_team) if raw_team is not None else None
+                points = f.get(points_field_id)
+                try:
+                    has_points = (float(points) if points not in (None, '', []) else 0.0) > 0
+                except (TypeError, ValueError):
+                    has_points = False
+                absent = [name for name, present in (
+                    ('Sprint', bool(f.get(sprint_field_id))), ('Story Points', has_points),
+                    ('Team', bool(extract_team_name(raw_team)) if raw_team is not None else False)) if not present]
+                if not absent:
+                    continue
+                assignee = f.get('assignee') or {}
+                priority = f.get('priority') or {}
+                missing.append({
+                    'id': issue.get('id'), 'key': issue.get('key'),
+                    'fields': {
+                        'summary': f.get('summary'), 'status': {'name': status} if status else None,
+                        'priority': {'name': priority.get('name')} if priority else None,
+                        'issuetype': {'name': (f.get('issuetype') or {}).get('name')} if f.get('issuetype') else None,
+                        'assignee': shape_jira_person(assignee), 'updated': f.get('updated'),
+                        'customfield_10004': points,  # null stays null; never coerced to 0
+                        'customfield_10101': f.get(sprint_field_id),
+                        'team': team_value, 'teamName': extract_team_name(raw_team) if raw_team is not None else None,
+                        'teamId': team_value.get('id') if isinstance(team_value, dict) else None,
+                        'epicKey': roles.parent_key_of(issue), 'missingFields': absent,
+                    },
+                })
+    payload = {'issues': missing, 'epics': epics_summary, 'count': len(missing), 'epicCount': len(parent_keys)}
+    complete = complete and parents_ok and children_ok
+    if not complete:
+        payload['complete'] = False
+    return payload, complete
+
+
 @bp.route('/api/missing-info', methods=['GET'])
 def get_missing_info():
     """Find stories under epics in a given sprint that are missing key planning fields (sprint/SP/team)."""
@@ -1405,12 +1692,17 @@ def get_missing_info():
         force_refresh = request.args.get('refresh', '').strip().lower() in ('1', 'true', 'yes')
 
         auth_context = current_request_auth_context()
+        work_request, work_error = admit_work_request(auth_context, sprint)
+        if work_error is not None:
+            return work_error
+        roles = work_request.roles if work_request is not None else None
         cache_generation = get_jira_issue_cache_generation()
         effective_components = components_param or ([MISSING_INFO_COMPONENT] if MISSING_INFO_COMPONENT else [])
         effective_team_ids = normalize_team_ids(team_ids or MISSING_INFO_TEAM_IDS)
         cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
-        cache_key = build_jira_home_process_cache_key(
+        cache_key = build_work_cache_key(
             auth_context,
+            work_request.context if work_request is not None else None,
             'missing-info',
             sprint,
             ','.join(effective_team_ids),
@@ -1429,18 +1721,43 @@ def get_missing_info():
             response.headers['Server-Timing'] = 'cache;dur=1'
             return response
 
-        # Resolve fields
-        team_field_id = resolve_team_field_id(None, context=auth_context)
-        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
+        if roles is not None and not roles.is_legacy:
+            try:
+                payload, complete = _missing_info_for_new_model(
+                    roles, sprint, effective_team_ids, effective_components, scoped_epic_key)
+            except planning_work.SearchUnavailable:
+                return jsonify({'error': 'Failed to fetch epics for missing-info scan'}), 502
+            if complete and cache_enabled:
+                with _cache_lock:
+                    if get_jira_issue_cache_generation() == cache_generation:
+                        MISSING_INFO_CACHE[cache_key] = {'timestamp': time.time(), 'data': payload}
+            response = jsonify(payload)
+            response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+            response.headers['Pragma'] = 'no-cache'
+            response.headers['Expires'] = '0'
+            response.headers['Server-Timing'] = f'total;dur={round((time.perf_counter() - started_at) * 1000, 1)}'
+            return response
 
-        scope_clause = build_missing_info_scope_clause(effective_team_ids, effective_components)
+        # Resolve fields
+        if roles is not None:  # Legacy adapter inside a promoted workspace: captured mapping only
+            team_field_id = roles.team_field_id
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context) if roles.uses_epic_link else None
+            scope_clause = build_missing_info_scope_clause(effective_team_ids, effective_components)
+            story_points_field_id, sprint_field_id = roles.story_points_field_id, roles.sprint_field_id
+        else:
+            team_field_id = resolve_team_field_id(None, context=auth_context)
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
+            scope_clause = build_missing_info_scope_clause(effective_team_ids, effective_components)
+            story_points_field_id, sprint_field_id = get_story_points_field_id(), get_sprint_field_id()
 
         # 1) Fetch epics that are in the sprint (future sprint planning), scoped by component/team.
-        epic_jql = f'Sprint = {sprint} AND issuetype = Epic'
+        epic_jql = (f'{roles.sprint_clause(sprint)} AND {roles.parent_clause()}' if roles is not None
+                    else f'Sprint = {sprint} AND issuetype = Epic')
         if scope_clause:
             epic_jql = add_clause_to_jql(epic_jql, scope_clause)
         epic_jql = add_clause_to_jql(epic_jql, 'status not in ("Killed","Done","Incomplete")')
-        epic_jql = add_clause_to_jql(epic_jql, f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")')
+        epic_jql = add_clause_to_jql(epic_jql, roles.project_clause() if roles is not None
+                                     else f'project in ("{JIRA_PRODUCT_PROJECT}","{JIRA_TECH_PROJECT}")')
         if scoped_epic_key:
             epic_jql = add_clause_to_jql(epic_jql, f'issueKey in ("{scoped_epic_key}")')
 
@@ -1500,8 +1817,8 @@ def get_missing_info():
             'issuetype',
             'assignee',
             'updated',
-            get_story_points_field_id(),  # Story Points
-            get_sprint_field_id(),  # Sprint
+            story_points_field_id,  # Story Points
+            sprint_field_id,  # Sprint
             'parent'
         ]
         if epic_link_field_id and epic_link_field_id not in story_fields:
@@ -1519,6 +1836,10 @@ def get_missing_info():
             # Important: do NOT scope stories by component/team here because the whole point is to
             # find stories missing those fields. We only scope epics, then pull every story under them.
             story_jql = f'({link_clause} OR {parent_clause}) AND issuetype = Story AND status not in (Killed, Done, Postponed)'
+            if roles is not None:
+                story_jql = planning_work._add_clause(
+                    roles.children_clause(','.join(batch)),
+                    ('issuetype = Story' if roles.is_legacy else roles.planning_clause()) + ' AND status not in (Killed, Done, Postponed)')
 
             next_page_token = None
             while True:
@@ -1564,14 +1885,14 @@ def get_missing_info():
                     if epic_key:
                         fields['epicKey'] = epic_key
 
-                    sp = fields.get(get_story_points_field_id())
+                    sp = fields.get(story_points_field_id)
                     try:
                         sp_num = float(sp) if sp not in (None, '', []) else 0.0
                     except Exception:
                         sp_num = 0.0
                     has_sp = sp_num > 0
 
-                    sprint_value = fields.get(get_sprint_field_id())
+                    sprint_value = fields.get(sprint_field_id)
                     has_sprint = bool(sprint_value)
                     has_team = bool(fields.get('teamName'))
 
@@ -1599,8 +1920,8 @@ def get_missing_info():
                             'issuetype': {'name': issuetype.get('name')} if issuetype else None,
                             'assignee': shape_jira_person(assignee),
                             'updated': fields.get('updated'),
-                            'customfield_10004': fields.get(get_story_points_field_id()),
-                            'customfield_10101': fields.get(get_sprint_field_id()),
+                            'customfield_10004': fields.get(story_points_field_id),
+                            'customfield_10101': fields.get(sprint_field_id),
                             'team': fields.get('team'),
                             'teamName': fields.get('teamName'),
                             'teamId': fields.get('teamId'),
@@ -1702,10 +2023,7 @@ def _team_catalog_cache(context, config, snapshot, *, refresh_started=False):
         state = 'missing'
     else:
         state = 'fresh'
-    scope_digest = build_team_scope_digest(
-        board_id=config.board_id, projects=config.projects,
-        team_field_id=config.team_field_id, base_jql=config.base_jql,
-    )
+    scope_digest = team_scope_digest(config)
     return {
         'backend': 'postgresql',
         'identity': snapshot.identity,
@@ -1748,7 +2066,7 @@ def _current_team_names(context):
 
 
 def _db_team_response(context, config, sprint_id, snapshot, *, team_ids,
-                      refresh_started, started_at):
+                      refresh_started, started_at, extra=None):
     cache = _team_catalog_cache(
         context, config, snapshot, refresh_started=refresh_started,
     )
@@ -1765,7 +2083,7 @@ def _db_team_response(context, config, sprint_id, snapshot, *, team_ids,
             teams.append({'id': team_id, 'name': name})
         teams.sort(key=lambda item: (item['name'].casefold(), item['id']))
         return _team_catalog_response(
-            {'teams': teams, 'sprintId': sprint_id, 'cache': cache},
+            {'teams': teams, 'sprintId': sprint_id, 'cache': cache, **(extra or {})},
             200, started_at,
         )
     if cache['refreshStatus'] == 'failed':
@@ -1781,8 +2099,24 @@ def _db_team_response(context, config, sprint_id, snapshot, *, team_ids,
 
 def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
                   completion_attempt_id, expected_identity, started_at):
-    with session_scope() as catalog_session:
-        config = resolve_request_effective_catalog_config(catalog_session, context)
+    try:
+        with session_scope() as catalog_session:
+            sources = resolve_request_catalog_sources(catalog_session, context)
+            config = (
+                None if sources is not None
+                else resolve_request_effective_catalog_config(catalog_session, context)
+            )
+    except work_routes.WorkConfigError as error:
+        body, status = error.response()
+        return _team_catalog_response(body, status, started_at)
+    if sources is not None:
+        return _get_configuration_teams(
+            context, sources, sprint_id=sprint_id, team_ids=team_ids,
+            force_refresh=force_refresh, completion_attempt_id=completion_attempt_id,
+            expected_identity=expected_identity, started_at=started_at,
+        )
+    if {'configurationId', 'quarter', 'configurationRevision', 'configurationDigest'} & set(request.args):
+        return _team_catalog_response({'error': 'unsupported_catalog_parameter'}, 400, started_at)
     if not config.board_id or not config.sprint_identity:
         return _team_catalog_response({'error': 'sprint_board_required'}, 409, started_at)
     if config.team_scope_error:
@@ -1796,22 +2130,61 @@ def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
         for item in sprint_snapshot.payload
     ):
         return _team_catalog_response({'error': 'sprint_not_in_catalog'}, 404, started_at)
+    return _serve_db_teams(
+        context, config, resolve_request_effective_catalog_config, sprint_id=sprint_id,
+        team_ids=team_ids, force_refresh=force_refresh,
+        completion_attempt_id=completion_attempt_id, expected_identity=expected_identity,
+        started_at=started_at,
+    )
 
+
+def _get_configuration_teams(context, sources, *, sprint_id, team_ids, force_refresh,
+                             completion_attempt_id, expected_identity, started_at):
+    """Promoted workspace: admit the physical Sprint through one configuration source."""
+    try:
+        configuration_id, quarter = work_routes.catalog_selectors(request.args)
+        config, sprint_row = work_routes.admit_sprint_source(
+            context, sources, sprint_id, configuration_id=configuration_id, quarter=quarter,
+        )
+        work_routes.check_catalog_stamp(
+            request.args, configuration_id=configuration_id, revisions=[config.configuration_revision])
+    except work_routes.WorkConfigError as error:
+        body, status = error.response()
+        return _team_catalog_response(body, status, started_at)
+    except work_routes.SprintCatalogPending:
+        return _team_catalog_response({'error': 'sprint_catalog_pending'}, 503, started_at)
+    if config.team_scope_error == 'team_field_required':
+        body, status = work_routes.WorkConfigError(
+            'configuration_incomplete', paths=['fields.team.fieldId'],
+            configuration_id=config.configuration_id,
+        ).response()
+        return _team_catalog_response(body, status, started_at)
+    if config.team_scope_error:
+        return _team_catalog_response({'error': config.team_scope_error}, 409, started_at)
+    return _serve_db_teams(
+        context, config, catalog_configuration_resolver(
+            config.configuration_id, observed=config.is_observed_supplement),
+        sprint_id=sprint_id, team_ids=team_ids, force_refresh=force_refresh,
+        completion_attempt_id=completion_attempt_id, expected_identity=expected_identity,
+        started_at=started_at,
+        extra={'configurationId': config.configuration_id, 'quarter': sprint_row.get('name')},
+    )
+
+
+def _serve_db_teams(context, config, resolve_config, *, sprint_id, team_ids, force_refresh,
+                    completion_attempt_id, expected_identity, started_at, extra=None):
     if completion_attempt_id is not None:
         try:
             snapshot = read_catalog_completion(
                 context, kind='teams', sprint_id=sprint_id,
                 attempt_id=completion_attempt_id,
                 expected_identity=expected_identity,
-                resolve_config=resolve_request_effective_catalog_config,
+                resolve_config=resolve_config,
             )
         except CatalogCompletionError as error:
             if error.code == 'invalid_catalog_completion':
                 return _team_catalog_response({'error': error.code}, 400, started_at)
-            scope_digest = build_team_scope_digest(
-                board_id=config.board_id, projects=config.projects,
-                team_field_id=config.team_field_id, base_jql=config.base_jql,
-            )
+            scope_digest = team_scope_digest(config)
             source = {
                 'backend': 'postgresql',
                 'identity': build_team_catalog_identity(
@@ -1829,7 +2202,7 @@ def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
             )
         return _db_team_response(
             context, config, sprint_id, snapshot, team_ids=team_ids,
-            refresh_started=False, started_at=started_at,
+            refresh_started=False, started_at=started_at, extra=extra,
         )
 
     snapshot = load_sprint_team_catalog(context, sprint_id=sprint_id, config=config)
@@ -1852,13 +2225,13 @@ def _get_db_teams(context, *, sprint_id, team_ids, force_refresh,
     if should_refresh:
         claim = catalog_refresh_runtime().refresh(
             context, kind='teams', sprint_id=sprint_id, config=config,
-            background=False, resolve_config=resolve_request_effective_catalog_config,
+            background=False, resolve_config=resolve_config,
         )
         refresh_started = claim is not None
         snapshot = load_sprint_team_catalog(context, sprint_id=sprint_id, config=config)
     return _db_team_response(
         context, config, sprint_id, snapshot, team_ids=team_ids,
-        refresh_started=refresh_started, started_at=started_at,
+        refresh_started=refresh_started, started_at=started_at, extra=extra,
     )
 
 
@@ -1875,7 +2248,8 @@ def get_teams():
         if config_storage_db_enabled() and is_db_auth_context(auth_context):
             allowed_parameters = {
                 'sprint', 'teamIds', 'all', 'refresh',
-                'completionAttemptId', 'catalogIdentity',
+                'completionAttemptId', 'catalogIdentity', 'configurationId', 'quarter',
+                'configurationRevision', 'configurationDigest',
             }
             if any(key not in allowed_parameters for key in request.args):
                 return _team_catalog_response(
@@ -1891,7 +2265,8 @@ def get_teams():
             if re.fullmatch(r'[1-9][0-9]*', sprint_key) is None:
                 return _team_catalog_response({'error': 'invalid_sprint'}, 400, started_at)
             if (
-                any(len(request.args.getlist(key)) != 1 for key in request.args)
+                any(len(request.args.getlist(key)) != 1 for key in request.args
+                    if key not in ('configurationId', 'quarter'))
                 or request.args.get('all') is not None and request.args.get('all') != 'true'
                 or force_value is not None and force_value != 'true'
                 or has_completion and (
@@ -2057,13 +2432,22 @@ def resolve_team_names():
             return jsonify({'error': 'teamIds is required'}), 400
 
         auth_context = current_request_auth_context()
-        team_field_id = resolve_team_field_id(None, context=auth_context)
-        if not team_field_id:
-            team_field_id = TEAM_FIELD_DEFAULT
+        work_request, work_error = admit_work_request(auth_context)
+        if work_error is not None:
+            return work_error
+        if work_request is not None:
+            roles = work_request.roles
+            team_field_id = roles.team_field_id
+            jql = add_clause_to_jql(remove_team_filter_from_jql(roles.base_jql(JQL_QUERY)),
+                                    roles.team_clause(team_ids))
+        else:
+            team_field_id = resolve_team_field_id(None, context=auth_context)
+            if not team_field_id:
+                team_field_id = TEAM_FIELD_DEFAULT
 
-        base_jql = remove_team_filter_from_jql(build_base_jql())
-        quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
-        jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
+            base_jql = remove_team_filter_from_jql(build_base_jql())
+            quoted = ', '.join(f'"{team_id}"' for team_id in team_ids)
+            jql = add_clause_to_jql(base_jql, f'"Team[Team]" in ({quoted})')
 
         fields_list = ['summary']
         if team_field_id and team_field_id not in fields_list:
@@ -2118,19 +2502,82 @@ def resolve_team_names():
         return jsonify({'error': 'Failed to resolve teams', 'details': str(e)}), 500
 
 
+def _all_teams_configuration_source(auth_context, sprint):
+    """``((config, sprint_id_or_None), None)`` for a promoted workspace, ``(None, None)`` otherwise.
+
+    A Sprint id is admitted through its source; without one the viewed quarter or
+    configuration id is required before any Team getter or base JQL is built.
+    """
+    if not (config_storage_db_enabled() and is_db_auth_context(auth_context)):
+        return None, None
+
+    def failure(error):
+        body, status = error.response()
+        return None, (jsonify(body), status)
+
+    try:
+        with session_scope() as catalog_session:
+            sources = resolve_request_catalog_sources(catalog_session, auth_context)
+        if sources is None:
+            return None, None
+        configuration_id, quarter = work_routes.catalog_selectors(request.args)
+        if len(request.args.getlist('sprint')) > 1 or (sprint and re.fullmatch(r'[1-9][0-9]*', sprint) is None):
+            return failure(work_routes.WorkConfigError('sprint_catalog_mismatch'))
+        if sprint:
+            config, _row = work_routes.admit_sprint_source(
+                auth_context, sources, sprint, configuration_id=configuration_id, quarter=quarter,
+            )
+        else:
+            if configuration_id is None and quarter is None:
+                return failure(work_routes.WorkConfigError('configuration_required'))
+            candidates = [
+                item for item in sources
+                if (configuration_id is None or item.configuration_id == configuration_id)
+                and (quarter is None or work_structure_service.entry_contains_quarter(
+                    {'fromQuarter': item.from_quarter, 'throughQuarter': item.through_quarter},
+                    work_structure_service.quarter_ordinal(quarter)))
+            ]
+            if len(candidates) != 1:
+                return failure(work_routes.WorkConfigError(
+                    'configuration_scope_changed' if configuration_id else 'configuration_required'))
+            config = candidates[0]
+    except work_routes.WorkConfigError as error:
+        return failure(error)
+    except work_routes.SprintCatalogPending:
+        return None, (jsonify({'error': 'sprint_catalog_pending'}), 503)
+    missing = ([] if config.team_field_id else ['fields.team.fieldId']) + (
+        ['fields.sprint.fieldId'] if sprint and not config.sprint_field_id else [])
+    if missing or config.scope_error or not config.base_jql:
+        return failure(work_routes.WorkConfigError(
+            'configuration_incomplete', paths=missing or ['scope.projects'],
+            configuration_id=config.configuration_id))
+    return (config, sprint or None), None
+
+
 @bp.route('/api/teams/all', methods=['GET'])
 def get_all_teams_list():
     """Fetch ALL teams from Jira for debugging - no filtering, simple list format."""
     try:
         sprint = request.args.get('sprint', '')
-
-        # Build JQL query - remove team filter to get ALL teams
-        jql = remove_team_filter_from_jql(build_base_jql())
-        if sprint:
-            jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
-
         auth_context = current_request_auth_context()
-        team_field_id = resolve_team_field_id(None, context=auth_context)
+        scoped_source, failure = _all_teams_configuration_source(auth_context, sprint)
+        if failure is not None:
+            return failure
+
+        if scoped_source is not None:
+            # Promoted: the admitted configuration's scope, never the unscoped getters.
+            scoped_config, scoped_sprint = scoped_source
+            jql = scoped_config.base_jql
+            if scoped_sprint:
+                sprint_number = scoped_config.sprint_field_id.rsplit('_', 1)[-1]
+                jql = add_clause_to_jql(jql, f"cf[{sprint_number}] = {scoped_sprint}")
+            team_field_id = scoped_config.team_field_id
+        else:
+            # Build JQL query - remove team filter to get ALL teams
+            jql = remove_team_filter_from_jql(build_base_jql())
+            if sprint:
+                jql = add_clause_to_jql(jql, f"Sprint = {sprint}")
+            team_field_id = resolve_team_field_id(None, context=auth_context)
 
         # Fetch tasks
         fields_list = ['summary', 'status']
@@ -2225,21 +2672,30 @@ def get_backlog_epics():
         project_filter = request.args.get('project', '').strip().lower()
         team_ids_param = request.args.get('teamIds', '').strip()
         team_ids = normalize_team_ids([t.strip() for t in team_ids_param.split(',') if t.strip()])
+        auth_context = current_request_auth_context()
+        work_request, work_error = admit_work_request(auth_context)
+        if work_error is not None:
+            return work_error
+        roles = work_request.roles if work_request is not None else None
+        if roles is not None and not roles.is_legacy:
+            # Initiatives legitimately have no Sprint: the Backlog parent-hygiene panel is retired.
+            return jsonify({'epics': []})
+        base_jql = roles.base_jql(JQL_QUERY) if roles is not None else None
 
         if team_ids and JQL_QUERY_TEMPLATE:
-            jql = apply_team_ids_to_template(team_ids) or build_base_jql()
+            jql = apply_team_ids_to_template(team_ids) or (base_jql if roles is not None else build_base_jql())
         elif team_ids:
-            jql = remove_team_filter_from_jql(build_base_jql())
+            jql = remove_team_filter_from_jql(base_jql if roles is not None else build_base_jql())
             if len(team_ids) == 1:
                 jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
             else:
                 quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
                 jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
         else:
-            jql = build_base_jql()
+            jql = base_jql if roles is not None else build_base_jql()
 
         if project_filter in ('product', 'tech'):
-            typed = get_selected_projects_typed()
+            typed = roles.projects if roles is not None else get_selected_projects_typed()
             if typed:
                 matching_keys = [item['key'] for item in typed if item['type'] == project_filter]
                 if matching_keys:
@@ -2250,27 +2706,34 @@ def get_backlog_epics():
                         quoted = ', '.join(f'"{key}"' for key in matching_keys)
                         jql = add_clause_to_jql(jql, f'project in ({quoted})')
 
-        issue_types = get_configured_issue_types()
-        if issue_types:
-            if len(issue_types) == 1:
-                jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
-            else:
-                quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
-                jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
+        if roles is not None:
+            jql = add_clause_to_jql(jql, roles.planning_clause())
+        else:
+            issue_types = get_configured_issue_types()
+            if issue_types:
+                if len(issue_types) == 1:
+                    jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
+                else:
+                    quoted_types = ', '.join(f'"{issue_type}"' for issue_type in issue_types)
+                    jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
 
         if epic_key:
             jql = add_clause_to_jql(jql, f'issueKey in ("{epic_key}")')
 
-        auth_context = current_request_auth_context()
-        team_field_id = resolve_team_field_id(None, context=auth_context)
-        epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
-        sprint_field_id = get_sprint_field_id()
+        if roles is not None:
+            team_field_id, sprint_field_id = roles.team_field_id, roles.sprint_field_id
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context) if roles.uses_epic_link else None
+        else:
+            team_field_id = resolve_team_field_id(None, context=auth_context)
+            epic_link_field_id = resolve_epic_link_field_id(None, context=auth_context)
+            sprint_field_id = get_sprint_field_id()
         epics = fetch_backlog_epics_for_alert(
             jql,
             headers=None,
             team_field_id=team_field_id,
             sprint_field_id=sprint_field_id,
-            epic_link_field=epic_link_field_id
+            epic_link_field=epic_link_field_id,
+            **({'roles': roles} if roles is not None else {})
         )
         return jsonify({'epics': epics})
     except AuthError as error:

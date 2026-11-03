@@ -19,11 +19,12 @@ function OpenEpicsChart({
     jiraSearchAnalyticsMeta,
     emptyMessage,
     variant,
+    itemWord = 'epics',
     initialVisibleCount = DEFAULT_VISIBLE_ROWS,
     loadMoreCount = DEFAULT_VISIBLE_ROWS
 }) {
     const rows = Array.isArray(items) ? items : [];
-    const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
+    const fallbackEmpty = emptyMessage || `No open ${itemWord} in this scope.`;
     const fillClass = `cohort-open-fill${variant ? ` cohort-open-fill--${variant}` : ''}`;
     const initialCount = normalizePositiveInteger(initialVisibleCount, rows.length || DEFAULT_VISIBLE_ROWS);
     const incrementCount = normalizePositiveInteger(loadMoreCount, DEFAULT_VISIBLE_ROWS);
@@ -35,8 +36,8 @@ function OpenEpicsChart({
 
     const normalizedJiraSearchUrl = String(jiraSearchUrl || '').trim();
     const normalizedJiraSearchLabel = jiraSearchLabel || (variant === 'completed'
-        ? 'Open all completed epics in Jira'
-        : 'Open all open epics in Jira');
+        ? `Open all completed ${itemWord} in Jira`
+        : `Open all open ${itemWord} in Jira`);
     const heading = (
         <div className="cohort-open-heading">
             <div className="cohort-open-heading-text">
@@ -72,7 +73,7 @@ function OpenEpicsChart({
     const hasMoreRows = visibleCount < rows.length;
     const remainingCount = Math.max(0, rows.length - visibleCount);
     const nextCount = Math.min(incrementCount, remainingCount);
-    const itemLabel = variant === 'completed' ? 'completed epics' : 'open epics';
+    const itemLabel = variant === 'completed' ? `completed ${itemWord}` : `open ${itemWord}`;
     const maxDays = rows.reduce((acc, item) => Math.max(acc, Number(item?.daysOpen) || 0), 0) || 1;
 
     return (

@@ -24,6 +24,18 @@
             min-height: 44px;
         }
 
+        /* The header keeps its height when the first edit adds the unsaved badge and the replay explanation. */
+        @media (min-width: 721px) {
+            .settings-onboarding-replay {
+                flex-wrap: nowrap;
+            }
+
+            .settings-onboarding-replay .group-modal-meta {
+                max-width: 14rem;
+                line-height: 1.25;
+            }
+        }
+
         @media (max-width: 720px) {
             .group-modal-title-wrap {
                 flex-wrap: wrap;
@@ -38,7 +50,24 @@
             }
         }
 
+        /* Out of flow on desktop so the badge appearing never narrows the title block and re-wraps the subtitle. */
+        @media (min-width: 721px) {
+            .group-modal-header {
+                position: relative;
+            }
+
+            .group-modal-dirty {
+                position: absolute;
+                top: 0;
+                bottom: 0;
+                right: 0.9rem;
+                display: flex;
+                align-items: center;
+            }
+        }
+
         .group-modal-dirty {
+            white-space: nowrap;
             font-size: 0.6rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;

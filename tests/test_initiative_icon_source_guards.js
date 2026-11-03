@@ -19,7 +19,7 @@ const cssSource = fs.readFileSync(
 
 test('dashboard renders Jira-aligned initiative icon hooks', () => {
     assert.ok(
-        jsxSource.includes("function InitiativeIcon({ className = '', size = 14, title = 'INITIATIVE' })"),
+        jsxSource.includes("function InitiativeIcon({ className = '', size = 14, title = resolveEntityNames(WORK_MODEL_LEGACY).ancestor.toUpperCase() })"),
         'Expected InitiativeIcon to preserve its native title by default'
     );
     assert.ok(

@@ -23,6 +23,7 @@
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
 import { getStatusPhaseRank } from './engTaskUtils.js';
+import { WORK_MODEL_LEGACY, isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
 import {
     classifyEpicProjectTrack,
@@ -30,7 +31,7 @@ import {
     PROJECT_TRACK_FLEXIBLE,
 } from './engProjectTrack.js';
 
-export const ENG_CATCH_UP_SUBJECT = 'Filtering stories';
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 // Today's default is `showKilled ?? false`, so a user with no saved preference must still
 // arrive with Killed hidden and everything else shown.
@@ -116,7 +117,11 @@ function epicForTask(task, epicDetails) {
     return epicKey ? epicDetails?.[epicKey] || null : null;
 }
 
-export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {} } = {}) {
+// `names` is the viewed configuration's EntityNames (Legacy defaults when absent).
+export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {}, names = LEGACY_NAMES } = {}) {
+    // The combined model has one lane: the Projects (Product/Tech) facet stays in the positional facet list
+    // but is hidden, never counted and never filtering.
+    const combinedLane = isCombinedWorkModel(names.model);
     const statusCounts = countBy(tasks, (task) => task.fields?.status?.name);
     const priorityCounts = countBy(tasks, (task) => priorityAxisLabel(task.fields?.priority?.name));
     const projectCounts = { tech: 0, product: 0 };
@@ -125,7 +130,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
     let trackEpicTotal = 0;
     let unsetTrackEpicTotal = 0;
     tasks.forEach((task) => {
-        projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
+        if (!combinedLane) projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
         const epicKey = String(task?.fields?.epicKey || '').trim();
         const epic = epicForTask(task, epicDetails);
         if (!epicKey || !epic || countedEpicKeys.has(epicKey)) return;
@@ -140,6 +145,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
     return {
         scopeTotal,
         epicDetails,
+        names,
         counts: {
             status: statusCounts,
             priority: PRIORITY_AXIS.reduce((all, label) => ({ ...all, [label]: priorityCounts[label] || 0 }), {}),
@@ -164,6 +170,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
             {
                 id: 'projects',
                 label: 'Projects',
+                ...(combinedLane ? { hidden: true } : {}),
                 kind: 'multi',
                 neutralTotal: scopeTotal,
                 options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
@@ -175,7 +182,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
                 allowEmpty: true,
                 showZeroCountOptions: true,
                 emptyLabel: 'No Project Track',
-                emptyDescription: 'No Project Track — showing stories under epics without a value',
+                emptyDescription: `No Project Track — showing ${lowerEntityWord(names.childPlural)} under ${lowerEntityWord(names.parentPlural)} without a value`,
                 emptyTotal: unsetTrackEpicTotal,
                 neutralTotal: trackEpicTotal,
                 options: [
@@ -238,8 +245,8 @@ export function resolveEngCatchUpFilters({
         selection,
         facetViews,
         activeFacetCount: countActiveFacets(facetViews),
-        subject: ENG_CATCH_UP_SUBJECT,
-        readoutUnit: `of ${scopeTotal} stories`,
+        subject: `Filtering ${lowerEntityWord(model.names.childPlural)}`,
+        readoutUnit: `of ${scopeTotal} ${lowerEntityWord(scopeTotal === 1 ? model.names.child : model.names.childPlural)}`,
         admitsStatus: (statusName) => admits(statusView, statusName),
         admitsStatusForPlanning: (statusName) => !statusExcludes || admits(statusView, statusName),
         admitsPriority: (priorityName) => admits(priorityView, priorityAxisLabel(priorityName)),

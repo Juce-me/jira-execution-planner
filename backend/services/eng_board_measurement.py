@@ -10,6 +10,7 @@ import hashlib
 import hmac
 
 from backend.services import eng_board as strict_core
+from backend.services import work_structure
 
 
 PAGE_SIZE = strict_core.PAGE_SIZE
@@ -93,6 +94,10 @@ def configured_teams(group):
 
 
 def profile_eligibility(group, dashboard_payload):
+    # The harness measures the Legacy flat-config Board pipeline only; a promoted workspace keeps
+    # its structure in the work configuration bundle, so it exposes no measurement candidates.
+    if work_structure.is_promoted(dashboard_payload or {}):
+        return ()
     try:
         projects = normalize_projects(((dashboard_payload or {}).get('projects') or {}).get('selected'))
         normalize_measurement_board((group or {}).get('board'))

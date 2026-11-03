@@ -122,8 +122,8 @@ test('state layer: 0 inputs, 17 returns, nine cells with the documented defaults
     assert.equal(mod.effects.length, 0, 'the state layer registers no effect');
 });
 
-test('behaviour hook: 58 inputs, 20 returns, no effects, no ref or state of its own', async () => {
-    assert.equal(MODAL_INPUTS.length, 58);
+test('behaviour hook: 60 inputs, 20 returns, no effects, no ref or state of its own', async () => {
+    assert.equal(MODAL_INPUTS.length, 60);
     const { hook, mod } = await mountModal();
     assert.deepEqual(Object.keys(hook).sort(), MODAL_RETURNS);
     assert.equal(mod.effects.length, 0, 'the behaviour layer registers no effect, so its call position crosses none');

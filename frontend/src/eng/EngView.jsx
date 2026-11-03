@@ -4,6 +4,9 @@ import { subscribeEngReading, getEngReadingPresentation } from './engReadingAnch
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
 import AlertPinBar from './AlertPinBar.jsx';
+import { WORK_MODEL_LEGACY, formatEntityCount, resolveEntityNames } from './engWorkModel.js';
+
+const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 export default function EngView({
     selectedView,
@@ -28,6 +31,8 @@ export default function EngView({
     onRetryReadiness,
     dependenciesIncomplete = false,
     onRetryDependencies,
+    workTypes = null,
+    entityNames = null,
     activeDependencyFocus,
     handleDependencyFocusClick,
     initiativeGroups,
@@ -47,7 +52,13 @@ export default function EngView({
         ? hierarchyCounts.visibleRows
         : visibleTasksForList.length;
     const hasNoVisibleTasks = visibleRowCount === 0;
+    const names = entityNames || LEGACY_NAMES;
     const readinessNeedsAttention = !['idle', 'loading', 'ready'].includes(readinessStatus);
+    // New-model links whose Jira parent is not of the configured type (the server reports none for Legacy).
+    const mismatches = entityNames ? workTypes?.linkMismatches : null;
+    const linkNotices = mismatches ? [['child', 'parent', mismatches.parentCount], ['parent', 'ancestor', mismatches.ancestorCount]]
+        .filter(([, , count]) => count > 0)
+        .map(([role, parentRole, count]) => `${formatEntityCount(count, entityNames, role)} in this quarter ${count === 1 ? 'has' : 'have'} a Jira parent that is not ${/^[aeiou]/i.test(entityNames[parentRole]) ? 'an' : 'a'} ${entityNames[parentRole]}. An administrator can review Field mapping in Settings.`) : [];
 
     if (sprintCatalogLoading) {
         return <LoadingState title="Loading sprints" message="Resolving sprint values from Jira." />;
@@ -111,7 +122,7 @@ export default function EngView({
                     {alertsPanel}
                     {readinessNeedsAttention && (
                         <div className="story-readiness-notice" role="status">
-                            <span>{readinessError || 'Story readiness is unavailable. Jira Stories remain visible.'}</span>
+                            <span>{readinessError || `${names.child} readiness is unavailable. Jira ${names.childPlural} remain visible.`}</span>
                             {readinessStatus === 'unavailable' && onRetryReadiness && (
                                 <button type="button" className="secondary compact" onClick={onRetryReadiness}>Retry</button>
                             )}
@@ -123,6 +134,9 @@ export default function EngView({
                             <button type="button" className="secondary compact" onClick={onRetryDependencies}>Retry</button>
                         </div>
                     )}
+                    {linkNotices.map(text => (
+                        <div key={text} className="story-readiness-notice" role="status"><span>{text}</span></div>
+                    ))}
 
                     {planningTable || (hasNoVisibleTasks ? (
                         <EmptyState title="No tasks found" className="eng-empty-results">
@@ -146,7 +160,7 @@ export default function EngView({
                                             {ini && (
                                                 <>
                                                     <div className="initiative-header" data-onboarding-target="hierarchy-initiative">
-                                                        <InitiativeIcon className="initiative-header-icon" />
+                                                        <InitiativeIcon className="initiative-header-icon" title={names.ancestor.toUpperCase()} />
                                                         <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
                                                             <span className="initiative-label-name">{ini.summary}</span>
                                                             <a
@@ -175,7 +189,7 @@ export default function EngView({
                         </div>
                     ))}
 
-                    {detachedDeparture && <IssueCard task={departedTask} jiraUrl={jiraUrl} teamLabel={departedTask.fields?.teamName || ''} readingDeparture />}
+                    {detachedDeparture && <IssueCard task={departedTask} jiraUrl={jiraUrl} teamLabel={departedTask.fields?.teamName || ''} readingDeparture entityNames={names} InitiativeIcon={InitiativeIcon} />}
 
                     <div style={{marginTop: '3rem', textAlign: 'center'}}>
                         <button onClick={hasNoVisibleTasks && onClearFilters ? onClearFilters : onRetry}>

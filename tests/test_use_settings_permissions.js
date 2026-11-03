@@ -14,9 +14,9 @@ const hookSource = fs.readFileSync(hookPath, 'utf8');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
 
 // Order of the hook's useState cells; the shim names its recorder by this table.
-const CELLS = ['settingsAdminOnly', 'userCanEditSettings', 'performanceAdminAvailable', 'userCanEditEpmConfig', 'adminUserManagementAvailable', 'userIsToolAdmin', 'environmentConfigExists'];
-const DEFAULTS = { settingsAdminOnly: true, userCanEditSettings: false, performanceAdminAvailable: false, userCanEditEpmConfig: false, adminUserManagementAvailable: false, userIsToolAdmin: false, environmentConfigExists: false };
-const RETURN_NAMES = ['adminAccess', 'adminAccessAvailable', 'adminUserManagementAvailable', 'applyBootstrapPermissions', 'applySavePermissions', 'canEditEpmConfiguration', 'canEditSharedConfiguration', 'performanceAdminAvailable', 'preferredSettingsTab', 'setPerformanceAdminAvailable', 'userCanEditSettings'];
+const CELLS = ['settingsAdminOnly', 'userCanEditSettings', 'performanceAdminAvailable', 'userCanEditEpmConfig', 'adminUserManagementAvailable', 'userIsToolAdmin', 'environmentConfigExists', 'scenarioPlannerForEveryone'];
+const DEFAULTS = { settingsAdminOnly: true, userCanEditSettings: false, performanceAdminAvailable: false, userCanEditEpmConfig: false, adminUserManagementAvailable: false, userIsToolAdmin: false, environmentConfigExists: false, scenarioPlannerForEveryone: null };
+const RETURN_NAMES = ['adminAccess', 'adminAccessAvailable', 'adminUserManagementAvailable', 'applyBootstrapPermissions', 'applySavePermissions', 'canEditEpmConfiguration', 'canEditSharedConfiguration', 'performanceAdminAvailable', 'preferredSettingsTab', 'scenarioPlannerAccess', 'scenarioPlannerAvailable', 'setPerformanceAdminAvailable', 'userCanEditSettings'];
 
 let bundlePromise;
 function loadBundle() {
@@ -26,7 +26,10 @@ function loadBundle() {
             name: 'stub-admin-access',
             setup(build) {
                 build.onResolve({ filter: /AdminAccessSettings\.jsx$/ }, () => ({ path: 'admin-access-stub', namespace: 'stub' }));
-                build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: 'exports.useAdminAccessSettings = (args) => globalThis.__adminAccessCalls.push(args) && { stub: true };', loader: 'js' }));
+                build.onLoad({ filter: /.*/, namespace: 'stub' }, () => ({ contents: [
+                    'exports.useAdminAccessSettings = (args) => globalThis.__adminAccessCalls.push(args) && { stub: true };',
+                    'exports.useScenarioPlannerAccessSetting = (args) => globalThis.__scenarioAccessCalls.push(args) && { stub: "scenario", applyConfig: (config) => globalThis.__scenarioAccessConfigs.push(config) };',
+                ].join('\n'), loader: 'js' }));
             },
         }],
     }).then((result) => result.outputFiles[0].text);
@@ -46,10 +49,12 @@ async function instantiate(overrides = {}) {
         },
     };
     globalThis.__adminAccessCalls = [];
+    globalThis.__scenarioAccessCalls = [];
+    globalThis.__scenarioAccessConfigs = [];
     const module = { exports: {} };
     new Function('module', 'exports', 'require', code)(module, module.exports, (id) => (id === 'react' ? shimmedReact : require(id)));
     const adminAccessCalls = globalThis.__adminAccessCalls;
-    return { hook: module.exports.useSettingsPermissions, writes, adminAccessCalls };
+    return { hook: module.exports.useSettingsPermissions, writes, adminAccessCalls, scenarioAccessCalls: globalThis.__scenarioAccessCalls, scenarioAccessConfigs: globalThis.__scenarioAccessConfigs };
 }
 
 function render(hook, input) {
@@ -71,6 +76,7 @@ test('defaults are fail-closed: no editing, no EPM editing, metadata on, no admi
     assert.equal(result.performanceAdminAvailable, false);
     assert.equal(result.adminUserManagementAvailable, false);
     assert.equal(result.preferredSettingsTab, 'teams');
+    assert.equal(result.scenarioPlannerAvailable, null, 'Scenario stays closed until the bootstrap answers');
     assert.deepEqual(writes, []);
     // The write-only metadata cell keeps its documented default; it is never returned.
     assert.equal(DEFAULTS.settingsAdminOnly, true);
@@ -131,20 +137,23 @@ test('edit flags derive from the explicit true only (state seeded with every gra
     assert.equal(metadataOnly.canEditSharedConfiguration, false);
 });
 
-test('bootstrap writes the six cells in order with exact coercions; the save refresh omits the tool-admin write', async () => {
+test('bootstrap writes the seven cells in order with exact coercions; the save refresh omits the tool-admin write', async () => {
     const config = { settingsAdminOnly: 0, userCanEditSettings: true, userCanEditEpmConfig: true, adminUserManagementAvailable: true, userIsToolAdmin: true, environmentConfigExists: 0, projectsConfigured: 1 };
     const boot = await instantiate();
     render(boot.hook, baseInput).applyBootstrapPermissions(config);
     assert.deepEqual(boot.writes, [
         ['settingsAdminOnly', false], ['userCanEditSettings', true], ['userCanEditEpmConfig', true],
         ['adminUserManagementAvailable', true], ['userIsToolAdmin', true], ['environmentConfigExists', true],
+        ['scenarioPlannerForEveryone', false],
     ]);
+    assert.deepEqual(boot.scenarioAccessConfigs, [config]);
     const save = await instantiate();
     render(save.hook, baseInput).applySavePermissions(config);
     assert.deepEqual(save.writes, [
         ['settingsAdminOnly', false], ['userCanEditSettings', true], ['userCanEditEpmConfig', true],
-        ['adminUserManagementAvailable', true], ['environmentConfigExists', true],
+        ['adminUserManagementAvailable', true], ['environmentConfigExists', true], ['scenarioPlannerForEveryone', false],
     ]);
+    assert.deepEqual(save.scenarioAccessConfigs, [config]);
     // 'true' strings and 1 never become booleans for the availability and tool-admin cells.
     const strict = await instantiate();
     render(strict.hook, baseInput).applyBootstrapPermissions({ adminUserManagementAvailable: 'true', userIsToolAdmin: 1 });
@@ -177,6 +186,30 @@ test('adminAccessAvailable truth table and the access-hook arguments', async () 
     const otherTab = await instantiate({ adminUserManagementAvailable: true, userIsToolAdmin: true });
     render(otherTab.hook, { BACKEND_URL: 'x', groupManageTab: 'scope', showGroupManage: true });
     assert.equal(otherTab.adminAccessCalls[0].active, false);
+});
+
+test('Scenario planner is for editors or an explicitly unlocked workspace, and the switch hook follows the Access tab', async () => {
+    for (const [label, value, expected] of GRANTS) {
+        for (const applier of ['applyBootstrapPermissions', 'applySavePermissions']) {
+            const { hook, writes } = await instantiate();
+            render(hook, baseInput)[applier]({ scenarioPlannerForEveryone: value });
+            assert.equal(writes.find(([name]) => name === 'scenarioPlannerForEveryone')[1], expected, `${applier} ${label}`);
+        }
+    }
+    const table = [
+        [null, false, null], [null, true, null],  // before the bootstrap answers nothing opens Scenario
+        [false, false, false], [false, true, true], [false, 'true', false], [true, false, true],
+    ];
+    for (const [everyone, edit, expected] of table) {
+        const { hook } = await instantiate({ scenarioPlannerForEveryone: everyone, userCanEditSettings: edit });
+        assert.equal(render(hook, baseInput).scenarioPlannerAvailable, expected, `${everyone}/${edit}`);
+    }
+    const open = await instantiate();
+    render(open.hook, { BACKEND_URL: 'http://backend.test', groupManageTab: 'access', showGroupManage: true });
+    assert.deepEqual(open.scenarioAccessCalls, [{ backendUrl: 'http://backend.test', active: true }]);
+    const closed = await instantiate();
+    assert.equal(render(closed.hook, baseInput).scenarioPlannerAccess.stub, 'scenario');
+    assert.deepEqual(closed.scenarioAccessCalls, [{ backendUrl: 'http://backend.test', active: false }]);
 });
 
 test('preferredSettingsTab opens Admin scope only for an editor in an unconfigured environment', async () => {

@@ -1,4 +1,5 @@
 // Pure rules that keep client-derived alert data in step with a per-epic refresh (issue #213). No React, no I/O.
+import { isCombinedWorkModel } from './engWorkModel.js';
 
 // Statuses the Missing Info endpoint excludes (backend/routes/eng_routes.py).
 const TERMINAL_STATUSES = new Set(['killed', 'done', 'postponed']);
@@ -132,7 +133,7 @@ const ALERT_CALL_ORDER = ['readyToClose', 'epicAlerts', 'missingInfo', 'backlog'
 
 // Which epic-scoped alert calls a refresh update needs (design section 3.6). `update` is the controller's update object, optionally with
 // `epicChangedFields` (the epic diff's displayed fields). Planning never re-checks alerts.
-export function alertCallsFor(update, { isFutureSprint = false, isCatchUp = false } = {}) {
+export function alertCallsFor(update, { isFutureSprint = false, isCatchUp = false, workModel } = {}) {
     if (!isCatchUp || !update) return [];
     const fieldsByKey = update.changedFieldsByKey || {};
     const storyFields = new Set((update.changedKeys || []).flatMap(key => fieldsByKey[key] || []));
@@ -148,16 +149,17 @@ export function alertCallsFor(update, { isFutureSprint = false, isCatchUp = fals
     if (storyFields.has('teamId')) ['missingInfo', 'readiness'].forEach(call => calls.add(call));
     if (epicTrigger) calls.add('epicAlerts');
     if (isFutureSprint && anyChange) calls.add('epicAlerts');
-    if (isFutureSprint && (membership || epicTrigger)) calls.add('backlog');
+    // The combined model retires the Backlog parent-hygiene alert, so it never asks for the backlog request.
+    if (isFutureSprint && !isCombinedWorkModel(workModel) && (membership || epicTrigger)) calls.add('backlog');
     return ALERT_CALL_ORDER.filter(call => calls.has(call));
 }
 
 // Which epic-scoped alert calls an inline edit needs (Task 13b), in the `ALERT_CALL_ORDER` order. Only a status edit in Catch Up re-checks:
 // priority feeds no alert rule, Missing Info does not follow a status change (same as `alertCallsFor`), and an unknown field asks for nothing.
-export function alertCallsForEdit({ field, isFutureSprint = false, isCatchUp = false } = {}) {
+export function alertCallsForEdit({ field, isFutureSprint = false, isCatchUp = false, workModel } = {}) {
     if (!isCatchUp || field !== 'status') return [];
     const calls = new Set(['readyToClose', 'epicAlerts', 'readiness']);
-    if (isFutureSprint) calls.add('backlog');
+    if (isFutureSprint && !isCombinedWorkModel(workModel)) calls.add('backlog');
     return ALERT_CALL_ORDER.filter(call => calls.has(call));
 }
 

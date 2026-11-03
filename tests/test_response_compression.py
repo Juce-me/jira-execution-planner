@@ -465,6 +465,7 @@ class RealAppTests(unittest.TestCase):
         with patch.dict(os.environ, {'SCENARIO_DRAFT_SSE_ENABLED': 'true'}, clear=False), \
              patch.object(jira_server, 'database_storage_enabled', return_value=True), \
              patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=object()), \
+             patch.object(jira_server, 'scenario_access_error', return_value=None), \
              patch.object(scenario_draft_routes, 'get_events_page', return_value=page):
             plain = self.client.get(path)
             gzipped = self.client.get(path, headers=GZIP)

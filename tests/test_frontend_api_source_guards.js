@@ -85,6 +85,7 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
     const source = readSource(modulePath)
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/http\.js';\n?/, '')
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/authApi\.js';\n?/, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/workStructure\/[A-Za-z]+\.js';\n?/g, '')
         .replaceAll('export async function ', 'async function ')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ')
@@ -92,6 +93,13 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
     const mergedDependencies = {
         apiFetch: (url, options) => fetch(url, options),
         trackedFetch: (_apiSurface, url, options) => fetch(url, options),
+        // Work-configuration context is absent in these wrappers' contract tests.
+        runInWorkContext: (init, start) => start(init), stampParams: params => params, stampBody: body => body,
+        applyContextToParams: params => params,
+        // Own-key write stamping is a no-op while no configuration is active (unpromoted shapes stay byte-identical).
+        stampWriteBody: body => body, stampWriteParams: params => params,
+        isStaleWorkContextError: () => false, reportWorkContextStale: () => {}, workWriteErrorMessage: () => null,
+        getActiveWorkContext: () => null, sameCatalogContext: () => true,
         ...dependencies,
     };
     const names = Object.keys(mergedDependencies);

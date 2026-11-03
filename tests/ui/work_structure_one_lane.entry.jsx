@@ -2,6 +2,7 @@
 // with model props injected through `window.__oneLane`. The dashboard composition does not pass the work
 // model yet, so this is the narrowest honest way to exercise them in a browser. Synthetic data only.
 import * as React from 'react';
+import { flushSync } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import EngFilterBar from '../../frontend/src/eng/EngFilterBar.jsx';
 import PlanningProjectSplitBar from '../../frontend/src/eng/PlanningProjectSplitBar.jsx';
@@ -83,13 +84,14 @@ window.__oneLane = {
         const Component = { alerts: AlertsHarness, filters: FiltersHarness, split: SplitHarness }[kind];
         root.render(<Component {...props} />);
     },
-    // The real hook is a plain closure factory; hand-driving it counts the requests it really makes.
+    // The real hook, rendered once inside a detached React root (it owns state); hand-driving the returned closures
+    // counts the requests it really makes.
     sprintData(workModel) {
         const sprintLoadRef = { current: { sprintId: null, product: false, tech: false } };
         const lastLoadedSprintRef = { current: null };
         const state = { techLoaded: [], techTasks: [], productTasks: [] };
         const noop = () => {};
-        const api = useEngSprintData({
+        const props = {
             workModel, backendUrl: '', selectedSprint: '1', activeGroupId: 'g', activeGroupTeamIds: ['t'], activeGroupTeamSet: new Set(['t']),
             pageLoadRefreshRef: { current: false }, sprintLoadRef, lastLoadedSprintRef, registerSprintFetch: () => new AbortController(),
             cleanupSprintFetch: noop, isFutureSprintSelected: true, loadedProductTasks: [], loadedTechTasks: [],
@@ -98,7 +100,10 @@ window.__oneLane = {
             setTechLoaded: value => state.techLoaded.push(value), setProductTasksLoading: noop, setTechTasksLoading: noop,
             setProductEpicsInScope: noop, setTechEpicsInScope: noop, setReadyToCloseProductTasks: noop, setReadyToCloseTechTasks: noop,
             setReadyToCloseProductEpicsInScope: noop, setReadyToCloseTechEpicsInScope: noop,
-        });
+        };
+        let api;
+        function Probe() { const result = useEngSprintData(props); if (!api) api = result; return null; }
+        flushSync(() => createRoot(document.createElement('div')).render(<Probe />));
         return { api, state, lastLoadedSprintRef };
     },
 };

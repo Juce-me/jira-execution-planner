@@ -194,3 +194,78 @@ test('the tour names the ancestor, parent and child; ids, groups and selectors n
     // Legacy keeps today's copy.
     assert.equal(step({ catalog: steps.ONBOARDING_STEP_CATALOG }, 'hierarchy-epic').body, 'An Epic groups the Stories that contribute to a larger delivery outcome.');
 });
+
+test('Legacy: one planning name and a mapped parent name every surface; kinds and compatibility words stay', async () => {
+    const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
+    // The Legacy name rule's output (tests/test_work_structure.py::test_legacy_role_types_follow_legacy_name_rule).
+    const MAPPED = resolveEntityNames('legacy', {
+        planning: { id: null, name: 'Task', hierarchyLevel: 0 }, parent: { id: '11700', name: 'Feature', hierarchyLevel: 1 },
+        ancestor: { id: null, name: 'Initiative', hierarchyLevel: 2 }, optionalAncestor: null,
+    });
+    assert.deepEqual([MAPPED.child, MAPPED.parent, MAPPED.ancestor], ['Task', 'Feature', 'Initiative'], 'compatibility ancestor keeps Initiative');
+    assert.deepEqual([MAPPED.childKind, MAPPED.parentKind, MAPPED.ancestorKind], ['story', 'epic', 'initiative']);
+    const tasks = Array.from({ length: 2 }, (_, i) => ({ key: `OLD-${i}`, fields: { status: { name: 'To Do' } } }));
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    assert.equal(resolveEngCatchUpFilters({ model: buildEngCatchUpFacetModel({ tasks, names: MAPPED }) }).readoutUnit, 'of 2 tasks');
+    assert.equal(buildEngCatchUpFacetModel({ tasks, names: MAPPED }).facets.find(facet => facet.id === 'track').emptyDescription,
+        'No Project Track — showing tasks under features without a value');
+    const { getFuturePlanningNeedsStoriesReasonText } = await import('../frontend/src/futurePlanningNeedsStories.mjs');
+    assert.equal(getFuturePlanningNeedsStoriesReasonText('no_stories', MAPPED), 'No tasks yet for this sprint.');
+    const { renderAlertsPanel } = require('./share_view_alert_panel_fixture');
+    const alerts = renderAlertsPanel({ props: { entityNames: MAPPED, alertCounts: { needsStories: 1, empty: 1 } } });
+    assert.match(alerts, /<span> Task required<\/span>/);
+    assert.match(alerts, /<span> Empty feature<\/span>/);
+    const card = render('frontend/src/eng/StoryRequirementCard.jsx', {
+        requirement: { id: 'r', epicKey: 'OLD-9', epic: { key: 'OLD-9', summary: 'Parent' }, team: { id: 't', name: 'Team A' }, sprint: { name: 'S1', state: 'active' } },
+        jiraUrl: 'https://jira.example', entityNames: MAPPED,
+    });
+    assert.match(card, /Task required<\/span>/);
+    assert.ok(card.includes('Opens the Feature in Jira to create the Task.'));
+    const issueCard = render('frontend/src/issues/IssueCard.jsx', {
+        task: { key: 'OLD-1', fields: { summary: 'S', status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: 'Task' } } },
+        jiraUrl: 'https://jira.example', teamLabel: 'T', entityNames: MAPPED,
+    });
+    assert.ok(issueCard.includes('title="TASK"') && issueCard.includes('M7 4h10a2 2 0 012 2v14l-7-4-7 4V6a2 2 0 012-2z'), 'level 0 keeps the bookmark');
+    const header = render('frontend/src/eng/EpicBlock.jsx', {
+        epicGroup: { key: 'OLD-9', epic: { summary: 'Parent', status: { name: 'To Do' } }, storyPoints: 0, tasks: [] },
+        statusTransitions: { activeSingleIssueTarget: null }, priorityTransitions: { activePriorityTarget: null }, projectTrackTransitions: { activeProjectTrackTarget: null },
+        issueFieldEdits: { activeEditor: null, pendingIssueKeys: new Set(), status: 'idle' }, jiraUrl: 'https://jira.example', excludedEpicSet: new Set(),
+        normalizeEpicKey: String, epicRefMap: { current: new Map() }, renderPriorityIcon: () => null, epicRefresh: { epicStates: {}, leavingKeys: new Set() },
+        selectedTasks: {}, getTeamInfo: () => ({}), storySubtasksByKey: {}, entityNames: MAPPED,
+    }, 'EpicBlock');
+    assert.ok(header.includes('class="epic-icon" aria-hidden="true" title="FEATURE"') && header.includes('m10.271.050656'), 'a mapped level-1 parent keeps the bolt and its name');
+    const { buildPlanningReviewRows } = await import('../frontend/src/eng/planningReviewTableModel.js');
+    const orphan = { key: 'NO_EPIC', epic: { key: 'NO_EPIC' }, tasks: [{ key: 'OLD-1', fields: { summary: 'Leaf' } }] };
+    assert.equal(buildPlanningReviewRows({ epicGroups: [orphan], visibleTasks: orphan.tasks, mode: 'story', names: MAPPED })[0].epic, 'No Feature');
+    assert.match(render('frontend/src/eng/PlanningActionBar.jsx', { hasVisibleTasks: true, selectedCount: 0, selectedVisibleCount: 0, entityNames: MAPPED }),
+        /aria-label="Open selected tasks in Jira"/);
+    const { buildEngBoardFacetModel, resolveEngBoardFilters } = await import('../frontend/src/eng/engBoardFilters.js');
+    assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: [epicGroup('P-1')], workModel: 'legacy', names: MAPPED }) }).readoutUnit, 'of 1 feature');
+    const { roleLabels } = await import('../frontend/src/stats/statsScope.js');
+    assert.deepEqual({ ...roleLabels(MAPPED) }, { parent: 'Feature', parents: 'Features', child: 'Task', children: 'Tasks' });
+    const { scenarioNoParentLane } = await import('../frontend/src/scenario/scenarioUtils.js');
+    assert.equal(scenarioNoParentLane(MAPPED), 'No Feature');
+    const steps = await import('../frontend/src/onboarding/onboardingSteps.js');
+    assert.equal(steps.buildOnboardingSteps(MAPPED).catalog.find(entry => entry.id === 'hierarchy-story').body, 'Tasks are the delivery work grouped under a Feature.');
+    const { reviewRowIssueKind } = await import('../frontend/src/eng/planningReviewKinds.js');
+    assert.deepEqual([reviewRowIssueKind('story', MAPPED), reviewRowIssueKind('epic', MAPPED)], ['story', 'epic']);
+});
+
+test('the ancestor name reaches the Board panel eyebrow and the Catch Up grouping control', async () => {
+    const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
+    const GOAL = resolveEntityNames('rnd_2027', {
+        planning: { id: '6', name: 'Deliverable', hierarchyLevel: 1 }, parent: { id: '11700', name: 'Theme', hierarchyLevel: 2 },
+        ancestor: { id: '12723', name: 'Goal', hierarchyLevel: 3 }, optionalAncestor: null,
+    });
+    const panel = render('frontend/src/eng/EngBoardEpicPanel.jsx', {
+        epicGroup: { key: 'PLAN-P1', epic: { key: 'PLAN-P1', summary: 'Synthetic theme', status: { name: 'To Do' }, initiative: { key: 'PLAN-G1', summary: 'Synthetic goal' } }, tasks: [] },
+        columns: [], issueFieldEdits: { activeEditor: null, pendingIssueKeys: new Set() }, workModel: 'rnd_2027', entityNames: GOAL, onClose() {},
+    });
+    assert.match(panel, /<span>Goal: Synthetic goal<\/span>/);
+    const controls = render('frontend/src/eng/EngFilterControls.jsx', {
+        engFilters: { facets: [], selection: {}, counts: {}, scopeTotal: 0 }, hasInitiativeData: true, groupByInitiative: true,
+        setGroupByInitiative() {}, InitiativeIcon: () => null, engEpicSort: 'default', setEngEpicSort() {}, entityNames: GOAL,
+    });
+    assert.match(controls, /aria-label="Group by Goal"/);
+    assert.match(controls, /Group by Goal — On/);
+});

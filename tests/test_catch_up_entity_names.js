@@ -159,6 +159,11 @@ test('alert pill counts are singular at 1 and the pin note is the plural label',
     assert.match(pill(DELIVERY, 2, 'rnd_2027'), /<span class="alerts-panel-summary-count">2<\/span><span> Epics required<\/span>/);
     assert.match(pill(LEGACY, 1), /<span> Story required<\/span>/);
     assert.match(pill(undefined, 2), /<span> Stories required<\/span>/);
+    const { RENAMED } = await names();
+    const parentAlerts = renderAlertsPanel({ props: { entityNames: RENAMED, workModel: 'rnd_2027', alertCounts: { empty: 2 } } });
+    assert.match(parentAlerts, /<span> Empty theme<\/span>/);
+    assert.match(parentAlerts, /Empty Theme<\/div>/);
+    assert.match(parentAlerts, /Theme Ready to Close<\/div>/);
 
     const notes = [];
     const tree = alertsPanelTree({ props: { entityNames: DELIVERY, workModel: 'rnd_2027' }, overrides: { pinAlert: pin => notes.push(pin.note), handleStoryRequirementClick: () => {} } });

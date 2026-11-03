@@ -189,7 +189,6 @@ test('open ends stay fixed choices; a non-canonical value is listed but cannot b
     await expect(deliveryThrough.locator('.selected-team-chip')).toHaveText('No end');
     await expect(deliveryThrough.locator('.team-search-input, .remove-btn')).toHaveCount(0);
 
-    await expect(dialog.locator('[data-sprint-values-note]')).toContainText('cannot be chosen');
     await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
     const from = rangeRow(dialog, 'fromQuarter');
     await from.getByLabel('Search From Sprint').fill('0000');
@@ -366,19 +365,20 @@ test('Refresh Sprint values reads each saved configuration from Jira, finishes p
     await expect(dialog.locator('[data-sprint-refresh-failed]')).toHaveCount(0);
 });
 
-test('before the first Save Refresh Sprint values is disabled and says what to save', async ({ page }) => {
+test('before the first Save there is nothing to refresh, so no Refresh button and no explanatory text', async ({ page }) => {
     const state = await mockApp(page, { promoted: false });
     const dialog = await openScope(page);
-    await expect(refreshButton(dialog)).toBeDisabled();
+    await expect(refreshButton(dialog)).toHaveCount(0);
     await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
-    await expect(dialog.locator('[data-sprint-refresh-note]')).toHaveText("Save DELIVERY's project and Sprint field first, or type the Sprint value (for example 2027Q1).");
+    await expect(refreshButton(dialog)).toHaveCount(0);
+    await expect(dialog.locator('[data-sprint-refresh-note]')).toHaveCount(0);
     expect(state.sprintCalls).toEqual([]);
 });
 
 for (const viewport of [{ width: 375, height: 667 }, { width: 1280, height: 800 }]) {
     test(`Refresh Sprint values stays one reachable control at ${viewport.width}`, async ({ page }) => {
         await page.setViewportSize(viewport);
-        await mockApp(page, { promoted: false });
+        await mockApp(page, { sources: [{ configurationId: 'delivery', diagnostics: [] }] });
         const dialog = await openScope(page);
         if (viewport.width <= 820) {
             await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
@@ -389,9 +389,6 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 1280, height: 800 
         const panel = await dialog.locator('#work-config-panel').boundingBox();
         expect(box.x).toBeGreaterThanOrEqual(panel.x);
         expect(box.x + box.width).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
-        const note = await dialog.locator('[data-sprint-refresh-note]').evaluate(element => ({ clipped: element.scrollWidth > element.clientWidth, right: element.getBoundingClientRect().right }));
-        expect(note.clipped).toBe(false);
-        expect(note.right).toBeLessThanOrEqual(panel.x + panel.width + 0.5);
         await page.waitForTimeout(250);
         await dialog.screenshot({ path: path.join(shotDir, `refresh-sprint-values-${viewport.width}.png`), animations: 'disabled' });
     });

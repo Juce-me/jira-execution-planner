@@ -36,9 +36,10 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
             onMouseEnter={hoverKey ? () => setMappingHoverKey(hoverKey) : undefined}
             onMouseLeave={hoverKey ? () => setMappingHoverKey(null) : undefined}
         >
-            <div className="team-selector-label">{showTechnicalFieldIds !== undefined && <span className={`field-id-hint field-id-slot${showTechnicalFieldIds && selected?.id ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={selected?.id || ''} />}{mapping.label}{mapping.optional ? ' (optional)' : mapping.required ? ' (required)' : ''}</div>
+            <div className="team-selector-label">{mapping.label}{mapping.required ? ' (required)' : ''}</div>
             {mapping.helper && <div className="group-field-helper">{mapping.helper}</div>}
             <div className="capacity-inline-row">
+                {showTechnicalFieldIds !== undefined && <span className={`field-id-hint field-id-slot${showTechnicalFieldIds && selected?.id ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={selected?.id || ''} />}
                 {selected ? (
                     <div className={`selected-team-chip${kind === 'hierarchy' ? ' issue-type-chip' : ''}`} title={selected.id}>
                         <span className="team-name"><strong>{selected.name}</strong></span>
@@ -48,7 +49,7 @@ export default function MappingPickerRow({ mapping, kind = 'field', showTechnica
                     <div className="team-search-wrapper capacity-inline-search">
                         <input
                             type="text" className="team-search-input" aria-label={`Search ${mapping.label}`}
-                            placeholder={kind === 'hierarchy' ? 'Search issue types...' : kind === 'sprint' ? 'Search Sprint values...' : 'Search fields...'} value={query}
+                            placeholder={mapping.placeholder || (kind === 'hierarchy' ? 'Search issue types...' : kind === 'sprint' ? 'Search Sprint values...' : 'Search fields...')} value={query} disabled={mapping.disabled || undefined}
                             onChange={event => { setQuery(event.target.value); setOpen(true); setIndex(0); }}
                             onFocus={() => setOpen(true)} onBlur={() => { window.setTimeout(() => setOpen(false), 120); }} onKeyDown={handleKeyDown}
                         />

@@ -681,14 +681,6 @@
             min-width: 0;
         }
 
-        .work-config-header-row {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.6rem;
-            min-width: 0;
-        }
-
         .work-config-header-helper {
             display: flex;
             align-items: center;
@@ -696,21 +688,38 @@
             gap: 0.6rem;
         }
 
-        .work-config-header-row .group-pane-title {
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .work-config-header-row > span {
+        .work-config-tabbar {
+            display: flex;
+            align-items: stretch;
+            border-bottom: 1px solid var(--border);
+            background: #faf8f4;
             flex-shrink: 0;
         }
 
-        .work-config-editor .group-pane-right > .group-modal-tabs {
+        .work-config-tabbar > .group-modal-tabs {
+            flex: 1 1 auto;
+            min-width: 0;
             padding: 0 0.9rem;
             margin: 0;
+            border-bottom: 0;
             overflow-x: auto;
+        }
+
+        .work-config-ids-control {
+            align-self: center;
+            flex-shrink: 0;
+            padding: 0 1rem;
+        }
+
+        /* A tab with an empty required row: one accent dot after its name. */
+        .work-config-tab-flag {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            margin-left: 0.4rem;
+            border-radius: 50%;
+            background: var(--accent);
+            vertical-align: middle;
         }
 
         .work-config-editor .group-modal-tab {
@@ -741,7 +750,33 @@
         }
 
         .work-config-ranges {
-            padding: 0.65rem 1rem;
+            padding: 0.6rem 1rem;
+        }
+
+        /* Dashboard Projects (shared with the flat editor): flat, divided from the Sprint range by one hairline. */
+        .work-config-fields .group-projects-pane-right {
+            margin: 0 1rem;
+            padding: 0.6rem 0;
+            width: auto;
+            border-top: 1px solid var(--border);
+        }
+
+        .work-config-fields .group-projects-pane-right .group-pane-header,
+        .work-config-fields .group-projects-pane-right .group-projects-pane-list {
+            padding: 0;
+        }
+
+        .work-config-fields .group-projects-pane-right .group-projects-pane-list {
+            margin-top: 0.4rem;
+        }
+
+        .work-config-fields .group-projects-pane-right .settings-scope-grid {
+            grid-template-columns: minmax(0, 1fr);
+        }
+
+        .work-config-fields .group-projects-pane-right .settings-scope-grid > .group-projects-subsection {
+            border: 0;
+            padding: 0;
         }
 
         .work-config-preview-line {
@@ -752,22 +787,35 @@
             min-width: 0;
         }
 
-        .work-config-refresh {
+        .work-config-ranges-head {
             display: flex;
-            flex-wrap: wrap;
             align-items: center;
-            gap: 0.5rem;
-            margin: 0 0 0.5rem;
+            justify-content: space-between;
+            gap: 0.6rem;
+            min-height: 28px;
+            margin: 0 0 0.25rem;
+        }
+
+        .work-config-ranges-head .team-selector-label {
+            margin: 0;
+        }
+
+        .work-config-range-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 0.75rem;
+            align-items: start;
+        }
+
+        @media (max-width: 650px) {
+            .work-config-range-grid {
+                grid-template-columns: minmax(0, 1fr);
+            }
         }
 
         .work-config-range-error {
             display: block;
             margin-bottom: 0.35rem;
-        }
-
-        .work-config-summary {
-            padding: 0.6rem 0.9rem;
-            border-top: 1px solid var(--border);
         }
 
         .work-config-editor .group-pane-mobile-header {
@@ -804,16 +852,6 @@
                 width: calc(100vw - 1rem);
                 height: calc(100dvh - 1rem);
                 max-height: none;
-            }
-
-            .work-config-header-row {
-                flex-wrap: wrap;
-                justify-content: flex-end;
-            }
-
-            /* The mobile header above already names the configuration. */
-            .work-config-header-row .group-pane-title {
-                display: none;
             }
 
             .group-modal:has(.work-config-editor) .group-modal-footer {

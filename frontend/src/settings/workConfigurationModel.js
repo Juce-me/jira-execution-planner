@@ -197,6 +197,19 @@ export function missingMappings(entry, catalog = {}) {
     return [...new Set(missing)];
 }
 
+// Which nested tabs still need the user: the first-save blockers plus every required row that is empty.
+// Pure and catalog-free, so the markers react to the draft only.
+export function incompleteTabs(entry, errors = {}, catalog = {}) {
+    const missing = missingMappings(entry, catalog);
+    const scopeErrors = ['name', 'fromQuarter', 'throughQuarter', 'projects'].some(key => errors[key]);
+    const isSprint = item => item === 'Sprint' || item.startsWith('Sprint (');
+    return {
+        scope: scopeErrors || missing.includes('Jira project'),
+        source: missing.some(isSprint),
+        mapping: missing.some(item => item !== 'Jira project' && !isSprint(item)),
+    };
+}
+
 export const missingSummary = (bundle, catalogFor = () => ({})) => (bundle?.configurations || [])
     .map(entry => ({ entry, missing: missingMappings(entry, catalogFor(entry)) }))
     .filter(item => item.missing.length)

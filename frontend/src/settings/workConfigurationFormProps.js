@@ -17,6 +17,9 @@ export const FIELD_SLOTS = [
     ['teamField', 'team'], ['deliveryOwnerField', 'deliveryOwner'],
 ];
 const upper = value => value[0].toUpperCase() + value.slice(1);
+// A saved field the loaded Jira catalog no longer lists is shown as such, never as a healthy mapping.
+const withFieldStatus = (name, id, jiraFields, loadingFields) => (id && !loadingFields && Array.isArray(jiraFields) && jiraFields.length && !jiraFields.some(field => field.id === id)
+    ? `${name || id} \u00b7 not found in Jira` : name);
 const resolve = (value, previous) => (typeof value === 'function' ? value(previous) : value);
 
 const REQUIREMENT = {
@@ -63,7 +66,7 @@ export function buildFieldSettingsProps({
         const index = get(`${prefix}Index`, 0);
         const setId = value => patch(id, current => ({ fields: { [name]: { ...current.fields[name], fieldId: resolve(value, current.fields[name]?.fieldId || '') } } }));
         const setName = value => patch(id, current => ({ fields: { [name]: { ...current.fields[name], fieldName: resolve(value, current.fields[name]?.fieldName || '') } } }));
-        props[`${prefix}NameDraft`] = entry.fields[name]?.fieldName || '';
+        props[`${prefix}NameDraft`] = withFieldStatus(entry.fields[name]?.fieldName || '', entry.fields[name]?.fieldId, jiraFields, loadingFields);
         props[`${prefix}IdDraft`] = entry.fields[name]?.fieldId || '';
         props[`set${cap}IdDraft`] = setId;
         props[`set${cap}NameDraft`] = setName;
@@ -165,8 +168,10 @@ export function buildFieldSettingsProps({
             selected,
             options: row.options,
             emptyMessage,
+            disabled: !selected && catalogState !== 'ready',
+            placeholder: !selected && catalogState !== 'ready' ? (catalogState === 'unscoped' ? 'Save a Jira project first' : catalogState === 'loading' ? 'Loading issue types…' : 'Issue types unavailable') : undefined,
             status: row.status,
-            helper: index === 0 ? `Story Points and Team are read from this ${labels[0]}; the Sprint field is set in Source.`
+            helper: index === 0 ? (retiresFilter && legacyFilter.length === 1 ? 'Captured filter: stays in effect until you change it.' : `Story Points and Team are read from this ${labels[0]}; the Sprint field is set in Source.`)
                 : index === 1 ? 'Totals its child issues using the existing calculation rules.' : 'Jira parent context.',
             onSelect: option => (retiresFilter ? requestRetire({ pendingType: option.id }) : patch(id, { hierarchy: { [slot]: option.id } })),
             onRemove: () => (retiresFilter ? requestRetire({ pendingType: null }) : patch(id, { hierarchy: { [slot]: null } })),
@@ -182,7 +187,7 @@ export function buildFieldSettingsProps({
         label,
         optional: true,
         helper,
-        selected: entry.fields[name]?.fieldId ? { id: entry.fields[name].fieldId, name: entry.fields[name].fieldName || entry.fields[name].fieldId } : null,
+        selected: entry.fields[name]?.fieldId ? { id: entry.fields[name].fieldId, name: withFieldStatus(entry.fields[name].fieldName || entry.fields[name].fieldId, entry.fields[name].fieldId, jiraFields, loadingFields) } : null,
         options: jiraFields || [],
         onSelect: option => patch(id, { fields: { [name]: { fieldId: option.id, fieldName: option.name } } }),
         onRemove: () => patch(id, { fields: { [name]: { fieldId: '', fieldName: '' } } }),

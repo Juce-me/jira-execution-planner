@@ -301,6 +301,8 @@ test('DELIVERY refuses a second project for mouse and Enter and clears only when
     await expect(dialog.locator('.group-modal-dirty')).toHaveCount(0);
 
     // Removing the last project is a deliberate clear: a saveable incomplete draft with the explicit protocol.
+    // The search popover covers the chips below it, so a user clears the search first.
+    await search.fill('');
     await dialog.getByRole('button', { name: 'Remove project PLAN' }).click();
     await expect(dialog.locator('[data-setup-guidance]')).toBeVisible();
     await saveButton(dialog).click();
@@ -369,7 +371,8 @@ test('conflict: Keep mine retargets the whole bundle; a retired compatibility fi
     await selectConfiguration(dialog, 'legacy');
     await nested(dialog, 'Field mapping').click();
     await expect(dialog.locator('[data-field-error="planningIssueTypeId"]')).toContainText('retired by another editor');
-    await dialog.getByRole('button', { name: 'Change captured issue-type filter' }).click();
+    // A single captured name is the Story card's own chip; its x opens the same retirement confirmation.
+    await dialog.locator('[data-mapping-key="planningIssueTypeId"]').getByRole('button', { name: 'Remove Story' }).click();
     await page.getByRole('alertdialog').getByRole('button', { name: 'Change mapping' }).click();
     await dialog.locator('[data-mapping-key="planningIssueTypeId"] .team-search-input').fill('Story');
     await dialog.locator('[data-mapping-key="planningIssueTypeId"] .team-search-result-item', { hasText: 'Story' }).click();
@@ -446,8 +449,8 @@ test('hierarchy pickers: loading, error with retry, resolved, unresolved, duplic
     await expect(dialog.locator('[data-mapping-key="parentIssueTypeId"]')).toContainText('Initiative');
     await expect(dialog.locator('[data-mapping-key="ancestorIssueTypeId"]')).toContainText('Unknown hierarchy type');
     await expect(dialog.locator('[data-mapping-key="planningIssueTypeId"] .team-selector-label')).toHaveText('Epic (required)');
-    await expect(dialog.locator('[data-mapping-key="ancestorIssueTypeId"] .team-selector-label')).toHaveText('Objective (optional)');
-    await expect(dialog.locator('[data-mapping-key="optionalAncestorIssueTypeId"] .team-selector-label')).toHaveText('Strategy (optional)');
+    await expect(dialog.locator('[data-mapping-key="ancestorIssueTypeId"] .team-selector-label')).toHaveText('Objective');
+    await expect(dialog.locator('[data-mapping-key="optionalAncestorIssueTypeId"] .team-selector-label')).toHaveText('Strategy');
     // Unresolved selections show the raw id and can be removed, never silently dropped.
     await dialog.getByRole('button', { name: 'Remove Epic', exact: true }).click();
     const planning = dialog.locator('[data-mapping-key="planningIssueTypeId"]');
@@ -461,8 +464,8 @@ test('hierarchy pickers: loading, error with retry, resolved, unresolved, duplic
     await expect(dialog.locator('[data-mapping-key="ancestorIssueTypeId"] .team-search-result-item.is-empty')).toBeVisible();
     // Required labels on the shared field rows.
     await expect(dialog.getByText('Story Points Field (required)')).toBeVisible();
-    await expect(dialog.getByText('Parent Name Field (optional)')).toBeVisible();
-    await expect(dialog.getByText('Delivery Owner Field (optional)')).toBeVisible();
+    await expect(dialog.getByText('Parent Name Field', { exact: true })).toBeVisible();
+    await expect(dialog.getByText('Delivery Owner Field', { exact: true })).toBeVisible();
     await nested(dialog, 'Source').click();
     await expect(dialog.getByText('Sprint Field (required)')).toBeVisible();
     expect(state.typesRequests).toBeGreaterThan(0);
@@ -743,6 +746,17 @@ test('one global Jira IDs setting: no per-tab buttons, ids in a fixed slot, noth
         // Each id is printed once, in its slot, never inside the chip or the name.
         const visibleSlots = dialog.locator('.field-id-slot:not(.is-hidden)');
         expect(await visibleSlots.count()).toBeGreaterThan(0);
+        // An id never paints over its label or chip.
+        const collisions = await visibleSlots.evaluateAll(nodes => nodes.flatMap(node => {
+            const box = node.getBoundingClientRect();
+            const owner = node.closest('.group-projects-subsection');
+            return [...owner.querySelectorAll('.team-selector-label, .selected-team-chip')].filter(other => {
+                const o = other.getBoundingClientRect();
+                return box.left < o.right && box.right > o.left && box.top < o.bottom && box.bottom > o.top;
+            }).map(other => `${node.dataset.fieldId} over ${other.className}`);
+        }));
+        expect(collisions, `${name}: ids collide`).toEqual([]);
+        await dialog.screenshot({ path: path.join(shotDir, `ids-on-${name.replace(' ', '-').toLowerCase()}.png`), animations: 'disabled' });
         await expect(dialog.locator('.selected-team-chip .field-id-hint')).toHaveCount(0);
         for (const text of await dialog.locator('.selected-team-chip').allInnerTexts()) expect(text).not.toMatch(/\(\d+\)/);
         // Hidden ids are laid out but invisible and unannounced.
@@ -821,4 +835,68 @@ test('the one-time hint carries the live-data note, is dismissed for good, and t
     await dialog.getByRole('button', { name: 'Got it' }).click();
     await expect(dialog.locator('[data-work-config-hint]')).toHaveCount(0);
     expect(await page.evaluate(() => window.localStorage.getItem('jira_work_config_hint_v1'))).toBe('1');
+});
+
+// --- Audit fixes: state-driven guidance instead of sentences -----------------------------------------------------
+
+test('tabs flag what is still missing and clear as the draft fills in; issue types stay disabled until the project is saved', async ({ page }) => {
+    await mockApp(page);
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    await selectConfiguration(dialog, 'delivery');
+    const flagged = name => nested(dialog, name).locator('.work-config-tab-flag');
+    for (const name of ['Scope', 'Source', 'Field mapping']) await expect(flagged(name)).toHaveCount(1);
+    await dialog.getByPlaceholder('Search projects to add...').fill('PLAN');
+    await dialog.locator('.team-search-result-item', { hasText: 'PLAN' }).getByRole('button', { name: 'Add' }).click();
+    await expect(flagged('Scope')).toHaveCount(0);
+    await nested(dialog, 'Source').click();
+    await pickField(dialog, /Sprint Field/, 'Sprint', 'Sprint');
+    await expect(flagged('Source')).toHaveCount(0);
+    await nested(dialog, 'Field mapping').click();
+    const epic = dialog.locator('[data-mapping-key="planningIssueTypeId"] .team-search-input');
+    await expect(epic).toBeDisabled();
+    await expect(epic).toHaveAttribute('placeholder', 'Save a Jira project first');
+    await expect(flagged('Field mapping')).toHaveCount(1);
+    // Legacy ships complete: nothing is flagged.
+    await selectConfiguration(dialog, 'legacy');
+    for (const name of ['Scope', 'Source', 'Field mapping']) await expect(flagged(name)).toHaveCount(0);
+});
+
+test('a saved board shows its name after a reload, not "Board <id>"', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'legacy');
+    await nested(dialog, 'Source').click();
+    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Legacy board' })).toBeVisible();
+    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Board 7001' })).toHaveCount(0);
+});
+
+test('a saved field that Jira no longer lists is shown as not found and flags its tab', async ({ page }) => {
+    const bundle = promotedBundle();
+    bundle.configurations[1].fields.team = { fieldId: 'customfield_99999', fieldName: 'Old Team' };
+    await mockApp(page, { promoted: true, revision: 6, bundle });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await expect(nested(dialog, 'Field mapping').locator('.work-config-tab-flag')).toHaveCount(1);
+    await nested(dialog, 'Field mapping').click();
+    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Old Team · not found in Jira' })).toBeVisible();
+    await expect(dialog.locator('.work-config-panel .selected-team-chip', { hasText: 'Story Points' })).not.toContainText('not found');
+});
+
+test('the first edit does not change the Settings header height', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    const header = dialog.locator('.group-modal-header');
+    const clean = await header.evaluate(node => node.getBoundingClientRect().height);
+    await selectConfiguration(dialog, 'delivery');
+    await row(dialog, 'delivery').locator('.group-list-name-input').fill('DELIVERY X');
+    await expect(dialog.locator('.group-modal-dirty')).toBeVisible();
+    expect(await header.evaluate(node => node.getBoundingClientRect().height)).toBe(clean);
+    await expect(dialog.locator('#settings-onboarding-replay-disabled')).toBeVisible();
 });

@@ -28,8 +28,9 @@
             font-weight: normal;
         }
 
-        /* Fixed id slot on a label row: always laid out out of flow, only its visibility changes, so the Jira IDs setting moves nothing. */
-        .team-selector-label:has(> .field-id-slot) {
+        /* Fixed id slot beside the selected value's chip (never over the label): always laid out out of flow, only its visibility changes, so the Jira IDs setting moves nothing. */
+        .capacity-inline-row:has(> .field-id-slot),
+        .selected-teams-list:has(> .field-id-slot) {
             position: relative;
         }
 
@@ -37,6 +38,9 @@
             position: absolute;
             right: 0;
             top: 0;
+            bottom: 0;
+            display: flex;
+            align-items: center;
             margin: 0;
             max-width: 55%;
             overflow: hidden;

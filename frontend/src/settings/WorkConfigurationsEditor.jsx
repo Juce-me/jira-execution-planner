@@ -4,7 +4,7 @@ import { searchBoards as requestBoardSearch, searchProjects as requestProjectSea
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, rangeLabel, savedSourceReady, sourceCause, sprintRefreshLine, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, rangeLabel, savedSourceReady, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
 const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
@@ -59,13 +59,19 @@ function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery
 function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, workConfig }) {
     const fixed = FIXED_BOUNDS[entry.model] || {};
     const options = React.useMemo(() => sprintValueOptions(sprintValues), [sprintValues]);
-    const unusable = (sprintValues.values || []).some(item => !item.canonical);
     const sprintRefresh = workConfig.sprintRefresh;
     // Nothing is readable from Jira until the first Save promotes the bundle: before that no configuration exists server-side.
     const savedSources = workConfig.promoted ? (workConfig.baseline?.configurations || []).filter(savedSourceReady) : [];
     return (
         <div className="work-config-ranges">
-            <p className="group-field-helper">From and Through are Sprint values such as 2027Q1. To move the shared edge, change Legacy&rsquo;s Through and DELIVERY&rsquo;s From together.</p>
+            <div className="work-config-ranges-head" data-sprint-refresh>
+                <div className="team-selector-label">Sprints</div>
+                {savedSources.length > 0 && (
+                    <button type="button" className="secondary compact" disabled={!canEdit || sprintRefresh.status === 'running'} onClick={workConfig.refreshSprintValues}>
+                        {sprintRefresh.status === 'running' ? 'Refreshing Sprint values…' : 'Refresh Sprint values'}
+                    </button>
+                )}
+            </div>
             {sprintValues.state === 'loading' && !options.length && <p className="group-field-helper" role="status" data-sprint-values-state="loading">Loading Sprint values from Jira&hellip;</p>}
             {sprintValues.state === 'error' && (
                 <p className="group-modal-warning" role="status" data-sprint-values-state="error">
@@ -74,48 +80,43 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, 
                 </p>
             )}
             {sprintValues.state === 'ready' && !options.length && <p className="group-field-helper" role="status" data-sprint-values-state="empty">No Sprint has been seen yet. {sourceCause((sprintValues.sources || []).find(item => item.configurationId === entry.id)?.diagnostics, entry.name) || 'Refresh the Sprint values, or choose a source Board in Source.'}</p>}
-            <div className="work-config-refresh" data-sprint-refresh>
-                <button type="button" className="secondary compact" disabled={!canEdit || sprintRefresh.status === 'running' || !savedSources.length} onClick={workConfig.refreshSprintValues}>
-                    {sprintRefresh.status === 'running' ? 'Refreshing Sprint values…' : 'Refresh Sprint values'}
-                </button>
-                {!savedSources.some(item => item.id === entry.id) && <span className="group-field-helper" data-sprint-refresh-note>{sprintRefreshLine(entry)}</span>}
-                {sprintRefresh.failed > 0 && <span className="group-modal-warning" role="status" data-sprint-refresh-failed>{sprintRefresh.failed === 1 ? 'One source' : `${sprintRefresh.failed} sources`} could not be refreshed. The list keeps what Jira last reported.</span>}
+            <div className="work-config-range-grid">
+                {RANGE_ROWS.map(([key, label]) => {
+                    const value = entry[key];
+                    return (
+                        <div key={key} data-range-row={key}>
+                            {fixed[key] ? (
+                                <div className="group-projects-subsection">
+                                    <div className="team-selector-label">{label}</div>
+                                    <div className="capacity-inline-row"><div className="selected-team-chip"><span className="team-name">{fixed[key]}</span></div></div>
+                                </div>
+                            ) : (
+                                <fieldset className="team-catalog-edit-lock work-config-fieldset" disabled={!canEdit}>
+                                    <MappingPickerRow
+                                        mapping={{
+                                            key,
+                                            label,
+                                            required: true,
+                                            selected: value ? { id: value, name: value } : null,
+                                            options,
+                                            emptyMessage: 'No matching Sprint value.',
+                                            typedOption: typedSprintOption,
+                                            onSelect: option => onPatch({ [key]: option.id }),
+                                            onRemove: () => onPatch({ [key]: null }),
+                                        }}
+                                        kind="sprint"
+                                        showTechnicalFieldIds={undefined}
+                                        mappingHoverKey={null}
+                                        setMappingHoverKey={noHover}
+                                    />
+                                </fieldset>
+                            )}
+                            {errors[key] && <span id={`${entry.id}-${key}-error`} className="group-modal-warning work-config-range-error" role="alert" tabIndex={-1} data-work-config-issue>{errors[key]}</span>}
+                        </div>
+                    );
+                })}
             </div>
-            {unusable && <p className="group-field-helper" data-sprint-values-note>Sprint values that are not YYYYQ1&ndash;YYYYQ4 are listed but cannot be chosen.</p>}
-            {RANGE_ROWS.map(([key, label]) => {
-                const value = entry[key];
-                return (
-                    <div key={key} data-range-row={key}>
-                        {fixed[key] ? (
-                            <div className="group-projects-subsection">
-                                <div className="team-selector-label">{label}</div>
-                                <div className="capacity-inline-row"><div className="selected-team-chip"><span className="team-name">{fixed[key]}</span></div></div>
-                            </div>
-                        ) : (
-                            <fieldset className="team-catalog-edit-lock work-config-fieldset" disabled={!canEdit}>
-                                <MappingPickerRow
-                                    mapping={{
-                                        key,
-                                        label,
-                                        required: true,
-                                        selected: value ? { id: value, name: value } : null,
-                                        options,
-                                        emptyMessage: 'No matching Sprint value.',
-                                        typedOption: typedSprintOption,
-                                        onSelect: option => onPatch({ [key]: option.id }),
-                                        onRemove: () => onPatch({ [key]: null }),
-                                    }}
-                                    kind="sprint"
-                                    showTechnicalFieldIds={undefined}
-                                    mappingHoverKey={null}
-                                    setMappingHoverKey={noHover}
-                                />
-                            </fieldset>
-                        )}
-                        {errors[key] && <span id={`${entry.id}-${key}-error`} className="group-modal-warning work-config-range-error" role="alert" tabIndex={-1} data-work-config-issue>{errors[key]}</span>}
-                    </div>
-                );
-            })}
+            {sprintRefresh.failed > 0 && <p className="group-modal-warning" role="status" data-sprint-refresh-failed>{sprintRefresh.failed === 1 ? 'One source' : `${sprintRefresh.failed} sources`} could not be refreshed. The list keeps what Jira last reported.</p>}
         </div>
     );
 }
@@ -169,6 +170,21 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
         boardQuery: tab === 'source' ? (search.boardQuery || '') : '',
         boardSelected: Boolean(entry.scope.boardId),
     });
+    // Only the board id is saved; its name is read back once so the chip never shows "Board 7001" after a reload.
+    const savedBoardId = entry.scope.boardId;
+    const savedBoardName = search.boardName;
+    React.useEffect(() => {
+        if (tab !== 'source' || !savedBoardId || savedBoardName) return undefined;
+        const controller = new AbortController();
+        requestBoardSearch(BACKEND_URL, { query: String(savedBoardId), signal: controller.signal })
+            .then(response => (response.ok ? response.json() : null))
+            .then(data => {
+                const match = (data?.boards || []).find(board => String(board.id) === String(savedBoardId));
+                if (match?.name && !controller.signal.aborted) workConfig.setSearch(entry.id, 'boardName', match.name);
+            })
+            .catch(() => {});
+        return () => controller.abort();
+    }, [BACKEND_URL, tab, entry.id, savedBoardId, savedBoardName]);
     const selectedKeys = new Set(entry.scope.projects.map(project => project.key));
     const projectQuery = String(search.projectQuery || '').toLowerCase().trim();
     const projectPool = remote.projects.length ? remote.projects : jiraProjects;
@@ -205,13 +221,13 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
             {tab === 'scope' && workConfig.validation.errors[entry.id]?.projects && (
                 <p className="group-modal-warning work-config-note" role="alert" tabIndex={-1} data-work-config-issue>{workConfig.validation.errors[entry.id].projects}</p>
             )}
-            {tab === 'mapping' && filter && (
+            {tab === 'mapping' && filter && filter.length !== 1 && (
                 <div className="group-projects-subsection work-config-note" data-captured-filter>
                     <div className="team-selector-label">Captured issue-type filter</div>
                     <div className="group-field-helper">{filter.length ? filter.join(', ') : 'All issue types (unrestricted)'}. This captured filter stays in effect until you explicitly change the mapping below.</div>
                     <div className="selected-team-chip">
                         <span className="team-name">{filter.length ? filter.join(', ') : 'All issue types'}</span>
-                        <button type="button" className="remove-btn" aria-label="Change captured issue-type filter" title="Change captured issue-type filter" onClick={() => setRetire({ pendingType: null })}>&times;</button>
+                        <button type="button" className="remove-btn" aria-label="Change captured issue-type filter" onClick={() => setRetire({ pendingType: null })}>&times;</button>
                     </div>
                 </div>
             )}
@@ -231,7 +247,6 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
                     <button type="button" className="secondary compact" onClick={() => workConfig.reload()}>Reload latest (discard my changes)</button>
                 </div>
             ))}
-            {tab === 'mapping' && <p className="group-field-helper work-config-note" data-field-context-note>Selecting a field does not check it in Jira. Use Test configuration to verify.</p>}
             <fieldset className="team-catalog-edit-lock work-config-fieldset" disabled={!workConfig.userCanEdit}><JiraFieldSettings {...props} /></fieldset>
             {retire && (
                 <div className="group-confirm-backdrop" role="alertdialog" aria-label="Change captured issue-type filter?" onClick={() => setRetire(null)}>
@@ -278,6 +293,7 @@ export default function WorkConfigurationsEditor({
     }
     const tab = workConfig.tabFor(entry.id);
     const errors = workConfig.validation.errors;
+    const incomplete = incompleteTabs(entry, errors[entry.id], { fields: loadingFields ? null : jiraFields });
     const onTabKeys = event => {
         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
@@ -298,37 +314,35 @@ export default function WorkConfigurationsEditor({
                         <ConfigurationRow key={item.id} entry={item} isActive={item.id === entry.id} error={errors[item.id]?.name} onSelect={workConfig.selectConfiguration} onPatch={workConfig.patch} />
                     ))}
                 </div>
-                <div className="group-field-helper work-config-summary">The viewed Sprint picks the configuration.</div>
             </aside>
             <section className="group-pane group-pane-right work-config-right" aria-label="Selected configuration">
                 <div className="group-pane-mobile-header">
                     <button type="button" className="secondary compact" onClick={() => workConfig.setDrawerOpen(true)}>Configurations</button>
                     <span className="group-pane-mobile-title">{entry.name}</span>
                 </div>
-                <div className="work-config-header">
-                    <div className="work-config-header-row">
-                        <h2 className="group-pane-title" title={entry.name}>{entry.name || 'Unnamed configuration'}</h2>
-                        <label className="group-visible-control" title="Show Jira IDs beside names">
-                            <input type="checkbox" checked={workConfig.technicalIds} onChange={event => workConfig.setTechnicalIds(event.target.checked)} />
-                            <span>Jira IDs</span>
-                        </label>
-                    </div>
-                    {!hintDismissed && (
+                {!hintDismissed && (
+                    <div className="work-config-header">
                         <div className="group-field-helper work-config-header-helper" data-work-config-hint>
                             <span>Changes apply to every Sprint in this range, and past views read live Jira data.</span>
                             <button type="button" className="secondary compact" onClick={dismissHint}>Got it</button>
                         </div>
-                    )}
+                    </div>
+                )}
+                <div className="work-config-tabbar">
+                    <nav className="group-modal-tabs epm-settings-tabs" role="tablist" aria-label="Configuration sections" onKeyDown={onTabKeys}>
+                        {TABS.map(([key, label]) => (
+                            <button type="button" key={key} id={`work-config-tab-${key}`} className={`group-modal-tab ${tab === key ? 'active' : ''}`} role="tab" aria-selected={tab === key} aria-controls="work-config-panel" tabIndex={tab === key ? 0 : -1} data-incomplete={incomplete[key] || undefined} onClick={() => workConfig.setTab(entry.id, key)}>{label}{incomplete[key] && <span className="work-config-tab-flag" aria-hidden="true" />}</button>
+                        ))}
+                    </nav>
+                    <label className="group-visible-control work-config-ids-control">
+                        <input type="checkbox" checked={workConfig.technicalIds} onChange={event => workConfig.setTechnicalIds(event.target.checked)} />
+                        <span>Jira IDs</span>
+                    </label>
                 </div>
-                <nav className="group-modal-tabs epm-settings-tabs" role="tablist" aria-label="Configuration sections" onKeyDown={onTabKeys}>
-                    {TABS.map(([key, label]) => (
-                        <button type="button" key={key} id={`work-config-tab-${key}`} className={`group-modal-tab ${tab === key ? 'active' : ''}`} role="tab" aria-selected={tab === key} aria-controls="work-config-panel" tabIndex={tab === key ? 0 : -1} onClick={() => workConfig.setTab(entry.id, key)}>{label}</button>
-                    ))}
-                </nav>
                 <div id="work-config-panel" className="work-config-panel" role="tabpanel" aria-labelledby={`work-config-tab-${tab}`}>
                     {entry.model === MODEL_RND && !entry.scope.projects.length && (
                         <div className="group-modal-warning work-config-note" data-setup-guidance>
-                            {entry.name} is not ready: choose its Jira project, Sprint field and required mappings before using Sprints from {entry.fromQuarter || 'its first Sprint'}.
+                            {entry.name} is not ready: choose its Jira project.
                         </div>
                     )}
                     <EntryForm key={`${entry.id}-${tab}`} {...{ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingProjects, jiraFields, loadingFields, resolveProjectName }} />

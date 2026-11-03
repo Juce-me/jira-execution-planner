@@ -178,7 +178,10 @@ export function buildStatusActionAnalyticsParams({
 } = {}) {
     const list = Array.isArray(targets) ? targets : [];
     const uniqueKeyCount = new Set(list.map((target) => String(target?.key || target || '').trim()).filter(Boolean)).size;
-    const storyTargets = list.filter((target) => targetKind(target) === leafKind);
+    // A kind-less target (EPM, cohort, Stats) is the leaf only under the Legacy name rule; the new model needs a role kind.
+    const isLeaf = target => (ROLE_ISSUE_KINDS.has(target?.issueKind) ? target.issueKind === leafKind
+        : leafKind === 'story' && classifyIssueTypeToken(target?.issueType) === 'story');
+    const storyTargets = list.filter(isLeaf);
     return {
         source_surface: sourceSurface,
         ...(status === undefined ? {} : { status_bucket: buildStatusBucket(status) }),

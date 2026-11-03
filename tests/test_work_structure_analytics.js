@@ -238,6 +238,11 @@ test('status, priority and Project Track mixes come from the target kind; the Pl
         assert.equal(params.issue_type_mix, 'stories');
         assert.equal(params.selected_sp_bucket, '1_5');
     }
+    // A kind-less target counts as the leaf only under the Legacy name rule: a new-model Jira "Epic" needs its role kind.
+    const kindless = { key: 'PLAN-6', issueType: 'Epic', storyPoints: 3 };
+    assert.equal('selected_sp_bucket' in planning([kindless]), false);
+    assert.equal('selected_sp_bucket' in planning([{ key: 'PLAN-7', issueType: 'Story', storyPoints: 3 }]), false);
+    assert.equal(buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: [{ key: 'OLD-3', issueType: 'Story', storyPoints: 3 }] }).selected_sp_bucket, '1_5');
     const epic = buildCatchUpStatusTargets({ key: 'OLD-2', status: 'To Do' }, 'Epic', LEGACY.parentKind);
     assert.equal(buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: [epic] }).issue_type_mix, 'epics');
     assert.equal('selected_sp_bucket' in buildStatusActionAnalyticsParams({ sourceSurface: 'planning', targets: [epic] }), false);
@@ -247,11 +252,20 @@ test('status, priority and Project Track mixes come from the target kind; the Pl
 });
 
 test('in-scope ENG call sites pass a kind from the role and names, never a literal or a lowercased name', () => {
-    const literalKind = /issueKind:\s*(?:'[a-z]+'|row\.rowKind|[\w.]+\.toLowerCase\(\))/;
+    // Object (`issueKind: 'epic'`) and JSX (`issueKind="epic"`, `issueKind={'epic'}`) literals, a raw row kind or a
+    // lowercased name. A default parameter (`issueKind = 'epic'`) is the component's own fallback, not a call site.
+    const literalKind = /issueKind(?::\s*|=\{?)['"][a-z]+['"]|issueKind:\s*(?:row\.rowKind|[\w.]+\.toLowerCase\(\))/;
+    const literalKindLines = source => source.split('\n').map(line => line.replace(/\/\/.*$/, ''))
+        .filter(line => literalKind.test(line) && !/\bissueKind\s+=\s/.test(line));
+    for (const sample of ['<Card issueKind="epic" />', "<Card issueKind={'epic'} />", "open({ issueKind: 'story' })"]) {
+        assert.equal(literalKindLines(sample).length, 1, sample);
+    }
+    assert.deepEqual(literalKindLines("function Card({ issueKind = 'epic' }) {}"), []);
     for (const relative of [
         'frontend/src/eng/StoryRequirementCard.jsx', 'frontend/src/eng/EpicBlock.jsx', 'frontend/src/issues/IssueCard.jsx',
         'frontend/src/eng/EngBoardEpicCard.jsx', 'frontend/src/eng/EngBoardEpicPanel.jsx', 'frontend/src/eng/PlanningReviewTable.jsx',
-    ]) assert.equal(literalKind.test(read(relative)), false, relative);
+        'frontend/src/eng/EngBoardView.jsx',
+    ]) assert.deepEqual(literalKindLines(read(relative)), [], relative);
     assert.doesNotMatch(read('frontend/src/dashboard.jsx'), /issueKind:\s*row\.rowKind/);
     for (const relative of ['frontend/src/issues/StatusTransitionMenu.jsx', 'frontend/src/issues/PriorityTransitionMenu.jsx']) {
         assert.match(read(relative), /onOpen\?\.\(issue, fallbackIssueType, issueKind\)/, relative);

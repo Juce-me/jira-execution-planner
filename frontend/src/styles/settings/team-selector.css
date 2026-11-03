@@ -203,6 +203,9 @@
             padding: 0;
             text-align: left;
             color: inherit;
+            font-family: 'IBM Plex Mono', monospace;
+            letter-spacing: normal;
+            text-transform: none;
         }
 
 
@@ -213,7 +216,9 @@
             border: 1px solid var(--border);
             border-radius: 6px;
             background: #fff;
-            font: inherit;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.78rem;
+            color: var(--text-primary);
         }
 
         .group-list-name-input[aria-invalid="true"] {

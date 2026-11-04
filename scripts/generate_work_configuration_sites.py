@@ -3,7 +3,7 @@
 
 Output: ``tmp/work-configuration-sites.json`` (ignored). The inventory is built
 from (a) a curated SEED table copied from
-``docs/plans/EXEC-quarterly-work-structure-migration.md`` and (b) a pattern scan
+``docs/plans/DONE-quarterly-work-structure-migration.md`` and (b) a pattern scan
 of ``backend/``, ``jira_server.py``, ``planning/`` and ``frontend/src/`` using
 Python ``ast`` (enclosing symbol, callers) plus line regexes.  It is a
 navigation/guard artifact, NOT an exhaustiveness claim: the header records
@@ -540,7 +540,7 @@ def generate():
     header = {
         'generator': 'scripts/generate_work_configuration_sites.py',
         'generator_version': GENERATOR_VERSION,
-        'plan': 'docs/plans/EXEC-quarterly-work-structure-migration.md',
+        'plan': 'docs/plans/DONE-quarterly-work-structure-migration.md',
         'scanned_roots': list(SCAN_DIRS) + list(SCAN_FILES),
         'scanned_file_count': len(files),
         'row_count': len(rows),

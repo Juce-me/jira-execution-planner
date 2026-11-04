@@ -10,7 +10,7 @@ const savedPrefs = page => page.evaluate(key => JSON.parse(localStorage.getItem(
 // FROZEN copy of the object passed to saveUiPrefs({...}) in the ui-prefs save useEffect of dashboard.jsx
 // (62 keys read from the source at the B0b baseline, plus `selectedQuarter` added deliberately by the quarterly
 // work-structure migration: the quarter is private UI state in this same owner as `selectedSprint`, never shared
-// configuration; see docs/plans/EXEC-quarterly-work-structure-migration.md). saveUiPrefs replaces the whole stored object, so a
+// configuration; see docs/plans/DONE-quarterly-work-structure-migration.md). saveUiPrefs replaces the whole stored object, so a
 // dropped key silently loses that preference; an added key must be added here on purpose. Keys marked "group"
 // are also part of the per-group snapshot; the rest (device or session preferences) are not.
 const FROZEN_SAVED_PREF_KEYS = [

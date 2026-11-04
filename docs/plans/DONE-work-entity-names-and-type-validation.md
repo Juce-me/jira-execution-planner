@@ -1,6 +1,6 @@
 # Work entity names and Jira type validation implementation plan
 
-> **Status:** In progress. Tasks 1–6 and Task 7 Steps 1 and 3 are implemented and verified locally on branch `feature/quarterly-project-configurations` (commits `2343c943`..`efaa3730` plus the Task 7 documentation commit). D3b (Jira type icons for the new model) is implemented in `6757292d`. Published for review in the first PR of the [parent plan](EXEC-quarterly-work-structure-migration.md) (see its PR status); this plan stays `EXEC-` until the live check passes. Remaining: Task 0 (Steps 1–2) and Task 7 Step 2, the read-only live check against the signed-in app (now including that the three DELIVERY icons load from `/api/issue-type-icon/<id>`), then the `DONE-*` rename (Task 7 Step 4). Follow-up to [Quarterly work-structure migration](EXEC-quarterly-work-structure-migration.md). Decisions D1–D3 accepted by the owner on 2026-11-03 with the recommended defaults (D1a, D2a, D3a); revision 3 applies two review rounds (see Review log).
+> **Status:** Done. Executed on branch `feature/quarterly-project-configurations` in [Juce-me/jira-execution-planner#332](https://github.com/Juce-me/jira-execution-planner/pull/332) (Tasks 1–6, Task 7 Steps 1 and 3, D3b Jira type icons in `6757292d`); kept for audit context only. Accepted as done by the owner on 2026-11-04 without the live check: Task 0 and Task 7 Step 2 (configured type ids, levels and the three DELIVERY icons against the signed-in app) are not done and are carried to `docs/TODO.md` Deferred, so names and icons are proven only against synthetic fixtures. Follow-up to [Quarterly work-structure migration](DONE-quarterly-work-structure-migration.md). Decisions D1–D3 accepted by the owner on 2026-11-03 (D1a, D2a, D3a), D3b on 2026-11-04.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -10,7 +10,7 @@
 
 **Tech Stack:** Flask/Python, React 19 + esbuild (Node 20), `unittest`, `node --test` unit tests, Playwright (Chromium).
 
-**Spec:** the owner's 2026-11-03 request (DELIVERY Catch Up shows "5 STORIES · 1 REQUIRED", "1 Epics required", a "Story required" card, Story icons on Epic rows; validate types with Jira; check analytics; names must follow what the admin selected) and the role table in [EXEC-quarterly-work-structure-migration](EXEC-quarterly-work-structure-migration.md).
+**Spec:** the owner's 2026-11-03 request (DELIVERY Catch Up shows "5 STORIES · 1 REQUIRED", "1 Epics required", a "Story required" card, Story icons on Epic rows; validate types with Jira; check analytics; names must follow what the admin selected) and the role table in [DONE-quarterly-work-structure-migration](DONE-quarterly-work-structure-migration.md).
 
 ## Verified facts this plan relies on
 
@@ -190,7 +190,7 @@
 
 ## Outcome
 
-Implemented with changes (Tasks 1–6, Task 7 Steps 1 and 3); not done: the live check (Task 0, Task 7 Step 2) and the `DONE-*` rename, which wait for the owner's signed-in session. The implementation is the source of truth for what shipped.
+Implemented with changes (Tasks 1–6, Task 7 Steps 1 and 3, D3b); not done: the live check (Task 0, Task 7 Step 2), waived by the owner's 2026-11-04 decision to close the plan. The implementation is the source of truth for what shipped.
 
 | Task | Commits | Status |
 | --- | --- | --- |

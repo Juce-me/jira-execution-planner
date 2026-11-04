@@ -21,8 +21,8 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 ## Current Planning Work
 
 - [Quarterly project configurations design](SUPPORT-quarterly-project-configurations-design.md): Settings hierarchy, component reuse, DB/OAuth-only quarterly configuration contracts, runnable mockup and accepted planning decisions.
-- [Quarterly work-structure migration](EXEC-quarterly-work-structure-migration.md): Tasks 0–6 with dependencies and acceptance journeys for DB/OAuth quarter ranges, reader enablement, isolated reviews, combined capacity and Legacy Scenario compatibility; separate extraction remains a release prerequisite.
-- [Work entity names and Jira type validation](EXEC-work-entity-names-and-type-validation.md): configured Jira type names for every role on ENG surfaces, per-response type validation against Field mapping, analytics issue kinds and a literal-word guard.
+- [Quarterly work-structure migration](DONE-quarterly-work-structure-migration.md): Tasks 0–6 with dependencies and acceptance journeys for DB/OAuth quarter ranges, reader enablement, isolated reviews, combined capacity and Legacy Scenario compatibility; separate extraction remains a release prerequisite.
+- [Work entity names and Jira type validation](DONE-work-entity-names-and-type-validation.md): configured Jira type names for every role on ENG surfaces, per-response type validation against Field mapping, analytics issue kinds and a literal-word guard.
 - [jira_server.py cohort and stats extraction](EXEC-jira-server-cohort-stats-extraction.md): Sliced, patch-preserving extraction of epic-cohort, statistics, excluded-capacity and Project Track phase code into services, with per-slice guards and a budget ratchet.
 
 - [Planning assignee capacity table #323](DONE-planning-assignee-capacity-table-323.md): with one team selected, Planning shows a per-assignee table (Planned capacity, Estimated effort, Vacations, Notes) stored per workspace, Sprint and Team in the app database, inherited gray from the nearest earlier Sprint, with a per-assignee strip in the pinned capacity bar, a stored planned team capacity and Add assignee.

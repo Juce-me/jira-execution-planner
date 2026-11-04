@@ -221,7 +221,7 @@ Addressable synthetic specimens use `?configuration=delivery&section=mapping&adm
 
 ## Implementation-plan handoff (2026-10-30)
 
-The owner’s “proceed” after the round-2 defaults authorizes this planning handoff. The existing [EXEC file](EXEC-quarterly-work-structure-migration.md#execution-sequence-and-checkpoints) now has a dependency/checkpoint table, Tasks 0–6 with explicit steps and commands, and mounted acceptance journeys. No new plan file, application code, mockup change, migration, commit or publication was created by this handoff.
+The owner’s “proceed” after the round-2 defaults authorizes this planning handoff. The existing [EXEC file](DONE-quarterly-work-structure-migration.md#execution-sequence-and-checkpoints) now has a dependency/checkpoint table, Tasks 0–6 with explicit steps and commands, and mounted acceptance journeys. No new plan file, application code, mockup change, migration, commit or publication was created by this handoff.
 
 Source audit added concrete implementation steps for current adoption tools (`scripts/adopt_legacy_sprint_reviews.py:154–173,269–286`), Legacy Scenario reload (`backend/routes/scenario_draft_routes.py:133–146`), Board-null Team publication (`backend/services/workspace_catalog_cache.py:328–339`), actual mapping-picker states (`frontend/src/settings/MappingPickerRow.jsx:29–55`) and every moved dirty/validation flag (`frontend/src/settings/useSharedConfigSave.js:205–266`). These are planned changes, not completed fixes.
 

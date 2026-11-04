@@ -1,5 +1,6 @@
 import * as React from 'react';
 import IssueCard from '../issues/IssueCard.jsx';
+import WorkTypeGlyph from '../issues/WorkTypeGlyph.jsx';
 import { subscribeEngReading, getEngReadingPresentation } from './engReadingAnchor.js';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
@@ -160,7 +161,11 @@ export default function EngView({
                                             {ini && (
                                                 <>
                                                     <div className="initiative-header" data-onboarding-target="hierarchy-initiative">
-                                                        <InitiativeIcon className="initiative-header-icon" title={names.ancestor.toUpperCase()} />
+                                                        {names.ancestorTypeId ? (
+                                                            <span className="initiative-icon initiative-header-icon" aria-hidden="true" title={names.ancestor.toUpperCase()}>
+                                                                <WorkTypeGlyph level={names.ancestorLevel} typeId={names.ancestorTypeId} InitiativeIcon={InitiativeIcon} size={14} />
+                                                            </span>
+                                                        ) : <InitiativeIcon className="initiative-header-icon" title={names.ancestor.toUpperCase()} />}
                                                         <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
                                                             <span className="initiative-label-name">{ini.summary}</span>
                                                             <a

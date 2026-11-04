@@ -40,6 +40,7 @@ const MODEL_DEFAULTS = {
 
 const typeName = slot => (typeof slot?.name === 'string' && slot.name.trim() ? slot.name.trim() : null);
 const typeLevel = slot => (Number.isInteger(slot?.hierarchyLevel) ? slot.hierarchyLevel : null);
+const typeId = slot => (typeof slot?.id === 'string' && /^\d{1,18}$/.test(slot.id) ? slot.id : null);
 
 // Captured levels ([child, parent, ancestor], each an int or null) must strictly increase where present, or every
 // level takes the model default. A missing slot keeps its default when that still fits between its neighbours;
@@ -56,9 +57,10 @@ function resolveLevels(captured, defaults) {
 }
 
 // The names and kinds the ENG surfaces use for each work role. `roleTypes` is the configuration summary's capture
-// ({planning, parent, ancestor, optionalAncestor}, each null or {id, name, hierarchyLevel}; ids are never read);
+// ({planning, parent, ancestor, optionalAncestor}, each null or {id, name, hierarchyLevel});
 // `observed` ({digest, planning, parent}) is what a full Catch Up read saw and wins only for the same digest.
-// Missing names fall back to the model defaults; levels follow `resolveLevels`.
+// Missing names fall back to the model defaults; levels follow `resolveLevels`. Ids are read only for the new
+// model's type icons (`*TypeId`); Legacy draws the level glyphs.
 export function resolveEntityNames(model, roleTypes = null, observed = null, digest = null) {
     const normalized = normalizeWorkModel(model);
     const defaults = MODEL_DEFAULTS[normalized];
@@ -76,6 +78,8 @@ export function resolveEntityNames(model, roleTypes = null, observed = null, dig
         optionalAncestor: name('optionalAncestor'),
         childKind: kindForLevel(levels[0]), parentKind: kindForLevel(levels[1]), ancestorKind: kindForLevel(levels[2]),
         childLevel: levels[0], parentLevel: levels[1], ancestorLevel: levels[2],
+        ...Object.fromEntries(['child', 'parent', 'ancestor'].map((key, index) => [`${key}TypeId`,
+            normalized === WORK_MODEL_RND_2027 ? typeId(roleTypes?.[['planning', 'parent', 'ancestor'][index]]) : null])),
     };
 }
 

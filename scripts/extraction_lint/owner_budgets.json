@@ -17968,6 +17968,7 @@
             "entityNames.parent.toUpperCase",
             "entityNames.parentKind",
             "entityNames.parentLevel",
+            "entityNames.parentTypeId",
             "epicGroup",
             "epicGroup.epic",
             "epicGroup.epic.assignee.displayName",
@@ -18086,11 +18087,11 @@
             "toggleTaskSelection"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 125,
+          "expandedInputCount": 126,
           "returnCount": 0,
           "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 125,
+          "expandedInputCeiling": 126,
           "returnCeiling": 0,
           "propCeiling": 38,
           "unresolved": [
@@ -18103,7 +18104,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "99323b9b45e9f86c2ac42b446b4153f50c28bde0dd0ec278b67dcac5fd343b59",
+            "sourceDigest": "99a417174e858412b4209778e1695032cce0d137074b1e48647ca797979a73c1",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",

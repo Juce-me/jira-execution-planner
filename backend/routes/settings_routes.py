@@ -2,7 +2,7 @@
 
 from urllib.parse import quote as _url_quote
 
-from flask import Blueprint
+from flask import Blueprint, Response
 from werkzeug.exceptions import BadRequest
 
 from backend.auth.admin_bootstrap import workspace_tool_admin_display_names
@@ -2426,6 +2426,60 @@ def get_jira_issue_types():
         return jsonify(payload), status
     except Exception as e:
         return jsonify({'error': 'Failed to fetch issue types', 'details': str(e)}), 500
+
+
+ISSUE_TYPE_ICON_CACHE = {}
+ISSUE_TYPE_ICON_TTL_SECONDS = 3600
+_ISSUE_TYPE_ICON_CACHE_LIMIT = 512
+_ISSUE_TYPE_ICON_MAX_BYTES = 64 * 1024
+_PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+
+
+def _fetch_issue_type_icon(type_id):
+    """The type's Jira avatar as PNG bytes, or None. PNG only, so the page never serves Jira-supplied SVG."""
+    response = current_jira_get(f'/rest/api/3/issuetype/{type_id}', timeout=15)
+    body = response.json() if response.status_code == 200 else None
+    avatar_id = body.get('avatarId') if isinstance(body, dict) else None
+    if not isinstance(avatar_id, int) or isinstance(avatar_id, bool) or avatar_id <= 0:
+        return None
+    response = current_jira_get(
+        f'/rest/api/3/universal_avatar/view/type/issuetype/avatar/{avatar_id}',
+        params={'format': 'png', 'size': 'medium'}, timeout=15, accept='image/png',
+    )
+    content = response.content if response.status_code == 200 else b''
+    if not content.startswith(_PNG_SIGNATURE) or len(content) > _ISSUE_TYPE_ICON_MAX_BYTES:
+        return None
+    return content
+
+
+@bp.route('/api/issue-type-icon/<type_id>', methods=['GET'])
+def get_issue_type_icon(type_id):
+    """A Jira issue type's own icon, read with the viewer's Jira auth and served same-origin (the CSP allows no Jira host)."""
+    if not type_id.isdigit() or len(type_id) > 18:
+        return jsonify({'error': 'invalid_issue_type_id'}), 400
+    auth_context = current_request_auth_context()
+    cache_enabled = jira_home_partitioned_process_cache_enabled(auth_context)
+    cache_key = build_jira_home_process_cache_key(auth_context, 'issue-type-icon', type_id)
+    if cache_enabled:
+        with _cache_lock:
+            cached = ISSUE_TYPE_ICON_CACHE.get(cache_key)
+        if cached and time.time() - cached[0] < ISSUE_TYPE_ICON_TTL_SECONDS:
+            return Response(cached[1], mimetype='image/png')
+    try:
+        content = _fetch_issue_type_icon(type_id)
+    except AuthError:
+        payload, status = oauth_auth_required_payload()
+        return jsonify(payload), status
+    except Exception:
+        content = None
+    if content is None:
+        return jsonify({'error': 'issue_type_icon_unavailable'}), 404
+    if cache_enabled:
+        with _cache_lock:
+            if len(ISSUE_TYPE_ICON_CACHE) >= _ISSUE_TYPE_ICON_CACHE_LIMIT:
+                ISSUE_TYPE_ICON_CACHE.clear()
+            ISSUE_TYPE_ICON_CACHE[cache_key] = (time.time(), content)
+    return Response(content, mimetype='image/png')
 
 
 @bp.route('/api/issue-types/config', methods=['GET'])

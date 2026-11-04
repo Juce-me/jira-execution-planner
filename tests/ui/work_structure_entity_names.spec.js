@@ -45,7 +45,10 @@ const closed = (key, index) => ({
     createdDate: '2027-01-05', terminalDate: `2027-02-0${index}`, leadTimeDays: 30 + index, assignee: { id: 'lead', name: 'Lead' },
 });
 
-async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES } = {}) {
+// A 1x1 PNG stands in for Jira's type icon; without `icons` the route answers like an unavailable icon.
+const ICON_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+
+async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES, icons = false } = {}) {
     const state = { log: [] };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
@@ -58,6 +61,9 @@ async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES } = {}
         const p = url.pathname;
         state.log.push({ method: request.method(), pathname: p, params });
         const json = (payload, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
+        if (p.startsWith('/api/issue-type-icon/')) {
+            return icons ? route.fulfill({ status: 200, contentType: 'image/png', body: ICON_PNG }) : json({ error: 'issue_type_icon_unavailable' }, 404);
+        }
         if (p === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (p === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
         if (p === '/api/analytics/context' || p === '/api/version') return json({ enabled: false });
@@ -134,6 +140,39 @@ test('Catch Up names the rows, parents and readout by the captured Jira types', 
     await expect(page.locator('.epic-header .epic-icon').first()).toHaveAttribute('title', 'THEME');
     await expectNoLegacyWords(list);
     await shot(page, 'catch-up', list);
+});
+
+// The rendered svg box of each Catch Up type icon: a row, its parent header and the ancestor group line.
+async function iconBoxes(page) {
+    await expect(page.locator('.task-item')).toHaveCount(3);
+    await expect(page.locator('.initiative-header .initiative-header-icon')).toHaveCount(1);
+    return page.evaluate(() => Object.fromEntries([
+        ['child', '.task-item .story-icon svg'], ['parent', '.epic-header .epic-icon svg'], ['ancestor', '.initiative-header .initiative-header-icon svg'],
+    ].map(([role, selector]) => {
+        const box = document.querySelector(selector).getBoundingClientRect();
+        return [role, { width: box.width, height: box.height, image: document.querySelector(selector).querySelector('image')?.getAttribute('href') || null }];
+    })));
+}
+
+test('DELIVERY draws each configured Jira type icon in the glyph box, and an unavailable icon falls back to the glyph', async ({ page }) => {
+    const state = await mockApp(page, { icons: true });
+    const jira = await iconBoxes(page);
+    expect(Object.values(jira).map(box => box.image)).toEqual(['/api/issue-type-icon/6', '/api/issue-type-icon/11700', '/api/issue-type-icon/12723']);
+    await expect(page.locator('.task-item .story-icon').first()).toHaveAttribute('title', 'DELIVERABLE');
+    await expect(page.locator('.initiative-header .initiative-header-icon')).toHaveAttribute('title', 'OBJECTIVE');
+    expect(state.log.filter(entry => entry.pathname.startsWith('/api/issue-type-icon/')).length).toBeGreaterThanOrEqual(3);
+    await shot(page, 'type-icons', page.locator('.task-list'));
+
+    const fallbackPage = await page.context().newPage();
+    await mockApp(fallbackPage);
+    const glyph = await iconBoxes(fallbackPage);
+    expect(Object.values(glyph).map(box => box.image)).toEqual([null, null, null]);
+    await expect(fallbackPage.locator('.task-item .story-icon path[d^="m10.271"]').first()).toBeAttached();
+    await expect(fallbackPage.locator('.epic-header .epic-icon .initiative-icon')).toHaveCount(1);
+    for (const role of ['child', 'parent', 'ancestor']) {
+        expect({ role, width: jira[role].width, height: jira[role].height }).toEqual({ role, width: glyph[role].width, height: glyph[role].height });
+    }
+    await fallbackPage.close();
 });
 
 test('the Planning table names its row kinds and parent column by the captured types', async ({ page }) => {

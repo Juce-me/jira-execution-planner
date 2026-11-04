@@ -233,7 +233,7 @@ export default function IssueCard({
                 )}
                 <div className="task-headline">
                     <span className="story-icon" aria-hidden="true" title={(entityNames || LEGACY_NAMES).child.toUpperCase()}>
-                        <WorkTypeGlyph level={(entityNames || LEGACY_NAMES).childLevel} InitiativeIcon={InitiativeIcon} />
+                        <WorkTypeGlyph level={(entityNames || LEGACY_NAMES).childLevel} typeId={entityNames?.childTypeId} InitiativeIcon={InitiativeIcon} />
                     </span>
                     {priorityTransitionEnabled ? (
                         <PriorityTransitionMenu

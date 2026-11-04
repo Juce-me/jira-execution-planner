@@ -1,10 +1,21 @@
 import * as React from 'react';
+import { issueTypeIconUrl } from '../api/jiraCatalogApi.js';
 
-// The Jira type glyph of a work row, chosen by the hierarchy level of its role's configured type: 0 the bookmark,
-// 1 the bolt, 2 or more the App's Initiative lightbulb (passed in, never redrawn here). The caller's wrapper owns the
-// title and the box; without `InitiativeIcon` a level of 2 or more falls back to the bolt.
-export default function WorkTypeGlyph({ level = 0, InitiativeIcon = null }) {
-    if (level >= 2 && InitiativeIcon) return <InitiativeIcon size={16} title={null} />;
+// The Jira type glyph of a work row. A new-model role with a configured type (`typeId`) draws that type's own Jira icon,
+// read through the same-origin `issueTypeIconUrl` route in the same svg box; if the image fails, or without
+// `typeId`, the glyph is chosen by the hierarchy level of the role's configured type: 0 the bookmark, 1 the bolt, 2 or
+// more the App's Initiative lightbulb (passed in, never redrawn here). The caller's wrapper owns the title and the box;
+// without `InitiativeIcon` a level of 2 or more falls back to the bolt.
+export default function WorkTypeGlyph({ level = 0, InitiativeIcon = null, typeId = null, size = 16 }) {
+    const [failedTypeId, setFailedTypeId] = React.useState(null);
+    if (typeId && failedTypeId !== typeId) {
+        return (
+            <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+                <image href={issueTypeIconUrl(typeId)} width="16" height="16" onError={() => setFailedTypeId(typeId)} />
+            </svg>
+        );
+    }
+    if (level >= 2 && InitiativeIcon) return <InitiativeIcon size={size} title={null} />;
     if (level >= 1) {
         return (
             <svg viewBox="0 0 16 16" fill="none">

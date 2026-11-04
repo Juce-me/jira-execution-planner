@@ -715,7 +715,7 @@ def current_oauth_session_callbacks(context=None, *, diagnostic_transport=None):
     }
 
 
-def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_transport=None):
+def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_transport=None, accept=None):
     if diagnostic_transport is None: diagnostic_transport = __import__('backend.services.eng_board_measurement_runtime', fromlist=['current_diagnostic_transport']).current_diagnostic_transport()
     explicit_context = context is not None
     auth_context = current_jira_auth_context(context)
@@ -736,7 +736,7 @@ def current_jira_get(path, *, params=None, timeout=30, context=None, diagnostic_
         path,
         http_get=request_get,
         params=params,
-        timeout=timeout,
+        timeout=timeout, accept=accept,
         cooperative_budget=diagnostic_transport.budget if diagnostic_transport else None, diagnostic_observer=diagnostic_transport.observer if diagnostic_transport else None,
         **session_callbacks,
     )

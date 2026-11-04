@@ -147,7 +147,7 @@ export function EpicBlock({
                     <div className="epic-title">
                         <div className="epic-title-row">
                         <span className="epic-icon" aria-hidden="true" title={entityNames.parent.toUpperCase()}>
-                            <WorkTypeGlyph level={entityNames.parentLevel} InitiativeIcon={InitiativeIcon} />
+                            <WorkTypeGlyph level={entityNames.parentLevel} typeId={entityNames.parentTypeId} InitiativeIcon={InitiativeIcon} />
                         </span>
                         {effectivePriority.name && (
                             (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (

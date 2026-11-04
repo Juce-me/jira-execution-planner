@@ -39,6 +39,18 @@ test('DELIVERY roleTypes name Epic/Initiative/Objective with kinds from levels',
     assert.deepEqual([names.childLevel, names.parentLevel, names.ancestorLevel], [1, 2, 3]);
 });
 
+test('DELIVERY carries its configured Jira type ids for the type icons; Legacy and unusable ids carry none', async () => {
+    const { resolveEntityNames } = await load();
+    const delivery = resolveEntityNames('rnd_2027', DELIVERY_TYPES, null, 'd1');
+    assert.deepEqual([delivery.childTypeId, delivery.parentTypeId, delivery.ancestorTypeId], ['6', '11700', '12723']);
+    const bare = resolveEntityNames('rnd_2027');
+    assert.deepEqual([bare.childTypeId, bare.parentTypeId, bare.ancestorTypeId], [null, null, null]);
+    const odd = resolveEntityNames('rnd_2027', { planning: type(null, 'Epic', 1), parent: type('../x', 'Initiative', 2), ancestor: type(12723, 'Objective', 3) });
+    assert.deepEqual([odd.childTypeId, odd.parentTypeId, odd.ancestorTypeId], [null, null, null]);
+    const legacy = resolveEntityNames('legacy', { planning: type('10002', 'Story', 0), parent: type('10000', 'Epic', 1), ancestor: type('10001', 'Initiative', 2) });
+    assert.deepEqual([legacy.childTypeId, legacy.parentTypeId, legacy.ancestorTypeId], [null, null, null]);
+});
+
 test('new model without a capture falls back to the model defaults, Strategy included', async () => {
     const { resolveEntityNames } = await load();
     const names = resolveEntityNames('rnd_2027');

@@ -114,6 +114,30 @@ test('IssueCard icon follows the planning level; without names (EPM) it renders 
     assert.ok(render({ entityNames: RENAMED }).includes('title="DELIVERABLE"'));
 });
 
+test('a configured DELIVERY type draws its own Jira icon through the same-origin route; Legacy and EPM keep the glyphs', async () => {
+    const { LEGACY, DELIVERY, RENAMED } = await names();
+    const IssueCard = loadComponent('frontend/src/issues/IssueCard.jsx').default;
+    const task = { key: 'PLAN-1', fields: { summary: 'Sample', status: { name: 'To Do' }, priority: { name: 'Medium' }, issuetype: { name: 'Deliverable' }, customfield_10004: 3 } };
+    const card = entityNames => renderToStaticMarkup(React.createElement(IssueCard, { task, jiraUrl: 'https://jira.example', teamLabel: 'T', entityNames }));
+    const renamed = card(RENAMED);
+    assert.match(renamed, /class="story-icon" aria-hidden="true" title="DELIVERABLE"><svg[^>]*><image href="\/api\/issue-type-icon\/6" width="16" height="16"/);
+    assert.ok(!renamed.includes(BOLT_PATH), 'the Jira icon replaces the level glyph');
+    for (const [label, html] of [['EPM', card(undefined)], ['Legacy', card(LEGACY)], ['DELIVERY without a capture', card(DELIVERY)]]) {
+        assert.ok(!html.includes('<image'), label);
+    }
+    const { EpicBlock } = loadComponent('frontend/src/eng/EpicBlock.jsx');
+    const header = entityNames => renderToStaticMarkup(React.createElement(EpicBlock, {
+        epicGroup: { key: 'SYN-1', epic: { summary: 'Synthetic parent', status: { name: 'In Progress' } }, storyPoints: 0, tasks: [] },
+        statusTransitions: { activeSingleIssueTarget: null }, priorityTransitions: { activePriorityTarget: null }, projectTrackTransitions: { activeProjectTrackTarget: null },
+        issueFieldEdits: { activeEditor: null, pendingIssueKeys: new Set(), status: 'idle' }, jiraUrl: 'https://jira.example',
+        excludedEpicSet: new Set(), normalizeEpicKey: String, stickyEpicFocusKey: null, epicRefMap: { current: new Map() },
+        renderPriorityIcon: () => null, epicRefresh: { epicStates: {}, leavingKeys: new Set() }, selectedTasks: {}, getTeamInfo: () => ({}),
+        storySubtasksByKey: {}, entityNames,
+    })).split('class="epic-title-row"')[1].split('</span>')[0];
+    assert.match(header(RENAMED), /title="THEME"><svg[^>]*><image href="\/api\/issue-type-icon\/11700"/);
+    assert.ok(!header(LEGACY).includes('<image'));
+});
+
 test('IssueCard field editing follows the planning-leaf role, not the Jira type name', async () => {
     const { RENAMED } = await names();
     const IssueCard = loadComponent('frontend/src/issues/IssueCard.jsx').default;

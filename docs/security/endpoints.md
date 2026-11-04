@@ -63,6 +63,7 @@ The endpoint policy registry lives in `backend/security/policy.py`. Every Flask 
 | `jira-boards` | `GET` | `/api/boards` | `authenticated_read` | `exact` |
 | `jira-sprints` | `GET` | `/api/sprints` | `authenticated_read` | `exact` |
 | `jira-issue-types` | `GET` | `/api/issue-types` | `authenticated_read` | `exact` |
+| `jira-issue-type-icon` | `GET` | `/api/issue-type-icon/<type_id>` | `authenticated_read` | `dynamic` |
 | `selected-projects-read` | `GET` | `/api/projects/selected` | `authenticated_read` | `exact` |
 | `selected-projects-write` | `POST` | `/api/projects/selected` | `shared_admin_write` | `exact` |
 | `board-config-read` | `GET` | `/api/board-config` | `authenticated_read` | `exact` |

@@ -100,10 +100,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         return {'issueId': issue, 'rowKind': 'story', 'columnId': self.column['id'], 'value': value, 'baseRevision': base}
 
     def rows(self):
+        # Only columns every group-table revision has, so the read also works below the namespace revision.
+        schema, view = models.WorkspaceGroupReviewSchema, models.GroupSprintReviewView
         with db_engine.session_scope(self.url) as session:
-            schemas = session.query(models.WorkspaceGroupReviewSchema).all()
+            schemas = session.query(schema.group_id, schema.schema_revision, schema.columns).all()
             return ([(s.group_id, s.schema_revision, [c['id'] for c in s.columns]) for s in schemas],
-                    sorted((v.sprint_id, v.view_revision, v.layouts) for v in session.query(models.GroupSprintReviewView).all()))
+                    sorted(tuple(v) for v in session.query(view.sprint_id, view.view_revision, view.layouts).all()))
 
     def wait_until_blocked(self, count=1):
         """Wait until `count` other backends wait on a lock while touching the group schema table."""
@@ -288,12 +290,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         holder = Thread(target=run)
         original = review.apply_schema
 
-        def paused(columns, changes):
+        def paused(columns, changes, *args):
             if current_thread() is holder:
                 entered.set()
                 if not release.wait(hold):
                     raise AssertionError('holder never released')
-            return original(columns, changes)
+            return original(columns, changes, *args)
 
         with patch.object(review, 'apply_schema', paused):
             holder.start()
@@ -803,8 +805,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             conn.close()
         self.assertEqual(self.stamped(), PARENT_REVISION)
         with db_engine.session_scope(self.url) as session:  # the first workspace's adoption was rolled back with the failure
-            self.assertEqual(session.query(models.WorkspaceGroupReviewSchema).count(), 0)
-            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM workspace_group_review_schemas')).scalar(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_sprint_review_views')).scalar(), 0)
         command.upgrade(self.config, 'head')
         with db_engine.session_scope(self.url) as session:
             self.assertEqual(sorted(row.workspace_id for row in session.query(models.WorkspaceGroupReviewSchema).all()),
@@ -843,6 +845,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
 
     def test_session_timeouts_are_restored_inside_the_transaction_and_set_for_the_step(self):
         revision = self.revision_module()
+        self.rewind()  # the revision runs against its own schema: 0022 later replaces its conflict target
         self.seed_review_legacy()
         seen = {}
         original = revision._lock_legacy
@@ -883,6 +886,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                 review._locked_schema(session, SimpleNamespace(workspace_id=self.workspace_id), 'app-group')
             app = list(statements)
             del statements[:]
+            self.rewind()  # the revision runs against its own schema: 0022 later replaces its conflict target
             with engine.begin() as conn:
                 revision._locked_schema(conn, self.workspace_id, 'rev-group')
             ours = list(statements)
@@ -896,8 +900,11 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                     'workspace_group_review_schemas.workspace_id = %(' in select.replace('$1', '%(')
                     or 'workspace_id = ' in select, select.endswith('for update'))
 
-        self.assertEqual(shape(ours), shape(app))
-        self.assertEqual(shape(app)[0], '(workspace_id, group_id) do nothing')
+        # Same insert-then-lock of the one schema row. The conflict target differs by era: the revision names
+        # its own unique constraint; since 0022 the app names none, so the partial unique indexes arbitrate.
+        self.assertEqual(shape(ours)[1:], shape(app)[1:])
+        self.assertEqual(shape(ours)[0], '(workspace_id, group_id) do nothing')
+        self.assertEqual(shape(app)[0], 'do nothing')
 
     def test_a_well_formed_downgrade_below_the_group_tables_adopts_again(self):
         column = self.seed_review_legacy()

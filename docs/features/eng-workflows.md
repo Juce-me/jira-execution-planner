@@ -40,6 +40,8 @@ At least one configured Team or Jira Component is required for first-run eligibi
 
 Configured Jira Components broaden Missing Information and Lead Times (Created mode) through configured-Team or Component matching; the Lead Times Closed and Last N modes match the Department's Components only (its Teams only when no Components are configured). They also define Board's cross-sprint **Component** choice and the Component-owned half of **All work**, at the Epic boundary only. They never make Stories appear in the main Product/Tech list.
 
+In Department settings, a configured Team ID gets a warning when a validated selected-Sprint catalog contains a different ID with the same name but not that ID. IDs remain separate so a Department can retain historical and current Teams.
+
 If expected work is missing, check in this order:
 
 1. Confirm the active Department and selected sprint.

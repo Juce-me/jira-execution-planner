@@ -208,6 +208,8 @@ test('a configured shadowed id stays listed so its chip keeps its name', () => {
         sprintGated: false,
     });
     assert.deepEqual(Array.from(rows, row => [row.id, row.name]), [['new-ds', 'Data Science'], ['old-ds', 'Data Science']]);
+    assert.equal(rows.find(row => row.id === 'old-ds').sameNameInSprint, true);
+    assert.notEqual(rows.find(row => row.id === 'new-ds').sameNameInSprint, true);
 });
 
 test('same-name ids stay listed when membership is unknown or none of them is in the Sprint', () => {
@@ -219,4 +221,5 @@ test('same-name ids stay listed when membership is unknown or none of them is in
     const absent = buildTeamAvailability({ directory, sprintTeams: [{ id: 'team-x', name: 'Xray' }], membershipReady: true, sprintGated: false });
     assert.deepEqual(Array.from(unknown, row => row.id), ['new-ds', 'old-ds']);
     assert.deepEqual(Array.from(absent, row => row.id), ['new-ds', 'old-ds', 'team-x']);
+    assert.ok([...unknown, ...absent].every(row => !row.sameNameInSprint));
 });

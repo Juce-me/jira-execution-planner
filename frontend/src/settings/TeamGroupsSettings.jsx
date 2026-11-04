@@ -385,6 +385,7 @@ export default function TeamGroupsSettings(props) {
                                                                 return (
                                                                     <div key={teamId} className="selected-team-chip">
                                                                         <span className="team-name">{teamName}</span>
+                                                                        {availableTeams.find(team => team.id === teamId)?.sameNameInSprint && <span className="group-modal-meta"> (not in selected Sprint)</span>}
                                                                         <button
                                                                             className="remove-btn"
                                                                             onClick={() => removeTeamFromGroup(activeGroupDraft.id, teamId)}
@@ -397,6 +398,11 @@ export default function TeamGroupsSettings(props) {
                                                                     </div>
                                                                 );
                                                             })}
+                                                        </div>
+                                                    )}
+                                                    {(activeGroupDraft.teamIds || []).some(teamId => availableTeams.find(team => team.id === teamId)?.sameNameInSprint) && (
+                                                        <div className="group-modal-warning" role="status">
+                                                            {availableTeams.filter(team => (activeGroupDraft.teamIds || []).includes(team.id) && team.sameNameInSprint).map(team => team.name).join(', ')}: this Team ID was not seen in the selected Sprint, but another ID with the same name was. Keep both IDs if this group needs work from both periods.
                                                         </div>
                                                     )}
                                                     {availableTeams.length === 0 && !loadingTeams ? (

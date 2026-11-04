@@ -86,6 +86,8 @@ export function buildTeamAvailability({
             name: names.get(id) || id,
             availableInSprint,
             canAdd: sprintGated ? availableInSprint === true : true,
+            ...(configured.has(id) && !members.has(id) && namesInSprint.has(nameKey(id))
+                ? { sameNameInSprint: true } : {}),
         };
     }).sort((left, right) => (
         left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })

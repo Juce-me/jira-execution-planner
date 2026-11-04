@@ -178,3 +178,45 @@ test('in a combined-model quarter every directory and saved Team stays addable a
         { id: 'team-c', name: 'team-c', availableInSprint: null, canAdd: true },
     ]);
 });
+
+test('a same-name id absent from the Sprint is hidden when another id of that name is in it', () => {
+    const directory = {
+        'old-ds': { id: 'old-ds', name: 'Data Science' },
+        'new-ds': { id: 'new-ds', name: 'Data Science' },
+        'team-x': { id: 'team-x', name: 'Xray' },
+    };
+    for (const sprintGated of [true, false]) {
+        const rows = buildTeamAvailability({
+            directory,
+            sprintTeams: [{ id: 'new-ds', name: 'Data Science' }],
+            membershipReady: true,
+            sprintGated,
+        });
+        assert.deepEqual(Array.from(rows, row => row.id), ['new-ds', 'team-x'], `sprintGated=${sprintGated}`);
+    }
+});
+
+test('a configured shadowed id stays listed so its chip keeps its name', () => {
+    const rows = buildTeamAvailability({
+        directory: {
+            'old-ds': { id: 'old-ds', name: 'Data Science' },
+            'new-ds': { id: 'new-ds', name: ' data science ' },
+        },
+        sprintTeams: [{ id: 'new-ds', name: 'Data Science' }],
+        configuredTeamIds: ['old-ds'],
+        membershipReady: true,
+        sprintGated: false,
+    });
+    assert.deepEqual(Array.from(rows, row => [row.id, row.name]), [['new-ds', 'Data Science'], ['old-ds', 'Data Science']]);
+});
+
+test('same-name ids stay listed when membership is unknown or none of them is in the Sprint', () => {
+    const directory = {
+        'old-ds': { id: 'old-ds', name: 'Data Science' },
+        'new-ds': { id: 'new-ds', name: 'Data Science' },
+    };
+    const unknown = buildTeamAvailability({ directory, membershipReady: false, sprintGated: false });
+    const absent = buildTeamAvailability({ directory, sprintTeams: [{ id: 'team-x', name: 'Xray' }], membershipReady: true, sprintGated: false });
+    assert.deepEqual(Array.from(unknown, row => row.id), ['new-ds', 'old-ds']);
+    assert.deepEqual(Array.from(absent, row => row.id), ['new-ds', 'old-ds', 'team-x']);
+});

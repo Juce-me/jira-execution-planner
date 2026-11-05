@@ -11,6 +11,8 @@ import EpicRefreshButton from '../ui/EpicRefreshButton.jsx';
 import StoryRequirementCard from './StoryRequirementCard.jsx';
 import IssueCard from '../issues/IssueCard.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
+import WorkTypeGlyph from '../issues/WorkTypeGlyph.jsx';
+import { isCombinedWorkModel, lowerEntityWord } from './engWorkModel.js';
 
 export function EpicBlock({
     epicGroup,
@@ -49,6 +51,8 @@ export function EpicBlock({
     storySubtasksByKey,
     toggleStorySubtasks,
     retryStorySubtasks,
+    entityNames,
+    InitiativeIcon,
 }) {
     // The three transition handles are read here and mapped onto the flat menu and IssueCard props below;
     // the Priority and Project Track write gates are the same flag as Status (statusTransitionEnabled).
@@ -72,7 +76,7 @@ export function EpicBlock({
     } = projectTrackTransitions;
     const epicInfo = epicGroup.epic;
     const epicTitle = epicInfo?.summary || epicGroup.parentSummary ||
-        (epicGroup.key === 'NO_EPIC' ? 'No Epic Linked' : epicGroup.key);
+        (epicGroup.key === 'NO_EPIC' ? `No ${entityNames.parent} Linked` : epicGroup.key);
     const epicTotalSp = epicGroup.storyPoints || 0;
     const epicStatus = typeof epicInfo?.status === 'string'
         ? epicInfo.status
@@ -119,7 +123,7 @@ export function EpicBlock({
                         <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
                             suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
                             submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                            onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
+                            onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: entityNames.parentKind, sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
                     </span>
                 )}
             </EpicHeaderValueReadout>
@@ -142,21 +146,15 @@ export function EpicBlock({
                 <div className="epic-header">
                     <div className="epic-title">
                         <div className="epic-title-row">
-                        <span className="epic-icon" aria-hidden="true" title="EPIC">
-                            <svg viewBox="0 0 16 16" fill="none">
-                                <path
-                                    clipRule="evenodd"
-                                    d="m10.271.050656c.2887.111871.479.38969.479.699344v4.63515l3.1471.62941c.2652.05303.4812.24469.5655.50161s.0238.53933-.1584.73914l-7.74997 8.49999c-.20863.2288-.53644.3059-.82517.194-.28874-.1118-.47905-.3896-.47905-.6993v-4.6351l-3.14708-.62947c-.26515-.05303-.48123-.24468-.56553-.5016-.08431-.25692-.02379-.53933.1584-.73915l7.75-8.499996c.20863-.2288201.53643-.305899.8252-.194028zm-6.57276 8.724134 3.05177.61036v3.92915l5.55179-6.08909-3.05179-.61036v-3.9291z"
-                                    fill="#bf63f3"
-                                    fillRule="evenodd"
-                                />
-                            </svg>
+                        <span className="epic-icon" aria-hidden="true" title={entityNames.parent.toUpperCase()}>
+                            <WorkTypeGlyph level={entityNames.parentLevel} typeId={entityNames.parentTypeId} InitiativeIcon={InitiativeIcon} />
                         </span>
                         {effectivePriority.name && (
                             (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
                                 <PriorityTransitionMenu
                                     issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
                                     fallbackIssueType="Epic"
+                                    issueKind={entityNames.parentKind}
                                     priorityLabel={effectivePriority.name}
                                     currentPriorityLabel={epicOwnPriority}
                                     renderPriorityIcon={renderPriorityIcon}
@@ -246,7 +244,7 @@ export function EpicBlock({
                                     ? 'You do not have permission to edit shared group capacity settings'
                                     : (showGroupManage && isGroupDraftDirty)
                                         ? 'Save or discard open Department settings changes before changing excluded capacity'
-                                        : 'Include/exclude this epic in shared group capacity and reporting'}
+                                        : `Include/exclude this ${lowerEntityWord(entityNames.parent)} in shared group capacity and reporting`}
                             >
                                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
@@ -271,6 +269,7 @@ export function EpicBlock({
                                             <StatusTransitionMenu
                                                 issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
                                                 fallbackIssueType="Epic"
+                                                issueKind={entityNames.parentKind}
                                                 statusLabel={epicStatus}
                                                 statusClassName={epicStatusClassName}
                                                 sourceSurface={statusTransitionSourceSurface}
@@ -337,6 +336,8 @@ export function EpicBlock({
                             requirement={row}
                             jiraUrl={jiraUrl}
                             sourceSurface={showPlanning ? 'planning' : 'catch_up'}
+                            entityNames={entityNames}
+                            InitiativeIcon={InitiativeIcon}
                         />
                     );
                 }
@@ -390,6 +391,9 @@ export function EpicBlock({
                         onboardingPreviewSession={onboardingPreviewSession}
                         onPreviewLifecycleChange={handleOnboardingPreviewLifecycleChange}
                         issueFieldEdits={issueFieldEditsEnabled ? issueFieldEdits : null}
+                        entityNames={entityNames}
+                        isPlanningLeaf={isCombinedWorkModel(entityNames.model) || undefined}
+                        InitiativeIcon={InitiativeIcon}
                     />
                 );
             })}

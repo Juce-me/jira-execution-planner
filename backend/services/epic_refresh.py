@@ -55,7 +55,9 @@ def epic_keys_error(args, single=False):
     if purpose in EPIC_SCOPED_PURPOSES:
         lane = str(args.get('project') or '').strip().lower()
         sprint = str(args.get('sprint') or '').strip()
-        if len(keys) != 1 or not _SPRINT_RE.fullmatch(sprint) or lane not in ('product', 'tech'):
+        # The new work model reads one unfiltered lane: a viewed quarter replaces the project lane.
+        quarter_scoped = not lane and bool(args.get('quarter'))
+        if len(keys) != 1 or not _SPRINT_RE.fullmatch(sprint) or (lane not in ('product', 'tech') and not quarter_scoped):
             return {
                 'error': 'invalid_epic_refresh',
                 'message': 'Epic refresh needs one epic key, a numeric sprint and a project lane.',
@@ -150,7 +152,8 @@ def apply_epic_enrichment(epics, counts, distribution):
 
 
 def fetch_epic_alert_bundle(fetch_epics, fetch_counts, fetch_distribution, *, epic_key, jql, headers, team_field_id,
-                            epic_link_field_id, sprint_field_id, sprint, team_ids, team_label_values, sprint_name):
+                            epic_link_field_id, sprint_field_id, sprint, team_ids, team_label_values, sprint_name,
+                            counts_available=None):
     """Scope-aware alert object for one epic: `{'epicsInScope': [enriched]}`, empty only when out of scope.
 
     The scope search is complete (it raises on a failed page); a failed counts or distribution search raises
@@ -162,7 +165,8 @@ def fetch_epic_alert_bundle(fetch_epics, fetch_counts, fetch_distribution, *, ep
     if not epics:
         return {'epicsInScope': []}
     failures = []
-    counts = fetch_counts([epic_key], headers, epic_link_field_id, failures=failures) if epic_link_field_id else None
+    counts_available = bool(epic_link_field_id) if counts_available is None else counts_available
+    counts = fetch_counts([epic_key], headers, epic_link_field_id, failures=failures) if counts_available else None
     distribution = fetch_distribution([epic_key], headers, epic_link_field_id, sprint, team_field_id=team_field_id, failures=failures)
     if failures:
         raise EpicAlertBundleError(f'Epic alert counts failed: status={failures[0]}')

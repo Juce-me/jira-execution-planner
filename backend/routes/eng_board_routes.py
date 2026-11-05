@@ -11,7 +11,8 @@ import secrets
 import queue
 import time
 
-from flask import Blueprint, Response, current_app, jsonify, request
+from flask import Blueprint, Response, current_app, has_request_context, jsonify, request
+from werkzeug.datastructures import MultiDict
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context
@@ -25,11 +26,13 @@ from backend.services.eng_board_stream import (
 )
 
 from . import get_jira_server
+from . import work_request as work_request_adapter
 
 
 bp = Blueprint('eng_board_routes', __name__)
 LOGGER = logging.getLogger(__name__)
-_QUERY_KEYS = {'departmentId', 'scope', 'sprintId', 'focusedColumnId', 'refresh'}
+_QUERY_KEYS = {'departmentId', 'scope', 'sprintId', 'focusedColumnId', 'refresh',
+               'quarter', 'configurationId', 'configurationRevision'}
 _PROJECT_CATALOG_PAGE_SIZE = 100
 _PROJECT_CATALOG_MAX_PAGES = 101
 _PROJECT_KEYS_PER_REQUEST = 50  # Jira's documented ceiling for the project search `keys` filter
@@ -54,6 +57,14 @@ class BoardScopeChanged(RuntimeError):
 
 class BoardJiraUnavailable(RuntimeError):
     pass
+
+
+class BoardWorkSelectorError(RuntimeError):
+    """Exact selector failure (400/409/503) from work-request admission; carries the response."""
+
+    def __init__(self, response):
+        super().__init__('work_selector')
+        self.response = response
 
 
 @dataclass(frozen=True)
@@ -92,6 +103,8 @@ class BoardSnapshot:
     adapter: str = 'db_oauth'
     focused_column_id: str | None = None
     adapter_server: object | None = None
+    work_request: object | None = None
+    parent_clause: str = 'issuetype = Epic'
 
 
 def _error(code, status, message='The ENG Board request could not continue safely.'):
@@ -354,7 +367,7 @@ def _run_catalog_reads(reads, *, concurrent):
     return [future.result() for future in futures]
 
 
-def _capture_shape(server, query, transport, dashboard, group, raw_group, *, context):
+def _capture_shape(server, query, transport, dashboard, group, raw_group, *, context, roles=None):
     validated = eng_board.validate_scope_configuration(
         query.scope, raw_group.get('board'), group.get('missingInfoComponents') or (),
         team_ids=_configured_teams(group),
@@ -371,24 +384,40 @@ def _capture_shape(server, query, transport, dashboard, group, raw_group, *, con
     if query.scope == 'sprint' and not validated['components'] and not teams:
         raise BoardRouteError('board_team_scope_required', 409)
     projects, issue_types, fields = _run_catalog_reads((
-        lambda: _resolve_projects(server, dashboard, context, transport),
+        lambda: _resolve_projects(server, {**dashboard, **roles.flat_admin_settings()} if roles is not None else dashboard,
+                                  context, transport),
         lambda: _jira_json(server, '/rest/api/3/issuetype', context, transport),
         lambda: _jira_json(server, '/rest/api/3/field', context, transport),
     ), concurrent=context is not None)
-    issue_type_ids = eng_board.resolve_issue_type_ids(
-        issue_types, dashboard.get('issueTypes'), key_present='issueTypes' in dashboard,
-    )
-    epic_link = eng_board.resolve_epic_link_field(fields)
-    field_ids = {
-        'sprint': _field_id(dashboard, 'sprintField', 'customfield_10101'),
-        'storyPoints': _field_id(dashboard, 'storyPointsField', 'customfield_10004'),
-        'team': _field_id(dashboard, 'teamField', 'customfield_30101'),
-        'projectTrack': _field_id(dashboard, 'projectTrackField', 'customfield_35024'),
-        'deliveryOwner': _field_id(dashboard, 'deliveryOwnerField'),
-        'epicLink': epic_link,
-    }
-    for field_id in (field_ids['sprint'], field_ids['storyPoints'], field_ids['team'], field_ids['projectTrack']):
+    if roles is not None:
+        # Admitted configuration: its planning type(s), mapped fields (blank is missing, never a
+        # default) and Epic Link only for the Story->Epic compatibility relationship.
+        issue_type_ids = roles.board_planning_type_ids(issue_types)
+        epic_link = eng_board.resolve_epic_link_field(fields) if roles.uses_epic_link else None
+        field_ids = {
+            'sprint': roles.sprint_field_id or None,
+            'storyPoints': roles.story_points_field_id or None,
+            'team': roles.team_field_id or None,
+            'projectTrack': roles.project_track_field_id or None,
+            'deliveryOwner': roles.delivery_owner_field_id or None,
+            'epicLink': epic_link,
+        }
+    else:
+        issue_type_ids = eng_board.resolve_issue_type_ids(
+            issue_types, dashboard.get('issueTypes'), key_present='issueTypes' in dashboard,
+        )
+        epic_link = eng_board.resolve_epic_link_field(fields)
+        field_ids = {
+            'sprint': _field_id(dashboard, 'sprintField', 'customfield_10101'),
+            'storyPoints': _field_id(dashboard, 'storyPointsField', 'customfield_10004'),
+            'team': _field_id(dashboard, 'teamField', 'customfield_30101'),
+            'projectTrack': _field_id(dashboard, 'projectTrackField', 'customfield_35024'),
+            'deliveryOwner': _field_id(dashboard, 'deliveryOwnerField'),
+            'epicLink': epic_link,
+        }
+    for field_id in (field_ids['sprint'], field_ids['storyPoints'], field_ids['team']):
         eng_board.validate_custom_field_id(field_id)
+    eng_board.validate_custom_field_id(field_ids['projectTrack'], optional=roles is not None)
     eng_board.validate_custom_field_id(field_ids['deliveryOwner'], optional=True)
     return {
         'board': board, 'focused': focused, 'teams': teams,
@@ -405,9 +434,15 @@ def _capture_snapshot(server, query, transport, secret_key):
     context = server.current_request_auth_context()
     if not is_db_auth_context(context) or not context.browser_session_id:
         raise BoardRouteError('board_unavailable', 409)
+    work_request, work_response = work_request_adapter.admit(
+        request.args if has_request_context() else MultiDict(), context,
+        sprint_id=str(query.sprint_id) if query.scope == 'sprint' else None)
+    if work_response is not None:
+        raise BoardWorkSelectorError(work_response)
+    roles = work_request.roles if work_request is not None else None
     authority, dashboard, group, raw_group, groups_revision, dashboard_revision = _load_authority(context, query)
     shape = _capture_shape(
-        server, query, transport, dashboard, group, raw_group, context=context,
+        server, query, transport, dashboard, group, raw_group, context=context, roles=roles,
     )
     fresh = server.current_request_auth_context()
     if not is_db_auth_context(fresh) or _auth_partition(fresh) != _auth_partition(context):
@@ -424,7 +459,13 @@ def _capture_snapshot(server, query, transport, secret_key):
         secret_key, workspace_id=context.workspace_id, site_id=context.cloud_id or context.site_url,
         user_id=context.user_id, department_id=query.department_id,
         shared_config_revisions={'groups': groups_revision, 'dashboard': dashboard_revision},
-        shared_config_content={'group': raw_group, 'dashboard': dashboard},
+        shared_config_content={
+            'group': raw_group, 'dashboard': dashboard,
+            **({'workConfiguration': {
+                'id': work_request.context.configuration_id, 'revision': work_request.context.revision,
+                'digest': work_request.context.digest, 'parent': roles.parent_clause()}}
+               if work_request is not None else {}),
+        },
         effective_projects=shape['projects'], project_access=[vars(value) for value in context.project_access],
         fields=shape['fields'], eligible_issue_types=shape['issueTypeIds'],
         components=shape['components'], teams=shape['teams'],
@@ -436,7 +477,8 @@ def _capture_snapshot(server, query, transport, secret_key):
         shape['issueTypeIds'], shape['fields']['epicLink'], shape['fields']['sprint'],
         shape['fields']['storyPoints'], shape['fields']['team'], shape['fields']['projectTrack'],
         shape['fields']['deliveryOwner'], scope_version, cohort, secret_key,
-        focused_column_id=shape['focused'],
+        focused_column_id=shape['focused'], work_request=work_request,
+        parent_clause=roles.parent_clause() if roles is not None else 'issuetype = Epic',
     )
 
 
@@ -687,6 +729,9 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
     peak = 0
     candidate_policy = None
     discovery_complete = False
+    work_roles = snapshot.work_request.roles if snapshot.work_request is not None else None
+    leaf_cohort = (eng_board.LeafCohort()
+                   if work_roles is not None and not work_roles.is_legacy and snapshot.components else None)
 
     def emit(frame_type, *, optional_candidate_bytes=None, **payload):
         nonlocal sequence
@@ -785,13 +830,26 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                     yield line
         elif snapshot.components:
             epics = []
-            for epics, component_index_complete in eng_board.iter_component_epic_batches(
+            if leaf_cohort is not None:
+                # New model: Components live on the Epic leaves. Membership is decided there, before
+                # any Initiative is admitted; Team leaves join the same cohort for Component-backed all-work.
+                component_batches = eng_board.iter_leaf_cohort_batches(
+                    search_page, projects=snapshot.projects, planning_type_ids=snapshot.issue_type_ids,
+                    components=snapshot.components,
+                    team_ids=snapshot.teams if snapshot.query.scope == 'all_work' else (),
+                    team_field_id=snapshot.team_field_id, parent_clause=snapshot.parent_clause,
+                    parent_fields=epic_fields, terminal_statuses=terminal_statuses,
+                    retention_days=snapshot.board['doneEpicRetentionDays'] or 28, cohort=leaf_cohort,
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot))
+            else:
+                component_batches = eng_board.iter_component_epic_batches(
                     search_page, projects=snapshot.projects, components=snapshot.components,
                     epic_fields=epic_fields, terminal_statuses=terminal_statuses,
                     retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
-                    counters=counters, cancel_check=lambda: _assert_current(snapshot)):
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot))
+            for epics, component_index_complete in component_batches:
                 final_membership = component_index_complete and not (
-                    snapshot.query.scope == 'all_work' and snapshot.teams
+                    snapshot.query.scope == 'all_work' and snapshot.teams and leaf_cohort is None
                 )
                 line = candidate_policy.offer(
                     epics, phase='component', phase_complete=component_index_complete,
@@ -802,7 +860,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         elif snapshot.query.scope == 'sprint':
             index_jql = eng_board.build_epic_index_jql(
                 snapshot.projects, (), terminal_statuses,
-                snapshot.board['doneEpicRetentionDays'] or 28,
+                snapshot.board['doneEpicRetentionDays'] or 28, snapshot.parent_clause,
             )
             epics = eng_board.strict_search(
                 search_page, index_jql, epic_fields, counters=counters,
@@ -810,7 +868,8 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
             )
         else:
             epics = []
-        if _candidate_updates is None and snapshot.query.scope == 'all_work' and snapshot.teams:
+        if (_candidate_updates is None and snapshot.query.scope == 'all_work' and snapshot.teams
+                and leaf_cohort is None):
             for epics, team_index_complete in eng_board.iter_team_epic_batches(
                     search_page, projects=snapshot.projects,
                     issue_type_ids=snapshot.issue_type_ids, team_ids=snapshot.teams,
@@ -819,7 +878,8 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                     retention_days=snapshot.board['doneEpicRetentionDays'] or 28,
                     team_field_id=snapshot.team_field_id,
                     epic_link_field_id=snapshot.epic_link_field_id,
-                    counters=counters, cancel_check=lambda: _assert_current(snapshot)):
+                    counters=counters, cancel_check=lambda: _assert_current(snapshot),
+                    parent_clause=snapshot.parent_clause):
                 line = candidate_policy.offer(
                     epics, phase='team', phase_complete=team_index_complete,
                     final=team_index_complete,
@@ -856,6 +916,9 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         team_ids = snapshot.teams if snapshot.query.scope == 'sprint' and not snapshot.components else ()
 
         def child_jql(keys):
+            if leaf_cohort is not None:
+                # Only the admitted matching leaves are fetched: never their non-matching siblings.
+                return eng_board.build_leaf_key_jql(snapshot.projects, snapshot.issue_type_ids, keys)
             return eng_board.build_child_jql(
                 snapshot.projects, snapshot.issue_type_ids, keys,
                 epic_link_field_id=snapshot.epic_link_field_id,
@@ -902,7 +965,8 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                             except queue.Empty:
                                 pass
                 try:
-                    for batch in eng_board.split_epic_batches(keys, child_jql, child_fields):
+                    child_keys = leaf_cohort.leaf_keys_for(keys) if leaf_cohort is not None else keys
+                    for batch in eng_board.split_epic_batches(child_keys, child_jql, child_fields):
                         _assert_current(snapshot)
                         children.extend(eng_board.strict_search(
                             lambda payload: _search_page(server, snapshot, transport, payload, timeout),
@@ -1060,6 +1124,8 @@ def get_eng_board():
             return _unavailable()
         generation_id = secrets.token_urlsafe(24)
         _preflight_stream(snapshot, generation_id)
+    except BoardWorkSelectorError as error:
+        return error.response
     except BoardRouteError as error:
         return _unavailable() if error.code == 'board_unavailable' else _error(error.code, error.status)
     except AuthError:

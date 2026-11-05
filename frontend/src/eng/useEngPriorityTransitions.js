@@ -123,8 +123,8 @@ export function useEngPriorityTransitions({
         setPriorityErrorCode('');
     }, []);
 
-    const openPriorityControl = React.useCallback((issue, fallbackIssueType) => {
-        const target = buildCatchUpPriorityTargets(issue, fallbackIssueType);
+    const openPriorityControl = React.useCallback((issue, fallbackIssueType, issueKind) => {
+        const target = buildCatchUpPriorityTargets(issue, fallbackIssueType, issueKind);
         if (!target) return;
         setPriorityResult(null);
         setActivePriorityTarget(target);

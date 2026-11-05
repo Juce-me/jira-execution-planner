@@ -100,10 +100,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         return {'issueId': issue, 'rowKind': 'story', 'columnId': self.column['id'], 'value': value, 'baseRevision': base}
 
     def rows(self):
+        # Only columns every group-table revision has, so the read also works below the namespace revision.
+        schema, view = models.WorkspaceGroupReviewSchema, models.GroupSprintReviewView
         with db_engine.session_scope(self.url) as session:
-            schemas = session.query(models.WorkspaceGroupReviewSchema).all()
+            schemas = session.query(schema.group_id, schema.schema_revision, schema.columns).all()
             return ([(s.group_id, s.schema_revision, [c['id'] for c in s.columns]) for s in schemas],
-                    sorted((v.sprint_id, v.view_revision, v.layouts) for v in session.query(models.GroupSprintReviewView).all()))
+                    sorted(tuple(v) for v in session.query(view.sprint_id, view.view_revision, view.layouts).all()))
 
     def wait_until_blocked(self, count=1):
         """Wait until `count` other backends wait on a lock while touching the group schema table."""
@@ -135,12 +137,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         waiter = Thread(target=run, args=('second', second))
         original = review.apply_schema
 
-        def paused(columns, changes):
+        def paused(columns, changes, *args):
             if current_thread() is holder:
                 entered.set()
                 if not release.wait(8):
                     raise AssertionError('holder never released')
-            return original(columns, changes)
+            return original(columns, changes, *args)
 
         with patch.object(review, 'apply_schema', paused):
             holder.start()
@@ -288,12 +290,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         holder = Thread(target=run)
         original = review.apply_schema
 
-        def paused(columns, changes):
+        def paused(columns, changes, *args):
             if current_thread() is holder:
                 entered.set()
                 if not release.wait(hold):
                     raise AssertionError('holder never released')
-            return original(columns, changes)
+            return original(columns, changes, *args)
 
         with patch.object(review, 'apply_schema', paused):
             holder.start()
@@ -534,7 +536,10 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual({f['options'].get('ondelete') for t in GROUP_TABLES for f in insp.get_foreign_keys(t)}, {'CASCADE'})
         self.assertEqual({i['name']: tuple(i['column_names']) for i in insp.get_indexes('group_sprint_review_views')
                           if not i.get('duplicates_constraint')},
-                         {'ix_group_sprint_review_views_order': ('workspace_id', 'group_id', 'sprint_order')})
+                         {'ix_group_sprint_review_views_order': ('workspace_id', 'group_id', 'sprint_order'),
+                          'uq_group_sprint_review_view_legacy': ('workspace_id', 'group_id', 'sprint_id'),
+                          'uq_group_sprint_review_view_configuration': ('workspace_id', 'group_id', 'sprint_id', 'configuration_id'),
+                          'ix_group_sprint_review_views_quarter': ('workspace_id', 'group_id', 'configuration_id', 'quarter_ordinal')})
 
     def test_check_constraints_and_cascade_are_enforced(self):
         from sqlalchemy.exc import IntegrityError
@@ -592,6 +597,123 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual(legacy_rows(), expected)
         self.assertEqual(self.rows(), ([], []))
 
+    # Isolated review namespaces (revision 20261030_0022). Opt-in: needs the approved disposable PostgreSQL target.
+    CFG = 'cfg-2027q1'
+    TYPE_MAP = {'epic': ('10001', 1), 'initiative': ('10002', 2)}
+
+    def search_typed(self, payload, **kwargs):
+        ids = payload['jql'].split('(')[1].split(')')[0].split(',')
+        level = lambda i: ('10002', 2) if i.startswith('9') else ('10001', 1)
+        return Mock(status_code=200, json=lambda: {'issues': [
+            {'id': i, 'fields': {'issuetype': {'id': level(i)[0], 'name': 'X', 'hierarchyLevel': level(i)[1], 'subtask': False}}}
+            for i in ids], 'isLast': True})
+
+    def nsave(self, schemas=None, cells=None, base=0, sprint='17', view=None, cfg=None, ordinal=8104):
+        payload = {'groupId': 'group-x', 'baseSchemaRevision': base, 'schemaChanges': schemas or [], 'cellChanges': cells or []}
+        if view is not None:
+            payload['baseViewRevision'] = view
+        return review.save_review(self.context, sprint, payload, self.url, self.search_typed, configuration_id=cfg or self.CFG,
+                                  quarter_ordinal=ordinal, type_map=self.TYPE_MAP)
+
+    def epic_column(self, label='Child'):
+        return {'id': str(uuid.uuid4()), 'rowKind': 'epic', 'label': label, 'type': 'number', 'aggregation': 'sum'}
+
+    def namespace_rows(self):
+        with db_engine.session_scope(self.url) as session:
+            return sorted((s.configuration_id or '', s.schema_revision, len(s.columns))
+                          for s in session.query(models.WorkspaceGroupReviewSchema).all())
+
+    def seed_definitions(self, count):
+        """A committed Legacy schema row holding `count` archived definitions (the fence row)."""
+        archived = [{'id': str(uuid.uuid4()), 'rowKind': 'story', 'label': f'Old{n}', 'type': 'number', 'aggregation': 'sum',
+                     'archived': True, 'order': n, 'after': None} for n in range(count)]
+        with db_engine.session_scope(self.url) as session:
+            session.add(models.WorkspaceGroupReviewSchema(workspace_id=self.workspace_id, group_id='group-x', schema_revision=1, columns=archived))
+
+    def test_two_first_creates_in_different_namespaces_serialize_on_the_fence_without_deadlock(self):
+        legacy, quarterly = self.new_column('Legacy'), self.epic_column()
+        first, second = self.overlap(lambda: self.add(legacy),
+                                     lambda: self.nsave([{'action': 'add', 'column': quarterly}]))
+        self.assertNotIsInstance(first, Exception)
+        self.assertNotIsInstance(second, Exception, second)
+        self.assertEqual(self.namespace_rows(), [('', 1, 1), (self.CFG, 1, 1)])
+
+    def test_a_namespace_writer_blocks_a_legacy_writer_in_the_same_order_and_both_commit(self):
+        legacy, quarterly = self.new_column('Legacy'), self.epic_column()
+        first, second = self.overlap(lambda: self.nsave([{'action': 'add', 'column': quarterly}]), lambda: self.add(legacy))
+        self.assertNotIsInstance(first, Exception, first)
+        self.assertNotIsInstance(second, Exception, second)
+        self.assertEqual(self.namespace_rows(), [('', 1, 1), (self.CFG, 1, 1)])
+
+    def test_the_group_definition_cap_holds_across_namespaces_under_a_race(self):
+        self.seed_definitions(239)
+        first, second = self.overlap(lambda: self.nsave([{'action': 'add', 'column': self.epic_column('A')}]),
+                                     lambda: self.save(schemas=[{'action': 'add', 'column': self.new_column('B')}], base=1))
+        outcomes = [first, second]
+        self.assertEqual(sum(isinstance(o, review.ReviewError) and o.code == 'review_schema_limit' for o in outcomes), 1, outcomes)
+        self.assertEqual(sum(not isinstance(o, Exception) for o in outcomes), 1, outcomes)
+        self.assertEqual(sum(count for _, _, count in self.namespace_rows()), 240)
+
+    def test_the_view_cap_holds_across_namespaces_under_a_race(self):
+        with db_engine.session_scope(self.url) as session:
+            for n in range(499):
+                cfg = None if n % 2 else self.CFG
+                session.add(models.GroupSprintReviewView(workspace_id=self.workspace_id, group_id='group-x', sprint_id=str(1000 + n),
+                                                         configuration_id=cfg, quarter_ordinal=None if cfg is None else 8104,
+                                                         sprint_order=review.sprint_order(str(1000 + n)), layouts={}, view_revision=1))
+        layout = {'action': 'layout', 'rowKind': 'epic', 'order': ['status'], 'hidden': []}
+        first, second = self.overlap(lambda: self.nsave([layout], view=0, sprint='5000'),
+                                     lambda: self.save(schemas=[self.layout()], base=0, view=0, sprint='5001'))
+        outcomes = [first, second]
+        self.assertEqual(sum(isinstance(o, review.ReviewError) and o.code == 'review_view_limit' for o in outcomes), 1, outcomes)
+        self.assertEqual(sum(not isinstance(o, Exception) for o in outcomes), 1, outcomes)
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 500)
+
+    def test_a_changed_remote_revision_conflicts_within_the_namespace_only(self):
+        column = self.epic_column()
+        self.nsave([{'action': 'add', 'column': column}])
+        first, second = self.overlap(lambda: self.nsave([{'action': 'rename', 'columnId': column['id'], 'label': 'One'}], base=1),
+                                     lambda: self.nsave([{'action': 'rename', 'columnId': column['id'], 'label': 'Two'}], base=1))
+        self.assertEqual(first['schemaRevision'], 2)
+        self.assert_conflict(second, schemaConflict=True, viewConflict=False, cellConflicts=[])
+        self.assertEqual(self.add()['schemaRevision'], 1)
+
+    def test_the_partial_unique_indexes_hold_on_postgresql(self):
+        from sqlalchemy.exc import IntegrityError
+        self.add()
+        self.nsave([{'action': 'add', 'column': self.epic_column()}])
+        for cfg in (None, self.CFG):
+            with self.subTest(cfg=cfg), self.assertRaises(IntegrityError), db_engine.session_scope(self.url) as session:
+                session.add(models.WorkspaceGroupReviewSchema(workspace_id=self.workspace_id, group_id='group-x',
+                                                              configuration_id=cfg, schema_revision=0, columns=[]))
+                session.flush()
+
+    def test_the_namespace_migration_retains_legacy_rows_and_downgrade_refuses_new_data(self):
+        self.add()
+        self.save([self.cell('101')])
+        self.save(schemas=[self.layout()], view=0)
+        legacy_before = self.rows()
+        engine = db_engine.get_engine(self.url)
+        with engine.connect() as conn:
+            self.assertEqual(conn.execute(text('SELECT count(*) FROM workspace_group_review_schemas WHERE configuration_id IS NOT NULL')).scalar(), 0)
+        self.nsave([{'action': 'add', 'column': self.epic_column()}])
+        def shape():
+            with db_engine.get_engine(self.url).connect() as conn:
+                return sorted(r[0] for r in conn.execute(text(
+                    "SELECT indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename LIKE '%review%'")).all())
+        indexes = shape()
+        with self.assertRaisesRegex(RuntimeError, 'Refusing to downgrade'):
+            command.downgrade(self.config, '20261028_0021')
+        self.assertEqual(self.stamped(), '20261030_0022')
+        self.assertEqual(shape(), indexes)
+        with db_engine.session_scope(self.url) as session:
+            session.execute(text('DELETE FROM workspace_group_review_schemas WHERE configuration_id IS NOT NULL'))
+        command.downgrade(self.config, '20261028_0021')
+        self.assertEqual(self.rows(), legacy_before)
+        command.upgrade(self.config, 'head')
+        self.assertEqual(self.rows(), legacy_before)
+
     # Automatic adoption on upgrade (revision 20261023_0020)
     def revision_module(self):
         spec = importlib.util.spec_from_file_location('adopt_revision_0020_pg', REVISION_FILE)
@@ -636,7 +758,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         column = self.seed_review_legacy()
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261029_0022')
+        self.assertEqual(self.stamped(), '20261030_0022')
         self.assertEqual(self.rows(), ([('group-x', 1, [column['id']])],
                                        [('17', 1, {'story': {'order': ['status', column['id']], 'hidden': []}})]))
         loaded = review.load_review(self.context, '17', 'group-x', self.url)
@@ -660,7 +782,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual(self.stamped(), PARENT_REVISION)
         self.assertEqual(self.rows(), ([], []))
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261029_0022')
+        self.assertEqual(self.stamped(), '20261030_0022')
         self.assertEqual(len(self.rows()[0]), 1)
 
     def test_a_later_workspace_failure_rolls_back_the_earlier_workspace(self):
@@ -683,8 +805,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             conn.close()
         self.assertEqual(self.stamped(), PARENT_REVISION)
         with db_engine.session_scope(self.url) as session:  # the first workspace's adoption was rolled back with the failure
-            self.assertEqual(session.query(models.WorkspaceGroupReviewSchema).count(), 0)
-            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM workspace_group_review_schemas')).scalar(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_sprint_review_views')).scalar(), 0)
         command.upgrade(self.config, 'head')
         with db_engine.session_scope(self.url) as session:
             self.assertEqual(sorted(row.workspace_id for row in session.query(models.WorkspaceGroupReviewSchema).all()),
@@ -723,6 +845,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
 
     def test_session_timeouts_are_restored_inside_the_transaction_and_set_for_the_step(self):
         revision = self.revision_module()
+        self.rewind()  # the revision runs against its own schema: 0022 later replaces its conflict target
         self.seed_review_legacy()
         seen = {}
         original = revision._lock_legacy
@@ -746,7 +869,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         self.seed_review_legacy(column=self.legacy_column(archived=True), plain=True)  # an archive intent plans nothing
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261029_0022')
+        self.assertEqual(self.stamped(), '20261030_0022')
         self.assertEqual(self.rows(), ([], []))
 
     def test_the_revision_takes_the_same_schema_row_lock_as_the_app(self):
@@ -763,6 +886,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                 review._locked_schema(session, SimpleNamespace(workspace_id=self.workspace_id), 'app-group')
             app = list(statements)
             del statements[:]
+            self.rewind()  # the revision runs against its own schema: 0022 later replaces its conflict target
             with engine.begin() as conn:
                 revision._locked_schema(conn, self.workspace_id, 'rev-group')
             ours = list(statements)
@@ -776,8 +900,11 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                     'workspace_group_review_schemas.workspace_id = %(' in select.replace('$1', '%(')
                     or 'workspace_id = ' in select, select.endswith('for update'))
 
-        self.assertEqual(shape(ours), shape(app))
-        self.assertEqual(shape(app)[0], '(workspace_id, group_id) do nothing')
+        # Same insert-then-lock of the one schema row. The conflict target differs by era: the revision names
+        # its own unique constraint; since 0022 the app names none, so the partial unique indexes arbitrate.
+        self.assertEqual(shape(ours)[1:], shape(app)[1:])
+        self.assertEqual(shape(ours)[0], '(workspace_id, group_id) do nothing')
+        self.assertEqual(shape(app)[0], 'do nothing')
 
     def test_a_well_formed_downgrade_below_the_group_tables_adopts_again(self):
         column = self.seed_review_legacy()

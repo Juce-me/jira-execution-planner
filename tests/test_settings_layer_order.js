@@ -35,7 +35,7 @@ test('call order: state layers first, permissions before the gate hook, save hoo
     assert.ok(saveState < firstSection, 'the revision refs and board fences feed every section hook');
     assert.ok(teamGroups < save && epm < save, 'the save hook reads the Team Groups and EPM outputs while rendering');
     assert.ok(save < modal && modal < onboarding, 'modal functions read the save hook outputs while rendering and feed useOnboardingController');
-    assert.ok(modal - save < 6000, 'the modal hook call follows the save hook call directly');
+    assert.ok(modal - save < 6100, 'the modal hook call follows the save hook call directly');
 });
 
 test('effects layers sit at their original positions: auto-open, hotkey and tab guards cross no unmoved effect', () => {

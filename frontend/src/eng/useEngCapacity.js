@@ -26,6 +26,7 @@ import {
 import { buildExcludedProjectStats, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats } from './planningSelectionStats.js';
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
 import { fetchCapacity as requestCapacity } from '../api/capacityApi.js';
+import { isCombinedWorkModel, normalizeWorkModel } from './engWorkModel.js';
 
 export function useEngCapacityState() {
     const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' }));
@@ -54,7 +55,7 @@ export function useEngCapacityState() {
 }
 
 export function useEngCapacity({
-    scope,
+    scope, workModel: workModelInput,
     showPlanning, capacityEnabled, showProduct, showTech,
     selectedTasksList, selectedPlanningTasksList, selectedSP, getTeamInfo,
     normalizeStatus, normalizeEpicKey, BACKEND_URL, loadEpochRef,
@@ -66,6 +67,8 @@ export function useEngCapacity({
     // #323 design A: the stored team number ({sprintId, teamId, value} or null) and the Jira read lifecycle that gates it.
     plannedCapacity = null, capacityLoading = false, capacityReadError = '', capacityDataStale = false,
 }) {
+    const workModel = normalizeWorkModel(workModelInput);
+    const combinedLane = isCombinedWorkModel(workModel);
     const { activeGroupId, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamOptions, capacityTasks, techProjectKeys, excludedEpicSet, adHocEpicSet, adHocEpicSignature } = scope;
     const selectedTeamStats = React.useMemo(() => {
         if (!showPlanning) return {};
@@ -74,41 +77,41 @@ export function useEngCapacity({
 
     const selectedProjectStats = React.useMemo(() => {
         if (!showPlanning) return {};
-        return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
-    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+        return buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet, workModel);
+    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature, workModel]);
 
     const selectedTeamProjectStats = React.useMemo(() => {
         if (!showPlanning) return {};
-        return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
-    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+        return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet, workModel);
+    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature, workModel]);
 
     // Ad Hoc story points already counted inside the PRODUCT bucket, surfaced
     // separately so the split bar can report the Product Ad Hoc portion.
     const selectedAdHocProductSP = React.useMemo(() => {
         if (!showPlanning || adHocEpicSet.size === 0) return 0;
         return selectedPlanningTasksList.reduce((sum, task) => {
-            if (classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType !== 'ad_hoc') {
+            if (classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel }).capacityType !== 'ad_hoc') {
                 return sum;
             }
             const sp = parseFloat(task.fields?.customfield_10004 || 0);
             return Number.isNaN(sp) ? sum : sum + sp;
         }, 0);
-    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+    }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature, workModel]);
 
     const excludedProjectStats = React.useMemo(() => {
         if (!showPlanning) return {};
-        return buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
-    }, [showPlanning, selectedTasksList, excludedEpicSet, techProjectKeys]);
+        return buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey, workModel);
+    }, [showPlanning, selectedTasksList, excludedEpicSet, techProjectKeys, workModel]);
 
     const capacitySplit = React.useMemo(() => ({ product: 0.7, tech: 0.3 }), []);
-    const capacityMultiplier = showProduct && showTech
+    const capacityMultiplier = combinedLane || (showProduct && showTech)
         ? 1
         : showProduct
             ? capacitySplit.product
             : showTech
                 ? capacitySplit.tech
                 : 1;
-    const capacityShareLabel = getCapacityShareLabel({ showProduct, showTech, capacitySplit });
+    const capacityShareLabel = getCapacityShareLabel({ showProduct: combinedLane || showProduct, showTech: combinedLane || showTech, capacitySplit });
 
     const teamCapacityStats = React.useMemo(() => {
         return buildTeamCapacityStats({
@@ -118,9 +121,10 @@ export function useEngCapacity({
             normalizeStatus,
             getTeamInfo,
             techProjectKeys,
-            adHocEpicSet
+            adHocEpicSet,
+            workModel
         });
-    }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+    }, [showPlanning, capacityEnabled, capacityTasks, techProjectKeys, adHocEpicSet, adHocEpicSignature, workModel]);
 
     const teamCapacityEntries = React.useMemo(() => {
         return buildTeamCapacityEntries(teamCapacityStats);
@@ -374,7 +378,8 @@ export function useEngCapacity({
             getTeamNetCapacity,
             capacitySplit,
             showProduct,
-            showTech
+            showTech,
+            workModel
         });
     }, [
         showPlanning,
@@ -383,6 +388,7 @@ export function useEngCapacity({
         selectedTeamProjectStats,
         showProduct,
         showTech,
+        workModel,
         capacitySplit,
         capacityByTeam,
         excludedCapacityByTeamId

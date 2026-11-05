@@ -89,6 +89,7 @@ export default function EpmSettings(props) {
         epmLabelPrefixMask,
         deleteEpmProjectRow,
         hasSessionRemovedEpmProjects,
+        workHierarchy = null,
     } = props;
     const rootGoalDisplay = selectedEpmRootGoal
         ? getEpmSubGoalDisplayParts(selectedEpmRootGoal)
@@ -133,6 +134,16 @@ export default function EpmSettings(props) {
                                                     <div className="group-pane-title">EPM scope</div>
                                                     <div className="group-pane-subtitle">Choose the Jira Home main goal, child goals, and label prefix used for EPM project mapping.</div>
                                                 </div>
+                                                {workHierarchy && (
+                                                    <div className="group-config-card" data-epm-work-hierarchy={workHierarchy.quarter}>
+                                                        <div className="team-selector-label">Work hierarchy for {workHierarchy.quarter}</div>
+                                                        <div className="group-field-helper">
+                                                            {workHierarchy.configurationName || 'This configuration'} uses the workspace hierarchy:
+                                                            {' '}{[workHierarchy.initiativeName, workHierarchy.epicName].filter(Boolean).join(' \u203a ') || 'not set'}.
+                                                            {' '}Read-only here; your saved issue-type choices are kept for other quarters.
+                                                        </div>
+                                                    </div>
+                                                )}
                                                 <div className="group-config-card epm-scope-card">
                                                     <div className="epm-scope-card-row">
                                                         <div className="group-projects-subsection">

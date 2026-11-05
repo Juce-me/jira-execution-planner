@@ -5,6 +5,7 @@ export default function EngModeControl({
     activeMode,
     isCompletedSprintSelected,
     onChange,
+    scenarioAvailable = true,
     selectedSprint,
 }) {
     return (
@@ -32,12 +33,13 @@ export default function EngModeControl({
                     label: 'Statistics',
                     title: 'Show sprint statistics',
                 },
-                {
+                // Locked Scenario (non-admin, workspace switch off) has no entry at all.
+                ...(scenarioAvailable ? [{
                     value: 'scenario',
                     label: 'Scenario',
                     disabled: !selectedSprint || isCompletedSprintSelected,
                     title: 'Show scenario planner'
-                }
+                }] : [])
             ]}
         />
     );

@@ -42,9 +42,10 @@ def quote_jql_value(value):
     return '"' + text.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
-def build_subtasks_jql(parent_key, sprint):
+def build_subtasks_jql(parent_key, sprint, sprint_clause=None):
+    """``sprint_clause`` is the admitted configuration's Sprint predicate; default is the Legacy name."""
     sprint_text = normalize_sprint_id(sprint)
-    return f"parent = {quote_jql_value(parent_key)} AND Sprint = {sprint_text} ORDER BY updated DESC"
+    return f"parent = {quote_jql_value(parent_key)} AND {sprint_clause or f'Sprint = {sprint_text}'} ORDER BY updated DESC"
 
 
 def fetch_subtask_issues_by_jql(jql, fields_list, *, search_request, context=None, max_results=500, log_warning_fn=None):

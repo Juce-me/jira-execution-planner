@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { readPendingAuthenticationRequired } from '../api/authRequired.js';
 import { testJiraConnection } from '../api/configApi.js';
-import { ADMIN_SETTINGS_TAB_IDS, DEPARTMENT_SETTINGS_TAB_IDS, SHARED_CONFIGURATION_TAB_IDS } from './settingsTabIds.js';
+import { ADMIN_SETTINGS_TAB_IDS, DEPARTMENT_SETTINGS_TAB_IDS, SHARED_CONFIGURATION_TAB_IDS, adminTabIdsFor, effectiveAdminTab } from './settingsTabIds.js';
 
 export function useSettingsModalState() {
     const [adminSettingsTab, setAdminSettingsTab] = useState('scope');
@@ -43,6 +43,7 @@ export function useSettingsModal({
     canEditSharedConfiguration,
     departmentSettingsTab,
     discardEpmViewPreference,
+    discardWorkConfigDraft = () => {},
     epmConfigBaselineRef,
     epmConfigSaving,
     epmViewPreferenceDirty,
@@ -94,6 +95,7 @@ export function useSettingsModal({
     setShowGroupManage,
     trackSettingsAction,
     userCanEditSettings,
+    workConfigMode = 'legacy',
 }) {
     const openGroupManage = (tab = preferredSettingsTab) => {
         setGroupManageTab(tab);
@@ -143,6 +145,7 @@ export function useSettingsModal({
 
     const discardGroupDraftChanges = () => {
         discardEpmViewPreference();
+        discardWorkConfigDraft();
         if (isEpmConfigDirty) {
             try {
                 setEpmConfigDraft(JSON.parse(epmConfigBaselineRef.current || '{}'));
@@ -237,8 +240,8 @@ export function useSettingsModal({
     const handleAdminSettingsTabKeyDown = (event) => {
         handleSettingsSubTabKeyDown(
             event,
-            ['scope', 'source', 'mapping', 'capacity', 'priorityWeights', ...(adminAccessAvailable ? ['access'] : []), ...(performanceAdminAvailable ? ['performance'] : [])],
-            adminSettingsTab,
+            adminTabIdsFor(workConfigMode, { accessAvailable: adminAccessAvailable, performanceAvailable: performanceAdminAvailable }),
+            effectiveAdminTab(workConfigMode, adminSettingsTab),
             selectAdminSettingsTab,
             'admin-settings'
         );
@@ -309,7 +312,7 @@ export function useSettingsModal({
         if (userCanEditSettings !== true) return;
         trackSettingsAction('scope', 'open', { source_surface: 'board' });
         setShowGroupManage(true);
-        selectAdminSettingsTab('scope');
+        selectAdminSettingsTab(effectiveAdminTab(workConfigMode, 'scope'));
     };
 
     return {

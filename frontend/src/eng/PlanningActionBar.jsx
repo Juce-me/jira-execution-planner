@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
 export function PlanningLayoutToggle({ planningLayout = 'list', onTogglePlanningLayout }) {
     return <button type="button" className="planning-action-button planning-icon-button planning-layout-toggle" onClick={onTogglePlanningLayout}
@@ -38,7 +39,9 @@ export default function PlanningActionBar({
     statusTransitionError = '',
     statusTransitionErrorCode = '',
     statusTransitionResult = null,
+    entityNames = null,
 }) {
+    const childWords = lowerEntityWord((entityNames || resolveEntityNames()).childPlural);
     // Feedback only: the status change itself is triggered from the clicked status
     // pill/menu, never from a button in this action bar.
     const statusFeedback = (() => {
@@ -60,7 +63,7 @@ export default function PlanningActionBar({
                 className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
                 onClick={onToggleAccepted}
                 disabled={!hasVisibleTasks}
-                title="Include all Accepted and In Progress stories for the current view"
+                title={`Include all Accepted and In Progress ${childWords} for the current view`}
             >
                 Accepted
             </button>
@@ -68,7 +71,7 @@ export default function PlanningActionBar({
                 className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
                 onClick={onToggleTodo}
                 disabled={!hasVisibleTasks}
-                title="Include all To Do / Pending stories for the current view"
+                title={`Include all To Do / Pending ${childWords} for the current view`}
             >
                 To Do
             </button>
@@ -76,7 +79,7 @@ export default function PlanningActionBar({
                 className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
                 onClick={onTogglePostponed}
                 disabled={!hasPostponedTasks}
-                title="Include all Postponed stories for the current view"
+                title={`Include all Postponed ${childWords} for the current view`}
             >
                 Postponed
             </button>
@@ -84,7 +87,7 @@ export default function PlanningActionBar({
                 className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
                 onClick={onToggleAwaitingValidation}
                 disabled={!hasAwaitingValidationTasks}
-                title="Include all Awaiting Validation stories for the current view"
+                title={`Include all Awaiting Validation ${childWords} for the current view`}
             >
                 Awaiting Val.
             </button>
@@ -116,8 +119,8 @@ export default function PlanningActionBar({
                 className="planning-action-button planning-icon-button"
                 onClick={onOpenSelectedInJira}
                 disabled={selectedVisibleCount === 0 || !jiraUrl}
-                title="Open selected stories matching the current filters in Jira (tip: bulk move them to Accepted)"
-                aria-label="Open selected stories in Jira"
+                title={`Open selected ${childWords} matching the current filters in Jira (tip: bulk move them to Accepted)`}
+                aria-label={`Open selected ${childWords} in Jira`}
             >
                 <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
                     <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />

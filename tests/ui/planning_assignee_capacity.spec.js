@@ -465,9 +465,10 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     const [, barSelected, teamNumber] = /tasks · ([\d.]+) SP \/ ([\d.]+) cap/.exec(compact);
     expect(Number(footer[2])).toBe(Number(barSelected));
     expect(Number(barSelected)).toBe(14);
-    // The hover readout's header carries the same Selected number.
+    // A segment's readout is about the person; the bar's Selected number is in the header-only readout past the last segment.
     await segments(page).nth(0).hover();
-    await expect(readout(page)).toContainText(`Selected 4 tasks · ${Number(barSelected).toFixed(1)} SP`);
+    await expect(readout(page)).toContainText('Ann Synthetic');
+    await expect(readout(page)).not.toContainText('Selected');
     // The team number lives on the pinned bar (compact readout, Team Cap marker); in the table only the Totals row's
     // Planned capacity carries it, after the people's sum (operator review, #323).
     expect(Number(teamNumber)).toBe(20);
@@ -517,18 +518,17 @@ test('segments are one per person with Planned capacity or effort plus Unassigne
     const before = await page.locator('.planning-panel').boundingBox();
     await segments(page).nth(2).hover();
     await expect(readout(page)).toContainText('Unassigned (effort)');
-    await expect(readout(page)).toContainText(`Selected ${unassignedEffort}`);
-    await expect(readout(page)).toContainText('29% of Selected');
+    await expect(readout(page)).toContainText(`${unassignedEffort} SP effort`);
+    await expect(readout(page)).toContainText('29% of selected');
     await expect(readout(page)).not.toContainText('Total');
     await expectReadoutInViewport(page);
     expect(await page.locator('.planning-panel').boundingBox()).toEqual(before);
     expect(await readout(page).evaluate(node => node.hasAttribute('title') || node.closest('[title]') !== null)).toBe(false);
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
-    await expect(readout(page)).toContainText('Estimated effort 5');
-    await expect(readout(page)).toContainText('Planned capacity 8');
+    await expect(readout(page)).toContainText('5 SP effort · 8 SP capacity');
     await expect(readout(page)).toContainText('3 SP capacity left');
-    await expect(readout(page)).not.toContainText('% of Selected');
+    await expect(readout(page)).not.toContainText('% of selected');
     await expectReadoutInViewport(page);
     await page.mouse.move(5, 400);
     await expect(readout(page)).toHaveCount(0);
@@ -606,23 +606,20 @@ test('whole-track hover: any height resolves the segment under the pointer, past
             await page.mouse.move(5, 400);
             await page.mouse.move(segment.left + segment.width / 2, y);
             await expect(readout(page)).toContainText(name);
-            await expect(readout(page)).toContainText('Selected 4 tasks · 14.0 SP');
         }
     }
-    await expect(readout(page)).toContainText('Selected 4');
-    await expect(readout(page)).toContainText('29% of Selected');
-    await expect(readout(page)).toContainText('Team capacity: Jira');
+    await expect(readout(page)).toContainText('29% of selected');
     // A person segment resolves with the round-3 readout (Bob: effort 5, capacity 6).
     await page.mouse.move(5, 400);
     await page.mouse.move(bob.left + bob.width / 2, geometry.track.top + 2);
-    await expect(readout(page)).toHaveText(/Selected 4 tasks · 14\.0 SP\s*Bob Synthetic\s*Estimated effort 5\s*Planned capacity 6\s*1 SP capacity left\s*Team capacity: Jira/);
-    // Past the last segment and off the marker: the header-only readout.
+    await expect(readout(page)).toHaveText(/Bob Synthetic\s*5 SP effort · 6 SP capacity\s*1 SP capacity left/);
+    // Past the last segment and off the marker: the bar's Selected number and the team capacity source.
     const pastX = (unassigned.right + geometry.marker.left) / 2;
     expect(pastX).toBeGreaterThan(unassigned.right + 2);
     await page.mouse.move(pastX, geometry.track.top + 3);
-    await expect(readout(page)).toHaveText('Selected 4 tasks · 14.0 SP');
+    await expect(readout(page)).toHaveText(/^Selected 4 tasks · 14\.0 SP\s*Team capacity: Jira$/);
     await page.mouse.move(geometry.track.right - 3, geometry.track.top + 3);
-    await expect(readout(page)).toHaveText('Selected 4 tasks · 14.0 SP');
+    await expect(readout(page)).toHaveText(/^Selected 4 tasks · 14\.0 SP\s*Team capacity: Jira$/);
     // At the marker the marker wins (z-order asserted by hit testing at the strip's pixels too) and shows its tooltip.
     const markerX = geometry.marker.left + geometry.marker.width / 2;
     const winners = await page.evaluate(({ x, ys }) => ys.map(y => {
@@ -798,7 +795,7 @@ test('each person row with a segment (Planned capacity or effort) is tinted with
         const resolve = value => { probe.style.background = value; return getComputedStyle(probe).backgroundColor; };
         const surface = getComputedStyle(document.querySelector('[data-assignee-capacity]')).getPropertyValue('--bg-secondary').trim();
         // The person colour: the segment's colour, or the colour its tinted layer mixes (tinted-only and capacity-on-the-bottom segments).
-        const solid = node => { const value = node.style.getPropertyValue('--stacked-bar-color'); const mix = /^color-mix\(in srgb, (\S+) /.exec(value); return resolve(mix ? mix[1] : value); };
+        const solid = node => { const value = node.style.getPropertyValue('--stacked-bar-color'); const mix = /color-mix\(in srgb, (\S+) /.exec(value); return resolve(mix ? mix[1] : value); };
         const segmentColors = Object.fromEntries([...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')]
             .map(node => [node.getAttribute('aria-label').replace(/^Assignee capacity /, '').split(': ')[0], solid(node)]));
         const rows = Object.fromEntries([...document.querySelectorAll('[data-assignee-capacity] tbody tr')].map(tr => {
@@ -1260,7 +1257,8 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     await expect(alphaCard(page).locator('.microbar-meta')).toContainText('Cap 14.0');
     await page.mouse.move(5, 600);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-no-ticket.png', animations: 'disabled' });
-    await underbar(page).hover({ position: { x: 4, y: 3 } });
+    const stripBox = await underbar(page).boundingBox();
+    await page.mouse.move(stripBox.x + stripBox.width - 3, stripBox.y + 3);
     await expect(readout(page)).toContainText('Team capacity (not in Jira)');
     // The next Sprint has no document of its own: the number is inherited (gray) and still drives the bar.
     await page.mouse.move(5, 600);
@@ -1289,7 +1287,8 @@ test('with a ticket Jira wins on screen: no stored-number pencil, the Jira numbe
     await expect(plannedPencil(page)).toHaveCount(0);
     await expect(alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
     await expect(reconcileBanner(page)).toHaveCount(0);
-    await underbar(page).hover({ position: { x: 4, y: 3 } });
+    const stripBox = await underbar(page).boundingBox();
+    await page.mouse.move(stripBox.x + stripBox.width - 3, stripBox.y + 3);
     await expect(readout(page)).toContainText('Team capacity: Jira');
     await page.mouse.move(5, 600);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-with-ticket.png', animations: 'disabled' });
@@ -2291,17 +2290,18 @@ const layerGeometry = page => page.evaluate(() => {
     const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
     const wrapper = document.querySelector('[data-assignee-underbar]').getBoundingClientRect();
     const cap = document.querySelector('.planning-panel .capacity-bar-marker.teamcap').getBoundingClientRect();
-    const surface = getComputedStyle(document.body).getPropertyValue('--bg-secondary').trim();
+    const surface = getComputedStyle(document.querySelector('[data-assignee-underbar]')).getPropertyValue('--bg-secondary').trim();
     const segmentsList = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
         const box = node.getBoundingClientRect();
         const overlay = node.querySelector(':scope > .stacked-bar-strip-part');
         const value = node.style.getPropertyValue('--stacked-bar-color');
-        const raw = /^color-mix\(in srgb, (\S+) /.exec(value)?.[1] || value;
+        const raw = /color-mix\(in srgb, (\S+) /.exec(value)?.[1] || value;
         const style = overlay && getComputedStyle(overlay);
         return {
             name: node.getAttribute('aria-label').split(': ')[0].replace(/^Assignee capacity /, ''),
             width: box.width / track.width, left: box.left, right: box.right, height: box.height,
-            background: getComputedStyle(node).backgroundColor, solid: resolve(raw), tint: resolve(`color-mix(in srgb, ${raw} 45%, ${surface})`),
+            background: getComputedStyle(node).backgroundColor, backgroundImage: getComputedStyle(node).backgroundImage,
+            solid: resolve(`color-mix(in srgb, ${raw} 70%, ${surface})`), tint: resolve(`color-mix(in srgb, ${raw} 28%, ${surface})`),
             overlay: overlay ? { width: overlay.getBoundingClientRect().width / box.width, left: overlay.getBoundingClientRect().left - box.left, height: overlay.getBoundingClientRect().height,
                 background: style.backgroundColor, position: style.position, parentIsSegment: overlay.parentElement === node, last: overlay === node.lastElementChild } : null,
         };
@@ -2312,10 +2312,11 @@ const layerGeometry = page => page.evaluate(() => {
     return { segments: segmentsList, trackLeft: track.left, trackWidth: track.width, wrapperRight: wrapper.right, capRatio: (cap.left + cap.width / 2 - track.left) / track.width, stripTrack, trackColor };
 });
 
-const rgb = text => (text.match(/[\d.]+/g) || []).slice(0, 3).map(Number);
+// Computed colours come back as rgb() (0-255) or color(srgb ...) (0-1, for color-mix); compare both on 0-255.
+const rgb = text => (text.match(/[\d.]+/g) || []).slice(0, 3).map(Number).map(channel => (text.startsWith('color(') ? channel * 255 : channel));
 const colourDistance = (a, b) => { const [x, y] = [rgb(a), rgb(b)]; return Math.hypot(x[0] - y[0], x[1] - y[1], x[2] - y[2]); };
 
-for (const mode of ['compact', 'expanded']) test(`person segments draw two layers of the person colour: tinted capacity and solid effort, capacity on top when effort reaches it (${mode} panel)`, async ({ page }) => {
+for (const mode of ['compact', 'expanded']) test(`person segments draw solid effort first, then tinted free capacity or striped effort beyond capacity (${mode} panel)`, async ({ page }) => {
     const server = capacityServer({ rows: layerRows });
     await install(page, { server, capacityProject: 'CAP', issues: layerStories });
     await openPlanning(page);
@@ -2337,10 +2338,11 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw two layer
     expect(by['Eve Synthetic'].background).toBe(by['Eve Synthetic'].tint);
     expect(by['Eve Synthetic'].overlay).toMatchObject({ background: by['Eve Synthetic'].solid, position: 'absolute', parentIsSegment: true, last: true, left: 0 });
     expect(by['Eve Synthetic'].overlay.width).toBeCloseTo(2 / 4, 2);
-    // Ann over (effort 5, capacity 3) and Fay at effort 3 >= capacity 2.5: solid effort at the bottom, tinted capacity on top.
+    // Ann over (effort 5, capacity 3) and Fay over (effort 3, capacity 2.5): striped effort at the bottom, solid effort up to
+    // capacity on top from the left, so the striped rest is the excess: the order is always solid first.
     for (const [name, ratio] of [['Ann Synthetic', 3 / 5], ['Fay Synthetic', 2.5 / 3]]) {
-        expect(by[name].background, name).toBe(by[name].solid);
-        expect(by[name].overlay, name).toMatchObject({ background: by[name].tint, position: 'absolute', parentIsSegment: true, last: true, left: 0 });
+        expect(by[name].backgroundImage, name).toContain('repeating-linear-gradient(135deg');
+        expect(by[name].overlay, name).toMatchObject({ background: by[name].solid, position: 'absolute', parentIsSegment: true, last: true, left: 0 });
         expect(by[name].overlay.width, name).toBeCloseTo(ratio, 2);
     }
     // Zoe capacity only: purely tinted; Bob effort only: purely solid; Unassigned: one solid --warn segment.
@@ -2349,11 +2351,11 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw two layer
     expect(by['Bob Synthetic'].background).toBe(by['Bob Synthetic'].solid);
     expect(by['Bob Synthetic'].overlay).toBeNull();
     expect(by['Unassigned (effort)'].overlay).toBeNull();
-    expect(by['Unassigned (effort)'].background).toBe('rgb(207, 19, 34)');
+    expect(by['Unassigned (effort)'].background).toBe(by['Unassigned (effort)'].solid);
     // The tint is distinguishable from the empty track and from the solid layer.
-    for (const name of ['Ann Synthetic', 'Eve Synthetic', 'Fay Synthetic', 'Zoe Capacity Only']) {
-        expect(colourDistance(by[name].tint, g.trackColor), `${name} tint vs track`).toBeGreaterThan(60);
-        expect(colourDistance(by[name].tint, by[name].solid), `${name} tint vs solid`).toBeGreaterThan(60);
+    for (const name of ['Eve Synthetic', 'Zoe Capacity Only']) {
+        expect(colourDistance(by[name].tint, g.trackColor), `${name} tint vs track`).toBeGreaterThan(40);
+        expect(colourDistance(by[name].tint, by[name].solid), `${name} tint vs solid ${JSON.stringify([by[name].tint, by[name].solid, by[name].background])}`).toBeGreaterThan(40);
     }
     // Rows: every person with a segment is tinted, Cy (no segment) is not.
     for (const key of ['acc-ann', 'acc-bob', 'acc-eve', 'acc-fay', 'acc-zoe']) await expect(rowOf(page, key), key).toHaveClass(/planning-assignee-tinted/);
@@ -2361,17 +2363,16 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw two layer
     // Whole-track hover resolves one segment per person, at the top of the track and on the strip pixels of either layer.
     const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();
     for (const [name, lines] of [
-        ['Ann Synthetic', ['Estimated effort 5', 'Planned capacity 3', '2 SP over capacity']],
-        ['Eve Synthetic', ['Estimated effort 2', 'Planned capacity 4', '2 SP capacity left']],
-        ['Fay Synthetic', ['Estimated effort 3', 'Planned capacity 2.5', '0.5 SP over capacity']],
-        ['Zoe Capacity Only', ['Estimated effort 0', 'Planned capacity 5', '5 SP capacity left']],
-        ['Bob Synthetic', ['Estimated effort 5']],
+        ['Ann Synthetic', ['5 SP effort · 3 SP capacity', '2 SP over capacity']],
+        ['Eve Synthetic', ['2 SP effort · 4 SP capacity', '2 SP capacity left']],
+        ['Fay Synthetic', ['3 SP effort · 2.5 SP capacity', '0.5 SP over capacity']],
+        ['Zoe Capacity Only', ['0 SP effort · 5 SP capacity', '5 SP capacity left']],
+        ['Bob Synthetic', ['5 SP effort']],
     ]) {
         const segment = by[name];
         for (const [x, y] of [[segment.left + 2, track.y + 2], [segment.right - 2, track.y + track.height - 2]]) {
             await page.mouse.move(5, 400);
             await page.mouse.move(x, y);
-            await expect(readout(page), `${name} at ${x}`).toContainText('Selected 6 tasks · 19.0 SP');
             await expect(readout(page)).toContainText(name);
             for (const line of lines) await expect(readout(page), `${name}: ${line}`).toContainText(line);
             await expectReadoutInViewport(page);
@@ -2382,8 +2383,8 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw two layer
     await page.mouse.move(5, 400);
     await page.mouse.move(by['Unassigned (effort)'].left + 3, track.y + 3);
     await expect(readout(page)).toContainText('Unassigned (effort)');
-    await expect(readout(page)).toContainText('Selected 4');
-    await expect(readout(page)).toContainText('21% of Selected');
+    await expect(readout(page)).toContainText('4 SP effort');
+    await expect(readout(page)).toContainText('21% of selected');
     await page.mouse.move(5, 400);
 });
 

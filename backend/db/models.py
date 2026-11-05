@@ -851,12 +851,17 @@ class WorkspaceGroupReviewSchema(Base):
     """Department-group review column schema, one row per workspace and group."""
     __tablename__ = 'workspace_group_review_schemas'
     __table_args__ = (
-        UniqueConstraint('workspace_id', 'group_id', name='uq_group_review_schema_workspace_group'),
         CheckConstraint('schema_revision >= 0', name='ck_group_review_schema_revision'),
+        Index('uq_group_review_schema_legacy', 'workspace_id', 'group_id', unique=True,
+              postgresql_where=text('configuration_id IS NULL'), sqlite_where=text('configuration_id IS NULL')),
+        Index('uq_group_review_schema_configuration', 'workspace_id', 'group_id', 'configuration_id', unique=True,
+              postgresql_where=text('configuration_id IS NOT NULL'), sqlite_where=text('configuration_id IS NOT NULL')),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
     group_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    # NULL is the Legacy namespace; a non-null id is an opaque quarterly configuration namespace.
+    configuration_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     schema_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default='0')
     columns: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
 
@@ -866,13 +871,13 @@ class GroupReviewCell(Base):
     __tablename__ = 'group_review_cells'
     __table_args__ = (
         UniqueConstraint('schema_id', 'issue_id', 'row_kind', 'column_id', name='uq_group_review_cell_identity'),
-        CheckConstraint("row_kind IN ('epic', 'story')", name='ck_group_review_cell_row_kind'),
+        CheckConstraint("row_kind IN ('epic', 'story', 'initiative')", name='ck_group_review_cell_row_kind'),
         CheckConstraint('revision >= 1', name='ck_group_review_cell_revision'),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     schema_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('workspace_group_review_schemas.id', ondelete='CASCADE'), nullable=False)
     issue_id: Mapped[str] = mapped_column(String(128), nullable=False)
-    row_kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    row_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     column_id: Mapped[str] = mapped_column(String(36), nullable=False)
     value: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -882,16 +887,25 @@ class GroupSprintReviewView(Base):
     """Per-Sprint shared layouts; sprint_order is the id left-padded to 128 digits."""
     __tablename__ = 'group_sprint_review_views'
     __table_args__ = (
-        UniqueConstraint('workspace_id', 'group_id', 'sprint_id', name='uq_group_sprint_review_view'),
         CheckConstraint('length(sprint_order) = 128', name='ck_group_sprint_review_view_order'),
         CheckConstraint('view_revision >= 1', name='ck_group_sprint_review_view_revision'),
         Index('ix_group_sprint_review_views_order', 'workspace_id', 'group_id', 'sprint_order'),
+        Index('uq_group_sprint_review_view_legacy', 'workspace_id', 'group_id', 'sprint_id', unique=True,
+              postgresql_where=text('configuration_id IS NULL'), sqlite_where=text('configuration_id IS NULL')),
+        Index('uq_group_sprint_review_view_configuration', 'workspace_id', 'group_id', 'sprint_id', 'configuration_id',
+              unique=True, postgresql_where=text('configuration_id IS NOT NULL'),
+              sqlite_where=text('configuration_id IS NOT NULL')),
+        Index('ix_group_sprint_review_views_quarter', 'workspace_id', 'group_id', 'configuration_id', 'quarter_ordinal',
+              postgresql_where=text('configuration_id IS NOT NULL'), sqlite_where=text('configuration_id IS NOT NULL')),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
     group_id: Mapped[str] = mapped_column(String(128), nullable=False)
     sprint_id: Mapped[str] = mapped_column(String(128), nullable=False)
     sprint_order: Mapped[str] = mapped_column(String(128), nullable=False)
+    # configuration_id NULL is Legacy; quarter_ordinal = (year-1)*4+(quarter-1), stamped only for configurations.
+    configuration_id: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
+    quarter_ordinal: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     layouts: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict, server_default=text("'{}'"))
     view_revision: Mapped[int] = mapped_column(Integer, nullable=False)
 

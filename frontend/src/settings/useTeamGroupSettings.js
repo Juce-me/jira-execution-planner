@@ -21,6 +21,8 @@ import {
     resolveVisibleActiveGroupId,
 } from './groupVisibilityUtils.js';
 import { bucketCount } from '../analytics/dashboardAnalytics.js';
+import { catalogScopeKey } from './boardStatusCatalog.js';
+import { isCombinedWorkModel } from '../eng/engWorkModel.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 import { fetchGroupsConfig as requestGroupsConfig } from '../api/configApi.js';
 import {
@@ -47,6 +49,7 @@ export function useTeamGroupSettings({
     teamCatalogState,
     teamMembershipState,
     trackSettingsAction,
+    workModel,
 }) {
     const [groupsConfig, setGroupsConfig] = useState({
         version: 1,
@@ -936,7 +939,8 @@ export function useTeamGroupSettings({
         membershipReady: teamMembershipState.status === 'ready'
             || teamMembershipState.validated === true,
         generation: teamMembershipState.generation,
-    }), [teamNameDirectory, teamMembershipState, configuredTeamIds]);
+        sprintGated: !isCombinedWorkModel(workModel),
+    }), [teamNameDirectory, teamMembershipState, configuredTeamIds, workModel]);
     const teamNameLookup = React.useMemo(() => Object.fromEntries(
         availableTeams.filter(team => team.name && team.name !== team.id).map(team => [team.id, team.name])
     ), [availableTeams]);
@@ -1332,6 +1336,7 @@ export function useTeamGroupSearchEffects({
     setExcludedEpicSearchLoading,
     setExcludedEpicSearchResults,
     showGroupManage,
+    workCatalogScope = null,
 }) {
     // Component search debounced fetch
     useEffect(() => {
@@ -1346,9 +1351,22 @@ export function useTeamGroupSearchEffects({
         const timeoutId = window.setTimeout(async () => {
             setComponentSearchLoading(true);
             try {
-                const response = await requestComponentSearch(BACKEND_URL, { query, signal: controller.signal });
+                const response = await requestComponentSearch(BACKEND_URL, {
+                    query,
+                    signal: controller.signal,
+                    ...(workCatalogScope?.configurationId ? {
+                        configurationId: workCatalogScope.configurationId,
+                        configurationRevision: workCatalogScope.configurationRevision,
+                        quarter: workCatalogScope.quarter || '',
+                    } : {}),
+                });
                 if (!response.ok) throw new Error(`Components search error ${response.status}`);
                 const data = await response.json();
+                // A late reply for another configuration or revision is never shown as current results.
+                if (controller.signal.aborted
+                    || (workCatalogScope?.configurationId && data.configurationId
+                        && (String(data.configurationId) !== String(workCatalogScope.configurationId)
+                            || (data.configurationRevision != null && Number(data.configurationRevision) !== Number(workCatalogScope.configurationRevision))))) return;
                 setComponentSearchResults(data.components || []);
             } catch (err) {
                 if (err.name !== 'AbortError') {
@@ -1366,7 +1384,7 @@ export function useTeamGroupSearchEffects({
             window.clearTimeout(timeoutId);
             controller.abort();
         };
-    }, [showGroupManage, groupManageTab, componentSearchQuery]);
+    }, [showGroupManage, groupManageTab, componentSearchQuery, catalogScopeKey(workCatalogScope)]);
 
     // Excluded epic search debounced fetch
     useEffect(() => {

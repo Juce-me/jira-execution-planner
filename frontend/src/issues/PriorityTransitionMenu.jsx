@@ -28,6 +28,7 @@ function priorityResultMessage(result) {
 export default function PriorityTransitionMenu({
     issue,
     fallbackIssueType = '',
+    issueKind = '',
     priorityLabel,
     currentPriorityLabel,
     renderPriorityIcon,
@@ -81,7 +82,7 @@ export default function PriorityTransitionMenu({
                 onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: 'same_trigger' });
             }
         } else {
-            onOpen?.(issue, fallbackIssueType);
+            onOpen?.(issue, fallbackIssueType, issueKind);
             if (previewDescriptor) {
                 onPreviewLifecycleChange?.(previewDescriptor, { state: 'loading', reason: '' });
             }

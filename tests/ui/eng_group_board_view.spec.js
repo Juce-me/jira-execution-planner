@@ -1094,6 +1094,12 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
 
                 const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
                 const activeMode = modes.getByRole('radio', { name: modeName, exact: true });
+                if (modeName === 'Scenario' && configProfile.configStatus) {
+                    // Without a config bootstrap the Scenario grant is unknown, so the locked default hides its entry.
+                    await expect(modes.getByRole('radio', { name: 'Catch Up', exact: true })).toHaveAttribute('aria-checked', 'true');
+                    await expect(activeMode).toHaveCount(0);
+                    return;
+                }
                 if (await activeMode.getAttribute('aria-checked') !== 'true') await activeMode.click();
                 await expect(activeMode).toHaveAttribute('aria-checked', 'true');
                 if (modeName === 'Statistics') {
@@ -3555,7 +3561,7 @@ test('a held Board observation response does not block completed Board controls 
         await page.locator('.sprint-dropdown-panel').getByText('All work', { exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
         await expect.poll(() => performanceLoads.filter(sample => sample.surface === 'eng_board').length).toBe(1);
-        await expect(page.locator('.fb-readout')).toContainText('1 of 1 epics');
+        await expect(page.locator('.fb-readout')).toHaveText(/\b1 of 1 epic$/);
 
         await page.getByRole('button', { name: 'Select sprint' }).first().click();
         await page.locator('.sprint-dropdown-panel').getByText(selectedSprintName, { exact: false }).click();
@@ -3585,7 +3591,7 @@ test('a rejected Board observation does not break Board completion or selector r
     await page.locator('.sprint-dropdown-panel').getByText('Component', { exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     await expect.poll(() => performanceLoads.filter(sample => sample.surface === 'eng_board').length).toBe(1);
-    await expect(page.locator('.fb-readout')).toContainText('1 of 1 epics');
+    await expect(page.locator('.fb-readout')).toHaveText(/\b1 of 1 epic$/);
 
     await page.getByRole('button', { name: 'Select sprint' }).first().click();
     await page.locator('.sprint-dropdown-panel').getByText(selectedSprintName, { exact: false }).click();
@@ -5981,7 +5987,7 @@ test('All work keeps a complete snapshot through a limited refresh and replaces 
     await expect(page.locator('.ecard[data-epic-key="OLD-1"]')).toBeVisible();
     await expect(page.locator('.ecard[data-epic-key="NEW-1"]')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Filters', exact: false }).first()).toBeEnabled();
-    await expect(page.locator('.fb-readout')).toHaveText('1 of 1 epics');
+    await expect(page.locator('.fb-readout')).toHaveText('1 of 1 epic');
     await page.getByRole('button', { name: 'Filters', exact: false }).first().click();
     await expect(page.locator('.pop-group[data-facet="priority"] .pop-total')).toHaveText('1');
     await page.getByRole('button', { name: 'Filters', exact: false }).first().click();

@@ -4,6 +4,7 @@ import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
 import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
+import { resolveEntityNames } from './engWorkModel.js';
 import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
@@ -161,7 +162,7 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
     </tr>;
 }
 
-function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, hiddenSelected, tinted, addPicker, teamCapacity }) {
+function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, onRetry, onDiscard, onUndo, editors, sprintName, hiddenSelected, tinted, addPicker, teamCapacity, names }) {
     const { rows, removed, unassigned, totals, inheritedFromSprintId } = view;
     const failed = state.save === 'failed';
     const colorMap = React.useMemo(() => buildAssigneeColorMap(rows), [rows]);
@@ -173,7 +174,7 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
     return <>
         {inheritedFromSprintId && <p className="planning-review-guidance">Inherited from {sprintName(inheritedFromSprintId) || 'an earlier Sprint'}. Editing any value saves this Sprint's own copy.</p>}
         {state.undoKept && !inheritedFromSprintId && <p className="planning-review-guidance" data-assignee-undo-kept>Undo kept this Sprint's own copy with the inherited values.</p>}
-        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? 'Story of this Team is' : 'Stories of this Team are'} hidden by filters and not counted in Estimated effort.</p>}
+        {hiddenSelected > 0 && <p className="planning-review-guidance" data-assignee-filter-hidden>{hiddenSelected} selected {hiddenSelected === 1 ? `${names.child} of this Team is` : `${names.childPlural} of this Team are`} hidden by filters and not counted in Estimated effort.</p>}
         <table className="planning-review-table planning-assignee-table" aria-label="Assignee capacity" onKeyDown={onKeyDown}>
             <thead><tr>
                 <th className="planning-assignee-name">Assignee</th>
@@ -219,8 +220,9 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
 // into the host element after the controls stack. Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
     children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
-    getTeamInfo, normalizeStatus, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null,
+    getTeamInfo, normalizeStatus, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null, entityNames = null,
 }) {
+    const names = entityNames || resolveEntityNames();
     const oneTeam = Boolean(enabled && !allTeams && selectedTeamIds?.size === 1);
     const teamId = oneTeam ? String([...selectedTeamIds][0]) : '';
     const [expanded, setExpanded] = React.useState(readExpanded);
@@ -319,10 +321,10 @@ export default function PlanningAssigneeCapacity({
     if (opened) {
         if (state.load === 'error') body = <p className="planning-review-guidance" role="alert">Assignee capacity could not be loaded. <button type="button" className="planning-action-button" onClick={() => controller.reload()}>Retry</button></p>;
         else if (!state.document) body = <p className="planning-review-guidance" role="status">Loading assignee capacity…</p>;
-        else if (empty) body = <p className="planning-review-guidance">No Stories or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
+        else if (empty) body = <p className="planning-review-guidance">No {names.childPlural} or saved people for this Team in this Sprint.{addPicker && <> {addPicker}</>}</p>;
         else body = <>
             {readOnly && <p className="planning-review-guidance">Assignee capacity is read-only here.</p>}
-            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} teamCapacity={rawCapacity} />
+            <AssigneeTable view={view} avatars={avatars} state={state} readOnly={readOnly} onCommit={onCommit} onRestore={onRestore} onRetry={onRetry} onDiscard={onDiscard} onUndo={onUndo} editors={editors} sprintName={sprintName} hiddenSelected={hiddenSelected} tinted={tinted} addPicker={addPicker} teamCapacity={rawCapacity} names={names} />
         </>;
     }
     const open = Boolean(oneTeam && !hidden && host && expanded);

@@ -96,6 +96,7 @@ function resultMessage(result) {
 export default function StatusTransitionMenu({
     issue,
     fallbackIssueType = '',
+    issueKind = '',
     statusLabel,
     statusClassName = '',
     sourceSurface = 'catch_up',
@@ -147,7 +148,7 @@ export default function StatusTransitionMenu({
     };
     const prefetchOptions = () => {
         cancelPrefetchDwell();
-        if (!isOpen && !previewDescriptor) onPrefetch?.(issue, fallbackIssueType);
+        if (!isOpen && !previewDescriptor) onPrefetch?.(issue, fallbackIssueType, issueKind);
     };
     React.useEffect(() => cancelPrefetchDwell, []);
 
@@ -158,7 +159,7 @@ export default function StatusTransitionMenu({
                 onPreviewLifecycleChange?.(previewDescriptor, { state: 'closed', reason: 'same_trigger' });
             }
         } else {
-            onOpen?.(issue, fallbackIssueType);
+            onOpen?.(issue, fallbackIssueType, issueKind);
             if (previewDescriptor) {
                 onPreviewLifecycleChange?.(previewDescriptor, { state: 'loading', reason: '' });
             }

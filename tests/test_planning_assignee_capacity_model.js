@@ -279,17 +279,17 @@ test('underbar: one segment per person with Planned capacity or effort, max(capa
     assert.equal(m.underbarOnBarAxis, undefined);
 });
 
-test('underbar layers: the effort lies on top below capacity, the capacity lies on top once effort reaches or passes it', async () => {
+test('underbar layers: solid effort first, then tinted free capacity or striped effort beyond capacity', async () => {
     const m = await load();
     // effort < capacity: tinted capacity full width, solid effort on top; the tinted rest is the capacity left.
     assert.deepEqual(m.underbarLayers(800, 300), { widthHundredths: 800, base: 'tint', overlay: { tone: 'solid', hundredths: 300 } });
-    // effort = capacity: the rule "capacity on top when effort >= capacity" makes it fully tinted over solid.
-    assert.deepEqual(m.underbarLayers(500, 500), { widthHundredths: 500, base: 'solid', overlay: { tone: 'tint', hundredths: 500 } });
-    // effort > capacity: solid effort full width, tinted capacity on top up to where capacity is used up.
-    assert.deepEqual(m.underbarLayers(400, 650), { widthHundredths: 650, base: 'solid', overlay: { tone: 'tint', hundredths: 400 } });
+    // effort = capacity: fully solid.
+    assert.deepEqual(m.underbarLayers(500, 500), { widthHundredths: 500, base: 'solid', overlay: null });
+    // effort > capacity: striped effort full width, solid capacity-sized effort on top; the striped rest is the excess.
+    assert.deepEqual(m.underbarLayers(400, 650), { widthHundredths: 650, base: 'over', overlay: { tone: 'solid', hundredths: 400 } });
     // hundredths, not floats: 0.01 below and above.
     assert.deepEqual(m.underbarLayers(1001, 1000).overlay, { tone: 'solid', hundredths: 1000 });
-    assert.deepEqual(m.underbarLayers(999, 1000).overlay, { tone: 'tint', hundredths: 999 });
+    assert.deepEqual(m.underbarLayers(999, 1000), { widthHundredths: 1000, base: 'over', overlay: { tone: 'solid', hundredths: 999 } });
     // capacity only, effort only, neither (blank and zero capacity are the same here).
     assert.deepEqual(m.underbarLayers(500, 0), { widthHundredths: 500, base: 'tint', overlay: null });
     assert.deepEqual(m.underbarLayers(null, 300), { widthHundredths: 300, base: 'solid', overlay: null });

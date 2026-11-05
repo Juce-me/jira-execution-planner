@@ -77,9 +77,15 @@ def _load_editmeta_allowed_values(key, field_id, *, jira_request, context):
 
 
 def load_project_track_options_for_issue(issue_key, *, jira_request,
-                                         get_project_track_field_id, context=None):
+                                         get_project_track_field_id, context=None, scope=None):
     key = _normalize_single_issue_key(issue_key)
     field_id = _resolve_field_id(get_project_track_field_id)
+    if scope is not None and scope.mapped:
+        raw_type, _current = _load_issue_snapshot(
+            key, field_id, jira_request=jira_request, context=context, with_type_identity=True)
+        if scope.role(raw_type.get("id"), raw_type.get("hierarchyLevel")) != "parent" \
+                or raw_type.get("subtask") is True:
+            raise ProjectTrackServiceError("issue_not_parent", 409)
     allowed = _load_editmeta_allowed_values(
         key, field_id, jira_request=jira_request, context=context)
     options = [
@@ -92,7 +98,7 @@ def load_project_track_options_for_issue(issue_key, *, jira_request,
     return {"options": options, "source": "jira"}
 
 
-def _load_issue_snapshot(key, field_id, *, jira_request, context):
+def _load_issue_snapshot(key, field_id, *, jira_request, context, with_type_identity=False):
     response = jira_request(
         "GET", f"/rest/api/3/issue/{key}",
         params={"fields": f"issuetype,{field_id}"}, context=context)
@@ -101,23 +107,35 @@ def _load_issue_snapshot(key, field_id, *, jira_request, context):
     if response.status_code != 200:
         raise ProjectTrackServiceError("project_track_update_failed", response.status_code)
     fields = (response.json() or {}).get("fields") or {}
-    issue_type = str(((fields.get("issuetype") or {}).get("name")) or "").strip()
+    raw_type = fields.get("issuetype") or {}
+    issue_type = str(raw_type.get("name") or "").strip()
     track_field = fields.get(field_id)
     current = ""
     if isinstance(track_field, dict):
         current = str(track_field.get("value") or "").strip()
+    if with_type_identity:
+        return raw_type, current
     return issue_type, current
 
 
 def update_issue_project_track(issue_key, target_track, *, jira_request,
-                               get_project_track_field_id, context=None):
+                               get_project_track_field_id, context=None, scope=None):
     key = _normalize_single_issue_key(issue_key)
     target = normalize_project_track_target(target_track)
     field_id = _resolve_field_id(get_project_track_field_id)
-    issue_type, current = _load_issue_snapshot(
-        key, field_id, jira_request=jira_request, context=context)
-    if issue_type.lower() != "epic":
-        raise ProjectTrackServiceError("issue_not_epic", 409)
+    if scope is not None and scope.mapped:
+        # New model: Project Track is a parent-role (Initiative) field resolved by mapped type id
+        # and level; the write targets this exact key and a child is never redirected to its parent.
+        raw_type, current = _load_issue_snapshot(
+            key, field_id, jira_request=jira_request, context=context, with_type_identity=True)
+        if scope.role(raw_type.get("id"), raw_type.get("hierarchyLevel")) != "parent" \
+                or raw_type.get("subtask") is True:
+            raise ProjectTrackServiceError("issue_not_parent", 409)
+    else:
+        issue_type, current = _load_issue_snapshot(
+            key, field_id, jira_request=jira_request, context=context)
+        if issue_type.lower() != "epic":
+            raise ProjectTrackServiceError("issue_not_epic", 409)
     if current.lower() == target.lower():
         return {"issueKey": key, "result": "already_in_track", "fromTrack": target}
     allowed = _load_editmeta_allowed_values(

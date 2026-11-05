@@ -37,6 +37,7 @@ export default function useTeamCatalogLifecycle({
     sharedConfigRevision,
     authResumeStagedRevision,
     setGroupDraftError,
+    workContext = null,
 }) {
     const [teamCatalogState, setTeamCatalogState] = React.useState({ catalog: {}, meta: {} });
     const teamCatalogStateRef = React.useRef({ catalog: {}, meta: {} });
@@ -213,6 +214,7 @@ export default function useTeamCatalogLifecycle({
             }
             try {
                 let response = await requestAllTeams(backendUrl, {
+                    context: workContext,
                     sprint: sprintId,
                     refresh,
                     signal: ownerAbortController.signal,
@@ -255,6 +257,7 @@ export default function useTeamCatalogLifecycle({
                     let completionTimedOut = false;
                     try {
                         response = await requestAllTeams(backendUrl, {
+                            context: workContext,
                             sprint: sprintId,
                             completionAttemptId: data.cache.refreshAttemptId,
                             catalogIdentity: data.cache.identity,

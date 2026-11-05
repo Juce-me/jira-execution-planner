@@ -1,3 +1,7 @@
+import {
+    contextKey, quarterFromSprintName, quarterInRange, responseMatchesContext, sameCatalogContext,
+} from './workStructure/configurationContext.js';
+
 const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
 const SPRINT_CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -76,18 +80,49 @@ function sameEventGeneration(state, event) {
         && (event.browserContextId ?? null) === (state.browserContextId ?? null);
 }
 
-function selectSprintId(sprints, preferredId) {
+function defaultSprintId(sprints) {
     if (!sprints.length) return null;
-    const preferred = preferredId === null || preferredId === undefined
-        ? null
-        : sprints.find(sprint => String(sprint.id) === String(preferredId));
-    if (preferred) return preferred.id;
     const currentQuarter = getCurrentQuarter();
     const fallback = sprints.find(sprint => String(sprint.state || '').toLowerCase() === 'active')
         || sprints.find(sprint => sprint.name === currentQuarter)
         || sprints[sprints.length - 1];
     return fallback?.id ?? null;
 }
+
+// With a viewed quarter the physical Sprint is admitted only from that quarter: the retained id must carry
+// it, otherwise the quarter's own Sprint is chosen, otherwise nothing. An explicit/restored quarter never
+// falls back to another era; an unprompted default may use the existing active/current/latest preference
+// restricted to the configuration's range.
+export function selectSprintForScope(sprints, preferredId, scope = null) {
+    if (!sprints.length) return null;
+    if (!scope?.quarter) {
+        const preferred = preferredId === null || preferredId === undefined
+            ? null
+            : sprints.find(sprint => String(sprint.id) === String(preferredId));
+        return preferred ? preferred.id : defaultSprintId(sprints);
+    }
+    const inQuarter = sprints.filter(sprint => quarterFromSprintName(sprint.name) === scope.quarter);
+    const retained = preferredId === null || preferredId === undefined
+        ? null
+        : inQuarter.find(sprint => String(sprint.id) === String(preferredId));
+    if (retained) return retained.id;
+    if (inQuarter.length) {
+        return (inQuarter.find(sprint => String(sprint.state || '').toLowerCase() === 'active') || inQuarter[inQuarter.length - 1]).id;
+    }
+    if (scope.explicit) return null;
+    return defaultSprintId(sprints.filter(sprint => {
+        const quarter = quarterFromSprintName(sprint.name);
+        return !quarter || quarterInRange(quarter, scope);
+    }));
+}
+
+export const sprintScopeOf = state => (state?.context
+    ? { quarter: state.context.quarter, explicit: state.quarterExplicit === true, fromQuarter: state.context.fromQuarter, throughQuarter: state.context.throughQuarter }
+    : null);
+
+const selectSprintId = (sprints, preferredId, state) => selectSprintForScope(sprints, preferredId, sprintScopeOf(state));
+
+const CONTEXT_ERRORS = new Set(['configuration_required', 'sprint_catalog_mismatch', 'configuration_scope_changed', 'configuration_incomplete']);
 
 export function createSprintCatalogState({ displaySnapshot = null, savedSprintId = null, savedSprintName = '' } = {}) {
     const displaySprints = normalizeSprintList(displaySnapshot?.sprints) || [];
@@ -96,6 +131,8 @@ export function createSprintCatalogState({ displaySnapshot = null, savedSprintId
         browserContextId: null,
         identity: null,
         authority: displaySnapshot ? 'display_only' : 'invalid',
+        context: null,
+        quarterExplicit: false,
         status: 'unknown',
         validatedSnapshot: null,
         displaySnapshot: displaySnapshot ? { ...displaySnapshot, sprints: displaySprints } : null,
@@ -121,6 +158,32 @@ export function reduceSprintCatalog(state, event) {
             ...state,
             generation: state.generation + 1,
             ...source,
+            authority: state.authority === 'display_only' && !state.validatedSnapshot ? 'display_only' : 'invalid',
+            selectionPreserved: false,
+            status: 'unknown',
+            validatedSnapshot: null,
+            availableSprints: [],
+            selectedSprintId: null,
+            refreshAttemptId: null,
+            errorReason: '',
+        };
+    }
+    if (event.type === 'CONTEXT') {
+        const next = event.context || null;
+        const explicit = event.explicit === undefined ? state.quarterExplicit === true : event.explicit === true;
+        if (contextKey(next) === contextKey(state.context) && explicit === (state.quarterExplicit === true)) return state;
+        if (next && state.context && sameCatalogContext(next, state.context)) {
+            // Same configuration catalog, another quarter: re-admit from the catalog already held.
+            const scoped = { ...state, context: next, quarterExplicit: explicit };
+            return { ...scoped, selectedSprintId: selectSprintId(state.availableSprints, event.selectedSprintId ?? null, scoped) };
+        }
+        return {
+            ...state,
+            generation: state.generation + 1,
+            context: next,
+            quarterExplicit: explicit,
+            identity: null,
+            browserContextId: null,
             authority: state.authority === 'display_only' && !state.validatedSnapshot ? 'display_only' : 'invalid',
             selectionPreserved: false,
             status: 'unknown',
@@ -162,6 +225,25 @@ export function reduceSprintCatalog(state, event) {
                 errorReason: 'sprint_board_required',
             };
         }
+        if (state.context && !responseMatchesContext(state.context, envelope.context ?? envelope.configuration)) return state;
+        if (envelope.httpStatus === 409 && CONTEXT_ERRORS.has(envelope.error)) {
+            // Awaiting the configuration context is not an error; every other refusal clears only the physical
+            // admission, never the viewed quarter, which lives in the context.
+            if (envelope.error === 'configuration_required' && !state.context) {
+                return { ...state, status: 'unknown', refreshAttemptId: null, errorReason: '' };
+            }
+            return {
+                ...state,
+                authority: 'invalid',
+                status: 'error',
+                validatedSnapshot: null,
+                availableSprints: [],
+                selectedSprintId: null,
+                selectionPreserved: false,
+                refreshAttemptId: null,
+                errorReason: envelope.error,
+            };
+        }
         const sprints = normalizeSprintList(envelope.sprints);
         const isPostgresql = cache.backend === 'postgresql';
         const requiresValidatedCache = isPostgresql || String(state.identity || '').startsWith('sc1:');
@@ -199,7 +281,9 @@ export function reduceSprintCatalog(state, event) {
                 },
                 displaySnapshot: preserved ? state.validatedSnapshot || state.displaySnapshot : state.displaySnapshot,
                 availableSprints: sprints,
-                selectedSprintId: preserved ? event.selectedSprintId : selectSprintId(sprints, state.selectedSprintId ?? state.savedSprintId),
+                selectedSprintId: preserved && !state.context
+                    ? event.selectedSprintId
+                    : selectSprintId(sprints, preserved ? event.selectedSprintId : state.selectedSprintId ?? state.savedSprintId, state),
                 selectionPreserved: preserved,
                 refreshAttemptId,
                 errorReason: failed ? 'refresh_failed' : '',
@@ -252,6 +336,7 @@ export function reduceSprintCatalog(state, event) {
 
 function catalogEventIdentity(state) {
     return {
+        context: state.context,
         generation: state.generation,
         identity: state.identity,
         browserContextId: state.browserContextId,
@@ -339,6 +424,7 @@ export function createSprintCatalogController({
             const abortTimer = setTimer(() => abortController.abort(), Math.min(5000, remaining));
             try {
                 const envelope = await read({
+                    context: captured.context ?? null,
                     forceRefresh: false,
                     completionAttemptId: attempt.attemptId,
                     catalogIdentity: attempt.identity,
@@ -411,7 +497,9 @@ export function createSprintCatalogController({
         activeRequestKind = forceRefresh ? 'forced' : 'ordinary';
         const requestAbortController = new AbortController();
         activeRequestAbortController = requestAbortController;
+        const requestContext = state.context;
         const requestPromise = Promise.resolve().then(() => read({
+            context: requestContext,
             forceRefresh,
             completionAttemptId: null,
             catalogIdentity: null,
@@ -476,6 +564,22 @@ export function createSprintCatalogController({
             // The retired read's response is discarded by the generation fence, so re-read under
             // the new source instead of stranding the catalog in 'unknown' with no request.
             if (readInFlight) void initiate(false);
+            return state;
+        },
+        // Quarter/configuration intent. A different configuration retires in-flight reads and re-reads that
+        // configuration's own catalog; the same configuration only re-admits the physical Sprint.
+        setContext(context, { explicit, selectedSprintId } = {}) {
+            if (disposed) return state;
+            const before = state;
+            // Like acceptSource: a catalog nobody has started reading stays unread (the app's own startup
+            // gates decide when), so only a started catalog is re-read under the new configuration.
+            const started = Boolean(activeRequest || observer?.promise) || before.status !== 'unknown' || Boolean(before.validatedSnapshot);
+            publish({ type: 'CONTEXT', context, explicit, selectedSprintId });
+            if (state === before) return state;
+            if (state.generation !== before.generation) {
+                retire();
+                if (state.context && started) void initiate(false);
+            }
             return state;
         },
         invalidate(reason = '', { preserveSelection = false } = {}) {

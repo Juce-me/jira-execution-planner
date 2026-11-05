@@ -133,7 +133,7 @@ test('sort and grouping move into the bar as view controls, outside the chip gra
         'Expected grouping to use the fixed filter-bar icon trigger'
     );
     assert.ok(
-        engViewSource.includes('aria-label="Group by Initiative"'),
+        engViewSource.includes('aria-label={`Group by ${entityNames.ancestor}`}'),
         'Expected grouping to retain an accessible button name'
     );
     assert.ok(
@@ -169,7 +169,7 @@ test('the Catch Up filter state round-trips through local state and per-group sn
             `Expected ${key} in local state, the per-group default, the snapshot and the restore (found ${occurrences})`
         );
     });
-    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails })'));
+    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, names: entityNames })'));
     assert.ok(dashboardSource.includes('engCatchUpFilters.admitsProjectTrack(task)'));
 });
 

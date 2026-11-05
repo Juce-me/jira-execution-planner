@@ -29,6 +29,7 @@ export const boardDraftIsDirty = (groupDraft, baselineGroups = []) => {
 // The footer Save runs these sections through their own endpoints before the groups POST, so a
 // rejected groups POST leaves them committed. Listed in save order.
 const SECTION_LABELS = [
+    ['workConfigurations', 'Project config'],
     ['projects', 'Scope projects'],
     ['priorityWeights', 'Priority weights'],
     ['board', 'Jira board'],

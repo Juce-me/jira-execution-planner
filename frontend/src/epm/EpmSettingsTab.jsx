@@ -86,6 +86,7 @@ export default function EpmSettingsTab({
     updateEpmProjectDraft,
     visibleEpmRootGoals,
     visibleEpmSubGoals,
+    workHierarchy,
 }) {
     const renderEpmProjectSkeletonRows = () => (
         <LoadingRows
@@ -99,6 +100,7 @@ export default function EpmSettingsTab({
     return (
         <EpmSettings
             {...{
+                workHierarchy,
                 DEFAULT_EPM_LABEL_PREFIX,
                 epmSettingsTab,
                 setEpmSettingsTab,

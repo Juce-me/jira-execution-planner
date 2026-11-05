@@ -92,9 +92,10 @@ test('StatsPanel owns chart state ref pointer and exactly two lifecycle effects'
 });
 
 // Every Statistics view is in the markup (the inactive ones are only closed), so slice out the Lead Times view.
-function renderLeadTimes(overrides = {}) {
+function renderLeadTimes(overrides = {}, workScope) {
     const props = panelProps('cohort');
     Object.assign(props.stats, overrides);
+    if (workScope !== undefined) props.workScope = workScope;
     const html = renderToString(React.createElement(loadPanel(), props));
     return html.slice(html.indexOf('stats-controls cohort-controls'));
 }
@@ -122,6 +123,43 @@ test('Lead Times shows exactly the selection control of its mode', () => {
     for (const count of ['30', '50', '60']) assert.match(lastN, new RegExp(`<option value="${count}"`));
     assert.match(lastN, /<option value="50" selected=""/);
     assert.equal(/Created quarter|Closed quarter/.test(lastN), false);
+});
+
+const NEW_MODEL_SCOPE = { quarter: '2027Q1', label: '2027Q1', model: 'rnd_2027', roles: { parent: 'Initiative', parents: 'Initiatives', child: 'Epic', children: 'Epics' } };
+const LEGACY_SCOPE = { quarter: '2026Q4', label: '2026Q4', model: 'legacy', roles: { parent: 'Epic', parents: 'Epics', child: 'Story', children: 'Stories' } };
+const barItem = { key: 'X-1', summary: 'Synthetic', status: 'Done', daysOpen: 3, projectKey: 'X', teamName: 'T', assigneeName: 'A' };
+
+test('Lead Times titles, empty text and the Number aria label use the model role word', () => {
+    const overrides = { cohortGridModel: gridModel, cohortOpenBars: [], cohortCompletedBars: [] };
+    const created = renderLeadTimes(overrides, NEW_MODEL_SCOPE);
+    assert.match(created, /Open Initiatives \(All Cohorts\)/);
+    assert.match(created, /Completed Initiatives \u2014 Lead Time \(All Cohorts\)/);
+    assert.match(created, /No completed initiatives in this scope\./);
+    assert.equal(/Open Epics|Completed Epics/.test(created), false);
+    const lastN = renderLeadTimes({ cohortMode: 'last_n', cohortLastN: 50, cohortStatusControls: closedChips, cohortCompletedBars: [barItem] }, NEW_MODEL_SCOPE);
+    assert.match(lastN, /<select[^>]*aria-label="Number of initiatives"[^>]*>/);
+    assert.match(lastN, /The most recently closed initiatives that pass/);
+    assert.match(lastN, /Open all completed initiatives in Jira/);
+    assert.match(lastN, /Most recently closed initiatives/);
+    assert.match(lastN, /Middle lead time of the most recently closed initiatives/);
+    const closed = renderLeadTimes({ cohortMode: 'closed', cohortStatusControls: closedChips }, NEW_MODEL_SCOPE);
+    assert.match(closed, /Initiatives closed in the selected range/);
+    assert.match(renderLeadTimes({}, NEW_MODEL_SCOPE), /Terminal initiatives with lead time/);
+    assert.equal(/closed epics|epics closed|Terminal epics/.test(lastN + closed), false);
+});
+
+test('Lead Times Legacy output is unchanged by the role word wiring', () => {
+    const overrides = { cohortGridModel: gridModel, cohortOpenBars: [], cohortCompletedBars: [] };
+    for (const scope of [LEGACY_SCOPE, null, undefined]) {
+        const created = renderLeadTimes(overrides, scope);
+        assert.match(created, /Open Epics \(All Cohorts\)/);
+        assert.match(created, /Completed Epics \u2014 Lead Time \(All Cohorts\)/);
+        assert.match(created, /No completed epics in this scope\./);
+        const lastN = renderLeadTimes({ cohortMode: 'last_n', cohortLastN: 50, cohortStatusControls: closedChips, cohortCompletedBars: [barItem] }, scope);
+        assert.match(lastN, /<select[^>]*aria-label="Number of epics"[^>]*>/);
+        assert.match(lastN, /The most recently closed epics that pass/);
+        assert.match(lastN, /Open all completed epics in Jira/);
+    }
 });
 
 test('Lead Times closed modes hide the open-work parts that Created shows', () => {
@@ -181,7 +219,7 @@ test('the Lead Times Mode and selection handlers clear the selected heatmap row'
     const modeSelect = source.slice(source.indexOf('aria-label="Lead Times mode"'), source.indexOf('</select>', source.indexOf('aria-label="Lead Times mode"')));
     assert.match(modeSelect, /setCohortMode\(/);
     assert.match(modeSelect, /setCohortSelectedRow\(null\)/);
-    const lastNSelect = source.slice(source.indexOf('aria-label="Number of epics"'), source.indexOf('</select>', source.indexOf('aria-label="Number of epics"')));
+    const lastNSelect = source.slice(source.indexOf('aria-label={`Number of '), source.indexOf('</select>', source.indexOf('aria-label={`Number of ')));
     assert.match(lastNSelect, /setCohortLastN\(/);
     assert.match(lastNSelect, /setCohortSelectedRow\(null\)/);
 });

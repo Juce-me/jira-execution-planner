@@ -4,6 +4,7 @@ import {
     readResponseStream,
     requireAuthentication,
 } from './http.js';
+import { runInWorkContext, stampParams } from '../workStructure/requestContext.js';
 
 export const ENG_BOARD_PROTOCOL_VERSION = 1;
 export const ENG_BOARD_MAX_FRAME_BYTES = 8 * 1024 * 1024;
@@ -350,8 +351,11 @@ export async function streamEngBoard({
     });
     if (sprintId !== undefined && sprintId !== null) params.set('sprintId', String(sprintId));
     if (focusedColumnId) params.set('focusedColumnId', String(focusedColumnId));
-    const response = await apiFetchHeaders(`${backendUrl}/api/eng/board?${params}`, {
-        method: 'GET', signal, headers: { Accept: 'application/x-ndjson' },
-    });
+    // After promotion the Board names the configuration and viewed quarter it answers for. The Board route's query
+    // allowlist carries id, revision and quarter only (no digest), and a context change before the headers arrive aborts.
+    stampParams(params, { includeDigest: false });
+    const response = await runInWorkContext({ signal }, next => apiFetchHeaders(`${backendUrl}/api/eng/board?${params}`, {
+        method: 'GET', signal: next.signal, headers: { Accept: 'application/x-ndjson' },
+    }));
     return consumeEngBoardResponse(response, { signal, onFrame, maxFrameBytes, maxTotalBytes });
 }

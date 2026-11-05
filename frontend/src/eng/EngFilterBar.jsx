@@ -72,7 +72,7 @@ export default function EngFilterBar({
             facet: facets[index],
             copy: describeFacetChip(facetView, facets[index]),
         }))
-        .filter((chip) => chip.copy);
+        .filter((chip) => chip.copy && !chip.facet?.hidden);
 
     const resetFacet = (facet) => {
         onChange?.(resetFacetSelection(selection, facet, counts));
@@ -191,6 +191,7 @@ export default function EngFilterBar({
                             <div className="pop-subject">{subject}</div>
                             {facetViews.map((facetView, index) => {
                                 const facet = facets[index];
+                                if (facet?.hidden) return null;
                                 const isSingle = facetView.kind === 'single';
                                 const emptyDescriptionId = `${mountId}-${facetView.id}-empty-description`;
                                 return (

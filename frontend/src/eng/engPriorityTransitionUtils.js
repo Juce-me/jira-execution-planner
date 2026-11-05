@@ -1,4 +1,4 @@
-import { buildSelectedCountBucket, findIssueResult, summarizeIssueTypeMix } from './engStatusTransitionUtils.js';
+import { buildSelectedCountBucket, findIssueResult, roleIssueKind, summarizeIssueTypeMix } from './engStatusTransitionUtils.js';
 
 // Target shape shared by the hook and UI. `summary` is for UI display only —
 // never put summary/key/URL/team/sprint/JQL into an analytics payload builder.
@@ -14,15 +14,15 @@ function issuePriorityName(priorityValue) {
 // used by Story tasks across dashboard.jsx) or the flat shape used by epicGroups' epic
 // entries (priority/summary directly on the object, no issueType). fallbackIssueType
 // supplies the issue type for shapes that never carry one (Epic). Mirrors
-// buildCatchUpStatusTargets in engStatusTransitionUtils.js for the priority field.
-export function buildCatchUpPriorityTargets(issue, fallbackIssueType = '') {
+// buildCatchUpStatusTargets in engStatusTransitionUtils.js for the priority field, including the role `issueKind`.
+export function buildCatchUpPriorityTargets(issue, fallbackIssueType = '', issueKind = '') {
     const key = String(issue?.key || '').trim();
     if (!key) return null;
     const fields = issue?.fields || null;
     const currentPriority = issuePriorityName(fields ? fields.priority : issue?.priority);
     const issueType = String(fields?.issuetype?.name || issue?.issueType || fallbackIssueType || '');
     const summary = String(fields?.summary || issue?.summary || '');
-    return { key, issueType, currentPriority, summary };
+    return { key, issueType, currentPriority, summary, ...roleIssueKind(issueKind) };
 }
 
 // Priority names the app renders a first-class icon for via renderPriorityIcon

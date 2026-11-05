@@ -96,3 +96,17 @@ test('empty Ad Hoc set leaves Tech story as Tech', async () => {
         { projectType: 'tech', capacityType: 'tech', productSubtype: null }
     );
 });
+
+test('combined (rnd_2027) model classifies as other/other and other/ad_hoc with no Product subtype', async () => {
+    const { classifyCapacityIssue } = await loadUtils();
+    const issue = { key: 'PLAN-E1', fields: { projectKey: 'TECH', epicKey: 'ADHOC-1' } };
+
+    assert.deepEqual(
+        classifyCapacityIssue({ key: 'PLAN-E2', fields: { projectKey: 'TECH', epicKey: 'EPIC-9' } }, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
+        { projectType: 'other', capacityType: 'other', productSubtype: null }
+    );
+    assert.deepEqual(
+        classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
+        { projectType: 'other', capacityType: 'ad_hoc', productSubtype: null }
+    );
+});

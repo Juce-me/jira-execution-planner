@@ -2,7 +2,7 @@ import * as React from 'react';
 
 import SettingsModal from './SettingsModal.jsx';
 import { groupConfigConflictMessages } from './groupsConfigConflict.js';
-import { SHARED_CONFIGURATION_TAB_IDS } from './settingsTabIds.js';
+import { SHARED_CONFIGURATION_TAB_IDS, effectiveAdminTab } from './settingsTabIds.js';
 import { workspaceConfigConflictMessages } from './workspaceConfigConflict.js';
 
 export default function SettingsModalContainer({
@@ -40,6 +40,8 @@ export default function SettingsModalContainer({
     testGroupsConfigConnection,
     unsavedSectionsCount,
     useLatestWorkspaceConfig,
+    workConfigMode,
+    workConfigTypeNamesNote,
     workspaceConfigConflict,
     children,
 }) {
@@ -63,7 +65,7 @@ export default function SettingsModalContainer({
                     <button className="compact" onClick={keepMineOnGroupsConfigConflict} type="button">Keep mine</button>
                 </div>
             ) : null}
-            showTestConfiguration={!['epm', 'connections', 'access', 'performance'].includes(groupManageTab)}
+            showTestConfiguration={!['epm', 'connections', 'access', 'performance'].includes(groupManageTab) && !(workConfigMode === 'unavailable' && effectiveAdminTab(workConfigMode, groupManageTab) === 'project')}
             onTestConfiguration={testGroupsConfigConnection}
             testConfigurationDisabled={groupTesting}
             testConfigurationLabel={groupTesting ? 'Testing...' : 'Test configuration'}
@@ -75,6 +77,7 @@ export default function SettingsModalContainer({
             saveDisabled={settingsSaveDisabled}
             saveTitle={settingsSaveTitle}
             saveLabel={settingsSaveLabel}
+            saveNote={groupManageTab !== 'connections' && isGroupDraftDirty ? workConfigTypeNamesNote : ''}
             showDiscardConfirm={showGroupDiscardConfirm}
             onDiscard={discardGroupDraftChanges}
             onKeepEditing={() => setShowGroupDiscardConfirm(false)}

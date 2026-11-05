@@ -86,7 +86,7 @@ def _directory_names(directory):
 
 
 def fetch_sprint_teams(*, sprint_id, base_jql, team_field_id, jira_search,
-                       directory, budget):
+                       directory, budget, sprint_field_id=None):
     """Return one fully validated Team membership snapshot for a Sprint."""
     sprint_key = str(sprint_id or '').strip()
     if re.fullmatch(r'[1-9][0-9]*', sprint_key) is None:
@@ -96,6 +96,14 @@ def fetch_sprint_teams(*, sprint_id, base_jql, team_field_id, jira_search,
     if not base or not field_id:
         raise TeamCatalogFetchError('catalog_incomplete')
 
+    # A configuration source names its own Sprint field; the flat path keeps `Sprint = n`.
+    sprint_clause = f'Sprint = {sprint_key}'
+    if sprint_field_id is not None:
+        field_match = re.fullmatch(r'customfield_([0-9]+)', str(sprint_field_id).strip())
+        if field_match is None:
+            raise TeamCatalogFetchError('catalog_incomplete')
+        sprint_clause = f'cf[{field_match.group(1)}] = {sprint_key}'
+
     issue_names = {}
     seen_tokens = set()
     next_token = None
@@ -104,7 +112,7 @@ def fetch_sprint_teams(*, sprint_id, base_jql, team_field_id, jira_search,
     while True:
         budget.check('team_page')
         payload = {
-            'jql': f'({base}) AND Sprint = {sprint_key}',
+            'jql': f'({base}) AND {sprint_clause}',
             'fields': [field_id],
             'maxResults': 100,
         }

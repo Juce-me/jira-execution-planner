@@ -743,11 +743,11 @@ test('Ad Hoc capacity is derived from the saved active group, separate from excl
 
 test('Ad Hoc set threads only into classification/reporting helpers, never excluded math', () => {
     assert.ok(
-        capacitySource.includes('buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet)'),
+        capacitySource.includes('buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet, workModel)'),
         'Expected Planning selected project stats to receive the Ad Hoc set'
     );
     assert.ok(
-        capacitySource.includes('buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet)'),
+        capacitySource.includes('buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet, workModel)'),
         'Expected Planning selected team project stats to receive the Ad Hoc set'
     );
     assert.match(

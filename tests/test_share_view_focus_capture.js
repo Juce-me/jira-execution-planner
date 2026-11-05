@@ -248,7 +248,7 @@ test('V4: the capture never clears filters, opens Jira, navigates, moves focus o
 
 test('the card id table matches ALERT_SUMMARY_CONFIG, the card ids in the panel and the codec alert vocabulary', () => {
     const alertsSource = fs.readFileSync(path.join(SOURCE_ROOT, 'eng', 'EngAlertsPanel.jsx'), 'utf8');
-    const config = Array.from(alertsSource.matchAll(/\{ key: '(\w+)', label: '[^']*', tone: '\w+', sectionId: '(eng-alert-[a-z-]+)' \}/g), match => [match[1], match[2]]);
+    const config = Array.from(alertsSource.matchAll(/\{ key: '(\w+)', label: (?:'[^']*'|`[^`]*`)(?:, one: `[^`]*`)?, tone: '\w+', sectionId: '(eng-alert-[a-z-]+)' \}/g), match => [match[1], match[2]]);
     assert.equal(config.length, 10);
     for (const [key, sectionId] of config) assert.equal(alertCardId(key), sectionId);
     const cardIds = Array.from(alertsSource.matchAll(/ id="(eng-alert-[a-z-]+)" tabIndex=\{-1\}/g), match => match[1]).sort();

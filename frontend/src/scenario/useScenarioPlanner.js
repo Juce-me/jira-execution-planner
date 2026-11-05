@@ -40,6 +40,9 @@ export function useScenarioPlanner({
     selectedTeamSet,
     isAllTeamsSelected,
     excludedEpicSet,
+    workModel,
+    entityNames = null,
+    workConfigurationId,
 }) {
     const {
         fetchScenarioDraft,
@@ -86,6 +89,8 @@ export function useScenarioPlanner({
         selectedTeamSet,
         isAllTeamsSelected,
         excludedEpicSet,
+        workModel,
+        workConfigurationId,
     });
 
     const {
@@ -247,6 +252,8 @@ export function useScenarioPlanner({
         scenarioTimelineWithSegments,
         scenarioTimelineIssueKeys,
         scenarioAssigneeConflicts,
+        workModel,
+        entityNames,
     });
     return {
         registerScenarioIssueRef,

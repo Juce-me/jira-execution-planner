@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import re
+import threading
 import uuid
 
 from sqlalchemy import select, text
@@ -13,10 +14,11 @@ from sqlalchemy import select, text
 from backend.auth.jira_auth import AuthError
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services import work_structure
 from backend.services.workspace_catalog_config import (
     EffectiveCatalogConfig,
     build_team_catalog_identity,
-    build_team_scope_digest,
+    team_scope_digest,
 )
 from backend.services.workspace_dashboard_config import (
     acquire_workspace_config_fence,
@@ -42,6 +44,7 @@ class CatalogSnapshot:
     retry_at: datetime | None
     refresh_lease_owner: str | None
     refresh_lease_until: datetime | None
+    scan: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -108,10 +111,206 @@ def _snapshot(row, *, identity, payload_attr, matches=True):
     )
 
 
+SCOPED_CATALOG_TTL_SECONDS = 24 * 3600
+SCOPED_FAILURE_RETRY_SECONDS = 300
+SCOPED_ATTEMPT_SECONDS = 120
+
+
+@dataclass(frozen=True)
+class SprintSourceProof:
+    """Server-captured evidence that a complete source observed one Sprint."""
+
+    source_identity: str
+    source_digest: str
+    catalog_version: str
+    sprint_id: str
+    sprint_name: str
+
+
+class ScopedSprintCatalogStore:
+    """Process-local Sprint catalogs for issue-scanned sources (no Board row exists).
+
+    Same semantics as the Board row: complete publishes only, the last good
+    payload survives a failed refresh, 24 hour freshness, 300 second failure
+    backoff and one live attempt per identity.  It is never persisted and never
+    holds browser-supplied data.
+    """
+
+    def __init__(self, now_fn=_now):
+        self._now = now_fn
+        self._lock = threading.Lock()
+        self._entries = {}
+        self._attempts = {}
+
+    def clear(self):
+        with self._lock:
+            self._entries.clear()
+            self._attempts.clear()
+
+    def retire_workspace(self, workspace_id):
+        with self._lock:
+            workspace_id = str(workspace_id)
+            retired = {
+                identity for identity, entry in self._entries.items()
+                if entry['workspace_id'] == workspace_id
+            }
+            retired |= {
+                identity for identity, attempt in self._attempts.items()
+                if attempt['workspace_id'] == workspace_id
+            }
+            for identity in retired:
+                self._entries.pop(identity, None)
+                self._attempts.pop(identity, None)
+
+    def begin(self, identity, attempt_id, *, workspace_id, config_digest, force=False):
+        """Claim the identity; False while another attempt is live (or backing off)."""
+        with self._lock:
+            now = self._now()
+            attempt = self._attempts.get(identity)
+            if attempt is not None:
+                if attempt['status'] == 'pending' and attempt['deadline'] > now:
+                    return False
+                if not force and attempt['status'] == 'failed' and attempt['retry_at'] > now:
+                    return False
+            self._attempts[identity] = {
+                'attempt_id': attempt_id, 'status': 'pending', 'workspace_id': str(workspace_id),
+                'config_digest': config_digest, 'deadline': now + timedelta(seconds=SCOPED_ATTEMPT_SECONDS),
+                'failure_code': None, 'failed_at': None, 'retry_at': None,
+            }
+            return True
+
+    def _owned(self, identity, attempt_id):
+        attempt = self._attempts.get(identity)
+        return attempt is not None and attempt['status'] == 'pending' \
+            and attempt['attempt_id'] == attempt_id and attempt['deadline'] > self._now()
+
+    def publish(self, identity, attempt_id, sprints, *, workspace_id, source_digest, scan=None):
+        with self._lock:
+            if not self._owned(identity, attempt_id):
+                return False
+            now = self._now()
+            self._entries[identity] = {
+                'workspace_id': str(workspace_id), 'sprints': deepcopy(list(sprints or [])),
+                'version': str(uuid.uuid4()), 'validated_at': now,
+                'next_refresh_at': now + timedelta(seconds=SCOPED_CATALOG_TTL_SECONDS),
+                'source_digest': source_digest, 'scan': dict(scan) if scan else None,
+            }
+            self._attempts[identity]['status'] = 'completed'
+            return True
+
+    def fail(self, identity, attempt_id, code):
+        with self._lock:
+            if not self._owned(identity, attempt_id):
+                return False
+            now = self._now()
+            attempt = self._attempts[identity]
+            attempt.update(
+                status='failed', failure_code=code, failed_at=now,
+                retry_at=now + timedelta(seconds=SCOPED_FAILURE_RETRY_SECONDS),
+            )
+            return True
+
+    def snapshot(self, identity):
+        with self._lock:
+            entry = self._entries.get(identity)
+            attempt = self._attempts.get(identity)
+            return CatalogSnapshot(
+                identity=identity,
+                payload=deepcopy(entry['sprints']) if entry else None,
+                validated_at=entry['validated_at'] if entry else None,
+                next_refresh_at=entry['next_refresh_at'] if entry else None,
+                catalog_version=entry['version'] if entry else None,
+                refresh_attempt_id=attempt['attempt_id'] if attempt else None,
+                attempt_identity=identity if attempt else None,
+                attempt_config_digest=attempt['config_digest'] if attempt else None,
+                attempt_scope_digest=None,
+                attempt_deadline_at=attempt['deadline'] if attempt else None,
+                refresh_status=attempt['status'] if attempt else 'idle',
+                failure_code=attempt['failure_code'] if attempt else None,
+                last_failure_at=attempt['failed_at'] if attempt else None,
+                retry_at=attempt['retry_at'] if attempt else None,
+                refresh_lease_owner=attempt['attempt_id'] if attempt and attempt['status'] == 'pending' else None,
+                refresh_lease_until=attempt['deadline'] if attempt and attempt['status'] == 'pending' else None,
+                scan=dict(entry['scan']) if entry and entry.get('scan') else None,
+            )
+
+    def proof(self, config, sprint_id):
+        """Evidence that ``config``'s complete catalog currently holds ``sprint_id`` in range."""
+        key = str(sprint_id or '').strip()
+        with self._lock:
+            entry = self._entries.get(config.sprint_identity)
+            if entry is None or entry['source_digest'] != config.source_digest:
+                return None
+            for item in entry['sprints']:
+                if isinstance(item, dict) and str(item.get('id')) == key:
+                    name = str(item.get('name') or '').strip()
+                    if name and _name_in_range(config, name):
+                        return SprintSourceProof(
+                            config.sprint_identity, config.source_digest, entry['version'],
+                            key, name,
+                        )
+            return None
+
+    def matches(self, proof):
+        if proof is None:
+            return False
+        with self._lock:
+            entry = self._entries.get(proof.source_identity)
+            if entry is None or entry['version'] != proof.catalog_version \
+                    or entry['source_digest'] != proof.source_digest:
+                return False
+            return any(
+                isinstance(item, dict) and str(item.get('id')) == proof.sprint_id
+                and str(item.get('name') or '').strip() == proof.sprint_name
+                for item in entry['sprints']
+            )
+
+
+SCOPED_SPRINT_CATALOGS = ScopedSprintCatalogStore()
+
+
+def _name_in_range(config, name):
+    """Configuration rows are admitted only inside their own quarter range."""
+    if config.configuration_id is None:
+        return True
+    low, high = config.from_quarter, config.through_quarter
+    return work_structure.quarter_in_entry_range(
+        {'fromQuarter': low, 'throughQuarter': high}, name,
+    )
+
+
+def in_range_sprints(config, payload):
+    """Project a catalog payload onto the configuration's quarter range."""
+    return [
+        deepcopy(item) for item in payload or []
+        if isinstance(item, dict) and _name_in_range(config, str(item.get('name') or ''))
+    ]
+
+
+def load_scoped_sprint_catalog(context, *, config, database_url=None, store=None):
+    """Process-local issue-scanned catalog; the actor is validated like a DB read."""
+    with db_engine.session_scope(database_url) as session:
+        assert_catalog_refresh_actor(session, context)
+    return (store or SCOPED_SPRINT_CATALOGS).snapshot(config.sprint_identity)
+
+
+def capture_sprint_proof(config, sprint_id, *, store=None):
+    """Server-only proof for Team publication; no DB, no Jira, no browser input."""
+    if config.source_mode != work_structure.SOURCE_MODE_SCOPED_ISSUES or not config.sprint_identity:
+        return None
+    return (store or SCOPED_SPRINT_CATALOGS).proof(config, sprint_id)
+
+
+def _require_board_source(config):
+    if config.source_mode == work_structure.SOURCE_MODE_SCOPED_ISSUES:
+        raise ValueError('issue-scanned Sprint catalogs have no Board row')
+
+
 def load_sprint_catalog(context, *, config, database_url=None):
     identity = config.sprint_identity
     if identity is None:
         return _snapshot(None, identity=None, payload_attr='sprints')
+    _require_board_source(config)
     with db_engine.session_scope(database_url) as session:
         assert_catalog_refresh_actor(session, context)
         row = session.execute(select(models.WorkspaceSprintCatalog).where(
@@ -122,10 +321,7 @@ def load_sprint_catalog(context, *, config, database_url=None):
 
 
 def _scope_digest(config):
-    return build_team_scope_digest(
-        board_id=config.board_id, projects=config.projects,
-        team_field_id=config.team_field_id, base_jql=config.base_jql,
-    )
+    return team_scope_digest(config)
 
 
 def _normalized_sprint_id(value):
@@ -244,6 +440,8 @@ def claim_catalog_refresh(
     resolve_config, nonblocking=False, database_url=None,
 ):
     _validate_kind(kind, sprint_id)
+    if kind == 'sprints':
+        _require_board_source(expected_config)
     normalized_sprint_id = _normalized_sprint_id(sprint_id) if kind == 'teams' else None
     scope_digest = _scope_digest(expected_config) if kind == 'teams' else None
     identity = (
@@ -319,7 +517,40 @@ def _owned(row, claim):
     )
 
 
-def publish_catalog(context, *, claim, payload, budget, resolve_config, database_url=None):
+def _fail_team_publication(session, context, claim, budget):
+    row = _row_for_claim(session, context, 'teams', claim.sprint_id)
+    now = _db_now(session)
+    lease = row.refresh_lease_until if row is not None else None
+    attempt_deadline = row.attempt_deadline_at if row is not None else None
+    if lease is not None and lease.tzinfo is None:
+        lease = lease.replace(tzinfo=timezone.utc)
+    if attempt_deadline is not None and attempt_deadline.tzinfo is None:
+        attempt_deadline = attempt_deadline.replace(tzinfo=timezone.utc)
+    if (
+        _owned(row, claim)
+        and lease is not None and lease > now
+        and attempt_deadline is not None and attempt_deadline > now
+        and _remaining(budget, 'failure_cleanup') > 0
+    ):
+        row.refresh_status = 'failed'
+        row.failure_code = 'catalog_identity_changed'
+        row.last_failure_at = now
+        row.retry_at = now + timedelta(seconds=300)
+        row.refresh_lease_owner = row.refresh_lease_until = None
+        session.flush()
+
+
+def publish_catalog(
+    context, *, claim, payload, budget, resolve_config, database_url=None,
+    sprint_proof=None, scoped_store=None,
+):
+    """Publish one validated payload under the workspace fence.
+
+    Team publication for an issue-scanned source has no Board row: the caller
+    captured ``sprint_proof`` (server-only) before the fence, and inside it the
+    actor, configuration digest, claim/attempt deadline and that evidence are
+    rechecked with no Jira I/O.  Any mismatch keeps the prior snapshot.
+    """
     with db_engine.session_scope(database_url) as session:
         _remaining(budget, 'publication_fence')
         acquire_workspace_config_fence(session, context.workspace_id, budget=budget)
@@ -330,33 +561,30 @@ def publish_catalog(context, *, claim, payload, budget, resolve_config, database
             return False
         sprint_name = None
         if claim.kind == 'teams':
-            sprint = _row_for_claim(session, context, 'sprints', current.board_id)
-            sprint_item = next((
-                item for item in (sprint.sprints or [])
-                if isinstance(item, dict) and str(item.get('id')) == claim.sprint_id
-            ), None) if sprint is not None and sprint.validated_at is not None else None
-            sprint_name = str((sprint_item or {}).get('name') or '').strip()
+            if current.source_mode == work_structure.SOURCE_MODE_SCOPED_ISSUES:
+                store = scoped_store or SCOPED_SPRINT_CATALOGS
+                evidence_ok = bool(
+                    sprint_proof is not None
+                    and sprint_proof.sprint_id == claim.sprint_id
+                    and sprint_proof.source_identity == current.sprint_identity
+                    and sprint_proof.source_identity == claim.config.sprint_identity
+                    and sprint_proof.source_digest == current.source_digest
+                    and _name_in_range(current, sprint_proof.sprint_name)
+                    and store.matches(sprint_proof)
+                )
+                sprint_name = sprint_proof.sprint_name if evidence_ok else ''
+                sprint_item = {'name': sprint_name} if evidence_ok else None
+            else:
+                sprint = _row_for_claim(session, context, 'sprints', current.board_id)
+                sprint_item = next((
+                    item for item in (sprint.sprints or [])
+                    if isinstance(item, dict) and str(item.get('id')) == claim.sprint_id
+                ), None) if sprint is not None and sprint.validated_at is not None else None
+                sprint_name = str((sprint_item or {}).get('name') or '').strip()
+                if sprint_item is not None and not _name_in_range(current, sprint_name):
+                    sprint_item = None
             if sprint_item is None or not sprint_name:
-                row = _row_for_claim(session, context, 'teams', claim.sprint_id)
-                now = _db_now(session)
-                lease = row.refresh_lease_until if row is not None else None
-                attempt_deadline = row.attempt_deadline_at if row is not None else None
-                if lease is not None and lease.tzinfo is None:
-                    lease = lease.replace(tzinfo=timezone.utc)
-                if attempt_deadline is not None and attempt_deadline.tzinfo is None:
-                    attempt_deadline = attempt_deadline.replace(tzinfo=timezone.utc)
-                if (
-                    _owned(row, claim)
-                    and lease is not None and lease > now
-                    and attempt_deadline is not None and attempt_deadline > now
-                    and _remaining(budget, 'failure_cleanup') > 0
-                ):
-                    row.refresh_status = 'failed'
-                    row.failure_code = 'catalog_identity_changed'
-                    row.last_failure_at = now
-                    row.retry_at = now + timedelta(seconds=300)
-                    row.refresh_lease_owner = row.refresh_lease_until = None
-                    session.flush()
+                _fail_team_publication(session, context, claim, budget)
                 return False
         row_key = current.board_id if claim.kind == 'sprints' else claim.sprint_id
         row = _row_for_claim(session, context, claim.kind, row_key)

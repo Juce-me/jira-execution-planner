@@ -804,3 +804,121 @@ test('a group re-created from the default flow reuses the deleted group id, so i
     groups = groups.filter(group => group.id !== created);   // delete
     assert.equal(buildGroupId('New Group', new Set(groups.map(group => group.id))), created, 'the next default group takes the same creation-slot id');
 });
+
+// ---- Combined (rnd_2027) namespace: native initiative/epic kinds, independent per-configuration state ----------------
+const nativeInitiativeColumn = { id: 'init-cost', rowKind: 'initiative', label: 'Initiative cost', type: 'number', aggregation: 'sum', order: 0 };
+const nativeEpicColumn = { id: 'epic-cost', rowKind: 'epic', label: 'Epic cost', type: 'number', aggregation: 'sum', order: 0 };
+const combinedSchema = (extra = {}) => ({
+    schemaRevision: 4, columns: [nativeInitiativeColumn, nativeEpicColumn], capabilities: { canRead: true, canSave: true },
+    layouts: { initiative: { order: ['status'], hidden: [] }, epic: { order: ['initiative', 'status'], hidden: ['project'] } },
+    viewRevision: 2, inheritedFrom: null, configurationId: 'delivery', quarterOrdinal: 8109, ...extra,
+});
+// Table roles: `epic` = parent rows, `story` = child rows. In the combined model they store as initiative / epic.
+const parentRow = id => ({ issueId: String(id), rowKind: 'epic', id: String(id), key: `PLAN-${id}` });
+const childRow = id => ({ issueId: String(id), rowKind: 'story', id: String(id), key: `PLAN-E${id}` });
+const roleColumn = { id: 'init-cost', rowKind: 'epic', label: 'Initiative cost', type: 'number', aggregation: 'sum', order: 0 };
+
+test('combined namespace: native initiative/epic kinds map to table roles in, and back to native on every request', async () => {
+    const requests = [];
+    const c = await fixture({
+        fetchSchema: async () => combinedSchema(),
+        readValues: async (_, __, payload) => {
+            requests.push(payload);
+            return { cells: payload.rowKind === 'initiative' ? [{ issueId: '1', rowKind: 'initiative', columnId: 'init-cost', value: '2.000', revision: 5 }] : [], unavailableIssueIds: [] };
+        },
+        saveReview: async (_, __, payload) => { requests.push(payload); return { schemaRevision: 4, cells: payload.cellChanges.map(change => ({ ...change, revision: 6 })), layouts: { epic: { order: ['x'], hidden: [] } }, viewRevision: 3, inheritedFrom: null }; },
+    });
+    await c.setScope({ ...scope([parentRow(1), childRow(2)]), workModel: 'rnd_2027' });
+    const state = c.getState();
+    assert.deepEqual(state.columns.map(column => [column.id, column.rowKind]), [['init-cost', 'epic'], ['epic-cost', 'story']], 'native kinds become the parent/child roles');
+    assert.deepEqual(Object.keys(state.layouts).sort(), ['epic', 'story'], 'layouts are keyed by role');
+    assert.deepEqual(requests.map(payload => [payload.rowKind, payload.issueIds]).sort(), [['epic', ['2']], ['initiative', ['1']]], 'reads name native kinds');
+    assert.equal(c.isRowReadable(parentRow(1)), true);
+    assert.equal(Object.values(state.cells)[0].rowKind, 'epic', 'cells come back keyed by role');
+    c.setCell(parentRow(1), roleColumn, '3');
+});
+
+test('combined namespace: save sends native kinds in cells and schema changes', async () => {
+    const payloads = [];
+    const c = await fixture({
+        fetchSchema: async () => combinedSchema(),
+        readValues: async () => ({ cells: [{ issueId: '1', rowKind: 'initiative', columnId: 'init-cost', value: '2.000', revision: 5 }], unavailableIssueIds: [] }),
+        saveReview: async (_, __, payload) => { payloads.push(payload); return { schemaRevision: 4, cells: payload.cellChanges, layouts: { epic: { order: ['x'], hidden: [] } }, viewRevision: 3, inheritedFrom: null }; },
+    });
+    await c.setScope({ ...scope([parentRow(1), childRow(2)]), workModel: 'rnd_2027' });
+    c.setCell(parentRow(1), roleColumn, '3');
+    c.changeSchema({ action: 'layout', rowKind: 'story', order: ['x'], hidden: [] });
+    assert.equal(await c.save(), true);
+    assert.deepEqual(payloads[0].cellChanges.map(change => change.rowKind), ['initiative']);
+    assert.deepEqual(payloads[0].schemaChanges.map(change => change.rowKind), ['epic']);
+    assert.equal(c.getState().layouts.story.order[0], 'x');
+});
+
+test('era switch resets to the other namespace: nothing is copied and the draft of the old one is retired', async () => {
+    const fetches = [];
+    const c = await fixture({
+        fetchSchema: async () => { fetches.push('schema'); return { ...schema(), configurationId: null }; },
+        readValues: async () => ({ cells: fetches.length === 1 ? [{ issueId: '1', rowKind: 'story', columnId: 'cost', value: '1.000', revision: 1 }] : [] }),
+    });
+    await c.setScope({ ...scope([childRow(1)]), contextKey: 'a|legacy-cfg:legacy', workModel: 'legacy' });
+    assert.equal(c.getState().columns[0].id, 'cost');
+    c.setCell(childRow(1), column, '9');
+    assert.equal(c.getState().dirty, true);
+    await c.setScope({ ...scope([parentRow(1)]), contextKey: 'a|delivery:rnd_2027', workModel: 'rnd_2027' });
+    assert.equal(c.getState().dirty, false);
+    assert.deepEqual(c.getState().savedCells, {}, 'no cross-era cell survives the switch');
+    assert.equal(fetches.length, 2, 'the new namespace loads its own definitions');
+});
+
+test('a model change alone is a context change; a revision refresh inside the same namespace keeps the draft', async () => {
+    const c = await fixture({ fetchSchema: async () => combinedSchema() });
+    await c.setScope({ ...scope([parentRow(1)]), contextKey: 'k', workModel: 'rnd_2027' });
+    c.setCell(parentRow(1), roleColumn, '4');
+    assert.equal(c.getState().dirty, true);
+    await c.setScope({ ...scope([parentRow(1)]), contextKey: 'k', workModel: 'rnd_2027' });
+    assert.equal(c.getState().dirty, true, 'same namespace key and model: draft kept');
+    await c.setScope({ ...scope([parentRow(1)]), contextKey: 'k', workModel: 'legacy' });
+    assert.equal(c.getState().dirty, false);
+});
+
+test('stale configuration on save keeps the draft with safe copy and no conflict state; no automatic retry', async () => {
+    let saves = 0;
+    const c = await fixture({
+        fetchSchema: async () => combinedSchema(),
+        saveReview: async () => { saves += 1; throw Object.assign(new Error('x'), { status: 409, code: 'configuration_scope_changed', conflict: {} }); },
+    });
+    await c.setScope({ ...scope([parentRow(1)]), workModel: 'rnd_2027' });
+    c.setCell(parentRow(1), roleColumn, '4');
+    assert.equal(await c.save(), false);
+    const state = c.getState();
+    assert.equal(state.dirty, true);
+    assert.equal(state.conflict, null, 'not a shared-review conflict');
+    assert.equal(state.unconfirmed, false);
+    assert.match(state.error, /kept but was not saved/);
+    await settle();
+    assert.equal(saves, 1);
+});
+
+test('unresolved quarter ordinal disables layout saves with safe copy; the server 400 does the same', async () => {
+    const c = await fixture({ fetchSchema: async () => combinedSchema({ quarterOrdinal: null }) });
+    await c.setScope({ ...scope([parentRow(1)]), workModel: 'rnd_2027' });
+    assert.equal(c.getState().layoutBlocked, true);
+    assert.equal(c.changeSchema({ action: 'layout', rowKind: 'epic', order: [], hidden: [] }), false);
+    assert.match(c.getState().error, /cannot be placed in order/);
+    const rejected = await fixture({
+        fetchSchema: async () => combinedSchema(),
+        saveReview: async () => { throw Object.assign(new Error('bad'), { status: 400, code: 'review_quarter_unresolved' }); },
+    });
+    await rejected.setScope({ ...scope([parentRow(1)]), workModel: 'rnd_2027' });
+    rejected.changeSchema({ action: 'layout', rowKind: 'epic', order: ['a'], hidden: [] });
+    assert.equal(await rejected.save(), false);
+    assert.equal(rejected.getState().layoutBlocked, true);
+    assert.equal(rejected.getState().dirty, true, 'the layout draft is kept');
+});
+
+test('Legacy namespace requests are untouched by the role mapping', async () => {
+    const payloads = [];
+    const c = await fixture({ fetchSchema: async () => schema(), readValues: async (_, __, payload) => { payloads.push(payload); return { cells: [] }; } });
+    await c.setScope(scope([row(1)]));
+    assert.deepEqual(payloads, [{ groupId: 'g1', rowKind: 'story', issueIds: ['1'] }]);
+});

@@ -12,7 +12,7 @@ const containerPath = path.join(__dirname, '../frontend/src/settings/SettingsMod
 const containerSource = fs.readFileSync(containerPath, 'utf8');
 const dashboardSource = fs.readFileSync(path.join(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
 
-const PROP_NAMES = ['activeSettingsModalTab', 'canEditEpmConfiguration', 'cancelFirstRunConfiguration', 'discardGroupDraftChanges', 'discardMineOnGroupsConfigConflict', 'epmViewPreferenceDirty', 'firstRunConfigurationActive', 'firstRunHasCommittedSection', 'groupConfigValidationErrors', 'groupDraftError', 'groupManageTab', 'groupTestMessage', 'groupTesting', 'groupsConfigConflict', 'isEpmConfigDirty', 'isGroupBoardDraftDirty', 'isGroupDraftDirty', 'isGroupVisibilityDraftDirty', 'keepMineOnGroupsConfigConflict', 'keepMineOnWorkspaceConfigConflict', 'requestCloseGroupManage', 'setShowGroupDiscardConfirm', 'settingsHeaderAction', 'settingsModalTabs', 'settingsSaveDisabled', 'settingsSaveError', 'settingsSaveHandler', 'settingsSaveLabel', 'settingsSaveTitle', 'settingsShowsSave', 'showGroupDiscardConfirm', 'testGroupsConfigConnection', 'unsavedSectionsCount', 'useLatestWorkspaceConfig', 'workspaceConfigConflict'];
+const PROP_NAMES = ['activeSettingsModalTab', 'canEditEpmConfiguration', 'cancelFirstRunConfiguration', 'discardGroupDraftChanges', 'discardMineOnGroupsConfigConflict', 'epmViewPreferenceDirty', 'firstRunConfigurationActive', 'firstRunHasCommittedSection', 'groupConfigValidationErrors', 'groupDraftError', 'groupManageTab', 'groupTestMessage', 'groupTesting', 'groupsConfigConflict', 'isEpmConfigDirty', 'isGroupBoardDraftDirty', 'isGroupDraftDirty', 'isGroupVisibilityDraftDirty', 'keepMineOnGroupsConfigConflict', 'keepMineOnWorkspaceConfigConflict', 'requestCloseGroupManage', 'setShowGroupDiscardConfirm', 'settingsHeaderAction', 'settingsModalTabs', 'settingsSaveDisabled', 'settingsSaveError', 'settingsSaveHandler', 'settingsSaveLabel', 'settingsSaveTitle', 'settingsShowsSave', 'showGroupDiscardConfirm', 'testGroupsConfigConnection', 'unsavedSectionsCount', 'useLatestWorkspaceConfig', 'workConfigMode', 'workConfigTypeNamesNote', 'workspaceConfigConflict'];
 
 let bundlePromise;
 function loadBundle() {
@@ -54,7 +54,7 @@ async function modalProps(overrides = {}, children = 'child') {
     return { props: globalThis.__modalProps, html };
 }
 
-test('interface: stateless, first parameter destructured with the 35 explicit props plus children', () => {
+test('interface: stateless, first parameter destructured with the 37 explicit props plus children', () => {
     const start = containerSource.indexOf('({\n') + 3;
     const names = containerSource.slice(start, containerSource.indexOf('\n}) {', start)).split('\n').map((line) => line.trim().replace(/,$/, '')).filter(Boolean);
     assert.deepEqual(names.filter((name) => name !== 'children').sort(), PROP_NAMES);
@@ -204,4 +204,11 @@ test('dashboard call site: the open-state conditional stays in the app, props ar
     for (const marker of ["groupManageTab === 'connections'", '<UserConnectionsSettings', '<AdminSettingsContainer', "groupManageTab === 'epm'", '<EpmSettingsTab', '<DepartmentsSettingsTab']) assert.ok(children.includes(marker), marker);
     assert.equal(dashboardSource.includes('<SettingsModal\n'), false, 'the dashboard reaches the shell only through the container');
     assert.ok(dashboardSource.includes("initialLoad: () => import('./settings/SettingsModalContainer.jsx')"));
+});
+
+test('the type-name note sits beside Save while the draft counts as unsaved, never on Connections', async () => {
+    const note = 'Jira type names need saving: DELIVERY.';
+    assert.equal((await modalProps({ workConfigTypeNamesNote: note })).props.saveNote, note);
+    assert.equal((await modalProps({ workConfigTypeNamesNote: note, isGroupDraftDirty: false })).props.saveNote, '');
+    assert.equal((await modalProps({ workConfigTypeNamesNote: note, groupManageTab: 'connections' })).props.saveNote, '');
 });

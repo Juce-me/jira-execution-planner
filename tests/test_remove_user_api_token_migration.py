@@ -18,7 +18,8 @@ from sqlalchemy.orm import Session
 from backend.db import models
 
 ROOT = Path(__file__).resolve().parents[1]
-PARENT, HEAD, LATEST = '20261023_0020', '20261028_0021', '20261029_0022'
+PARENT, HEAD = '20261023_0020', '20261028_0021'
+LATEST = '20261030_0022'
 TOKEN_PROVIDER = 'atlassian_user_api_token'
 TOKEN_INDEX = 'uq_auth_connections_user_api_token_cloud'
 

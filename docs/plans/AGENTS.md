@@ -18,7 +18,7 @@ Existing date-only files in `docs/plans/` are legacy unclassified plans. Do not 
 
 Every remaining date-only legacy file must keep a top `Legacy plan status` note so direct file reads do not look implementation-ready.
 
-Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed and verified. Do the rename before the push or PR, in the commit that completes the work, so the pushed branch carries the finished plan (root `AGENTS.md` section 10, Git workflow); merge is not required first. A plan executed across several PRs keeps `EXEC-*` until the PR that completes it. Add a short top note naming the execution branch, commit or PR, for example:
+Do not rename an `EXEC-*` plan to `DONE-*` until the implementation has been completed and verified. Do the rename before the push or PR, in the commit that completes the work, so the pushed branch carries the finished plan (root `AGENTS.md` section 10, Git workflow); merge is not required first. A plan executed across several PRs keeps `EXEC-*` until the PR that completes it; finalizing a branch for push or PR completes its plans unless the operator says the PR is partial (root `AGENTS.md` section 10, Git workflow). Add a short top note naming the execution branch, commit or PR, for example:
 
 ```md
 > **Status:** Done. Executed in `<branch-or-commit-or-PR>`. Kept for audit context only.

@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { fetchSprintReview, readSprintReviewValues, saveSprintReview } from '../api/sprintReviewApi.js';
 import { reviewCellKey, validateReviewValue, parseReviewNumber, REVIEW_LIMIT_MESSAGES } from './planningReviewTableModel.js';
+import { REVIEW_ROLES, toNativeChange, toNativeKind, toRoleSchema } from './planningReviewKinds.js';
+import { WORK_WRITE_ERROR_MESSAGES } from '../workStructure/writeErrors.js';
 
 export function applyReviewSchemaChanges(columns, changes) {
     let result = columns.map(column => ({ ...column }));
@@ -25,12 +27,16 @@ export function applyReviewLayoutChanges(layouts = {}, changes = []) {
     return result;
 }
 
+// A stored review namespace without a resolved quarter ordinal cannot save a layout (the server answers 400 review_quarter_unresolved).
+const LAYOUT_BLOCKED_MESSAGE = WORK_WRITE_ERROR_MESSAGES.review_quarter_unresolved;
 const GROUP_BLOCKED_MESSAGES = { review_group_unknown: 'This Department group is no longer configured.', review_view_limit: 'This group has reached its limit of saved Sprint views.' };
 const responseView = data => ({ viewRevision: Number.isInteger(data.viewRevision) ? data.viewRevision : 0, inheritedFrom: data.inheritedFrom == null ? null : data.inheritedFrom });
 
 export function createPlanningSprintReviewController({ backendUrl = '', fetchSchema = fetchSprintReview, readValues = readSprintReviewValues, saveReview = saveSprintReview, onReviewAction } = {}) {
-    let state = { sprintId: '', groupId: '', contextKey: '', savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, columns: [], cells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, capabilities: { canRead: false, canSave: false }, dirty: false, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false };
+    let state = { sprintId: '', groupId: '', contextKey: '', workModel: 'legacy', layoutBlocked: false, savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, columns: [], cells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, capabilities: { canRead: false, canSave: false }, dirty: false, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false };
     let currentRows = [], active = false, generation = 0, pendingScope = null, disposed = false;
+    // The model selects the native row kinds the server stores under; everything above this boundary uses the table roles.
+    const fromServer = data => toRoleSchema(state.workModel, data);
     let loadedIds = new Set();
     let loadQueued = null, runningRead = null, deferredRead = false, writeEpoch = 0;
     const blockedDuringOwnRead = () => Boolean(state.dirty || state.saving || state.conflict || state.unconfirmed || state.pendingScopeChange);
@@ -46,11 +52,11 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         state.cells = { ...(state.savedCells || {}), ...Object.fromEntries(Object.entries(state.drafts).filter(([, cell]) => cell.valid !== false)) };
         listeners.forEach(listener => listener());
     };
-    const reset = (sprintId, contextKey, groupId) => {
+    const reset = (sprintId, contextKey, groupId, workModel = state.workModel) => {
         generation += 1;
         pendingScope?.resolve(false); pendingScope = null; settleQueued('ignored'); runningRead = null;
         lifetime.abort(); lifetime = new AbortController(); loadedIds = new Set(); deferredRead = false;
-        state = { ...state, sprintId: String(sprintId || ''), groupId, contextKey, savedColumns: [], savedLayouts: {}, currentLayouts: {}, savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, savedCells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, columns: [], cells: {}, capabilities: { canRead: false, canSave: false }, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false, schemaLoaded: false, currentSchemaRevision: 0, currentColumns: [], unavailableIssueIds: [] };
+        state = { ...state, workModel, layoutBlocked: false, sprintId: String(sprintId || ''), groupId, contextKey, savedColumns: [], savedLayouts: {}, currentLayouts: {}, savedViewRevision: 0, currentViewRevision: 0, savedInheritedFrom: null, currentInheritedFrom: null, groupBlocked: false, forceLoading: false, savedCells: {}, schemaRevision: 0, schemaChanges: [], drafts: {}, columns: [], cells: {}, capabilities: { canRead: false, canSave: false }, loading: false, saving: false, error: '', conflict: null, unconfirmed: false, progress: null, pendingScopeChange: false, schemaLoaded: false, currentSchemaRevision: 0, currentColumns: [], unavailableIssueIds: [] };
         emit({});
     };
     async function load({ force = false, options = {} } = {}) {
@@ -91,19 +97,19 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         if (!automatic) emit({ loading: true, forceLoading: force, error: '', progress: { completed: 0, total: 0 } });
         try {
             if (force || !state.schemaLoaded) {
-                const schema = await fetchSchema(backendUrl, sprintId, { signal, groupId });
+                const schema = fromServer(await fetchSchema(backendUrl, sprintId, { signal, groupId }));
                 if (!current()) return outcome('ignored');
                 const view = responseView(schema);
                 // Refresh retains every draft and its original revision until explicit recovery; only a
                 // pending column action conflicts on schemaRevision and only a pending layout on viewRevision.
                 const schemaConflict = state.dirty && state.schemaChanges.some(change => change.action !== 'layout') && schema.schemaRevision !== state.schemaRevision;
                 const viewConflict = state.dirty && state.schemaChanges.some(change => change.action === 'layout') && view.viewRevision !== state.savedViewRevision;
-                publish({ savedColumns: state.dirty ? state.savedColumns : schema.columns || [], currentColumns: schema.columns || [], savedLayouts: state.dirty ? state.savedLayouts : schema.layouts || {}, currentLayouts: schema.layouts || {}, schemaRevision: state.dirty ? state.schemaRevision : schema.schemaRevision, currentSchemaRevision: schema.schemaRevision, savedViewRevision: state.dirty ? state.savedViewRevision : view.viewRevision, currentViewRevision: view.viewRevision, savedInheritedFrom: state.dirty ? state.savedInheritedFrom : view.inheritedFrom, currentInheritedFrom: view.inheritedFrom, capabilities: schema.capabilities || {}, schemaLoaded: true, ...(schemaConflict || viewConflict ? { conflict: { schemaConflict, viewConflict }, error: schemaConflict ? 'The shared columns changed. Your draft is preserved.' : 'The shared review changed. Your draft is preserved.' } : {}) });
+                publish({ savedColumns: state.dirty ? state.savedColumns : schema.columns || [], currentColumns: schema.columns || [], savedLayouts: state.dirty ? state.savedLayouts : schema.layouts || {}, currentLayouts: schema.layouts || {}, schemaRevision: state.dirty ? state.schemaRevision : schema.schemaRevision, currentSchemaRevision: schema.schemaRevision, savedViewRevision: state.dirty ? state.savedViewRevision : view.viewRevision, currentViewRevision: view.viewRevision, savedInheritedFrom: state.dirty ? state.savedInheritedFrom : view.inheritedFrom, currentInheritedFrom: view.inheritedFrom, capabilities: schema.capabilities || {}, layoutBlocked: schema.configurationId != null && schema.quarterOrdinal == null, schemaLoaded: true, ...(schemaConflict || viewConflict ? { conflict: { schemaConflict, viewConflict }, error: schemaConflict ? 'The shared columns changed. Your draft is preserved.' : 'The shared review changed. Your draft is preserved.' } : {}) });
             }
             if (!staged.capabilities.canRead) { if (automatic && current()) { loadedIds = stagedIds; emit({ ...staged, groupBlocked: false }); } else if (!automatic) emit({ groupBlocked: false }); return outcome('ok'); }
-            const requested = [...currentRows.filter(row => !row.synthetic && row.issueId && ['epic', 'story'].includes(row.rowKind)), ...(force ? Object.values(state.drafts).map(cell => ({ issueId: cell.issueId, rowKind: cell.rowKind })) : [])];
+            const requested = [...currentRows.filter(row => !row.synthetic && row.issueId && REVIEW_ROLES.includes(row.rowKind)), ...(force ? Object.values(state.drafts).map(cell => ({ issueId: cell.issueId, rowKind: cell.rowKind })) : [])];
             const batches = [];
-            for (const rowKind of ['epic', 'story']) {
+            for (const rowKind of REVIEW_ROLES) {
                 const ids = [...new Set(requested.filter(row => row.rowKind === rowKind).map(row => row.issueId))].filter(id => force || !stagedIds.has(`${rowKind}:${id}`));
                 for (let offset = 0; offset < ids.length; offset += 500) batches.push({ rowKind, issueIds: ids.slice(offset, offset + 500) });
             }
@@ -113,7 +119,7 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             for (const batch of batches) {
                 if (!current()) return outcome('ignored');
                 let data;
-                try { data = await readValues(backendUrl, sprintId, { groupId, ...batch }, { signal }); }
+                try { data = fromServer(await readValues(backendUrl, sprintId, { groupId, ...batch, rowKind: toNativeKind(state.workModel, batch.rowKind) }, { signal })); }
                 catch (error) {
                     if (error.status !== 413 || batch.issueIds.length < 2) throw error;
                     const middle = Math.ceil(batch.issueIds.length / 2);
@@ -169,11 +175,11 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         const columnAction = state.schemaChanges.some(change => change.action !== 'layout');
         // A first layout save in an inheriting Sprint sends the displayed view's other kinds too; never stored in schemaChanges.
         const injected = layoutKinds.size > 0 && state.savedViewRevision === 0 && state.savedInheritedFrom !== null
-            ? ['epic', 'story'].filter(rowKind => !layoutKinds.has(rowKind) && state.savedLayouts?.[rowKind]).map(rowKind => ({ action: 'layout', rowKind, order: [...(state.savedLayouts[rowKind].order || [])], hidden: [...(state.savedLayouts[rowKind].hidden || [])] }))
+            ? REVIEW_ROLES.filter(rowKind => !layoutKinds.has(rowKind) && state.savedLayouts?.[rowKind]).map(rowKind => ({ action: 'layout', rowKind, order: [...(state.savedLayouts[rowKind].order || [])], hidden: [...(state.savedLayouts[rowKind].hidden || [])] }))
             : [];
         emit({ saving: true, error: '' });
         try {
-            const data = await saveReview(backendUrl, state.sprintId, { groupId: state.groupId, baseSchemaRevision: state.schemaRevision, baseViewRevision: state.savedViewRevision, schemaChanges: [...state.schemaChanges, ...injected], cellChanges: changes.map(({ issueId, rowKind, columnId, value, baseRevision }) => ({ issueId, rowKind, columnId, value, baseRevision })) });
+            const data = fromServer(await saveReview(backendUrl, state.sprintId, { groupId: state.groupId, baseSchemaRevision: state.schemaRevision, baseViewRevision: state.savedViewRevision, schemaChanges: [...state.schemaChanges, ...injected].map(change => toNativeChange(state.workModel, change)), cellChanges: changes.map(({ issueId, rowKind, columnId, value, baseRevision }) => ({ issueId, rowKind: toNativeKind(state.workModel, rowKind), columnId, value, baseRevision })) }));
             if (generation !== thisGeneration) return false;
             const layoutConfirmed = state.schemaChanges.filter(change => change.action === 'layout').every(change => {
                 const saved = data.layouts?.[change.rowKind];
@@ -198,7 +204,9 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             return true;
         } catch (error) {
             if (generation === thisGeneration) {
-                if (error.status === 409) { writeEpoch += 1; emit({ conflict: error.conflict || {}, error: 'The shared review changed. Your draft is preserved.' }); }
+                if (error.code === 'configuration_scope_changed') { writeEpoch += 1; emit({ error: WORK_WRITE_ERROR_MESSAGES.configuration_scope_changed }); }
+                else if (error.code === 'review_quarter_unresolved') emit({ layoutBlocked: true, error: LAYOUT_BLOCKED_MESSAGE });
+                else if (error.status === 409) { writeEpoch += 1; emit({ conflict: error.conflict || {}, error: 'The shared review changed. Your draft is preserved.' }); }
                 else if (error.name !== 'AuthenticationRequiredError') {
                     if (GROUP_BLOCKED_MESSAGES[error.code]) emit({ groupBlocked: true, error: GROUP_BLOCKED_MESSAGES[error.code] });
                     else if (REVIEW_LIMIT_MESSAGES[error.code]) emit({ error: REVIEW_LIMIT_MESSAGES[error.code] });
@@ -220,13 +228,14 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
             return load({ options: { ...options, automatic: true } });
         },
         subscribe(listener) { listeners.add(listener); return () => listeners.delete(listener); },
-        async setScope({ sprintId, groupId, contextKey, active: nextActive, rows = [], deferRead = false }) {
+        async setScope({ sprintId, groupId, contextKey, active: nextActive, rows = [], deferRead = false, workModel = 'legacy' }) {
             const nextGroupId = String(groupId || '');
-            const contextChanged = contextKey !== state.contextKey;
+            // An era switch is a context change: the other namespace's definitions, values and layout are never copied across.
+            const contextChanged = contextKey !== state.contextKey || workModel !== state.workModel;
             const groupChanged = nextGroupId !== state.groupId;
             const sprintChanged = String(sprintId || '') !== state.sprintId;
             // A group change discards like a context change: drafts are bound to the group they were loaded under.
-            if (contextChanged || groupChanged) { reset(sprintId, contextKey, nextGroupId); emit({ schemaLoaded: false, unavailableIssueIds: [] }); }
+            if (contextChanged || groupChanged) { reset(sprintId, contextKey, nextGroupId, workModel); emit({ schemaLoaded: false, unavailableIssueIds: [] }); }
             else if (sprintChanged) {
                 if (state.dirty) return false;
                 reset(sprintId, contextKey, nextGroupId); emit({ schemaLoaded: false, unavailableIssueIds: [] });
@@ -250,8 +259,9 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
         changeSchema(change) {
             writeEpoch += 1;
             if (!state.capabilities.canSave || state.saving) return false;
+            if (change.action === 'layout' && state.layoutBlocked) { emit({ error: LAYOUT_BLOCKED_MESSAGE }); return false; }
             if (change.action === 'add') {
-                if (!change.column?.id || !['epic', 'story'].includes(change.column.rowKind) || !['number', 'text'].includes(change.column.type) || !String(change.column.label).trim() || Array.from(change.column.label).length > 80 || state.columns.filter(column => column.rowKind === change.column.rowKind && !column.archived).length >= 30) return false;
+                if (!change.column?.id || !REVIEW_ROLES.includes(change.column.rowKind) || !['number', 'text'].includes(change.column.type) || !String(change.column.label).trim() || Array.from(change.column.label).length > 80 || state.columns.filter(column => column.rowKind === change.column.rowKind && !column.archived).length >= 30) return false;
             }
             if (change.action === 'archive' && Object.values(state.drafts).some(cell => cell.columnId === change.columnId)) { emit({ error: 'Save or discard this column’s draft cells before archiving it.' }); return false; }
             if (change.action === 'rename' && (!String(change.label).trim() || Array.from(change.label).length > 80)) return false;
@@ -288,14 +298,14 @@ export function createPlanningSprintReviewController({ backendUrl = '', fetchSch
     return controller;
 }
 
-export default function usePlanningSprintReview({ sprintId, groupId, active = false, contextKey, backendUrl = '', rows = [], onReviewAction, automaticHoldRef }) {
+export default function usePlanningSprintReview({ sprintId, groupId, active = false, contextKey, backendUrl = '', rows = [], onReviewAction, automaticHoldRef, workModel = 'legacy' }) {
     const actionRef = React.useRef(onReviewAction); actionRef.current = onReviewAction;
     const controller = React.useMemo(() => createPlanningSprintReviewController({ backendUrl, onReviewAction: (action, params) => actionRef.current?.(action, params) }), [backendUrl]);
     const state = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
     controller.setRows(rows);
     const deferRead = automaticHoldRef?.current > 0;
     const rowSignature = rows.filter(row => !row.synthetic && row.issueId).map(row => `${row.rowKind}:${row.issueId}`).sort().join('|');
-    React.useEffect(() => { void controller.setScope({ sprintId, groupId, active, contextKey, rows, deferRead }); }, [controller, sprintId, groupId, active, contextKey, rowSignature]);
+    React.useEffect(() => { void controller.setScope({ sprintId, groupId, active, contextKey, rows, deferRead, workModel }); }, [controller, sprintId, groupId, active, contextKey, workModel, rowSignature]);
     React.useEffect(() => {
         const leave = event => { if (controller.getState().dirty || controller.getState().saving) { event.preventDefault(); event.returnValue = ''; } };
         window.addEventListener('beforeunload', leave);

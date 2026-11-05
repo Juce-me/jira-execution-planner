@@ -5,9 +5,16 @@ import { epicHasFuturePlanningTeamLabel, epicMatchesFuturePlanningTeamSelection,
 import { buildStoryReadinessAlertModel } from './useEngWorkHierarchy.js';
 import { getEpicTeamInfo } from './engTaskUtils.js';
 import { useEngAlertFilters } from './useEngAlertFilters.js';
+import { isCombinedWorkModel, resolveEntityNames } from './engWorkModel.js';
+
+// Empty, waiting and ready-to-close Initiatives are derived from their Epic children, so they need authoritative complete child data:
+// a parent the server marked incomplete is never read as empty or closable. The server (`mark_child_data_completeness` in
+// jira_server.py) stamps `childDataComplete: false` on a combined-model parent whose child count/distribution read had a failed
+// page, since those fetchers return partial counts instead of raising; an absent field means no failure was recorded.
+const hasCompleteChildData = epic => epic?.childDataComplete !== false;
 
 export function useEngAlerts({
-    scope,
+    scope, workModel, entityNames,
     dismissedAlertKeys, visibleTasks, normalizeStatus, isExcludedStatus, getTeamInfo,
     missingPlanningInfoTasks, isTaskInSelectedSprint, hasStoryPoints, priorityOrder,
     activeGroupTeamLabels, resolveTeamName, tasks, alertScopeTooLarge, epicsInScope,
@@ -17,6 +24,11 @@ export function useEngAlerts({
     burnoutTaskFilter
 }) {
     const { selectedSprint, selectedSprintInfo, isAllTeamsSelected, selectedTeamSet, teamNameById, techProjectKeys } = scope;
+    // Combined (rnd_2027) model: tasks are Epic leaves and epicsInScope are their Initiative parents. The Backlog, Missing Team and
+    // Missing Labels parent-hygiene alerts are retired outright (no lists, so no requests); every other category keeps its rule at the
+    // shifted role. Legacy is untouched.
+    const combinedLane = isCombinedWorkModel(workModel);
+    const parentName = (entityNames || resolveEntityNames(workModel)).parent;
     const dismissedAlertSet = React.useMemo(() => new Set(dismissedAlertKeys || []), [dismissedAlertKeys]);
 
     const blockedTasks = visibleTasks.filter(task => {
@@ -68,7 +80,7 @@ export function useEngAlerts({
             const current = byKey.get(task.key) || { task, missing: new Set() };
 
             if (!hasStoryPoints(task)) current.missing.add('Story Points');
-            if (!task.fields?.epicKey) current.missing.add('Epic');
+            if (!task.fields?.epicKey) current.missing.add(parentName);
             if (!task.fields?.teamId && !task.fields?.teamName) current.missing.add('Team');
             if (!shouldIncludeUnknownTeam(task, current.missing)) return;
 
@@ -96,7 +108,8 @@ export function useEngAlerts({
         selectedTeamSet,
         dismissedAlertKeys,
         selectedSprint,
-        selectedSprintInfo?.name
+        selectedSprintInfo?.name,
+        parentName
     ]);
 
     const normalizedActiveGroupTeamLabels = React.useMemo(() => {
@@ -157,7 +170,7 @@ export function useEngAlerts({
         });
     }, [alertEpicsInScope, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels]);
     const backlogEpics = React.useMemo(() => {
-        if (!isFutureSprintSelected) return [];
+        if (!isFutureSprintSelected || combinedLane) return [];
         const seen = new Set();
         const selectedSprintScope = { selectedSprint, selectedSprintName: selectedSprintInfo?.name || '' };
         const remoteBacklog = filterExplicitBacklogEpics([...backlogProductEpics, ...backlogTechEpics], selectedSprintScope);
@@ -175,26 +188,26 @@ export function useEngAlerts({
             if (!status || status === 'done' || status === 'killed' || status === 'incomplete') return false;
             return true;
         });
-    }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels, selectedSprint, selectedSprintInfo?.name]);
+    }, [isFutureSprintSelected, backlogProductEpics, backlogTechEpics, planningCandidateEpics, dismissedAlertSet, isAllTeamsSelected, selectedTeamSet, normalizedActiveGroupTeamLabels, selectedSprint, selectedSprintInfo?.name, combinedLane]);
     const backlogEpicKeySet = React.useMemo(
         () => new Set(backlogEpics.map(epic => epic.key).filter(Boolean)),
         [backlogEpics]
     );
     const missingTeamEpics = React.useMemo(() => {
-        if (!isFutureSprintSelected) return [];
+        if (!isFutureSprintSelected || combinedLane) return [];
         return planningCandidateEpics.filter((epic) => {
             if (backlogEpicKeySet.has(epic.key)) return false;
             const teamId = String(epic.teamId || '').trim();
             const teamName = String(epic.teamName || '').trim().toLowerCase();
             return !teamId || !teamName || teamName === 'unknown team';
         });
-    }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet]);
+    }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, combinedLane]);
     const missingTeamEpicKeySet = React.useMemo(
         () => new Set(missingTeamEpics.map(epic => epic.key).filter(Boolean)),
         [missingTeamEpics]
     );
     const missingLabelEpics = React.useMemo(() => {
-        if (!isFutureSprintSelected) return [];
+        if (!isFutureSprintSelected || combinedLane) return [];
         return planningCandidateEpics.filter((epic) => {
             if (backlogEpicKeySet.has(epic.key) || missingTeamEpicKeySet.has(epic.key)) return false;
             if (!epicMatchesPlanningSprintValue(epic)) return false;
@@ -203,7 +216,7 @@ export function useEngAlerts({
                 teamLabels: normalizedActiveGroupTeamLabels
             });
         });
-    }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, selectedTeamSet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel]);
+    }, [isFutureSprintSelected, planningCandidateEpics, backlogEpicKeySet, missingTeamEpicKeySet, selectedTeamSet, normalizedActiveGroupTeamLabels, epicMatchesPlanningSprintValue, epicHasPlanningSprintLabel, combinedLane]);
     const missingLabelEpicKeySet = React.useMemo(
         () => new Set(missingLabelEpics.map(epic => epic.key).filter(Boolean)),
         [missingLabelEpics]
@@ -226,6 +239,7 @@ export function useEngAlerts({
             return true;
         })
         .filter(epic => typeof epic.totalStories === 'number' && epic.totalStories === 0)
+        .filter(epic => !combinedLane || hasCompleteChildData(epic))
         .filter(epic => !dismissedAlertSet.has(epic.key));
     const futureRoutedEpics = React.useMemo(() => {
         return emptyEpics.filter(epic => {
@@ -267,7 +281,7 @@ export function useEngAlerts({
             // close only when the epic has zero open (non-terminal) children
             // across all sprints. Fail closed when the count is missing/unloaded
             // so a still-open future-sprint story is never read as "all done".
-            return epic.openChildCount === 0;
+            return epic.openChildCount === 0 && (!combinedLane || hasCompleteChildData(epic));
         })
         .filter(epic => !dismissedAlertSet.has(epic.key));
 
@@ -343,6 +357,7 @@ export function useEngAlerts({
                 return true;
             });
             if (epicStories.length === 0) return false;
+            if (combinedLane && !hasCompleteChildData(epic)) return false;
             return epicStories.every(task => readyToCloseStoryStatuses.has(normalizeStatus(task.fields.status?.name)));
         });
     }, [
@@ -355,7 +370,8 @@ export function useEngAlerts({
         readyToCloseStoryStatuses,
         readyToCloseEpicStatuses,
         selectedSprint,
-        selectedSprintInfo?.name
+        selectedSprintInfo?.name,
+        combinedLane
     ]);
 
     const postponedEmptyEpics = React.useMemo(() => {

@@ -3,18 +3,22 @@ import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from
 import { fetchEditableIssueField, searchIssueFieldUsers, updateIssueField } from '../api/jiraIssueApi.js';
 import { enqueueEngIssueMutations } from './engIssueMutationQueue.js';
 import { hasIssueUserSearchThreshold, normalizeIssueUserSuggestions } from './engIssueFieldEditUtils.js';
+import { WORK_WRITE_ERROR_MESSAGES } from '../workStructure/writeErrors.js';
 
 const KNOWN_REJECTION_CODES = new Set([
     'invalid_json', 'invalid_issue_key', 'invalid_field', 'invalid_query', 'invalid_value', 'unsupported_field',
     'csrf_required', 'jira_oauth_required', 'jira_edit_forbidden', 'issue_not_found', 'field_not_editable',
     'issue_type_not_supported', 'field_mapping_changed', 'target_unavailable', 'stale_issue',
     'jira_field_rejected', 'jira_configuration_invalid', 'jira_rate_limited', 'jira_read_failed',
+    // Work-configuration rejections arrive before any Jira call: a known refusal, never an unknown write outcome.
+    ...Object.keys(WORK_WRITE_ERROR_MESSAGES),
 ]);
 const SUBMITTABLE_STATUSES = new Set(['ready', 'draft']);
 const MAX_CACHED_PEOPLE = 25;
 const MAX_CACHED_SEARCHES = 50;
 
 const ERROR_MESSAGES = Object.freeze({
+    ...WORK_WRITE_ERROR_MESSAGES,
     stale_issue: 'This field changed in Jira. Reload it before saving again.',
     field_mapping_changed: 'The Jira field configuration changed. Reload before editing.',
     field_not_editable: 'This field is no longer editable in Jira.',

@@ -24,6 +24,7 @@ export default function SettingsModal(props) {
         saveDisabled = false,
         saveTitle = '',
         saveLabel = 'Save',
+        saveNote = '',
         showDiscardConfirm = false,
         onDiscard,
         onKeepEditing,
@@ -78,9 +79,14 @@ export default function SettingsModal(props) {
                 </div>
                 {(validationMessages.length > 0 || validationActions) && (
                     <div className="group-modal-validation" role="alert" aria-live="polite" tabIndex={-1} ref={validationRef}>
-                        {validationMessages.map((message) => (
-                            <div key={message}>&bull; {message}</div>
-                        ))}
+                        {validationMessages.map((message) => (typeof message === 'string'
+                            ? <div key={message}>&bull; {message}</div>
+                            : (
+                                <div key={message.text}>
+                                    &bull; {message.text}{' '}
+                                    <button type="button" className="secondary compact" onClick={message.onAction}>{message.actionLabel}</button>
+                                </div>
+                            )))}
                         {validationActions}
                     </div>
                 )}
@@ -107,6 +113,7 @@ export default function SettingsModal(props) {
                     </div>
                     {showSave && (
                         <div className="group-modal-button-row">
+                            {saveNote && <span className="group-modal-meta" data-settings-save-note>{saveNote}</span>}
                             <button
                                 className="compact"
                                 onClick={onSave}

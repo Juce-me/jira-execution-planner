@@ -160,3 +160,66 @@ test('Team failures retain authority only for the exact validated identity and s
         }), false, key);
     }
 });
+
+test('in a combined-model quarter every directory and saved Team stays addable and nothing reads as absent', () => {
+    const rows = buildTeamAvailability({
+        directory: {
+            'team-a': { id: 'team-a', name: 'Alpha' },
+            'team-b': { id: 'team-b', name: 'Beta' },
+        },
+        sprintTeams: [{ id: 'team-a', name: 'Alpha' }],
+        configuredTeamIds: ['team-c'],
+        membershipReady: true,
+        sprintGated: false,
+    });
+    assert.deepEqual(Array.from(rows, row => ({ ...row })), [
+        { id: 'team-a', name: 'Alpha', availableInSprint: null, canAdd: true },
+        { id: 'team-b', name: 'Beta', availableInSprint: null, canAdd: true },
+        { id: 'team-c', name: 'team-c', availableInSprint: null, canAdd: true },
+    ]);
+});
+
+test('a same-name id absent from the Sprint is hidden when another id of that name is in it', () => {
+    const directory = {
+        'old-ds': { id: 'old-ds', name: 'Data Science' },
+        'new-ds': { id: 'new-ds', name: 'Data Science' },
+        'team-x': { id: 'team-x', name: 'Xray' },
+    };
+    for (const sprintGated of [true, false]) {
+        const rows = buildTeamAvailability({
+            directory,
+            sprintTeams: [{ id: 'new-ds', name: 'Data Science' }],
+            membershipReady: true,
+            sprintGated,
+        });
+        assert.deepEqual(Array.from(rows, row => row.id), ['new-ds', 'team-x'], `sprintGated=${sprintGated}`);
+    }
+});
+
+test('a configured shadowed id stays listed so its chip keeps its name', () => {
+    const rows = buildTeamAvailability({
+        directory: {
+            'old-ds': { id: 'old-ds', name: 'Data Science' },
+            'new-ds': { id: 'new-ds', name: ' data science ' },
+        },
+        sprintTeams: [{ id: 'new-ds', name: 'Data Science' }],
+        configuredTeamIds: ['old-ds'],
+        membershipReady: true,
+        sprintGated: false,
+    });
+    assert.deepEqual(Array.from(rows, row => [row.id, row.name]), [['new-ds', 'Data Science'], ['old-ds', 'Data Science']]);
+    assert.equal(rows.find(row => row.id === 'old-ds').sameNameInSprint, true);
+    assert.notEqual(rows.find(row => row.id === 'new-ds').sameNameInSprint, true);
+});
+
+test('same-name ids stay listed when membership is unknown or none of them is in the Sprint', () => {
+    const directory = {
+        'old-ds': { id: 'old-ds', name: 'Data Science' },
+        'new-ds': { id: 'new-ds', name: 'Data Science' },
+    };
+    const unknown = buildTeamAvailability({ directory, membershipReady: false, sprintGated: false });
+    const absent = buildTeamAvailability({ directory, sprintTeams: [{ id: 'team-x', name: 'Xray' }], membershipReady: true, sprintGated: false });
+    assert.deepEqual(Array.from(unknown, row => row.id), ['new-ds', 'old-ds']);
+    assert.deepEqual(Array.from(absent, row => row.id), ['new-ds', 'old-ds', 'team-x']);
+    assert.ok([...unknown, ...absent].every(row => !row.sameNameInSprint));
+});

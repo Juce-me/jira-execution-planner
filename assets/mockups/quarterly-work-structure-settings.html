@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project configurations — Settings mockup</title>
+<!-- Synthetic, memory-only fixture. Uses actual SettingsModal and JiraFieldSettings components. -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Crimson+Pro:wght@300;400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../../frontend/src/styles/dashboard.css">
+<style>
+/* Fixture layout only; control appearance comes from application CSS. */
+[hidden] { display: none !important; }
+[data-mockup] .group-modal-tabs { flex-shrink: 0; overflow-x: auto; }
+[data-mockup] .group-modal-tab { white-space: nowrap; }
+[data-mockup] .group-modal-content { overflow: hidden; }
+[data-mockup] #editor { padding: 0; overflow: hidden; }
+[data-mockup] #configuration-header { padding: .65rem 1rem; min-width: 0; }
+[data-mockup] [data-header-row] { display: flex; align-items: center; justify-content: space-between; gap: .6rem; min-width: 0; }
+[data-mockup] [data-header-row] h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+[data-mockup] [data-header-row] > span { flex-shrink: 0; }
+[data-mockup] #editor > * { flex-shrink: 0; }
+[data-mockup] #settings-panel { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; }
+[data-mockup] [data-fixture-panel] { min-height: 0; min-width: 0; }
+[data-mockup] [data-real-jira-settings] { min-height: 0; min-width: 0; }
+[data-mockup] [data-real-jira-settings] .group-modal-body,
+[data-mockup] [data-real-jira-settings] .group-pane { display: block; overflow: visible; }
+[data-mockup] [data-project-limit] .team-search-results { display: none; }
+[data-mockup] [data-catalog-state], [data-mockup] [data-picker-feedback], [data-mockup] [data-captured-filter],
+[data-mockup] [data-field-context-note], [data-mockup] [data-project-limit-message], [data-mockup] [data-setup-guidance],
+[data-mockup] [data-save-feedback] { margin: .5rem 1rem; }
+[data-mockup] [data-ranges] { padding: .65rem 1rem; flex-shrink: 0; }
+[data-mockup] [data-range-row] { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: center; gap: .5rem; margin-bottom: .35rem; }
+[data-mockup] [data-range-row] .group-name-input { min-width: 0; width: 100%; }
+[data-mockup] [data-range-row] > .selected-team-chip { justify-self: start; max-width: 100%; }
+[data-mockup] [data-range-error] { grid-column: 2 / -1; }
+[data-mockup] [data-config-tabs] { padding: 0 .9rem; margin: 0; }
+[data-mockup] [data-configuration-summary] { padding: .6rem .9rem; border-top: 1px solid var(--border); }
+[data-mockup] .group-pane-mobile-header { padding: .5rem 1rem; }
+[data-mockup] .group-pane-mobile-close { color: var(--text-primary); background: var(--bg-primary); }
+[data-mockup] .group-modal-footer { flex-shrink: 0; }
+@media (max-width: 650px) {
+  [data-mockup] .group-modal { width: calc(100vw - 1rem); height: calc(100dvh - 1rem); max-height: none; }
+  [data-mockup] .group-modal-backdrop { align-items: flex-start; padding-top: .5rem; }
+  [data-mockup] [data-range-row] { grid-template-columns: 5.5rem minmax(0, 1fr) auto; }
+  [data-mockup] [data-header-row] { flex-wrap: wrap; }
+  [data-mockup] .group-modal-footer { flex-wrap: wrap; gap: .5rem; }
+  [data-mockup] .group-modal-footer > .group-modal-button-row:first-child { flex-basis: 100%; min-width: 0; }
+  [data-mockup] .group-modal-footer > .group-modal-button-row:first-child button { flex-shrink: 0; white-space: nowrap; }
+  [data-mockup] .group-modal-footer .group-modal-meta { flex: 1; min-width: 0; }
+  [data-mockup] .remove-btn { min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+}
+@media (max-height: 480px) {
+  [data-mockup] .group-modal-subtitle { display: none; }
+  [data-mockup] #configuration-header > .group-field-helper { display: none; }
+  [data-mockup] .group-modal-footer .group-modal-meta { max-height: 2.6em; overflow-y: auto; }
+}
+@media (pointer: coarse) {
+  [data-mockup] .remove-btn { min-width: 24px; min-height: 24px; display: inline-flex; align-items: center; justify-content: center; }
+}
+</style>
+</head>
+<body data-mockup>
+<div id="work-structure-mockup"></div>
+<script src="../../tmp/quarterly-work-structure-fields.js"></script>
+</body>
+</html>

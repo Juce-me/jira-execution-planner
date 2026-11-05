@@ -220,10 +220,11 @@ export function SprintControl({
                             options.map((option, optionIndex) => {
                                 const selected = option.kind === 'scope'
                                     ? boardStrictScope === option.scope
+                                    : option.kind === 'quarter' ? !boardStrictScope && option.selected
                                     : !boardStrictScope && String(option.sprint.id) === String(selectedSprint);
                                 const state = option.kind === 'sprint'
                                     ? (option.sprint.state || '').toLowerCase()
-                                    : '';
+                                    : option.kind === 'quarter' ? option.state : '';
                                 const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
                                 const readinessText = option.kind === 'scope'
                                     ? (option.readiness === 'ready' ? 'Ready'
@@ -236,7 +237,7 @@ export function SprintControl({
                                     : undefined;
                                 return (
                                     <button
-                                        key={option.kind === 'scope' ? option.scope : option.sprint.id}
+                                        key={option.kind === 'scope' ? option.scope : option.kind === 'quarter' ? `quarter-${option.quarter}` : option.sprint.id}
                                         id={sprintOptionDomId(surface, option)}
                                         type="button"
                                         role="option"
@@ -246,10 +247,11 @@ export function SprintControl({
                                         aria-describedby={descriptionId}
                                         className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
                                         data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}
+                                        data-quarter={option.kind === 'quarter' ? option.quarter : undefined}
                                         onMouseMove={() => setSprintActiveOptionIndex(optionIndex)}
                                         onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
                                     >
-                                        <span>{option.kind === 'sprint' ? `${marker} ${option.label}` : option.label}</span>
+                                        <span>{option.kind === 'sprint' || (option.kind === 'quarter' && state) ? `${marker} ${option.label}` : option.label}</span>
                                         {option.kind === 'scope' && (
                                             <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
                                         )}

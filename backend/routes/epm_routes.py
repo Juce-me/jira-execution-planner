@@ -120,10 +120,14 @@ def _strict_epm_request_payload(*, rekey_custom_projects=False):
     return payload
 
 
-def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None):
+def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_keys=None, work_request=None):
     auth_context = _cache_policy_context()
     home_auth = resolve_epm_home_read_auth(auth_context)
     epm_config_snapshot = get_epm_config(context=auth_context)
+    roles = work_request.roles if work_request is not None else None
+    config_generation = build_epm_config_generation(epm_config_snapshot)
+    if work_request is not None:
+        config_generation = f'{config_generation}:{work_configuration_cache_segment(work_request.context)}'
     deps = epm_issues.EpmIssuesDependencies(
         find_epm_project_or_404=lambda project_id: find_epm_project_or_404(
             project_id,
@@ -133,22 +137,27 @@ def build_epm_project_issues_response(home_project_id, tab, sprint, sub_goal_key
             home_auth=home_auth,
         ),
         validate_epm_tab_sprint=validate_epm_tab_sprint,
-        build_epm_scope_clause=build_epm_scope_clause,
-        build_base_jql=build_base_jql,
+        build_epm_scope_clause=(
+            (lambda linkage: build_epm_scope_clause(linkage, epic_link=roles.uses_epic_link))
+            if roles is not None else build_epm_scope_clause),
+        build_base_jql=(lambda: roles.base_jql(JQL_QUERY)) if roles is not None else build_base_jql,
         add_clause_to_jql=add_clause_to_jql,
         fetch_issues_by_jql=(
             lambda jql, fields_list, context=None:
             fetch_epm_issues_by_jql(jql, fields_list, context=auth_context)
         ),
-        build_epm_fields_list=build_epm_fields_list,
+        build_epm_fields_list=(
+            (lambda: build_epm_fields_list(story_points_field_id=roles.story_points_field_id))
+            if roles is not None else build_epm_fields_list),
         shape_epm_issue_payload=shape_epm_issue_payload,
         dedupe_issues_by_key=dedupe_issues_by_key,
         cache=EPM_ISSUES_CACHE,
         cache_lock=_epm_cache_lock,
         cache_ttl_seconds=EPM_ISSUES_CACHE_TTL_SECONDS,
         context=auth_context,
-        config_generation=build_epm_config_generation(epm_config_snapshot),
+        config_generation=config_generation,
         authorize_cache=home_auth.cache_authorizer() if home_auth.strict else None,
+        sprint_clause=roles.sprint_clause if roles is not None else None,
     )
     return epm_issues.build_epm_project_issues_payload(home_project_id, tab, sprint, deps)
 
@@ -275,7 +284,11 @@ def get_all_epm_projects_rollup_endpoint():
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
-    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys)
+    work_request, work_error = admit_epm_work_request(_cache_policy_context(), tab, sprint)
+    if work_error is not None:
+        return work_error
+    admitted = {'work_request': work_request} if work_request is not None else {}
+    payload, status, headers = build_all_epm_projects_rollup(tab, sprint, sub_goal_keys=sub_goal_keys, **admitted)
     response = jsonify(payload)
     for key, value in headers.items():
         response.headers[key] = value
@@ -287,11 +300,16 @@ def get_epm_project_issues_endpoint(home_project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
     sub_goal_keys = parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys'))
+    work_request, work_error = admit_epm_work_request(_cache_policy_context(), tab, sprint)
+    if work_error is not None:
+        return work_error
+    admitted = {'work_request': work_request} if work_request is not None else {}
     payload, status, headers = build_epm_project_issues_response(
         home_project_id,
         tab,
         sprint,
         sub_goal_keys=sub_goal_keys,
+        **admitted,
     )
     response = jsonify(payload)
     for key, value in headers.items():
@@ -303,6 +321,9 @@ def get_epm_project_issues_endpoint(home_project_id):
 def get_epm_project_rollup_endpoint(project_id):
     tab = str(request.args.get('tab') or 'active').strip().lower()
     sprint = str(request.args.get('sprint') or '').strip()
+    work_request, work_error = admit_epm_work_request(_cache_policy_context(), tab, sprint)
+    if work_error is not None:
+        return work_error
     payload, status, headers = build_per_project_rollup(
         project_id,
         tab,
@@ -310,6 +331,7 @@ def get_epm_project_rollup_endpoint(project_id):
         build_epm_rollup_dependencies(
             sub_goal_keys=parse_epm_sub_goal_keys_param(request.args.get('subGoalKeys')),
             context=_cache_policy_context(),
+            **({'work_request': work_request} if work_request is not None else {}),
         ),
     )
     response = jsonify(payload)

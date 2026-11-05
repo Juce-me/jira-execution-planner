@@ -2,6 +2,7 @@ import * as React from 'react';
 import IconButton from '../ui/IconButton.jsx';
 import { trackShareViewAction } from '../analytics/dashboardAnalytics.js';
 import { shareViewCopyMessage, shareViewNoticeMessage } from './noticeCopy.js';
+import { resolveEntityNames } from '../eng/engWorkModel.js';
 
 const COPIED_MS = 2000;
 const KEY_SLOT_PX = 30;   // the gap the Epic key reserves on its left (epics.css) for the copy action
@@ -11,7 +12,7 @@ const LABEL = 'Copy view link';
 // An alert group passes `labelText`: its own count text is then the control, so the group has no second copy affordance.
 // The same Share control serves header view copies and explicit Epic copies. It copies the captured URL; when the
 // clipboard is unavailable or refuses the write, the notice shows the URL in a read-only field.
-export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, issueKind = 'epic', boardColumnId, alertTarget, scopeKey, labelText }) {
+export default function ShareViewButton({ surface, share, sourceSurface, activeControlSurface, epicKey, issueKind = 'epic', boardColumnId, alertTarget, scopeKey, labelText, entityNames = null }) {
     const [copied, setCopied] = React.useState(false);
     const [local, setLocal] = React.useState(null);
     const wrapperRef = React.useRef(null);
@@ -24,7 +25,9 @@ export default function ShareViewButton({ surface, share, sourceSurface, activeC
 
     const targeted = Boolean(epicKey || alertTarget);
     const identity = JSON.stringify([surface, scopeKey, sourceSurface, epicKey, issueKind, boardColumnId, alertTarget, share.shareDisabled]);
-    const kindLabel = issueKind === 'story' ? 'Story' : 'Epic';
+    // `issueKind` is the share-link role token; the copy names that role by its configured Jira type.
+    const names = entityNames || resolveEntityNames();
+    const kindLabel = issueKind === 'story' ? names.child : names.parent;
     const destination = epicKey ? `${kindLabel} ${epicKey} link copied` : alertTarget ? 'Alert group link copied' : 'View link copied';
     const label = epicKey ? `Copy link to ${kindLabel} ${epicKey}` : alertTarget ? 'Copy link to this alert group' : LABEL;
     const hint = epicKey ? `Copy link to this ${kindLabel}` : alertTarget ? 'Copy link to this alert group' : LABEL;

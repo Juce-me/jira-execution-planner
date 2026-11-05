@@ -196,6 +196,11 @@ export async function jsonOrStructuredError(response, label) {
         error.code = errorData.error;
         error.loginUrl = errorData.loginUrl;
         error.recoveryUrl = errorData.recoveryUrl;
+        // Label-free configuration details: a reason code, Team display names and missing configuration paths.
+        if (typeof errorData.reason === 'string') error.reason = errorData.reason;
+        for (const name of ['teams', 'missingFields']) {
+            if (Array.isArray(errorData[name])) error[name] = errorData[name].filter(item => typeof item === 'string');
+        }
         throw error;
     }
     return response.json();

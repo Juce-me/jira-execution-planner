@@ -54,9 +54,9 @@ function render(tab, performanceAdminAvailable = false) {
     return renderToStaticMarkup(React.createElement(Container, props));
 }
 
-test('the container takes the 160 explicit props the interface checker verifies', () => {
-    assert.equal(PROP_NAMES.length, 160);
-    assert.equal(new Set(PROP_NAMES).size, 160);
+test('the container takes the 164 explicit props the interface checker verifies', () => {
+    assert.equal(PROP_NAMES.length, 164);
+    assert.equal(new Set(PROP_NAMES).size, 164);
 });
 
 test('the container is stateless', () => {

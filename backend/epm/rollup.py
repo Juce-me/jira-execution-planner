@@ -41,6 +41,9 @@ class EpmRollupDependencies:
     authorize_cache: Callable | None = None
     # Aggregate workers: true once a sibling failed, so nothing more is admitted to the cache.
     is_cancelled: Callable | None = None
+    # Admitted work configuration (WorkRoles) of the selected quarter; None keeps the flat Legacy path.
+    roles: object = None
+    sprint_clause: Callable | None = None
     now: Callable = time.time
 
 
@@ -134,6 +137,72 @@ def _hierarchy_has_issues(hierarchy):
     )
 
 
+def _raw_type(row):
+    issue_type = ((row or {}).get('fields') or {}).get('issuetype') or {}
+    return str(issue_type.get('id') or ''), str(issue_type.get('name') or '').strip()
+
+
+def _build_new_model_rollup(project, label, tab, sprint, deps):
+    """Selected-quarter Epics under labeled Initiatives (no daily Story prerequisite, no Epic Link).
+
+    Hierarchy roles come from the workspace's mapped type ids, never from the private ``issueTypes``
+    names, which stay stored untouched.  Returns the payload (empty rollup when nothing qualifies).
+    """
+    roles = deps.roles
+    base_jql = deps.build_base_jql()
+    headers = deps.build_jira_headers()
+    fields_list = deps.build_epm_rollup_fields_list(None, roles.team_field_id)
+    parent_id = roles.parent_term()[1]
+    planning_id = roles.planning_type_id()
+    truncated_queries = []
+
+    quoted_label = '"' + str(label).replace('\\', '\\\\').replace('"', '\\"') + '"'
+    q1_jql = deps.add_clause_to_jql(deps.add_clause_to_jql(base_jql, f'labels = {quoted_label}'), roles.parent_clause())
+    q1_raw = [row for row in deps.fetch_epm_rollup_query(q1_jql, 'q1', headers, fields_list, truncated_queries)
+              if _raw_type(row)[0] == parent_id]
+    payload_empty = deps.build_empty_epm_rollup_payload(project, empty_rollup=True)
+    if not q1_raw:
+        return payload_empty
+
+    initiative_keys = sorted({row.get('key') for row in q1_raw if row.get('key')})
+    quoted_keys = ', '.join('"' + str(key).replace('"', '') + '"' for key in initiative_keys)
+    q2_jql = deps.add_clause_to_jql(deps.add_clause_to_jql(base_jql, f'parent in ({quoted_keys})'), roles.planning_clause())
+    if should_apply_epm_sprint(tab):
+        q2_jql = deps.add_clause_to_jql(q2_jql, deps.sprint_clause(sprint))
+    elif tab == 'backlog':
+        q2_jql = deps.add_clause_to_jql(q2_jql, f'{roles.sprint_ref} is EMPTY')
+    q2_raw = [row for row in deps.fetch_epm_rollup_query(q2_jql, 'q2', headers, fields_list, truncated_queries)
+              if _raw_type(row)[0] == planning_id]
+    if tab == 'backlog':
+        q2_raw = [row for row in q2_raw
+                  if not _is_backlog_excluded_epic(
+                      {'status': (((row.get('fields') or {}).get('status')) or {}).get('name')}, deps.normalize_epm_text)]
+
+    names = {'initiative': sorted({_raw_type(row)[1] for row in q1_raw if _raw_type(row)[1]}),
+             'epic': sorted({_raw_type(row)[1] for row in q2_raw if _raw_type(row)[1]})}
+    shaped, _ = deps.shape_epm_rollup_issue_payload(q1_raw + q2_raw, epic_link_field_id=None,
+                                                   team_field_id=roles.team_field_id)
+    hierarchy = deps.build_epm_rollup_hierarchy(deps.dedupe_issues_by_key(shaped), names)
+    if tab == 'backlog' or should_apply_epm_sprint(tab):
+        hierarchy['initiatives'] = {
+            key: initiative for key, initiative in hierarchy['initiatives'].items()
+            if initiative.get('epics')}
+    if not _hierarchy_has_issues(hierarchy):
+        payload_empty['truncated'] = bool(truncated_queries)
+        payload_empty['truncatedQueries'] = truncated_queries
+        return payload_empty
+    return {
+        'project': project,
+        'metadataOnly': False,
+        'emptyRollup': False,
+        'truncated': bool(truncated_queries),
+        'truncatedQueries': truncated_queries,
+        # Read-only workspace hierarchy names of this period (the private issueTypes stay as stored).
+        'hierarchyNames': names,
+        **hierarchy,
+    }
+
+
 def build_per_project_rollup(project_id, tab, sprint, deps):
     tab = str(tab or 'active').strip().lower()
     sprint = str(sprint or '').strip()
@@ -173,6 +242,10 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
         return cached['data'], 200, {'Server-Timing': 'cache;dur=1'}
 
     started = time.perf_counter()
+    if deps.roles is not None and not deps.roles.is_legacy:
+        payload = _build_new_model_rollup(project, label, tab, sprint, deps)
+        admit(payload)
+        return payload, 200, {'Server-Timing': f'jira-search;dur={round((time.perf_counter() - started) * 1000, 1)}'}
     s1_jql, child_predicate = rollup_jqls
     headers = deps.build_jira_headers()
     epic_link_field_id = deps.resolve_epic_link_field_id(headers)
@@ -184,7 +257,7 @@ def build_per_project_rollup(project_id, tab, sprint, deps):
 
     def with_sprint_filter(jql):
         if should_apply_epm_sprint(tab):
-            return deps.add_clause_to_jql(jql, f'Sprint = {sprint}')
+            return deps.add_clause_to_jql(jql, deps.sprint_clause(sprint) if deps.sprint_clause else f'Sprint = {sprint}')
         return jql
 
     def filter_leaf_issues_for_tab(issues, sprint_filtered=False):

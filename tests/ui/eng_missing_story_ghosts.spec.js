@@ -504,7 +504,7 @@ test('Planning puts requirement rows and requirement-bearing Epics first', async
     await expect(mixedRows.nth(1)).toHaveClass(/task-item/);
     await expect(page.locator('.epic-block').first()).toContainText('Story required');
     await expect(page.locator('.eng-empty-results')).toHaveCount(0);
-    await expect(page.getByText(/1 stories · 2 required/i)).toBeVisible();
+    await expect(page.getByText(/1 story · 2 required/i)).toBeVisible();
 });
 
 test('a ghost-only hierarchy is a non-empty ENG result', async ({ page }) => {

@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from './statsScope.js';
 import { createPortal } from 'react-dom';
 import StackedBar from './StackedBar.jsx';
 import { sortEpicsByTotalAge } from './projectTrackPhaseStats.js';
@@ -23,7 +25,7 @@ import { resolveFloatingHoverPosition } from '../ui/hoverBubblePosition.js';
 const READOUT_MAX_WIDTH = 220;
 const READOUT_HEIGHT = 72;
 
-export default function ProjectTrackPhaseChart({ rows, resolveColor, jiraUrl }) {
+export default function ProjectTrackPhaseChart({ rows, resolveColor, jiraUrl, words = roleLabels(null) }) {
     const sorted = React.useMemo(() => sortEpicsByTotalAge(rows || []), [rows]);
     const [hovered, setHovered] = React.useState(null);
 
@@ -109,8 +111,8 @@ export default function ProjectTrackPhaseChart({ rows, resolveColor, jiraUrl }) 
                 formatValue={formatDays}
                 formatReadout={({ rowLabel, segmentKey, value }) => `${rowLabel} — ${segmentKey}: ${formatDays(value)}`}
                 renderRowLabel={renderRowLabel}
-                ariaLabel="Time in Project Track phase per epic"
-                emptyText="No epic phase data available."
+                ariaLabel={`Time in Project Track phase per ${lowerEntityWord(words.parent)}`}
+                emptyText={`No ${lowerEntityWord(words.parent)} phase data available.`}
                 resolveLabel={(state) => state}
             />
             {readout && typeof document !== 'undefined' && document.body

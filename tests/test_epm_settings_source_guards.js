@@ -242,9 +242,13 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
         extractDestructuredProps(teamGroupsSettingsSource),
         'Expected TeamGroupsSettings passed props to match received props exactly'
     );
+    // The six quarterly Project config props are optional: the flat Admin container never passes them
+    // (omitted means the unchanged default markup, pinned by test_jira_field_settings_default_markup.js)
+    // and only WorkConfigurationsEditor supplies them.
+    const OPTIONAL_PROJECT_CONFIG_PROPS = ['hierarchyMappings', 'extraFieldMappings', 'classificationMode', 'mappingPreviewLabels', 'mappingFieldHelpers', 'sourceFieldHelpers'];
     assert.deepStrictEqual(
         extractShorthandSpreadProps(jiraFieldSettingsCallSource),
-        extractDestructuredProps(jiraFieldSettingsSource),
+        extractDestructuredProps(jiraFieldSettingsSource).filter((name) => !OPTIONAL_PROJECT_CONFIG_PROPS.includes(name)),
         'Expected JiraFieldSettings passed props to match received props exactly'
     );
     ['activeGroupDraft', 'teamSearchOpen', 'activeTeamQuery', 'removeTeamFromGroup', 'showGroupAdvanced', 'groupImportText'].forEach((propName) => {

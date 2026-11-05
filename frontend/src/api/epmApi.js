@@ -1,4 +1,5 @@
 import { apiFetch, getJson, postJson, trackedFetch } from './http.js';
+import { runInWorkContext, stampParams } from '../workStructure/requestContext.js';
 
 const fetchCsrfToken = (backendUrl) =>
     getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
@@ -88,6 +89,11 @@ function getEpmJson(url, label, options = {}) {
         : apiFetch(url, fetchOptions);
     return request.then(response => epmJson(response, label));
 }
+
+// Rollups read the selected quarter's configuration (id, revision, quarter); the backlog tab has no Sprint,
+// so the viewed quarter is its only selector. Metadata, scope and goals stay private/global and unstamped.
+const getScopedEpmRollupJson = (url, label, options) =>
+    runInWorkContext(options, next => getEpmJson(url, label, next));
 
 export const fetchEpmConfig = (backendUrl) =>
     getEpmJson(`${backendUrl}/api/epm/config`, 'EPM config', { cache: 'no-cache' });
@@ -195,7 +201,8 @@ export const fetchEpmProjectRollup = (backendUrl, projectId, { tab, sprint, subG
         params.set('sprint', String(sprint));
     }
     appendEpmSubGoalKeysParam(params, subGoalKeys);
-    return getEpmJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', {
+    stampParams(params);
+    return getScopedEpmRollupJson(`${backendUrl}/api/epm/projects/${encodeURIComponent(projectId)}/rollup?${params.toString()}`, 'EPM rollup', {
         cache: 'no-cache',
         signal,
         analytics: {
@@ -216,7 +223,8 @@ export const fetchEpmAllProjectsRollup = (backendUrl, { tab, sprint, subGoalKeys
         params.set('sprint', String(sprint));
     }
     appendEpmSubGoalKeysParam(params, subGoalKeys);
-    return getEpmJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', {
+    stampParams(params);
+    return getScopedEpmRollupJson(`${backendUrl}/api/epm/projects/rollup/all?${params.toString()}`, 'EPM all-projects rollup', {
         cache: 'no-cache',
         signal,
         analytics: {

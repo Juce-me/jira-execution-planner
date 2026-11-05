@@ -66,7 +66,8 @@ function epicProps() {
         issueFieldEditsEnabled: false, jiraUrl: 'https://jira.example', excludedEpicSet: new Set(), normalizeEpicKey: String, stickyEpicFocusKey: null, epicRefMap: { current: new Map() },
         statusTransitionEnabled: false, renderPriorityIcon: () => null,
         showStats: false, showPlanning: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() }, selectedTasks: {}, getTeamInfo: () => ({}),
-        shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false };
+        shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false,
+        entityNames: { model: 'legacy', child: 'Story', childPlural: 'Stories', parent: 'Epic', parentPlural: 'Epics', childLevel: 0, parentLevel: 1 } };
 }
 test('EpicBlock SSR preserves keyed root status/person metadata and fallback branches', () => {
     const { EpicBlock } = load('EpicBlock.jsx');
@@ -182,8 +183,10 @@ const expectedProps = {
         "toggleTeamSelection"
     ],
     "EpicBlock": [
+        "InitiativeIcon",
         "canEditSharedConfiguration",
         "canToggleSharedGroupExcludedCapacity",
+        "entityNames",
         "epicGroup",
         "epicRefMap",
         "epicRefresh",

@@ -1,11 +1,14 @@
 import React, { useEffect } from 'react';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
-import { aggregateCohortSummary, buildCohortGridModel, buildCohortRequest, buildCompletedEpicsBars, buildOpenEpicsBars, buildQuarterOptions, createdRangeOf, deriveProjectOptions, filterCohortIssues, getCurrentQuarterLabel, normalizeCohortStatus, selectLastClosedEpics } from '../cohort/cohortUtils.js';
+import { admitCohortResult, aggregateCohortSummary, buildCohortGridModel, buildCohortQueryKey, buildCohortRequest, cohortConfigurationFailure, buildCompletedEpicsBars, buildOpenEpicsBars, buildQuarterOptions, createdRangeOf, deriveProjectOptions, filterCohortIssues, getCurrentQuarterLabel, normalizeCohortStatus, selectLastClosedEpics } from '../cohort/cohortUtils.js';
 import { buildDefaultExcludedCapacityRange, buildEpicTeamCrossShareLineSeries, buildEpicTeamModeOverall, buildEpicTeamModeSprintRows, buildEffortTypeSplitRows, buildExcludedCapacityLineSeries, buildExcludedCapacityTimeSeries, buildExcludedEpicCatalog, getSprintRange, loadExcludedCapacityStatsSourceChunks, mergeExcludedCapacityStatsSourceChunks, sortSprintsNewestFirst, summarizeEffortTypeSplitTotals } from './excludedCapacityStats.js';
 import { buildBurnoutChartModel } from './burnoutChartUtils.js';
 import { buildLocalStatsFromTasks, computePriorityWeighted, computeRate, getPriorityLabel } from './statsUtils.js';
 import { buildProjectTrackSprintSeries, summarizeProjectTrackTotals, buildProjectTrackBreakdownRows, buildProjectTrackColumnSplit, inScopeEpicKeys as projectTrackInScopeEpicKeys } from './projectTrackStats.js';
 import { summarizeTrackPhaseDurations } from './projectTrackPhaseStats.js';
+import { sprintInContext } from './statsScope.js';
+import { catalogContextKey } from '../workStructure/configurationContext.js';
+import { useActiveWorkContext } from '../workStructure/useActiveWorkContext.js';
 import { fetchExcludedCapacityStatsSource as requestExcludedCapacityStatsSource } from '../api/engApi.js';
 import { fetchBurnoutStats as requestBurnoutStats, fetchEpicCohortStats as requestEpicCohortStats, fetchProjectTrackPhaseDurations as requestProjectTrackPhaseDurations } from '../api/statsApi.js';
 
@@ -58,7 +61,7 @@ export function useStatsDerivedA({
     scope, automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
     activeGroupTeamSet, burnoutAssigneeFilter, burnoutCacheRef, burnoutData,
     cohortClosedEndQuarter, cohortClosedStartQuarter, cohortEndQuarter, cohortMode, cohortStartQuarter,
-    getTeamInfo, groupPreferences,
+    getTeamInfo, groupPreferences, workContext: workContextInput, workSetupScope = null,
     isCompletedSprintSelected, issueEditStateRef, issuePeopleStatsRevision, normalizeEpicKey,
     normalizeStatus, perfCountersRef, perfEnabled, setBurnoutAssigneeFilter,
     setBurnoutData, setBurnoutError, setBurnoutLoading, showStats,
@@ -68,6 +71,8 @@ export function useStatsDerivedA({
         adHocEpicSet, adHocEpicSignature, capacityTasks, excludedEpicSet,
         isAllTeamsSelected, selectedSprintInfo, selectedTeamSet, techProjectKeys
     } = scope;
+    const activeWorkContext = useActiveWorkContext();
+    const workContext = workContextInput === undefined ? activeWorkContext : workContextInput;
     const automaticBurnoutDataRef = React.useRef(null);
     const statsTaskList = React.useMemo(() => {
         if (!capacityTasks.length) return [];
@@ -187,17 +192,15 @@ export function useStatsDerivedA({
         if (!sprintLabel) return '';
         return `${sprintLabel}::${burnoutClosureScopeKey}::${burnoutScopedTeamSignature || 'all'}::${burnoutIssueKeysSignature}`;
     }, [selectedSprintInfo?.name, burnoutClosureScopeKey, burnoutScopedTeamSignature, burnoutIssueKeysSignature]);
-    const cohortQueryKey = React.useMemo(() => {
-        // Created keeps its original key; the closed modes prefix theirs, and Last N is keyed by scope alone (N is client-only).
-        const scopeKey = `${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`;
-        if (cohortMode === 'last_n') return `last_n::::::${scopeKey}`;
-        const closedMode = cohortMode === 'closed';
-        const startQuarter = String((closedMode ? cohortClosedStartQuarter : cohortStartQuarter) || '').trim();
-        const endQuarter = String((closedMode ? cohortClosedEndQuarter : cohortEndQuarter) || '').trim();
-        if (!startQuarter || !endQuarter) return '';
-        const key = `${startQuarter}::${endQuarter}::${scopeKey}`;
-        return closedMode ? `closed::${key}` : key;
-    }, [cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortScopedTeamSignature, adHocEpicSignature]);
+    const statsWorkCatalogKey = catalogContextKey(workContext);
+    // Last N is only blocked by its own selected configuration; usable Legacy is never blocked by DELIVERY.
+    const cohortSetupBlocked = cohortMode === 'last_n' && Boolean(workSetupScope)
+        && (workSetupScope.status === 'setup_required' || workSetupScope.status === 'no_configuration');
+    const cohortQueryKey = React.useMemo(() => buildCohortQueryKey({
+        mode: cohortMode, startQuarter: cohortStartQuarter, endQuarter: cohortEndQuarter,
+        closedStartQuarter: cohortClosedStartQuarter, closedEndQuarter: cohortClosedEndQuarter,
+        scopeKey: `${cohortScopedTeamSignature}::${adHocEpicSignature || 'no-adhoc'}`, context: workContext
+    }), [cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortScopedTeamSignature, adHocEpicSignature, statsWorkCatalogKey]);
 
     useEffect(() => {
         if (!showStats || statsView !== 'burnout') return;
@@ -334,7 +337,7 @@ export function useStatsDerivedA({
     return {
         effectiveStatsData, burnoutTaskTeamByIssueKey, burnoutTaskStatusByIssueKey, burnoutIssueWeightByKey,
         burnoutScopedTeamIds, burnoutScopedTeamSignature, cohortScopedTeamSignature, burnoutQueryKey,
-        cohortQueryKey
+        cohortQueryKey, statsWorkCatalogKey, cohortSetupBlocked, workContext, workSetupScope
     };
 }
 
@@ -356,14 +359,18 @@ export function useStatsDerivedB({
     setExcludedCapacityData, setExcludedCapacityEndSprintId, setExcludedCapacityEpicDropdownOpen, setExcludedCapacityError,
     setExcludedCapacityIsolatedTeam, setExcludedCapacityLoading, setExcludedCapacitySelectedEpicKeys, setExcludedCapacityStartSprintId,
     setProjectTrackPhaseData, setProjectTrackPhaseError, setProjectTrackPhaseLoading, showStats,
-    statsView, trackApiResult
+    statsView, trackApiResult, statsWorkCatalogKey = '', cohortSetupBlocked = false, workContext = null
 }) {
     const {
         activeGroupId, adHocEpicSet, adHocEpicSignature, excludedEpicSet,
         isAllTeamsSelected, selectedSprint, selectedSprintInfo, selectedTeamSet,
         teamNameById, teamOptions, techProjectKeys
     } = scope;
+    // Selectors may narrow a source read only when the id belongs to the viewed configuration (mixed-era ranges).
+    const sprintScoped = id => sprintInContext((availableSprints || []).find(sprint => String(sprint?.id) === String(id)), workContext);
     const automaticCohortDataRef = React.useRef(null);
+    const cohortQueryKeyRef = React.useRef(cohortQueryKey);
+    cohortQueryKeyRef.current = cohortQueryKey;
     const automaticExcludedDataRef = React.useRef(null);
     useEffect(() => {
         if (showStats && statsView === 'burnout') return;
@@ -382,14 +389,14 @@ export function useStatsDerivedB({
         const automatic = automaticRefreshRef?.current;
         if (automatic && automatic.job.shouldApply()) {
             if (automatic.source !== 'stats_cohort') return;
-            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (cohortMode !== 'last_n' && (!activeStartQuarter || !activeEndQuarter))) { automatic.settle([{ source: 'stats_cohort', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
+            if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (cohortMode !== 'last_n' && (!activeStartQuarter || !activeEndQuarter)) || cohortSetupBlocked) { automatic.settle([{ source: 'stats_cohort', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
             return runAutomaticStatsRead(automatic, 'stats_cohort', issueEditStateRef,
                 signal => requestEpicCohortStats(BACKEND_URL, buildCohortRequest({ mode: cohortMode, startQuarter: activeStartQuarter, endQuarter: activeEndQuarter,
-                    teamIds: burnoutScopedTeamIds, components: activeGroupMissingComponents, adHocCapacityEpics: activeGroupAdHocCapacityEpics }), { signal, suppressAbortResult: true }),
+                    teamIds: burnoutScopedTeamIds, components: activeGroupMissingComponents, adHocCapacityEpics: activeGroupAdHocCapacityEpics, context: workContext }), { signal, suppressAbortResult: true }),
                 data => { automaticCohortDataRef.current = data; cohortCacheRef.current[cohortQueryKey] = data; setCohortData(data); });
         }
         automaticCohortDataRef.current = null;
-        if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear') { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
+        if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || cohortSetupBlocked) { setCohortData(null); setCohortError(''); setCohortLoading(false); return; }
         const startQuarter = String(activeStartQuarter || '').trim();
         const endQuarter = String(activeEndQuarter || '').trim();
         if (cohortMode !== 'last_n' && (!startQuarter || !endQuarter)) {
@@ -415,6 +422,7 @@ export function useStatsDerivedB({
             }
         }, 30000);
         let cancelled = false;
+        const requestedKey = cohortQueryKey;
         const fetchCohort = async () => {
             const readToken = issueEditStateRef.current.beginRead({ aggregate: true }), started = Date.now(), recordExplicit = automaticRefreshRef?.createExplicitRecorder?.('stats_cohort'); setCohortLoading(true);
             setCohortError('');
@@ -427,16 +435,19 @@ export function useStatsDerivedB({
                         endQuarter,
                         teamIds: burnoutScopedTeamIds,
                         components: activeGroupMissingComponents,
-                        adHocCapacityEpics: activeGroupAdHocCapacityEpics
+                        adHocCapacityEpics: activeGroupAdHocCapacityEpics,
+                        context: workContext
                     }),
                     { signal: controller.signal }
                 );
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
+                    const failure = cohortConfigurationFailure(response.status, err);
+                    if (failure) throw Object.assign(new Error(failure.message), { configurationFailure: failure.code });
                     throw new Error(err.error || err.message || `Lead times fetch failed (${response.status})`);
                 }
                 const payload = await response.json();
-                if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken)) return;
+                if (cancelled || !issueEditStateRef.current.isCurrentAggregateRead(readToken) || !admitCohortResult(requestedKey, cohortQueryKeyRef.current)) return;
                 const data = payload?.data || null;
                 cohortCacheRef.current[cohortQueryKey] = data;
                 setCohortData(data);
@@ -445,6 +456,12 @@ export function useStatsDerivedB({
             } catch (err) {
                 if (cancelled) return;
                 if (isAuthenticationRequiredError(err)) return;
+                if (err?.configurationFailure) {
+                    // Held data stays and the request is never replayed; the safe message explains it.
+                    setCohortError(err.message);
+                    return;
+                }
+                if (err?.code === 'configuration_context_changed') return;
                 if (err?.name === 'AbortError') {
                     setCohortError('Lead times request timed out (30s). Narrow scope with team filters.');
                 } else {
@@ -468,7 +485,7 @@ export function useStatsDerivedB({
                 // ignore abort errors
             }
         };
-    }, [showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision]);
+    }, [showStats, statsView, cohortMode, cohortStartQuarter, cohortEndQuarter, cohortClosedStartQuarter, cohortClosedEndQuarter, cohortQueryKey, cohortScopedTeamSignature, burnoutScopedTeamSignature, activeGroupMissingComponents, adHocEpicSignature, groupPreferences.onboardingRequired, adminSettingsGate.status, issuePeopleStatsRevision, statsWorkCatalogKey, cohortSetupBlocked]);
 
     const cohortQuarterOptions = React.useMemo(() => {
         return buildQuarterOptions(getCurrentQuarterLabel(), 16);
@@ -668,8 +685,8 @@ export function useStatsDerivedB({
     }, [excludedCapacityScopedTeamIds, teamNameById, teamOptions]);
     const excludedCapacityQueryKey = React.useMemo(() => {
         if (!excludedCapacitySprintIds.length) return '';
-        return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}`;
-    }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature]);
+        return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
+    }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature, statsWorkCatalogKey]);
     useEffect(() => {
         if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
         const automatic = automaticRefreshRef?.current;
@@ -678,9 +695,9 @@ export function useStatsDerivedB({
             if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) || (activeGroupId && activeGroupTeamIds.length === 0)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
             const sprintId = String(selectedSprint || '');
             if (!excludedCapacitySprintIds.includes(sprintId)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'denied', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; } // Outside-range Sprint: deferred by policy; no read, no check, source settles quietly.
-            const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}`;
+            const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
             return runAutomaticStatsRead(automatic, 'stats_excluded_capacity', issueEditStateRef,
-                signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, refresh: true, signal }),
+                signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, refresh: true, signal, scoped: sprintScoped(sprintId) }),
                 chunk => {
                     const chunks = excludedCapacitySprintIds.map(id => id === sprintId ? chunk : excludedCapacityCacheRef.current[sprintKey(id)]);
                     // A missing untouched chunk is not permission to shrink the held chart.
@@ -730,7 +747,7 @@ export function useStatsDerivedB({
         let cancelled = false, readToken;
         const chunkKinds = [];
         const controllers = new Set();
-        const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}`;
+        const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
         const fetchSprintChunk = async (sprintId) => {
             const sprintCacheKey = sprintCacheKeyFor(sprintId);
             const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
@@ -751,7 +768,8 @@ export function useStatsDerivedB({
                     sprintIds: [sprintId],
                     teamIds: excludedCapacityScopedTeamIds,
                     refresh: forceRefresh,
-                    signal: controller.signal
+                    signal: controller.signal,
+                    scoped: sprintScoped(sprintId)
                 });
                 if (!response.ok) {
                     const err = await response.json().catch(() => ({}));
@@ -921,7 +939,8 @@ export function useStatsDerivedB({
             setProjectTrackPhaseLoading(false);
             return;
         }
-        const cached = projectTrackPhaseCacheRef.current[projectTrackPhaseSignature];
+        const phaseCacheKey = statsWorkCatalogKey ? `${projectTrackPhaseSignature}::cfg:${statsWorkCatalogKey}` : projectTrackPhaseSignature;
+        const cached = projectTrackPhaseCacheRef.current[phaseCacheKey];
         if (cached) {
             setProjectTrackPhaseData(cached);
             setProjectTrackPhaseError('');
@@ -949,7 +968,7 @@ export function useStatsDerivedB({
                 }
                 const payload = await response.json();
                 if (cancelled) return;
-                projectTrackPhaseCacheRef.current[projectTrackPhaseSignature] = payload;
+                projectTrackPhaseCacheRef.current[phaseCacheKey] = payload;
                 setProjectTrackPhaseData(payload);
                 setProjectTrackPhaseError('');
             } catch (err) {
@@ -972,6 +991,7 @@ export function useStatsDerivedB({
         statsView,
         projectTrackMode,
         projectTrackPhaseSignature,
+        statsWorkCatalogKey,
     ]);
     const projectTrackPhaseEpics = React.useMemo(
         () => Array.isArray(projectTrackPhaseData?.epics) ? projectTrackPhaseData.epics : [],

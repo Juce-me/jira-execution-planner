@@ -56,9 +56,9 @@ function render(overrides) {
     return renderToStaticMarkup(React.createElement(loadContainer(), propsFor(overrides)));
 }
 
-test('the container takes the 80 explicit props the interface checker verifies', () => {
-    assert.equal(PROP_NAMES.length, 80);
-    assert.equal(new Set(PROP_NAMES).size, 80);
+test('the container takes the 81 explicit props the interface checker verifies', () => {
+    assert.equal(PROP_NAMES.length, 81);
+    assert.equal(new Set(PROP_NAMES).size, 81);
 });
 
 test('the container is stateless', () => {
@@ -80,7 +80,7 @@ test('every prop reaches EpmSettings under its own name, except the two document
     assert.equal(element.props.epmLabelPrefixMask, 'custom_');
     assert.equal(element.props.DEFAULT_EPM_LABEL_PREFIX, 'rnd_project_');
     assert.equal(typeof element.props.isEmptyCustomEpmProjectRow, 'function');
-    assert.equal(Object.keys(element.props).length, 84);
+    assert.equal(Object.keys(element.props).length, 85);
 });
 
 test('the container owns the project skeleton rows and the empty-draft prefix mask default', () => {

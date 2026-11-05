@@ -1,5 +1,5 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from datetime import date
 
 from tests.auth_mode_test_utils import force_basic_auth_mode
@@ -81,6 +81,31 @@ class TestEpicCohortHelpers(unittest.TestCase):
             jira_server._build_epic_cohort_cache_key('2025Q1', '2025Q2', ['T1'], ['PRODUCT']),
             '2025Q1::2025Q2::T1::PRODUCT::no-components::no-adhoc',
         )
+
+    def test_cache_key_with_a_configuration_adds_one_segment_and_leaves_the_flat_key_alone(self):
+        flat = jira_server._build_epic_cohort_cache_key('', '', ['T1'], ['PLAN'], mode='last_n')
+        configured = jira_server._build_epic_cohort_cache_key(
+            '', '', ['T1'], ['PLAN'], mode='last_n',
+            configuration={'configurationId': 'delivery', 'revision': 1, 'digest': 'abc'})
+        self.assertTrue(configured.startswith('last_n::') and configured.endswith('::cfg:delivery:1:abc'))
+        self.assertNotIn('cfg:', flat)
+
+    def test_ordered_configuration_list_is_one_joined_segment(self):
+        segment = jira_server.work_configuration_cache_segment([
+            {'configurationId': 'legacy', 'revision': 1, 'digest': 'a'},
+            {'configurationId': 'delivery', 'revision': 2, 'digest': 'b'},
+        ])
+        self.assertEqual(segment, 'cfg:legacy:1:a|cfg:delivery:2:b')
+        self.assertEqual(jira_server.work_configuration_cache_segment(None), '')
+
+    def test_only_new_model_scoped_requests_qualify_through_leaves(self):
+        legacy = Mock(is_legacy=True)
+        delivery = Mock(is_legacy=False)
+        self.assertFalse(jira_server._cohort_qualifies_through_leaves(None, ['T1'], []))
+        self.assertFalse(jira_server._cohort_qualifies_through_leaves(legacy, ['T1'], ['A']))
+        self.assertFalse(jira_server._cohort_qualifies_through_leaves(delivery, [], []))
+        self.assertTrue(jira_server._cohort_qualifies_through_leaves(delivery, ['T1'], []))
+        self.assertTrue(jira_server._cohort_qualifies_through_leaves(delivery, [], ['A']))
 
     def test_cache_key_differs_per_mode(self):
         created = jira_server._build_epic_cohort_cache_key('2025Q1', '2025Q2', ['T1'], ['PRODUCT'], ['Alpha'])

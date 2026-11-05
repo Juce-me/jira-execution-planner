@@ -9,11 +9,14 @@ const hookPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'useStoryR
 function loadApi(dependencies = {}) {
     const source = fs.readFileSync(apiPath, 'utf8')
         .replace(/import\s+\{[^}]+\}\s+from\s+'\.\/http\.js';\n?/, '')
+        .replace(/import\s+\{[^}]+\}\s+from\s+'\.\.\/workStructure\/[A-Za-z]+\.js';\n?/g, '')
         .replaceAll('export const ', 'const ');
     const defaults = {
         apiFetch: () => { throw new Error('unexpected apiFetch'); },
         getJson: () => { throw new Error('unexpected getJson'); },
         trackedFetch: () => { throw new Error('unexpected trackedFetch'); },
+        runInWorkContext: (init, start) => start(init), stampParams: params => params, stampBody: body => body,
+        applyContextToParams: params => params,
         jsonOrStructuredError: async response => {
             if (!response.ok) {
                 const body = await response.json();
@@ -126,6 +129,7 @@ test('story readiness lifecycle helpers reject stale scopes and classify only tr
         .replace("import * as React from 'react';\n", '')
         .replace("import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';\n", 'const fetchEpicReadiness = null; const fetchStoryReadiness = null;\n')
         .replace("import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';\n", 'const mergeReadinessEpic = null; const patchReadinessEpicField = null;\n')
+        .replace("import { reportWorkContextStale } from '../workStructure/requestContext.js';\n", 'const reportWorkContextStale = () => {};\n')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const helpers = new Function(`${transformed}; return { storyReadinessScopeKey, storyReadinessScopeMatches, classifyStoryReadinessError, STORY_READINESS_STATUS };`)();
@@ -138,10 +142,12 @@ test('story readiness lifecycle helpers reject stale scopes and classify only tr
     assert.deepEqual(helpers.classifyStoryReadinessError({ status: 502 }), {
         status: helpers.STORY_READINESS_STATUS.UNAVAILABLE, code: 'story_readiness_unavailable', canRetry: true,
     });
-    for (const [status, expected] of [[400, 'invalid_scope'], [403, 'access_denied'], [404, 'scope_not_found'], [409, 'invalid_configuration'], [422, 'scope_too_large']]) {
+    for (const [status, expected] of [[400, 'invalid_scope'], [403, 'access_denied'], [404, 'scope_not_found'], [422, 'scope_too_large']]) {
         assert.equal(helpers.classifyStoryReadinessError({ status }).status, expected);
         assert.equal(helpers.classifyStoryReadinessError({ status }).canRetry, false);
     }
+    // A 409 is a configuration gap only when its code says so; other conflicts are not "incomplete".
+    assert.equal(helpers.classifyStoryReadinessError({ status: 409, code: 'story_readiness_configuration_invalid' }).status, 'invalid_configuration');
 });
 
 test('awaited Stories are answered only for a Sprint state without readiness or a current READY snapshot', async () => {
@@ -150,6 +156,7 @@ test('awaited Stories are answered only for a Sprint state without readiness or 
         .replace("import * as React from 'react';\n", '')
         .replace("import { fetchEpicReadiness, fetchStoryReadiness } from '../api/engApi.js';\n", 'const fetchEpicReadiness = null; const fetchStoryReadiness = null;\n')
         .replace("import { mergeReadinessEpic, patchReadinessEpicField } from './epicRefreshAlerts.js';\n", 'const mergeReadinessEpic = null; const patchReadinessEpicField = null;\n')
+        .replace("import { reportWorkContextStale } from '../workStructure/requestContext.js';\n", 'const reportWorkContextStale = () => {};\n')
         .replaceAll('export const ', 'const ')
         .replaceAll('export function ', 'function ');
     const { storyReadinessAnswersAwaited, STORY_READINESS_STATUS } = new Function(`${transformed}; return { storyReadinessAnswersAwaited, STORY_READINESS_STATUS };`)();

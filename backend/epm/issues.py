@@ -34,6 +34,8 @@ class EpmIssuesDependencies:
     config_generation: str = ''
     # Strict Home reads: forced direct authority check returning the context for cache keys.
     authorize_cache: Callable | None = None
+    # Admitted work configuration: maps the selected Sprint to its field; None keeps ``Sprint = N``.
+    sprint_clause: Callable | None = None
     now: Callable = time.time
     timer: Callable = time.perf_counter
 
@@ -71,7 +73,7 @@ def build_epm_project_issues_payload(home_project_id, tab, sprint, deps: EpmIssu
     started = deps.timer()
     jql = deps.add_clause_to_jql(base_jql, scope_clause)
     if should_apply_epm_sprint(tab):
-        jql = deps.add_clause_to_jql(jql, f'Sprint = {sprint}')
+        jql = deps.add_clause_to_jql(jql, deps.sprint_clause(sprint) if deps.sprint_clause else f'Sprint = {sprint}')
     issues = deps.fetch_issues_by_jql(jql, deps.build_epm_fields_list(), context=deps.context)
     slim_issues, epic_details = deps.shape_epm_issue_payload(issues)
     payload = {

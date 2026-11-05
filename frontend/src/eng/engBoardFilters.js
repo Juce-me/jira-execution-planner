@@ -10,6 +10,7 @@
 
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
+import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { classifyEpicProjects } from './engBoardCardModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
@@ -19,7 +20,6 @@ import {
     PROJECT_TRACK_FLEXIBLE,
 } from './engProjectTrack.js';
 
-export const ENG_BOARD_SUBJECT = 'Filtering epics';
 
 const ASSIGNEE_ANYONE = 'anyone';
 const ASSIGNEE_UNASSIGNED = 'unassigned';
@@ -67,7 +67,10 @@ function hasNoProjectTrack(epic) {
     return classification.kind === 'unset';
 }
 
-export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false } = {}) {
+// `names` is the viewed configuration's EntityNames (the model's defaults when absent).
+export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false, workModel, names = resolveEntityNames(workModel) } = {}) {
+    // Combined model: one lane, so the Projects (Product/Tech/Other) facet is hidden, uncounted and never filters.
+    const combinedLane = isCombinedWorkModel(workModel);
     const scopeTotal = epicGroups.length;
     const priorityCounts = {};
     const projectCounts = { tech: 0, product: 0, other: 0 };
@@ -80,9 +83,11 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         if (label) priorityCounts[label] = (priorityCounts[label] || 0) + 1;
 
         const { isTech, isProduct, isOther } = classifyEpicProjects(group, isTechTask);
-        if (isTech) projectCounts.tech += 1;
-        if (isProduct) projectCounts.product += 1;
-        if (isOther) projectCounts.other += 1;
+        if (!combinedLane) {
+            if (isTech) projectCounts.tech += 1;
+            if (isProduct) projectCounts.product += 1;
+            if (isOther) projectCounts.other += 1;
+        }
 
         if (!(group.epic && group.epic.assignee)) unassigned += 1;
         const id = normalizeTrackId(group.epic);
@@ -103,6 +108,8 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         // only one that can ever admit against them, so a call site cannot desync the two by
         // passing a different one at resolve or admission time.
         isTechTask,
+        workModel,
+        names,
         facets: [
             {
                 id: 'priority',
@@ -117,6 +124,7 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 // option-sum would double-count it.
                 id: 'projects',
                 label: 'Projects',
+                ...(combinedLane ? { hidden: true } : {}),
                 kind: 'multi',
                 neutralTotal: scopeTotal,
                 options: [
@@ -145,7 +153,7 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 allowEmpty: true,
                 showZeroCountOptions: true,
                 emptyLabel: 'No Project Track',
-                emptyDescription: 'No Project Track — showing epics without a value',
+                emptyDescription: `No Project Track — showing ${lowerEntityWord(names.parentPlural)} without a value`,
                 emptyTotal: untrackedCount,
                 neutralTotal: scopeTotal,
                 options: [
@@ -158,7 +166,7 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
 }
 
 export function resolveEngBoardFilters({ model, selection = {} } = {}) {
-    const { facets, counts, scopeTotal, isTechTask = () => false } = model;
+    const { facets, counts, scopeTotal, isTechTask = () => false, names } = model;
     // A scope change (sprint/group/team — O6) can hide or drop a ticked option; this is what
     // stops that reaching the empty set §7.3 forbids, exactly like Catch Up's own resolve step.
     const reconciled = reconcileSelection({ facets, selection, counts });
@@ -174,8 +182,8 @@ export function resolveEngBoardFilters({ model, selection = {} } = {}) {
         selection: reconciled,
         facetViews,
         activeFacetCount: countActiveFacets(facetViews),
-        subject: ENG_BOARD_SUBJECT,
-        readoutUnit: `of ${scopeTotal} epics`,
+        subject: `Filtering ${lowerEntityWord(names.parentPlural)}`,
+        readoutUnit: `of ${scopeTotal} ${lowerEntityWord(scopeTotal === 1 ? names.parent : names.parentPlural)}`,
         // D41: an epic with stories on both sides is admitted by EITHER Projects option, so this
         // checks isTech / isProduct independently rather than folding them into one admits() call.
         // `isTechTask` comes from `model` — see the comment there — not from this call site.

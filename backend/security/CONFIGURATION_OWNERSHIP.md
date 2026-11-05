@@ -10,6 +10,8 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | --- | --- | --- | --- | --- |
 | Administrator settings | `workspace_dashboard_configs` | Authenticated workspace users | `shared_admin_write` | One effective value per workspace; only tool admins configure it when `SETTINGS_ADMIN_ONLY=true` |
 | Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
+| Scenario planner access switch (`scenarioPlanner.enabledForEveryone`) | `workspace_dashboard_configs.payload` (its own admin section) | Authenticated workspace users (`/api/config` `scenarioPlannerForEveryone`, `GET /api/scenario-access/config`) | `shared_admin_write` via `POST /api/scenario-access/config` only | One value per workspace, default off; while off only editors (`userCanEditSettings`) may use Scenario and every other user's Scenario request answers `403 scenario_locked`; never stored in private views or group configuration |
+| Quarterly work configurations (`workConfigurations` bundle) | `workspace_dashboard_configs.payload` (one revisioned key, server-owned `promotionRevision`) | Authenticated workspace users (virtual capture before promotion; no write on GET) | `shared_admin_write` via the dedicated bundle transaction only | One bundle per workspace: exactly Legacy then DELIVERY; after promotion it replaces the flat projects/Board/Sprint/Story Points/parent-name/Team/Project Track/Delivery owner/issue-type keys; Capacity, priority weights, groups and private payloads stay where they are |
 | Group visibility, favorite/star, and active group | `user_group_preferences` | Current user | `user_write` | Private to one user in one workspace; never copied into shared group configuration |
 | EPM scope, label prefix, issue types, and project-label mappings | Current user's default private `view_configs` payload | Current user | `user_write` | Private to the owning user; never stored in workspace administrator configuration |
 | EPM tab and selected sprint UI state | Private browser preferences; preserve existing private-view values | Current user | Current user only | Never stored in workspace administrator or shared group configuration |
@@ -19,15 +21,15 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived Sprint catalog | `workspace_sprint_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and configured Jira source Board; complete validated empty lists are authoritative |
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
-| ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group; views (column order and hidden columns) per workspace + group + Sprint; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
+| ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group + review namespace (NULL `configuration_id` is the Legacy namespace; each quarterly work configuration has its own, see Quarterly Work Configurations); views (column order and hidden columns) per workspace + group + Sprint + namespace; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
 | ENG Planning assignee capacity (Capacity, Vacations, Notes, removed flag per person; stored team capacity `planned_capacity`/`planned_source`, "Team capacity (not in Jira)", never written to Jira by this store) | `planning_team_sprint_capacity` | Authenticated workspace users | `user_write` with requested-with and CSRF; read `authenticated_read` | Shared per workspace + Sprint + Team (a Team is part of this store's key, unlike review data, where Team stays a filter); no user columns; not stored in `workspace_dashboard_configs` or `shared_capacity_config`; a Sprint without a document reads the nearest earlier one, including its stored team capacity as `inherited` |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
 ## Exact Boundaries
 
 Administrator settings contain workspace Jira planning inputs: selected Jira projects, Jira source
-board, capacity mapping, Jira field mappings, priority weights, and dashboard issue-type
-configuration outside EPM.
+board, capacity mapping, Jira field mappings, priority weights, dashboard issue-type
+configuration outside EPM, and the Scenario planner access switch.
 They do **not** contain EPM settings, department groups, group preferences, personal view state,
 connections, credentials, or derived catalog payloads. The selected Jira source Board, projects,
 Sprint/Team fields, and base JQL remain administrator inputs; they identify derived catalogs but do
@@ -125,6 +127,54 @@ Bounds are 30 active columns per row kind and 240 columns per group (archived on
 budget. No request can return partially authorized data. Browser-supplied workspace/user authority is
 rejected; the one browser-supplied selector is `groupId`, checked against the shared Department group
 catalog on PATCH only (reads never consult it), and it is a storage key, never authority.
+
+## Quarterly Work Configurations
+
+The bundle (`backend/services/work_structure.py`) lives under `workConfigurations` in the workspace
+payload and is written only by `save_work_configurations` through
+`workspace_dashboard_config.update_workspace_config_keys`: one advisory-fence transaction that rechecks
+the global revision, recaptures first-save input from the locked row (DB-only; no JSON, ambient getter
+or request-cache read), validates, writes the bundle and the server-owned `promotionRevision`, removes
+only the moved flat keys, bumps changed entry revisions and the global revision once, and audits. It
+never touches Capacity, its verification columns, priority weights, groups or private views.
+
+- `WORK_CONFIGURATIONS_ENABLED` defaults off. Durable state decides behavior, not the flag alone:
+  unpromoted/off keeps the flat editor and writers; unpromoted/on shows the virtual two-entry editor
+  while work reads stay Legacy until an explicit Save; promoted/on reads the bundle; promoted/off fails
+  structural reads and bundle writes with `409 configuration_feature_disabled` and never falls back to
+  flat keys. A seeded bundle without `promotionRevision` is unpromoted. Nothing writes on GET or startup.
+- After promotion the old partial structural writers (`update_workspace_config_section` for the moved
+  keys, therefore `settings_routes._persist_shared_section` and `jira_server._save_field_config`) reject
+  `409 configuration_bundle_required`. Browser input never carries authority: ids, models, revisions,
+  captured compatibility and display metadata and `promotionRevision` are server-owned; a non-empty to
+  empty project scope needs an explicit `clearProjectsForConfigurationIds` entry.
+- `/api/config` is the intentional no-quarter metadata read: it adds `workConfigurationsEnabled`,
+  `workConfigurationsPromoted`, `workConfigurationSummaries` (id, name, revision, model, ranges, the
+  entry `digest`, which write stamps need, and `roleTypes`) and `adminSettingsMissingByConfiguration`; after
+  promotion it omits the unscoped moved projections. `roleTypes` (`planning`, `parent`, `ancestor`,
+  `optionalAncestor`, each `null` or `{id, name, hierarchyLevel}`) comes from the server-owned workspace key
+  `workConfigurationTypeNames`: every bundle Save reads `/rest/api/3/issuetype` outside the fence and captures
+  the names of the saved ids (a failed read keeps an unchanged id's previous capture). It is display metadata
+  beside the bundle: never browser input, never in a digest, the editor envelope or `sharedConfig`; a
+  names-only change writes it without moving any entry `revision`. Legacy compatibility slots report
+  `Epic`/`Initiative` and a name-filtered planning slot reports its single name or `Story`. `GET/POST /api/work-structure/config` are `authenticated_read` /
+  `shared_admin_write` (`backend/security/policy.py`). `GET /api/work-structure/sprint-values` is an `authenticated_read`
+  metadata read for the Scope boundary pickers: no query parameters (400 `unsupported_catalog_parameter`), no viewed quarter,
+  no Jira call (stored Sprint snapshots only), DB/OAuth only (409 `work_configuration_setup_required`), 409
+  `configuration_feature_disabled` while the flag is off and the workspace is unpromoted or promoted; it returns only Sprint
+  value, canonical flag, state, Jira Sprint ids and configuration ids.
+- Own-key Jira writes, write-option reads and Sprint review calls carry a `{id, revision, quarter, digest}`
+  stamp that `backend/services/work_write_scope.py` re-resolves against the current workspace before any Jira
+  call: a stale or wrong-model stamp answers `409 configuration_scope_changed`. The stamp is optional for an
+  unpromoted workspace and refused while the flag is off. Scenario source work runs for a complete context of
+  either model; new-model drafts are namespaced `<configurationId>:<sprintId>:<groupId>` with a server-checked
+  `configurationId` in their scope and never save or reload under another configuration
+  (`409 scenario_configuration_mismatch`). Capacity `PATCH` carries no stamp.
+- Sprint review rows are namespaced by `configuration_id` (migration `20261030_0022`): NULL is Legacy, a
+  configuration id is its own namespace. The storage key stays workspace + group (+ namespace); the group
+  is still the common fence and the 30/240/500 caps are per group across namespaces.
+- `scripts/check_work_configuration_rollback.py --workspace-id <id>` reads the selected workspace row
+  read-only and refuses any promoted bundle. It never flattens or mutates.
 
 ## HTTP Meaning
 

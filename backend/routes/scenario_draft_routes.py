@@ -38,6 +38,29 @@ bp = Blueprint('scenario_draft_routes', __name__)
 
 UNSAFE_METHODS = {'POST', 'PUT', 'PATCH', 'DELETE'}
 SCENARIO_RELOAD_TIMEOUT_SECONDS = 20
+# Codes a reload gate raises through the loader (the fork path only carries the message text).
+_RELOAD_DENIAL_CODES = frozenset({
+    'scenario_not_supported', 'configuration_incomplete', 'configuration_scope_changed',
+    'scenario_configuration_mismatch',
+})
+_CONFIGURATION_MISMATCH_MESSAGE = 'This Scenario draft belongs to a different work configuration.'
+
+
+def _draft_configuration_id(scope_payload):
+    """Configuration a draft was saved under: its id for the new model, ``None`` for Legacy."""
+    value = (scope_payload or {}).get('configurationId') if isinstance(scope_payload, dict) else None
+    return str(value) if value not in (None, '') else None
+
+
+def _resolved_configuration_id(work_request):
+    """Configuration a resolved source belongs to: ``None`` for Legacy and unpromoted workspaces."""
+    if work_request is None or work_request.roles.is_legacy:
+        return None
+    return work_request.roles.configuration_id
+
+
+def _configuration_mismatch_response():
+    return _error_response('scenario_configuration_mismatch', _CONFIGURATION_MISMATCH_MESSAGE, 409)
 
 
 @bp.before_request
@@ -83,6 +106,22 @@ def _require_db_storage_and_auth_context():
     except DatabaseConfigurationError:
         return _storage_error_response()
     return None
+
+
+@bp.before_request
+def _require_scenario_access():
+    return scenario_access_error(g.auth_context)
+
+
+@bp.before_request
+def _deny_unsupported_scenario_context():
+    """A request that names a selected quarter/configuration may only address a complete source."""
+    body = request.get_json(force=True, silent=True) if request.method in UNSAFE_METHODS else None
+    selectors = scenario_selectors(request.args, body if isinstance(body, dict) else None)
+    if not selectors:
+        return None
+    _work_request, error = scenario_work_gate(g.auth_context, selectors=selectors)
+    return error
 
 
 def _storage_error_response():
@@ -139,10 +178,27 @@ def scenario_draft_reload_source_loader(context, draft, timeout_seconds):
 
     scope_payload = deepcopy(draft.get('scopePayload') or {})
     payload = _scenario_reload_payload(scope_payload)
+    draft_configuration_id = _draft_configuration_id(scope_payload)
+    if draft_configuration_id is not None and not (payload.get('filters') or {}).get('sprint'):
+        # A new-model draft stores the browser scope; its Sprint id names the source to reload.
+        payload['filters'] = {**(payload.get('filters') or {}), 'sprint': scope_payload.get('sprintId')}
     if not context.browser_session_id:
         raise ScenarioDraftReloadUnavailable('browser session is required for DB OAuth Scenario reload')
     with app.test_request_context('/api/scenario', method='POST', json=payload):
         session['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
+        # Resolve the saved source's Legacy context before the planner or any moved getter runs; the
+        # planner then reuses this captured context instead of resolving a calendar/global default.
+        work_request, gate_error = server.scenario_work_gate(
+            server.current_request_auth_context(), sprint=(payload.get('filters') or {}).get('sprint'),
+            require_source=True)
+        if gate_error is not None:
+            gate_body = gate_error[0].get_json() or {}
+            raise ScenarioDraftReloadUnavailable(str(gate_body.get('error') or 'scenario_not_supported'))
+        if _resolved_configuration_id(work_request) != draft_configuration_id:
+            # Never reload a draft under another configuration than the one it was saved under.
+            raise ScenarioDraftReloadUnavailable('scenario_configuration_mismatch')
+        g.scenario_work_gate_done = True
+        g.scenario_work_request = work_request
         response = planner()
 
     if isinstance(response, tuple):
@@ -229,14 +285,39 @@ def api_scenario_drafts_get():
 @bp.route('/api/scenario/drafts', methods=['POST'])
 def api_scenario_drafts_post():
     body = _request_json()
+    scope = body.get('scope') if isinstance(body.get('scope'), dict) else {}
+    scope_filters = scope.get('filters') if isinstance(scope.get('filters'), dict) else scope
+    scope_payload = body.get('scope')
+    claimed_configuration_id = _draft_configuration_id(scope)
+    source_sprint = scope_filters.get('sprint')
+    if source_sprint in (None, '') and claimed_configuration_id is not None:
+        source_sprint = scope.get('sprintId')  # a new-model draft names its source by Sprint id
+    if source_sprint not in (None, ''):
+        # A draft naming its source may only name a complete source; Legacy stores no stamp.
+        work_request, gate_error = scenario_work_gate(g.auth_context, sprint=source_sprint)
+        if gate_error is not None:
+            return gate_error
+        configuration_id = _resolved_configuration_id(work_request)
+        if claimed_configuration_id is not None and claimed_configuration_id != configuration_id:
+            return _configuration_mismatch_response()
+        if configuration_id is not None:
+            # New-model drafts live in their own namespace: `<configurationId>:<sprintId>:<groupId>`.
+            if not str(body.get('scope_key') or '').startswith(f'{configuration_id}:'):
+                return _configuration_mismatch_response()
+            scope_payload = {**scope, 'configurationId': configuration_id}
+    elif claimed_configuration_id is not None:
+        return _configuration_mismatch_response()
     try:
+        stored = get_active_draft(g.auth_context, body.get('scope_key'))['activeDraft'] if body.get('scope_key') else None
+        if stored is not None and _draft_configuration_id(stored.get('scopePayload')) != _draft_configuration_id(scope_payload):
+            return _configuration_mismatch_response()
         return jsonify(save_draft(
             g.auth_context,
             body.get('scope_key'),
             body.get('name'),
             body.get('overrides'),
             base_draft_revision=_base_draft_revision(body),
-            scope_payload=body.get('scope'),
+            scope_payload=scope_payload,
         ))
     except ScenarioDraftValidationError as error:
         return _validation_error_response(error)
@@ -449,6 +530,10 @@ def api_scenario_draft_reload_from_jira_route(draft_id):
     except ScenarioDraftReloadTimeout:
         return _reload_timeout_response()
     except ScenarioDraftReloadUnavailable as error:
+        if str(error) in _RELOAD_DENIAL_CODES:
+            if str(error) == 'scenario_configuration_mismatch':
+                return _configuration_mismatch_response()
+            return _error_response(str(error), 'Scenario Planner is not available for this period.', 409)
         return _error_response('scenario_reload_unavailable', str(error), 503)
     except ScenarioDraftValidationError as error:
         return _validation_error_response(error)

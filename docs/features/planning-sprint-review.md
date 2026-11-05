@@ -295,6 +295,10 @@ a no-op. `--list` reports `nothing to adopt`, `pending`, `needs-merge`, `adopted
   changes the layout that later Sprints without their own view inherit (the report names the Sprint-id intervals). It has no automatic
   undo: the pre-run backup is the rollback.
 
+## Quarterly work configuration namespaces
+
+After promotion, review data is isolated per work configuration. Existing rows keep `configuration_id` NULL and form the **Legacy namespace** (Epic parent rows, Story child rows, inheritance by numeric Sprint id), unchanged. A quarter handled by the combined model uses its own namespace keyed by the configuration's opaque id: native `initiative` rows are the parents and `epic` rows are the children, with their own columns, values and layouts (`backend/services/sprint_review.py`: `LEGACY_KINDS`, `CONFIGURATION_KINDS`, `namespace_identity`). Nothing is copied or inherited across namespaces, and a new namespace starts empty. A saved view in a configuration namespace is stamped with a quarter ordinal (`(year-1)*4+(quarter-1)`) and inherits from the nearest earlier ordinal of the same namespace only (`resolve_view`), never by Sprint id; Legacy views get no ordinal. Moving a configuration's range does not relabel stored data. The caps are per group across namespaces (30 active columns per native kind, 240 definitions, 500 views), and every writer takes the NULL-Legacy schema row as the group fence first. Authorization uses the configuration's mapped type id plus the expected hierarchy level (Epic 1, Initiative 2), not issue-type names. The Planning review calls carry the configuration stamp described in the design-system write registry. Migration `20261030_0022_review_namespaces.py` adds the columns and partial unique indexes and its downgrade refuses once any new-namespace, Initiative or ordinal data exists. Tests: `tests/test_work_structure_reviews.py`, `tests/test_sprint_review.py`; PostgreSQL cases in `tests/test_sprint_review_postgresql.py` were compile-checked only. Fresh (non-merge) Legacy adoption refuses once era-specific review rows exist.
+
 ## Assignee capacity strip (#323)
 
 With exactly one Team selected in the Table layout, Planning shows a collapsible in-flow strip, "Assignee Capacity (Story
@@ -377,17 +381,18 @@ auth session. Read-only strips show no Undo.
 **Underbar.** The pinned amber capacity bar carries a thin 5px strip at the bottom of its existing track, adding no height:
 one segment per person with Planned capacity or Estimated effort above 0, in table order, plus a trailing Unassigned segment
 (one solid `--warn` layer sized by the Selected Stories with no assignee). A person's segment is max(capacity, effort) wide
-and draws two layers of the person's colour: a tinted layer (the colour at 45% over the surface) for Planned capacity and the
-solid layer for Estimated effort, both from the segment's left edge. While effort is below capacity the solid effort lies on
-top, so the tinted rest is the capacity left; once effort reaches or passes capacity (equal included) the tinted capacity
-lies on top, so the tint ends where capacity is used up and the solid part beyond it is the work above capacity. A person
+and always reads left to right as solid effort (the colour at 70% over the surface), then the rest: tinted free
+capacity (28%) while effort is below capacity, or diagonal stripes of the two for the effort beyond capacity once it passes
+it (equal is fully solid). Both are drawn as a full-width base layer plus a solid layer on top from the left edge, close to
+the table row tint (12%). A person
 with capacity only is purely tinted, with effort only purely solid, with neither has no segment. The strip's total (the sum
 of max(capacity, effort) plus Unassigned) may exceed the Selected fill and run past the Team Cap marker, so the bar's scale
 is the largest of capacity, Selected and that total, times 1.15 (the team-card bar uses the same function with 1.3); the
 fill, the markers and the strip share it, so nothing clips and the Team Cap marker lines up. The whole track is hoverable
-and tappable: the segment under the pointer shows its readout under a "Selected N tasks · X SP" header that replaces the fill
-tooltip (person: name, Estimated effort, then Planned capacity with "X SP capacity left" or "X SP over capacity" when capacity
-is set, then the team number's source; "Unassigned (effort)" with Selected and its share of Selected), and the marker lines
+and tappable: the segment under the pointer shows a compact readout (person: swatch and name, "X SP effort · Y SP capacity", then
+"X SP capacity left" or, in the warning tone, "X SP over capacity" when capacity is set; "Unassigned (effort)" with its effort
+and share of selected), while past the last segment it shows the "Selected N tasks · X SP" header and the team number's
+source; and the marker lines
 keep their own tooltips. Table rows of people with a segment are tinted with the person colour; others keep the normal row
 surface.
 

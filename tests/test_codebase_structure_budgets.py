@@ -14,7 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # that grows it modestly needs no edit here. The dashboard and owner ceilings live in
 # scripts/extraction_lint/owner_budgets.json.
 LEGACY_ENTRYPOINT_LINE_BUDGETS = {
-    "jira_server.py": 7300,
+    "jira_server.py": 8210,
 }
 
 

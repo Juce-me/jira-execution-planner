@@ -1,4 +1,6 @@
 import * as React from 'react';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from './statsScope.js';
 import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 
@@ -12,8 +14,10 @@ function StatsPriorityView({
     buildRadarPoints,
     buildPriorityStatLink,
     formatPercent,
-    resolveTeamColor
+    resolveTeamColor,
+    words = roleLabels(null)
 }) {
+    const childWords = lowerEntityWord(words.children);
     const renderStatsLink = (href, count, title, ariaLabel) => (
         <TrackedExternalLink
             className="stats-link"
@@ -178,7 +182,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.points.toFixed(1)}</span>
                                         {pointsLink && (
-                                            renderStatsLink(pointsLink, row.points, 'View stories for this priority in Jira', 'Open stories in Jira')
+                                            renderStatsLink(pointsLink, row.points, `View ${childWords} for this priority in Jira`, `Open ${childWords} in Jira`)
                                         )}
                                     </div>
                                 </td>
@@ -186,7 +190,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.done}</span>
                                         {doneLink && (
-                                            renderStatsLink(doneLink, row.done, 'View done stories for this priority in Jira', 'Open done stories in Jira')
+                                            renderStatsLink(doneLink, row.done, `View done ${childWords} for this priority in Jira`, `Open done ${childWords} in Jira`)
                                         )}
                                     </div>
                                 </td>
@@ -194,7 +198,7 @@ function StatsPriorityView({
                                     <div className="postponed-cell">
                                         <span>{row.incomplete}</span>
                                         {incompleteLink && (
-                                            renderStatsLink(incompleteLink, row.incomplete, 'View incomplete stories for this priority in Jira', 'Open incomplete stories in Jira')
+                                            renderStatsLink(incompleteLink, row.incomplete, `View incomplete ${childWords} for this priority in Jira`, `Open incomplete ${childWords} in Jira`)
                                         )}
                                     </div>
                                 </td>

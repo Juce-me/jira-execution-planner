@@ -20,10 +20,17 @@ const READOUT_HEIGHT = 72;
 const READOUT_LINE_HEIGHT = 23;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
-// Strip layers: a tinted layer is the segment colour at this strength over the surface (opaque, so it reads the same over
-// the track, the fill or a solid layer).
-const STRIP_TINT_PERCENT = 45;
-const tintOf = colour => `color-mix(in srgb, ${colour} ${STRIP_TINT_PERCENT}%, var(--bg-secondary))`;
+// Strip layers, all opaque so they read the same over the track or the fill, and close to the table's row tint (12%):
+// `solid` is the segment colour at STRIP_SOLID_PERCENT over the surface, `tint` at STRIP_TINT_PERCENT, and `over` is
+// diagonal stripes of the two (effort beyond capacity).
+const STRIP_SOLID_PERCENT = 70;
+const STRIP_TINT_PERCENT = 28;
+const mixOf = (colour, percent) => `color-mix(in srgb, ${colour} ${percent}%, var(--bg-secondary))`;
+const stripPaint = (colour, tone) => {
+    if (tone === 'tint') return mixOf(colour, STRIP_TINT_PERCENT);
+    if (tone === 'over') return `repeating-linear-gradient(135deg, ${mixOf(colour, STRIP_SOLID_PERCENT)} 0 2px, ${mixOf(colour, STRIP_TINT_PERCENT)} 2px 4px)`;
+    return mixOf(colour, STRIP_SOLID_PERCENT);
+};
 
 function clampReadoutPoint(x, y, lineCount = 0) {
     return resolveFloatingHoverPosition({
@@ -70,9 +77,9 @@ export default function StackedBar({
     ariaLabel,
     emptyText = 'No data in range.',
     variant,                // optional: 'strip' = 5px label-less strip (.stacked-bar--strip), e.g. the Planning assignee underbar.
-                            // Strip segments may carry two layers of their colour: `tint: true` paints the segment (the base,
-                            // `value` wide) tinted, and `overlay: { value, tint }` is drawn ON TOP of it from its left edge,
-                            // `overlay.value` wide, solid or tinted. Hit testing and readouts still see one segment.
+                            // Strip segments may carry two layers of their colour: `tone` ('solid' default, 'tint' or 'over')
+                            // paints the segment (the base, `value` wide), and `overlay: { value, tone }` is drawn ON TOP of it
+                            // from its left edge, `overlay.value` wide. Hit testing and readouts still see one segment.
     readoutLineCount        // optional: ({ segmentKey }) => lines of formatReadout's output, so the readout clamps inside the viewport
 }) {
     const rowList = Array.isArray(rows) ? rows : [];
@@ -202,7 +209,7 @@ export default function StackedBar({
                                             className="stacked-bar-segment"
                                             style={{
                                                 width: `${Math.max(0, Math.min(100, width))}%`,
-                                                '--stacked-bar-color': isStrip && segment.tint ? tintOf(colour) : colour
+                                                '--stacked-bar-color': isStrip && segment.tone ? stripPaint(colour, segment.tone) : colour
                                             }}
                                             tabIndex={0}
                                             {...(isStrip ? {} : {
@@ -217,7 +224,7 @@ export default function StackedBar({
                                         >
                                             <span>{showFull ? `${segmentLabel} ${valueText}` : valueText}</span>
                                             {overlay && <span className="stacked-bar-strip-part" aria-hidden="true"
-                                                style={{ width: `${Math.min(100, (overlay.value / value) * 100)}%`, background: overlay.tint ? tintOf(colour) : colour }} />}
+                                                style={{ width: `${Math.min(100, (overlay.value / value) * 100)}%`, background: stripPaint(colour, overlay.tone) }} />}
                                         </SegmentControl>
                                     );
                                 })}

@@ -27,6 +27,7 @@ export function groupTasksByEpic(taskList = [], epicDetails = {}) {
 }
 
 export function useEngWorkHierarchy({
+    workModel,
     visibleTasksForList = [],
     epicDetails = {},
     capacityTasks = [],
@@ -92,12 +93,12 @@ export function useEngWorkHierarchy({
         },
         sort: engEpicSort,
         groupByInitiative,
-        planningOriginals, readingPresentation,
+        planningOriginals, readingPresentation, workModel,
     }), [
         showPlanning, selectedSprint, selectedSprintName, selectedSprintState, storyEpicGroups,
         readinessSnapshot, readinessStatus, activeGroupId, selectedTeams, isAllTeamsSelected,
         showTech, showProduct, searchQuery, statusNeutral, priorityNeutral, admitsEpicProjectTrack,
-        engEpicSort, groupByInitiative, planningOriginals, readingPresentation,
+        engEpicSort, groupByInitiative, planningOriginals, readingPresentation, workModel,
     ]);
     React.useLayoutEffect(() => { markEngReadingDeparture(new Set(visibleTasksForList.map(task => task.key)), [], new Set(hierarchy.canonicalEpicGroups.map(group => group.key))); }, [visibleTasksForList, hierarchy.canonicalEpicGroups]);
     return {

@@ -1,5 +1,6 @@
 import * as React from 'react';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import { resolveEntityNames } from '../eng/engWorkModel.js';
 
 const DEFAULT_VISIBLE_ROWS = 30;
 
@@ -19,11 +20,13 @@ function OpenEpicsChart({
     jiraSearchAnalyticsMeta,
     emptyMessage,
     variant,
+    itemWord = 'epics',
+    itemName = resolveEntityNames().parent,
     initialVisibleCount = DEFAULT_VISIBLE_ROWS,
     loadMoreCount = DEFAULT_VISIBLE_ROWS
 }) {
     const rows = Array.isArray(items) ? items : [];
-    const fallbackEmpty = emptyMessage || 'No open epics in this scope.';
+    const fallbackEmpty = emptyMessage || `No open ${itemWord} in this scope.`;
     const fillClass = `cohort-open-fill${variant ? ` cohort-open-fill--${variant}` : ''}`;
     const initialCount = normalizePositiveInteger(initialVisibleCount, rows.length || DEFAULT_VISIBLE_ROWS);
     const incrementCount = normalizePositiveInteger(loadMoreCount, DEFAULT_VISIBLE_ROWS);
@@ -35,8 +38,8 @@ function OpenEpicsChart({
 
     const normalizedJiraSearchUrl = String(jiraSearchUrl || '').trim();
     const normalizedJiraSearchLabel = jiraSearchLabel || (variant === 'completed'
-        ? 'Open all completed epics in Jira'
-        : 'Open all open epics in Jira');
+        ? `Open all completed ${itemWord} in Jira`
+        : `Open all open ${itemWord} in Jira`);
     const heading = (
         <div className="cohort-open-heading">
             <div className="cohort-open-heading-text">
@@ -72,7 +75,7 @@ function OpenEpicsChart({
     const hasMoreRows = visibleCount < rows.length;
     const remainingCount = Math.max(0, rows.length - visibleCount);
     const nextCount = Math.min(incrementCount, remainingCount);
-    const itemLabel = variant === 'completed' ? 'completed epics' : 'open epics';
+    const itemLabel = variant === 'completed' ? `completed ${itemWord}` : `open ${itemWord}`;
     const maxDays = rows.reduce((acc, item) => Math.max(acc, Number(item?.daysOpen) || 0), 0) || 1;
 
     return (
@@ -95,13 +98,13 @@ function OpenEpicsChart({
                                         rel="noopener noreferrer"
                                         title={`Open ${issueKey} in Jira`}
                                     >
-                                        <span className="cohort-open-key">{issueKey || 'Epic'}</span>
+                                        <span className="cohort-open-key">{issueKey || itemName}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
                                         <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </a>
                                 ) : (
                                     <>
-                                        <span className="cohort-open-key">{item.key || 'Epic'}</span>
+                                        <span className="cohort-open-key">{item.key || itemName}</span>
                                         <span className="cohort-open-summary">{item.summary || 'No summary'}</span>
                                         <span className="cohort-open-status">{item.status || 'Open'}</span>
                                     </>

@@ -502,7 +502,19 @@ for(const mode of ['planning-list','planning-table']) test(`${mode} Planning own
         const rowKind=page.getByRole('radiogroup',{name:'Planning review rows'}).getByRole('radio',{checked:true});
         await hoverEvidence(page,rowKind,testInfo,'planning-table-selected-row-kind',{pill:true,selected:true,ringPseudo:true});
         const heading=page.getByRole('button',{name:'Status',exact:true});
-        await hoverEvidence(page,heading,testInfo,'planning-table-sort',{foundation:true,clipped:true});
+        // Recorded exception: the sort heading highlights its whole header cell, with no ring or overlay on the heading itself.
+        const headCell=page.locator('thead th.planning-review-status');
+        const read=()=>Promise.all([heading.evaluate(node=>{const r=node.getBoundingClientRect();return {box:[r.x,r.y,r.width,r.height],shadow:getComputedStyle(node).boxShadow};}),headCell.evaluate(node=>getComputedStyle(node).backgroundImage)]);
+        await page.mouse.move(1,1); await page.waitForTimeout(450);
+        const [restHeading,restCell]=await read();
+        expect(restCell).toBe('none');
+        await heading.hover(); await page.waitForTimeout(450);
+        await expect.poll(()=>heading.evaluate(node=>node.matches(':hover'))).toBe(true);
+        const [hoverHeading,hoverCell]=await read();
+        expect(hoverHeading.shadow,'sort heading has no ring or overlay').toBe('none');
+        expect(hoverHeading.box,'sort heading stays put').toEqual(restHeading.box);
+        expect(hoverCell,'header cell tint').toContain('linear-gradient');
+        await headCell.screenshot({path:path.join(evidenceDir(testInfo),'planning-table-sort-cell-hover.png'),animations:'disabled'});
         const included=page.locator('.planning-review-capacity .epic-stat-toggle.active').first();
         await hoverEvidence(page,included,testInfo,'planning-table-included',{pill:true,selected:true,clipped:true});
         await hoverEvidence(page,page.locator('.planning-review-capacity .epic-stat-toggle:not(.active)').first(),testInfo,'planning-table-excluded',{pill:true,clipped:true});

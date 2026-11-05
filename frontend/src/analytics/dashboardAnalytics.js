@@ -9,7 +9,7 @@ const CAPACITY_WORKFLOW_ACTIONS = new Set([
 ]);
 const ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS = new Set(['open', 'submit', 'result']);
 const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team']);
-const ISSUE_FIELD_EDIT_KINDS = new Set(['epic', 'story']);
+const ISSUE_FIELD_EDIT_KINDS = new Set(['initiative', 'epic', 'story', 'objective']);
 const ISSUE_FIELD_EDIT_SURFACES = new Set(['catch_up', 'planning', 'board']);
 const ISSUE_FIELD_EDIT_RESULTS = new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown']);
 const BOARD_SMALL_SCREEN_REASONS = new Set(['short', 'narrow', 'touch']);

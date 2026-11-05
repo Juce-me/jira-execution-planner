@@ -183,6 +183,7 @@ export function buildJiraCohortIssueSearchUrl({
     rowKey = '',
     statuses = [],
     issueType = 'Epic',
+    issueTypeId = null,
     projectKey = '',
     components = [],
     teamIds = [],
@@ -193,7 +194,8 @@ export function buildJiraCohortIssueSearchUrl({
     if (!dateClauses.length || !normalizedStatuses.length) return '';
 
     const clauses = [
-        `issuetype = "${escapeJqlLiteral(issueType)}"`,
+        // A configured Jira issue type id (new model) wins over the Legacy type name.
+        /^\d+$/.test(String(issueTypeId ?? '')) ? `issuetype = ${issueTypeId}` : `issuetype = "${escapeJqlLiteral(issueType)}"`,
         ...dateClauses
     ];
     const normalizedProject = String(projectKey || '').trim();
@@ -212,13 +214,15 @@ export function buildJiraCohortStatusSearchUrl({
     endQuarter,
     statuses = [],
     issueType = 'Epic',
+    issueTypeId = null,
 } = {}) {
     return buildJiraCohortIssueSearchUrl({
         jiraUrl,
         startQuarter,
         endQuarter,
         statuses,
-        issueType
+        issueType,
+        issueTypeId
     });
 }
 

@@ -17,9 +17,20 @@ export function sumEpicStoryPoints(tasks = []) {
 
 // A Story's own points for a fixed column: at least one decimal, up to two (2.0, 0.75), null Jira points read as 0.0.
 export function formatStoryPointsFixed(task) {
-    const value = parseFloat(task?.fields?.customfield_10004 || 0);
+    return formatStoryPointsNumberFixed(task?.fields?.customfield_10004);
+}
+
+// The same fixed format for a bare Story Points value (Scenario reads it from the configured field server-side).
+export function formatStoryPointsNumberFixed(rawValue) {
+    const value = parseFloat(rawValue || 0);
     const text = formatStoryPointsValue(Number.isNaN(value) ? 0 : value);
     return /^\d+$/.test(text) ? `${text}.0` : text;
+}
+
+// Story Points display copy: a null/empty/unparseable value reads as `0 SP` while the source value stays null internally.
+export function formatStoryPointsLabel(task) {
+    const value = parseFloat(task?.fields?.customfield_10004 || 0);
+    return `${Number.isNaN(value) ? 0 : value} SP`;
 }
 
 export const PRIORITY_ORDER = {

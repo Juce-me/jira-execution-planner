@@ -44,6 +44,7 @@ export function buildTeamAvailability({
     configuredTeamIds = [],
     membershipReady = false,
     generation = null,
+    sprintGated = true,
 } = {}) {
     const names = new Map();
     const ids = new Set();
@@ -64,18 +65,29 @@ export function buildTeamAvailability({
         if (team.name) names.set(team.id, team.name);
     });
 
+    const configured = new Set();
     (configuredTeamIds || []).forEach(value => {
         const id = String(value || '').trim();
-        if (id) ids.add(id);
+        if (id) { ids.add(id); configured.add(id); }
     });
 
-    return Array.from(ids, id => {
-        const availableInSprint = membershipReady ? members.has(id) : null;
+    // The directory keeps every Team id it has seen, so a Team Jira re-keyed shows twice under one name. When the
+    // Sprint carries one id of a name, an unconfigured id of the same name that the Sprint lacks is a stale copy.
+    const nameKey = id => (names.get(id) || '').toLowerCase();
+    const namesInSprint = new Set(membershipReady ? Array.from(members, nameKey).filter(Boolean) : []);
+    const shadowed = id => !members.has(id) && !configured.has(id) && namesInSprint.has(nameKey(id));
+
+    return Array.from(ids).filter(id => !shadowed(id)).map(id => {
+        // Ungated (a combined-model quarter), every directory Team stays addable: the Department's Teams are one
+        // workspace list whatever the viewed configuration, and new-quarter Epics need not carry a Team yet.
+        const availableInSprint = sprintGated && membershipReady ? members.has(id) : null;
         return {
             id,
             name: names.get(id) || id,
             availableInSprint,
-            canAdd: availableInSprint === true,
+            canAdd: sprintGated ? availableInSprint === true : true,
+            ...(configured.has(id) && !members.has(id) && namesInSprint.has(nameKey(id))
+                ? { sameNameInSprint: true } : {}),
         };
     }).sort((left, right) => (
         left.name.localeCompare(right.name, undefined, { sensitivity: 'base' })

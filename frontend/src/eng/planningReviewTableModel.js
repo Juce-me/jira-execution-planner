@@ -1,4 +1,5 @@
 import { getTaskTeamInfo, PRIORITY_ORDER } from './engTaskUtils.js';
+import { reviewLabels } from './planningReviewKinds.js';
 
 const naturalOrder = new Intl.Collator('en', { numeric: true, sensitivity: 'base' });
 export function newReviewColumnId() {
@@ -63,7 +64,8 @@ function issueRow(issue, rowKind, getTeamInfo) {
     };
 }
 
-export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mode = 'epic', getTeamInfo = getTaskTeamInfo } = {}) {
+export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mode = 'epic', getTeamInfo = getTaskTeamInfo, workModel, names } = {}) {
+    const { parent: parentName, child: childName } = reviewLabels(names || workModel);
     const visibleKeys = new Set(visibleTasks.map(task => task.key));
     const rows = [];
     const represented = new Set();
@@ -73,8 +75,8 @@ export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mo
         const requirements = group.requirements || [];
         const realEpic = group.key && group.key !== 'NO_EPIC' && group.epic?.key && group.epic.key !== 'NO_EPIC';
         if (mode === 'story') {
-            rows.push(...children.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: realEpic ? group.key : null, epicIssueId: realEpic ? rowIssueId(group.epic, group.epic) || null : null, epic: realEpic ? group.epic.summary || group.key : 'No Epic', projectTrack: realEpic ? group.epic.projectTrack || '' : '' })));
-            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: Story awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : 'No Epic', projectTrack: group.epic?.projectTrack || '' })));
+            rows.push(...children.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: realEpic ? group.key : null, epicIssueId: realEpic ? rowIssueId(group.epic, group.epic) || null : null, epic: realEpic ? group.epic.summary || group.key : `No ${parentName}`, projectTrack: realEpic ? group.epic.projectTrack || '' : '' })));
+            rows.push(...requirements.map(requirement => ({ id: requirement.id, rowKind: 'requirement', key: '', summary: `${group.epic?.summary || group.key}: ${childName} awaiting creation for ${requirement.team?.name || 'Unknown Team'}`, synthetic: true, requirements: [requirement], children: [], storyPoints: 0, team: requirement.team, project: group.epic?.projectKey || '', epicKey: realEpic ? group.key : null, epic: realEpic ? group.epic.summary || group.key : `No ${parentName}`, projectTrack: group.epic?.projectTrack || '' })));
         } else if (realEpic) {
             const row = issueRow(group.epic, 'epic', getTeamInfo);
             row.children = children;
@@ -83,15 +85,15 @@ export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mo
             row.teamsInScope = [...new Set([...children.map(task => getTeamInfo(task).name), ...requirements.map(item => item.team?.name || 'Unknown Team')])].sort(naturalOrder.compare);
             rows.push(row);
         } else if (children.length) {
-            rows.push({ id: 'no-epic', rowKind: 'group', key: '', summary: 'No Epic', synthetic: true, children, requirements: [], storyPoints: formatReviewScaled(children.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004).scaled ?? 0n), 0n)) });
+            rows.push({ id: 'no-epic', rowKind: 'group', key: '', summary: `No ${parentName}`, synthetic: true, children, requirements: [], storyPoints: formatReviewScaled(children.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004).scaled ?? 0n), 0n)) });
         }
     }
     const orphans = visibleTasks.filter(task => !represented.has(task.key));
-    if (mode === 'story') rows.push(...orphans.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: null, epicIssueId: null, epic: 'No Epic' })));
+    if (mode === 'story') rows.push(...orphans.map(task => ({ ...issueRow(task, 'story', getTeamInfo), epicKey: null, epicIssueId: null, epic: `No ${parentName}` })));
     else if (orphans.length) {
         const existing = rows.find(row => row.id === 'no-epic');
         if (existing) { existing.children.push(...orphans); existing.storyPoints = formatReviewScaled(existing.children.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004).scaled ?? 0n), 0n)); }
-        else rows.push({ id: 'no-epic', rowKind: 'group', key: '', summary: 'No Epic', synthetic: true, children: orphans, requirements: [], storyPoints: formatReviewScaled(orphans.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004).scaled ?? 0n), 0n)) });
+        else rows.push({ id: 'no-epic', rowKind: 'group', key: '', summary: `No ${parentName}`, synthetic: true, children: orphans, requirements: [], storyPoints: formatReviewScaled(orphans.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004).scaled ?? 0n), 0n)) });
     }
     return rows;
 }
@@ -156,7 +158,8 @@ export function nearestBoundary(edges, x, threshold = 5) {
 
 // `derived: true` places columns by the saved order plus each new column's `after` anchor and appends the other row kind's
 // derived columns (Story number sums up to Epics, every Epic column down to Stories); without it the columns are unchanged.
-export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {}, derived = false } = {}) {
+export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {}, derived = false, workModel, names } = {}) {
+    const labels = reviewLabels(names || workModel);
     const teams = new Set(rows.flatMap(row => row.rowKind === 'epic' ? row.teamsInScope || [] : [row.team?.name || 'Unknown Team']));
     const projects = new Set(rows.filter(row => !row.synthetic).map(row => row.project).filter(Boolean));
     const columns = [
@@ -174,8 +177,9 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
     if (!teamAdmitted) gated.add(mode === 'epic' ? 'teamsInScope' : 'team');
     if (projectAdmitted || derived) columns.push({ id: 'project', label: 'Project', type: 'text', optional: true });
     if (!projectAdmitted) gated.add('project');
-    if (mode === 'epic') columns.push({ id: 'team', label: 'Epic Team', type: 'text', optional: true });
-    if (mode === 'story') columns.push({ id: 'epic', label: 'Epic', type: 'text', optional: true });
+    if (mode === 'epic') columns.push({ id: 'team', label: `${labels.parent} Team`, type: 'text', optional: true });
+    // The child level's parent column keeps its stored builtin id: `epic` in Legacy, `initiative` in the combined namespace.
+    if (mode === 'story') columns.push({ id: labels.parentColumnId, label: labels.parent, type: 'text', optional: true });
     columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', optional: true });
     const pinned = columns.filter(column => ['key', 'summary'].includes(column.id));
     if (!derived) {
@@ -240,6 +244,7 @@ export function reviewValue(row, column, cells = {}, originals, derivedContext) 
         const original = originals.get(String(row.key || '').trim().toUpperCase())?.[column.id];
         if (original !== undefined) return typeof original === 'string' ? original : original?.name ?? null;
     }
+    if (column.id === 'initiative') return row.epic ?? null;
     if (column.id === 'team') return row.team?.name || 'Unknown Team';
     if (column.id === 'teamsInScope') return (row.teamsInScope || []).join(', ');
     return row[column.id] ?? null;

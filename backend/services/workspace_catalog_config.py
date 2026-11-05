@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import re
 
+from backend.services import work_structure
 from backend.services.workspace_dashboard_config import load_workspace_config_in_session
 
 
@@ -26,6 +27,18 @@ class EffectiveCatalogConfig:
     sprint_identity: str | None
     team_scope_error: str | None
     missing_admin_settings: tuple[str, ...]
+    # Work-configuration sources only; the flat (unpromoted) resolver leaves these at defaults.
+    configuration_id: str | None = None
+    configuration_revision: int | None = None
+    source_mode: str | None = None
+    source_digest: str | None = None
+    from_quarter: str | None = None
+    through_quarter: str | None = None
+    scope_error: str | None = None
+    # Board-mode entries also scan their scoped issues for Sprints the Board does not list; that
+    # supplement is an issue-scanned source of the same configuration (never a Board row).
+    observed_source: 'EffectiveCatalogConfig | None' = None
+    is_observed_supplement: bool = False
 
 
 def _digest(value):
@@ -33,14 +46,59 @@ def _digest(value):
     return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
 
 
-def build_team_scope_digest(*, board_id, projects, team_field_id, base_jql, payload_version=1):
-    return _digest([payload_version, board_id, list(projects), team_field_id, base_jql])
+def build_team_scope_digest(
+    *, board_id, projects, team_field_id, base_jql, payload_version=1,
+    configuration_digest=None, sprint_field_id=None,
+):
+    material = [payload_version, board_id, list(projects), team_field_id, base_jql]
+    if configuration_digest is not None:
+        # Configuration sources only: unpromoted digests stay byte-identical.
+        material += [configuration_digest, sprint_field_id or '']
+    return _digest(material)
+
+
+def team_scope_digest(config):
+    """Team-catalog scope digest of one resolved source (flat or configuration)."""
+    return build_team_scope_digest(
+        board_id=config.board_id, projects=config.projects,
+        team_field_id=config.team_field_id, base_jql=config.base_jql,
+        configuration_digest=config.source_digest,
+        sprint_field_id=config.sprint_field_id if config.source_digest is not None else None,
+    )
 
 
 def build_sprint_catalog_identity(workspace_id, board_id):
     if not board_id:
         return None
     return f'sc1:{_digest([1, "sprints", str(workspace_id), str(board_id)])}'
+
+
+def build_scoped_sprint_catalog_identity(
+    workspace_id, *, site_partition, effective_scope, sprint_field_id, source_digest,
+):
+    """Process-local identity of an issue-scanned Sprint catalog (no Board row exists)."""
+    return 'si1:' + _digest([
+        1, 'scoped-sprints', str(workspace_id), list(site_partition), effective_scope,
+        str(sprint_field_id), str(source_digest),
+    ])
+
+
+def build_projection_identity(config):
+    """Browser-visible identity of one source projection: row identity + digest + range."""
+    if not config.sprint_identity:
+        return None
+    return 'sp1:' + _digest([
+        1, config.sprint_identity, config.source_digest, config.configuration_id,
+        config.from_quarter, config.through_quarter,
+    ])
+
+
+def build_merged_catalog_identity(configs):
+    """Identity of a merged multi-source Sprint response (order independent)."""
+    return 'sm1:' + _digest(sorted(
+        [build_projection_identity(config) or f'unusable:{config.configuration_id}:{config.source_digest}'
+         for config in configs]
+    ))
 
 
 def build_team_catalog_identity(workspace_id, sprint_id, scope_digest):
@@ -305,3 +363,127 @@ def resolve_effective_catalog_config(
         team_scope_error=team_scope_error,
         missing_admin_settings=missing_admin_settings,
     )
+
+
+def _site_partition(context):
+    return (
+        str(getattr(context, 'cloud_id', '') or ''),
+        str(getattr(context, 'site_url', '') or '').rstrip('/').lower(),
+        str(getattr(context, 'auth_connection_id', '') or getattr(context, 'user_id', '') or ''),
+    )
+
+
+def _entry_catalog_config(context, snapshot, entry, runtime_inputs):
+    """One saved entry as a catalog source; global query precedence is unchanged.
+
+    ``JQL_QUERY`` overrides the active project chips; Sprint/Team clauses are
+    stripped by the shared normalizer.  Nothing here reads JSON or ambient
+    Board/field getters: blank mapped ids stay blank.
+    """
+    projects = tuple(sorted(work_structure.project_keys(entry)))
+    board_id = entry['scope']['boardId']
+    sprint_field_id = entry['fields']['sprint']['fieldId']
+    team_field_id = entry['fields']['team']['fieldId']
+    mode = work_structure.source_mode(entry)
+    digest = work_structure.source_digest(entry)
+    raw_jql = str(_runtime(runtime_inputs, 'jql_query', 'JQL_QUERY') or '').strip()
+    scope_error = None
+    if not raw_jql and projects:
+        if not all(re.fullmatch(r'[A-Z][A-Z0-9_]{0,63}', key) for key in projects):
+            scope_error = 'team_scope_unsupported'
+        else:
+            quoted = ', '.join(f'"{key}"' for key in projects)
+            raw_jql = f'project in ({quoted}) ORDER BY created DESC'
+    base_jql = ''
+    if scope_error is None:
+        if not raw_jql:
+            scope_error = 'team_scope_required'
+        else:
+            try:
+                base_jql = normalize_catalog_base_jql(
+                    raw_jql, team_field_id=team_field_id, sprint_field_id=sprint_field_id,
+                )
+            except ValueError:
+                scope_error = 'team_scope_unsupported'
+    team_scope_error = scope_error
+    if team_scope_error is None and not team_field_id:
+        team_scope_error = 'team_field_required'
+    config_digest = _digest([
+        2, entry['id'], digest, base_jql, scope_error, team_scope_error, mode,
+    ])
+    if mode == work_structure.SOURCE_MODE_BOARD:
+        sprint_identity = build_sprint_catalog_identity(context.workspace_id, board_id)
+    elif mode == work_structure.SOURCE_MODE_SCOPED_ISSUES and scope_error is None:
+        sprint_identity = build_scoped_sprint_catalog_identity(
+            context.workspace_id, site_partition=_site_partition(context),
+            effective_scope=base_jql, sprint_field_id=sprint_field_id, source_digest=digest,
+        )
+    else:
+        sprint_identity = None
+    primary = EffectiveCatalogConfig(
+        workspace_id=context.workspace_id, config_revision=snapshot.config_revision,
+        config_source=snapshot.source, workspace_payload=deepcopy(snapshot.payload),
+        board_id=board_id, projects=projects, team_field_id=team_field_id,
+        sprint_field_id=sprint_field_id, base_jql=base_jql, config_digest=config_digest,
+        sprint_identity=sprint_identity, team_scope_error=team_scope_error,
+        missing_admin_settings=tuple(work_structure.entry_missing_fields(entry)),
+        configuration_id=entry['id'], configuration_revision=entry['revision'],
+        source_mode=mode, source_digest=digest, from_quarter=entry['fromQuarter'],
+        through_quarter=entry['throughQuarter'], scope_error=scope_error,
+    )
+    if (mode == work_structure.SOURCE_MODE_BOARD and entry['model'] == work_structure.MODEL_RND_2027
+            and scope_error is None and projects and sprint_field_id):
+        # A Board lists only its own Sprints, but quarterly Epics may carry another one. The
+        # quarterly model scans the same scoped issues as a second source; Legacy keeps Board-only
+        # discovery (its Board-origin rules and scan cost are unchanged).
+        observed = replace(
+            primary, source_mode=work_structure.SOURCE_MODE_SCOPED_ISSUES,
+            config_digest=_digest([2, entry['id'], digest, base_jql, scope_error, team_scope_error,
+                                   work_structure.SOURCE_MODE_SCOPED_ISSUES, 'observed']),
+            sprint_identity=build_scoped_sprint_catalog_identity(
+                context.workspace_id, site_partition=_site_partition(context),
+                effective_scope=base_jql, sprint_field_id=sprint_field_id, source_digest=digest,
+            ),
+            is_observed_supplement=True,
+        )
+        primary = replace(primary, observed_source=observed)
+    return primary
+
+
+def resolve_catalog_sources(session, context, *, runtime_inputs, flag_enabled=None):
+    """Every saved configuration as a catalog source, or None while unpromoted.
+
+    Reads the DB row only (``fallback_loader=None``); a promoted workspace never
+    reaches a JSON loader.  Promoted with the flag off raises
+    ``configuration_feature_disabled``.
+    """
+    snapshot = load_workspace_config_in_session(session, context, fallback_loader=None)
+    entries = work_structure.catalog_entries(snapshot, flag_enabled=flag_enabled)
+    if entries is None:
+        return None
+    return tuple(
+        _entry_catalog_config(context, snapshot, entry, runtime_inputs) for entry in entries
+    )
+
+
+def resolve_configuration_catalog_config(
+    session, context, *, runtime_inputs, configuration_id, flag_enabled=None, observed=False,
+):
+    """One saved configuration as a catalog source; ``None`` when unpromoted.
+
+    Unknown id raises ``invalid_configuration_id``.  ``observed=True`` returns the
+    issue-scanned supplement of a Board-mode configuration (same id otherwise).
+    """
+    sources = resolve_catalog_sources(
+        session, context, runtime_inputs=runtime_inputs, flag_enabled=flag_enabled,
+    )
+    if sources is None:
+        return None
+    for source in sources:
+        if source.configuration_id == configuration_id:
+            if observed:
+                if source.observed_source is None:
+                    raise work_structure.WorkConfigError('invalid_configuration_id')
+                return source.observed_source
+            return source
+    raise work_structure.WorkConfigError('invalid_configuration_id')

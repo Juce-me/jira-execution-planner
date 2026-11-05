@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from './statsScope.js';
 
 function StatsTeamsView({
     open,
@@ -10,8 +12,10 @@ function StatsTeamsView({
     buildStatLink,
     computeRate,
     formatPercent,
-    getRateClass
+    getRateClass,
+    words = roleLabels(null)
 }) {
+    const childWords = lowerEntityWord(words.children);
     const renderStatsLink = (href, count, title, ariaLabel) => (
         <TrackedExternalLink
             className="stats-link"
@@ -123,7 +127,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.straight.done}</span>
                                     {totalDoneLink && (
-                                        renderStatsLink(totalDoneLink, team.straight.done, 'View done stories for this team in Jira', 'Open done stories in Jira')
+                                        renderStatsLink(totalDoneLink, team.straight.done, `View done ${childWords} for this team in Jira`, `Open done ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>
@@ -131,7 +135,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.straight.incomplete}</span>
                                     {totalIncompleteLink && (
-                                        renderStatsLink(totalIncompleteLink, team.straight.incomplete, 'View incomplete stories for this team in Jira', 'Open incomplete stories in Jira')
+                                        renderStatsLink(totalIncompleteLink, team.straight.incomplete, `View incomplete ${childWords} for this team in Jira`, `Open incomplete ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>
@@ -141,7 +145,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.product.done}</span>
                                     {productDoneLink && (
-                                        renderStatsLink(productDoneLink, team.product.done, 'View done product stories for this team in Jira', 'Open done product stories in Jira')
+                                        renderStatsLink(productDoneLink, team.product.done, `View done product ${childWords} for this team in Jira`, `Open done product ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>
@@ -149,7 +153,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.product.incomplete}</span>
                                     {productIncompleteLink && (
-                                        renderStatsLink(productIncompleteLink, team.product.incomplete, 'View incomplete product stories for this team in Jira', 'Open incomplete product stories in Jira')
+                                        renderStatsLink(productIncompleteLink, team.product.incomplete, `View incomplete product ${childWords} for this team in Jira`, `Open incomplete product ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>
@@ -159,7 +163,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.tech.done}</span>
                                     {techDoneLink && (
-                                        renderStatsLink(techDoneLink, team.tech.done, 'View done tech stories for this team in Jira', 'Open done tech stories in Jira')
+                                        renderStatsLink(techDoneLink, team.tech.done, `View done tech ${childWords} for this team in Jira`, `Open done tech ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>
@@ -167,7 +171,7 @@ function StatsTeamsView({
                                 <div className="postponed-cell">
                                     <span>{team.tech.incomplete}</span>
                                     {techIncompleteLink && (
-                                        renderStatsLink(techIncompleteLink, team.tech.incomplete, 'View incomplete tech stories for this team in Jira', 'Open incomplete tech stories in Jira')
+                                        renderStatsLink(techIncompleteLink, team.tech.incomplete, `View incomplete tech ${childWords} for this team in Jira`, `Open incomplete tech ${childWords} in Jira`)
                                     )}
                                 </div>
                             </td>

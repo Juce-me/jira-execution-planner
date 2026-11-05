@@ -136,7 +136,8 @@ test('390px creation fits, frozen keys and last-column reachability at desktop a
     await expect(page.getByRole('textbox', { name: 'Cost 7 for DEMO-1', exact: true })).toBeInViewport();
     await page.getByRole('button', { name: 'Cost 7', exact: true }).hover();
     // Read the settled hover state: WebKit applies :hover a frame after the pointer arrives.
-    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgba(0, 0, 0, 0)', color:'rgb(26, 26, 26)', transform:'none', shadow:'color(srgb 0.101961 0.101961 0.101961 / 0.08) 0px 0px 0px 999px inset, rgb(47, 128, 237) 0px 0px 0px 1px inset, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px inset' });
+    await expect.poll(() => page.getByRole('button', { name: 'Cost 7', exact: true }).evaluate(node => ({ background:getComputedStyle(node).backgroundColor,color:getComputedStyle(node).color,transform:getComputedStyle(node).transform,shadow:getComputedStyle(node).boxShadow }))).toEqual({ background:'rgba(0, 0, 0, 0)', color:'rgb(26, 26, 26)', transform:'none', shadow:'none' });
+    await expect.poll(() => page.locator('thead th', { has: page.getByRole('button', { name: 'Cost 7', exact: true }) }).evaluate(node => getComputedStyle(node).backgroundImage)).toContain('linear-gradient');
     await page.screenshot({ path: path.join(root, 'tmp/217-ui/planning-review-desktop.png'), fullPage: true });
     // Browser zoom reduces the CSS layout viewport; a body CSS transform does not.
     await page.setViewportSize({ width: Math.round(1280 / 1.5), height: Math.round(900 / 1.5) });
@@ -1526,17 +1527,15 @@ test('review table surfaces and borders use the shared tokens, not slate literal
     expect(popover).toEqual({ bg: tokens.bgSecondary, border: tokens.border, ink: tokens.textPrimary });
 });
 
-test('heading hover uses an inset overlay and ring without changing its fill', async ({ page }) => {
+test('heading hover highlights its header cell without framing the heading or changing its fill', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     const heading = page.locator('.planning-review-heading', { hasText: /^Status/ });
+    const cell = page.locator('thead th.planning-review-status');
+    expect(await cell.evaluate(node => getComputedStyle(node).backgroundImage)).toBe('none');
     await heading.hover();
-    const read = () => heading.evaluate(node => { const s = getComputedStyle(node); const probe = document.createElement('div'); document.body.append(probe); probe.style.color = 'var(--border)'; const border = getComputedStyle(probe).color; probe.remove(); return { bg: s.backgroundColor, border, color: s.color, transform: s.transform, shadow: s.boxShadow }; });
-    await expect.poll(async () => (await read()).shadow).toContain('rgb(47, 128, 237)');
-    expect((await read()).bg).toBe('rgba(0, 0, 0, 0)');
-    const settled = await read();
-    expect(settled.color).toBe('rgb(26, 26, 26)');
-    expect(settled.transform).toBe('none'); expect(settled.shadow).toContain('999px inset');
-    expect(settled.shadow).toContain('1px inset');
+    await expect.poll(() => cell.evaluate(node => getComputedStyle(node).backgroundImage)).toContain('linear-gradient');
+    const settled = await heading.evaluate(node => { const s = getComputedStyle(node); return { bg: s.backgroundColor, color: s.color, transform: s.transform, shadow: s.boxShadow }; });
+    expect(settled).toEqual({ bg: 'rgba(0, 0, 0, 0)', color: 'rgb(26, 26, 26)', transform: 'none', shadow: 'none' });
 });
 
 test('on a wide display the sheet shrinks to its columns and sits centred with no blank frame to its right', async ({ page }) => {

@@ -150,17 +150,17 @@
 
 **Files:** this plan (Execution evidence); captures under the ignored `tmp/planning-323-every-team/`.
 
-- [ ] **Step 1:** Record the starting head SHA (it was `07949f38` when this plan was written), the operator's answers to D1–D4, and the G1 integers in Execution evidence.
-- [ ] **Step 2:** Run `npm run build`, the isolated backend suite and `node --test tests/test_*.js` (Node 20) at the starting head; record the summary lines.
-- [ ] **Step 3:** Capture "before" Chromium screenshots (synthetic data, mocked routes as in `planning_assignee_capacity.spec.js`) for:
+- [x] **Step 1:** Record the starting head SHA (it was `07949f38` when this plan was written), the operator's answers to D1–D4, and the G1 integers in Execution evidence.
+- [x] **Step 2:** Run `npm run build`, the isolated backend suite and `node --test tests/test_*.js` (Node 20) at the starting head; record the summary lines.
+- [x] **Step 3:** Capture "before" Chromium screenshots (synthetic data, mocked routes as in `planning_assignee_capacity.spec.js`) for:
   - one Team;
   - two Teams;
   - All Teams;
   - a no-Story Team;
   - an unpointed-Story Team;
   - the reconcile row (compact and expanded).
-- [ ] **Step 4:** Record the request ledger for initial dashboard load and for Planning Table at one, two and All Teams, using the DoD 12 ledger tests.
-- [ ] **Step 5 (G3):** Measure the Jira capacity GET for the G1 counts and for 500 synthetic Teams, before and after the D3 Team set: URL bytes and the number of Jira searches. Stop and ask if a G3 limit is exceeded.
+- [x] **Step 4:** Record the request ledger for initial dashboard load and for Planning Table at one, two and All Teams, using the DoD 12 ledger tests.
+- [x] **Step 5 (G3):** Measure the Jira capacity GET for the G1 counts and for 500 synthetic Teams, before and after the D3 Team set: URL bytes and the number of Jira searches. Stop and ask if a G3 limit is exceeded.
 
 ### Task 1: Batch Team-number projection (backend)
 
@@ -569,7 +569,29 @@ Each item is done only with its named evidence recorded in Execution evidence (c
 
 ## Execution evidence
 
-Not started.
+**Task 0 (2026-11-06), starting head `55ef631b`.** No source changed. Captures and logs are under the ignored `tmp/planning-323-every-team/`.
+
+- **Step 1.** Starting head is `55ef631b` (the plan's `07949f38` predates committing the pending work and merging `origin/main`). D1–D4 and G1 are recorded below.
+- **Step 2 (Node 20).**
+  - `npm run build`: completed (`frontend/dist/dashboard.css 364.5kb`, `Done in 11ms`).
+  - `.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)"`: `Ran 3539 tests in 1911.206s`, `FAILED (failures=1, errors=1, skipped=1)`. The two are `test_local_postgresql_runner.LocalPostgresqlRunnerProcessTests.test_sigint_returns_130_kills_child_and_cleans_once` (`cleanup did not start`) and `...test_sigint_during_child_launch_is_serviced_after_pid_publication` (8 s `communicate` timeout). They are the known load-sensitive signal tests; `... tests.test_local_postgresql_runner` alone passes: `Ran 36 tests in 88.231s`, `OK`.
+  - `node --test tests/test_*.js`: `# tests 3592`, `# pass 3592`, `# fail 0`, `# skipped 0`.
+  - Baseline finding: `npx playwright test tests/ui/planning_assignee_capacity.spec.js --browser=chromium --workers=4` at this head gives `45 failed`, `3 skipped`, `58 passed` (106 tests). The fixture is stale against the merged shared-plan work: its review mock returns no `plan`, so Planning stays on "Loading plan…" and `.planning-team-capacity-cards` is never visible, and it clicks a "Show panel" button that is now "Show capacity details" inside the Planning options menu. The DoD 12 ledger tests at lines 167 and 1045 pass; the one at line 1422 (mirror) is among the 45. Not fixed here; later tasks that rely on this spec need its fixture moved to `planning_review_mock.js` first.
+- **Step 3.** Capture-only spec (not committed; built from the spec's `install`/`plannedServer` helpers, the review routes answered through `planning_review_mock.js`, a `story-readiness` stub added) at 1440x900. Synthetic data only. PNGs in `tmp/planning-323-every-team/before/` (`*-compact`, `*-expanded`, plus `*-page` full-viewport): `one-team`, `two-teams`, `all-teams`, `no-story-team` (selected Team has no Stories), `no-story-plus-alpha` (a no-Story Team beside a Team with work), `unpointed-team` (Stories with no Story Points), `reconcile` (stored 14 vs ticket 20). What the app shows today: one Team with work gets one card; two Teams and All Teams get one card per Team that has Stories; a no-Story Team and an unpointed-Story Team get no card at all and the panel shows only the aggregate "Planned stories / Planned SP: 0 · 0.0 SP" line; the reconcile banner appears only in one-Team scope, above the card.
+- **Step 4 (request ledger, requests by path).**
+  - Initial dashboard load (Catch Up, networkidle): 24 requests, identical for every scope: one each of config, groups-config, auth/refresh, projects/selected, priority-weights-config, board-config, capacity/config, six field-config reads, issue-types/config, analytics/context, sprints, team-catalog, story-readiness, missing-info and `POST dependencies`, plus 5 `tasks-with-team-name`. No assignee-capacity or Jira capacity request.
+  - Opening Planning Table (Sprint pick, switch to Planning, settled), requests added: one Team has 5 `tasks-with-team-name`, 1 story-readiness, 1 missing-info, 2 backlog-epics, 1 `POST dependencies`, 1 assignee-capacity GET, 1 review GET, 1 `GET /api/capacity`, 2 csrf and 2 `review/values/read`. Two Teams and All Teams are the same minus the assignee-capacity GET (0). A selected no-Story Team and an unpointed-Story Team: 1 assignee-capacity GET and no `GET /api/capacity`.
+  - Full table: `tmp/planning-323-every-team/ledger.json`.
+- **Step 5 (G3), real code paths** (`fetchCapacity` from `frontend/src/api/capacityApi.js` with a stubbed `fetch`; `_team_chunks` and `build_capacity_jql` from `backend/services/capacity.py`; assumed Team name length 15 characters, Sprint name `2026Q3 Sprint 1`):
+
+| Teams | Browser GET URL bytes | Jira searches `ceil(N/20)` | Largest Jira search body bytes |
+| --- | --- | --- | --- |
+| 1 | 74 | 1 | 163 |
+| 2 | 92 | 1 | 232 |
+| 12 (G1 maximum) | 272 | 1 | 922 |
+| 500 (synthetic) | 9,056 | 25 | 1,474 |
+
+  The D3 set is the Team-selector set and never exceeds today's displayed set (at most 12 under G1), so before and after are identical for the G1 counts: 272 bytes, one search, below the 6,000-byte limit. The 500-Team figure exceeds 6,000 bytes and costs 25 searches; informational only.
 
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.

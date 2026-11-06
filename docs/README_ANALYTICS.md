@@ -445,3 +445,4 @@ same-tab recovery storage are automatic state maintenance and emit no gesture
 events. Tests: `test_planning_save_analytics.js`, `test_planning_sprint_review.js`,
 `test_planning_selection_state.js` and `test_analytics_events.js`. The existing
 two-trigger GTM map, transport gate and GA4 runbook need no configuration changes.
+Stories Required completed-work correction (2026-11-06): trigger none; `event_type=none`; canonical `event_name=none`; `feature_name=eng_alerts`; typed params none. Counting selected-quarter Done work changes only derived alert/placeholder eligibility, with no new action, request, event or parameter. Existing alert interaction and API reliability taxonomy applies; no GA4 runbook change. Verification: `tests/test_completed_story_readiness.py`, `tests/test_epic_refresh_alerts.js`.

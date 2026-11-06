@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const activeSprintId = 3001;
@@ -9,7 +10,12 @@ const futureSprintName = '2026Q3 Sprint 1';
 const earlierSprintName = '2026Q2 Sprint 9';
 const caps = { canRead: true, canSave: true };
 
-const json = (route, body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
+// The shared Planning review payload carries `plan` and `scopeProof` (#331); the mock adds them to every review response.
+const sharedReviewMocks = new WeakMap();
+const json = (route, body, status = 200) => {
+    const planning = sharedReviewMocks.get(route.request().frame().page());
+    return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(planning ? planning.response(route.request(), body, status) : body) });
+};
 const requestBody = request => { try { return request.postDataJSON(); } catch (error) { return null; } };
 
 function story(key, accountId, name, sp, { team = 'team-alpha', status = 'To Do' } = {}) {
@@ -80,6 +86,8 @@ const defaultPeople = query => ({ users: searchPeople.filter(person => person.di
 async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople } = {}) {
     const calls = [];
     await installDashboardShell(page);
+    // Planning counts only Stories included in the shared plan (#331); the previous default selection becomes a saved plan of every Story.
+    sharedReviewMocks.set(page, createPlanningReviewMock({ initialPlans: { [futureSprintId]: { includedIssueIds: issues.map(issue => issue.id) } } }));
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -129,6 +137,9 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         if (url.pathname === '/api/eng/assignee-capacity/user-options' && request.method() === 'POST') return json(route, people(requestBody(request)?.query));
         if (/^\/api\/eng\/sprints\/[^/]+\/review$/.test(url.pathname)) return json(route, { schemaVersion: 1, sprintId: String(futureSprintId), schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: true } });
         if (/\/review\/values\/read$/.test(url.pathname)) return json(route, { cells: [], unavailableIssueIds: [] });
+        if (url.pathname === '/api/eng/story-readiness') return json(route, { schemaVersion: 1, complete: true,
+            scope: { groupId: url.searchParams.get('groupId'), sprintId: url.searchParams.get('sprint'),
+                sprintName: url.searchParams.get('sprintName'), sprintState: url.searchParams.get('sprintState') }, epics: [] });
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
@@ -466,7 +477,7 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     await expect(segments(page)).toHaveCount(3);
     const footer = await table(page).locator('tfoot td').evaluateAll(tds => tds.map(td => td.textContent.trim()));
     const compact = await page.locator('.planning-panel-capacity-graph .planning-compact-readout').textContent();
-    const [, barSelected, teamNumber] = /tasks · ([\d.]+) SP \/ ([\d.]+) cap/.exec(compact);
+    const [, barSelected, teamNumber] = /planned stories · ([\d.]+) SP \/ ([\d.]+) SP capacity/.exec(compact);
     expect(Number(footer[2])).toBe(Number(barSelected));
     expect(Number(barSelected)).toBe(14);
     // A segment's readout is about the person; the bar's Selected number is in the header-only readout past the last segment.
@@ -477,8 +488,8 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     // Planned capacity carries it, after the people's sum (operator review, #323).
     expect(Number(teamNumber)).toBe(20);
     await page.mouse.move(5, 400);
-    await showPanel(page).click();
-    await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Team Cap\s*20\.0/);
+    await showCapacityDetails(page);
+    await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Capacity\s*20\.0/);
     const headers = await table(page).locator('thead th').evaluateAll(ths => ths.map(th => th.textContent.trim()));
     expect(headers).toEqual(['Assignee', 'Planned capacity', 'Estimated effort', 'Vacations', 'Notes']);
     expect(footer[1], 'the people\'s Planned capacity sum out of the team number').toBe('14 / 20');
@@ -488,6 +499,7 @@ test('segments are one per person with Planned capacity or effort plus Unassigne
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    await showCapacityDetails(page);
     await expand(page);
     // Ann 5 and Bob 5 (Capacity 8 and 6), Unassigned 4; Cy has Capacity unset and nothing selected, so no segment.
     await expect(segments(page)).toHaveCount(3);
@@ -560,6 +572,7 @@ test('tapping a segment shows its readout and a settled screenshot of the pinned
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    await showCapacityDetails(page);
     await stripToggle(page).tap(); await expect(table(page)).toBeVisible();
     await expect(segments(page)).toHaveCount(3);
     // Chromium's emulated tap moves its virtual mouse back to the last mouse position about 13 ms after the click,
@@ -646,7 +659,12 @@ test('whole-track hover: any height resolves the segment under the pointer, past
 });
 
 const overflowMark = page => underbar(page).locator('[data-assignee-overflow], .planning-assignee-overflow');
-const showPanel = page => page.locator('.planning-panel').getByRole('button', { name: 'Show panel' });
+// The details toggle lives in the Planning options popover (#331); the overview starts compact.
+async function showCapacityDetails(page) {
+    const show = page.getByRole('button', { name: 'Show capacity details', exact: true });
+    if (!await show.isVisible()) await page.getByRole('button', { name: 'Planning options', exact: true }).click();
+    if (await show.count()) await show.click(); else await page.keyboard.press('Escape');
+}
 
 test('people Capacity above Team Cap widens the shared axis: the strip is not clipped, no overflow mark, and the Team Cap marker stays on the axis, expanded and compact', async ({ page }) => {
     const server = capacityServer({ rows: bigCapacityRows });
@@ -657,7 +675,7 @@ test('people Capacity above Team Cap widens the shared axis: the strip is not cl
     // the strip ending with the fill at 14/23), so the strip ends at 26/29.9, past the Team Cap at 20/29.9.
     await expect(segments(page)).toHaveCount(3);
     await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(0);
-    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 20.0 cap');
+    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 planned stories · 14.0 SP / 20.0 SP capacity');
     const measure = () => page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
         const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
@@ -669,7 +687,7 @@ test('people Capacity above Team Cap widens the shared axis: the strip is not cl
             widths: list.map(rect => rect.width / track.width), track: { top: track.top } };
     });
     for (const mode of ['compact', 'expanded']) {
-        if (mode === 'expanded') { await showPanel(page).click(); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
+        if (mode === 'expanded') { await showCapacityDetails(page); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
         await expect(page.locator('.planning-panel [data-assignee-overflow], .planning-panel .planning-assignee-overflow'), mode).toHaveCount(0);
         await expect(page.locator('.planning-panel').getByText(/SP over/), mode).toHaveCount(0);
         const m = await measure();
@@ -701,7 +719,7 @@ test('over capacity: the strip spans the clipped fill and the bar\'s own over-ca
     await expect(segments(page)).toHaveCount(3);
     await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(1);
     await expect(overflowMark(page)).toHaveCount(0);
-    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 tasks · 14.0 SP / 10.0 cap');
+    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 planned stories · 14.0 SP / 10.0 SP capacity');
     const ends = await page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
         const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
@@ -713,7 +731,7 @@ test('over capacity: the strip spans the clipped fill and the bar\'s own over-ca
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
     await expect(readout(page)).not.toContainText('over Team Cap');
-    await showPanel(page).click();
+    await showCapacityDetails(page);
     await expect(overflowMark(page)).toHaveCount(0);
     await page.evaluate(() => document.activeElement?.blur());
     await page.mouse.move(5, 400);
@@ -735,7 +753,7 @@ for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewp
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
     await expand(page);
-    if (mode === 'expanded') await showPanel(page).click();
+    if (mode === 'expanded') await showCapacityDetails(page);
     await expect(segments(page)).toHaveCount(3);
     for (const scrolled of [false, true]) {
         if (scrolled) {
@@ -779,7 +797,7 @@ test('settled screenshots of the strip in the normal case, compact and expanded,
     await expect(segments(page)).toHaveCount(3);
     await page.mouse.move(5, 400);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/slice1-shots/strip-normal-compact.png', animations: 'disabled' });
-    await showPanel(page).click();
+    await showCapacityDetails(page);
     await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible();
     await page.evaluate(() => document.activeElement?.blur());
     await page.locator('.planning-panel').screenshot({ path: 'tmp/slice1-shots/strip-normal-expanded.png', animations: 'disabled' });
@@ -1224,7 +1242,7 @@ async function hover(page, locator) { await locator.hover(); }
 // The Table overview starts compact; the team cards live in its details.
 async function showCards(page) {
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    if (await showPanel(page).count()) await showPanel(page).click();
+    await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards')).toBeVisible();
 }
 
@@ -1255,7 +1273,7 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     await expect(underbar(page)).toHaveCount(0);
     await page.locator('.planning-panel').getByRole('button', { name: 'Select All', exact: true }).click();
     await expect(underbar(page)).toHaveCount(1);
-    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(teamCap(page)).toHaveText(/Capacity\s*14\.0/);
     await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'planned');
     await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'user');
     await expect(alphaCard(page).locator('.microbar-meta')).toContainText('Cap 14.0');
@@ -1268,7 +1286,7 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     await page.mouse.move(5, 600);
     await switchSprint(page, futureSprintName);
     await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'inherited');
-    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(teamCap(page)).toHaveText(/Capacity\s*14\.0/);
     await expect(page.locator('.team-capacity-read-status').filter({ hasText: 'have not been created yet for this future sprint' })).toContainText('Showing Team capacity (not in Jira) meanwhile.');
     await hover(page, alphaCard(page));
     await plannedPencil(page).click();
@@ -1285,7 +1303,7 @@ test('with a ticket Jira wins on screen: no stored-number pencil, the Jira numbe
     await openPlanning(page);
     await showCards(page);
     await expect.poll(() => server.state.gets).toBe(1);
-    await expect(teamCap(page)).toHaveText(/Team Cap\s*20\.0/);
+    await expect(teamCap(page)).toHaveText(/Capacity\s*20\.0/);
     await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'jira');
     await hover(page, alphaCard(page));
     await expect(plannedPencil(page)).toHaveCount(0);
@@ -1307,7 +1325,7 @@ test('a typed number that differs from the ticket shows the banner with three ac
     await expect(reconcileBanner(page)).toBeVisible();
     await expect(reconcileBanner(page)).toContainText('Alpha Team: Team capacity (not in Jira) is 14 SP; the Jira ticket says 20 SP.');
     await expect(reconcileBanner(page).getByRole('button')).toHaveText(['Write to ticket', 'Use ticket value', 'Not now']);
-    await expect(teamCap(page), 'Jira wins on screen').toHaveText(/Team Cap\s*20\.0/);
+    await expect(teamCap(page), 'Jira wins on screen').toHaveText(/Capacity\s*20\.0/);
     await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/slice3-shots/reconcile-banner.png', animations: 'disabled' });
     await page.mouse.move(5, 600);
     await page.locator('.planning-panel').screenshot({ path: 'tmp/slice3-shots/bar-underbar-differing.png', animations: 'disabled' });
@@ -1359,7 +1377,7 @@ test('equal numbers, and jira or inherited sources, show no banner', async ({ pa
         await openPlanning(page);
         await showCards(page);
         await expect.poll(() => server.state.gets).toBe(1);
-        await expect(teamCap(page)).toHaveText(/Team Cap\s*20\.0/);
+        await expect(teamCap(page)).toHaveText(/Capacity\s*20\.0/);
         await page.waitForTimeout(300);
         await expect(reconcileBanner(page), JSON.stringify(docs)).toHaveCount(0);
         await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -1371,7 +1389,7 @@ test('a matched ticket with a blank value falls back to the stored number; the p
     await install(page, { server, capacityProject: 'CAP', capacity: ticket(null), authMode: 'atlassian_oauth' });
     await openPlanning(page);
     await showCards(page);
-    await expect(teamCap(page)).toHaveText(/Team Cap\s*14\.0/);
+    await expect(teamCap(page)).toHaveText(/Capacity\s*14\.0/);
     await expect(alphaCard(page)).toHaveAttribute('data-capacity-source', 'planned');
     await hover(page, alphaCard(page));
     await expect(alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
@@ -1440,7 +1458,7 @@ test('request ledger: the mirror sends at most one guarded PATCH per user-initia
     let since = calls.length;
     await lifecycle.returnAfter(13 * 60000);
     await expect.poll(() => calls.slice(since).some(call => call.pathname === '/api/capacity'), 'the automatic window re-read capacity').toBe(true);
-    await expect(teamCap(page)).toHaveText(/Team Cap\s*25\.0/);
+    await expect(teamCap(page)).toHaveText(/Capacity\s*25\.0/);
     await page.waitForLoadState('networkidle'); await page.waitForTimeout(600);
     expect(assigneeWrites(calls, since), 'no non-GET in an automatic window').toEqual([]);
     // A user-initiated load (header Refresh) mirrors the differing ticket value once.
@@ -2326,7 +2344,7 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw solid eff
     await install(page, { server, capacityProject: 'CAP', issues: layerStories });
     await openPlanning(page);
     await expand(page);
-    if (mode === 'expanded') { await showPanel(page).click(); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
+    if (mode === 'expanded') { await showCapacityDetails(page); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
     await expect(segments(page)).toHaveCount(6);
     const g = await layerGeometry(page);
     const by = Object.fromEntries(g.segments.map(segment => [segment.name, segment]));
@@ -2656,15 +2674,15 @@ test('a dirty review draft survives both directions: the switch to Stories is no
     await page.getByRole('button', { name: 'Add column', exact: true }).click();
     const cell = page.getByRole('textbox', { name: 'Synthetic review for PLAN-EPIC', exact: true });
     await cell.fill('7'); await cell.press('Enter');
-    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
     await expand(page);
     await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
     await expect(page.locator('.planning-review-dialog')).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
     await rowsButton(page, 'Epics').click();
     await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
     await expect(cell).toHaveValue('7');
-    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
 });
 
 test('mount: a saved expanded strip and the table\'s Epics default select Stories once; a link\'s Stories keeps both; a link\'s Epics collapses the strip', async ({ page }) => {

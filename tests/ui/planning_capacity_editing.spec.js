@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
@@ -412,6 +413,12 @@ async function openPlanning(page, options = {}) {
     return fixture;
 }
 
+// The details toggle lives in the Planning options popover (#331); the overview starts compact.
+async function showCapacityDetails(page) {
+    await page.getByRole('button', { name: 'Planning options', exact: true }).click();
+    await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
+}
+
 // Group-scoped review stubs: the group comes from the GET query or the values-read/PATCH body, and each group has its own
 // schema (none has columns by default). `derived: true` gives group-capacity a Story number sum column, which rolls up onto
 // Epic rows; it stays off so the existing Epic-mode tests see no derived columns.
@@ -419,8 +426,11 @@ async function stubGroupReview(page, { derived = false } = {}) {
     const groupOf = request => request.method() === 'GET' ? new URL(request.url()).searchParams.get('groupId') : requestBody(request)?.groupId ?? null;
     const columnsFor = groupId => derived && groupId === 'group-capacity' ? [{ id: 'effort', rowKind: 'story', label: 'Effort', type: 'number', aggregation: 'sum', order: 0 }] : [];
     const reviewGroups = [];
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { const groupId = groupOf(route.request()); reviewGroups.push(groupId); return json(route, { schemaRevision: 1, columns: columnsFor(groupId), layouts: {}, capabilities: { canRead: true, canSave: true } }); });
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { reviewGroups.push(groupOf(route.request())); return json(route, { cells: [], unavailableIssueIds: [] }); });
+    // The shared Planning review payload carries `plan` and `scopeProof` (#331); the mock adds them to each response.
+    const planning = createPlanningReviewMock();
+    const planned = (route, body) => json(route, planning.response(route.request(), body));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { const groupId = groupOf(route.request()); reviewGroups.push(groupId); return planned(route, { schemaRevision: 1, columns: columnsFor(groupId), layouts: {}, capabilities: { canRead: true, canSave: true } }); });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { reviewGroups.push(groupOf(route.request())); return planned(route, { cells: [], unavailableIssueIds: [] }); });
     return reviewGroups;
 }
 
@@ -1825,7 +1835,7 @@ test('automatic Planning capacity editor defers primary work and cancels a late 
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
     await stubGroupReview(page);
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await showCapacityDetails(page);
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' });
     await card.hover();
     await card.getByRole('button', { name: 'Edit Alpha capacity', exact: true }).click(); const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' }); await input.fill('37');
@@ -1845,7 +1855,7 @@ for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
     const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
     await stubGroupReview(page);
-    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await showCapacityDetails(page);
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();
     await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await page.waitForLoadState('networkidle');
     state.capacityGetStatus = status; const since = calls.length; await lifecycle.returnAfter(13 * 60000); await expect.poll(() => capacityCalls(calls.slice(since), 'GET').length).toBe(1);

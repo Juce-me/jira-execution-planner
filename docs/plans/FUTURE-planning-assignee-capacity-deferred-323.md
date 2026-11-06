@@ -1,6 +1,6 @@
 # Planning Assignee Capacity: Deferred Scope (#323)
 
-> **Status:** Deferred follow-up. Spun out of `DONE-planning-assignee-capacity-table-323.md`. Do not execute without renaming to `EXEC-*` after review.
+> **Status:** Deferred follow-up. Spun out of `DONE-planning-assignee-capacity-table-323.md`. Do not execute without renaming to `EXEC-*` after review. On 2026-11-06 the "Team capacity for every selected Team" scope, the one-click push and the open items were promoted to [EXEC-planning-team-capacity-every-team-323.md](EXEC-planning-team-capacity-every-team-323.md), which records the source review; this file keeps the original design text for audit until that plan completes.
 
 ## Team capacity for every selected Team
 

@@ -47,7 +47,9 @@ class EnvFileBootstrapBehaviorTests(unittest.TestCase):
         sources.extend(str(path.relative_to(ROOT)) for path in (ROOT / 'frontend/src').rglob('*') if path.is_file())
         self.snapshot = prepare_snapshot(ROOT, self.case / 'checkout', include_new=sources)
 
-        self.environment = synthetic_environment(self.snapshot)
+        from tests.postgres_test_db import fresh_database_url, owned_cluster_for_nested_snapshot
+        self.environment = synthetic_environment(self.snapshot, cluster=owned_cluster_for_nested_snapshot())
+        self.environment['DATABASE_URL'] = fresh_database_url(self.addCleanup)
         # These particular inputs must be supplied by the selected fake dotenv.
         for name in ('JIRA_AUTH_MODE', 'CONFIG_STORAGE_BACKEND', 'JIRA_URL',
                      'FLASK_SECRET_KEY', 'APP_ALLOWED_ORIGINS', 'SESSION_COOKIE_SECURE'):

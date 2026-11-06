@@ -43,6 +43,16 @@ def _execute_admin(statement: str, admin: URL | None = None) -> None:
         engine.dispose()
 
 
+def owned_cluster_for_nested_snapshot() -> dict:
+    """The runner's owned cluster, so a nested isolated snapshot admits it through its own guard."""
+    if os.environ.get("JEP_TEST_OWNED_CLUSTER") != "1":
+        raise RuntimeError("Nested snapshots need the isolated runner's owned cluster.")
+    url = _admin_url()
+    return {"host": url.host, "port": url.port, "user": url.username, "password": url.password,
+            "adminDatabase": url.database, "runtimeDatabase": "jep_runtime",
+            "binDir": os.environ.get("JEP_TEST_PG_BIN", "")}
+
+
 def fresh_database_url(add_cleanup: Callable | None = None) -> str:
     """Create an empty database; `add_cleanup` (e.g. `self.addCleanup`) drops it."""
     admin = _admin_url()

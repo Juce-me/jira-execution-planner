@@ -422,3 +422,5 @@ pinned totals, uncreated Story placeholders, compact column widths and custom-in
 passive conflict display are derived or intermediate state. They produce no
 separate events. Never transmit cell values, column labels/IDs, issue identities,
 summaries, person information, URLs or JQL in app-owned analytics.
+
+Stories Required completed-work correction (2026-11-06): trigger none; `event_type=none`; canonical `event_name=none`; `feature_name=eng_alerts`; typed params none. Counting selected-quarter Done work changes only derived alert/placeholder eligibility, with no new action, request, event or parameter. Existing alert interaction and API reliability taxonomy applies; no GA4 runbook change. Verification: `tests/test_completed_story_readiness.py`, `tests/test_epic_refresh_alerts.js`.

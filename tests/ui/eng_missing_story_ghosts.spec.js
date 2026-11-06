@@ -714,3 +714,24 @@ test('delayed oversized alert response from the previous Department never shows 
     await expect(page.locator('#eng-alert-needs-stories .alert-story').filter({ hasText: 'READY-EPIC' })).toHaveCount(1);
     await expect(alertScopeNotice(page)).toHaveCount(0);
 });
+
+for (const mode of ['catchUp', 'planning']) {
+    test(`${mode} completed selected-quarter work removes its Team requirement`, async ({ page }, testInfo) => {
+        await installFixture(page, {
+            mode,
+            productIssues: [story('MIX-DONE', { status: 'Done', teamId: 'team-beta', teamName: 'Beta Team' })],
+            productEpics: { 'MIX-EPIC': productEpic() },
+            // Simulate a held snapshot from before the completed Story was refreshed.
+            readinessEpics: [readinessEpic('MIX-EPIC'), readinessEpic('UNCOVERED-EPIC')],
+        });
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+        await expect(page.locator('.story-requirement-card[data-epic-key="UNCOVERED-EPIC"]')).toHaveCount(1);
+        await page.screenshot({ path: testInfo.outputPath('completed-quarter-readiness.png'), animations: 'disabled' });
+        await expect(page.locator('.story-requirement-card[data-epic-key="MIX-EPIC"]')).toHaveCount(0);
+        if (mode === 'catchUp') {
+            const alerts = page.locator('#eng-alert-needs-stories');
+            await expect(alerts).toContainText('UNCOVERED-EPIC');
+            await expect(alerts).not.toContainText('MIX-EPIC');
+        }
+    });
+}

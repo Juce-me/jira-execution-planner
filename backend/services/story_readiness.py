@@ -8,7 +8,7 @@ class InvalidCompleteReadinessInput(ValueError):
 
 
 _NON_ACTIONABLE_STORY_STATUSES = frozenset({
-    "blocked", "done", "killed", "incomplete",
+    "blocked", "killed", "incomplete",
 })
 _TERMINAL_EPIC_STATUSES = frozenset({
     "done", "killed", "incomplete", "postponed",

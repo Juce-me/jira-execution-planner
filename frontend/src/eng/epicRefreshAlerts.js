@@ -3,8 +3,8 @@ import { isCombinedWorkModel } from './engWorkModel.js';
 
 // Statuses the Missing Info endpoint excludes (backend/routes/eng_routes.py).
 const TERMINAL_STATUSES = new Set(['killed', 'done', 'postponed']);
-// Statuses that do not make a Story actionable (backend/services/story_readiness.py, _NON_ACTIONABLE_STORY_STATUSES).
-const NON_ACTIONABLE_STATUSES = new Set(['blocked', 'done', 'killed', 'incomplete']);
+// Statuses that do not satisfy readiness; Done work counts (backend/services/story_readiness.py).
+const NON_ACTIONABLE_STATUSES = new Set(['blocked', 'killed', 'incomplete']);
 
 const text = value => String(value ?? '').trim();
 const statusOf = story => text(story?.fields?.status?.name).toLowerCase();
@@ -163,7 +163,7 @@ export function alertCallsForEdit({ field, isFutureSprint = false, isCatchUp = f
     return ALERT_CALL_ORDER.filter(call => calls.has(call));
 }
 
-// True when the stories already hold an actionable Story for the team, so its "Stories Required" ghost is stale.
+// True when the stories already hold open or Done work for the team, so its "Stories Required" ghost is stale.
 export function shouldHideReadinessGhost({ epicKey, teamId, stories }) {
     return (stories || []).some(story => text(story?.fields?.epicKey) === text(epicKey)
         && text(story.fields.teamId) === text(teamId)

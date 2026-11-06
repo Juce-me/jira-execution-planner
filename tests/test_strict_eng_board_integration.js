@@ -6,7 +6,7 @@ import { strictEngBoardViewProps } from '../frontend/src/eng/useStrictEngBoardIn
 test('selector scheduling keeps requested scope suppression separate from ready owner activation', () => {
     const source = fs.readFileSync(new URL('../frontend/src/dashboard.jsx', import.meta.url), 'utf8');
     assert.match(source, /const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';/);
-    assert.match(source, /if \(boardScopeRequested\) return;/);
+    assert.match(source, /const recoveringPlan = Boolean\(pendingPlanningAuthResumeRef\.current\);\s*if \(!recoveringPlan && \(selectedView !== 'eng' \|\| isStatsSourceOnlyStatsView \|\| boardScopeRequested\)\) return;/);
     assert.match(source, /strictBoardActive: boardScopeRequested,/);
     assert.match(source, /useStrictEngBoardOwner\(\{ active: strictBoardOwnerActive,/);
     assert.match(source, /groupRevision: acceptedStrictBoardRevision,/);

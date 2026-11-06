@@ -3,10 +3,11 @@
 import os
 
 from flask import Blueprint, jsonify, redirect, request, session
+from sqlalchemy.exc import SQLAlchemyError
 
-from backend.auth.csrf import csrf_session_data_for_auth_context, issue_csrf_token
+from backend.auth.csrf import CSRF_SESSION_KEY
+from backend.auth.csrf_store import CsrfStorageUnavailable, issue_csrf_token
 from backend.auth.db_browser_sessions import delete_browser_session
-from backend.auth.jira_auth import ensure_oauth_token
 from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.auth.share_view_stash import clear_share_view_stash, pop_share_view_target
 from backend.config.repository import ConfigStorageError
@@ -37,12 +38,6 @@ def _delete_current_db_oauth_browser_session():
 
 @bp.route('/api/auth/status', methods=['GET'])
 def api_auth_status():
-    if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
-        return jsonify({
-            'authMode': AUTH_MODE_BASIC,
-            'authenticated': bool(JIRA_URL and JIRA_EMAIL and JIRA_TOKEN),
-            'loginRequired': False,
-        })
     if database_storage_enabled() and db_oauth_browser_session_data():
         try:
             context = current_request_auth_context()
@@ -66,28 +61,10 @@ def api_auth_status():
             'loginRequired': False,
             'siteUrl': context.site_url,
         })
-    data = oauth_session_data()
-    authenticated = bool(data.get('access_token') and data.get('cloudid'))
-    if authenticated:
-        try:
-            context = current_request_auth_context()
-        except AuthError:
-            context = None
-        if context is None or missing_context_oauth_scopes(context, ATLASSIAN_SCOPES):
-            return jsonify({
-                'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
-                'authenticated': False,
-                'loginRequired': True,
-                'loginUrl': '/login?reason=missing_scope',
-                'siteUrl': data.get('site_url'),
-                'siteName': data.get('site_name'),
-            })
     return jsonify({
         'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
-        'authenticated': authenticated,
-        'loginRequired': not authenticated,
-        'siteUrl': data.get('site_url'),
-        'siteName': data.get('site_name'),
+        'authenticated': False,
+        'loginRequired': True,
     })
 
 
@@ -103,9 +80,6 @@ def auth_entry_page():
             return redirect(pop_share_view_target(session))
         except AuthError:
             pass
-    data = oauth_session_data()
-    if not terminal_recovery and data.get('access_token') and data.get('cloudid'):
-        return redirect(pop_share_view_target(session))
     message = ''
     login_url = '/api/auth/atlassian/login'
     if recovery_reason == 'session_expired':
@@ -347,34 +321,19 @@ def auth_service_credentials_page():
 
 @bp.route('/api/auth/csrf', methods=['GET'])
 def api_auth_csrf():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return jsonify({'csrfToken': issue_csrf_token(session, {})})
-    if database_storage_enabled() and db_oauth_browser_session_data():
-        try:
-            context = current_request_auth_context()
-            csrf_data = csrf_session_data_for_auth_context(context)
-            token = issue_csrf_token(session, csrf_data)
-        except AuthError as error:
-            return auth_error_response(error, 401)
-        except DatabaseConfigurationError:
-            return jsonify({
-                'error': 'config_storage_unavailable',
-                'message': 'Database-backed authentication is unavailable.',
-            }), 503
-        return jsonify({'csrfToken': token})
-    data = oauth_session_data()
-    if not data.get('access_token') or not data.get('cloudid'):
-        save_oauth_session({})
-        return jsonify({
-            'error': 'auth_required',
-            'message': 'Your Jira sign-in expired. Sign in again to continue.',
-            'loginUrl': '/login?reason=session_expired',
-        }), 401
+    # Issuance writes server state, so a cross-site top-level GET must not trigger it.
+    if request.headers.get('X-Requested-With') != 'jira-execution-planner':
+        return jsonify({'error': 'csrf_required',
+                        'message': 'CSRF token requests require X-Requested-With: jira-execution-planner'}), 403
     try:
-        current_request_auth_context()
+        context = current_request_auth_context()
+        token = issue_csrf_token(context)
     except AuthError as error:
         return auth_error_response(error, 401)
-    token = issue_csrf_token(session, data)
+    except (DatabaseConfigurationError, ConfigStorageError, CsrfStorageUnavailable, SQLAlchemyError):
+        return jsonify({'error': 'config_storage_unavailable',
+                        'message': 'Database-backed authentication is unavailable.'}), 503
+    session.pop(CSRF_SESSION_KEY, None)
     return jsonify({'csrfToken': token})
 
 
@@ -444,8 +403,7 @@ def api_atlassian_callback():
         resources = fetch_accessible_resources(token_data.get('access_token', ''))
         resource = choose_accessible_resource(resources, config.jira_url)
         session_token_data = dict(token_data or {})
-        session_payload = token_session_payload(session_token_data, resource, user_profile)
-        session_payload.update(store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile))
+        session_payload = store_db_oauth_callback_session_metadata(session_token_data, resource, user_profile)
         save_oauth_session(session_payload)
     except AuthError as error:
         if exchange_started:
@@ -459,53 +417,12 @@ def api_atlassian_callback():
 
 @bp.route('/api/auth/refresh', methods=['POST'])
 def api_auth_refresh():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return jsonify({'authenticated': True, 'authMode': AUTH_MODE_BASIC})
-    if database_storage_enabled() and db_oauth_browser_session_data():
-        try:
-            context = current_request_auth_context()
-            active = current_jira_session_data(context)
-        except AuthError as error:
-            if error.code == 'auth_required':
-                save_oauth_session({})
-                return jsonify({
-                    'error': 'auth_required',
-                    'message': 'Your Jira sign-in expired. Sign in again to continue.',
-                    'loginUrl': '/login?reason=session_expired',
-                }), 401
-            return auth_error_response(error, 401)
-        return jsonify({
-            'authMode': AUTH_MODE_ATLASSIAN_OAUTH,
-            'authenticated': True,
-            'loginRequired': False,
-            'expiresAt': active.get('expires_at'),
-            'siteUrl': active.get('site_url'),
-            'siteName': active.get('site_name'),
-        })
-    data = oauth_session_data()
-    if not data.get('access_token') or not data.get('cloudid'):
-        save_oauth_session({})
-        return jsonify({
-            'error': 'auth_required',
-            'message': 'Your Jira sign-in expired. Sign in again to continue.',
-            'loginUrl': '/login?reason=session_expired',
-        }), 401
     try:
-        active = ensure_oauth_token(
-            current_auth_config(),
-            data,
-            save_oauth_session,
-            reload_session=oauth_session_data,
-            refresh_lock=oauth_refresh_lock(),
-        )
+        context = current_request_auth_context()
+        active = current_jira_session_data(context)
     except AuthError as error:
         if error.code == 'auth_required':
             save_oauth_session({})
-            return jsonify({
-                'error': 'auth_required',
-                'message': 'Your Jira sign-in expired. Sign in again to continue.',
-                'loginUrl': '/login?reason=session_expired',
-            }), 401
         return auth_error_response(error, 401)
     return jsonify({
         'authMode': AUTH_MODE_ATLASSIAN_OAUTH,

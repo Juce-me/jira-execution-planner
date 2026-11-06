@@ -1,4 +1,3 @@
-import dataclasses
 import os
 import time
 import unittest
@@ -6,9 +5,11 @@ from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
 from backend.auth.cache_policy import build_jira_home_process_cache_key
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 from tests.oauth_test_helpers import install_oauth_session
-from tests.test_oauth_eng_routes import _local_oauth_context
+from backend.auth.db_context import resolve_db_request_auth_context, invalidate_auth_status_cache
+from backend.db import engine as db_engine, models
+from tests.postgres_test_db import fresh_database_url
 
 try:
     import jira_server
@@ -61,7 +62,7 @@ class EpicRefreshPurposeTests(unittest.TestCase):
     def setUp(self):
         from backend.routes import eng_routes
         from backend.services import epic_refresh
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.testing = True
         self.client = jira_server.app.test_client()
         jira_server.TASKS_CACHE.clear()
@@ -161,13 +162,16 @@ class EpicRefreshPurposeTests(unittest.TestCase):
 
     def test_success_evicts_only_the_same_lane_dashboard_and_alerts_entries(self):
         now = time.time()
-        for purpose, lane in (('dashboard', 'product'), ('alerts', 'product'), ('dashboard', 'tech')):
-            jira_server.TASKS_CACHE[_key(purpose, lane)] = {'timestamp': now, 'data': {'issues': []}}
+        context = jira_server.current_request_auth_context()
+        keys = {(purpose, lane): build_jira_home_process_cache_key(context, _key(purpose, lane))
+                for purpose, lane in (('dashboard', 'product'), ('alerts', 'product'), ('dashboard', 'tech'))}
+        for key in keys.values():
+            jira_server.TASKS_CACHE[key] = {'timestamp': now, 'data': {'issues': []}}
         search = Mock(side_effect=[_page([_issue('S-1')])])
         self._get('purpose=epic-refresh&project=product&sprint=123&epicKeys=EPIC-1', search, {'EPIC-1': {'key': 'EPIC-1'}})
-        self.assertNotIn(_key('dashboard', 'product'), jira_server.TASKS_CACHE)
-        self.assertNotIn(_key('alerts', 'product'), jira_server.TASKS_CACHE)
-        self.assertIn(_key('dashboard', 'tech'), jira_server.TASKS_CACHE)
+        self.assertNotIn(keys['dashboard', 'product'], jira_server.TASKS_CACHE)
+        self.assertNotIn(keys['alerts', 'product'], jira_server.TASKS_CACHE)
+        self.assertIn(keys['dashboard', 'tech'], jira_server.TASKS_CACHE)
 
     def test_rate_limit_returns_429_with_retry_after(self):
         self.eng_routes._EPIC_REFRESH_LIMITER = self.epic_refresh.EpicRefreshLimiter(min_interval_seconds=8)
@@ -237,7 +241,7 @@ class EpicAlertsPurposeTests(unittest.TestCase):
     def setUp(self):
         from backend.routes import eng_routes
         from backend.services import epic_refresh
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.testing = True
         self.client = jira_server.app.test_client()
         jira_server.TASKS_CACHE.clear()
@@ -439,19 +443,21 @@ class EpicRefreshOAuthTests(unittest.TestCase):
         from backend.services import epic_refresh
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        env_patcher = patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': '',
-        }, clear=False)
-        env_patcher.start()
-        self.addCleanup(env_patcher.stop)
+        url = fresh_database_url(self.addCleanup)
+        for patcher in (
+            patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': url, 'TEST_DATABASE_URL': url}),
+            patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),
+            patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.addCleanup(db_engine.dispose_engines)
+        self.addCleanup(invalidate_auth_status_cache)
         self.client = jira_server.app.test_client()
-        self.stored_at = time.time()
-        install_oauth_session(self.client, stored_at=self.stored_at)
-        self.context = _local_oauth_context(stored_at=self.stored_at)
+        self.session_payload = install_oauth_session(self.client)
+        self.context = resolve_db_request_auth_context(self.session_payload)
         jira_server.TASKS_CACHE.clear()
         self.addCleanup(jira_server.TASKS_CACHE.clear)
-        self.addCleanup(jira_server.OAUTH_TOKEN_STORE.clear)
-        self.addCleanup(jira_server.OAUTH_REFRESH_LOCKS.clear)
         eng_routes._EPIC_REFRESH_LIMITER = epic_refresh.EpicRefreshLimiter(min_interval_seconds=0)
 
     def _partitioned(self, context, purpose, lane='product', epic_keys=None):
@@ -485,8 +491,11 @@ class EpicRefreshOAuthTests(unittest.TestCase):
         return _page([_issue('S-1')])
 
     def test_oauth_refresh_evicts_only_this_users_partitioned_entries(self):
-        other = dataclasses.replace(
-            self.context, user_id='local-oauth-user:account-999', auth_connection_id='local-oauth-connection:other')
+        other_client = jira_server.app.test_client()
+        other_payload = install_oauth_session(other_client, account_id='synthetic-other-user')
+        other = resolve_db_request_auth_context(other_payload)
+        self.assertEqual(other.workspace_id, self.context.workspace_id)
+        self.assertNotEqual(other.user_id, self.context.user_id)
         now = time.time()
         mine = {purpose: self._partitioned(self.context, purpose) for purpose in ('dashboard', 'alerts')}
         mine_tech = self._partitioned(self.context, 'dashboard', 'tech')
@@ -535,16 +544,14 @@ class EpicRefreshOAuthTests(unittest.TestCase):
         search.assert_not_called()
 
     def test_epic_alerts_for_a_lane_the_user_may_not_access_is_a_403_without_a_jira_search(self):
-        from backend.auth.context import ProjectAccessSnapshot
-        from tests.test_db_project_access import auth_context
-        context = auth_context(project_access=[
-            ProjectAccessSnapshot(project_key='PROD', project_type='product', status='inaccessible'),
-            ProjectAccessSnapshot(project_key='TECH', project_type='tech', status='accessible'),
-        ])
+        with db_engine.session_scope() as db:
+            for key, lane, status in (('PROD', 'product', 'inaccessible'), ('TECH', 'tech', 'accessible')):
+                db.add(models.JiraProjectAccess(connection_id=self.context.auth_connection_id,
+                                                 workspace_id=self.context.workspace_id,
+                                                 project_key=key, project_type=lane, status=status))
         http_get = Mock()
         search = Mock()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'resilient_jira_get', http_get), \
              patch.object(jira_server, 'jira_search_request', search):
             response = self.client.get('/api/tasks-with-team-name?' + EPIC_ALERTS_QUERY)

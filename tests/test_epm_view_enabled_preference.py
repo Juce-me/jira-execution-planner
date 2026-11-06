@@ -1,11 +1,9 @@
 """Owner-private `view.epm.viewEnabled` preference: validation, serialized service, route and rollback helper.
 
 Synthetic data only. Routes run against the real DB OAuth browser session built by the cutover
-test helper; service tests run against a throwaway SQLite database.
+test helper; service tests run against a throwaway PostgreSQL database.
 """
 
-import os
-import tempfile
 import threading
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -34,6 +32,7 @@ from backend.services.user_view_config import (
     strip_epm_view_enabled,
 )
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 def epm_settings(label='alpha'):
@@ -80,8 +79,7 @@ class ViewEnabledValidationTests(unittest.TestCase):
 
 class DbFixtureMixin:
     def setUpDb(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'views.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -104,7 +102,6 @@ class DbFixtureMixin:
 
     def tearDownDb(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     @staticmethod
     def make_context(workspace_id, user_id):
@@ -397,6 +394,7 @@ class ViewEnabledRouteTests(unittest.TestCase):
         from tests import test_db_oauth_cutover as cutover
         self.helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
         self.helper.setUp()
+        self.addCleanup(self.helper.doCleanups)
         self.addCleanup(self.helper.tearDown)
         self.client = self.helper.client
         self.callback = self.helper._store_callback_through_route(client=self.client)
@@ -413,7 +411,7 @@ class ViewEnabledRouteTests(unittest.TestCase):
 
     def headers(self, **extra):
         with self.helper._db_route_mode():
-            response = self.client.get('/api/auth/csrf')
+            response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200)
         return {'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': response.get_json()['csrfToken'], **extra}
 
@@ -528,20 +526,20 @@ class ViewEnabledRouteTests(unittest.TestCase):
 
 
 class ViewEnabledBootstrapTests(unittest.TestCase):
-    def test_basic_json_bootstrap_reports_false(self):
-        from tests.auth_mode_test_utils import force_basic_auth_mode
-        force_basic_auth_mode(self, jira_server)
+    def test_retired_basic_bootstrap_is_rejected(self):
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, jira_server)
         client = jira_server.app.test_client()
-        with tempfile.TemporaryDirectory() as tmp, patch.object(
-            jira_server, 'resolve_dashboard_config_path', return_value=os.path.join(tmp, 'dashboard-config.json'),
-        ):
-            payload = client.get('/api/config').get_json()
-        self.assertIs(payload['epmViewEnabled'], False)
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            response = client.get('/api/config')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_db_bootstrap_reports_the_owner_flag_only(self):
         from tests import test_db_oauth_cutover as cutover
         helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
         helper.setUp()
+        self.addCleanup(helper.doCleanups)
         self.addCleanup(helper.tearDown)
         callback = helper._store_callback_through_route(client=helper.client)
         with helper.factory() as session:

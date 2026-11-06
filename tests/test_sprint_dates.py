@@ -7,7 +7,7 @@ import unittest
 from datetime import date
 from unittest.mock import patch, MagicMock
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -22,7 +22,7 @@ class TestSprintDatesInFetch(unittest.TestCase):
     """Verify that startDate/endDate from the Board API appear in formatted sprints."""
 
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def test_board_api_includes_start_and_end_dates(self):
         """Mock Board API response with dates and assert they appear in output."""
@@ -257,7 +257,7 @@ class TestMethod2BoardScoping(unittest.TestCase):
     """Verify Method 2 (JQL fallback) filters cross-board sprints."""
 
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def test_cross_board_sprints_filtered_in_method2(self):
         """When board API failed but board ID is set, Method 2 results should be scoped."""

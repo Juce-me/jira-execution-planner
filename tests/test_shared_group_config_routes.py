@@ -1,10 +1,12 @@
 import os
-import tempfile
 import time
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
+from types import SimpleNamespace
+
+from backend.services.shared_group_config import ensure_workspace_group_config
 
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -14,69 +16,38 @@ from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
 from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from tests.db_oauth_test_helpers import seed_db_actor
+from tests.postgres_test_db import fresh_database_url
 
 
 class SharedGroupConfigRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'shared-groups-routes.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
+        env_patcher = self._env_patch()
+        env_patcher.start()
+        self.addCleanup(env_patcher.stop)
         self.workspace_id, self.user_id, self.connection_id = self._seed_user('account-1')
         _, self.other_user_id, self.other_connection_id = self._seed_user('account-2')
         self._install_session('session-1', 'account-1', self.connection_id)
 
     def tearDown(self):
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._tmpdir.cleanup()
 
     def _seed_user(self, account_id, *, site_url='https://example.atlassian.net', cloud_id='cloud-1'):
         with self.factory() as session:
-            workspace = session.query(models.Workspace).filter_by(jira_cloud_id=cloud_id).first()
-            if workspace is None:
-                workspace = models.Workspace(
-                    environment_key='local',
-                    name=f'Workspace {cloud_id}',
-                    jira_site_url=site_url,
-                    jira_cloud_id=cloud_id,
-                    created_by='test',
-                )
-                session.add(workspace)
-                session.flush()
-            user = models.User(
-                external_provider='atlassian',
-                external_subject=account_id,
-                account_type='user',
-                status='active',
-                created_by='test',
-            )
-            session.add(user)
-            session.flush()
-            connection = models.AuthConnection(
-                user_id=user.id,
-                workspace_id=workspace.id,
-                provider='atlassian_oauth',
-                site_url=workspace.jira_site_url,
-                cloud_id=workspace.jira_cloud_id,
-                scopes=FULL_OAUTH_SCOPE.split(),
-                scope_provenance='provider',
-                status='active',
-                token_version=1,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(connection)
+            actor = seed_db_actor(session, workspace={'cloud_id': cloud_id, 'site_url': site_url},
+                                  account_identity=account_id)
             session.commit()
-            return workspace.id, user.id, connection.id
+            return actor.workspace_id, actor.user_id, actor.connection_id
 
     def _install_session(self, session_id, account_id, connection_id, *, site_url='https://example.atlassian.net', cloud_id='cloud-1'):
+        self.active_connection_id = connection_id
         install_oauth_session(
             self.client,
             session_id=session_id,
@@ -95,7 +66,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         }, clear=False)
 
     def _csrf_headers(self):
-        response = self.client.get('/api/auth/csrf')
+        response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return {
             'X-Requested-With': 'jira-execution-planner',
@@ -127,11 +98,22 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             },
         }
 
+    def _seed_shared_groups(self, payload):
+        # Explicit fixture import; runtime requests must never discover JSON.
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, self.active_connection_id)
+            context = SimpleNamespace(workspace_id=connection.workspace_id, user_id=connection.user_id)
+            ensure_workspace_group_config(session, context, payload.get('teamGroups'),
+                                          jira_server.validate_groups_config)
+            session.commit()
+
     def _get_groups_config(self, *, fallback=None):
-        fallback = self._legacy_config() if fallback is None else fallback
+        payload = self._legacy_config() if fallback is None else fallback
+        if 'teamGroups' in payload:
+            self._seed_shared_groups(payload)
         with self._env_patch(), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'load_dashboard_config', return_value=fallback):
+             patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('runtime JSON read')):
             return self.client.get('/api/groups-config')
 
     def _save_personal_favorite(self, favorite_group_id='platform'):
@@ -175,7 +157,18 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
 
         return failing_session_scope
 
-    def test_get_groups_config_imports_shared_catalog_and_requires_first_run(self):
+    def test_empty_workspace_request_does_not_import_local_json(self):
+        with patch.object(jira_server, '_load_dashboard_config_json',
+                          side_effect=AssertionError('runtime JSON read')) as loader:
+            response = self.client.get('/api/groups-config')
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['groups'], [])
+        loader.assert_not_called()
+        with self.factory() as session:
+            row = session.query(models.WorkspaceGroupConfig).one()
+            self.assertEqual(row.payload['groups'], [])
+
+    def test_get_groups_config_reads_explicitly_imported_shared_catalog_and_requires_first_run(self):
         first = self._get_groups_config()
         self._install_session('session-2', 'account-2', self.other_connection_id)
         second = self._get_groups_config(fallback={'version': 1})
@@ -589,12 +582,13 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         self.assertFalse(after['preferences']['onboardingRequired'])
 
     def test_post_group_preferences_rejects_json_mode_and_identity_spoofing_fields(self):
+        headers = self._csrf_headers()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False):
             json_mode = self.client.post(
                 '/api/groups-preferences',
                 json={'visibleGroupIds': ['platform'], 'activeGroupId': 'platform'},
-                headers=self._csrf_headers(),
+                headers=headers,
             )
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             spoofed = self.client.post(
@@ -603,8 +597,8 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
                 headers=self._csrf_headers(),
             )
 
-        self.assertEqual(json_mode.status_code, 409, json_mode.get_data(as_text=True))
-        self.assertEqual(json_mode.get_json()['error'], 'group_preferences_db_required')
+        self.assertEqual(json_mode.status_code, 503, json_mode.get_data(as_text=True))
+        self.assertEqual(json_mode.get_json()['error'], 'runtime_storage_unsupported')
         self.assertEqual(spoofed.status_code, 400, spoofed.get_data(as_text=True))
         self.assertEqual(spoofed.get_json()['error'], 'unsupported_group_preference_field')
 
@@ -746,8 +740,8 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
              patch.object(jira_server, 'load_dashboard_config', return_value=self._favorite_config()):
             json_mode = self.client.get('/api/groups-config')
 
-        self.assertEqual(json_mode.status_code, 200, json_mode.get_data(as_text=True))
-        self.assertTrue(json_mode.get_json()['preferences']['onboardingDone'])
+        self.assertEqual(json_mode.status_code, 503, json_mode.get_data(as_text=True))
+        self.assertEqual(json_mode.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_post_group_preferences_requires_requested_with_and_token_bound_csrf(self):
         self._get_groups_config(fallback=self._favorite_config())
@@ -938,16 +932,17 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
             self.assertEqual(session.query(models.WorkspaceGroupConfig).count(), 0)
 
     def test_post_onboarding_rejects_json_mode(self):
+        headers = self._csrf_headers()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False):
             response = self.client.post(
                 '/api/me/onboarding',
                 json={'onboardingDone': True},
-                headers=self._csrf_headers(),
+                headers=headers,
             )
 
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'error': 'onboarding_db_required'})
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_storage_unsupported')
 
     def test_post_onboarding_maps_config_selection_failure_to_safe_storage_error(self):
         from backend.routes import settings_routes

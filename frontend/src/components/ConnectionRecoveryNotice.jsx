@@ -9,7 +9,7 @@ export default function ConnectionRecoveryNotice({ notice, onRecover, onDiscard,
             <div className="connection-recovery-notice-actions">
                 {actionable && <button type="button" onClick={onRecover}>Recover</button>}
                 {actionable && <button type="button" onClick={onDiscard}>Discard recovery copy</button>}
-                {notice.kind === 'discard_required' && (
+                {(notice.kind === 'discard_required' || notice.kind === 'preservation_failed') && (
                     <button type="button" onClick={onReloadDiscard}>Reload and discard</button>
                 )}
                 {notice.kind === 'settings_discarded' && <button type="button" onClick={onDismiss}>Dismiss</button>}

@@ -527,8 +527,9 @@ test('excluded-capacity stats source loads progressively and source-only tabs sk
         'Expected source-only stats tabs to be identified explicitly'
     );
     assert.ok(
-        dashboardSource.includes("if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;"),
-        'Expected ENG task fetch effect to skip source-only stats tabs'
+        dashboardSource.includes("const recoveringPlan = Boolean(pendingPlanningAuthResumeRef.current);")
+            && dashboardSource.includes("if (!recoveringPlan && (selectedView !== 'eng' || isStatsSourceOnlyStatsView || boardScopeRequested)) return;"),
+        'Expected ENG task fetch effect to skip source-only stats tabs unless a pending Planning recovery needs its source'
     );
     assert.ok(
         dashboardSource.includes('{shouldRenderEngTaskList && ('),

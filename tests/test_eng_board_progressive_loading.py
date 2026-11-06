@@ -11,9 +11,13 @@ from backend.services.eng_board_stream import (
     EngBoardRequestBudget, EngBoardRequestTransport, EngBoardStreamWriter,
 )
 from tests.test_eng_board_routes import FakeResponse, board_snapshot, db_context, epic, child
+from tests.oauth_test_helpers import set_up_db_oauth
 
 
 class EngBoardProgressiveLoadingTests(unittest.TestCase):
+    def setUp(self):
+        set_up_db_oauth(self)
+
     def test_parent_candidates_filtered_before_admitted_epic_limit(self):
         calls = []
         parent_count = 1001

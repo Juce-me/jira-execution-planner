@@ -1,320 +1,80 @@
+"""Retirement boundary for the former pre-DB shared-settings runtime.
+
+Supported DB settings journeys are covered by test_oauth_settings_routes,
+test_shared_group_config_routes, test_board_config_api and test_epm_config_api.
+This file retains the old route inventory as fail-closed admission coverage.
+"""
 import unittest
 from unittest.mock import patch
 
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from backend.db import engine as db_engine, models
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
 
-class PreDbToolAdminGateTests(unittest.TestCase):
+class RetiredPreDbSettingsTests(unittest.TestCase):
+    ROUTES = (
+        '/api/projects/selected', '/api/board-config', '/api/capacity/config',
+        '/api/sprint-field/config', '/api/story-points-field/config',
+        '/api/parent-name-field/config', '/api/team-field/config',
+        '/api/stats/priority-weights-config', '/api/issue-types/config',
+        '/api/epm/config', '/api/groups-config', '/api/team-catalog',
+    )
+
     def setUp(self):
-        jira_server.app.config["TESTING"] = True
-        jira_server.app.secret_key = "test-secret"
-        self.env_patch = patch.dict("os.environ", {"CONFIG_STORAGE_BACKEND": "jsonfile"}, clear=False)
-        self.env_patch.start()
+        set_up_db_oauth(self)
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'synthetic-retirement-session'
         self.client = jira_server.app.test_client()
 
-    def tearDown(self):
-        self.env_patch.stop()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
+    def headers(self):
+        response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 200)
+        return {'X-Requested-With': 'jira-execution-planner',
+                'X-CSRF-Token': response.get_json()['csrfToken']}
 
-    def csrf_headers(self):
-        response = self.client.get("/api/auth/csrf")
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        return {
-            "X-Requested-With": "jira-execution-planner",
-            "X-CSRF-Token": response.get_json()["csrfToken"],
-        }
+    def test_retired_runtime_cannot_admit_any_former_settings_write(self):
+        install_oauth_session(self.client, roles=('admin',))
+        headers = self.headers()
+        with patch.object(jira_server, 'save_dashboard_config') as save, \
+             patch.object(jira_server, 'save_team_catalog_file') as catalog, \
+             patch.object(jira_server, 'current_jira_request') as jira:
+            for auth, storage, expected in (
+                ('atlassian_oauth', 'jsonfile', 'runtime_storage_unsupported'),
+                ('basic', 'db', 'runtime_auth_unsupported'),
+            ):
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', auth), \
+                     patch.dict('os.environ', {'CONFIG_STORAGE_BACKEND': storage}):
+                    for route in self.ROUTES:
+                        with self.subTest(auth=auth, storage=storage, route=route):
+                            # Rejection precedes body parsing, CSRF or storage.
+                            response = self.client.post(route, data='not json',
+                                content_type='application/json', headers=headers)
+                            self.assertEqual(response.status_code, 503)
+                            self.assertEqual(response.get_json()['error'], expected)
+            save.assert_not_called()
+            catalog.assert_not_called()
+            jira.assert_not_called()
+        with db_engine.session_scope() as db:
+            self.assertEqual(db.query(models.WorkspaceDashboardConfig).count(), 0)
+            self.assertEqual(db.query(models.WorkspaceGroupConfig).count(), 0)
+            self.assertEqual(db.query(models.ViewConfig).count(), 0)
 
-    def test_authenticated_oauth_account_can_save_shared_config_before_db_roles(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        routes = [
-            ("/api/projects/selected", {"selected": [{"key": "ABC", "type": "product"}]}),
-            ("/api/board-config", {"boardId": "7", "boardName": "Product"}),
-            ("/api/capacity/config", {"project": "CAP", "fieldId": "customfield_1"}),
-            ("/api/sprint-field/config", {"fieldId": "customfield_2", "fieldName": "Sprint"}),
-            ("/api/story-points-field/config", {"fieldId": "customfield_3", "fieldName": "Story Points"}),
-            ("/api/parent-name-field/config", {"fieldId": "customfield_4", "fieldName": "Parent"}),
-            ("/api/team-field/config", {"fieldId": "customfield_5", "fieldName": "Team"}),
-            ("/api/stats/priority-weights-config", {"weights": []}),
-            ("/api/issue-types/config", {"issueTypes": ["Story"]}),
-        ]
+    def test_legacy_bootstrap_admin_environment_cannot_elevate_a_db_user(self):
+        install_oauth_session(self.client, account_id='synthetic-regular-user')
+        with patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True), \
+             patch.dict('os.environ', {'TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS': 'synthetic-regular-user'}):
+            response = self.client.post('/api/board-config',
+                json={'boardId': '7', 'boardName': 'Synthetic', 'baseRevision': 0},
+                headers=self.headers())
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'admin_required')
+        with db_engine.session_scope() as db:
+            self.assertEqual(db.query(models.WorkspaceDashboardConfig).count(), 0)
 
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch("backend.routes.settings_routes.load_current_site_field_catalog", return_value=[
-                 {"id": "customfield_1", "name": "Synthetic Capacity", "schema": {"type": "number"}},
-             ]), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            for route, payload in routes:
-                with self.subTest(route=route):
-                    response = self.client.post(
-                        route,
-                        json=payload,
-                        headers=self.csrf_headers(),
-                    )
-
-                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            self.assertEqual(mock_save.call_count, len(routes))
-
-    def test_authenticated_oauth_account_can_save_user_owned_epm_before_db_roles(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        payload = {
-            "version": 2,
-            "labelPrefix": "rnd_project_*",
-            "scope": {"rootGoalKey": "", "subGoalKeys": []},
-            "issueTypes": {
-                "initiative": ["Initiative"],
-                "epic": ["Epic"],
-                "leaf": ["Story"],
-            },
-            "projects": {},
-        }
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/epm/config",
-                json=payload,
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["version"], 2)
-        mock_save.assert_called_once()
-
-    def test_shared_config_write_without_oauth_session_returns_login_url(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False):
-            response = self.client.post(
-                "/api/board-config",
-                json={"boardId": "7", "boardName": "Product"},
-                headers={"X-Requested-With": "jira-execution-planner"},
-            )
-
-        self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "auth_required")
-        self.assertEqual(response.get_json()["loginUrl"], "/login?reason=session_expired")
-
-    def test_bootstrap_tool_admin_oauth_account_can_save_shared_config(self):
-        install_oauth_session(self.client, account_id="tool-admin-account")
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/board-config",
-                json={"boardId": "7", "boardName": "Product"},
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["boardId"], "7")
-        mock_save.assert_called_once()
-
-    def test_authenticated_oauth_account_can_save_team_groups(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        payload = {
-            "version": 1,
-            "groups": [{"id": "group-1", "name": "Group 1", "teamIds": ["team-1"]}],
-            "defaultGroupId": "group-1",
-        }
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/groups-config",
-                json=payload,
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["defaultGroupId"], "group-1")
-        mock_save.assert_called_once()
-
-    def test_authenticated_oauth_account_can_save_group_without_teams(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        payload = {
-            "version": 1,
-            "groups": [{
-                "id": "group-1",
-                "name": "Group 1",
-                "teamIds": [],
-                "missingInfoComponents": ["ATS"],
-            }],
-            "defaultGroupId": "group-1",
-        }
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "load_dashboard_config", return_value={"version": 1, "projects": {"selected": []}}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/groups-config",
-                json=payload,
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["groups"][0]["teamIds"], [])
-        saved_config = mock_save.call_args[0][0]
-        self.assertEqual(saved_config["teamGroups"]["groups"][0]["missingInfoComponents"], ["ATS"])
-
-    def test_project_selection_rejects_empty_overwrite_when_projects_exist(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        existing = {
-            "version": 1,
-            "projects": {"selected": [{"key": "ABC", "type": "product"}]},
-        }
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "load_dashboard_config", return_value=existing), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/projects/selected",
-                json={"selected": []},
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "selected projects cannot be cleared implicitly")
-        mock_save.assert_not_called()
-
-    def test_group_config_rejects_empty_overwrite_when_groups_exist(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        existing = {
-            "version": 1,
-            "projects": {"selected": [{"key": "ABC", "type": "product"}]},
-            "teamGroups": {
-                "version": 1,
-                "groups": [{"id": "group-1", "name": "Group 1", "teamIds": ["team-1"]}],
-                "defaultGroupId": "group-1",
-            },
-        }
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "load_dashboard_config", return_value=existing), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post(
-                "/api/groups-config",
-                json={"version": 1, "groups": [], "defaultGroupId": ""},
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "team groups cannot be cleared implicitly")
-        mock_save.assert_not_called()
-
-    def test_authenticated_oauth_account_can_save_team_catalog(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "save_team_catalog_file", return_value={
-                 "catalog": {"team-1": {"id": "team-1", "name": "Team 1"}},
-                 "meta": {},
-             }) as mock_save:
-            response = self.client.post(
-                "/api/team-catalog",
-                json={"catalog": {"team-1": {"id": "team-1", "name": "Team 1"}}, "meta": {}},
-                headers=self.csrf_headers(),
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["catalog"]["team-1"]["name"], "Team 1")
-        mock_save.assert_called_once()
-
-    def test_basic_mode_preserves_single_user_config_writes(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            response = self.client.post("/api/board-config", json={"boardId": "7", "boardName": "Product"})
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["boardId"], "7")
-        mock_save.assert_called_once()
-
-    def test_shared_config_routes_reject_raw_payload_bypasses_before_saving(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        cases = (
-            (
-                "/api/projects/selected",
-                {"selected": [{"key": "ABC", "type": "product", "workspaceId": "claimed"}]},
-            ),
-            (
-                "/api/projects/selected",
-                {"selected": [{"key": "ABC", "type": "product", "unexpected": "value"}]},
-            ),
-            (
-                "/api/capacity/config",
-                {"project": "CAP", "fieldId": {"value": "customfield_1"}, "fieldName": "Capacity"},
-            ),
-            (
-                "/api/sprint-field/config",
-                {"fieldId": "customfield_2", "fieldName": {"value": "Sprint"}},
-            ),
-            (
-                "/api/issue-types/config",
-                {"issueTypes": ["Story", {"name": "Bug"}]},
-            ),
-        )
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            for route, payload in cases:
-                with self.subTest(route=route, payload=payload):
-                    response = self.client.post(route, json=payload, headers=self.csrf_headers())
-                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-
-        mock_save.assert_not_called()
-
-    def test_user_owned_epm_rejects_raw_payload_bypasses_before_saving(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        cases = (
-            {
-                "version": 2,
-                "labelPrefix": "rnd_project_*",
-                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": [], "unexpected": "value"},
-                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
-                "projects": {},
-            },
-            {
-                "version": 2,
-                "labelPrefix": "rnd_project_*",
-                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
-                "issueTypes": {
-                    "initiative": ["Initiative"],
-                    "epic": ["Epic"],
-                    "leaf": ["Story", {"name": "Bug"}],
-                },
-                "projects": {},
-            },
-            {
-                "version": 2,
-                "labelPrefix": "rnd_project_*",
-                "scope": {"rootGoalKey": "GOAL-1", "subGoalKeys": []},
-                "issueTypes": {"initiative": ["Initiative"], "epic": ["Epic"], "leaf": ["Story"]},
-                "projects": {
-                    "draft-1": {
-                        "id": "draft-1",
-                        "name": "Draft",
-                        "label": "rnd_project_draft",
-                        "user_id": "claimed",
-                    },
-                },
-            },
-        )
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config") as mock_save:
-            for payload in cases:
-                with self.subTest(payload=payload):
-                    response = self.client.post(
-                        "/api/epm/config",
-                        json=payload,
-                        headers=self.csrf_headers(),
-                    )
-                    self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-
-        mock_save.assert_not_called()
+    def test_anonymous_shared_write_keeps_same_tab_recovery(self):
+        response = self.client.post('/api/board-config', json={'boardId': '7'},
+            headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')

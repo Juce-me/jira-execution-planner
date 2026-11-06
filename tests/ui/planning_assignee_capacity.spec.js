@@ -77,7 +77,7 @@ const searchPeople = [
 ];
 const defaultPeople = query => ({ users: searchPeople.filter(person => person.displayName.toLowerCase().includes(String(query || '').toLowerCase())), reason: null });
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'basic', analytics = false, people = defaultPeople } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople } = {}) {
     const calls = [];
     await installDashboardShell(page);
     await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
@@ -109,6 +109,10 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
             });
         }
         if (url.pathname === '/api/projects/selected') return json(route, { selected: [] });
+        if (url.pathname === '/api/board-config') return json(route, { boardId: '1', boardName: 'Synthetic board', configRevision: 1 });
+        if (url.pathname === '/api/capacity/config') return json(route, { project: capacityProject, fieldId: capacityProject ? 'customfield_capacity' : '', fieldName: capacityProject ? 'Capacity' : '', mutationEnabled: Boolean(capacityProject), configRevision: 1 });
+        if (/^\/api\/(sprint-field|parent-name-field|story-points-field|team-field|delivery-owner-field)\/config$/.test(url.pathname)) return json(route, { fieldId: '', fieldName: '', configRevision: 1 });
+        if (url.pathname === '/api/issue-types/config') return json(route, { issueTypes: ['Story'], configRevision: 1 });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
             return json(route, { sprints: [
@@ -1420,7 +1424,8 @@ test('request ledger: the mirror sends at most one guarded PATCH per user-initia
     const lifecycle = await installLifecycleControl(page);
     const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'jira' }) } });
     let ticketValue = 20;
-    // Basic mode, as the other freshness tests here (with this fixture in OAuth mode the return triggered no re-read; not investigated).
+    // Exercise the supported OAuth/DB lifecycle, including its focus auth refresh,
+    // without changing the at-most-one mirror and no-background-write ledger.
     const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: sprint => ticket(ticketValue)(sprint), analytics: true });
     await openPlanning(page);
     await showCards(page);

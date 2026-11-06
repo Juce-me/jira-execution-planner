@@ -1,6 +1,6 @@
 """Task 3B: config readiness fields, GET /api/epm/access and the OAuth A/H error mapping on the EPM routes.
 
-Real DB OAuth browser sessions on SQLite, synthetic Home replies, no network. Valid-journey tests and
+Real DB OAuth browser sessions on PostgreSQL, synthetic Home replies, no network. Valid-journey tests and
 missing-session tests are separate classes.
 """
 
@@ -23,7 +23,7 @@ from backend.epm import access as epm_access
 from backend.epm import home as epm_home
 from backend.routes import epm_errors
 from backend.security.guards import format_auth_error_response
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 from tests.test_epm_home_oauth_client import FakeHome
 from tests.test_epm_home_scope_request import DbJourneyMixin, HOME
 
@@ -118,13 +118,12 @@ class ConfigReadinessTests(AccessCase):
         self.assertIs(payload['epmHomeReadAvailable'], True)
         self.assertNotIn('epmHomeReadLoginUrl', payload)
 
-    def test_basic_json_config_never_reports_home_read_readiness(self):
-        force_basic_auth_mode(self, jira_server)
-        client = jira_server.app.test_client()
-        payload = client.get('/api/config').get_json()
-        self.assertIs(payload['epmViewEnabled'], False)
-        self.assertIs(payload['epmHomeReadAvailable'], False)
-        self.assertNotIn('epmHomeReadLoginUrl', payload)
+    def test_retired_basic_config_is_rejected_before_home_read(self):
+        self.forbid_home()
+        with self.helper._db_route_mode(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            response = self.client.get('/api/config')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
 
 class AccessStateTests(AccessCase):
@@ -287,12 +286,12 @@ class AccessForbiddenPathTests(AccessCase):
             return raiser
 
         stack = ExitStack()
-        for target, name in (
-                (epm_home, '_home_basic_credentials'), (epm_home, 'build_teamwork_graph_client'),
-                (epm_home, 'build_home_graphql_client'), (epm_home, '_read_metadata_credential'),
-                (jira_server, 'oauth_session_data'), (jira_server, 'save_oauth_session'),
-                (jira_server, 'oauth_refresh_lock')):
-            stack.enter_context(patch.object(target, name, boom(name)))
+        for name in ('HomeGraphQLClient', '_home_basic_credentials', 'build_teamwork_graph_client',
+                     'build_home_graphql_client', '_read_metadata_credential'):
+            self.assertFalse(hasattr(epm_home, name), name)
+        for name in ('oauth_session_data', 'save_oauth_session', 'oauth_refresh_lock'):
+            if hasattr(jira_server, name):
+                stack.enter_context(patch.object(jira_server, name, boom(name)))
         self.addCleanup(stack.close)
 
     def test_access_states_never_touch_a_forbidden_credential_path(self):
@@ -314,17 +313,15 @@ class AccessForbiddenPathTests(AccessCase):
 
 
 class AccessBasicAndSessionTests(unittest.TestCase):
-    def test_basic_mode_returns_the_compatible_available_state_without_home_io(self):
-        force_basic_auth_mode(self, jira_server)
+    def test_retired_basic_access_is_rejected_before_home_io(self):
+        force_db_oauth_mode(self, jira_server)
         client = jira_server.app.test_client()
-
-        def forbidden(request, timeout=None):
-            raise AssertionError('Basic access check must not do Home I/O')
-
-        with patch.object(epm_home, 'urlopen', forbidden):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(epm_home, 'urlopen') as home:
             response = client.get('/api/epm/access')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json(), {'state': 'available', 'epmHomeReadAvailable': False})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
+        home.assert_not_called()
 
 
 class AccessMissingSessionTests(DbJourneyMixin, unittest.TestCase):
@@ -546,7 +543,7 @@ class ViewReferenceValidationTests(AccessCase):
 
     def post_view(self):
         with self.helper._db_route_mode():
-            csrf = self.client.get('/api/auth/csrf').get_json()['csrfToken']
+            csrf = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'}).get_json()['csrfToken']
             return self.client.post('/api/me/views', json=self.VIEW,
                                     headers={'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': csrf})
 

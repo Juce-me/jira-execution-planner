@@ -9,6 +9,7 @@ from backend.routes import work_structure_routes as work_routes
 from backend.services import eng_board
 from backend.services import work_structure as ws
 from tests.test_work_structure_routes import WorkStructureRouteBase, jira_response
+from tests.oauth_test_helpers import set_up_db_oauth
 
 SPRINT_FIELD, POINTS_FIELD, TEAM_FIELD = 'customfield_26', 'customfield_211', 'customfield_24'
 
@@ -379,6 +380,9 @@ def parent_shell(key, status='To Do'):
 
 
 class ComponentBoardStreamTests(unittest.TestCase):
+    def setUp(self):
+        set_up_db_oauth(self)
+
     """Paired fixture: Initiative I has Epic A (8 SP, Component A) and Epic B (5 SP, Component B)."""
 
     LEAVES = {'PLAN-E1': leaf('PLAN-E1', 'PLAN-I1', 8, ('Component A',)),
@@ -512,6 +516,7 @@ class ComponentBoardStreamTests(unittest.TestCase):
 
 class BoardSelectorTests(unittest.TestCase):
     def setUp(self):
+        set_up_db_oauth(self)
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
         self.client = jira_server.app.test_client()

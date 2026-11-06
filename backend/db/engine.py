@@ -12,6 +12,7 @@ from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import Pool
 
+from backend.auth.runtime_profile import DB_STORAGE_BACKENDS, normalize_runtime_profile
 from backend.db.cloud_sql import (
     CloudSqlConfigurationError,
     CloudSqlIamConfig,
@@ -20,7 +21,6 @@ from backend.db.cloud_sql import (
 )
 
 
-DB_STORAGE_BACKENDS = {'db', 'database', 'postgres', 'postgresql'}
 DATABASE_CONNECTION_MODE_URL = "url"
 DATABASE_CONNECTION_MODE_CLOUD_SQL_IAM = "cloud_sql_iam"
 DATABASE_CONNECTION_MODES = {
@@ -39,8 +39,10 @@ class DatabaseConfigurationError(RuntimeError):
 
 def database_storage_enabled(environ: Mapping[str, str] | None = None) -> bool:
     env = os.environ if environ is None else environ
-    storage_backend = str(env.get('CONFIG_STORAGE_BACKEND') or '').strip().lower()
-    return storage_backend in DB_STORAGE_BACKENDS
+    _auth, storage_backend = normalize_runtime_profile(
+        env.get('JIRA_AUTH_MODE'), env.get('CONFIG_STORAGE_BACKEND'),
+    )
+    return storage_backend == 'db'
 
 
 def resolve_database_url(
@@ -72,6 +74,16 @@ def resolve_database_connection_mode(
             "DATABASE_CONNECTION_MODE must be url or cloud_sql_iam."
         )
     return mode
+
+
+def require_postgresql_url(database_url: str) -> None:
+    """PostgreSQL is the only supported database for serving, tools and tests."""
+    try:
+        backend = make_url(database_url).get_backend_name()
+    except Exception:
+        raise DatabaseConfigurationError('DATABASE_URL must be a PostgreSQL URL.') from None
+    if backend != 'postgresql':
+        raise DatabaseConfigurationError('PostgreSQL is the only supported database; SQLite is retired.')
 
 
 def _validated_cloud_sql_config(database_url: str) -> CloudSqlIamConfig:
@@ -107,10 +119,10 @@ def create_database_engine(
     if poolclass is not None:
         engine_kwargs["poolclass"] = poolclass
     if mode == DATABASE_CONNECTION_MODE_URL:
-        if make_url(database_url).get_backend_name() == "postgresql":
-            engine_kwargs["connect_args"] = {
-                "connect_timeout": DATABASE_CONNECT_TIMEOUT_SECONDS,
-            }
+        require_postgresql_url(database_url)
+        engine_kwargs["connect_args"] = {
+            "connect_timeout": DATABASE_CONNECT_TIMEOUT_SECONDS,
+        }
         return create_engine(database_url, **engine_kwargs)
 
     config = _validated_cloud_sql_config(database_url)
@@ -141,6 +153,8 @@ def validate_startup_database_config(
         required=database_storage_enabled(env),
     )
     mode = resolve_database_connection_mode(env)
+    if url and mode == DATABASE_CONNECTION_MODE_URL:
+        require_postgresql_url(url)
     if url and mode == DATABASE_CONNECTION_MODE_CLOUD_SQL_IAM:
         _validated_cloud_sql_config(url)
     return mode
@@ -201,16 +215,6 @@ def session_scope(
         raise
     finally:
         session.close()
-
-
-def require_postgresql_refresh_locking(database_url: str) -> None:
-    backend = make_url(database_url).get_backend_name()
-    if backend == 'sqlite':
-        raise DatabaseConfigurationError(
-            'SQLite cannot prove PostgreSQL advisory-lock or SELECT FOR UPDATE refresh locking semantics.'
-        )
-    if backend != 'postgresql':
-        raise DatabaseConfigurationError('PostgreSQL is required for refresh-race locking tests.')
 
 
 def dispose_engines() -> None:

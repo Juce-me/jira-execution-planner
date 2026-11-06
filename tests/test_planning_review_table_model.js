@@ -171,13 +171,13 @@ test('selectedStoryPoints counts only ticked Stories for Story, Epic and No Epic
     assert.equal(selectedStoryPoints(storyRows.find(row => row.rowKind === 'requirement'), all), null);
 });
 
-test('the Accepted column is a visible-by-default optional number column summed in the footer, right after the points column', async () => {
+test('Planned SP preserves the accepted storage identity, visibility and footer sum', async () => {
     const { buildPlanningReviewColumns, planningReviewTotals, DEFAULT_REVIEW_HIDDEN_COLUMNS } = await model();
     for (const mode of ['epic', 'story']) {
         const columns = buildPlanningReviewColumns({ rows: [], mode, admittedTeamCount: 2, admittedProjectCount: 2, hidden: new Set(DEFAULT_REVIEW_HIDDEN_COLUMNS) });
         const ids = columns.map(column => column.id), accepted = columns.find(column => column.id === 'accepted');
         assert.equal(ids[ids.indexOf('storyPoints') + 1], 'accepted', mode);
-        assert.deepEqual({ label: accepted.label, type: accepted.type, aggregation: accepted.aggregation, optional: accepted.optional, required: Boolean(accepted.required) }, { label: 'Accepted', type: 'number', aggregation: 'sum', optional: true, required: false });
+        assert.deepEqual({ label: accepted.label, type: accepted.type, aggregation: accepted.aggregation, optional: accepted.optional, required: Boolean(accepted.required) }, { label: 'Planned SP', type: 'number', aggregation: 'sum', optional: true, required: false });
         assert.equal(DEFAULT_REVIEW_HIDDEN_COLUMNS.includes('accepted'), false);
     }
     const accepted = { id: 'accepted', type: 'number', aggregation: 'sum' };

@@ -192,13 +192,13 @@ class EnvConfigDocsTests(unittest.TestCase):
             for position in signed_in_positions
         ))
 
-    def test_install_doc_names_user_home_token_storage_boundaries(self):
+    def test_install_doc_names_oauth_and_private_view_storage_boundaries(self):
         install_doc = (REPO_ROOT / "INSTALL.md").read_text(encoding="utf8")
 
         self.assertIn("Settings -> Connections", install_doc)
         self.assertIn("auth_tokens", install_doc)
         self.assertIn("service_integration_tokens", install_doc)
-        self.assertIn("user view config", install_doc)
+        self.assertIn("default private saved view", install_doc)
 
 
 if __name__ == "__main__":

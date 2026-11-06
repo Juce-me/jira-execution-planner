@@ -77,7 +77,6 @@ export function useScenarioState({ initialLaneMode }) {
     const scenarioDragStateRef = useRef(null);
     const scenarioDragFrameRef = useRef(null);
     const scenarioDragLockRefreshRef = useRef(null);
-    const scenarioRealtimeCsrfRef = useRef('');
     const scenarioHistoryRefreshControllerRef = useRef(null);
     const scenarioHistoryActionControllerRef = useRef(null);
     const scenarioViewRangeRef = useRef({ start: null, end: null });
@@ -187,7 +186,6 @@ export function useScenarioState({ initialLaneMode }) {
         scenarioDragStateRef,
         scenarioDragFrameRef,
         scenarioDragLockRefreshRef,
-        scenarioRealtimeCsrfRef,
         scenarioHistoryRefreshControllerRef,
         scenarioHistoryActionControllerRef,
         scenarioViewRangeRef,

@@ -15,4 +15,4 @@ exec gunicorn \
   --access-logfile - \
   --access-logformat '%(h)s %(t)s "%(m)s %(U)r %(H)s" %(s)s %(b)s "%(a)s"' \
   --error-logfile - \
-  jira_server:app
+  'jira_server:create_serving_app()'

@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -12,6 +10,7 @@ from backend.db import engine as db_engine
 from backend.db import models
 from backend.auth.context import RequestAuthContext
 from backend.services import shared_group_config
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,89 +26,87 @@ def migration_config(database_url):
 
 class SharedGroupConfigMigrationTests(unittest.TestCase):
     def test_shared_group_migration_adds_catalog_and_preference_tables(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'shared-groups-migration.db')}"
-            config = migration_config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = migration_config(database_url)
 
-            command.upgrade(config, '20260514_0005')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('workspace_group_configs', tables)
-                self.assertNotIn('user_group_preferences', tables)
-            finally:
-                engine.dispose()
+        command.upgrade(config, '20260514_0005')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('workspace_group_configs', tables)
+            self.assertNotIn('user_group_preferences', tables)
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                tables = set(inspector.get_table_names())
-                self.assertIn('workspace_group_configs', tables)
-                self.assertIn('user_group_preferences', tables)
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            tables = set(inspector.get_table_names())
+            self.assertIn('workspace_group_configs', tables)
+            self.assertIn('user_group_preferences', tables)
 
-                catalog_columns = {
-                    column['name']
-                    for column in inspector.get_columns('workspace_group_configs')
-                }
-                preference_columns = {
-                    column['name']
-                    for column in inspector.get_columns('user_group_preferences')
-                }
-                catalog_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('workspace_group_configs')
-                }
-                preference_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('user_group_preferences')
-                }
-                preference_indexes = {
-                    index['name']
-                    for index in inspector.get_indexes('user_group_preferences')
-                }
+            catalog_columns = {
+                column['name']
+                for column in inspector.get_columns('workspace_group_configs')
+            }
+            preference_columns = {
+                column['name']
+                for column in inspector.get_columns('user_group_preferences')
+            }
+            catalog_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('workspace_group_configs')
+            }
+            preference_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('user_group_preferences')
+            }
+            preference_indexes = {
+                index['name']
+                for index in inspector.get_indexes('user_group_preferences')
+            }
 
-                self.assertTrue({
-                    'workspace_id',
-                    'payload_version',
-                    'payload',
-                    'config_revision',
-                    'created_by',
-                    'updated_by',
-                    'created_at',
-                    'updated_at',
-                }.issubset(catalog_columns))
-                self.assertTrue({
-                    'workspace_id',
-                    'user_id',
-                    'payload_version',
-                    'visible_group_ids',
-                    'active_group_id',
-                    'customized',
-                    'created_at',
-                    'updated_at',
-                }.issubset(preference_columns))
-                self.assertIn('uq_workspace_group_configs_workspace', catalog_uniques)
-                self.assertIn('uq_user_group_preferences_workspace_user', preference_uniques)
-                self.assertIn('ix_user_group_preferences_user_workspace', preference_indexes)
-            finally:
-                engine.dispose()
+            self.assertTrue({
+                'workspace_id',
+                'payload_version',
+                'payload',
+                'config_revision',
+                'created_by',
+                'updated_by',
+                'created_at',
+                'updated_at',
+            }.issubset(catalog_columns))
+            self.assertTrue({
+                'workspace_id',
+                'user_id',
+                'payload_version',
+                'visible_group_ids',
+                'active_group_id',
+                'customized',
+                'created_at',
+                'updated_at',
+            }.issubset(preference_columns))
+            self.assertIn('uq_workspace_group_configs_workspace', catalog_uniques)
+            self.assertIn('uq_user_group_preferences_workspace_user', preference_uniques)
+            self.assertIn('ix_user_group_preferences_user_workspace', preference_indexes)
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260514_0005')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('workspace_group_configs', tables)
-                self.assertNotIn('user_group_preferences', tables)
-                self.assertIn('scenario_draft_locks', tables)
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260514_0005')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('workspace_group_configs', tables)
+            self.assertNotIn('user_group_preferences', tables)
+            self.assertIn('scenario_draft_locks', tables)
+        finally:
+            engine.dispose()
 
 
 class SharedGroupConfigModelTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'shared-groups.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -117,7 +114,6 @@ class SharedGroupConfigModelTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_users_workspace(self):
         with self.factory() as session:

@@ -269,6 +269,7 @@ These user-visible changes intentionally do not add a new app-owned `userevent`;
 | Quarterly work configuration: Project configuration Settings editor, quarter-scoped Stats/Last N/EPM reads, unavailable-period notices and the Scenario denial notice | `backend/routes/work_request.py`, `backend/routes/stats_routes.py`, `backend/routes/epm_routes.py`, `backend/routes/scenario_routes.py`, `backend/routes/scenario_draft_routes.py`, `frontend/src/settings/WorkConfigurationsEditor.jsx`, `frontend/src/workStructure/useActiveWorkContext.js`, `tests/test_work_structure_analytics.js` | Existing contracts only: no new event, no new `event_name`, no new standalone auto-load event and no new parameter. The editor's tab open, Save and failure reuse `settings_action` with the existing `section` token, which for this editor is `section=work_configurations` (with `workflow_action`, `result`, `dirty_state`, `validation_count_bucket`; a revision conflict keeps `conflict_state=remote`); the Save outcome stays under `api_result(api_surface=settings_save)`. Native Initiative work appears only through the already-allowed safe kinds (`issue_kind=initiative`, `issue_type_mix`) where an existing status, priority, Project Track or field-edit action targets one. Quarter changes, Last N and range reads, per-era unavailable-period or setup notices, the Scenario `scenario_not_supported` notice and the Stats/EPM admission errors are derived states and add no event. Never send configuration names or ids, revisions, digests, quarter-to-configuration mappings, issue keys, JQL, field ids, Board/project keys or draft content; the source guard in `tests/test_work_structure_analytics.js` scans the editor, context hook and request builders for forwarded identity. No GA4 admin or runbook change. | 2026-10-30 |
 | Scenario planner admin lock, the Access tab "Scenario planner for everyone" switch and new-model Scenario (Initiative lanes, configuration-namespaced drafts) | `frontend/src/settings/AdminAccessSettings.jsx`, `frontend/src/settings/useSharedConfigSave.js`, `frontend/src/eng/EngModeControl.jsx`, `frontend/src/scenario/*`, `backend/routes/scenario_routes.py`, `backend/routes/scenario_draft_routes.py`, `backend/routes/settings_routes.py` | Existing contracts only: no new event, `event_name` or parameter. Saving the switch is part of the Admin footer Save and reuses `settings_action` with the existing `section=admin` token (`workflow_action=save`/`save_result`, `result`, `dirty_state`, `validation_count_bucket`; a revision conflict keeps `conflict_state=remote`); its request is covered by `api_result(api_surface=settings_save)`. The hidden Scenario entry, the fallback from a restored Scenario view and `403 scenario_locked` are derived states with no event; new-model Scenario runs keep the existing `scenario_action`, `select_content(eng_mode=scenario)` and `api_result` coverage, and the parent-lane toggle label changes no `lane_mode` value (`epic`). Never send the switch value, configuration ids, draft scope keys, Initiative or Epic keys. No GA4 admin or runbook change. | 2026-11-03 |
 | Board status pill non-blocking | `frontend/src/dashboard.jsx`, `frontend/src/eng/EngBoardEpicPanel.jsx`, `frontend/src/eng/EngBoardView.jsx`, `frontend/src/eng/EpicBlock.jsx`, `frontend/src/eng/useEngStatusTransitions.js`, `frontend/src/eng/useStrictEngBoardIntegration.js`, `frontend/src/issues/IssueCard.jsx`, `frontend/src/styles/eng/board.css` | Behavior-only change to the existing `status_change_submit` / `status_change_result` flow of `issue_status_action`: no new trigger, `event_type` or canonical `event_name`; typed params none. A Board status pill no longer locks the Board, closes its menu at once and announces its outcome like drag; the `issue_status_action` payloads (`source_surface=board`) are unchanged, and the announcement text is not an event. No GA4 runbook change. | 2026-10-29 |
+| PostgreSQL-only storage and server-side single-use CSRF tokens | `backend/auth/csrf_store.py`, `backend/security/guards.py`, `frontend/src/api/authApi.js` | Security and storage plumbing with no user-visible action; a token fetch or a pre-dispatch `csrf_required`/`config_storage_unavailable` refusal is not a product interaction, and existing `api_result` tracking of the calling surfaces is unchanged. | 2026-11-06 |
 
 Do not use reserved GA4 event names such as `click`, `error`, `page_view`, `scroll`, `session_start`, `user_engagement`, `view_search_results`, `file_download`, `form_start`, or `form_submit` through `event=userevent`. GA4 `page_view` is allowed only through the `event=pageview` GTM trigger, and GA4 may emit the allowed Enhanced Measurement names automatically when analytics is enabled. Do not emit Universal Analytics-style `event_category`, `event_action`, or `event_label`.
 
@@ -344,6 +345,7 @@ State-changing routes or user-visible surfaces without analytics must be documen
 
 | Surface | File/line anchor | Reason no event is emitted | Review date |
 | --- | --- | --- | --- |
+| DB-backed OAuth runtime retirement | `backend/auth/runtime_profile.py`, `backend/security/guards.py`, `jira_server.py`, `frontend/src/dashboardRuntime.js`, `frontend/src/settings/useSettingsPermissions.js` | Startup/profile enforcement introduces no new interactive action. Existing sign-in, sign-out and terminal-auth recovery events retain their names, typed parameters and pageview/userevent transport. Rejected legacy profiles emit no identity or credential/configuration payload; no additional event or dimension is registered. | 2026-11-03 |
 | Home/Townsquare writes | `docs/plans/GATE-05-home-write-capability.md` | Blocked external capability; no write route exists in this analytics slice. | 2026-05-26 |
 | Person avatars in the assignee glyph slot and EPM owner circle | `frontend/src/ui/PersonAvatar.jsx`, `jira_server.py`, `backend/security/avatar_urls.py` | Passive decoration that fills an existing slot from data already in the existing ENG and EPM payloads; no new action, no new request and no new event, and no person name, URL or account id is sent to GA4. | 2026-10-29 |
 | EPM project progress display | `frontend/src/epm/EpmRollupPanel.jsx` | Passive readout derived from already-loaded rollup Stories; existing EPM rollup load and expand/collapse analytics cover the surrounding workflow. | 2026-05-28 |
@@ -403,6 +405,13 @@ through `planning_action`; it includes only the row-mode category. Optional
 visibility changes are intermediate configuration covered by `save_review`
 and do not emit another event.
 Save outcomes use the typed `result` enum `success|failure|conflict|unknown`.
+The combined **Save plan** gesture retains `workflow_action=save_review` and emits
+one outcome event after the attempted save: `success` for a confirmed acknowledgement,
+`conflict` for a surfaced conflict, `unknown` for an unconfirmed outcome, otherwise
+`failure`. The Table button and scope-leave Save use the settled controller state,
+not the render-time snapshot. Automatic receipt lookup or sign-in restoration emits
+no additional Save event. The accepted `save_result` compatibility action retains
+the same result enum; no new event or parameter is introduced.
 `sort_changed` uses `sort_scope=planning_review` and a built-in column category or
 `custom`, never a custom column ID. Summary and Team edits use the existing
 open/submit/result contract on Planning only, with `field_name=summary|team`.
@@ -419,3 +428,17 @@ pinned totals, uncreated Story placeholders, compact column widths and custom-in
 passive conflict display are derived or intermediate state. They produce no
 separate events. Never transmit cell values, column labels/IDs, issue identities,
 summaries, person information, URLs or JQL in app-owned analytics.
+
+Shared Planning's **Select All**, **Clear Selection**, explicit status Include/Remove
+and **Undo** retain the existing inclusion action names and `feature_name=planning`;
+combined review saves retain `feature_name=planning_review`. Labels do not define
+new analytics identities. The read-only Table inspector, relationship-category
+inspection, bounded related-issue pagination and subtask expansion are no-event
+allowlist cases: they expose existing issue information without a plan or Jira
+mutation. Their reads retain existing API reliability surfaces, and Jira links in
+the reused issue cards retain the existing `external_link_opened` contract.
+Projection hydration, inclusion Undo bookkeeping, operation reconciliation and
+same-tab recovery storage are automatic state maintenance and emit no gesture
+events. Tests: `test_planning_save_analytics.js`, `test_planning_sprint_review.js`,
+`test_planning_selection_state.js` and `test_analytics_events.js`. The existing
+two-trigger GTM map, transport gate and GA4 runbook need no configuration changes.

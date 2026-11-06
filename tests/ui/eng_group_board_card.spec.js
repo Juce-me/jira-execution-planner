@@ -1048,8 +1048,10 @@ test('truncated epic values expose a bounded in-app readout without intercepting
 
 test('readonly truncated assignee preserves the current value and keyboard readout', async ({ page }) => {
     const fullName = 'Alexanderson Maximilian Petrovsky-Smith The Third With An Intentionally Long Readonly Current Value For Truncation';
-    await openBoard(page, { width: 988, height: 600, epicAssigneeName: fullName, authMode: 'jira_basic' });
+    await openBoard(page, { width: 988, height: 600, epicAssigneeName: fullName, authMode: 'atlassian_oauth' });
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
+    await page.getByRole('button', { name: /manage team groups/i }).click();
+    await expect(page.getByRole('dialog').first()).toBeVisible();
     const value = page.locator('.epic-block').first().locator('.epic-assignee-value');
     await expect(value).toHaveText(fullName);
     expect(await value.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);

@@ -1,6 +1,6 @@
 # SUPPORT: Atlassian OAuth Setup
 
-This app uses Atlassian OAuth 2.0 (3LO) for browser login. Microsoft Entra SSO, when enforced by your organization, happens inside Atlassian's login flow; do not create or use a Microsoft OAuth app for Jira API bearer tokens.
+This app requires database-backed Atlassian OAuth 2.0 (3LO) for browser login and application reads. Basic/API-token and local-file OAuth are retired serving profiles. Microsoft Entra SSO, when enforced by your organization, happens inside Atlassian's login flow; do not create or use a Microsoft OAuth app for Jira API bearer tokens.
 
 ## Create The Atlassian App
 
@@ -24,7 +24,7 @@ For internal container hosting, register the HTTPS ingress callback URL in the A
 <https-origin>/api/auth/atlassian/callback
 ```
 
-Set `ATLASSIAN_REDIRECT_URI` to that exact HTTPS callback URL and set `APP_ALLOWED_ORIGINS` to the same HTTPS origin. OAuth2 Proxy may enforce perimeter identity at ingress, but it does not replace app-level Atlassian OAuth. Jira REST calls still use the signed-in user's Atlassian OAuth 2.0 (3LO) session, and Home/Townsquare EPM metadata still requires the user's connected Home token in DB storage.
+Set `ATLASSIAN_REDIRECT_URI` to that exact HTTPS callback URL and set `APP_ALLOWED_ORIGINS` to the same HTTPS origin. OAuth2 Proxy may enforce perimeter identity at ingress, but it does not replace app-level Atlassian OAuth. Jira REST calls still use the signed-in user's Atlassian OAuth 2.0 (3LO) session, and Home/Townsquare EPM metadata uses the same user's encrypted DB OAuth grant with the Home read scopes.
 
 If Microsoft Entra SSO is enforced for the organization, keep using the Atlassian OAuth app. Entra remains part of the Atlassian login flow; do not replace the Atlassian app with a Microsoft OAuth app for Jira REST or Home/Townsquare token flows.
 
@@ -41,7 +41,7 @@ Open the app's `Permissions` page and add/configure these APIs.
 | Jira Software API | `read:board-scope:jira-software` | `/rest/agile/1.0/board` board discovery. |
 | Jira Software API | `read:sprint:jira-software` | `/rest/agile/1.0/board/{boardId}/sprint` sprint discovery. |
 | Jira API | `read:project:jira` | Jira Software board APIs require project read scope. |
-| OAuth authorize URL only | `offline_access` | Refresh tokens for local OAuth sessions; this does not appear as a separate API row. |
+| OAuth authorize URL only | `offline_access` | Refresh tokens for encrypted DB OAuth sessions; this does not appear as a separate API row. |
 
 ### Write Scope Forces Re-Auth For Every Signed-In User
 
@@ -61,7 +61,7 @@ You do not add `offline_access` from the app's `Permissions` API list, and it do
 
 ## Local `.env`
 
-Copy `.env.example` to `.env` and use real OAuth values from the Atlassian Developer Console. DB storage and migrations are covered in [INSTALL.md](../INSTALL.md); this section only shows the OAuth app values.
+For a new installation, configure the OAuth values from the Atlassian Developer Console along with the database, migrations and encryption settings in [INSTALL.md](../INSTALL.md). Existing supported DB/OAuth configurations keep their current values, signing secret, encryption provider and keyring; unused legacy keys do not require rewriting the file. The example below shows the OAuth app values only.
 
 ```env
 JIRA_URL=https://your-company.atlassian.net
@@ -74,12 +74,8 @@ ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback
 ATLASSIAN_SCOPES=read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
 
 FLASK_SECRET_KEY=...
-OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
-OAUTH_TOKEN_STORE_PATH=.oauth-token-store.json
-OAUTH_TOKEN_STORE_TTL_SECONDS=2592000
-# Reserved for future DB-backed first-admin bootstrap.
-# Legacy pre-DB OAuth treated every signed-in Atlassian user as a local tool admin.
-# TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS=...
+# Optional first tool-admin bootstrap: comma-separated Atlassian account ids.
+# TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS=<initial-tool-admin-account-id>
 ```
 
 `JIRA_URL` is required in OAuth mode, but it is not a Basic-auth credential. It tells the backend which Jira Cloud site to select after Atlassian returns the user's accessible resources.
@@ -90,17 +86,19 @@ Generate `FLASK_SECRET_KEY` locally:
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-### Local OAuth Session Persistence
+### DB OAuth Sessions and Profile Selection
 
-`offline_access` gives the server a refresh token. With `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`, the local/dev server stores that OAuth session server-side at `OAUTH_TOKEN_STORE_PATH` so a Flask restart does not force a new Atlassian consent flow. The browser cookie keeps only an opaque local session id; access and refresh tokens stay in the server-side token store.
+Omitted, empty or whitespace auth/storage selectors default to `atlassian_oauth` and `db`. The storage aliases `database`, `postgres` and `postgresql` also select DB storage. Basic/API-token and live JSON/local-file OAuth profiles are rejected with sanitized setup guidance. Explicit developer JSON import/export remains available; startup does not import old token/config files, rewrite operator configuration or regenerate encryption keys.
 
-Keep `OAUTH_TOKEN_STORE_PATH` local and ignored by git. The default local path `.oauth-token-store.json` is ignored by this repo. `OAUTH_TOKEN_STORE_TTL_SECONDS` defaults to 30 days; shorten it only if you want local sessions to expire sooner. Delete the token store file or use `/api/auth/logout` when you want to clear the saved local session.
+`offline_access` gives the server a refresh token. Access and refresh tokens stay encrypted in DB `auth_tokens`; the signed browser cookie contains an opaque DB browser-session handle. Keep the same signing secret, database and encryption configuration across restarts. Logout deletes the current browser session; other browsers' sessions are independent.
 
-### Legacy Pre-DB Tool-Admin Writes
+An accepted local-loopback DB/OAuth profile may contain leftover Basic credential fields or local-store flag/path/TTL settings. They do not activate a local store, grant access or cause token-file I/O. The hosted/network prohibition on enabling the local-store opt-in still applies. A selected retired profile requires an approved DB migration before serving; there is no automatic compatibility conversion.
 
-Older JSON-backed OAuth runs treated every signed-in Atlassian user as a local tool admin for shared configuration writes. DB-backed runs use explicit app/user state instead; Atlassian tenant/admin status, email address, email domain, Jira project access, or Home/Townsquare access must not grant tool-admin rights by itself.
+### Tool-Admin Rights
 
-`SETTINGS_ADMIN_ONLY` controls who may edit shared Admin settings and manage app-admin membership. With `true` (the default), DB-backed OAuth requires an existing app admin. With `false`, every authenticated OAuth user may edit and save those settings and membership changes. The Admin → Access picker lists users already known from OAuth sign-in, displays their stored profile details, and uses the Atlassian `accountId` identity stored as the user's external subject. Basic mode treats the local user as an administrator and does not load an OAuth user list.
+Tool-admin rights come from explicit app user state. Atlassian tenant/admin status, email address/domain, Jira permissions and Home/Townsquare access do not grant them. An operator can bootstrap an explicitly configured Atlassian account at callback only while that workspace has no tool admin; subsequent grants use the app-admin Access controls.
+
+`SETTINGS_ADMIN_ONLY=true` (the default) restricts shared Admin settings to app admins. With `false`, authenticated users may edit those settings. The user directory and app-admin membership changes always require a tool admin, independently of that switch. The Admin -> Access picker lists users already known from OAuth sign-in and stores grants against their stable Atlassian account identity.
 
 ## Test The Flow
 
@@ -108,7 +106,7 @@ Restart the Flask server after changing `.env`.
 
 1. Open `http://localhost:5050/login`.
 2. Click `Sign in with Atlassian`.
-3. Complete Atlassian login. If Microsoft Entra SSO is enforced, Atlassian redirects through it automatically.
+3. Complete Atlassian login, including Microsoft Entra/Azure SSO through Atlassian when the organization enforces it. Record this operator-owned deployment acceptance separately; synthetic provider tests do not prove live SSO acceptance.
 4. Accept the Atlassian consent screen.
 5. Confirm the callback returns to the dashboard. If you opened a shared view link (`/?v=1&...`) while signed out, it is kept in the signed session cookie for up to 15 minutes and the callback returns to `/?<that query>` so the view opens after sign-in; the registered callback URL does not change.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
@@ -124,7 +122,7 @@ Use the same browser and hostname for the whole flow. If `ATLASSIAN_REDIRECT_URI
 
 ## Home GraphQL OAuth Gate
 
-Rechecked on 2026-10-27 using a real local DB-backed browser session and the operator-approved Home site/goal fixture from the Basic setup. OAuth works for public Home reads, but the current eight-operation probe still stops an unchanged EPM route migration:
+Rechecked on 2026-10-27 using a real local DB-backed browser session and the operator-approved Home site/goal fixture from the Basic setup. The recorded public Home reads worked, while the original eight-operation probe blocked migrating the unchanged query projections:
 
 ```text
 FAIL home_graphql_3lo_unsupported
@@ -145,9 +143,9 @@ Live results:
 
 The identity errors name the precise paths: `goals_byId.subGoals.edges.node.owner`, `goals_byId.projects.edges.node.owner`, `goals_byId.projects.edges.node.updates.edges.node.creator`, `projects_byId.owner`, and `projects_byId.updates.edges.node.creator`. Their required scope is `identity:atlassian-external`. Atlassian's published explanation says apps cannot declare that internal scope and customers cannot authorize it ([staff explanation](https://community.developer.atlassian.com/t/rest-api-call-for-fetching-teams/79521/13)). This is not resolved by adding another published Home read scope.
 
-These diagnostics changed query projections only in process memory and did not change application queries or the eight-operation gate contract. The original validator still prints `FAIL home_graphql_3lo_unsupported`; that result describes the complete current query set, not universal failure of Home OAuth. On 2026-10-27 the operator accepted a bounded public-read cutover and waived single-user usage/migration staging gates. The [accepted design and DoD](plans/SUPPORT-home-oauth-public-read-design.md) explicitly omit unavailable owner/author metadata and use direct Home tags. Its [implementation plan is ready and unlocked](plans/DONE-home-oauth-public-reads.md): update the probe, client, credential wiring, route/UI readiness and requested scopes together. The planned seven-operation `public-read-v1` acceptance check must prove the shipped contract; it does not convert the legacy FAIL to PASS. Implementation and operator acceptance are pending.
+These diagnostics changed query projections only in process memory and did not change application queries or the eight-operation gate contract. The original validator still prints `FAIL home_graphql_3lo_unsupported`; that result describes the complete current query set, not universal failure of Home OAuth. On 2026-10-27 the operator accepted a bounded public-read cutover and waived single-user usage/migration staging gates. The [accepted design and DoD](plans/SUPPORT-home-oauth-public-read-design.md) explicitly omit unavailable owner/author metadata and use direct Home tags. The [implementation record](plans/DONE-home-oauth-public-reads.md) describes the shipped bounded `public-read-v1` contract. Its seven-operation acceptance profile does not convert the original legacy FAIL to PASS. Source/format verification does not attest live deployment access; record operator-owned product acceptance separately.
 
-Resolve runtime overrides before inspecting credentials: the local runner overrides the environment file's DB connection. The selected Basic Home fixture also belongs to a different site from the current dashboard and was used only as an explicitly approved diagnostic fixture. No private view or shared workspace configuration was changed. A migration must preserve the owning workspace/site and private EPM scope boundaries. The existing app's configured scope request list was not modified by this verification. The accepted plan keeps global Jira scope requirements unchanged, requests Home scopes only for the enabled user's EPM consent journey, and uses a private Enable EPM view checkbox plus scoped Home access. These are pending implementation changes; the branch integration changes documents only.
+Resolve runtime overrides before inspecting credentials: the local runner overrides the environment file's DB connection. The selected Basic Home fixture also belongs to a different site from the current dashboard and was used only as an explicitly approved diagnostic fixture. No private view or shared workspace configuration was changed. A migration must preserve the owning workspace/site and private EPM scope boundaries. The existing app's configured scope request list was not modified by this verification. The accepted plan keeps global Jira scope requirements unchanged, requests Home scopes only for the enabled user's EPM consent journey, and uses a private Enable EPM view checkbox plus scoped Home access. These boundaries are implemented in the current application; the historical probe results above remain scoped to their recorded diagnostic fixture.
 
 `GATE-05` applies only to posting Home project updates. Read-only OAuth verification requires no update text, disposable write target, or mutation probe.
 
@@ -164,7 +162,7 @@ These Home/Townsquare-backed API routes read Home with the signed-in user's OAut
 /api/epm/projects/<path:project_id>/rollup
 ```
 
-The implemented EPM routes use the strict `public-read-v1` OAuth client in DB/OAuth mode; its format validator is `scripts/check_home_graphql_oauth.py --profile public-read-v1` (PASS reason `home_graphql_public_read_v1_supported`, which is not an attestation of live access: the product journey is the proof). Local JSON/Basic compatibility runs keep their own service credential path, which is not the DB/OAuth EPM read path. The legacy eight-query gate above is unchanged and still fails.
+The implemented EPM routes use the strict `public-read-v1` OAuth client in DB/OAuth mode; its format validator is `scripts/check_home_graphql_oauth.py --profile public-read-v1` (PASS reason `home_graphql_public_read_v1_supported`, which is not an attestation of live access: the product journey is the proof). Basic/API-token and live JSON compatibility serving paths are retired; historical service-integration rows remain preserved and unused as Jira/Home read credentials. The legacy eight-query gate above is unchanged and still fails.
 
 ### Home/Townsquare Visibility Model
 
@@ -207,14 +205,9 @@ Start again from `/login` in the same browser tab. Do not reuse an old callback 
 
 The login session is valid, but the requested API route is intentionally guarded because it has no supported OAuth boundary. The ENG dashboard, Jira REST catalog/statistics routes, and DB/OAuth EPM routes read Home through the user's OAuth grant; do not fall back to process-global Basic credentials for guarded routes.
 
-`Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true`
+`runtime_auth_unsupported`, `runtime_storage_unsupported` or `runtime_legacy_cli_unsupported`
 
-Set both values for local testing:
-
-```env
-APP_ENVIRONMENT_KEY=local
-OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
-```
+The selected application profile or explicit credential CLI request is retired. Use the approved DB/OAuth setup and migration workflow; do not add Basic credentials or enable a local token store to bypass the error. Inert legacy keys in an already supported local-loopback DB/OAuth configuration do not need removal. Hosted/network cookie, origin and local-store opt-in restrictions still apply.
 
 ## References
 

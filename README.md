@@ -67,17 +67,17 @@ Simple local dashboard to display Jira sprint tasks sorted by priority with Pyth
 
 ### Quick test run (TL;DR)
 
-For the current DB/OAuth path, use [INSTALL.md](INSTALL.md). The short version is:
+For DB-backed Atlassian OAuth, use [INSTALL.md](INSTALL.md). The short version is:
 
 1. Create a virtualenv with Python 3.10+ linked against OpenSSL 1.1.1+ and install `requirements.txt`.
-2. Copy `.env.example` to `.env`.
+2. For a new installation, copy `.env.example` to `.env`; preserve any existing configuration.
 3. Configure PostgreSQL, Atlassian OAuth, and token-encryption values.
 4. Run Alembic migrations.
 5. Run `.venv/bin/python scripts/check_startup_preflight.py`.
 6. Start the backend with `.venv/bin/python jira_server.py`.
-7. Sign in, then connect the current user's Home/Townsquare token in `Settings -> Connections` if you need EPM.
+7. Sign in, then enable the EPM view in `Settings -> Connections` and grant the Home read scopes if you need EPM.
 
-Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, builds the frontend first, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. Production and release startup paths are unchanged. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
+Starting `.venv/bin/python jira_server.py` directly still does not start PostgreSQL, create the database, or run migrations. Source-checkout developers who want a localhost-only PostgreSQL lifecycle may instead run `./runners/local/run.sh`; it keeps Flask in `.venv`, builds the frontend first, starts only PostgreSQL in Docker, migrates before startup, and removes the container on `Ctrl+C` while retaining its named volume. See [INSTALL.md](INSTALL.md) and [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md).
 
 ## 📦 Prebuilt download (no Node required)
 
@@ -86,10 +86,11 @@ The release zip contains a built `frontend/dist`, so this path needs no Node and
 2. Unzip it anywhere.
 3. Configure `.env` from `.env.example`.
 4. Install backend deps: `chmod +x scripts/install.sh && ./scripts/install.sh`
-5. Start the backend: `.venv/bin/python jira_server.py`
-6. Visit `http://localhost:5050/` with the backend running. Direct `file://` opening of `jira-dashboard.html` is unsupported.
+5. Complete the database, encryption, migration and preflight steps in [INSTALL.md](INSTALL.md).
+6. Start the backend: `.venv/bin/python jira_server.py`
+7. Visit `http://localhost:5050/` with the backend running. Direct `file://` opening of `jira-dashboard.html` is unsupported.
 
-The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for intentional network exposure, with `ALLOW_NETWORK_BIND=true`; Basic auth network exposure also requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and `APP_ENVIRONMENT_KEY=local`. Dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
+The server binds to `127.0.0.1` by default. Use `APP_BIND_HOST=0.0.0.0` only for intentional network exposure, with `ALLOW_NETWORK_BIND=true`. Network serving also requires secure cookies, a stable signing secret and explicit allowed origins; see [INSTALL.md](INSTALL.md). Dev diagnostics require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access.
 
 Prebuilt release zips omit source tests and development plans. Use a source checkout when you need to run the unit test suite.
 
@@ -149,11 +150,11 @@ cp .env.example .env
 nano .env  # or use any text editor
 ```
 
-DB/OAuth mode is the production-like local path. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup and migrations live in [INSTALL.md](INSTALL.md).
+DB-backed Atlassian OAuth is the sole application profile. It requires `JIRA_URL`, `JIRA_AUTH_MODE=atlassian_oauth`, Atlassian OAuth client values, `CONFIG_STORAGE_BACKEND=db`, `DATABASE_URL`, and token-encryption settings. Full setup and migrations live in [INSTALL.md](INSTALL.md).
 
 Quarterly project configurations (Admin -> Project config, which resolves the work structure from the viewed quarter) are controlled by `WORK_CONFIGURATIONS_ENABLED`. It defaults to off and applies only in DB/OAuth mode. The first successful Project config Save promotes the workspace and is not reversible by turning the flag off: a promoted workspace with the flag off fails structural reads and writes closed. Before any downgrade or rollback, run `.venv/bin/python scripts/check_work_configuration_rollback.py --workspace-id <id>` (read-only; it refuses any promoted bundle). Ownership details: [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md).
 
-Server-side API-token auth remains a legacy compatibility mode. Do not use legacy Jira/Home Basic credentials for the DB/OAuth EPM path.
+Omitted, empty or whitespace auth/storage selectors default to `atlassian_oauth` and `db`. Storage aliases `database`, `postgres` and `postgresql` also select DB storage. Basic/API-token and live JSON/local-file OAuth profiles are rejected. Existing local-loopback DB/OAuth installations may keep inert legacy credential and local-token settings; these values grant no access and cause no token-file read or import. Hosted/network local-token opt-in remains invalid. Retired profiles require an approved DB migration; startup does not rewrite configuration or import old files.
 
 ### Step 4: Start the server
 
@@ -175,13 +176,13 @@ You can override the environment values at launch time instead of editing `.env`
 
 ### Atlassian OAuth login
 
-The dashboard can run with Atlassian OAuth 2.0 (3LO) for user Jira access instead of server-side Jira Basic auth.
+The dashboard requires Atlassian OAuth 2.0 (3LO) with database-backed identities, encrypted user tokens and opaque browser sessions.
 
 1. Create an OAuth 2.0 app in the Atlassian Developer Console.
 2. Add the required User Identity API and Jira API scopes documented in [docs/SUPPORT-atlassian-oauth-setup.md](docs/SUPPORT-atlassian-oauth-setup.md).
 3. Set the callback URL to `http://localhost:5050/api/auth/atlassian/callback`, or to an HTTPS tunnel URL if your Atlassian app requires HTTPS.
-4. In `.env`, set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, the Atlassian OAuth client settings, `FLASK_SECRET_KEY`, DB storage settings, token-encryption settings, and `OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true` for local single-process testing. `JIRA_URL` selects the matching Atlassian cloud site after login.
-5. Start the server and open `/login`. The `Sign in with Atlassian` action starts Atlassian OAuth; for managed Atlassian accounts backed by Microsoft Entra SSO, Atlassian redirects through Microsoft automatically before returning to the local callback.
+4. In `.env`, set `JIRA_AUTH_MODE=atlassian_oauth`, `APP_ENVIRONMENT_KEY=local`, `JIRA_URL`, the Atlassian OAuth client settings, `FLASK_SECRET_KEY`, DB storage settings, and token-encryption settings. `JIRA_URL` selects the matching Atlassian cloud site after login.
+5. Start the server and open `/login`. The `Sign in with Atlassian` action starts Atlassian OAuth, including the organization's Microsoft Entra/Azure SSO flow when enforced. Verify that deployment-specific journey with the operator; synthetic tests do not establish live SSO acceptance.
 6. Confirm `/api/auth/status` reports `authenticated: true`, then use `/api/test` to verify Jira REST access. In DB/OAuth mode, EPM becomes available after the signed-in user ticks **Enable EPM view** in `Settings -> Connections` and the Atlassian sign-in grants the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`).
 
 Jira still receives Atlassian OAuth tokens, not Microsoft Entra tokens. Direct Microsoft access tokens cannot be used as Jira REST API bearer tokens.
@@ -203,14 +204,13 @@ GA4_USER_ID_PEPPER=<deployment-secret>
 
 Visit `http://localhost:5050/` with the backend running. Direct `file://` opening of `jira-dashboard.html` is unsupported.
 
-On first launch (or when local config files do not exist), open **Dashboard Settings** and configure:
+On first launch (or when the workspace has no saved administrator configuration), open **Dashboard Settings** and configure:
 
 1. **Scope projects**
    - Add Jira projects and assign each to **Product** or **Tech**
 2. **Jira source**
    - Select **Sprint Field**
-   - In DB/OAuth mode, select **Sprint Board**; the persisted Sprint catalog is Board-backed and returns `409 sprint_board_required` when no effective Board is configured
-   - In legacy Basic/local mode, **Sprint Board** is optional; omitting it retains the Issues API fallback
+   - Select **Sprint Board**; the persisted Sprint catalog is Board-backed and returns `409 sprint_board_required` when no effective Board is configured
 3. **Field mapping**
    - Set **Issue Type**, **Parent Name Field**, **Story Points Field**, **Team Field**
 4. **Capacity** (used by the Planning module)
@@ -218,16 +218,13 @@ On first launch (or when local config files do not exist), open **Dashboard Sett
    - Select **Capacity Field** (numeric team capacity field)
 5. **Team groups**
    - Create at least one group and choose which teams it contains
-6. Click **Save** to persist configuration locally
+6. Click **Save** to persist the workspace configuration in the database.
 
-Saved local JSON files:
-- `dashboard-config.json` (projects, Jira source, field mapping, capacity, priority weights)
-- `team-groups.json` (team groups)
-- `team-catalog.json` (derived team catalog metadata)
+Runtime configuration and derived catalogs use workspace DB storage. Explicit developer JSON import/export remains available for controlled artifact workflows; existing JSON files are never an automatic runtime fallback or a serving profile.
 
 The app now relies on Dashboard Settings for supported runtime configuration. Keep `.env` focused on credentials and local server settings.
 
-In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings to app admins; `false` lets every authenticated OAuth user edit and save them. App-admin membership and the user directory always stay app-admin only. If the workspace has no selected Jira projects (and no `JQL_QUERY`) or no Jira source Board, the dashboard loads no ENG Jira data: app admins get Admin settings opened on the missing tab, and other users see the display names of the app admins to contact. Basic mode treats the local user as an administrator.
+In OAuth mode, Dashboard Settings → **Admin → Access** lists users already known from Atlassian sign-in and stores app-admin membership against their stable Atlassian account identity. `SETTINGS_ADMIN_ONLY=true` restricts Admin settings to app admins; `false` lets every authenticated OAuth user edit and save them. App-admin membership and the user directory always stay app-admin only. If the workspace has no selected Jira projects (and no `JQL_QUERY`) or no Jira source Board, the dashboard loads no ENG Jira data: app admins get Admin settings opened on the missing tab, and other users see the display names of the app admins to contact.
 
 In DB/OAuth mode, administrator settings are shared once per workspace and use administrator writes. Department groups and their board layouts are also workspace-shared, but every authenticated user may configure them. Group visibility, favorite/active group, and EPM settings are private to the current user. EPM scope, label prefix, issue types, and project-label mappings live in that user's default private saved view; EPM tab and selected sprint remain private UI state. Derived Sprint catalogs persist per workspace and Jira source Board; Sprint-Team membership persists per workspace and Sprint and is accepted only for the current effective scope. The workspace Team-name directory is separate from membership. See [backend/security/CONFIGURATION_OWNERSHIP.md](backend/security/CONFIGURATION_OWNERSHIP.md) for the complete ownership and access contract.
 
@@ -235,7 +232,7 @@ In DB/OAuth mode, administrator settings are shared once per workspace and use a
 
 Use the `ENG | EPM` switch in the dashboard header to browse project rollups rendered as Initiative -> Epic -> Story/Task hierarchies.
 
-In DB/OAuth mode, EPM is hidden until the signed-in user enables it in `Settings -> Connections` (a private per-user preference), the provider has granted the Home read scopes and Atlassian Home confirms access. Jira REST and Home/Townsquare reads both use the user's OAuth session (Home through the fixed `public-read-v1` query set); the app stores no personal Atlassian API token, and there is no API-token fallback. Basic/JSON compatibility mode keeps its own server-side credentials.
+In DB/OAuth mode, EPM is hidden until the signed-in user enables it in `Settings -> Connections` (a private per-user preference), the provider has granted the Home read scopes and Atlassian Home confirms access. Jira REST and Home/Townsquare reads both use the user's OAuth session (Home through the fixed `public-read-v1` query set); the app stores no personal Atlassian API token, and there is no API-token fallback. Basic/API-token and live JSON compatibility profiles are not supported.
 
 For setup details, see [INSTALL.md](INSTALL.md). For EPM behavior and configuration rules, see [docs/features/epm-view.md](docs/features/epm-view.md).
 
@@ -292,7 +289,6 @@ FLASK_SECRET_KEY=<from-secret>
 TOKEN_ENCRYPTION_KEY_SOURCE=env
 TOKEN_ENCRYPTION_MASTER_KEY_B64=<from-secret>
 TOKEN_ENCRYPTION_KEY_ID=<key-id>
-OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
 LOCAL_FILE_STATE_ENABLED=false
 SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED=false
 RUN_DB_MIGRATIONS=false
@@ -374,7 +370,7 @@ Rollback depends on how far the cutover got:
 
 Environments that auto-migrate with `RUN_DB_MIGRATIONS=true`, including local runners, now adopt on upgrade (see above); run the manual steps only for workspaces `--list` still reports `pending` or `needs-merge`, with `--merge` below once any group row exists.
 
-**Restoring hidden review columns while the app serves (`--merge`, #299).** When the migration ran without adoption, or users saved something before it ran, `--apply` refuses because group rows exist. `--merge` adopts the legacy columns, values and Sprint views into groups that already hold rows. It never overwrites, clears, renames or resurrects anything in a group: a legacy column claims a group column by id first (so a column adopted earlier and renamed since is recognized), then by kind, label and type; a live cell or Sprint view wins over the legacy one; a column the group archived stays archived. On PostgreSQL it needs no quiesced window (SQLite has no row locks and is for tests only): the apply locks only the groups it writes, through the same schema-row lock every app save takes first, in sorted group order, and exits 2 with nothing written if a lock is not granted within 5 seconds. Its database identity needs `SELECT`, `INSERT` and `UPDATE` on `workspace_group_review_schemas` (`FOR UPDATE` and the column update need `UPDATE`), `SELECT` and `INSERT` on `group_review_cells` and `group_sprint_review_views`, `SELECT` on `workspaces`, `workspace_group_configs` and the two legacy tables, and, for the share lock, `UPDATE`, `DELETE` or `TRUNCATE` on the two legacy tables.
+**Restoring hidden review columns while the app serves (`--merge`, #299).** When the migration ran without adoption, or users saved something before it ran, `--apply` refuses because group rows exist. `--merge` adopts the legacy columns, values and Sprint views into groups that already hold rows. It never overwrites, clears, renames or resurrects anything in a group: a legacy column claims a group column by id first (so a column adopted earlier and renamed since is recognized), then by kind, label and type; a live cell or Sprint view wins over the legacy one; a column the group archived stays archived. It needs no quiesced window: the apply locks only the groups it writes, through the same schema-row lock every app save takes first, in sorted group order, and exits 2 with nothing written if a lock is not granted within 5 seconds. Its database identity needs `SELECT`, `INSERT` and `UPDATE` on `workspace_group_review_schemas` (`FOR UPDATE` and the column update need `UPDATE`), `SELECT` and `INSERT` on `group_review_cells` and `group_sprint_review_views`, `SELECT` on `workspaces`, `workspace_group_configs` and the two legacy tables, and, for the share lock, `UPDATE`, `DELETE` or `TRUNCATE` on the two legacy tables.
 
 1. Back up the database.
 2. Run `python scripts/adopt_legacy_sprint_reviews.py --list`. `needs-merge` means a merge would still insert something, `pending` means no group rows exist yet (the cutover steps above apply, and `--merge` works there too), `adopted` means nothing is left to insert, and `error` means the workspace cannot be planned (run the dry run for the reason).
@@ -437,11 +433,9 @@ The dashboard supports dynamic sprint selection:
 
 1. **Auto-detection**: Automatically selects current quarter (e.g., 2025Q4)
 2. **Dropdown**: Choose from available sprints starting from 2025Q1
-3. **Caching**: In DB/OAuth mode, the validated Sprint list is shared per workspace and source Board and refreshed after 24 hours; Basic/local mode keeps its compatible file cache
+3. **Caching**: The validated Sprint list is shared per workspace and source Board and refreshed after 24 hours
 4. **Refresh button**: Manually update sprint list from Jira
-5. **Two fetch methods**:
-   - DB/OAuth: Board API only (set Sprint Board in Dashboard Settings → Jira source); no effective Board returns `409 sprint_board_required`
-   - Legacy Basic/local: Board API when configured, otherwise the Issues API fallback uses the dashboard configuration and selected projects
+5. **Jira source**: Set Sprint Board in Dashboard Settings → Jira source for the Legacy Board-backed catalog; no effective Board returns `409 sprint_board_required`. Promoted quarterly configurations retain their saved source and quarter boundaries.
 
 ## 📊 Sprint Statistics
 
@@ -498,16 +492,14 @@ See the full guide:
 **`TOKEN_ENCRYPTION_MASTER_KEY_B64 or TOKEN_ENCRYPTION_KEY_ID is required`:**
 - Generate and set the token-encryption values from [INSTALL.md](INSTALL.md). DB/OAuth token storage will not start without them.
 
-**"Required Jira Basic auth settings must be set" error:**
-- Make sure you created `.env` file from `.env.example`
-- Check that you filled in the required Basic auth settings for legacy API-token mode, or switch to DB/OAuth mode with `JIRA_AUTH_MODE=atlassian_oauth`
+**`runtime_auth_unsupported` or `runtime_storage_unsupported`:**
+- The selected profile is retired. Follow the DB/OAuth setup and an approved migration before serving. Startup does not convert old files or credentials; existing supported DB/OAuth settings do not need rewriting because unused legacy keys remain.
 
 **"401 Unauthorized" error:**
 - In DB/OAuth mode, any application API `401` blocks the mounted dashboard behind the global sign-in recovery screen. Use its same-tab **Sign in again** action; the new authenticated document bootstraps from scratch and does not replay the failed request.
-- In legacy Basic mode, check that your API token settings are correct in `.env`.
 
 **EPM tab is missing in DB/OAuth mode:**
-- Connect the signed-in user's Home/Townsquare token in `Settings -> Connections`; EPM is intentionally hidden until that encrypted user token exists.
+- Enable **EPM view** in `Settings -> Connections`, grant the four Home read scopes through Atlassian, and confirm access to the configured Home scope.
 
 **"No tasks found":**
 - Verify your configured projects and shared team groups match your Jira setup
@@ -520,8 +512,6 @@ See the full guide:
 **"No sprints available" in dropdown:**
 - In DB/OAuth mode, set **Sprint Board** in Dashboard Settings → **Jira source**; it is required for the Board-backed Sprint catalog, and an absent effective Board returns `409 sprint_board_required`
   - Find your board ID: go to `/api/boards` endpoint or check Jira board URL
-- In legacy Basic/local mode, set **Sprint Board** for the Board API path or leave it empty to use the Issues API fallback
-- For the legacy fallback, check that your selected projects return tasks with sprint information
 
 **Planning panel shows no capacity / capacity comparison looks wrong:**
 - Open Dashboard Settings → **Capacity**
@@ -598,7 +588,6 @@ jira-dashboard/
 
 The dashboard uses a few different cache layers to keep Jira traffic reasonable:
 
-- **Basic/local Sprint list**: cached on disk in `sprints_cache.json` for 24 hours. Use **Refresh Sprints** or `?refresh=true` to force a reload from Jira.
 - **DB/OAuth Sprint and Team catalogs**: Sprint values persist in `workspace_sprint_catalogs` per workspace/source Board. Team availability persists in `workspace_sprint_team_catalogs` per workspace/Sprint and is bound to the effective Board/project/base-JQL/Team-field scope digest; names remain in the separate `workspace_team_catalogs` directory. A complete validated empty result replaces older choices. A matching failed refresh retains the last validated result with a warning instead of publishing partial discovery.
 - **Catalog browser lifecycle**: Restored Sprint labels are display-only until the current server identity and browser context validate them. Pending refresh completion is bound to one attempt/identity, bounded by hard server and browser deadlines, and cancelled on auth, configuration, or document-lifetime changes. Manual refresh coalesces with an ordinary pending attempt; Retry forces only when no such attempt exists.
 - **Tasks and epics**: cached in server memory for 5 minutes for repeated requests with the same sprint/group/project scope. The refresh button bypasses the server cache and also clears browser-side group state, so changes made in Jira appear immediately after clicking refresh.

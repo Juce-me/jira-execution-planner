@@ -1,35 +1,32 @@
 import os
-import sqlite3
-import tempfile
-import time
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from unittest.mock import patch
 
+import psycopg
 from sqlalchemy.exc import OperationalError
 
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services.user_view_config import UserViewConfigStorageError
 import jira_server
-
-
-FULL_SCOPE = (
-    'read:me read:jira-work write:jira-work read:jira-user '
-    'read:board-scope:jira-software read:sprint:jira-software read:project:jira '
-    'offline_access'
-)
+from tests.db_oauth_test_helpers import seed_db_actor
+from tests.oauth_test_helpers import install_oauth_session
+from tests.postgres_test_db import fresh_database_url
 
 
 class UserViewConfigRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'user-views.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
+        environment = self._env_patch()
+        environment.start()
+        self.addCleanup(environment.stop)
+        auth_mode = patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth')
+        auth_mode.start()
+        self.addCleanup(auth_mode.stop)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -39,76 +36,21 @@ class UserViewConfigRouteTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._tmpdir.cleanup()
 
     def _seed_user(self, account_id, account_type):
         with self.factory() as session:
-            workspace = session.query(models.Workspace).first()
-            if workspace is None:
-                workspace = models.Workspace(
-                    environment_key='local',
-                    name='Local',
-                    jira_site_url='https://example.atlassian.net',
-                    jira_cloud_id='cloud-1',
-                    created_by='test',
-                )
-                session.add(workspace)
-                session.flush()
-            user = models.User(
-                external_provider='atlassian',
-                external_subject=account_id,
-                account_type=account_type,
-                status='active',
-                created_by='test',
-            )
-            session.add(user)
-            session.flush()
-            connection = models.AuthConnection(
-                user_id=user.id,
-                workspace_id=workspace.id,
-                provider='atlassian_oauth',
-                site_url=workspace.jira_site_url,
-                cloud_id=workspace.jira_cloud_id,
-                scopes=FULL_SCOPE.split(),
-                scope_provenance='provider',
-                status='active',
-                token_version=1,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(connection)
-            session.flush()
-            session.add(models.JiraProjectAccess(
-                connection_id=connection.id,
-                workspace_id=workspace.id,
-                project_key='PROD',
-                project_type='product',
-                status='accessible',
-                checked_at=datetime.now(timezone.utc),
-            ))
+            actor = seed_db_actor(session,
+                workspace={'cloud_id': 'cloud-1', 'site_url': 'https://example.atlassian.net'},
+                account_identity=account_id,
+                roles=('admin',) if account_type == 'admin' else ())
+            session.add(models.JiraProjectAccess(connection_id=actor.connection_id,
+                workspace_id=actor.workspace_id, project_key='PROD', project_type='product',
+                status='accessible', checked_at=datetime.now(timezone.utc)))
             session.commit()
-            return workspace.id, user.id, connection.id
+            return actor.workspace_id, actor.user_id, actor.connection_id
 
     def _install_session(self, client, session_id, account_id, connection_id):
-        with client.session_transaction() as flask_session:
-            flask_session['db_oauth_session'] = {
-                'db_auth_connection_id': connection_id,
-                'db_token_version': '1',
-            }
-        jira_server.OAUTH_TOKEN_STORE[session_id] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 3600,
-            'scope': FULL_SCOPE,
-            'cloudid': 'cloud-1',
-            'site_url': 'https://example.atlassian.net',
-            'account_id': account_id,
-            'account_status': 'active',
-            'db_auth_connection_id': connection_id,
-            'db_token_version': '1',
-            'stored_at': time.time(),
-        }
+        install_oauth_session(client, db_auth_connection_id=connection_id)
 
     def _env_patch(self):
         return patch.dict(os.environ, {
@@ -117,7 +59,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         }, clear=False)
 
     def _csrf_headers(self):
-        response = self.client.get('/api/auth/csrf')
+        response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return {
             'X-Requested-With': 'jira-execution-planner',
@@ -463,7 +405,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
             self.assertEqual(session.get(models.ViewConfig, view_id).payload, payload)
 
     def test_view_list_read_failure_returns_stable_503(self):
-        failure = OperationalError('select views', {}, sqlite3.OperationalError('disk I/O error'))
+        failure = OperationalError('select views', {}, psycopg.OperationalError('disk I/O error'))
         with self._env_patch(), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'session_scope', side_effect=failure):
@@ -476,7 +418,7 @@ class UserViewConfigRouteTests(unittest.TestCase):
         })
 
     def test_default_view_read_failure_returns_stable_503(self):
-        failure = OperationalError('select default', {}, sqlite3.OperationalError('disk I/O error'))
+        failure = OperationalError('select default', {}, psycopg.OperationalError('disk I/O error'))
         with self._env_patch(), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch(

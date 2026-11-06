@@ -54,12 +54,17 @@ async function mockApp(page, { editor, workspace, prefs = { selectedView: 'eng' 
         const json = (payload, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
         if (p === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (p === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
+        if (p === '/api/admin/users') return json({ users: [{
+            id: 'synthetic-admin', externalSubject: 'synthetic-admin-account',
+            displayName: 'Synthetic Admin', accountType: 'admin', status: 'active',
+            authConnections: [], projectAccess: [],
+        }] });
         if (p === '/api/analytics/context' || p === '/api/version') return json({ enabled: false });
         if (p === '/api/config') {
             const epm = { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] }, projects: {} };
             return json({
                 jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: true,
-                userCanEditSettings: editor, userCanEditEpmConfig: true, adminUserManagementAvailable: false, userIsToolAdmin: editor,
+                userCanEditSettings: editor, userCanEditEpmConfig: true, adminUserManagementAvailable: true, userIsToolAdmin: editor,
                 scenarioPlannerForEveryone: workspace.forEveryone, epm,
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm } },
                 sharedConfig: { version: 1, capacity: {}, statsPriorityWeights: [], epm }, sharedConfigRevision: workspace.revision,

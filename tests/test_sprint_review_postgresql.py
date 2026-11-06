@@ -8,9 +8,12 @@ holds the group schema row lock, the test proves the second writer is waiting on
 PostgreSQL lock, and only then releases the first writer.
 """
 import contextlib
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 import importlib.util
 import io
 import os
+import re
 from pathlib import Path
 from threading import Event, Thread, current_thread
 from types import SimpleNamespace
@@ -31,6 +34,8 @@ from scripts import adopt_legacy_sprint_reviews as adopt
 
 GROUP_TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
 LEGACY_TABLES = ('workspace_sprint_reviews', 'sprint_review_cells')
+SHARED_PLAN_TABLES = ('group_sprint_plans', 'group_sprint_plan_entries', 'planning_save_operations')
+HEAD_REVISION = '20261106_0024'
 REVISION_FILE = Path('backend/db/migrations/versions/20261023_0020_adopt_legacy_sprint_reviews.py')
 PARENT_REVISION = '20261020_0019'
 
@@ -101,9 +106,13 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
 
     def rows(self):
         with db_engine.session_scope(self.url) as session:
-            schemas = session.query(models.WorkspaceGroupReviewSchema).all()
+            # Migration rollback assertions also run before namespace columns exist.
+            schemas = session.query(models.WorkspaceGroupReviewSchema.group_id,
+                models.WorkspaceGroupReviewSchema.schema_revision, models.WorkspaceGroupReviewSchema.columns).all()
+            views = session.query(models.GroupSprintReviewView.sprint_id,
+                models.GroupSprintReviewView.view_revision, models.GroupSprintReviewView.layouts).all()
             return ([(s.group_id, s.schema_revision, [c['id'] for c in s.columns]) for s in schemas],
-                    sorted((v.sprint_id, v.view_revision, v.layouts) for v in session.query(models.GroupSprintReviewView).all()))
+                    sorted((v.sprint_id, v.view_revision, v.layouts) for v in views))
 
     def wait_until_blocked(self, count=1):
         """Wait until `count` other backends wait on a lock while touching the group schema table."""
@@ -165,6 +174,348 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             self.assertEqual(result.details[name], value, name)
 
     # Races
+    def planning_actor(self):
+        """Receipts reference a real synthetic user, unlike the historical cell fixtures."""
+        with db_engine.session_scope(self.url) as session:
+            actor = models.User(external_provider='atlassian', external_subject='planning-race-user')
+            session.add(actor)
+            session.flush()
+            actor_id = actor.id
+        self.context = replace(self.context, user_id=actor_id)
+
+    def planning_payload(self, **updates):
+        milliseconds = int(datetime.now(timezone.utc).timestamp() * 1000)
+        operation = str(uuid.UUID(int=(milliseconds << 80) | (7 << 76) | (2 << 62)
+                                  | (uuid.uuid4().int & ((1 << 62) - 1))))
+        return dict(version=2, groupId='group-x', operationId=operation, initializePlan=True,
+                    basePlanRevision=0, baseSchemaRevision=0, baseScopeProof='pg-synthetic-proof',
+                    inclusionChanges=[{'issueId': '101', 'included': True, 'baseRevision': 0}], **updates)
+
+    def planning_admission(self, configuration_id=None, revalidate=None):
+        return review.PlanningAdmission('pg-synthetic-proof', 'Sprint = 17', 'story',
+            configuration_id, None, None, 1,
+            {'version': 1, 'groups': [{'id': 'group-x', 'name': 'Platform'}], 'defaultGroupId': 'group-x'},
+            revalidate or (lambda session: None))
+
+    def planning_search(self, payload, **kwargs):
+        ids = re.search(r'id in \(([0-9,]+)\)', payload['jql']).group(1).split(',')
+        return Mock(status_code=200, json=lambda: {'issues': [
+            {'id': identity, 'fields': {'issuetype': {'name': 'Story', 'subtask': False}}}
+            for identity in ids], 'isLast': True})
+
+    def planning_save(self, payload, *, admission=None, **kwargs):
+        return review.save_review(self.context, '17', payload, self.url, self.planning_search,
+            planning_admission=admission or self.planning_admission, **kwargs)
+
+    def planning_rows(self):
+        with db_engine.session_scope(self.url) as session:
+            return (sorted((plan.sprint_id, plan.revision) for plan in session.query(models.GroupSprintPlan)),
+                    sorted((entry.issue_id, entry.included, entry.revision)
+                           for entry in session.query(models.GroupSprintPlanEntry)),
+                    session.query(models.PlanningSaveOperation).count())
+
+    def planning_overlap(self, first, second, while_held=None):
+        """Prove v2's waiter blocks on its real workspace advisory fence, before schema locks."""
+        entered, release, results = Event(), Event(), {}
+        def run(name, action):
+            try:
+                results[name] = action()
+            except Exception as error:  # Returned to the owning test; never printed with connection data.
+                results[name] = error
+        holder = Thread(target=run, args=('first', first), daemon=True)
+        waiter = Thread(target=run, args=('second', second), daemon=True)
+        original_locked = review._locked_schema
+        def paused(*args, **kwargs):
+            row = original_locked(*args, **kwargs)
+            if current_thread() is holder:
+                entered.set()
+                if not release.wait(8):
+                    raise AssertionError('planning holder never released')
+            return row
+        def blocked():
+            deadline = time.monotonic() + 4
+            query = text("""SELECT count(*) FROM pg_stat_activity
+                WHERE datname = current_database() AND pid <> pg_backend_pid()
+                  AND wait_event_type = 'Lock' AND cardinality(pg_blocking_pids(pid)) > 0
+                  AND query ILIKE '%pg_advisory_xact_lock%'""")
+            while time.monotonic() < deadline:
+                with self.admin.connect() as conn:
+                    if conn.execute(query).scalar() >= 1:
+                        return
+                time.sleep(0.02)
+            raise AssertionError('v2 writer never waited on the PostgreSQL workspace fence')
+        with patch.object(review, '_locked_schema', side_effect=paused):
+            holder.start()
+            try:
+                self.assertTrue(entered.wait(8), 'planning writer never acquired its transaction fences')
+                if while_held is not None:
+                    while_held()
+                waiter.start()
+                blocked()
+            finally:
+                release.set()
+                holder.join(10)
+                if waiter.ident is not None:
+                    waiter.join(10)
+        self.assertFalse(holder.is_alive() or waiter.is_alive())
+        return results['first'], results['second']
+
+    def test_planning_first_initializations_and_disjoint_stale_writers(self):
+        self.planning_actor()
+        left, right = self.planning_payload(), self.planning_payload()
+        right['inclusionChanges'][0]['issueId'] = '102'
+        first, second = self.planning_overlap(lambda: self.planning_save(left), lambda: self.planning_save(right))
+        self.assertEqual((first['plan']['revision'], second['plan']['revision']), (1, 2))
+        self.assertEqual(self.planning_rows(), ([('17', 2)], [('101', True, 1), ('102', True, 1)], 2))
+
+    def test_planning_same_value_writers_converge_without_revision_bump(self):
+        self.planning_actor()
+        left, right = self.planning_payload(), self.planning_payload()
+        first, second = self.planning_overlap(lambda: self.planning_save(left), lambda: self.planning_save(right))
+        self.assertEqual((first['plan']['revision'], second['plan']['revision']), (1, 1))
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('101', True, 1)], 2))
+
+    def test_planning_aba_waiter_conflicts_and_rolls_back_disjoint_entry(self):
+        self.planning_actor()
+        self.planning_save(self.planning_payload())
+        remove = self.planning_payload()
+        remove['inclusionChanges'][0].update(included=False, baseRevision=1)
+        self.planning_save(remove)
+        include = self.planning_payload()
+        include['inclusionChanges'][0]['baseRevision'] = 2
+        stale = self.planning_payload()
+        stale['inclusionChanges'] = [{'issueId': '101', 'included': False, 'baseRevision': 0},
+                                     {'issueId': '102', 'included': True, 'baseRevision': 0}]
+        first, second = self.planning_overlap(lambda: self.planning_save(include), lambda: self.planning_save(stale))
+        self.assertEqual(first['plan']['revision'], 3)
+        self.assertIsInstance(second, review.ReviewError)
+        self.assertEqual((second.code, second.status), ('review_conflict', 409))
+        self.assertEqual(second.details['inclusionConflicts'], [{'issueId': '101', 'included': True, 'revision': 3}])
+        self.assertEqual(self.planning_rows(), ([('17', 3)], [('101', True, 3)], 3))
+
+    def test_planning_duplicate_operation_waiter_commits_once(self):
+        self.planning_actor()
+        payload = self.planning_payload()
+        first, second = self.planning_overlap(lambda: self.planning_save(payload), lambda: self.planning_save(payload))
+        self.assertEqual(second, {**first, 'status': 'committed'})
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('101', True, 1)], 1))
+
+    def test_planning_duplicate_operation_different_hash_waiter_conflicts(self):
+        self.planning_actor()
+        left = self.planning_payload()
+        right = {**left, 'inclusionChanges': [{'issueId': '102', 'included': True, 'baseRevision': 0}]}
+        first, second = self.planning_overlap(lambda: self.planning_save(left), lambda: self.planning_save(right))
+        self.assertEqual(first['plan']['revision'], 1)
+        self.assertIsInstance(second, review.ReviewError)
+        self.assertEqual((second.code, second.status), ('operation_id_reused', 409))
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('101', True, 1)], 1))
+
+    def test_planning_ack_failure_rolls_back_all_stores_before_waiter(self):
+        self.planning_actor()
+        left, right = self.planning_payload(), self.planning_payload()
+        left.update(schemaChanges=[{'action': 'add', 'column': self.column}, self.layout()],
+                    baseViewRevision=0, cellChanges=[self.cell('101')])
+        right['inclusionChanges'][0]['issueId'] = '102'
+        def fail(_value):
+            raise review.ReviewError('review_response_unavailable', 503, noCommit=True)
+        first, second = self.planning_overlap(lambda: self.planning_save(left, prepare_response=fail),
+                                              lambda: self.planning_save(right))
+        self.assertIsInstance(first, review.ReviewError)
+        self.assertEqual(first.code, 'review_response_unavailable')
+        self.assertEqual(second['plan']['revision'], 1)
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('102', True, 1)], 1))
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.query(models.GroupReviewCell).count(), 0)
+            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 0)
+        self.assertEqual(self.rows(), ([('group-x', 0, [])], []))
+
+    def test_planning_group_changed_after_authorization_rejects_without_writes(self):
+        self.planning_actor()
+        search = self.planning_search
+        changed = False
+        def drift(payload, **kwargs):
+            nonlocal changed
+            result = search(payload, **kwargs)
+            if not changed:
+                changed = True
+                with db_engine.session_scope(self.url) as session:
+                    session.query(models.WorkspaceGroupConfig).filter_by(workspace_id=self.workspace_id).update(
+                        {'config_revision': models.WorkspaceGroupConfig.config_revision + 1})
+            return result
+        with patch.object(self, 'planning_search', side_effect=drift), self.assertRaises(review.ReviewError) as raised:
+            self.planning_save(self.planning_payload())
+        self.assertEqual(raised.exception.code, 'configuration_scope_changed')
+        self.assertEqual(self.planning_rows(), ([], [], 0))
+        self.assertEqual(self.rows(), ([], []))
+
+    def test_planning_namespace_writers_share_fence_but_not_plan_entries(self):
+        self.planning_actor()
+        left, right = self.planning_payload(), self.planning_payload()
+        right['configuration'] = {'id': 'delivery-synthetic', 'revision': 1,
+                                  'quarter': '2027Q1', 'digest': 'a' * 32}
+        first, second = self.planning_overlap(lambda: self.planning_save(left),
+            lambda: self.planning_save(right, admission=lambda: self.planning_admission('delivery-synthetic')))
+        self.assertEqual((first['plan']['revision'], second['plan']['revision']), (1, 1))
+        self.assertEqual(self.planning_rows(), ([('17', 1), ('17', 1)], [('101', True, 1), ('101', True, 1)], 2))
+        with db_engine.session_scope(self.url) as session:
+            namespaces = session.query(models.WorkspaceGroupReviewSchema.configuration_id).all()
+            self.assertCountEqual(namespaces, [(None,), ('delivery-synthetic',)])
+
+    def planning_authority_drift(self, model, row, field, replacement):
+        """An independent committed authority change occurs between Jira and write locks."""
+        self.planning_actor()
+        with db_engine.session_scope(self.url) as session:
+            session.add(row)
+            session.flush()
+            row_id, captured = row.id, getattr(row, field)
+        def revalidate(session):
+            current = session.get(model, row_id, populate_existing=True)
+            if getattr(current, field) != captured:
+                raise review.ReviewError('configuration_scope_changed', 409, noCommit=True)
+        admission = self.planning_admission(revalidate=revalidate)
+        search = self.planning_search
+        changed = False
+        def drift(payload, **kwargs):
+            nonlocal changed
+            result = search(payload, **kwargs)
+            if not changed:
+                changed = True
+                with db_engine.session_scope(self.url) as session:
+                    setattr(session.get(model, row_id), field, replacement)
+            return result
+        with patch.object(self, 'planning_search', side_effect=drift), self.assertRaises(review.ReviewError) as raised:
+            self.planning_save(self.planning_payload(), admission=lambda: admission)
+        self.assertEqual(raised.exception.code, 'configuration_scope_changed')
+        self.assertEqual(self.planning_rows(), ([], [], 0))
+        self.assertEqual(self.rows(), ([], []))
+
+    def test_planning_configuration_changed_after_authorization_rejects(self):
+        self.planning_authority_drift(models.WorkspaceDashboardConfig,
+            models.WorkspaceDashboardConfig(workspace_id=self.workspace_id, payload={'board': {'boardId': '17'}},
+                                            config_revision=1), 'config_revision', 2)
+
+    def test_planning_board_publication_changed_after_authorization_rejects(self):
+        self.planning_authority_drift(models.WorkspaceSprintCatalog,
+            models.WorkspaceSprintCatalog(workspace_id=self.workspace_id, board_id='17',
+                sprints=[{'id': '17', 'name': 'Synthetic Sprint'}], validated_at=datetime.now(timezone.utc),
+                catalog_version=str(uuid.uuid4())), 'catalog_version', str(uuid.uuid4()))
+
+    def test_planning_unchanged_catalog_republication_after_authorization_rejects(self):
+        from backend.services.workspace_catalog_cache import ScopedSprintCatalogStore
+        from backend.services import workspace_catalog_cache
+        self.planning_actor()
+        store = ScopedSprintCatalogStore()
+        config = SimpleNamespace(sprint_identity='synthetic-source', source_digest='synthetic-digest', configuration_id=None)
+        sprints = [{'id': '17', 'name': 'Synthetic Sprint'}]
+        def publish(attempt):
+            self.assertTrue(store.begin(config.sprint_identity, attempt, workspace_id=self.workspace_id,
+                                        config_digest=config.source_digest, force=True))
+            self.assertTrue(store.publish(config.sprint_identity, attempt, sprints,
+                                         workspace_id=self.workspace_id, source_digest=config.source_digest))
+        publish('first')
+        proof = store.proof(config, '17')
+        admission = replace(self.planning_admission(), source_proof=proof)
+        search = self.planning_search
+        changed = False
+        def republish(payload, **kwargs):
+            nonlocal changed
+            result = search(payload, **kwargs)
+            if not changed:
+                changed = True
+                publish('second')
+            return result
+        with patch.object(workspace_catalog_cache, 'SCOPED_SPRINT_CATALOGS', store), \
+                patch.object(self, 'planning_search', side_effect=republish), self.assertRaises(review.ReviewError) as raised:
+            self.planning_save(self.planning_payload(), admission=lambda: admission)
+        self.assertEqual(raised.exception.code, 'configuration_scope_changed')
+        self.assertEqual(self.planning_rows(), ([], [], 0))
+        self.assertEqual(self.rows(), ([], []))
+
+    def test_planning_deadline_crossing_real_fence_wait_rolls_back_waiter(self):
+        self.planning_actor()
+        left, right = self.planning_payload(), self.planning_payload()
+        right['inclusionChanges'][0]['issueId'] = '102'
+        ticks = [0]
+        deadline = review.PlanningDeadline(clock=lambda: ticks[0])
+        original_locked = review._locked_schema
+        calls = []
+        def expire_waiter(*args, **kwargs):
+            row = original_locked(*args, **kwargs)
+            calls.append(current_thread())
+            if len(calls) == 2:
+                ticks[0] = 31
+            return row
+        with patch.object(review, '_locked_schema', side_effect=expire_waiter):
+            first, second = self.planning_overlap(lambda: self.planning_save(left),
+                lambda: self.planning_save(right, deadline=deadline))
+        self.assertEqual(first['plan']['revision'], 1)
+        self.assertIsInstance(second, review.ReviewError)
+        self.assertEqual(second.code, 'planning_deadline_exceeded')
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('101', True, 1)], 1))
+
+    def test_planning_store_guard_outlives_postgresql_commit_and_rollback(self):
+        from backend.services.workspace_catalog_cache import ScopedSprintCatalogStore
+        from backend.services import workspace_catalog_cache
+        self.planning_actor()
+        store = ScopedSprintCatalogStore()
+        config = SimpleNamespace(sprint_identity='synthetic-source', source_digest='synthetic-digest', configuration_id=None)
+        self.assertTrue(store.begin(config.sprint_identity, 'initial', workspace_id=self.workspace_id,
+                                    config_digest=config.source_digest))
+        self.assertTrue(store.publish(config.sprint_identity, 'initial', [{'id': '17', 'name': 'Synthetic Sprint'}],
+                                      workspace_id=self.workspace_id, source_digest=config.source_digest))
+        proof = store.proof(config, '17')
+        admission = replace(self.planning_admission(), source_proof=proof)
+        real_guard, observed = store.proof_guard, []
+        @contextlib.contextmanager
+        def observing_guard(current_proof, **kwargs):
+            with real_guard(current_proof, **kwargs) as matches:
+                try:
+                    yield matches
+                finally:
+                    # A separate PG transaction cannot see staged-but-uncommitted rows.
+                    self.assertTrue(store._lock.locked())
+                    with db_engine.session_scope(self.url) as session:
+                        observed.append((session.query(models.PlanningSaveOperation).count(),
+                                         session.query(models.GroupSprintPlanEntry).count()))
+        def fail(_value):
+            raise review.ReviewError('review_response_unavailable', 503, noCommit=True)
+        with patch.object(workspace_catalog_cache, 'SCOPED_SPRINT_CATALOGS', store), \
+                patch.object(store, 'proof_guard', side_effect=observing_guard):
+            self.planning_save(self.planning_payload(), admission=lambda: admission)
+            failed = self.planning_payload()
+            failed['inclusionChanges'][0]['issueId'] = '102'
+            with self.assertRaises(review.ReviewError) as raised:
+                self.planning_save(failed, admission=lambda: admission, prepare_response=fail)
+            self.assertEqual(raised.exception.code, 'review_response_unavailable')
+        self.assertEqual(observed, [(1, 1), (1, 1)])
+        self.assertFalse(store._lock.locked())
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('101', True, 1)], 1))
+
+    def test_planning_expiry_crossing_real_lock_wait_cannot_initialize(self):
+        self.planning_actor()
+        actual = datetime.now(timezone.utc)
+        left, right = self.planning_payload(), self.planning_payload()
+        left['inclusionChanges'][0]['issueId'] = '102'
+        right['inclusionChanges'][0]['issueId'] = '103'
+        with patch.object(review, 'datetime') as controlled:
+            ticks = [actual]
+            controlled.now.side_effect = lambda *_args: ticks[0]
+            # The holder commits before the test advances wall time; expiry happens at the waiter's locked-schema boundary.
+            original_locked = review._locked_schema
+            calls = []
+            def expire_waiter(*args, **kwargs):
+                row = original_locked(*args, **kwargs)
+                calls.append(current_thread())
+                if len(calls) == 2:
+                    ticks[0] = actual + timedelta(hours=25)
+                return row
+            with patch.object(review, '_locked_schema', side_effect=expire_waiter):
+                first, second = self.planning_overlap(lambda: self.planning_save(left), lambda: self.planning_save(right))
+        self.assertEqual(first['plan']['revision'], 1)
+        self.assertIsInstance(second, review.ReviewError)
+        self.assertEqual(second.code, 'operation_expired')
+        self.assertEqual(self.planning_rows(), ([('17', 1)], [('102', True, 1)], 1))
+
     def test_two_first_creations_of_the_group_schema_row(self):
         other = self.new_column('Other')
         first, second = self.overlap(lambda: self.add(), lambda: self.add(other))
@@ -219,7 +570,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         empty_statements, cell_statements = captured[:2], captured[2:]
         self.assertEqual(len(empty_statements), 2, captured)
         self.assertFalse([s for s in empty_statements if 'FOR UPDATE' in s.upper() or s.lstrip().upper().startswith(('INSERT', 'UPDATE'))])
-        # The capture does see the lock PostgreSQL keeps (SQLite drops the clause).
+        # The capture does see the row lock the cell save takes.
         self.assertTrue([s for s in cell_statements if 'FOR UPDATE' in s.upper()])
         self.assertEqual(cell['cells'][0]['revision'], 1)
         # While another writer holds the schema row lock, an empty PATCH still completes.
@@ -288,12 +639,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         holder = Thread(target=run)
         original = review.apply_schema
 
-        def paused(columns, changes):
+        def paused(columns, changes, *args):
             if current_thread() is holder:
                 entered.set()
                 if not release.wait(hold):
                     raise AssertionError('holder never released')
-            return original(columns, changes)
+            return original(columns, changes, *args)
 
         with patch.object(review, 'apply_schema', paused):
             holder.start()
@@ -513,7 +864,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
     # Migration
     def test_model_database_parity(self):
         insp = inspect(db_engine.get_engine(self.url))
-        for name in GROUP_TABLES + LEGACY_TABLES:
+        for name in GROUP_TABLES + LEGACY_TABLES + SHARED_PLAN_TABLES:
             with self.subTest(table=name):
                 table = models.Base.metadata.tables[name]
                 columns = {c['name']: c for c in insp.get_columns(name)}
@@ -583,8 +934,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertTrue(set(GROUP_TABLES) <= before)
         command.downgrade(self.config, '20261001_0018')
         after = set(inspect(engine).get_table_names())
-        # Downgrading below 0019 also removes the later assignee capacity table (#323).
-        dropped = set(GROUP_TABLES) | {'planning_team_sprint_capacity'}
+        # Downgrading below 0019 also removes the later capacity, shared-plan and CSRF token tables.
+        dropped = set(GROUP_TABLES + SHARED_PLAN_TABLES) | {'planning_team_sprint_capacity', 'browser_csrf_tokens'}
         self.assertEqual(before - after, dropped)
         self.assertEqual(after, before - dropped)
         self.assertEqual(legacy_rows(), expected)
@@ -703,7 +1054,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         indexes = shape()
         with self.assertRaisesRegex(RuntimeError, 'Refusing to downgrade'):
             command.downgrade(self.config, '20261028_0021')
-        self.assertEqual(self.stamped(), '20261030_0022')
+        self.assertEqual(self.stamped(), HEAD_REVISION)
         self.assertEqual(shape(), indexes)
         with db_engine.session_scope(self.url) as session:
             session.execute(text('DELETE FROM workspace_group_review_schemas WHERE configuration_id IS NOT NULL'))
@@ -756,7 +1107,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         column = self.seed_review_legacy()
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261030_0022')
+        self.assertEqual(self.stamped(), HEAD_REVISION)
         self.assertEqual(self.rows(), ([('group-x', 1, [column['id']])],
                                        [('17', 1, {'story': {'order': ['status', column['id']], 'hidden': []}})]))
         loaded = review.load_review(self.context, '17', 'group-x', self.url)
@@ -780,7 +1131,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.assertEqual(self.stamped(), PARENT_REVISION)
         self.assertEqual(self.rows(), ([], []))
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261030_0022')
+        self.assertEqual(self.stamped(), HEAD_REVISION)
         self.assertEqual(len(self.rows()[0]), 1)
 
     def test_a_later_workspace_failure_rolls_back_the_earlier_workspace(self):
@@ -803,8 +1154,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             conn.close()
         self.assertEqual(self.stamped(), PARENT_REVISION)
         with db_engine.session_scope(self.url) as session:  # the first workspace's adoption was rolled back with the failure
-            self.assertEqual(session.query(models.WorkspaceGroupReviewSchema).count(), 0)
-            self.assertEqual(session.query(models.GroupSprintReviewView).count(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM workspace_group_review_schemas')).scalar(), 0)
+            self.assertEqual(session.execute(text('SELECT count(*) FROM group_sprint_review_views')).scalar(), 0)
         command.upgrade(self.config, 'head')
         with db_engine.session_scope(self.url) as session:
             self.assertEqual(sorted(row.workspace_id for row in session.query(models.WorkspaceGroupReviewSchema).all()),
@@ -842,6 +1193,7 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
 
     def test_session_timeouts_are_restored_inside_the_transaction_and_set_for_the_step(self):
+        self.rewind()  # Exercise the adoption revision against its historical input schema.
         revision = self.revision_module()
         self.seed_review_legacy()
         seen = {}
@@ -866,10 +1218,11 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         self.rewind()
         self.seed_review_legacy(column=self.legacy_column(archived=True), plain=True)  # an archive intent plans nothing
         command.upgrade(self.config, 'head')
-        self.assertEqual(self.stamped(), '20261030_0022')
+        self.assertEqual(self.stamped(), HEAD_REVISION)
         self.assertEqual(self.rows(), ([], []))
 
     def test_the_revision_takes_the_same_schema_row_lock_as_the_app(self):
+        self.rewind()
         revision = self.revision_module()
         engine = db_engine.get_engine(self.url)
         statements = []
@@ -879,13 +1232,15 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
 
         event.listen(engine, 'before_cursor_execute', capture)
         try:
-            with db_engine.session_scope(self.url) as session:
-                review._locked_schema(session, SimpleNamespace(workspace_id=self.workspace_id), 'app-group')
-            app = list(statements)
-            del statements[:]
             with engine.begin() as conn:
-                revision._locked_schema(conn, self.workspace_id, 'rev-group')
+                historical_row = revision._locked_schema(conn, self.workspace_id, 'lock-proof-group')
             ours = list(statements)
+            command.upgrade(self.config, 'head')
+            del statements[:]
+            with db_engine.session_scope(self.url) as session:
+                current_row = review._locked_schema(session, self.context, 'lock-proof-group')
+                current_id = current_row.id
+            app = list(statements)
         finally:
             event.remove(engine, 'before_cursor_execute', capture)
 
@@ -896,8 +1251,13 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
                     'workspace_group_review_schemas.workspace_id = %(' in select.replace('$1', '%(')
                     or 'workspace_id = ' in select, select.endswith('for update'))
 
-        self.assertEqual(shape(ours), shape(app))
-        self.assertEqual(shape(app)[0], '(workspace_id, group_id) do nothing')
+        # Namespace migration changes the unique arbiter, while retaining the
+        # same physical NULL-Legacy group row as the current app's common fence.
+        self.assertEqual(str(historical_row.id), str(current_id))
+        self.assertEqual(shape(ours)[1:], shape(app)[1:])
+        self.assertEqual(shape(ours), ('(workspace_id, group_id) do nothing', True, True, True))
+        self.assertEqual(shape(app), ('do nothing', True, True, True))
+        self.assertTrue(any('configuration_id is null' in statement for statement in app))
 
     def test_a_well_formed_downgrade_below_the_group_tables_adopts_again(self):
         column = self.seed_review_legacy()

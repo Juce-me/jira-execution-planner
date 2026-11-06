@@ -3,7 +3,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
 
 ENABLED_ENV = {
@@ -16,13 +16,10 @@ ENABLED_ENV = {
 
 class AnalyticsRoutesTests(unittest.TestCase):
     def setUp(self):
+        set_up_db_oauth(self)
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
         self.client = jira_server.app.test_client()
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
 
     def test_disabled_context_is_compact_no_store_and_public(self):
         with patch.dict("os.environ", {"GA4_ENABLED": "false"}, clear=False):
@@ -38,20 +35,13 @@ class AnalyticsRoutesTests(unittest.TestCase):
             "ga4UserId": None,
         })
 
-    def test_enabled_context_for_basic_local_never_includes_user_id(self):
+    def test_retired_basic_profile_blocks_public_analytics(self):
         with patch.dict("os.environ", ENABLED_ENV, clear=False), \
              patch.object(jira_server, "JIRA_AUTH_MODE", jira_server.AUTH_MODE_BASIC):
             response = self.client.get("/api/analytics/context")
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.headers.get("Cache-Control"), "no-store")
-        self.assertEqual(response.get_json(), {
-            "enabled": True,
-            "gtmContainerId": "GTM-NZJW2CFN",
-            "measurementId": "G-6QERX19WB0",
-            "debugMode": False,
-            "ga4UserId": None,
-        })
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_enabled_context_for_oauth_without_session_does_not_hash_identity(self):
         with patch.dict("os.environ", ENABLED_ENV, clear=False), \
@@ -98,8 +88,8 @@ class AnalyticsRoutesTests(unittest.TestCase):
                 validate_analytics_startup_config()
 
     def test_jira_server_startup_validation_fails_closed_for_invalid_enabled_analytics(self):
-        with patch.dict("os.environ", {"GA4_ENABLED": "true", "CONFIG_STORAGE_BACKEND": "jsonfile"}, clear=True), \
-             patch.object(jira_server, "JIRA_AUTH_MODE", jira_server.AUTH_MODE_BASIC), \
+        with patch.dict("os.environ", {"GA4_ENABLED": "true", "CONFIG_STORAGE_BACKEND": "db"}, clear=True), \
+             patch.object(jira_server, "JIRA_AUTH_MODE", jira_server.AUTH_MODE_ATLASSIAN_OAUTH), \
              patch.object(jira_server, "JIRA_URL", "https://example.atlassian.net"), \
              patch.object(jira_server, "JIRA_EMAIL", "user@example.com"), \
              patch.object(jira_server, "JIRA_TOKEN", "token"):

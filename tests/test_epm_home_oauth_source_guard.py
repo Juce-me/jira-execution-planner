@@ -118,16 +118,22 @@ class ForbiddenPathBehaviorTests(unittest.TestCase):
             def enter(runner, stack, fixture, transports):
                 super().enter(stack, fixture, transports)
                 for target, name in patches:
-                    stack.enter_context(patch.object(target, name, self.boom(f'{target.__name__}.{name}')))
+                    if hasattr(target, name):
+                        stack.enter_context(patch.object(target, name, self.boom(f'{target.__name__}.{name}')))
+                local_store = getattr(jira_server, '_LOCAL_OAUTH_STORE', None)
                 for method in ('session_data', 'session_data_for_id', 'save_session', 'save_session_for_id',
                                'refresh_lock', 'refresh_lock_for_id', 'existing_refresh_lock'):
-                    if hasattr(jira_server._LOCAL_OAUTH_STORE, method):
+                    if local_store is not None and hasattr(local_store, method):
                         stack.enter_context(patch.object(
-                            jira_server._LOCAL_OAUTH_STORE, method, self.boom(f'_LOCAL_OAUTH_STORE.{method}')))
+                            local_store, method, self.boom(f'_LOCAL_OAUTH_STORE.{method}')))
 
         return Armed
 
     def test_every_epm_read_route_runs_with_all_forbidden_paths_patched_to_raise(self):
+        for name in ('_home_basic_credentials', 'build_teamwork_graph_client',
+                     'build_home_graphql_client', '_read_metadata_credential'):
+            self.assertFalse(hasattr(home, name), name)
+        self.assertFalse(hasattr(jira_server, '_LOCAL_OAUTH_STORE'))
         patches = (
             (home, '_home_basic_credentials'), (home, 'build_teamwork_graph_client'),
             (home, 'build_home_graphql_client'), (home, '_read_metadata_credential'),

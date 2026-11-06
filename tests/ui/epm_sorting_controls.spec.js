@@ -109,7 +109,7 @@ test('EPM sort control pins recently completed projects and reorders active boar
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',
-                authMode: 'basic',
+                authMode: 'atlassian_oauth', epmViewEnabled: true, epmHomeReadAvailable: true,
                 projectsConfigured: true,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
@@ -117,8 +117,9 @@ test('EPM sort control pins recently completed projects and reorders active boar
                 epm: epmConfig,
             });
         }
+        if (url.pathname === '/api/epm/access') return json({ state: 'available', epmHomeReadAvailable: true });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
-        if (url.pathname === '/api/auth/status') return json({ authMode: 'basic', authenticated: true });
+        if (url.pathname === '/api/auth/status') return json({ authMode: 'atlassian_oauth', authenticated: true });
         if (url.pathname === '/api/version') return json({ enabled: false });
         if (url.pathname === '/api/groups-config') return json({ version: 1, groups: [], defaultGroupId: '', source: 'test' });
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });

@@ -12,7 +12,8 @@ from backend.services import request_performance as perf
 class RequestPerformanceTests(unittest.TestCase):
     def setUp(self):
         self.app = Flask(__name__)
-        environment = patch.dict(os.environ, {'DATABASE_URL': 'sqlite://'})
+        # Collection only needs a configured database URL; these tests never connect to it.
+        environment = patch.dict(os.environ, {'DATABASE_URL': 'postgresql+psycopg://synthetic@localhost/synthetic'})
         environment.start()
         self.addCleanup(environment.stop)
 
@@ -72,8 +73,8 @@ class RequestPerformanceTests(unittest.TestCase):
 
     def test_real_tasks_cache_does_not_leak_debug_metrics(self):
         import jira_server as server
-        from tests.auth_mode_test_utils import force_basic_auth_mode
-        force_basic_auth_mode(self, server)
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, server)
         values = {'build_base_jql': 'project = TEST', 'get_configured_issue_types': [],
                   'resolve_team_field_id': 'customfield_team', 'resolve_epic_link_field_id': 'customfield_epic',
                   'get_sprint_field_id': 'customfield_sprint', 'load_dashboard_config': {},
@@ -100,8 +101,8 @@ class RequestPerformanceTests(unittest.TestCase):
 
     def test_worker_reaches_real_jira_auth_wrapper_without_flask_context(self):
         import jira_server as server
-        from tests.auth_mode_test_utils import force_basic_auth_mode
-        force_basic_auth_mode(self, server)
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, server)
 
         def worker(context):
             self.assertFalse(has_request_context())
@@ -127,8 +128,8 @@ class RequestPerformanceTests(unittest.TestCase):
         import jira_server as server
         from backend.routes import eng_routes
         from backend.services.eng_board_stream import EngBoardRequestBudget, EngBoardRequestTransport
-        from tests.auth_mode_test_utils import force_basic_auth_mode
-        force_basic_auth_mode(self, server)
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, server)
 
         with server.app.test_request_context('/'):
             context = server.current_request_auth_context()

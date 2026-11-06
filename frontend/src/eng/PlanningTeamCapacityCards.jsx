@@ -505,10 +505,10 @@ export default function PlanningTeamCapacityCards({
     const futureSprintUsesPlanned = Boolean(plannedEntry?.capacitySource === 'planned');
 
     return (
-        <section className="planning-team-capacity-cards" aria-label="Selected story points by team">
+        <section className="planning-team-capacity-cards" aria-label="Planned story points by team">
             <div className="planning-stats compact planning-team-capacity-heading">
                 <div className="planning-stat">
-                    <span className="planning-stat-label">Selected SP by Team:</span>
+                    <span className="planning-stat-label">Planned SP by Team:</span>
                 </div>
             </div>
             {capacityReadError && (

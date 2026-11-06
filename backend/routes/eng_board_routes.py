@@ -19,7 +19,7 @@ from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
-from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
+from backend.services import eng_board, shared_group_config, workspace_dashboard_config
 from backend.services.eng_board_stream import (
     ENG_BOARD_PROTOCOL_VERSION, EngBoardChildScheduler, EngBoardRequestDeadline,
     EngBoardFrameError, EngBoardRequestTransport, EngBoardStreamWriter,
@@ -100,9 +100,7 @@ class BoardSnapshot:
     scope_version: str
     scope_cohort_digest: str
     secret_key: bytes
-    adapter: str = 'db_oauth'
     focused_column_id: str | None = None
-    adapter_server: object | None = None
     work_request: object | None = None
     parent_clause: str = 'issuetype = Epic'
 
@@ -298,8 +296,6 @@ def _auth_partition(context):
 
 
 def _assert_current(snapshot):
-    if snapshot.adapter == 'basic_json':
-        return _assert_basic_snapshot_current(snapshot.adapter_server or get_jira_server(), snapshot)
     context = _context_from_browser_session(snapshot)
     if _auth_partition(context) != _auth_partition(snapshot.context):
         raise BoardScopeChanged('scope_changed')
@@ -311,31 +307,6 @@ def _assert_current(snapshot):
     if current != snapshot.scope_version:
         raise BoardScopeChanged('scope_changed')
     return context
-
-
-def _basic_request_checkpoint(server, snapshot, budget, *, phase):
-    cancelled = getattr(budget, 'cancelled', None)
-    if cancelled is not None and cancelled.is_set():
-        raise EngBoardRequestDeadline('request_cancelled')
-    budget.check(phase)
-    _assert_basic_snapshot_current(server, snapshot, checkpoint=phase)
-
-
-def _assert_basic_snapshot_current(server, snapshot, *, checkpoint='scope'):
-    del checkpoint
-    try:
-        current = eng_board_basic.capture_authority(
-            server, snapshot.query.department_id, snapshot.secret_key,
-        )
-    except eng_board_basic.BasicBoardCompatibilityError as error:
-        raise BoardScopeChanged('scope_changed') from error
-    current_version = eng_board.build_scope_version(
-        snapshot.secret_key, current.authority_payload,
-        token_version=current.credential_version,
-    )
-    if current_version != snapshot.scope_version:
-        raise BoardScopeChanged('scope_changed')
-    return None
 
 
 def _resolve_projects(server, dashboard_payload, context, transport):
@@ -358,7 +329,7 @@ def _resolve_projects(server, dashboard_payload, context, transport):
 def _run_catalog_reads(reads, *, concurrent):
     """Run independent catalog reads side by side; a failure is raised in the order the reads were given.
 
-    Only a captured auth context lets a worker thread call Jira, so the context-free Basic adapter stays serial.
+    Captured DB OAuth context is passed explicitly to every worker.
     """
     if not concurrent:
         return [read() for read in reads]
@@ -480,50 +451,6 @@ def _capture_snapshot(server, query, transport, secret_key):
         focused_column_id=shape['focused'], work_request=work_request,
         parent_clause=roles.parent_clause() if roles is not None else 'issuetype = Epic',
     )
-
-
-def _capture_basic_snapshot(server, query, transport, secret_key):
-    try:
-        captured = eng_board_basic.capture_authority(
-            server, query.department_id, secret_key,
-        )
-    except eng_board_basic.BasicBoardCompatibilityError as error:
-        raise BoardRouteError(error.code, error.status) from error
-    group = captured.group
-    shape = _capture_shape(
-        server, query, transport, captured.dashboard_payload, group, group, context=None,
-    )
-    scope_version = eng_board.build_scope_version(
-        secret_key, captured.authority_payload,
-        token_version=captured.credential_version,
-    )
-    cohort = eng_board.build_scope_version(secret_key, {
-        'adapter': 'basic_json',
-        'departmentId': query.department_id,
-        'dashboard': captured.dashboard_payload,
-        'group': group,
-        'projects': shape['projects'],
-        'fields': shape['fields'],
-        'issueTypeIds': shape['issueTypeIds'],
-        'components': shape['components'],
-        'teams': shape['teams'],
-        'board': shape['board'],
-        'scope': query.scope,
-        'sprintId': query.sprint_id,
-    }, token_version='basic-json-v1')
-    snapshot = BoardSnapshot(
-        query, None, '', '', captured.authority_payload, captured.dashboard_payload,
-        group, group, shape['board'], shape['projects'], shape['components'], shape['teams'],
-        shape['issueTypeIds'], shape['fields']['epicLink'], shape['fields']['sprint'],
-        shape['fields']['storyPoints'], shape['fields']['team'], shape['fields']['projectTrack'],
-        shape['fields']['deliveryOwner'], scope_version, cohort, secret_key,
-        adapter='basic_json', focused_column_id=shape['focused'], adapter_server=server,
-    )
-    try:
-        _assert_basic_snapshot_current(server, snapshot, checkpoint='preheader')
-    except BoardScopeChanged as error:
-        raise BoardRouteError('scope_changed', 409) from error
-    return snapshot
 
 
 def _wire_columns(board):
@@ -695,18 +622,12 @@ def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, compl
 
 
 def _search_page(server, snapshot, transport, payload, timeout):
-    if snapshot.adapter == 'basic_json':
-        _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
     response = server.current_jira_search(
         payload, context=snapshot.context,
         timeout=timeout[1] if isinstance(timeout, tuple) else timeout,
         diagnostic_transport=transport,
     )
-    if snapshot.adapter == 'basic_json':
-        _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
     if response.status_code == 401:
-        if snapshot.adapter == 'basic_json':
-            raise BoardJiraUnavailable('jira_unavailable')
         raise AuthError('auth_required', 'Atlassian authentication is required.')
     if response.status_code != 200:
         raise BoardJiraUnavailable('jira_unavailable')
@@ -1129,8 +1050,6 @@ def get_eng_board():
     except BoardRouteError as error:
         return _unavailable() if error.code == 'board_unavailable' else _error(error.code, error.status)
     except AuthError:
-        if auth_mode == 'basic':
-            return _unavailable()
         payload, status = server.oauth_auth_required_payload()
         return jsonify(payload), status
     except eng_board.EngBoardError as error:

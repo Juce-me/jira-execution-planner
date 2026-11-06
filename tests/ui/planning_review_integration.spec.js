@@ -4,6 +4,8 @@ const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
+const { createPlanningReviewMock } = require('./planning_review_mock');
+const sharedReviewMocks = new WeakMap();
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -16,7 +18,7 @@ const secondFutureSprintName = '2026Q3 Sprint 2';
 const completedSprintId = 2001;
 const completedSprintName = '2026Q1 Sprint 9';
 const groupTeamIds = ['team-alpha'];
-let dashboardJs;
+let dashboardJs, dashboardCss;
 
 test.beforeAll(() => {
     fs.mkdirSync(path.join(repoRoot, 'tmp', '217-ui'), { recursive: true });
@@ -29,13 +31,18 @@ test.beforeAll(() => {
         define: { 'process.env.NODE_ENV': '"test"' },
     });
     dashboardJs = result.outputFiles[0].text;
+    dashboardCss = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'styles', 'dashboard.css')],
+        bundle: true, write: false,
+    }).outputFiles[0].text;
 });
 
 function json(route, body, status = 200) {
+    const planning = sharedReviewMocks.get(route.request().frame().page());
     return route.fulfill({
         status,
         contentType: 'application/json',
-        body: JSON.stringify(body),
+        body: JSON.stringify(planning ? planning.response(route.request(), body, status) : body),
     });
 }
 
@@ -45,6 +52,12 @@ function requestBody(request) {
     } catch (err) {
         return null;
     }
+}
+
+async function clickPlanningOption(page, name) {
+    const command = page.getByRole('button', { name, exact: true });
+    if (!await command.isVisible()) await page.getByRole('button', { name: 'Planning options', exact: true }).click();
+    await command.click();
 }
 
 // The Department group a review request is scoped to: the GET query, or the values-read/PATCH body.
@@ -107,7 +120,7 @@ async function installPlanningFixture(page, {
     delayConfig = false,
     shellAuthDependency = '',
     onboardingRequired = false,
-    authMode = 'basic',
+    authMode = 'atlassian_oauth',
     summary = '',
     scopeTeamIds = groupTeamIds,
     capacityProject = '',
@@ -115,6 +128,7 @@ async function installPlanningFixture(page, {
     longTable = false,
     groups = 1,
     selectedTeams = null,
+    initialPlans = {},
 } = {}) {
     const calls = [];
     let futureProductTaskAttempts = 0;
@@ -159,11 +173,15 @@ async function installPlanningFixture(page, {
     };
 
     await installDashboardShell(page);
+    sharedReviewMocks.set(page, createPlanningReviewMock({ initialPlans }));
     if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), {planningLayout, ...(selectedTeams ? {selectedTeams, activeGroupId: 'group-alpha'} : {})});
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
         body: dashboardJs,
+    }));
+    await page.route('**/frontend/dist/dashboard.css', route => route.fulfill({
+        status: 200, contentType: 'text/css', body: dashboardCss,
     }));
     await page.route('**/api/**', async route => {
         const request = route.request();
@@ -236,6 +254,10 @@ async function installPlanningFixture(page, {
             return json(route, groupsConfigPayload);
         }
         if (url.pathname === '/api/projects/selected') return json(route, { selected: [] });
+        if (url.pathname === '/api/board-config') return json(route, { boardId: '1', boardName: 'Synthetic board', configRevision: 1 });
+        if (url.pathname === '/api/capacity/config') return json(route, { project: capacityProject, fieldId: capacityProject ? 'customfield_capacity' : '', fieldName: capacityProject ? 'Capacity' : '', mutationEnabled: Boolean(capacityProject), configRevision: 1 });
+        if (/^\/api\/(sprint-field|parent-name-field|story-points-field|team-field|delivery-owner-field)\/config$/.test(url.pathname)) return json(route, { fieldId: '', fieldName: '', configRevision: 1 });
+        if (url.pathname === '/api/issue-types/config') return json(route, { issueTypes: ['Story'], configRevision: 1 });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
         if (url.pathname === '/api/sprints') {
             return json(route, {
@@ -281,12 +303,16 @@ async function installPlanningFixture(page, {
                 names: {},
             });
         }
+        if (url.pathname === '/api/eng/story-readiness') return json(route, { schemaVersion: 1, complete: true,
+            scope: { groupId: url.searchParams.get('groupId'), sprintId: url.searchParams.get('sprint'),
+                sprintName: url.searchParams.get('sprintName'), sprintState: url.searchParams.get('sprintState') }, epics: [] });
         if (url.pathname === '/api/missing-info') return json(route, { issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
         // The Assignee Capacity strip (#323) reads only after it is expanded; an unconfigured store answers empty rather than 404.
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return json(route, { teamId: url.searchParams.get('teamId'), sprintId: url.pathname.split('/')[4], revision: 0, rows: [], inherited: null, capabilities: { canRead: true, canSave: true } });
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read|\/operations\/[^/]+)?$/.test(url.pathname)) return json(route, {});
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
     return {
@@ -316,15 +342,79 @@ async function bounds(page) {
         return [selector, r ? { x:r.x, width:r.width, y:r.y, height:r.height } : null];
     })));
 }
+
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`shared Planning controls retain stable labels, full-match actions and focus help at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    const fixture = await installPlanningFixture(page, { planningLayout: 'table', longTable: true });
+    await openPlanning(page, { expectStories: false });
+    await page.getByRole('radio', { name: 'Stories', exact: true }).check();
+    const panel = page.locator('.planning-panel');
+    const select = panel.getByRole('button', { name: 'Select All', exact: true });
+    const clear = panel.getByRole('button', { name: 'Clear Selection', exact: true });
+    const undo = panel.getByRole('button', { name: 'Undo', exact: true });
+    const checkboxes = page.locator('.planning-review-table tbody input[type=checkbox]');
+    const scopeHelp = 'Applies to all stories matching the current Team and filters, including rows below.';
+    await expect(select).toBeEnabled();
+    await expect(clear).toBeDisabled();
+    await expect(undo).toBeDisabled();
+    await expect(checkboxes).toHaveCount(60);
+    await expect(panel).toContainText('No saved plan yet. Include stories to preview capacity, then save your plan.');
+    await expect(panel.locator(':scope > .planning-stats')).toHaveText('Capacity: unavailable');
+    await clear.evaluate(node => node.click());
+    await expect(undo).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+    await page.keyboard.press('Tab');
+    await expect(select).toBeFocused();
+    await expect(page.getByRole('tooltip').filter({ hasText: scopeHelp })).toBeVisible();
+    expect(await select.evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(scopeHelp);
+    const originalHeight = await page.locator('.planning-review-table tbody tr').first().evaluate(node => node.getBoundingClientRect().height);
+    await select.click();
+    await expect(page.locator('.planning-review-table tbody input[type=checkbox]:checked')).toHaveCount(60);
+    await expect(select).toBeDisabled();
+    await select.evaluate(node => node.click());
+    await expect(clear).toBeEnabled();
+    await expect(undo).toBeEnabled();
+    await expect(panel).toContainText('Planned stories: 60');
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeVisible();
+    await page.mouse.move(0, 0);
+    await page.keyboard.press('Tab');
+    await clear.focus();
+    await expect(page.getByRole('tooltip').filter({ hasText: scopeHelp })).toHaveCount(1);
+    await expect(page.getByRole('tooltip').filter({ hasText: scopeHelp })).toBeVisible();
+    expect(await clear.evaluate(node => document.getElementById(node.getAttribute('aria-describedby'))?.textContent)).toBe(scopeHelp);
+    await undo.click();
+    await expect(page.locator('.planning-review-table tbody input[type=checkbox]:checked')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+    await panel.getByRole('button', { name: 'Planning options', exact: true }).click();
+    const menu = page.getByRole('dialog', { name: 'Planning options', exact: true });
+    await expect(menu).toBeVisible();
+    await expect(menu).toContainText('Include by status');
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+    expect(await menu.evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && node.contains(document.elementFromPoint(r.left + 12, r.top + 12)); })).toBe(true);
+    await menu.getByRole('button', { name: 'Include To Do / Pending', exact: true }).click();
+    await expect(page.locator('.planning-review-table tbody input[type=checkbox]:checked')).toHaveCount(60);
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(panel).toContainText('Plan saved');
+    expect(fixture.calls.filter(call => call.method === 'PATCH' && /\/review$/.test(call.pathname))).toHaveLength(1);
+    await clickPlanningOption(page, 'Show capacity details');
+    await expect(select).toBeVisible(); await expect(clear).toBeVisible(); await expect(undo).toBeVisible();
+    await clickPlanningOption(page, 'Hide capacity details');
+    await expect(select).toBeVisible(); await expect(clear).toBeVisible(); await expect(undo).toBeVisible();
+    expect(await page.locator('.planning-review-table tbody tr').first().evaluate(node => node.getBoundingClientRect().height)).toBe(originalHeight);
+    expect(originalHeight).toBeGreaterThanOrEqual(32);
+    expect(originalHeight).toBeLessThan(33);
+    await page.screenshot({ path: `tmp/217-ui/shared-planning-controls-${width}x${height}.png`, fullPage: false });
+});
+
 test('Planning switch preserves selection, header geometry and loaded datasets', async ({ page }) => {
-    const fixture = await installPlanningFixture(page);
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false,reason:'Shared review saving requires database-backed OAuth.'} }));
+    const fixture = await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
     await openPlanning(page);
+    await expect(page.locator('.task-list input.task-checkbox:checked')).toHaveCount(futureStories.length);
     const before = await bounds(page);
     const loads = fixture.calls.filter(call => ['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies','/api/eng/board'].includes(call.pathname)).length;
     const selected = await page.locator('.task-list input.task-checkbox:checked').count();
     await page.screenshot({ path:'tmp/217-ui/planning-review-list-before.png',fullPage:true });
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
     const after=await bounds(page);
     expect(after['.header']).toEqual(before['.header']);
@@ -333,14 +423,15 @@ test('Planning switch preserves selection, header geometry and loaded datasets',
     expect(fixture.calls.filter(call => ['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies','/api/eng/board'].includes(call.pathname)).length).toBe(loads);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(selected);
-    // Without a saving-capable profile the column controls are present but disabled, as the old + Column button was.
-    await expect(page.getByRole('button',{name:'+ Add column',exact:true})).toBeDisabled();
-    await expect(page.getByRole('button',{name:'Status column options',exact:true})).toBeDisabled();
+    // Switching presentation preserves the authenticated shared plan without creating a draft.
+    await expect(page.getByRole('button',{name:'+ Add column',exact:true})).toBeEnabled();
+    await expect(page.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
     await page.screenshot({ path:'tmp/217-ui/planning-review-table-after.png',fullPage:true });
-    await page.getByRole('button',{name:'Show panel',exact:true}).click();
-    await page.getByRole('button',{name:'Clear Selected',exact:true}).click();
+    await clickPlanningOption(page, 'Show capacity details');
+    await page.getByRole('button',{name:'Clear Selection',exact:true}).click();
+    await page.getByRole('button', { name: 'Planning options', exact: true }).click();
     await expect(page.getByRole('button',{name:'Show Planning list',exact:true})).toBeEnabled();
-    await page.getByRole('button',{name:'Show Planning list',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning list');
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
     expect(await page.locator('.task-list input.task-checkbox:checked').count()).toBe(0);
 });
@@ -351,7 +442,7 @@ test('the app-header Refresh also reloads the shared review', async ({ page }) =
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { reads += 1; return json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }); });
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await expect.poll(() => reads).toBeGreaterThan(0);
     // A review that is still loading is already current, so the header Refresh leaves it alone; wait for it to settle first.
     await expect(page.locator('.planning-review-state-note',{hasText:'Loading…'})).toHaveCount(0);
@@ -365,19 +456,19 @@ test('dirty noninitial Sprint review survives Jira catalog refresh and guards an
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
     await page.getByLabel('Column name',{exact:true}).fill('Synthetic review');
     await page.getByRole('button',{name:'Add column',exact:true}).click();
-    await expect(page.getByRole('button',{name:'Save review',exact:true})).toBeEnabled();
+    await expect(page.getByRole('button',{name:'Save plan',exact:true})).toBeEnabled();
     await page.getByRole('button',{name:'Refresh tasks and sprints from Jira',exact:true}).click();
     await expect(page.locator('.sprint-dropdown').first()).toContainText('2026Q3');
     await expect(page.getByRole('textbox',{name:'Synthetic review for PLAN-EPIC',exact:true})).toBeVisible();
-    await expect(page.getByRole('button',{name:'Save review',exact:true})).toBeEnabled();
+    await expect(page.getByRole('button',{name:'Save plan',exact:true})).toBeEnabled();
     const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
     await toggle.click();
     await page.locator('.sprint-dropdown-option',{hasText:secondFutureSprintName}).click();
-    await expect(page.getByRole('dialog',{name:'Save this Sprint review?'})).toBeVisible();
+    await expect(page.getByRole('dialog',{name:'Save this plan?'})).toBeVisible();
     await page.getByRole('button',{name:'Stay',exact:true}).click();
     await expect(page.getByRole('textbox',{name:'Synthetic review for PLAN-EPIC',exact:true})).toBeVisible();
 });
@@ -391,53 +482,58 @@ test('catalog capability loss preserves drafts and recovery invalidates a queued
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
     await page.getByLabel('Column name',{exact:true}).fill('Preserved draft');
     await page.getByRole('button',{name:'Add column',exact:true}).click();
     unavailable = true;
     await page.getByRole('button',{name:'Refresh tasks and sprints from Jira',exact:true}).click();
-    await expect(page.getByRole('dialog',{name:'Save this Sprint review?'})).toBeVisible();
+    await expect(page.getByRole('dialog',{name:'Save this plan?'})).toBeVisible();
     unavailable = false;
     // Simulate a concurrent external catalog refresh finishing while the leave
     // decision remains pending, rather than interacting through the modal.
     await page.evaluate(() => document.querySelector('[aria-label="Refresh tasks and sprints from Jira"]').click());
     await expect(page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle')).toHaveAttribute('aria-disabled','false');
-    await page.getByRole('dialog',{name:'Save this Sprint review?'}).getByRole('button',{name:'Discard',exact:true}).click();
+    await page.getByRole('dialog',{name:'Save this plan?'}).getByRole('button',{name:'Discard changes',exact:true}).click();
     await expect(page.locator('.sprint-dropdown').first()).toContainText('2026Q3');
     await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
 });
 
 test('review 401 locks the mounted dashboard and never replays the failed read', async ({ page }) => {
-    await installPlanningFixture(page);
-    let reviewReads = 0;
+    await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
+    let reviewReads = 0, expired = false;
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => {
         reviewReads++;
-        return json(route, {error:'auth_required',loginUrl:'https://unsafe.example/login'}, 401);
+        return expired ? json(route, {error:'auth_required',loginUrl:'https://unsafe.example/login'}, 401)
+            : json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: true } });
     });
-    await openPlanning(page);
-    const selected = await page.locator('.task-list input.task-checkbox:checked').count();
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page, { expectStories: false });
+    await expect(page.locator('.planning-review-table tbody input[type=checkbox]:checked')).toHaveCount(1);
+    await page.waitForLoadState('networkidle');
+    const before = reviewReads;
+    expired = true;
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click();
     await expect(page.getByRole('alertdialog').getByRole('link',{name:'Sign in again'})).toHaveAttribute('href','/login?reason=session_expired');
     await expect(page.getByRole('region',{name:'Planning Sprint review',includeHidden:true})).toHaveCount(1);
-    expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(selected > 0 ? 1 : 0);
+    expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(1);
     await page.evaluate(() => {
         window.dispatchEvent(new Event('focus'));
         document.dispatchEvent(new Event('visibilitychange'));
     });
-    expect(reviewReads).toBe(1);
+    expect(reviewReads).toBe(before + 1);
 });
 
-for (const authMode of ['basic', 'atlassian_oauth']) test(`table status chips retain shared presentation in ${authMode}`, async ({ page }) => {
-    await installPlanningFixture(page, {authMode});
+for (const passive of [true, false]) test(`table status chips retain shared presentation with Settings ${passive ? 'open' : 'closed'}`, async ({ page }) => {
+    await installPlanningFixture(page);
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, {schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
+    if (passive) await page.getByRole('button', { name: /manage team groups/i }).click();
     const chip = page.locator('.planning-review-status .task-status').first();
     await expect(chip).toBeVisible();
     expect(await chip.evaluate(node => node.getBoundingClientRect().height)).toBeLessThan(30);
     await expect(chip).toHaveCSS('background-color','rgb(105, 192, 255)');
-    if (authMode === 'atlassian_oauth') {
+    if (!passive) {
         await page.locator('.planning-review-scroll').evaluate(node=>node.scrollIntoView({block:'center'}));
         await chip.hover();
         await expect(chip).toHaveCSS('background-color','rgb(105, 192, 255)');
@@ -456,7 +552,7 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
         return json(route, { value: savedPoints, result: 'updated', mappingRevision: 'synthetic' });
     });
     await openPlanning(page);
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await clickPlanningOption(page, 'Show Planning table');
     const table = page.locator('.planning-review-table');
     const epic = table.locator('tbody tr[data-issue-key="PLAN-EPIC"]');
     const epicHeight = await epic.evaluate(node => node.getBoundingClientRect().height);
@@ -507,7 +603,7 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
     await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await page.route('**/api/issues/PLAN-1/field',route=>{saved=route.request().postDataJSON();return json(route,{value:saved.value,result:'updated',mappingRevision:'synthetic'});});
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const table=page.locator('.planning-review-table');
     const points=table.locator('tbody tr').filter({has:page.getByRole('link',{name:'PLAN-1',exact:true})}).getByRole('textbox',{name:'Story Points',exact:true});
@@ -540,7 +636,7 @@ test('Planning table Story Points save two decimals, round a third before the si
     const bodies=[];
     await page.route('**/api/issues/PLAN-1/field',route=>{const body=route.request().postDataJSON();bodies.push(body);return json(route,{value:body.value,result:'updated',mappingRevision:'synthetic'});});
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const table=page.locator('.planning-review-table');
     const points=table.locator('tbody tr[data-issue-key="PLAN-1"]').getByRole('textbox',{name:'Story Points',exact:true});
@@ -566,28 +662,32 @@ test('Planning table Story Points save two decimals, round a third before the si
     expect(bodies).toHaveLength(2);
 });
 
-for (const authMode of ['basic','atlassian_oauth']) for(const width of [390,1280]) test(`summaries truncate and reveal the full text without losing editing in ${authMode} at ${width}px`, async ({page})=>{
+for (const passive of [true,false]) for(const width of [390,1280]) test(`summaries truncate and reveal the full text with Settings ${passive ? 'open' : 'closed'} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{authMode,summary});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
-    await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page);await clickPlanningOption(page, 'Show Planning table');
     const cell=page.locator('tbody .planning-review-summary').first();
-    if(authMode==='atlassian_oauth') await expect(cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true})).toHaveText(summary);
-    else await expect(cell).toHaveText(summary);
+    if(passive) {
+        await page.getByRole('button',{name:/manage team groups/i}).click();
+        await expect(page.getByRole('dialog').first()).toBeVisible();
+        await expect(cell).toHaveText(summary);
+    } else await expect(cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true})).toHaveText(summary);
     const value=cell.locator('.planning-review-truncated-value');
-    const target=authMode==='atlassian_oauth'?cell.locator('.issue-summary-editor-trigger'):value;
+    const target=passive?value:cell.locator('.issue-summary-editor-trigger');
     expect(await target.evaluate(node=>({clipped:node.scrollWidth>node.clientWidth+1,ellipsis:getComputedStyle(node).textOverflow,whiteSpace:getComputedStyle(node).whiteSpace}))).toEqual({clipped:true,ellipsis:'ellipsis',whiteSpace:'nowrap'});
-    await target.hover();const readout=page.getByRole('tooltip').filter({hasText:summary});await expect(readout).toBeVisible();
+    if(passive) await target.focus(); else await target.hover();
+    const readout=page.getByRole('tooltip').filter({hasText:summary});await expect(readout).toBeVisible();
     expect(await readout.evaluate(node=>{const r=node.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth&&node.contains(document.elementFromPoint(r.left+5,r.top+5));})).toBe(true);
     await target.focus();await expect(readout).toBeVisible();await target.press('Escape');await expect(readout).toHaveCount(0);
-    if(authMode==='atlassian_oauth'){
+    if(!passive){
         const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
         await trigger.focus();await trigger.press('Enter');
         const editor=page.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});await expect(editor).toHaveValue(summary);await expect(readout).toHaveCount(0);await editor.press('Escape');await expect(trigger).toBeFocused();
     }
-    await page.screenshot({path:`tmp/217-ui/planning-review-summary-${authMode}-${width}.png`,fullPage:true});
+    await page.screenshot({path:`tmp/217-ui/planning-review-summary-${passive?'passive':'editing'}-${width}.png`,fullPage:true});
 });
 
 for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page},testInfo)=>{
@@ -597,7 +697,7 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:saved.at(-1)||summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{saved.push(route.request().postDataJSON().value);return json(route,{value:saved.at(-1),result:'updated',mappingRevision:'synthetic'});});
-    await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page);await clickPlanningOption(page, 'Show Planning table');
     await page.locator('.planning-review-region').evaluate(node=>node.scrollIntoView({block:'start'}));
     const cell=page.locator('tbody .planning-review-summary').first();
     const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
@@ -633,7 +733,7 @@ test('Summary loading and saving show a spinner inside the input and never chang
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',async route=>{await gate;return json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'});});
     await page.route('**/api/issues/PLAN-EPIC/field',async route=>{await saveGate;return json(route,{value:'Edited',result:'updated',mappingRevision:'synthetic'});});
-    await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page);await clickPlanningOption(page, 'Show Planning table');
     const row=page.locator('tbody tr').first(),cell=row.locator('.planning-review-summary');
     const trigger=cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true});
     const rest=(await row.boundingBox()).height;
@@ -661,7 +761,7 @@ test('Summary conflict stays inside the cell and reloads before another edit',as
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>{reads++;return json(route,{editable:true,currentValue:reads===1?'Original summary':'Current Jira summary',mappingRevision:'synthetic',baseUpdated:'synthetic'});});
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{writes++;return json(route,{error:'stale_issue'},409);});
-    await openPlanning(page);await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page);await clickPlanningOption(page, 'Show Planning table');
     const cell=page.locator('tbody .planning-review-summary').first();
     await cell.getByRole('button',{name:'Edit summary for PLAN-EPIC',exact:true}).click();
     const editor=cell.getByRole('textbox',{name:'Summary for PLAN-EPIC',exact:true});
@@ -673,10 +773,10 @@ test('Summary conflict stays inside the cell and reloads before another edit',as
 });
 
 test('table shows readiness-only Epics and placeholders when no Jira Stories exist',async({page})=>{
-    await installPlanningFixture(page,{authMode:'basic'});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route('**/api/tasks-with-team-name?*',route=>json(route,{issues:[],epics:{},epicsInScope:[],names:{}}));
     await installUncreatedReadiness(page);
-    await openPlanning(page,{expectStories:false});await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await openPlanning(page,{expectStories:false});await clickPlanningOption(page, 'Show Planning table');
     const table=page.locator('.planning-review-table');
     await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);await expect(table).toContainText('1 Story awaited');
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
@@ -690,8 +790,8 @@ async function installUncreatedReadiness(page) {
 }
 
 test('table keeps uncreated Stories through Story filters while List retains its filtering',async({page})=>{
-    await installPlanningFixture(page,{authMode:'basic'});await installUncreatedReadiness(page);await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});await installUncreatedReadiness(page);await openPlanning(page);
+    await clickPlanningOption(page, 'Show Planning table');
     const table=page.locator('.planning-review-table');await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
     await page.locator('.filterbar .fb-trigger').click();
     const status=page.locator('.popover [data-facet="status"]');
@@ -700,54 +800,59 @@ test('table keeps uncreated Stories through Story filters while List retains its
     await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();await expect(table).toContainText('Story awaiting creation for Alpha Team');
     await expect(table.locator('tbody .planning-review-key').filter({hasText:'PLAN-2'})).toHaveCount(0);
-    await page.getByRole('button',{name:'Show Planning list',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning list');
     await expect(page.locator('.task-list a[href$="/browse/PLAN-EMPTY"]')).toHaveCount(0);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
+    await clickPlanningOption(page, 'Show Planning table');await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
 });
 
 for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
-    const fixture=await installPlanningFixture(page,{scopeTeamIds,selectedTeams,capacityProject:'CAP'});
+    const fixture=await installPlanningFixture(page,{scopeTeamIds,selectedTeams,capacityProject:'CAP',initialPlans:{[futureSprintId]:{includedIssueIds:futureStories.map(story=>story.id)}}});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
     await openPlanning(page);
     const panel=page.locator('.planning-panel');
+    await expect(page.locator('.task-list input.task-checkbox:checked')).toHaveCount(futureStories.length);
     const selected=await page.locator('.task-list input.task-checkbox:checked').count();
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
-    await expect(panel).toHaveClass(/planning-panel-compact/);await expect(panel.getByRole('button',{name:'Select All',exact:true})).toHaveCount(0);
+    await clickPlanningOption(page, 'Show Planning table');
+    await expect(panel).toHaveClass(/planning-panel-compact/);await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
     // One Team selected: the collapsed assignee strip is in the stack (the strip itself is #323).
     await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const row=await panel.boundingBox();expect(row.height).toBeLessThan(64);
+    await expect(panel.locator('#planning-panel-details')).toBeHidden();
+    await expect(panel.locator('.planning-stats').first()).toContainText(`Planned stories: ${selected}`);
+    await expect(panel.locator('.planning-stats').first()).toContainText('Planned SP:');
+    for(const readout of await panel.locator(':scope > .planning-stats > span').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
+    const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;
+    await clickPlanningOption(page, 'Show capacity details');
+    await expect(panel.locator('#planning-panel-details')).toBeVisible();
+    await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
     await expect(panel.locator('.capacity-bar-graph')).toHaveCount(1);
-    for(const readout of await panel.locator('.planning-compact-readout').all()) expect(await readout.evaluate(node=>node.scrollWidth<=node.clientWidth+1)).toBe(true);
     for(const selector of ['.capacity-bar-fill','.project-bar-fill.product']) {
         const fill=panel.locator(selector).first();
-        // One Team: the assignee strip (#323 D6, loaded without expanding) owns the capacity track's pointer and replaces the fill tooltip.
         const strip=selector==='.capacity-bar-fill'&&await panel.locator('[data-assignee-underbar]').count()>0;
-        if(strip){const box=await fill.boundingBox();await page.mouse.move(box.x+4,box.y+box.height/2);}else await fill.hover();
+        const before=await fill.boundingBox();
+        if(strip){const box=await panel.locator('[data-assignee-underbar] .stacked-bar-track').boundingBox();await page.mouse.move(box.x+box.width-2,box.y+box.height/2);}else await fill.hover();
+        expect(await fill.boundingBox()).toEqual(before);
         await page.screenshot({path:`tmp/217-ui/bar-hover-${scopeTeamIds.length}${selectedTeams?'-one':''}-${selector.includes('product')?'project':'capacity'}.png`});
-        const label=fill.locator('..').locator('.planning-compact-readout');
+        const label=fill.locator('.capacity-bar-fill-label');
+        await expect(label).toBeVisible();
         expect(await label.evaluate(node=>{
-            // Include the normally pointer-transparent label in paint-order hit testing.
-            // The transparent strip wrapper takes the pointer above the label; leave it out of the paint-order check.
             node.style.pointerEvents='auto';
             const under=document.querySelector('[data-assignee-underbar]');if(under)under.style.pointerEvents='none';
-            const r=node.getBoundingClientRect();
-            const top=document.elementFromPoint(r.left+4,r.top+r.height/2);
+            const r=node.getBoundingClientRect(),top=document.elementFromPoint(r.left+4,r.top+r.height/2);
             node.style.pointerEvents='';if(under)under.style.pointerEvents='';
             return top===node;
         })).toBe(true);
         if(strip){await expect(page.locator('.stacked-bar-readout')).toContainText('Selected');expect(await fill.getAttribute('data-tooltip')).toBeNull();}
         else expect(await fill.evaluate(node=>getComputedStyle(node,'::after').content)).not.toBe('none');
     }
-    const geometry=await panel.locator('.planning-panel-capacity-graph,.planning-panel-project-graph').evaluateAll(nodes=>nodes.map(node=>node.getBoundingClientRect().y));expect(Math.abs(geometry[0]-geometry[1])).toBeLessThan(8);
-    const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;
-    await panel.getByRole('button',{name:'Show panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
-    const collapse=panel.getByRole('button',{name:'Collapse panel',exact:true});
-    await expect(panel.locator('.planning-actions')).toContainText('Collapse panel');
-    const collapseRect=await collapse.boundingBox(),selectRect=await panel.getByRole('button',{name:'Select All',exact:true}).boundingBox();
-    expect(Math.abs(collapseRect.y-selectRect.y)).toBeLessThan(3);
-    await page.screenshot({path:`tmp/217-ui/collapse-inline-${scopeTeamIds.length}-team.png`,fullPage:false});
+    await page.getByRole('button',{name:'Planning options',exact:true}).click();
+    const options=page.getByRole('dialog',{name:'Planning options',exact:true});
+    const collapse=options.getByRole('button',{name:'Hide capacity details',exact:true});
+    await expect(collapse).toBeVisible();
+    expect(await collapse.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));})).toBe(true);
+    await page.screenshot({path:`tmp/217-ui/collapse-menu-${scopeTeamIds.length}-team.png`,fullPage:false});
 
-    await panel.getByRole('button',{name:'Collapse panel',exact:true}).click();await page.getByRole('radio',{name:'Stories',exact:true}).click();
+    await clickPlanningOption(page, 'Hide capacity details');await page.getByRole('radio',{name:'Stories',exact:true}).click();
     expect(await page.locator('.planning-review-table tbody input[type=checkbox]:checked').count()).toBe(selected);
     expect(fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length).toBe(beforeCalls);
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});
@@ -757,29 +862,49 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
     await page.locator('.filterbar .fb-trigger').click();
     const popup=page.locator('.popover');await expect(popup).toBeVisible();expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+10,r.top+10));})).toBe(true);
     await page.locator('.filterbar .fb-trigger').click();
-    await panel.getByRole('button',{name:'Show Planning list',exact:true}).click();await expect(panel).not.toHaveClass(/planning-panel-compact/);
+    await clickPlanningOption(page, 'Show Planning list');await expect(panel).not.toHaveClass(/planning-panel-compact/);
     await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
 test('compact Table panel fits narrow screens and restores normal Planning in Scenario',async({page})=>{
     await page.setViewportSize({width:390,height:900});await installPlanningFixture(page);await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     const panel=page.locator('.planning-panel');await expect(panel).toHaveClass(/planning-panel-compact/);
+    await expect(panel.locator(':scope > .planning-stats')).toHaveText('Capacity: unavailable');
+    const primary=panel.locator('.planning-actions button');
+    await expect(primary).toHaveCount(4);
+    const controlRects=[];
+    for(const control of await primary.all()) {
+        const rect=await control.boundingBox();controlRects.push(rect);
+        expect(rect.width).toBeGreaterThanOrEqual(24);expect(rect.height).toBeGreaterThanOrEqual(24);
+        await control.hover();expect(await control.boundingBox()).toEqual(rect);
+    }
+    expect(Math.max(...controlRects.map(rect=>rect.y))-Math.min(...controlRects.map(rect=>rect.y))).toBeLessThan(3);
+    await page.mouse.move(0,0);
+    const compactGeometry=await panel.evaluate(node=>[node,...node.children,...node.querySelectorAll('.planning-actions button')].map(element=>{
+        const r=element.getBoundingClientRect(),style=getComputedStyle(element);
+        return {className:element.className,display:style.display,text:element.textContent.trim().slice(0,180),x:r.x,y:r.y,width:r.width,height:r.height,
+            padding:style.padding,font:style.font,fontSize:style.fontSize,lineHeight:style.lineHeight,gap:style.gap,columnGap:style.columnGap,boxSizing:style.boxSizing};
+    }));
+    fs.writeFileSync(path.join(repoRoot,'tmp','217-ui','shared-planning-narrow-390.json'),JSON.stringify(compactGeometry,null,2));
+    await page.screenshot({path:'tmp/217-ui/shared-planning-narrow-390.png',fullPage:false});
     expect((await panel.boundingBox()).height).toBeLessThan(130);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
-    await panel.getByRole('button',{name:'Show panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
-    await panel.getByRole('button',{name:'Collapse panel',exact:true}).click();await expect(panel.getByRole('button',{name:'Show panel',exact:true})).toBeVisible();
+    await clickPlanningOption(page, 'Show capacity details');await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
+    await clickPlanningOption(page, 'Hide capacity details');await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'Planning options',exact:true}).click();await expect(page.getByRole('button',{name:'Show capacity details',exact:true})).toBeVisible();await page.keyboard.press('Escape');
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Scenario',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
  test('Planning defaults to Table without a layout preference and preserves an explicit List choice', async ({page}) => {
     await installPlanningFixture(page,{planningLayout:null});await openPlanning(page,{expectStories:false});
     await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
-    await page.getByRole('button',{name:'Show Planning list',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning list');
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
     await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}').planningLayout)).toBe('list');
     await page.reload();await expect(page.locator('.task-list .task-item').first()).toBeVisible();
+    await page.getByRole('button',{name:'Planning options',exact:true}).click();
     await expect(page.getByRole('button',{name:'Show Planning table',exact:true})).toBeVisible();
 });
 
@@ -816,7 +941,7 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await expect(filters.locator('[data-probe="row-switch"]')).toHaveCount(1);
     expect(Math.abs((await filters.locator('[data-probe="row-switch"]').boundingBox()).x-switchLeft)).toBeLessThan(1);
     expect(await page.locator('.planning-review-table tbody input:checked').count()).toBe(selected);
-    await panel.getByRole('button',{name:'Show Planning list',exact:true}).click();await expect(stack).toHaveCount(0);
+    await clickPlanningOption(page, 'Show Planning list');await expect(stack).toHaveCount(0);
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
 });
@@ -836,7 +961,7 @@ for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row s
     // Sort epics is not rendered in Table view (it never did anything there); it is back in List and Catch Up.
     await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Group by Initiative'})).toHaveCount(0);
-    await page.locator('.planning-panel').getByRole('button',{name:'Show Planning list',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning list');
     await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
     await expect(page.getByRole('radiogroup',{name:'Planning review rows'})).toHaveCount(0);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();
@@ -850,6 +975,20 @@ for (const [width,height] of [[1440,900],[1280,720]]) for (const selectedTeams o
     await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
     const docked=page.locator('.planning-review-docked-header');await expect(docked).toBeVisible();
     await expect(page.locator('.compact-sticky-header')).toHaveClass(/is-visible/);
+    const measured = await page.evaluate(() => {
+        const box = selector => {
+            const node = document.querySelector(selector);
+            if (!node) return null;
+            const rect = node.getBoundingClientRect(), style = getComputedStyle(node);
+            return { x: rect.x, y: rect.y, width: rect.width, height: rect.height, bottom: rect.bottom,
+                fontSize: style.fontSize, lineHeight: style.lineHeight, text: node.textContent.trim().slice(0, 250) };
+        };
+        return Object.fromEntries(['.compact-sticky-header.is-visible', '.planning-review-sticky-stack .filterbar-wrap',
+            '.planning-panel', '.planning-actions', '.planning-panel > .planning-stats', '.planning-panel > .planning-review-state-note',
+            '[data-assignee-capacity]', '.capacity-panel', '.planning-review-docked-header'].map(selector => [selector, box(selector)]));
+    });
+    fs.writeFileSync(path.join(repoRoot, 'tmp', '217-ui', `shared-sticky-geometry-${width}x${height}${selectedTeams ? '-one-team' : ''}.json`), JSON.stringify(measured, null, 2));
+    await page.screenshot({ path: `tmp/217-ui/shared-sticky-geometry-${width}x${height}${selectedTeams ? '-one-team' : ''}.png`, fullPage: false });
     await expect.poll(async()=>{const d=await docked.boundingBox();return Math.round(d.y+d.height);}).toBeLessThanOrEqual(175);
     await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const parts=await page.evaluate(()=>{const box=s=>{const n=document.querySelector(s);return n?Math.round(n.getBoundingClientRect().height*10)/10:null;};return {header:box('.compact-sticky-header.is-visible'),filters:box('.planning-review-sticky-stack .filterbar-wrap'),overview:box('.planning-review-sticky-stack .planning-panel'),docked:box('.planning-review-docked-header')};});
@@ -940,15 +1079,15 @@ test('Discard and Save sit at the right end of the Filters row only while the re
     await page.setViewportSize({width:1280,height:900});
     await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     const row=page.locator('.filterbar-wrap .filterbar'),controls=row.locator('.fb-view-controls');
-    await expect(controls.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
-    await expect(controls.getByRole('button',{name:'Discard',exact:true})).toHaveCount(0);
+    await expect(controls.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
+    await expect(controls.getByRole('button',{name:'Discard changes',exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
     await page.getByLabel('Column name',{exact:true}).fill('Risk');await page.getByRole('button',{name:'Add column',exact:true}).click();
-    const save=controls.getByRole('button',{name:'Save review',exact:true}),discard=controls.getByRole('button',{name:'Discard',exact:true});
+    const save=controls.getByRole('button',{name:'Save plan',exact:true}),discard=controls.getByRole('button',{name:'Discard changes',exact:true});
     await expect(save).toBeVisible();await expect(discard).toBeVisible();
     await page.locator('.filterbar-wrap').screenshot({path:'tmp/217-ui/c1-filters-row-dirty-1280.png'});
     await expect(save).toHaveClass(/fb-trigger-primary/);await expect(discard).toHaveClass(/fb-trigger(?!-)/);
-    const geometry=await page.evaluate(()=>{const r=n=>n.getBoundingClientRect(),bar=r(document.querySelector('.filterbar')),mode=r(document.querySelector('[aria-label="Planning review rows"]')),discard=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.textContent.trim()==='Discard'),save=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.getAttribute('aria-label')==='Save review'),d=r(discard),s=r(save),filters=r(document.querySelector('.filterbar .pop-host .fb-trigger'));return {barRight:bar.right,barTop:bar.top,barBottom:bar.bottom,modeRight:mode.right,discardLeft:d.left,saveRight:s.right,saveTop:s.top,saveBottom:s.bottom,saveText:save.scrollWidth-save.clientWidth,filtersRight:filters.right,modeLeft:mode.left,height:bar.height};});
+    const geometry=await page.evaluate(()=>{const r=n=>n.getBoundingClientRect(),bar=r(document.querySelector('.filterbar')),mode=r(document.querySelector('[aria-label="Planning review rows"]')),discard=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.textContent.trim()==='Discard changes'),save=[...document.querySelectorAll('.fb-view-controls button')].find(b=>b.getAttribute('aria-label')==='Save plan'),d=r(discard),s=r(save),filters=r(document.querySelector('.filterbar .pop-host .fb-trigger'));return {barRight:bar.right,barTop:bar.top,barBottom:bar.bottom,modeRight:mode.right,discardLeft:d.left,saveRight:s.right,saveTop:s.top,saveBottom:s.bottom,saveText:save.scrollWidth-save.clientWidth,filtersRight:filters.right,modeLeft:mode.left,height:bar.height};});
     expect(geometry.barRight-geometry.saveRight,JSON.stringify(geometry)).toBeLessThan(14);
     expect(geometry.discardLeft,JSON.stringify(geometry)).toBeGreaterThan(geometry.modeRight);
     expect(geometry.modeLeft,JSON.stringify(geometry)).toBeGreaterThan(geometry.filtersRight);
@@ -974,7 +1113,7 @@ test('Discard and Save sit at the right end of the Filters row only while the re
     const popup=page.locator('.popover');await expect(popup).toBeVisible();
     expect(await popup.evaluate(node=>{const r=node.getBoundingClientRect();return node.contains(document.elementFromPoint(r.left+12,r.top+12));})).toBe(true);
     await row.locator('.fb-trigger').first().click();
-    await discard.click();await controls.getByRole('button',{name:'Discard',exact:true}).first().click();
+    await discard.click();await controls.getByRole('button',{name:'Discard changes',exact:true}).first().click();
     await expect(save).toHaveCount(0);
 });
 
@@ -1002,9 +1141,9 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
     const heading=page.locator('.planning-review-docked-header');await expect(heading).toBeVisible();
     await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
     expect(await scroll.evaluate(node=>{const h=document.querySelector('.planning-review-docked-header').getBoundingClientRect(),r=node.getBoundingClientRect();return !node.querySelector('tbody').contains(document.elementFromPoint(r.left+10,h.top-8));})).toBe(true);
-    await stack.getByRole('button',{name:'Show panel',exact:true}).click();
+    await clickPlanningOption(page, 'Show capacity details');
     await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
-    await stack.getByRole('button',{name:'Collapse panel',exact:true}).click();
+    await clickPlanningOption(page, 'Hide capacity details');
     await expect.poll(async()=>{const h=await heading.boundingBox(),s=await stack.boundingBox();return Math.abs(h.y-s.y-s.height);}).toBeLessThan(2);
     // The real header is hidden from assistive technology while docked, so these roles resolve to the docked copy.
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
@@ -1026,7 +1165,9 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
 async function automaticPlanningFixture(page, { longTable = false, derived = false, groups = 1 } = {}) {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page);
-    const fixture = await installPlanningFixture(page, { longTable, groups });
+    const fixture = await installPlanningFixture(page, { longTable, groups, initialPlans: { [futureSprintId]: {
+        includedIssueIds: longTable ? Array.from({ length: 60 }, (_, index) => String(8001 + index)) : futureStories.map(story => story.id),
+    } } });
     const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null, reviewGroups: [] };
     const alphaColumns = [{ id: 'cost', rowKind: 'epic', label: 'Cost', type: 'number', aggregation: 'sum', order: 0 }, ...(derived ? [{ id: 'effort', rowKind: 'story', label: 'Effort', type: 'number', aggregation: 'sum', order: 1 }] : [])];
     const columnsFor = groupId => groupId === 'group-alpha' ? alphaColumns : [];
@@ -1051,7 +1192,7 @@ async function automaticPlanningFixture(page, { longTable = false, derived = fal
         const epic = makeEpic(); epic.summary = 'Accepted automatic Epic';
         return json(route, { issues: product ? rows : [], epics: product ? { [epic.key]: epic } : {}, epicsInScope: product ? [epic] : [], names: {} });
     });
-    await openPlanning(page); await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    await openPlanning(page); await clickPlanningOption(page, 'Show Planning table');
     await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true })).toBeVisible();
     await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
     await page.waitForLoadState('networkidle');
@@ -1086,8 +1227,8 @@ test('automatic Planning current-row reconciliation stages one forced review wit
     await expect.poll(() => state.values.length).toBe(values + 1);
     await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
     gate.resolve(); await expect.poll(() => state.values.length).toBe(values + 2); await page.waitForLoadState('networkidle');
-    expect(state.schemaReads - schemas).toBe(1); expect(state.values.slice(values).map(batch => batch.rowKind)).toEqual(['epic', 'story']);
-    expect(state.values.at(-1).issueIds).toEqual(expect.arrayContaining(['8001', '8002', '8003', '8004'])); expect(state.primary).toHaveLength(2);
+    expect(state.schemaReads - schemas).toBe(1); expect(state.values.slice(values).map(batch => batch.rowKind)).toEqual(['story', 'epic']);
+    expect(state.values.slice(values).find(batch => batch.rowKind === 'story').issueIds).toEqual(expect.arrayContaining(['8001', '8002', '8003', '8004'])); expect(state.primary).toHaveLength(2);
     expect(await page.evaluate(() => window.reviewLoadingObserved)).toBe(false);
     await page.screenshot({ path: 'tmp/freshness-251/task-7-table-after.png', animations: 'disabled' });
     await testInfo.attach('current-admitted-review-batches', { body: JSON.stringify(state.values.slice(values)), contentType: 'application/json' });
@@ -1107,12 +1248,12 @@ test('focused clean Planning input defers return, keeps node/value/focus and dra
 test('dirty Planning layout and scope dialog retain one intent through Stay and Discard', async ({ page }) => {
     const { lifecycle, state } = await automaticPlanningFixture(page);
     await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await page.getByLabel('Column name', { exact: true }).fill('Local column'); await page.getByRole('button', { name: 'Add column', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled(); state.remote = true;
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled(); state.remote = true;
     await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(150); expect(state.primary).toHaveLength(0);
     await page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle').click(); await page.locator('.sprint-dropdown-option', { hasText: secondFutureSprintName }).click();
-    await expect(page.getByRole('dialog', { name: 'Save this Sprint review?' })).toBeVisible(); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0);
+    await expect(page.getByRole('dialog', { name: 'Save this plan?' })).toBeVisible(); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0);
     await page.getByRole('button', { name: 'Stay', exact: true }).click(); expect(state.primary).toHaveLength(0);
-    await page.getByRole('button', { name: 'Discard', exact: true }).click(); await expect(page.getByText('Discard unsaved changes?', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Discard', exact: true }).click(); await expect.poll(() => state.primary.length).toBe(2);
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await expect(page.getByText('Discard unsaved changes?', { exact: true })).toBeVisible(); await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await expect.poll(() => state.primary.length).toBe(2);
     await expect(page.getByRole('textbox', { name: 'Local column for PLAN-EPIC', exact: true })).toHaveCount(0);
 });
 
@@ -1120,18 +1261,23 @@ for (const status of [429, 500, 401]) test(`automatic Planning review ${status} 
     const { lifecycle, state } = await automaticPlanningFixture(page); state.remote = true; state.schemaStatus = status;
     const before = state.schemaReads; await lifecycle.returnAfter(13 * 60000); await expect.poll(() => state.schemaReads).toBe(before + 1); await page.waitForTimeout(200);
     if (status === 401) { await expect(page.getByRole('link', { name: 'Sign in again', exact: true })).toBeVisible(); await lifecycle.returnAfter(24 * 60 * 60000); await page.waitForTimeout(100); expect(state.schemaReads).toBe(before + 1); }
-    else { await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true })).toBeVisible(); await expect(page.locator('.planning-review-state-note', { hasText: /could not|Loading/ })).toHaveCount(0); }
+    else {
+        await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC', exact: true })).toHaveValue('1');
+        await expect(page.locator('.planning-review-state-note', { hasText: 'Plan could not be loaded.' })).toBeVisible();
+        await expect(page.locator('.planning-panel').getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+        expect(state.schemaReads).toBe(before + 1);
+    }
 });
 
 test('automatic Planning save-in-flight waits for confirmation then checks once without replay', async ({ page }) => {
     const { lifecycle, state } = await automaticPlanningFixture(page); const { deferred } = require('./eng_epic_refresh_fixture'); const gate = deferred(); state.saveGate = gate.promise;
-    await page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' }).fill('7'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' }).fill('7'); await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => state.saveCalls.length).toBe(1); state.remote = true; await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0);
     gate.resolve(); await expect.poll(() => state.primary.length).toBe(2); expect(state.saveCalls).toHaveLength(1); expect(state.saveCalls[0].cellChanges[0].baseRevision).toBe(1);
 });
 for (const failure of [409, 'network']) test(`automatic Planning ${failure} save preserves draft until deliberate recovery`, async ({ page }) => {
     const { lifecycle, state } = await automaticPlanningFixture(page); await page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' }).fill('7'); state.saveStatus = failure;
-    await page.getByRole('button', { name: 'Save review', exact: true }).click(); await expect(page.getByRole('button', { name: 'Load current and discard draft', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click(); await expect(page.getByRole('button', { name: 'Load current and discard draft', exact: true })).toBeVisible();
     state.remote = true; await lifecycle.returnAfter(13 * 60000); await page.waitForTimeout(100); expect(state.primary).toHaveLength(0); expect(state.saveCalls).toHaveLength(1);
     await expect(page.getByRole('textbox', { name: 'Cost for PLAN-EPIC' })).toHaveValue('7');
     await page.getByRole('button', { name: 'Load current and discard draft', exact: true }).click(); await expect.poll(() => state.primary.length).toBe(2); expect(state.saveCalls).toHaveLength(1);
@@ -1140,7 +1286,7 @@ test('automatic Planning read splits 413 batches with their CSRF reads and no lo
     const { lifecycle, state } = await automaticPlanningFixture(page); const values = state.values.length; state.remote = true; state.limit = 2;
     const csrf = []; page.on('request', request => { if (new URL(request.url()).pathname === '/api/auth/csrf') csrf.push(request); });
     await lifecycle.returnAfter(13 * 60000); await expect.poll(() => state.values.length).toBe(values + 4);
-    expect(state.values.slice(values).map(batch => batch.issueIds.length)).toEqual([1, 4, 2, 2]); expect(csrf).toHaveLength(4);
+    expect(state.values.slice(values).map(batch => batch.issueIds.length)).toEqual([4, 2, 2, 1]); expect(csrf).toHaveLength(4);
     await expect(page.locator('.planning-review-state-note', { hasText: 'Loading…' })).toHaveCount(0);
 });
 for (const access of ['capability', 'issue']) test(`automatic Planning accepted ${access} access removal disables review editing`, async ({ page }) => {
@@ -1156,7 +1302,9 @@ test('automatic Planning table retains document anchor, horizontal offset, selec
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await page.locator('tbody tr[data-issue-key="PLAN-1"]').getByRole('checkbox').check();
     await page.locator('tbody tr[data-issue-key="PLAN-2"]').getByRole('checkbox').uncheck();
-    const row = page.locator('tbody [data-issue-key="PLAN-35"]'); await row.scrollIntoViewIfNeeded();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+    const row = page.locator('tbody tr[data-issue-key="PLAN-35"]'); await row.scrollIntoViewIfNeeded();
     const scroller = page.locator('.planning-review-scroll'); await scroller.evaluate(node => { node.scrollLeft = node.scrollWidth - node.clientWidth; }); await page.waitForTimeout(150);
     const node = await row.elementHandle(), before = await row.boundingBox(), left = await scroller.evaluate(node => node.scrollLeft), selection = await page.locator('tbody tr[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input[type=checkbox]')).map(row => [row.dataset.issueKey, row.querySelector('input[type=checkbox]').checked])));
     expect(Object.values(selection)).toContain(true); expect(Object.values(selection)).toContain(false);
@@ -1180,7 +1328,7 @@ test('the priority menu on the last Planning row overlays the table fully on scr
     const priorities=['Blocker','Critical','Major','Minor','Low','Trivial'].map((name,index)=>({id:String(index+1),name}));
     await page.route('**/api/issues/priorities/options*',route=>json(route,{priorities}));
     await openPlanning(page);
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
+    await clickPlanningOption(page, 'Show Planning table');
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const scroller=page.locator('.planning-review-scroll');
     const trigger=scroller.locator('tbody tr').last().locator('[data-priority-transition-trigger]');
@@ -1291,14 +1439,15 @@ test('a header group change while the review is dirty prompts: Stay keeps the dr
     const { state } = await inheritedViewFixture(page, { analytics: true });
     await openPlanning(page, { expectStories: false });
     const groupEvents = () => page.evaluate(() => (window.dataLayer || []).filter(entry => entry?.event_name === 'filter_changed' && entry?.filter_type === 'group').length);
-    const dialog = page.getByRole('dialog', { name: 'Save this Sprint review?' });
-    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Save this plan?' });
+    const save = page.getByRole('button', { name: 'Save plan', exact: true });
     const addColumn = async label => { await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await page.getByLabel('Column name', { exact: true }).fill(label); await page.getByRole('button', { name: 'Add column', exact: true }).click(); await expect(save).toBeEnabled(); };
     await addColumn('Local column');
     const events = await groupEvents();
     await selectGroup(page, 'Beta Department');
     await expect(dialog).toBeVisible();
-    await expect(dialog).toContainText('Save or discard them before changing Sprint or group.');
+    await expect(dialog).toContainText('Save or discard all pending Team changes before leaving this scope.');
+    await expect(dialog).toContainText('shared review columns and values span Sprints');
     await dialog.getByRole('button', { name: 'Stay', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Alpha Department');
@@ -1307,7 +1456,7 @@ test('a header group change while the review is dirty prompts: Stay keeps the dr
     expect(state.gets.filter(get => get.groupId === 'group-beta')).toHaveLength(0);
     // Discard proceeds to the other group and reports the change once.
     await selectGroup(page, 'Beta Department');
-    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Beta Department');
     await expect.poll(() => lastGet(state)?.groupId).toBe('group-beta');
     await expect(save).toHaveCount(0);
@@ -1316,7 +1465,7 @@ test('a header group change while the review is dirty prompts: Stay keeps the dr
     // Save proceeds and saves the draft under the group it was made in.
     await addColumn('Beta column');
     await selectGroup(page, 'Alpha Department');
-    await dialog.getByRole('button', { name: 'Save review', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.locator('.view-selector .group-dropdown-toggle')).toContainText('Alpha Department');
     expect(state.patches.map(patch => patch.groupId)).toEqual(['group-beta']);
     expect(state.patches[0].payload.groupId).toBe('group-beta');
@@ -1334,7 +1483,7 @@ test('a Settings Save that changes the active group while the review is dirty pr
     await settings.locator('.group-list-item', { hasText: 'Beta Department' }).click();
     await settings.locator('.group-list-item.active').getByRole('button', { name: 'Set Beta Department as your favorite Department' }).click();
     await settings.getByRole('button', { name: /^Save$/ }).click();
-    const dialog = page.getByRole('dialog', { name: 'Save this Sprint review?' });
+    const dialog = page.getByRole('dialog', { name: 'Save this plan?' });
     await expect(dialog).toBeVisible();
     await dialog.getByRole('button', { name: 'Stay', exact: true }).click();
     await expect(settings).toBeVisible();
@@ -1343,7 +1492,7 @@ test('a Settings Save that changes the active group while the review is dirty pr
     // Discard lets the same Save proceed.
     await settings.getByRole('button', { name: /^Save$/ }).click();
     await expect(dialog).toBeVisible();
-    await dialog.getByRole('button', { name: 'Discard', exact: true }).click();
+    await dialog.getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect.poll(() => state.preferencePosts.length).toBe(1);
     expect(state.preferencePosts[0].activeGroupId).toBe('group-beta');
     await expect.poll(() => lastGet(state)?.groupId).toBe('group-beta');
@@ -1389,7 +1538,7 @@ test('a re-created group id reattaches its review columns and values, and hiding
     await selectGroup(page, 'New Group');
     await expect(riskCell).toHaveValue('5');
     expect(gets.at(-1)).toBe('new-group');
-    await riskCell.fill('6'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await riskCell.fill('6'); await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => patches.length).toBe(1);
     expect(patches[0].groupId).toBe('new-group');
     // A visibility preference hiding the other group from the selector does not change which group the review reads and writes.
@@ -1398,9 +1547,9 @@ test('a re-created group id reattaches its review columns and values, and hiding
     await page.reload(); await expect(page.locator('.planning-review-table')).toBeVisible();
     await expect.poll(() => gets.length).toBeGreaterThan(beforeHide);
     expect(gets.slice(beforeHide)).not.toContain('group-alpha');
-    await expect(riskCell).toHaveValue('5');
+    await expect(riskCell).toHaveValue('6');
     expect(gets.at(-1)).toBe('new-group');
-    await riskCell.fill('7'); await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await riskCell.fill('7'); await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => patches.length).toBe(2);
     expect(patches[1].groupId).toBe('new-group');
 });

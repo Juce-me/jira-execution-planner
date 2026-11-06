@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import time
 from datetime import datetime
+from contextlib import ExitStack, nullcontext
 
 from sqlalchemy import select
 
@@ -102,9 +103,12 @@ def resolve_db_request_auth_context(
     database_url: str | None = None,
     required_scopes: str = '',
     now: float | None = None,
+    budget=None,
 ) -> RequestAuthContext:
     current_time = time.time() if now is None else now
-    with db_engine.session_factory(database_url)() as session:
+    with ExitStack() as budget_stack, db_engine.session_factory(database_url)() as session:
+        if budget is not None:
+            budget.bind(session, budget_stack)
         browser_session_id = str((session_data or {}).get('db_browser_session_id') or '').strip()
         browser_session = (
             resolve_browser_session(session, browser_session_id) if browser_session_id else None
@@ -167,35 +171,54 @@ def revalidate_db_request_auth_context(
     *,
     database_url: str | None = None,
     required_scopes: str = '',
+    db_session=None,
+    legacy_session_data=None,
 ) -> RequestAuthContext:
     """Re-prove a captured DB request context with ONE direct SELECT.
 
     Reads actor, browser session, connection and workspace status straight from the
     database, never through `_STATUS_CACHE`, so a disable or revoke made by another
     process is observed. It needs a real browser session id, so there is no
-    legacy-context fallback, and it does not catch `OperationalError`. Rotation of
+    legacy-context fallback by default, and it does not catch `OperationalError`.
+    Token consumers may supply their existing DB session. The explicit legacy
+    branch additionally requires matching signed-cookie connection/version data
+    supplied by the request wrapper; unbound captured contexts remain forbidden. Rotation of
     the token version is allowed and reflected in the returned context; any change
     of user, connection, workspace, site, cloud or a narrowing of scopes fails closed.
     """
     browser_session_id = str(getattr(captured, 'browser_session_id', '') or '').strip()
-    if not browser_session_id or not is_db_auth_context(captured):
+    if not is_db_auth_context(captured) or getattr(captured, 'auth_mode', '') != AUTH_MODE_ATLASSIAN_OAUTH:
         raise AuthError('auth_required', 'Atlassian authentication is required.')
-    statement = (
-        select(models.BrowserSession, models.AuthConnection, models.User, models.Workspace)
-        .join(models.AuthConnection, models.AuthConnection.id == models.BrowserSession.auth_connection_id)
-        .join(models.User, models.User.id == models.AuthConnection.user_id)
-        .join(models.Workspace, models.Workspace.id == models.AuthConnection.workspace_id)
-        .where(models.BrowserSession.id == browser_session_id)
-    )
-    with db_engine.session_factory(database_url)() as session:
-        row = session.execute(statement).first()
+    if browser_session_id:
+        statement = (
+            select(models.BrowserSession, models.AuthConnection, models.User, models.Workspace)
+            .join(models.AuthConnection, models.AuthConnection.id == models.BrowserSession.auth_connection_id)
+            .join(models.User, models.User.id == models.AuthConnection.user_id)
+            .join(models.Workspace, models.Workspace.id == models.AuthConnection.workspace_id)
+            .where(models.BrowserSession.id == browser_session_id)
+        )
+    else:
+        legacy = legacy_session_data or {}
+        legacy_version = str(legacy.get('db_token_version') or '')
+        if (str(legacy.get('db_auth_connection_id') or '') != captured.auth_connection_id
+                or not legacy_version or legacy_version != str(captured.token_version)
+                or legacy.get('db_browser_session_id')):
+            raise AuthError('auth_required', 'Atlassian authentication is required.')
+        statement = (
+            select(models.AuthConnection, models.User, models.Workspace)
+            .join(models.User, models.User.id == models.AuthConnection.user_id)
+            .join(models.Workspace, models.Workspace.id == models.AuthConnection.workspace_id)
+            .where(models.AuthConnection.id == captured.auth_connection_id)
+        )
+    with (nullcontext(db_session) if db_session is not None else db_engine.session_factory(database_url)()) as session:
+        row = session.execute(statement.execution_options(populate_existing=True)).first()
         if row is None:
             raise AuthError('auth_required', 'Atlassian authentication is required.')
-        browser_session, connection, user, workspace = row
+        browser_session, connection, user, workspace = row if browser_session_id else (None, *row)
         if (
             connection.provider != 'atlassian_oauth'
-            or browser_session.user_id != user.id
-            or browser_session.workspace_id != workspace.id
+            or (browser_session is not None and browser_session.user_id != user.id)
+            or (browser_session is not None and browser_session.workspace_id != workspace.id)
             or connection.id != captured.auth_connection_id
             or user.id != captured.user_id
             or workspace.id != captured.workspace_id
@@ -207,6 +230,8 @@ def revalidate_db_request_auth_context(
             raise AuthError('account_disabled', 'Your account is disabled.')
         if str(connection.status or '') != 'active':
             raise AuthError('auth_connection_revoked', 'Your Jira connection needs to be reconnected.')
+        if not browser_session_id and str(connection.token_version) != legacy_version:
+            raise AuthError('auth_connection_stale', 'Your Jira connection changed. Reconnect to continue.')
         scopes_verified = connection.scope_provenance == 'provider'
         granted_scopes = tuple(connection.scopes or []) if scopes_verified else ()
         token_version = str(connection.token_version)

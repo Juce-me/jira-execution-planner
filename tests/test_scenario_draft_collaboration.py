@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from datetime import datetime, timedelta, timezone
@@ -29,6 +27,7 @@ from backend.scenario_drafts import (
     upsert_presence,
 )
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -44,93 +43,91 @@ def migration_config(database_url):
 
 class ScenarioDraftCollaborationMigrationTests(unittest.TestCase):
     def test_migration_adds_collaboration_tables_and_downgrades(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'scenario-draft-collab.db')}"
-            config = migration_config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = migration_config(database_url)
 
-            command.upgrade(config, '20260514_0004')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('scenario_draft_events', tables)
-                self.assertNotIn('scenario_draft_presence', tables)
-                self.assertNotIn('scenario_draft_locks', tables)
-            finally:
-                engine.dispose()
+        command.upgrade(config, '20260514_0004')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('scenario_draft_events', tables)
+            self.assertNotIn('scenario_draft_presence', tables)
+            self.assertNotIn('scenario_draft_locks', tables)
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, '20260514_0005')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                tables = set(inspector.get_table_names())
-                self.assertIn('scenario_draft_events', tables)
-                self.assertIn('scenario_draft_presence', tables)
-                self.assertIn('scenario_draft_locks', tables)
+        command.upgrade(config, '20260514_0005')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            tables = set(inspector.get_table_names())
+            self.assertIn('scenario_draft_events', tables)
+            self.assertIn('scenario_draft_presence', tables)
+            self.assertIn('scenario_draft_locks', tables)
 
-                event_columns = {column['name'] for column in inspector.get_columns('scenario_draft_events')}
-                presence_columns = {column['name'] for column in inspector.get_columns('scenario_draft_presence')}
-                lock_columns = {column['name'] for column in inspector.get_columns('scenario_draft_locks')}
-                event_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('scenario_draft_events')
-                }
-                presence_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('scenario_draft_presence')
-                }
-                lock_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('scenario_draft_locks')
-                }
+            event_columns = {column['name'] for column in inspector.get_columns('scenario_draft_events')}
+            presence_columns = {column['name'] for column in inspector.get_columns('scenario_draft_presence')}
+            lock_columns = {column['name'] for column in inspector.get_columns('scenario_draft_locks')}
+            event_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('scenario_draft_events')
+            }
+            presence_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('scenario_draft_presence')
+            }
+            lock_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('scenario_draft_locks')
+            }
 
-                self.assertTrue({
-                    'scenario_draft_id',
-                    'event_number',
-                    'event_type',
-                    'draft_revision',
-                    'payload',
-                    'created_by',
-                    'created_at',
-                }.issubset(event_columns))
-                self.assertTrue({
-                    'scenario_draft_id',
-                    'user_id',
-                    'display_name',
-                    'cursor_payload',
-                    'mode',
-                    'last_seen_at',
-                }.issubset(presence_columns))
-                self.assertTrue({
-                    'scenario_draft_id',
-                    'resource_type',
-                    'resource_id',
-                    'holder_user_id',
-                    'holder_display_name',
-                    'expires_at',
-                    'updated_at',
-                }.issubset(lock_columns))
-                self.assertIn('uq_scenario_draft_events_number', event_uniques)
-                self.assertIn('uq_scenario_draft_presence_user', presence_uniques)
-                self.assertIn('uq_scenario_draft_locks_resource', lock_uniques)
-            finally:
-                engine.dispose()
+            self.assertTrue({
+                'scenario_draft_id',
+                'event_number',
+                'event_type',
+                'draft_revision',
+                'payload',
+                'created_by',
+                'created_at',
+            }.issubset(event_columns))
+            self.assertTrue({
+                'scenario_draft_id',
+                'user_id',
+                'display_name',
+                'cursor_payload',
+                'mode',
+                'last_seen_at',
+            }.issubset(presence_columns))
+            self.assertTrue({
+                'scenario_draft_id',
+                'resource_type',
+                'resource_id',
+                'holder_user_id',
+                'holder_display_name',
+                'expires_at',
+                'updated_at',
+            }.issubset(lock_columns))
+            self.assertIn('uq_scenario_draft_events_number', event_uniques)
+            self.assertIn('uq_scenario_draft_presence_user', presence_uniques)
+            self.assertIn('uq_scenario_draft_locks_resource', lock_uniques)
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260514_0004')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('scenario_draft_events', tables)
-                self.assertNotIn('scenario_draft_presence', tables)
-                self.assertNotIn('scenario_draft_locks', tables)
-                self.assertIn('scenario_drafts', tables)
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260514_0004')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('scenario_draft_events', tables)
+            self.assertNotIn('scenario_draft_presence', tables)
+            self.assertNotIn('scenario_draft_locks', tables)
+            self.assertIn('scenario_drafts', tables)
+        finally:
+            engine.dispose()
 
 
 class ScenarioDraftCollaborationServiceTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'scenario-draft-collab-service.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -145,7 +142,6 @@ class ScenarioDraftCollaborationServiceTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_users_workspaces(self):
         with self.factory() as session:
@@ -291,10 +287,6 @@ class ScenarioDraftCollaborationServiceTests(unittest.TestCase):
                     name,
                     side_effect=AssertionError(f'{name} forbidden'),
                 ))
-            stack.enter_context(patch(
-                'backend.epm.home._read_metadata_credential',
-                side_effect=AssertionError('home credential forbidden'),
-            ))
             stack.enter_context(patch(
                 'backend.auth.service_integrations.get_service_integration_summary',
                 side_effect=AssertionError('service integration forbidden'),

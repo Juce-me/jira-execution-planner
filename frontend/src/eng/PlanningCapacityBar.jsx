@@ -11,6 +11,7 @@ export default function PlanningCapacityBar({
     selectedSP,
     capacitySummary,
     compact = false,
+    childPlural = 'stories',
 }) {
     const underbar = useAssigneeUnderbar(totalCapacityAdjusted);
     if (capacityEnabled && totalCapacityAdjusted > 0) {
@@ -40,9 +41,9 @@ export default function PlanningCapacityBar({
                     )}
                     {/* Selected fill - clip at teamCap when over so variance zone is visible */}
                     <div className={`capacity-bar-fill ${isOver ? 'over' : isUnder ? 'under' : ''}${(isOver ? teamCapPct : selectedPct) < 20 ? ' narrow' : ''}`} style={{ width: `${isOver ? teamCapPct : selectedPct}%` }} data-tooltip={underbar ? undefined : `Total story points from ${selectedCount} selected tasks.`}>
-                        {!compact && <span className="capacity-bar-fill-label">{selectedCount} tasks · {selectedSP.toFixed(1)} SP</span>}
+                        {!compact && <span className="capacity-bar-fill-label">{selectedCount} planned {childPlural.toLowerCase()} · {selectedSP.toFixed(1)} SP</span>}
                     </div>
-                    {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} tasks · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} cap</span>}
+                    {compact && <span className="capacity-bar-fill-label planning-compact-readout">{selectedCount} planned {childPlural.toLowerCase()} · {selectedSP.toFixed(1)} SP / {totalCapacityAdjusted.toFixed(1)} SP capacity</span>}
                     {underbar && <PlanningAssigneeCapacityBar underbar={underbar} axis={scale} selectedCount={selectedCount} selectedSP={selectedSP} />}
                     {/* Planning marker */}
                     {showPlanningMarker && (
@@ -54,7 +55,7 @@ export default function PlanningCapacityBar({
                     {/* Team cap marker */}
                     <div className="capacity-bar-marker teamcap" style={{ left: `${teamCapPct}%` }} data-tooltip={compact ? `Team capacity: ${totalCapacityAdjusted.toFixed(1)} SP.` : 'Estimated total team capacity for the quarter.'}>
                         <div className="capacity-bar-marker-line" />
-                        {!compact && <div className="capacity-bar-marker-label">Team Cap<br/>{totalCapacityAdjusted.toFixed(1)}</div>}
+                        {!compact && <div className="capacity-bar-marker-label">Capacity<br/>{totalCapacityAdjusted.toFixed(1)} SP</div>}
                     </div>
                 </div>
             </div>
@@ -64,7 +65,7 @@ export default function PlanningCapacityBar({
     return (
         <div className="planning-stats">
             <div className="planning-stat">
-                <span className="planning-stat-label">Selected:</span>
+                <span className="planning-stat-label">Planned {childPlural.toLowerCase()} / Planned SP:</span>
                 <span className="planning-stat-value">{selectedCount} · {selectedSP.toFixed(1)} SP</span>
             </div>
         </div>

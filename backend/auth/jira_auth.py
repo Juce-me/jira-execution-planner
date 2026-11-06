@@ -28,7 +28,7 @@ class AuthError(Exception):
 
 @dataclass
 class AuthConfig:
-    auth_mode: str = AUTH_MODE_BASIC
+    auth_mode: str = AUTH_MODE_ATLASSIAN_OAUTH
     jira_url: str = ""
     jira_email: str = ""
     jira_token: str = ""
@@ -46,10 +46,6 @@ def normalize_site_url(value):
 def validate_auth_config(config):
     if not normalize_site_url(config.jira_url):
         raise AuthError("missing_jira_url", "JIRA_URL is required.")
-    if config.auth_mode == AUTH_MODE_BASIC:
-        if not config.jira_email or not config.jira_token:
-            raise AuthError("missing_basic_auth", "Jira email and API token are required for basic auth.")
-        return
     if config.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
         if not config.client_id or not config.client_secret or not config.redirect_uri:
             raise AuthError("missing_oauth_config", "Atlassian OAuth client ID, client secret, and redirect URI are required.")
@@ -231,6 +227,8 @@ def is_oauth_token_expired(session_data):
 
 
 def refresh_oauth_token(config, session_data, http_post=requests.post, *, cooperative_budget=None, diagnostic_observer=None):
+    if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
+        raise AuthError("invalid_auth_mode", "DB-backed Atlassian OAuth is required.")
     refresh_token = (session_data or {}).get("refresh_token")
     if not refresh_token:
         raise AuthError("auth_required", "Atlassian authentication is required.")
@@ -319,7 +317,7 @@ def ensure_oauth_token(
     diagnostic_observer=None,
 ):
     if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
-        return session_data
+        raise AuthError("invalid_auth_mode", "DB-backed Atlassian OAuth is required.")
     if not session_data.get("access_token"):
         raise AuthError("auth_required", "Atlassian authentication is required.")
     if not is_oauth_token_expired(session_data):
@@ -346,10 +344,6 @@ def build_jira_headers(config, session_data):
         "Accept": "application/json",
         "Content-Type": "application/json",
     }
-    if config.auth_mode == AUTH_MODE_BASIC:
-        token = base64.b64encode(f"{config.jira_email}:{config.jira_token}".encode("utf-8")).decode("ascii")
-        headers["Authorization"] = f"Basic {token}"
-        return headers
     if config.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
         access_token = (session_data or {}).get("access_token")
         if not access_token:
@@ -361,8 +355,6 @@ def build_jira_headers(config, session_data):
 
 def build_jira_api_url(config, context, path):
     normalized_path = path if path.startswith("/") else f"/{path}"
-    if config.auth_mode == AUTH_MODE_BASIC:
-        return f"{normalize_site_url(config.jira_url)}{normalized_path}"
     if config.auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
         if not context.cloud_id:
             raise AuthError("auth_required", "Atlassian authentication is required.")

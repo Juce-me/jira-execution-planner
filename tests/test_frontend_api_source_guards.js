@@ -100,8 +100,14 @@ function loadApiModule(fileName, exportNames, dependencies = {}) {
         stampWriteBody: body => body, stampWriteParams: params => params,
         isStaleWorkContextError: () => false, reportWorkContextStale: () => {}, workWriteErrorMessage: () => null,
         getActiveWorkContext: () => null, sameCatalogContext: () => true,
+        // authApi's shared single-use token read, routed through the injected HTTP helpers.
+        fetchCsrfToken: backendUrl => (dependencies.getJson
+            || ((url, _label, options) => fetch(url, options).then(response => response.json())))(
+            `${backendUrl}/api/auth/csrf`, 'CSRF token',
+            { cache: 'no-cache', headers: { 'X-Requested-With': 'jira-execution-planner' } }),
         ...dependencies,
     };
+    if (/\bconst fetchCsrfToken\b/.test(source)) delete mergedDependencies.fetchCsrfToken;
     const names = Object.keys(mergedDependencies);
     const values = Object.values(mergedDependencies);
     return new Function(...names, `${source}; return { ${exportNames.join(', ')} };`)(...values);
@@ -1977,45 +1983,33 @@ test('updateIssuePriorities fetches a CSRF token before posting the target prior
     assert.equal(new Headers(calls[0].options.headers).get('X-CSRF-Token'), 'csrf-token');
 });
 
-test('concurrent Jira issue writes share one in-flight CSRF request', async () => {
+test('concurrent Jira issue writes each fetch their own single-use CSRF token', async () => {
     const { jsonOrStructuredError } = loadHttpHelpers();
     const calls = [];
     let csrfCalls = 0;
-    let resolveCsrf;
-    const csrfResponse = new Promise(resolve => { resolveCsrf = resolve; });
     const jiraIssueApi = loadApiModule('jiraIssueApi.js', [
         'transitionIssues',
         'updateIssuePriorities',
     ], {
         jsonOrStructuredError,
-        fetchCsrfToken: async () => {
-            csrfCalls += 1;
-            return csrfResponse;
-        },
+        fetchCsrfToken: async () => ({ csrfToken: `csrf-token-${++csrfCalls}` }),
         trackedFetch: async (apiSurface, url, options) => {
             calls.push({ apiSurface, url, options });
             return jsonResponse({ requested: 1, succeeded: 1, failed: 0, results: [] });
         },
     });
 
-    const statusWrite = jiraIssueApi.transitionIssues('http://backend', {
-        issueKeys: ['PROD-1'],
-        targetStatus: 'In Progress',
-    });
-    const priorityWrite = jiraIssueApi.updateIssuePriorities('http://backend', {
-        issueKeys: ['PROD-2'],
-        targetPriorityId: '3',
-    });
-    await new Promise(resolve => setImmediate(resolve));
+    await Promise.all([
+        jiraIssueApi.transitionIssues('http://backend', { issueKeys: ['PROD-1'], targetStatus: 'In Progress' }),
+        jiraIssueApi.updateIssuePriorities('http://backend', { issueKeys: ['PROD-2'], targetPriorityId: '3' }),
+    ]);
 
-    assert.equal(csrfCalls, 1, 'simultaneous writes should not fan out duplicate CSRF reads');
-    resolveCsrf({ csrfToken: 'csrf-token' });
-    await Promise.all([statusWrite, priorityWrite]);
-    assert.equal(calls.length, 2);
-    calls.forEach(call => assert.equal(new Headers(call.options.headers).get('X-CSRF-Token'), 'csrf-token'));
+    assert.equal(csrfCalls, 2, 'a single-use token must never be shared between simultaneous writes');
+    assert.deepEqual(calls.map(call => new Headers(call.options.headers).get('X-CSRF-Token')).sort(),
+        ['csrf-token-1', 'csrf-token-2']);
 });
 
-test('failed CSRF reads are removed from the shared mutation request cache', async () => {
+test('a failed CSRF read does not affect the next issue write', async () => {
     const { jsonOrStructuredError } = loadHttpHelpers();
     let csrfCalls = 0;
     const calls = [];
@@ -2284,4 +2278,17 @@ test('capsule restore cannot release an outage reported after the recovery reloa
 
     assert.match(recoverySource, /const releaseRestoredOwnership = React\.useCallback\(\(nextStatus = 'idle'\) => \{\s*if \(unavailableRef\.current\) return;/);
     assert.ok(recoverySource.includes('releaseOwnership: releaseRestoredOwnership,'), 'Capsule consumers must receive the outage-guarded release');
+});
+
+test('CSRF tokens come only from authApi with X-Requested-With and are never cached or shared', () => {
+    const authApi = readSource(path.join(frontendSrcPath, 'api', 'authApi.js'));
+    assert.match(authApi, /export const fetchCsrfToken = \(backendUrl\) =>\s*getJson\(`\$\{backendUrl\}\/api\/auth\/csrf`, 'CSRF token', \{[^}]*headers: \{ 'X-Requested-With': 'jira-execution-planner' \}/);
+    const offenders = [];
+    for (const file of listSourceFiles(frontendSrcPath)) {
+        const relative = path.relative(frontendSrcPath, file);
+        const source = readSource(file);
+        if (relative !== path.join('api', 'authApi.js') && source.includes('/api/auth/csrf')) offenders.push(`${relative}: builds the CSRF URL`);
+        if (/fetchMutationCsrfToken|csrfTokenRequests|CsrfRef\b|\bcsrf\.token\b|\{\s*csrf\s*\}/.test(source)) offenders.push(`${relative}: caches or shares a CSRF token`);
+    }
+    assert.deepEqual(offenders, []);
 });

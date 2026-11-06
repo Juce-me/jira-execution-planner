@@ -16,7 +16,6 @@ import uuid
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import DBAPIError
 
 from backend.db import engine as db_engine, models
@@ -256,16 +255,13 @@ def _apply(session, context, sprint_id, team_id, changes, planned=None):
     rows_change = bool(changes) and merge_changes(base, changes) != base
     if not rows_change and _planned_target(base_planned, planned) == base_planned:
         return _document(sprint_id, team_id, seen)
-    dialect = session.bind.dialect.name
-    insert = postgres_insert if dialect == 'postgresql' else sqlite_insert if dialect == 'sqlite' else None
-    if insert is None:
+    if session.bind.dialect.name != 'postgresql':
         raise ReviewError('review_storage_unavailable', 503)
-    if dialect == 'postgresql':
-        session.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
+    session.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
     if not own and session.scalar(select(func.count()).select_from(models.PlanningTeamSprintCapacity).where(
             models.PlanningTeamSprintCapacity.workspace_id == workspace_id)) >= MAX_DOCUMENTS_PER_WORKSPACE:
         raise ReviewError('assignee_capacity_document_limit')
-    inserted = session.execute(insert(models.PlanningTeamSprintCapacity).values(
+    inserted = session.execute(postgres_insert(models.PlanningTeamSprintCapacity).values(
         id=str(uuid.uuid4()), workspace_id=workspace_id, sprint_id=sprint_id, sprint_order=sprint_order(sprint_id),
         team_id=team_id, rows=[], revision=1, created_at=models._utcnow(), updated_at=models._utcnow(),
     ).on_conflict_do_nothing(index_elements=['workspace_id', 'sprint_id', 'team_id'])

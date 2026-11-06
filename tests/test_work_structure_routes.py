@@ -1,17 +1,18 @@
 import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from copy import deepcopy
-from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 import jira_server
 from backend.auth.jira_auth import AuthError
+from backend.auth.db_browser_sessions import create_browser_session
+from tests.db_oauth_test_helpers import seed_db_actor
 from backend.config.json_repository import JsonConfigRepository
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import work_structure as ws
+from tests.postgres_test_db import fresh_database_url
 
 XRW = 'jira-execution-planner'
 SITE = 'https://one.example.test'
@@ -45,8 +46,15 @@ class WorkStructureRouteBase(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'routes.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
+        self.stack = ExitStack()
+        self.addCleanup(self.stack.close)
+        self.stack.enter_context(patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url,
+            'WORK_CONFIGURATIONS_ENABLED': self.flag,
+        }, clear=False))
+        self.stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
+        self.stack.enter_context(patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True))
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
@@ -59,14 +67,6 @@ class WorkStructureRouteBase(unittest.TestCase):
             session.commit()
         self.client = self._client(self.admin_connection)
         self.member = self._client(self.member_connection)
-        self.stack = ExitStack()
-        self.addCleanup(self.stack.close)
-        self.stack.enter_context(patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url,
-            'WORK_CONFIGURATIONS_ENABLED': self.flag,
-        }, clear=False))
-        self.stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
-        self.stack.enter_context(patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True))
         # Feature paths must never fall back to a JSON config.
         self.json_loader = self.stack.enter_context(patch.object(
             JsonConfigRepository, 'load_dashboard_config', side_effect=AssertionError('JSON repository read')))
@@ -75,30 +75,25 @@ class WorkStructureRouteBase(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self.tmpdir.cleanup()
 
     def _connection(self, session, workspace, subject, account_type):
-        user = models.User(external_provider='test', external_subject=subject, account_type=account_type)
-        session.add(user)
-        session.flush()
-        connection = models.AuthConnection(
-            user_id=user.id, workspace_id=workspace.id, provider='atlassian_oauth',
-            site_url=workspace.jira_site_url, cloud_id=workspace.jira_cloud_id,
-            scopes=jira_server.ATLASSIAN_SCOPES.split(), scope_provenance='provider',
-            status='active', expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-        )
-        session.add(connection)
-        session.flush()
-        return connection.id
+        actor = seed_db_actor(session, workspace=workspace, account_identity=subject,
+                              roles=('admin',) if account_type == 'admin' else ())
+        return actor.connection_id
 
     def _client(self, connection_id):
+        with self.factory() as session:
+            connection = session.get(models.AuthConnection, connection_id)
+            browser = create_browser_session(session, user_id=connection.user_id,
+                workspace_id=connection.workspace_id, auth_connection_id=connection.id)
+            session.commit()
         client = jira_server.app.test_client()
         with client.session_transaction() as flask_session:
-            flask_session['db_oauth_session'] = {'db_auth_connection_id': connection_id, 'db_token_version': '1'}
+            flask_session['db_oauth_session'] = {'db_browser_session_id': browser.id}
         return client
 
     def headers(self, client=None):
-        response = (client or self.client).get('/api/auth/csrf')
+        response = (client or self.client).get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return {'X-Requested-With': XRW, 'X-CSRF-Token': response.get_json()['csrfToken']}
 
@@ -166,12 +161,12 @@ class EditorRouteTests(WorkStructureRouteBase):
         self.assertFalse(body['userCanEditSettings'])
         self.assertFalse(body['featureEnabled'])
 
-    def test_non_db_oauth_request_requires_setup(self):
+    def test_retired_profile_read_rejects_before_setup(self):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             response = jira_server.app.test_client().get('/api/work-structure/config')
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'work_configuration_setup_required')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_unauthenticated_get_is_terminal_401(self):
         response = jira_server.app.test_client().get('/api/work-structure/config')
@@ -276,12 +271,12 @@ class EditorRouteTests(WorkStructureRouteBase):
         self.assertEqual((denied.status_code, denied.get_json()['error']), (403, 'admin_required'))
         self.assertIsNone(self.row())
 
-    def test_non_db_oauth_post_requires_setup(self):
+    def test_retired_profile_post_rejects_before_setup(self):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             response = jira_server.app.test_client().post('/api/work-structure/config', json={})
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'work_configuration_setup_required')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_later_save_increments_changed_entries_and_requires_explicit_project_clear(self):
         self.stub_issue_type_catalog()
@@ -817,12 +812,12 @@ class UnpromotedSelectorTests(WorkStructureRouteBase):
             response = self.client.get('/api/components', query_string={'configurationId': 'legacy', 'configurationRevision': '0'})
         self.assertEqual((response.status_code, response.get_json()['error']), (409, 'configuration_feature_disabled'))
 
-    def test_selector_outside_db_oauth_requires_setup(self):
+    def test_selector_in_retired_profile_is_rejected(self):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             response = jira_server.app.test_client().get(
                 '/api/components', query_string={'configurationId': 'legacy', 'configurationRevision': '0'})
-        self.assertEqual((response.status_code, response.get_json()['error']), (409, 'work_configuration_setup_required'))
+        self.assertEqual((response.status_code, response.get_json()['error']), (503, 'runtime_auth_unsupported'))
 
 
 if __name__ == '__main__':

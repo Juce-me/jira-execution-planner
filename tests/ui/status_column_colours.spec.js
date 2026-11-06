@@ -76,8 +76,8 @@ for (const flag of [true, false]) {
         expectPillColours(pills, { flag });
     });
 
-    test(`basic-auth profile follows the same colours (flag ${label})`, async ({ page }) => {
-        await openCatchUp(page, { flag, authMode: 'basic' });
+    test(`non-admin OAuth profile follows the same colours (flag ${label})`, async ({ page }) => {
+        await openCatchUp(page, { flag, authMode: 'atlassian_oauth', userCanEditSettings: false, settingsAdminOnly: true });
         const pills = await collectPills(page, '.task-list');
         expect(pills.length).toBeGreaterThan(0);
         expectPillColours(pills, { flag });
@@ -99,8 +99,10 @@ for (const flag of [true, false]) {
         expectPillColours(await collectPills(page, 'table.planning-review-table'), { flag });
     });
 
-    test(`Planning Table passive status pills with a non-OAuth profile (flag ${label})`, async ({ page }) => {
-        await openPlanningTable(page, { flag, authMode: 'basic' });
+    test(`Planning Table passive OAuth status pills while Settings is open (flag ${label})`, async ({ page }) => {
+        await openPlanningTable(page, { flag });
+        await page.getByRole('button', { name: /manage team groups/i }).click();
+        await expect(page.getByRole('dialog').first()).toBeVisible();
         const pills = await collectPills(page, 'table.planning-review-table');
         expect(pills.length).toBeGreaterThan(0);
         expect(pills.every((pill) => pill.tag === 'SPAN'), 'passive profile renders spans').toBe(true);

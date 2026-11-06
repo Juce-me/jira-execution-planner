@@ -10,7 +10,6 @@ Useful local commands:
 from __future__ import annotations
 
 import os
-from pathlib import Path
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
@@ -38,18 +37,8 @@ def reset_local_database(database_url: str | None = None) -> None:
     if environment_key not in SAFE_ENVIRONMENT_KEYS:
         raise DatabaseConfigurationError('Refusing to reset a database outside local/dev/test.')
 
-    if parsed.get_backend_name() == 'sqlite':
-        database = parsed.database or ''
-        if database in {'', ':memory:'}:
-            return
-        path = Path(database)
-        if not path.name.endswith(('.db', '.sqlite', '.sqlite3')):
-            raise DatabaseConfigurationError('Refusing to remove an SQLite file without a local DB extension.')
-        path.unlink(missing_ok=True)
-        return
-
     if parsed.get_backend_name() != 'postgresql':
-        raise DatabaseConfigurationError('Only local PostgreSQL and SQLite reset are supported.')
+        raise DatabaseConfigurationError('Only local PostgreSQL reset is supported.')
     if parsed.host not in SAFE_POSTGRES_HOSTS or not _database_name_is_local(parsed.database):
         raise DatabaseConfigurationError('Refusing to reset a PostgreSQL database that is not clearly local/test.')
 

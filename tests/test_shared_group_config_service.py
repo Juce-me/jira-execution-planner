@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from contextlib import contextmanager
 from datetime import datetime, timezone
@@ -15,6 +13,7 @@ from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import shared_group_config as service
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 def validate_groups_config(payload, allow_empty=False):
@@ -23,8 +22,7 @@ def validate_groups_config(payload, allow_empty=False):
 
 class SharedGroupConfigServiceTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'shared-groups.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -34,7 +32,6 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_subjects(self):
         with self.factory() as session:

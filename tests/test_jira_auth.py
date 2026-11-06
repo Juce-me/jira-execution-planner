@@ -81,7 +81,7 @@ class JiraAuthTests(unittest.TestCase):
     def test_validate_auth_config_uses_planned_error_codes(self):
         cases = [
             (AuthConfig(jira_url=""), "missing_jira_url"),
-            (AuthConfig(jira_url="https://example.atlassian.net"), "missing_basic_auth"),
+            (AuthConfig(auth_mode=AUTH_MODE_BASIC, jira_url="https://example.atlassian.net"), "invalid_auth_mode"),
             (
                 AuthConfig(auth_mode=AUTH_MODE_ATLASSIAN_OAUTH, jira_url="https://example.atlassian.net"),
                 "missing_oauth_config",
@@ -231,20 +231,12 @@ class JiraAuthTests(unittest.TestCase):
         self.assertEqual(payload["email"], "person@example.com")
         self.assertEqual(payload["display_name"], "Person Example")
 
-    def test_build_jira_headers_basic_mode_returns_json_and_basic_authorization(self):
-        config = AuthConfig(
-            auth_mode=AUTH_MODE_BASIC,
-            jira_url="https://example.atlassian.net",
-            jira_email="person@example.com",
-            jira_token="token-123",
-        )
-
-        headers = build_jira_headers(config, {})
-        expected_token = base64.b64encode(b"person@example.com:token-123").decode("ascii")
-
-        self.assertEqual(headers["Accept"], "application/json")
-        self.assertEqual(headers["Content-Type"], "application/json")
-        self.assertEqual(headers["Authorization"], f"Basic {expected_token}")
+    def test_build_jira_headers_rejects_retired_basic_credentials(self):
+        config = AuthConfig(auth_mode=AUTH_MODE_BASIC, jira_url='https://example.atlassian.net',
+                            jira_email='synthetic@example.invalid', jira_token='synthetic-token')
+        with self.assertRaises(AuthError) as raised:
+            build_jira_headers(config, {})
+        self.assertEqual(raised.exception.code, 'invalid_auth_mode')
 
     def test_build_jira_headers_oauth_mode_uses_session_access_token_as_bearer(self):
         config = AuthConfig(auth_mode=AUTH_MODE_ATLASSIAN_OAUTH, jira_url="https://example.atlassian.net")
@@ -261,14 +253,10 @@ class JiraAuthTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "auth_required")
 
-    def test_build_jira_api_url_basic_mode_uses_site_url_plus_path(self):
-        config = AuthConfig(auth_mode=AUTH_MODE_BASIC, jira_url="https://example.atlassian.net/")
-        context = self._auth_context()
-
-        self.assertEqual(
-            build_jira_api_url(config, context, "/rest/api/3/myself"),
-            "https://example.atlassian.net/rest/api/3/myself",
-        )
+    def test_build_jira_api_url_rejects_retired_basic_profile(self):
+        with self.assertRaises(AuthError) as raised:
+            build_jira_api_url(AuthConfig(auth_mode=AUTH_MODE_BASIC), self._auth_context(), '/rest/api/3/myself')
+        self.assertEqual(raised.exception.code, 'invalid_auth_mode')
 
     def test_build_jira_api_url_oauth_mode_uses_atlassian_api_gateway(self):
         config = AuthConfig(auth_mode=AUTH_MODE_ATLASSIAN_OAUTH, jira_url="https://example.atlassian.net")
@@ -550,28 +538,15 @@ class JiraAuthTests(unittest.TestCase):
         self.assertTrue(is_oauth_token_expired({"expires_at": int(time.time()) + 30}))
         self.assertFalse(is_oauth_token_expired({"expires_at": int(time.time()) + 600}))
 
-    def test_jira_get_uses_built_url_and_headers(self):
-        config = AuthConfig(
-            auth_mode=AUTH_MODE_BASIC,
-            jira_url="https://example.atlassian.net",
-            jira_email="user@example.com",
-            jira_token="token-123",
-        )
-        context = self._auth_context()
-        calls = []
-
-        def http_get(url, **kwargs):
-            calls.append((url, kwargs))
-            return FakeResponse(200, {"ok": True})
-
+    def test_retired_basic_get_fails_before_http(self):
         from backend.auth.jira_auth import jira_get
-
-        response = jira_get(config, context, {}, "/rest/api/3/project/search", http_get=http_get, timeout=15)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(calls[0][0], "https://example.atlassian.net/rest/api/3/project/search")
-        self.assertIn("Authorization", calls[0][1]["headers"])
-        self.assertEqual(calls[0][1]["timeout"], 15)
+        from unittest.mock import Mock
+        http_get = Mock()
+        with self.assertRaises(AuthError) as raised:
+            jira_get(AuthConfig(auth_mode=AUTH_MODE_BASIC), self._auth_context(), {},
+                     '/rest/api/3/project/search', http_get=http_get)
+        self.assertEqual(raised.exception.code, 'invalid_auth_mode')
+        http_get.assert_not_called()
 
     def test_concurrent_oauth_refresh_only_calls_provider_once(self):
         from backend.auth.jira_auth import ensure_oauth_token

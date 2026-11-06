@@ -167,8 +167,8 @@ test('bootstrap writes the seven cells in order with exact coercions; the save r
 
 test('adminAccessAvailable truth table and the access-hook arguments', async () => {
     const table = [
-        [false, false, true, false],  // directory unavailable: Access tab shows (informational card)
-        [false, true, true, false],
+        [false, false, false, false], // missing DB-directory capability never grants Access
+        [false, true, false, false],
         [true, false, false, false],  // DB user directory: tool admins only
         [true, true, true, true],
     ];

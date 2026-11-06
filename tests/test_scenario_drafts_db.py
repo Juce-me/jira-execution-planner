@@ -1,6 +1,5 @@
 import os
 from types import SimpleNamespace
-import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -25,6 +24,7 @@ from backend.scenario_drafts import (
     scenario_source_hash,
 )
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -40,79 +40,76 @@ def migration_config(database_url):
 
 class ScenarioDraftMigrationTests(unittest.TestCase):
     def test_scenario_draft_migration_adds_tables_indexes_and_downgrades(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'scenario-drafts-migration.db')}"
-            config = migration_config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = migration_config(database_url)
 
-            command.upgrade(config, '20260511_0003')
-            engine = create_engine(database_url, future=True)
-            try:
-                self.assertNotIn('scenario_drafts', inspect(engine).get_table_names())
-            finally:
-                engine.dispose()
+        command.upgrade(config, '20260511_0003')
+        engine = create_engine(database_url, future=True)
+        try:
+            self.assertNotIn('scenario_drafts', inspect(engine).get_table_names())
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, '20260514_0004')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                tables = set(inspector.get_table_names())
-                self.assertIn('scenario_drafts', tables)
-                self.assertIn('scenario_draft_versions', tables)
+        command.upgrade(config, '20260514_0004')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            tables = set(inspector.get_table_names())
+            self.assertIn('scenario_drafts', tables)
+            self.assertIn('scenario_draft_versions', tables)
 
-                draft_columns = {column['name'] for column in inspector.get_columns('scenario_drafts')}
-                version_columns = {column['name'] for column in inspector.get_columns('scenario_draft_versions')}
-                draft_indexes = {index['name']: index for index in inspector.get_indexes('scenario_drafts')}
-                version_uniques = {
-                    constraint['name']
-                    for constraint in inspector.get_unique_constraints('scenario_draft_versions')
-                }
+            draft_columns = {column['name'] for column in inspector.get_columns('scenario_drafts')}
+            version_columns = {column['name'] for column in inspector.get_columns('scenario_draft_versions')}
+            draft_indexes = {index['name']: index for index in inspector.get_indexes('scenario_drafts')}
+            version_uniques = {
+                constraint['name']
+                for constraint in inspector.get_unique_constraints('scenario_draft_versions')
+            }
 
-                self.assertTrue({
-                    'workspace_id',
-                    'scope_key',
-                    'scope_payload',
-                    'scenario_source_hash',
-                    'overrides',
-                    'draft_revision',
-                    'archived_at',
-                }.issubset(draft_columns))
-                self.assertTrue({
-                    'scenario_draft_id',
-                    'version_number',
-                    'draft_revision',
-                    'scenario_source_hash',
-                    'overrides',
-                    'source',
-                }.issubset(version_columns))
-                self.assertIn('uq_scenario_drafts_active_scope', draft_indexes)
-                self.assertTrue(draft_indexes['uq_scenario_drafts_active_scope']['unique'])
-                self.assertIn('ix_scenario_drafts_workspace_updated', draft_indexes)
-                self.assertIn('uq_scenario_draft_versions_number', version_uniques)
-            finally:
-                engine.dispose()
+            self.assertTrue({
+                'workspace_id',
+                'scope_key',
+                'scope_payload',
+                'scenario_source_hash',
+                'overrides',
+                'draft_revision',
+                'archived_at',
+            }.issubset(draft_columns))
+            self.assertTrue({
+                'scenario_draft_id',
+                'version_number',
+                'draft_revision',
+                'scenario_source_hash',
+                'overrides',
+                'source',
+            }.issubset(version_columns))
+            self.assertIn('uq_scenario_drafts_active_scope', draft_indexes)
+            self.assertTrue(draft_indexes['uq_scenario_drafts_active_scope']['unique'])
+            self.assertIn('ix_scenario_drafts_workspace_updated', draft_indexes)
+            self.assertIn('uq_scenario_draft_versions_number', version_uniques)
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260511_0003')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('scenario_drafts', tables)
-                self.assertNotIn('scenario_draft_versions', tables)
-                self.assertIn('view_configs', tables)
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260511_0003')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('scenario_drafts', tables)
+            self.assertNotIn('scenario_draft_versions', tables)
+            self.assertIn('view_configs', tables)
+        finally:
+            engine.dispose()
 
 
 class ScenarioDraftModelTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'scenario-drafts.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_users_workspaces(self):
         with self.factory() as session:
@@ -372,8 +369,7 @@ class ScenarioDraftModelTests(unittest.TestCase):
 
 class ScenarioDraftServiceTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'scenario-drafts-service.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -382,7 +378,6 @@ class ScenarioDraftServiceTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_users_workspaces(self):
         with self.factory() as session:
@@ -641,7 +636,7 @@ class ScenarioDraftServiceTests(unittest.TestCase):
                 return
             bumped.append(True)
             cursor.execute(
-                'UPDATE scenario_drafts SET draft_revision = ? WHERE scope_key = ?',
+                'UPDATE scenario_drafts SET draft_revision = %s WHERE scope_key = %s',
                 (2, scope_key),
             )
 

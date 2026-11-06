@@ -1,8 +1,6 @@
 import unittest
 import uuid
 import importlib
-from contextlib import contextmanager
-from dataclasses import replace
 from unittest.mock import Mock, patch
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
@@ -15,6 +13,7 @@ from alembic.operations import Operations
 
 from backend.db.models import Base, LoadPerformance
 from backend.services import load_performance as performance
+from tests.postgres_test_db import fresh_database_url
 
 
 def observation(duration=1000, completeness='complete', outcome='success'):
@@ -64,7 +63,7 @@ def phased_board(duration, index, first, focused, scope_type='component', **over
 
 class LoadPerformanceTests(unittest.TestCase):
     def setUp(self):
-        self.engine = create_engine('sqlite://')
+        self.engine = create_engine(fresh_database_url(self.addCleanup))
         Base.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.addCleanup(self.engine.dispose)
@@ -176,9 +175,10 @@ class LoadPerformanceTests(unittest.TestCase):
     def test_collection_defaults_on_with_database_and_supports_opt_out(self):
         self.assertFalse(performance.collection_enabled({}))
         self.assertFalse(performance.collection_enabled({'APP_PERFORMANCE_DEBUG': 'true'}))
-        self.assertTrue(performance.collection_enabled({'DATABASE_URL': 'sqlite://'}))
-        self.assertFalse(performance.collection_enabled({'APP_PERFORMANCE_DEBUG': 'false', 'DATABASE_URL': 'sqlite://'}))
-        self.assertTrue(performance.collection_enabled({'APP_PERFORMANCE_DEBUG': 'true', 'DATABASE_URL': 'sqlite://'}))
+        database_url = 'postgresql+psycopg://synthetic@localhost/synthetic'
+        self.assertTrue(performance.collection_enabled({'DATABASE_URL': database_url}))
+        self.assertFalse(performance.collection_enabled({'APP_PERFORMANCE_DEBUG': 'false', 'DATABASE_URL': database_url}))
+        self.assertTrue(performance.collection_enabled({'APP_PERFORMANCE_DEBUG': 'true', 'DATABASE_URL': database_url}))
 
     def test_epics_without_child_issues_and_dependency_timing_are_preserved(self):
         payload = observation()
@@ -505,7 +505,7 @@ class LoadPerformanceTests(unittest.TestCase):
         migration = importlib.import_module('backend.db.migrations.versions.20260908_0014_load_performance')
         board_migration = importlib.import_module(
             'backend.db.migrations.versions.20260908_0015_board_load_performance')
-        engine = create_engine('sqlite://')
+        engine = create_engine(fresh_database_url(self.addCleanup))
         self.addCleanup(engine.dispose)
         with engine.begin() as connection:
             with Operations.context(MigrationContext.configure(connection)):
@@ -681,140 +681,97 @@ class LoadPerformanceTests(unittest.TestCase):
 class LoadPerformanceSecurityTests(unittest.TestCase):
     def setUp(self):
         import jira_server
+        from tests.oauth_test_helpers import set_up_db_oauth
         self.server = jira_server
         self.server.app.config['TESTING'] = True
         self.server.app.secret_key = 'synthetic-test-secret'
+        self.database_url = set_up_db_oauth(self)
+        environment = patch.dict('os.environ', {
+            'APP_ENVIRONMENT_KEY': 'local', 'APP_PERFORMANCE_DEBUG': 'true',
+            'APP_REVISION': 'synthetic-performance-revision',
+        })
+        environment.start()
+        self.addCleanup(environment.stop)
         self.client = self.server.app.test_client()
 
-    def test_anonymous_oauth_denied_and_missing_csrf_denied(self):
+    def sign_in(self, client=None, **overrides):
         from tests.oauth_test_helpers import install_oauth_session
-        from tests.test_endpoint_security_matrix import _verified_context
-        with patch.object(self.server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            for method, path in [('GET', '/api/performance/context'), ('POST', '/api/performance/loads'),
-                                 ('GET', '/api/admin/performance')]:
-                self.assertEqual(self.client.open(path, method=method).status_code, 401)
-            install_oauth_session(self.client, account_id='synthetic-account')
-            with patch.object(self.server, 'current_request_auth_context', return_value=_verified_context()):
-                response = self.client.post('/api/performance/loads', json=observation())
-                self.assertEqual(response.status_code, 403)
-                self.assertEqual(response.get_json()['error'], 'csrf_required')
+        install_oauth_session(client or self.client, account_id='synthetic-account', **overrides)
+
+    def csrf_headers(self):
+        response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return {'X-Requested-With': 'jira-execution-planner',
+                'X-CSRF-Token': response.get_json()['csrfToken']}
+
+    def test_anonymous_oauth_denied_and_missing_csrf_denied(self):
+        for method, path in [('GET', '/api/performance/context'), ('POST', '/api/performance/loads'),
+                             ('GET', '/api/admin/performance')]:
+            self.assertEqual(self.client.open(path, method=method).status_code, 401)
+        self.sign_in()
+        response = self.client.post('/api/performance/loads', json=observation())
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'csrf_required')
 
     def test_admin_denied_even_when_settings_are_collaborative(self):
-        from tests.oauth_test_helpers import install_oauth_session
-        from tests.test_endpoint_security_matrix import _verified_context
-        with patch.object(self.server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(self.server, 'SETTINGS_ADMIN_ONLY', False), \
-             patch.object(self.server, 'current_request_auth_context', return_value=_verified_context()):
-            install_oauth_session(self.client, account_id='synthetic-account')
+        self.sign_in()
+        with patch.object(self.server, 'SETTINGS_ADMIN_ONLY', False):
             response = self.client.get('/api/admin/performance')
-            self.assertEqual(response.status_code, 403)
-            self.assertEqual(response.get_json()['error'], 'admin_required')
-            self.assertNotIn('catchUpWeekly', response.get_json())
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.get_json()['error'], 'admin_required')
+        self.assertNotIn('catchUpWeekly', response.get_json())
 
     def test_ingestion_and_admin_read_are_workspace_scoped(self):
-        from tests.test_endpoint_security_matrix import _verified_context
-        engine = create_engine('sqlite://')
-        self.addCleanup(engine.dispose)
-        Base.metadata.create_all(engine)
-
-        @contextmanager
-        def database_session():
-            with Session(engine) as session:
-                yield session
-                session.commit()
-
-        context = _verified_context(is_admin=True)
-        with patch.object(self.server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.dict('os.environ', {'APP_ENVIRONMENT_KEY': 'local', 'APP_PERFORMANCE_DEBUG': 'true', 'DATABASE_URL': 'sqlite://'}), \
-             patch.object(self.server, 'current_request_auth_context', return_value=context), \
-             patch('backend.routes.performance_routes.session_scope', database_session):
-            payload = observation()
-            response = self.client.post('/api/performance/loads', json=payload)
-            self.assertEqual(response.status_code, 201, response.get_json())
-            self.assertEqual(self.client.post('/api/performance/loads', json=payload).status_code, 200)
-            response = self.client.get('/api/admin/performance')
-            self.assertEqual(response.status_code, 200, response.get_json())
-            self.assertEqual(response.get_json()['summary']['sampleCount'], 1)
-            self.assertIn('catchUpWeekly', response.get_json())
-            with patch.object(self.server, 'current_request_auth_context', return_value=replace(context, workspace_id='other-workspace')):
-                other = self.client.get('/api/admin/performance').get_json()
-                self.assertEqual(other['summary']['sampleCount'], 0)
-                self.assertEqual({'weeks': []}, other['catchUpWeekly'])
-            payload['workspaceId'] = 'other-workspace'
-            self.assertEqual(self.client.post('/api/performance/loads', json=payload).status_code, 400)
-            self.assertEqual(self.client.post('/api/performance/loads', data='x' * 16385).status_code, 413)
-            with patch.dict('os.environ', {'APP_PERFORMANCE_DEBUG': 'false'}):
-                self.assertEqual(self.client.post('/api/performance/loads', json=observation()).status_code, 404)
+        self.sign_in(roles=('admin',))
+        payload = observation()
+        response = self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers())
+        self.assertEqual(response.status_code, 201, response.get_json())
+        self.assertEqual(self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers()).status_code, 200)
+        response = self.client.get('/api/admin/performance')
+        self.assertEqual(response.status_code, 200, response.get_json())
+        self.assertEqual(response.get_json()['summary']['sampleCount'], 1)
+        self.assertIn('catchUpWeekly', response.get_json())
+        other_client = self.server.app.test_client()
+        self.sign_in(other_client, roles=('admin',), cloudid='synthetic-other-cloud',
+                     site_url='https://other.example.invalid')
+        other_response = other_client.get('/api/admin/performance')
+        self.assertEqual(other_response.status_code, 200, other_response.get_json())
+        other = other_response.get_json()
+        self.assertEqual(other['summary']['sampleCount'], 0)
+        self.assertEqual({'weeks': []}, other['catchUpWeekly'])
+        payload['workspaceId'] = 'other-workspace'
+        self.assertEqual(self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers()).status_code, 400)
+        self.assertEqual(self.client.post('/api/performance/loads', data='x' * 16385, headers=self.csrf_headers()).status_code, 413)
+        with patch.dict('os.environ', {'APP_PERFORMANCE_DEBUG': 'false'}):
+            self.assertEqual(self.client.post('/api/performance/loads', json=observation(), headers=self.csrf_headers()).status_code, 404)
 
     def test_oauth_component_ingestion_and_admin_report_use_real_storage(self):
-        from tests.oauth_test_helpers import install_oauth_session
-        from tests.test_endpoint_security_matrix import _verified_context
-        engine = create_engine('sqlite://')
-        self.addCleanup(engine.dispose)
-        Base.metadata.create_all(engine)
-
-        @contextmanager
-        def database_session():
-            with Session(engine) as session:
-                yield session
-                session.commit()
-
-        context = _verified_context(is_admin=True)
-        with patch.object(self.server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.dict('os.environ', {
-                 'APP_ENVIRONMENT_KEY': 'local', 'APP_PERFORMANCE_DEBUG': 'true',
-                 'DATABASE_URL': 'sqlite://',
-             }), \
-             patch.object(self.server, 'current_request_auth_context', return_value=context), \
-             patch('backend.routes.performance_routes.session_scope', database_session):
-            install_oauth_session(self.client, account_id='synthetic-account')
-
-            def csrf_headers():
-                csrf_response = self.client.get('/api/auth/csrf')
-                self.assertEqual(
-                    csrf_response.status_code, 200, csrf_response.get_data(as_text=True),
-                )
-                return {
-                    'X-Requested-With': 'jira-execution-planner',
-                    'X-CSRF-Token': csrf_response.get_json()['csrfToken'],
-                }
-
-            payload = board_observation(825, scope_type='component')
-
-            created = self.client.post(
-                '/api/performance/loads', json=payload, headers=csrf_headers(),
-            )
-            self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
-            self.assertEqual(created.get_json(), {'recorded': True})
-            duplicate = self.client.post(
-                '/api/performance/loads', json=payload, headers=csrf_headers(),
-            )
-            self.assertEqual(duplicate.status_code, 200, duplicate.get_data(as_text=True))
-            self.assertEqual(duplicate.get_json(), {'recorded': False})
-
-            for scope_type in ('all_work', 'component'):
-                invalid = board_observation(scope_type=scope_type)
-                invalid['sprintId'] = 'sprint-a'
-                rejected = self.client.post(
-                    '/api/performance/loads', json=invalid, headers=csrf_headers(),
-                )
-                with self.subTest(scope_type=scope_type):
-                    self.assertEqual(rejected.status_code, 400, rejected.get_data(as_text=True))
-                    self.assertEqual(rejected.get_json(), {'error': 'invalid_measurement'})
-
-            response = self.client.get(
-                '/api/admin/performance',
-                query_string={'surface': 'eng_board', 'scopeType': 'component'},
-            )
-            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            report = response.get_json()
-            self.assertEqual(report['summary']['sampleCount'], 1)
-            self.assertEqual(len(report['samples']), 1)
-            self.assertEqual(report['filters']['scopeTypes'], ['component'])
-            self.assertEqual(report['filters']['sprints'], [])
-            self.assertEqual(report['samples'][0]['loadId'], payload['loadId'])
-            self.assertEqual(report['samples'][0]['scopeType'], 'component')
-            self.assertIsNone(report['samples'][0]['sprintId'])
+        self.sign_in(roles=('admin',))
+        payload = board_observation(825, scope_type='component')
+        created = self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers())
+        self.assertEqual(created.status_code, 201, created.get_data(as_text=True))
+        self.assertEqual(created.get_json(), {'recorded': True})
+        duplicate = self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers())
+        self.assertEqual(duplicate.status_code, 200, duplicate.get_data(as_text=True))
+        self.assertEqual(duplicate.get_json(), {'recorded': False})
+        for scope_type in ('all_work', 'component'):
+            invalid = board_observation(scope_type=scope_type)
+            invalid['sprintId'] = 'sprint-a'
+            rejected = self.client.post('/api/performance/loads', json=invalid, headers=self.csrf_headers())
+            with self.subTest(scope_type=scope_type):
+                self.assertEqual(rejected.status_code, 400, rejected.get_data(as_text=True))
+                self.assertEqual(rejected.get_json(), {'error': 'invalid_measurement'})
+        response = self.client.get('/api/admin/performance',
+            query_string={'surface': 'eng_board', 'scopeType': 'component'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        report = response.get_json()
+        self.assertEqual(report['summary']['sampleCount'], 1)
+        self.assertEqual(len(report['samples']), 1)
+        self.assertEqual(report['filters']['scopeTypes'], ['component'])
+        self.assertEqual(report['filters']['sprints'], [])
+        self.assertEqual(report['samples'][0]['loadId'], payload['loadId'])
+        self.assertEqual(report['samples'][0]['scopeType'], 'component')
+        self.assertIsNone(report['samples'][0]['sprintId'])
 
 
 def epm_observation(duration=3000, index=500, tab='active', sprint='42', outcome='success', lanes=(), **overrides):
@@ -829,7 +786,7 @@ class EpmLoadPerformanceTests(unittest.TestCase):
     NOW = datetime(2026, 10, 21, 12, 0, tzinfo=timezone.utc)   # a Wednesday
 
     def setUp(self):
-        self.engine = create_engine('sqlite://')
+        self.engine = create_engine(fresh_database_url(self.addCleanup))
         Base.metadata.create_all(self.engine)
         self.session = Session(self.engine)
         self.addCleanup(self.engine.dispose)

@@ -7,12 +7,13 @@ from backend.auth.context import RequestAuthContext
 from backend.config.import_config import import_dashboard_config
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 class SharedCapacityConfigImportTests(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'import.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:

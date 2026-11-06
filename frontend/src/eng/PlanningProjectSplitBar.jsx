@@ -7,9 +7,10 @@ export default function PlanningProjectSplitBar({
     adHocProductSP = 0,
     compact = false,
     workModel,
+    childPlural = 'stories',
 }) {
     if (isCombinedWorkModel(workModel)) {
-        return <CombinedWorkBar selectedProjectEntries={selectedProjectEntries} excludedProjectStats={excludedProjectStats} adHocSP={adHocProductSP} compact={compact} />;
+        return <CombinedWorkBar selectedProjectEntries={selectedProjectEntries} excludedProjectStats={excludedProjectStats} adHocSP={adHocProductSP} compact={compact} childPlural={childPlural} />;
     }
     const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
     const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
@@ -33,12 +34,12 @@ export default function PlanningProjectSplitBar({
         <>
             {!compact && <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
                 <div className="planning-stat">
-                    <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
+                    <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Planned effort excludes excluded epics.">Planned SP by Project:</span>
                 </div>
             </div>}
             {projectTotal === 0 && excludedTotal === 0 ? (
                 <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
-                    <span className="planning-stat-value">No tasks selected</span>
+                    <span className="planning-stat-value">No planned {childPlural.toLowerCase()}</span>
                 </div>
             ) : (
                 <div className="project-bar-graph">
@@ -87,7 +88,7 @@ export default function PlanningProjectSplitBar({
 }
 
 // One combined lane (rnd_2027): a single selected-SP fill with an Ad Hoc subsegment; no Product/Tech labels or 70/30 target.
-function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP: adHocInput, compact }) {
+function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP: adHocInput, compact, childPlural }) {
     const selectedSP = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
     const excludedSP = excludedProjectStats['OTHER'] || 0;
     const adHocSP = Math.min(adHocInput, selectedSP);
@@ -95,7 +96,7 @@ function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP
     if (selectedSP === 0 && excludedSP === 0) {
         return (
             <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
-                <span className="planning-stat-value">No tasks selected</span>
+                <span className="planning-stat-value">No planned {childPlural.toLowerCase()}</span>
             </div>
         );
     }
@@ -105,9 +106,9 @@ function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP
                 <div
                     className="project-bar-fill product"
                     style={{ width: selectedSP > 0 ? '100%' : '0%', borderRadius: '6px' }}
-                    data-tooltip={`Selected: ${selectedSP.toFixed(1)} SP.${adHocSP > 0 ? ` Incl. Ad Hoc: ${adHocSP.toFixed(1)} SP.` : ''}${excludedSP > 0 ? ` Excluded: ${excludedSP.toFixed(1)} SP.` : ''}`}
+                    data-tooltip={`Planned SP: ${selectedSP.toFixed(1)} SP.${adHocSP > 0 ? ` Incl. Ad Hoc: ${adHocSP.toFixed(1)} SP.` : ''}${excludedSP > 0 ? ` Excluded: ${excludedSP.toFixed(1)} SP.` : ''}`}
                 >
-                    {!compact && <span className="capacity-bar-fill-label">Selected · {selectedSP.toFixed(1)} SP{adHocSP > 0 ? ` · Ad Hoc ${adHocSP.toFixed(1)}` : ''}</span>}
+                    {!compact && <span className="capacity-bar-fill-label">Planned SP · {selectedSP.toFixed(1)} SP{adHocSP > 0 ? ` · Ad Hoc ${adHocSP.toFixed(1)}` : ''}</span>}
                 </div>
                 {adHocSP > 0 && (
                     <div
@@ -116,7 +117,7 @@ function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP
                         data-tooltip={`Ad Hoc (included): ${adHocSP.toFixed(1)} SP of ${selectedSP.toFixed(1)} SP.`}
                     />
                 )}
-                {compact && <span className="capacity-bar-fill-label planning-compact-readout">Selected {selectedSP.toFixed(1)} SP</span>}
+                {compact && <span className="capacity-bar-fill-label planning-compact-readout">Planned SP {selectedSP.toFixed(1)} SP</span>}
             </div>
         </div>
     );

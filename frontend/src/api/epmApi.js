@@ -1,8 +1,6 @@
-import { apiFetch, getJson, postJson, trackedFetch } from './http.js';
+import { fetchCsrfToken } from './authApi.js';
+import { apiFetch, postJson, trackedFetch } from './http.js';
 import { runInWorkContext, stampParams } from '../workStructure/requestContext.js';
-
-const fetchCsrfToken = (backendUrl) =>
-    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
 
 const DEFAULT_EPM_ISSUE_TYPES = {
     initiative: ['Initiative'],

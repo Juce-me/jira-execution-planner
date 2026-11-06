@@ -17,6 +17,7 @@ const {
     describeEpmReadError,
     isBackendConnectionFailure,
     isEpmNavigationVisible,
+    getLocalStorage,
     loadCachedSprintCatalog,
     normalizeEpmAccess,
     normalizeEpmCapabilities,
@@ -31,6 +32,16 @@ vm.runInContext(esbuild.buildSync({
     bundle: true, write: false, format: 'cjs', platform: 'browser',
 }).outputFiles[0].text, vm.createContext(contextSandbox));
 const { buildConfigurationContext } = contextSandbox.module.exports;
+
+test('local storage acquisition tolerates a denied browser property without touching data', () => {
+    const storage = { getItem() { throw new Error('no data access expected'); } };
+    assert.equal(getLocalStorage({ localStorage: storage }), storage);
+    assert.equal(getLocalStorage(null), null);
+    const blocked = Object.defineProperty({}, 'localStorage', {
+        get() { throw new Error('browser storage denied'); },
+    });
+    assert.equal(getLocalStorage(blocked), null);
+});
 
 const SOURCE_A = { identity: 'sc1:a', browserContextId: 'bc1:a' };
 const SOURCE_B = { identity: 'sc1:b', browserContextId: 'bc1:a' };
@@ -542,17 +553,17 @@ test('catalog completion401 remains terminal at the hard deadline', async () => 
 const plain = (value) => JSON.parse(JSON.stringify(value));
 
 test('EPM capabilities fail closed in production: missing or mistyped fields are false/empty', () => {
-    const closed = { basicCompatibility: false, viewEnabled: false, homeReadAvailable: false, loginUrl: '' };
+    const closed = { viewEnabled: false, homeReadAvailable: false, loginUrl: '' };
     for (const config of [undefined, null, {}, 'x', { authMode: 'atlassian_oauth' }, { authMode: 'atlassian_oauth', epmViewEnabled: 'true', epmHomeReadAvailable: 1, epmHomeReadLoginUrl: 5 }]) {
         assert.deepEqual(plain(normalizeEpmCapabilities(config)), closed, JSON.stringify(config));
     }
     assert.deepEqual(plain(normalizeEpmCapabilities({ authMode: 'atlassian_oauth', epmViewEnabled: true, epmHomeReadAvailable: true })), { ...closed, viewEnabled: true, homeReadAvailable: true });
-    assert.equal(normalizeEpmCapabilities({ authMode: 'basic' }).basicCompatibility, true);
-    assert.equal(normalizeEpmCapabilities({ epmViewEnabled: true }).basicCompatibility, false, 'a missing authMode is never Basic compatibility');
+    assert.deepEqual(plain(normalizeEpmCapabilities({ authMode: 'basic', epmViewEnabled: true, epmHomeReadAvailable: true })), closed);
+    assert.deepEqual(plain(normalizeEpmCapabilities({ epmViewEnabled: true, epmHomeReadAvailable: true })), closed, 'missing authMode fails closed');
 });
 
 test('EPM scope-update link is only the same-tab app login URL', () => {
-    const url = (value) => normalizeEpmCapabilities({ epmHomeReadLoginUrl: value }).loginUrl;
+    const url = (value) => normalizeEpmCapabilities({ authMode: 'atlassian_oauth', epmHomeReadLoginUrl: value }).loginUrl;
     assert.equal(url('/login?reason=missing_scope'), '/login?reason=missing_scope');
     assert.equal(url('/login'), '/login');
     for (const bad of ['https://evil.example/login', '//evil.example/login', '/login?reason=missing_scope&x=1', '/other', 'javascript:alert(1)', '']) assert.equal(url(bad), '', bad);
@@ -568,15 +579,15 @@ test('EPM access normalizer: unknown state is unavailable, null stays unresolved
     for (const state of ['available', 'disabled', 'scope_missing', 'empty', 'denied', 'unavailable']) assert.equal(normalizeEpmAccess({ state }).state, state);
 });
 
-test('EPM navigation: Basic compatibility, or enabled + available + access available; unresolved access hides it', () => {
-    const caps = (overrides = {}) => ({ basicCompatibility: false, viewEnabled: true, homeReadAvailable: true, loginUrl: '', ...overrides });
+test('EPM navigation requires enabled + available + access available; unresolved access hides it', () => {
+    const caps = (overrides = {}) => ({ viewEnabled: true, homeReadAvailable: true, loginUrl: '', ...overrides });
     const access = (state) => ({ state });
     assert.equal(isEpmNavigationVisible(caps(), access('available')), true);
     assert.equal(isEpmNavigationVisible(caps(), null), false, 'unresolved access hides navigation');
     for (const state of ['disabled', 'scope_missing', 'empty', 'denied', 'unavailable']) assert.equal(isEpmNavigationVisible(caps(), access(state)), false, state);
     assert.equal(isEpmNavigationVisible(caps({ viewEnabled: false }), access('available')), false);
     assert.equal(isEpmNavigationVisible(caps({ homeReadAvailable: false }), access('available')), false);
-    assert.equal(isEpmNavigationVisible(caps({ basicCompatibility: true, viewEnabled: false, homeReadAvailable: false }), null), true);
+    assert.equal(isEpmNavigationVisible(caps({ basicCompatibility: true, viewEnabled: false, homeReadAvailable: false }), null), false, 'a retired compatibility flag grants nothing');
     assert.equal(isEpmNavigationVisible(null, access('available')), false);
     assert.equal(isEpmNavigationVisible(caps(), { state: 'available', homeReadAvailable: false }), true, 'config readiness plus access state decide, not a second flag');
 });

@@ -119,9 +119,9 @@ exit "${FAKE_BUILD_STATUS:-0}"
 
 PYTHON_STUB = r'''#!/usr/bin/env bash
 set -u
-printf 'python|%s|bind=%s|network=%s|basic=%s|debug=%s\n' \
+printf 'python|%s|bind=%s|network=%s|basic=%s|debug=%s|auth=%s\n' \
   "$*" "${APP_BIND_HOST:-}" "${ALLOW_NETWORK_BIND:-}" \
-  "${ALLOW_BASIC_AUTH_ON_NETWORK:-}" "${DEBUG_MODE:-}" >> "$RUNNER_LOG"
+  "${ALLOW_BASIC_AUTH_ON_NETWORK:-}" "${DEBUG_MODE:-}" "${JIRA_AUTH_MODE:-}" >> "$RUNNER_LOG"
 case "$*" in
   *"-m alembic"*) exit "${FAKE_MIGRATION_STATUS:-0}" ;;
   *"check_startup_preflight.py"*) exit "${FAKE_PREFLIGHT_STATUS:-0}" ;;
@@ -449,6 +449,22 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self.assertNotIn("jira_server.py", log)
         self._assert_down_once(log)
         self._assert_lock_released()
+
+    def test_explicit_retired_auth_reaches_preflight_without_silent_conversion(self):
+        result = self._run(JIRA_AUTH_MODE='basic', FAKE_PREFLIGHT_STATUS=42)
+        self.assertEqual(result.returncode, 42)
+        log = self.log.read_text()
+        preflight = next(line for line in log.splitlines() if 'check_startup_preflight.py' in line)
+        self.assertTrue(preflight.endswith('|auth=basic'))
+        self.assertNotIn('jira_server.py', log)
+
+    def test_omitted_auth_is_left_for_the_shared_default_normalizer(self):
+        self.env.pop('JIRA_AUTH_MODE', None)
+        result = self._run()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        lines = [line for line in self.log.read_text().splitlines() if line.startswith('python|')]
+        self.assertTrue(lines)
+        self.assertTrue(all(line.endswith('|auth=') for line in lines))
 
     def test_preflight_failure_retains_42_and_skips_app(self):
         result = self._run(FAKE_PREFLIGHT_STATUS=42)

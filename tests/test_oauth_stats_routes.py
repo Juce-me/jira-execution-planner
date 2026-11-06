@@ -1,13 +1,13 @@
-import base64
-import os
 import unittest
 from urllib.parse import quote
 from unittest.mock import patch
 
 import jira_server
 from backend.routes import epm_routes
-from backend.auth.context import RequestAuthContext
-from tests.oauth_test_helpers import install_oauth_session
+from backend.auth.db_context import resolve_db_request_auth_context
+from backend.db import engine as db_engine, models
+from backend.epm.home import EPM_HOME_READ_SCOPES
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth, FULL_OAUTH_SCOPE
 
 
 class FakeResponse:
@@ -24,23 +24,24 @@ class OAuthStatsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
+        self.session_payload = install_oauth_session(self.client, scope=FULL_OAUTH_SCOPE + ' ' + ' '.join(EPM_HOME_READ_SCOPES))
+        self.context = resolve_db_request_auth_context(self.session_payload)
+        with db_engine.session_scope() as db:
+            db.add(models.WorkspaceDashboardConfig(workspace_id=self.context.workspace_id,
+                payload={'projects': {'selected': ['SYN']}, 'board': {'boardId': '42'},
+                         'scenarioPlanner': {'enabledForEveryone': True}},
+                created_by=self.context.user_id, updated_by=self.context.user_id))
+            db.add(models.ViewConfig(workspace_id=self.context.workspace_id,
+                owner_user_id=self.context.user_id, name='Synthetic default', view_type='mixed',
+                is_default=True, payload={'epm': {'viewEnabled': True}}))
         jira_server.SPRINTS_PROCESS_CACHE.clear()
 
     def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.SCENARIO_CACHE.clear()
         jira_server.EPIC_COHORT_CACHE.clear()
         jira_server.SPRINTS_PROCESS_CACHE.clear()
-        self._env_patcher.stop()
 
     def test_sprints_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -50,7 +51,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "get_effective_board_id", return_value="42"), \
              patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
                  "values": [{"id": 42, "name": "2026Q2", "state": "active", "originBoardId": 42}],
-                 "isLast": True,
+                 "startAt": 0, "maxResults": 100, "total": 1, "isLast": True,
              })) as mock_get:
             response = self.client.get("/api/sprints")
 
@@ -59,10 +60,10 @@ class OAuthStatsRouteTests(unittest.TestCase):
         mock_get.assert_called()
         mock_save_cache.assert_not_called()
 
-    def test_sprints_route_reuses_partitioned_oauth_process_cache(self):
+    def test_sprints_route_reuses_workspace_db_catalog(self):
         jira_response = FakeResponse(200, {
             "values": [{"id": 42, "name": "2026Q2", "state": "active", "originBoardId": 42}],
-            "isLast": True,
+            "startAt": 0, "maxResults": 100, "total": 1, "isLast": True,
         })
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "get_effective_board_id", return_value="42"), \
@@ -72,7 +73,11 @@ class OAuthStatsRouteTests(unittest.TestCase):
 
         self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
         self.assertEqual(second.status_code, 200, second.get_data(as_text=True))
-        self.assertEqual(second.get_json(), first.get_json())
+        self.assertEqual(second.get_json()['sprints'], first.get_json()['sprints'])
+        self.assertEqual(second.get_json()['cache']['identity'], first.get_json()['cache']['identity'])
+        self.assertEqual(second.get_json()['cache']['catalogVersion'], first.get_json()['cache']['catalogVersion'])
+        self.assertTrue(first.get_json()['cache']['refreshStarted'])
+        self.assertFalse(second.get_json()['cache']['refreshStarted'])
         self.assertEqual(mock_get.call_count, 1)
 
     def test_capacity_route_is_oauth_ready(self):
@@ -184,24 +189,12 @@ class OAuthStatsRouteTests(unittest.TestCase):
             self.assertNotIn('secret', response.get_data(as_text=True))
             self.assertEqual(len(calls), failing_page)
 
-    def test_basic_capacity_route_keeps_raw_401_on_fixed_jira_failure_contract(self):
-        active = {
-            'project': 'CAP', 'fieldId': 'customfield_capacity',
-            'requiresResolution': False, 'mutationEnabled': False,
-        }
+    def test_retired_basic_capacity_route_rejects_before_jira(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'load_request_capacity_config', return_value=active), \
-             patch.object(jira_server, 'current_jira_search', return_value=FakeResponse(
-                 401, {'detail': 'synthetic-secret-upstream-detail'},
-             )):
+             patch.object(jira_server, 'current_jira_search', side_effect=AssertionError('No Jira I/O')):
             response = self.client.get('/api/capacity?sprint=2026Q2')
-
-        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'jira_capacity_fetch_failed',
-            'message': 'Capacity could not be loaded from Jira.',
-        })
-        self.assertNotIn('secret', response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_capacity_route_returns_disabled_shape_when_project_missing(self):
         with patch.object(jira_server, 'load_request_capacity_config', return_value={
@@ -218,11 +211,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         })
 
     def test_capacity_wrappers_use_loaded_shared_config_and_explicit_context(self):
-        context = RequestAuthContext(
-            auth_mode='atlassian_oauth', user_id='user-1', stable_subject='user-1', atlassian_account_id='user-1',
-            workspace_id='workspace-1', auth_connection_id='connection-1', cloud_id='cloud-1',
-            site_url='https://example.atlassian.net', token_version='1', account_status='active', is_admin=True,
-        )
+        context = self.context
         config = {'project': 'CAP', 'fieldId': 'customfield_capacity', 'fieldName': 'Capacity', 'requiresResolution': False, 'mutationEnabled': True}
         response = FakeResponse(200, {'issues': [{
             'key': 'CAP-1',
@@ -403,7 +392,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
-    def test_scenario_overrides_get_is_oauth_ready_and_post_is_legacy_basic_local(self):
+    def test_scenario_overrides_get_is_oauth_ready_and_post_is_retired(self):
         overrides_payload = {"scenarios": {"2026Q2": {"overrides": {"PROD-1": {"start": "2026-04-01"}}}}}
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "load_scenario_overrides", return_value=overrides_payload), \
@@ -456,8 +445,8 @@ class OAuthStatsRouteTests(unittest.TestCase):
              patch.object(jira_server, "build_base_jql", return_value="project = ABC"), \
              patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
              patch.object(jira_server, "build_per_project_rollup", return_value=({"project": {}}, 200, {})):
-            configuration_csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
-            preview_csrf = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
+            configuration_csrf = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"}).get_json()["csrfToken"]
+            preview_csrf = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"}).get_json()["csrfToken"]
             responses = [
                 self.client.get("/api/epm/scope"),
                 self.client.get("/api/epm/goals"),
@@ -514,19 +503,7 @@ class OAuthStatsRouteTests(unittest.TestCase):
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
     def test_epm_issue_search_accepts_explicit_oauth_context(self):
-        context = RequestAuthContext(
-            auth_mode="atlassian_oauth",
-            user_id="local-oauth-user:acct-1",
-            stable_subject="acct-1",
-            atlassian_account_id="acct-1",
-            workspace_id="workspace-1",
-            auth_connection_id="connection-1",
-            cloud_id="cloud-1",
-            site_url="https://example.atlassian.net",
-            token_version="1",
-            account_status="active",
-            is_admin=True,
-        )
+        context = self.context
         with patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {
             "issues": [],
             "isLast": True,
@@ -537,84 +514,22 @@ class OAuthStatsRouteTests(unittest.TestCase):
         self.assertEqual(mock_search.call_args.kwargs.get("context"), context)
 
 
-class BasicStatsRouteTests(unittest.TestCase):
+class RetiredBasicStatsRouteTests(unittest.TestCase):
     def setUp(self):
-        jira_server.app.config["TESTING"] = True
-        jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'test-secret'
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
 
-    def tearDown(self):
-        self._env_patcher.stop()
-
-    def test_sprints_basic_uses_jira_url_basic_auth_without_csrf_header(self):
-        calls = []
-
-        def fake_get(url, **kwargs):
-            calls.append((url, kwargs))
-            return FakeResponse(200, {
-                "values": [{"id": 42, "name": "2026Q2", "state": "active", "originBoardId": 42}],
-                "isLast": True,
-            })
-
-        expected_token = base64.b64encode(b"basic@example.com:api-token").decode("ascii")
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "JIRA_URL", "https://basic.atlassian.net"), \
-             patch.object(jira_server, "JIRA_EMAIL", "basic@example.com"), \
-             patch.object(jira_server, "JIRA_TOKEN", "api-token"), \
-             patch.object(jira_server, "get_effective_board_id", return_value="42"), \
-             patch.object(jira_server, "save_sprints_cache"), \
-             patch.object(jira_server, "resilient_jira_get", side_effect=fake_get), \
-             patch("jira_server.requests.get", side_effect=fake_get):
-            response = self.client.get("/api/sprints?refresh=true")
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(calls[0][0], "https://basic.atlassian.net/rest/agile/1.0/board/42/sprint")
-        self.assertEqual(calls[0][1]["headers"]["Authorization"], f"Basic {expected_token}")
-
-    def test_scenario_basic_mode_does_not_require_csrf_header(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
-             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
-             patch.object(jira_server, "fetch_issues_by_jql", return_value=[]), \
-             patch.object(jira_server, "collect_dependencies", return_value={}), \
-             patch.object(jira_server, "fetch_capacity_team_sizes", return_value=({}, {})):
-            response = self.client.post(
-                "/api/scenario",
-                json={"filters": {"sprint": "2026Q2"}, "config": {}},
-            )
-
-        self.assertNotEqual(response.status_code, 403)
-
-    def test_stats_burnout_post_basic_mode_does_not_require_csrf_header(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
-             patch.object(jira_server, "fetch_burnout_events_for_sprint", return_value=({"events": []}, None, {})):
-            response = self.client.post("/api/stats/burnout", json={"sprint": "2026Q2"})
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-
-    def test_epic_cohort_post_basic_mode_does_not_require_csrf_header(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "jira_home_process_cache_enabled", return_value=False), \
-             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
-             patch.object(jira_server, "fetch_epic_cohort_data", return_value=({"quarters": []}, None)):
-            response = self.client.post("/api/stats/epic-cohort", json={"startQuarter": "2026Q2", "endQuarter": "2026Q2"})
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-
-    def test_scenario_overrides_basic_mode_does_not_require_csrf_header(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "load_scenario_overrides", return_value={"scenarios": {}}), \
-             patch.object(jira_server, "save_scenario_overrides"):
-            response = self.client.post(
-                "/api/scenario/overrides",
-                json={"scope_key": "2026Q2", "overrides": {}, "name": "Synthetic"},
-            )
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+    def test_basic_routes_reject_before_provider_or_file_io(self):
+        cases = (('GET', '/api/sprints?refresh=true'), ('POST', '/api/scenario'),
+                 ('POST', '/api/stats/burnout'), ('POST', '/api/stats/epic-cohort'),
+                 ('POST', '/api/scenario/overrides'))
+        for method, path in cases:
+            with self.subTest(method=method, path=path), \
+                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+                 patch.object(jira_server, 'resilient_jira_get', side_effect=AssertionError('No Jira I/O')), \
+                 patch('builtins.open', side_effect=AssertionError('No legacy file I/O')):
+                response = self.client.open(path, method=method, json={})
+            self.assertEqual(response.status_code, 503)
+            self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')

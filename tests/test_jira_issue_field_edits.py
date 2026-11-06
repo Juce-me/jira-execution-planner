@@ -843,8 +843,6 @@ class CapturedOAuthFieldEditTests(unittest.TestCase):
              patch.object(jira_server, 'current_auth_config', return_value=config), \
              patch.object(jira_server, 'db_oauth_session_data_for_auth_context', return_value=session_data), \
              patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local token store forbidden')), \
-             patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token store forbidden')), \
-             patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('Home credentials forbidden')), \
              patch.object(jira_server.HTTP_SESSION, 'request', side_effect=responses) as transport, \
              patch.object(jira_server, 'jira_request', wraps=jira_server.jira_request) as wrapper:
             result = update_issue_field('DEMO-1', {
@@ -873,8 +871,6 @@ class PlanningFieldRouteCredentialDenialTests(unittest.TestCase):
                      patch.object(jira_server, 'database_storage_enabled', return_value=False), \
                      patch.object(jira_server, 'current_request_auth_context', side_effect=AssertionError('local context forbidden')), \
                      patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local fallback forbidden')), \
-                     patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data', side_effect=AssertionError('local cookie token forbidden')), \
-                     patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token forbidden')), \
                      jira_server.app.test_request_context(path, method='POST' if write else 'GET', json=payload,
                          headers={'X-Requested-With': 'jira-execution-planner'}):
                     eng_routes._sync_server_globals()
@@ -890,8 +886,7 @@ class PlanningFieldRouteCredentialDenialTests(unittest.TestCase):
         local = SimpleNamespace(auth_connection_id='local-oauth-connection:synthetic')
         with patch.object(jira_server, 'database_storage_enabled', return_value=True), \
              patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=local), \
-             patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local fallback forbidden')), \
-             patch.object(jira_server._LOCAL_OAUTH_STORE, 'session_data_for_id', side_effect=AssertionError('local token forbidden')):
+             patch.object(jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local fallback forbidden')):
             eng_routes._sync_server_globals()
             with self.assertRaises(FieldEditServiceError) as raised:
                 eng_routes._issue_field_auth_context('summary')

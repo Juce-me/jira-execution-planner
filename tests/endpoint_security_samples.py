@@ -1,4 +1,5 @@
 ROUTE_SAMPLES = {
+    "/api/eng/sprints/<sprint_id>/review/operations/<operation_id>": "/api/eng/sprints/17/review/operations/019a413c-0000-7000-8000-000000000001",
     "/api/eng/sprints/<sprint_id>/review": "/api/eng/sprints/17/review",
     "/api/eng/sprints/<sprint_id>/review/values/read": "/api/eng/sprints/17/review/values/read",
     "/api/eng/sprints/<sprint_id>/assignee-capacity": "/api/eng/sprints/17/assignee-capacity",

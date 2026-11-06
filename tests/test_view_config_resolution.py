@@ -1,9 +1,7 @@
-import os
-import sqlite3
-import tempfile
 import unittest
 from unittest.mock import patch
 
+import psycopg
 from sqlalchemy.exc import OperationalError
 
 from backend.auth.context import RequestAuthContext
@@ -11,12 +9,12 @@ from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services.user_view_config import UserViewConfigStorageError
+from tests.postgres_test_db import fresh_database_url
 
 
 class ViewConfigResolutionTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'view-resolution.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -26,7 +24,6 @@ class ViewConfigResolutionTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_subjects(self):
         with self.factory() as session:
@@ -173,13 +170,13 @@ class ViewConfigResolutionTests(unittest.TestCase):
             self.assertEqual(session.get(models.ViewConfig, view_id).payload, payload)
 
     def test_resolution_translates_operational_read_failure(self):
-        failure = OperationalError('select default', {}, sqlite3.OperationalError('disk I/O error'))
+        failure = OperationalError('select default', {}, psycopg.OperationalError('disk I/O error'))
         with patch('backend.config.db_repository.db_engine.session_scope', side_effect=failure):
             with self.assertRaises(UserViewConfigStorageError):
                 self.repo.resolve_effective_view_config(self.context)
 
     def test_user_epm_load_translates_operational_read_failure(self):
-        failure = OperationalError('select epm', {}, sqlite3.OperationalError('disk I/O error'))
+        failure = OperationalError('select epm', {}, psycopg.OperationalError('disk I/O error'))
         with patch('backend.services.user_view_config.db_engine.session_scope', side_effect=failure):
             with self.assertRaises(UserViewConfigStorageError):
                 self.repo.load_user_epm_config(self.context)

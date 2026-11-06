@@ -9,6 +9,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 
+from backend.auth.runtime_profile import RuntimeProfileError, normalize_runtime_profile
 from backend.config.db_repository import DbConfigRepository
 from backend.config.json_repository import JsonConfigRepository
 from backend.db import engine as db_engine
@@ -24,12 +25,13 @@ class ConfigStorageError(RuntimeError):
 
 def selected_config_storage_backend(environ=None):
     env = os.environ if environ is None else environ
-    backend = str(env.get('CONFIG_STORAGE_BACKEND') or 'jsonfile').strip().lower()
-    if backend in {'', 'jsonfile'}:
-        return 'jsonfile'
-    if backend in db_engine.DB_STORAGE_BACKENDS:
-        return 'db'
-    raise ConfigStorageError('CONFIG_STORAGE_BACKEND must be jsonfile or db')
+    try:
+        _auth, backend = normalize_runtime_profile(env.get('JIRA_AUTH_MODE'), env.get('CONFIG_STORAGE_BACKEND'))
+    except RuntimeProfileError as error:
+        raise ConfigStorageError(str(error)) from None
+    if backend != 'db':
+        raise ConfigStorageError('DB configuration storage is required; configure CONFIG_STORAGE_BACKEND=db')
+    return backend
 
 
 def config_storage_db_enabled(environ=None):

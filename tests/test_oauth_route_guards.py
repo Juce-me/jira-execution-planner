@@ -1,32 +1,19 @@
 import unittest
 from unittest.mock import patch
 
-from backend.auth.context import RequestAuthContext
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
-
-def _verified_context(*, is_admin=True):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
-        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
-        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
-        site_url='https://example.atlassian.net', token_version='1', account_status='active',
-        is_admin=is_admin, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
-    )
 
 
 class TestOauthRouteGuards(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
 
     def _fixed_storage_body(self):
         return {
@@ -36,7 +23,7 @@ class TestOauthRouteGuards(unittest.TestCase):
 
     def _csrf(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.get('/api/auth/csrf')
+            response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['csrfToken']
 
@@ -57,11 +44,13 @@ class TestOauthRouteGuards(unittest.TestCase):
             response = self.client.get('/api/auth/status')
         self.assertEqual(response.status_code, 200)
 
-    def test_basic_mode_does_not_apply_oauth_route_guard(self):
+    def test_retired_basic_profile_is_rejected_before_application_config_read(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'load_dashboard_config', return_value={}):
+             patch.object(jira_server, 'load_dashboard_config', side_effect=AssertionError('route reached')):
             response = self.client.get('/api/config')
-        self.assertNotEqual(response.status_code, 501)
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
+        self.assertNotIn('basic', response.get_data(as_text=True).lower())
 
     def test_legacy_basic_header_builder_refuses_oauth_mode(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -92,49 +81,35 @@ class TestOauthRouteGuards(unittest.TestCase):
     def test_capacity_patch_csrf_guard_sanitizes_regular_browser_and_csrf_session_failures(self):
         install_oauth_session(self.client)
         cases = (
-            ('regular', {'db': DatabaseConfigurationError('secret browser DB')}),
-            ('csrf', {'csrf': ConfigStorageError('secret CSRF DB')}),
+            ('regular', 'db_oauth_browser_session_data', DatabaseConfigurationError('secret browser DB')),
+            ('csrf', 'csrf_request_auth_context', ConfigStorageError('secret CSRF DB')),
         )
-        for name, failure in cases:
-            patches = [
-                patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),
-                patch('backend.security.guards.database_storage_enabled', return_value=True),
-                patch.object(jira_server, 'strict_db_oauth_browser_session_data', return_value={}),
-                patch.object(jira_server, 'current_request_auth_context', return_value=_verified_context()),
-                patch.object(
-                    jira_server,
-                    'db_oauth_browser_session_data',
-                    side_effect=failure.get('db'),
-                    return_value={'db_auth_connection_id': 'connection-1'} if 'db' not in failure else None,
-                ),
-            ]
-            if 'csrf' in failure:
-                patches.append(patch.object(jira_server, 'csrf_session_data_for_request', side_effect=failure['csrf']))
-            for active in patches:
-                active.start()
-            try:
-                response = self.client.patch(
-                    '/api/capacity/CAP-101',
-                    json={},
-                    headers={'X-Requested-With': 'jira-execution-planner'},
-                )
-            finally:
-                for active in reversed(patches):
-                    active.stop()
-            with self.subTest(name=name):
+        for name, symbol, failure in cases:
+            with self.subTest(name=name), patch.object(jira_server, symbol, side_effect=failure):
+                response = self.client.patch('/api/capacity/CAP-101', json={},
+                    headers={'X-Requested-With': 'jira-execution-planner'})
                 self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
                 self.assertEqual(response.get_json(), self._fixed_storage_body())
                 self.assertNotIn('secret', response.get_data(as_text=True))
 
     def test_shared_admin_guard_sanitizes_storage_failure_after_csrf(self):
-        install_oauth_session(self.client)
+        install_oauth_session(self.client, roles=('admin',))
         csrf = self._csrf()
+        resolve_context = jira_server.current_request_auth_context
+        calls = 0
+
+        def fail_admin_context_after_real_auth():
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return resolve_context()
+            raise DatabaseConfigurationError('secret admin DB')
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True), \
              patch.object(
                  jira_server,
                  'current_request_auth_context',
-                 side_effect=[_verified_context(is_admin=True), DatabaseConfigurationError('secret admin DB')],
+                 side_effect=fail_admin_context_after_real_auth,
              ):
             response = self.client.post(
                 '/api/capacity/config',

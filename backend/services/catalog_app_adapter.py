@@ -32,7 +32,7 @@ class CatalogAppAdapter:
             session,
             context,
             runtime_inputs=self._get('catalog_runtime_inputs')(),
-            fallback_loader=self._get('_load_dashboard_config_json'),
+            fallback_loader=None,
             legacy_site_url=self._get('JIRA_URL') or '',
         )
 

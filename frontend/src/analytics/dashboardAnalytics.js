@@ -90,7 +90,7 @@ export function buildPlanningReviewAnalyticsParams(action, { result } = {}) {
     if (!REVIEW_ACTIONS.has(action)) return null;
     return {
         feature_name: 'planning_review', source_surface: 'planning', workflow_action: action,
-        ...(action === 'save_result' && ['success', 'failure', 'conflict', 'unknown'].includes(result) ? { result } : {}),
+        ...(['save_review', 'save_result'].includes(action) && ['success', 'failure', 'conflict', 'unknown'].includes(result) ? { result } : {}),
     };
 }
 

@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch
 
 from backend.services import alert_epics
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -49,7 +49,7 @@ class TestCreateStoriesAlertConfig(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertPayloads(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def test_task_alert_enrichment_requires_alerts_purpose(self):
         app = jira_server.app
@@ -216,8 +216,8 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
         epics = payload.get('epicsInScope') or []
         self.assertEqual(len(epics), 1)
         self.assertEqual(epics[0].get('openStoriesOutsideSelected'), 2)
-        self.assertEqual(epics_fetch.call_args.args[-2], '2026Q3')
-        self.assertTrue(epics_fetch.call_args.args[-1])
+        self.assertEqual(epics_fetch.call_args.args[7], '2026Q3')
+        self.assertTrue(epics_fetch.call_args.kwargs['complete_alert_scope'])
 
     def test_story_distribution_breaks_selected_actionable_down_by_team(self):
         jira_payload = {
@@ -336,7 +336,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
             response = client.get('/api/tasks-with-team-name?sprint=123&team=all&teamIds=team-a,team-b&teamLabels=team_alpha_label,team_beta_label')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(epics_fetch.call_args.args[-3], ['team_alpha_label', 'team_beta_label'])
+        self.assertEqual(epics_fetch.call_args.args[6], ['team_alpha_label', 'team_beta_label'])
 
     def test_ready_to_close_fetch_scans_non_epic_child_work_and_explicit_epic_keys(self):
         app = jira_server.app
@@ -789,7 +789,7 @@ class TestCreateStoriesAlertPayloads(unittest.TestCase):
                  patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True), \
                  patch.object(jira_server, 'build_jira_home_process_cache_key', side_effect=lambda _context, key: key), \
                  patch.object(jira_server, 'jira_search_request', return_value=_mock_response(200, task_page)), \
-                 patch.object(jira_server, 'fetch_epics_for_empty_alert', side_effect=lambda *args: [{'key': args[-2]}]) as epic_fetch:
+                 patch.object(jira_server, 'fetch_epics_for_empty_alert', side_effect=lambda *args, **kwargs: [{'key': args[7]}]) as epic_fetch:
                 first = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&purpose=alerts')
                 second = client.get('/api/tasks-with-team-name?sprint=123&sprintName=2026Q4&purpose=alerts')
             self.assertEqual(first.status_code, 200, first.get_data(as_text=True))
@@ -953,13 +953,13 @@ class _AnyToken(dict):
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestTaskRouteTeamLabelAliases(unittest.TestCase):
-    """Basic-mode task route: saved aliases come from the dashboard JSON teamGroups."""
+    """DB OAuth task route: saved aliases come from shared Department configuration."""
 
     QUERY = ('/api/tasks-with-team-name?sprint=123&sprintName=2026Q3&team=all'
              '&groupId=department-a&teamIds=team-a&teamLabels=label_team_a')
 
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.testing = True
         self.client = jira_server.app.test_client()
         before_cache = dict(jira_server.TASKS_CACHE)
@@ -979,6 +979,16 @@ class TestTaskRouteTeamLabelAliases(unittest.TestCase):
             'teamLabels': {'team-a': list(self.saved_aliases)},
         }]}}
 
+    def _save_groups(self):
+        from backend.db import engine as db_engine, models
+        with db_engine.session_scope() as db:
+            row = db.query(models.WorkspaceGroupConfig).filter_by(workspace_id=self.db_actor.workspace_id).one_or_none()
+            if row is None:
+                row = models.WorkspaceGroupConfig(workspace_id=self.db_actor.workspace_id,
+                    created_by=self.db_actor.user_id, updated_by=self.db_actor.user_id)
+                db.add(row)
+            row.payload = self._dashboard()['teamGroups']
+
     def _search(self, payload):
         self.search_payloads.append(dict(payload))
         if 'type = "Epic"' in payload['jql']:
@@ -992,6 +1002,7 @@ class TestTaskRouteTeamLabelAliases(unittest.TestCase):
 
     @contextlib.contextmanager
     def _route(self, **extra):
+        self._save_groups()
         patches = {
             'load_dashboard_config': Mock(side_effect=self._dashboard),
             'build_base_jql': Mock(return_value='project = PROJ'),
@@ -1058,6 +1069,7 @@ class TestTaskRouteTeamLabelAliases(unittest.TestCase):
         with self._route():
             first = self.client.get(self.QUERY + '&purpose=alerts')
             self.saved_aliases = ['label_team_a', 'label_team_b']
+            self._save_groups()
             second = self.client.get(self.QUERY + '&purpose=alerts')
             third = self.client.get(self.QUERY + '&purpose=alerts')
 
@@ -1160,7 +1172,7 @@ class TestTaskRouteTeamLabelAliases(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestCreateStoriesAlertApi(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.LABELS_CACHE['data'] = None
         jira_server.LABELS_CACHE['timestamp'] = 0
 

@@ -1,4 +1,4 @@
-PYTHON_TEST_ENV = JIRA_AUTH_MODE=basic CONFIG_STORAGE_BACKEND=jsonfile
+PYTHON_TEST_RUNNER = .venv/bin/python tests/run_isolated_runtime_tests.py --node "$(shell command -v node)"
 
 .PHONY: install build test test-security test-frontend-unit test-frontend-ui verify preflight run
 
@@ -12,10 +12,10 @@ build:
 	npm run build
 
 test:
-	$(PYTHON_TEST_ENV) .venv/bin/python -m unittest discover -s tests
+	$(PYTHON_TEST_RUNNER)
 
 test-security:
-	$(PYTHON_TEST_ENV) .venv/bin/python -m unittest tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
+	$(PYTHON_TEST_RUNNER) tests.test_endpoint_policy_inventory tests.test_endpoint_security_matrix tests.test_network_bind_guards tests.test_security_headers tests.test_oauth_route_guards tests.test_backend_route_source_guards tests.test_route_move_preservation
 
 test-frontend-unit:
 	npm run test:frontend:unit

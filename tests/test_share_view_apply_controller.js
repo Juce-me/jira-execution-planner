@@ -110,7 +110,8 @@ function createRig({ link, search, options = {} } = {}) {
     const take = () => log.splice(0);
     return {
         o, log, take, controller, tick, flush, tracked, revealLog, readFacetOptionIds,
-        store: { log: storeLog, module: store, snapshot: () => store.getShareViewSnapshot() },
+        store: { log: storeLog, module: store, snapshot: () => store.getShareViewSnapshot(),
+            replaceLink: nextLink => store.initShareViewFromLocation({ location: { search: `?${encodeShareView(nextLink).query}`, pathname: '/', hash: '' }, history: { state: null, replaceState() {} } }) },
     };
 }
 
@@ -712,5 +713,100 @@ test('cold alignment stops on trusted input or a changed scope', () => {
         // Replace the actual options fields between controller ticks: the live predicate must see them.
         change(previous);
         assert.equal(handle.options.isCancelled(), true);
+    }
+});
+
+function deferredPlanningGuard() {
+    const requests = [];
+    return { requests, guard: callback => new Promise(resolve => requests.push({ respond(allowed) { if (allowed) callback(); resolve(allowed); } })) };
+}
+const settlePlanningGuard = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test('a scope-changing link waits for Planning permission without starting stages or timing out', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    assert.equal(guard.requests.length, 1);
+    assert.deepEqual(rig.take(), []);
+    assert.deepEqual(rig.store.log, []);
+    assert.equal(rig.controller.isPaused(), true);
+    rig.o.planningReviewBusy = true; // Save chosen inside the scope dialog is still pending.
+    rig.tick(120000);
+    assert.deepEqual(rig.take(), []);
+    assert.equal(rig.store.snapshot().phase, 'pending');
+    guard.requests[0].respond(true);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), [], 'the permission result waits for pending Save state to settle');
+    assert.equal(rig.controller.isPaused(), true, 'dialog/save settlement is still protected from interaction cancellation');
+    rig.o.planningReviewBusy = false;
+    rig.tick();
+    assert.deepEqual(rig.take().map(([name]) => name), ['setSelectedView', 'setActiveGroupId', 'commitSprintSelection']);
+    assert.equal(rig.controller.isPaused(), false);
+    rig.tick();
+    assert.equal(guard.requests.length, 1);
+    assert.deepEqual(rig.take(), [], 'scope is committed once');
+});
+
+test('Stay cancels a scope-changing link without changing the mounted Planning scope', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    guard.requests[0].respond(false);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), []);
+    assert.equal(rig.store.snapshot().phase, 'cancelled');
+    assert.equal(rig.o.activeGroupId, 'grp-a');
+    assert.equal(rig.o.selectedSprint, 41);
+    assert.equal(rig.controller.isPaused(), false);
+});
+
+test('same-scope mode and filter changes do not prompt for the Planning draft', () => {
+    let guards = 0;
+    const rig = createRig({ link: { ...LINK, group: 'grp-a', sprint: '41' }, options: { guardPlanningScopeChange() { guards++; throw new Error('same-scope guard'); } } });
+    rig.tick(); rig.take(); rig.tick();
+    assert.equal(guards, 0);
+    assert.ok(rig.take().some(([name, value]) => name === 'setSearchQuery' && value === 'login'));
+});
+
+test('a superseded link or terminal auth lock cannot use a late Planning permission', async () => {
+    for (const supersede of [true, false]) {
+        const guard = deferredPlanningGuard();
+        const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+        rig.tick();
+        const priorWindow = globalThis.window;
+        try {
+            if (supersede) rig.store.module.finishShareView('cancelled');
+            else { globalThis.window = { __JEP_AUTH_REQUIRED__: { locked: true } }; rig.tick(); }
+            guard.requests[0].respond(true);
+            await settlePlanningGuard();
+            assert.deepEqual(rig.take(), []);
+            assert.equal(rig.store.snapshot().phase, supersede ? 'cancelled' : 'dropped');
+        } finally { globalThis.window = priorWindow; }
+    }
+});
+
+test('permission for a replaced link never authorizes its replacement', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    rig.store.replaceLink({ ...LINK, group: 'grp-b', sprint: '41' });
+    guard.requests[0].respond(true);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), []);
+    rig.tick();
+    assert.equal(guard.requests.length, 2, 'the new entry obtains its own scope decision');
+    assert.deepEqual(rig.take(), []);
+    guard.requests[1].respond(false);
+    await settlePlanningGuard();
+    assert.equal(rig.store.snapshot().phase, 'cancelled');
+    assert.deepEqual(rig.take(), []);
+});
+
+test('a scope guard rejection or exception fails closed without scope writes', async () => {
+    for (const guardPlanningScopeChange of [() => { throw new Error('guard unavailable'); }, () => Promise.reject(new Error('guard unavailable'))]) {
+        const rig = createRig({ link: LINK, options: { guardPlanningScopeChange } });
+        rig.tick(); await settlePlanningGuard();
+        assert.deepEqual(rig.take(), []);
+        assert.equal(rig.store.snapshot().phase, 'cancelled');
     }
 });

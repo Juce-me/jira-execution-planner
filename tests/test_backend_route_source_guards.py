@@ -6,7 +6,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -101,7 +101,7 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
     def setUp(self):
         import jira_server
 
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def test_route_server_resolver_prefers_live_main_jira_server(self):
         from backend.routes import get_jira_server
@@ -334,7 +334,7 @@ class BackendRouteSourceGuardTests(unittest.TestCase):
             return
 
         source = BACKEND_EPM_HOME_PATH.read_text(encoding="utf8")
-        self.assertIn("def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=None)", source)
+        self.assertIn("def fetch_projects_for_goal(client: HomeOAuthGraphQLClient, goal_id: str, context=None)", source)
         self.assertIn("_fetch_or_build_home_project_record(client, row, context=context)", source)
         self.assertIn("executor.map(lambda row:", source)
 

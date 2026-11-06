@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import Mock, patch
 from datetime import date
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -151,7 +151,7 @@ class TestEpicCohortHelpers(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortFetch(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def _epic(self, key, created='2025-01-10', status='Done', resolution='2025-02-15'):
         return {
@@ -199,7 +199,7 @@ class TestEpicCohortFetch(unittest.TestCase):
         self.assertEqual(second_payload.get('nextPageToken'), 'token-1')
 
     @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
-    @patch.object(jira_server, 'resilient_jira_get')
+    @patch.object(jira_server, 'current_jira_get')
     @patch.object(jira_server, 'jira_search_request')
     def test_fetch_enriches_terminal_date_from_changelog(self, mock_search, mock_get, _mock_scope):
         mock_search.return_value = DummyResponse({
@@ -403,7 +403,7 @@ class TestEpicCohortFetch(unittest.TestCase):
         })
 
     @patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT', 'TECH'])
-    @patch.object(jira_server, 'resilient_jira_get')
+    @patch.object(jira_server, 'current_jira_get')
     @patch.object(jira_server, 'jira_search_request')
     def test_created_mode_output_is_unchanged_golden(self, mock_search, mock_get, _mock_scope):
         tech_epic = self._epic('TECH-9', created='2025-05-05', status='Done', resolution='2025-06-01')
@@ -483,7 +483,7 @@ class TestEpicCohortFetch(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortClosedFetch(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.EPIC_COHORT_CACHE.clear()
         self.addCleanup(jira_server.EPIC_COHORT_CACHE.clear)
         scope_patch = patch.object(jira_server, '_cohort_project_scope', return_value=['PRODUCT'])
@@ -780,7 +780,7 @@ class TestEpicCohortClosedFetch(unittest.TestCase):
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicCohortEndpoint(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.EPIC_COHORT_CACHE.clear()
         self.addCleanup(jira_server.EPIC_COHORT_CACHE.clear)
         app = jira_server.app
@@ -924,33 +924,33 @@ class TestEpicCohortEndpoint(unittest.TestCase):
 
     @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
     @patch.object(jira_server, 'fetch_closed_epic_cohort_data')
-    def test_closed_response_is_cached_per_mode(self, mock_closed, _team):
+    def test_oauth_closed_response_is_not_shared_between_requests(self, mock_closed, _team):
         mock_closed.return_value = self._closed_payload()
         closed_body = {'mode': 'closed', 'startQuarter': '2025Q1', 'endQuarter': '2025Q2', 'components': ['Alpha']}
 
         first = self.client.post('/api/stats/epic-cohort', json=closed_body)
         second = self.client.post('/api/stats/epic-cohort', json=closed_body)
-        self.assertEqual(mock_closed.call_count, 1)
+        self.assertEqual(mock_closed.call_count, 2)
         self.assertFalse(first.get_json()['cached'])
-        self.assertTrue(second.get_json()['cached'])
+        self.assertFalse(second.get_json()['cached'])
 
         self.client.post('/api/stats/epic-cohort', json={'mode': 'last_n', 'components': ['Alpha']})
-        self.assertEqual(mock_closed.call_count, 2)
+        self.assertEqual(mock_closed.call_count, 3)
 
     @patch.object(jira_server, 'resolve_team_field_id', return_value='customfield_30101')
     @patch.object(jira_server, 'fetch_closed_epic_cohort_data')
-    def test_team_ids_do_not_split_component_scoped_cache_entries(self, mock_closed, _team):
+    def test_oauth_component_scope_does_not_use_unpartitioned_cache(self, mock_closed, _team):
         mock_closed.return_value = self._closed_payload()
         scoped = {'mode': 'last_n', 'components': ['Alpha']}
 
         self.client.post('/api/stats/epic-cohort', json={**scoped, 'teamIds': ['T1']})
         self.client.post('/api/stats/epic-cohort', json={**scoped, 'teamIds': ['T2']})
-        self.assertEqual(mock_closed.call_count, 1)
+        self.assertEqual(mock_closed.call_count, 2)
 
         teams_only = {'mode': 'last_n', 'components': []}
         self.client.post('/api/stats/epic-cohort', json={**teams_only, 'teamIds': ['T1']})
         self.client.post('/api/stats/epic-cohort', json={**teams_only, 'teamIds': ['T2']})
-        self.assertEqual(mock_closed.call_count, 3)
+        self.assertEqual(mock_closed.call_count, 4)
 
     @patch.object(jira_server, 'resolve_team_field_id')
     @patch.object(jira_server, 'fetch_closed_epic_cohort_data')

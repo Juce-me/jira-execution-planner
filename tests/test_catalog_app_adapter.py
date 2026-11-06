@@ -30,7 +30,8 @@ class CatalogAppAdapterTests(unittest.TestCase):
 
         self.assertEqual(result['jql_query'], 'project = NEW')
         namespace['catalog_runtime_inputs'].assert_called_once_with()
-        self.assertIs(captured[0]['fallback_loader'], namespace['_load_dashboard_config_json'])
+        self.assertIsNone(captured[0]['fallback_loader'])
+        namespace['_load_dashboard_config_json'].assert_not_called()
         self.assertEqual(captured[0]['legacy_site_url'], 'https://jira.example.test')
 
     def test_team_search_timeout_is_capped_by_same_remaining_budget(self):

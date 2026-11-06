@@ -204,14 +204,12 @@ test('collaborative settings hide Access and never load the user directory for a
     expect(calls.some(call => call.pathname.startsWith('/api/admin/'))).toBe(false);
 });
 
-test('Basic mode states that every user is an administrator without loading OAuth users', async ({ page }) => {
-    const calls = await installSettingsFixture(page, {
-        authMode: 'basic',
-        adminUserManagementAvailable: false,
-    });
-    const dialog = await openAccessTab(page);
-
-    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toBeVisible();
+test('missing DB directory capability hides Access without granting administrator status', async ({ page }) => {
+    const calls = await installSettingsFixture(page, { adminUserManagementAvailable: false });
+    const dialog = await openSettings(page);
+    await dialog.getByRole('button', { name: 'Admin', exact: true }).click();
+    await expect(dialog.getByRole('tab', { name: 'Access' })).toHaveCount(0);
+    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toHaveCount(0);
     expect(calls.some(call => call.pathname === '/api/admin/users')).toBe(false);
 });
 

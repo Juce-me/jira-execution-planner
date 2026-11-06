@@ -5,15 +5,15 @@ from unittest.mock import patch
 from urllib.parse import urlsplit
 
 import jira_server
-from tests.oauth_test_helpers import forbid_jira_http, install_oauth_session
+from backend.db import engine as db_engine, models
+from tests.oauth_test_helpers import forbid_jira_http, install_oauth_session, set_up_db_oauth
 
 
 class TestAuthEntryPage(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        if hasattr(jira_server, 'OAUTH_TOKEN_STORE'):
-            jira_server.OAUTH_TOKEN_STORE.clear()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
 
     def test_oauth_login_page_shows_atlassian_sign_in_action(self):
@@ -33,11 +33,11 @@ class TestAuthEntryPage(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers['Location'], '/login')
 
-    def test_basic_mode_does_not_show_oauth_login_page(self):
+    def test_retired_basic_profile_rejects_login_instead_of_redirecting_into_app(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             response = self.client.get('/login')
-        self.assertEqual(response.status_code, 302)
-        self.assertEqual(response.headers['Location'], '/')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_login_page_shows_expired_session_message(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -48,29 +48,21 @@ class TestAuthEntryPage(unittest.TestCase):
         self.assertIn('Sign in with Atlassian', body)
         self.assertNotIn('prompt=consent', body)
 
-    def test_terminal_recovery_reason_bypasses_valid_local_session_redirect(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
-             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
-            response = self.client.get('/login?reason=session_expired')
+    def test_expired_recovery_reason_bypasses_valid_database_session_redirect(self):
+        install_oauth_session(self.client)
+        response = self.client.get('/login?reason=session_expired')
         self.assertEqual(response.status_code, 200)
         self.assertIn('/api/auth/atlassian/login', response.get_data(as_text=True))
 
-    def test_terminal_recovery_reason_bypasses_valid_database_session_redirect(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-             patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'connectionId': 'connection'}), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=object()), \
-             patch.object(jira_server, 'oauth_session_data', return_value={}):
-            response = self.client.get('/login?reason=missing_scope')
+    def test_missing_scope_recovery_reason_bypasses_valid_database_session_redirect(self):
+        install_oauth_session(self.client)
+        response = self.client.get('/login?reason=missing_scope')
         self.assertEqual(response.status_code, 200)
         self.assertIn('/api/auth/atlassian/login?prompt=consent', response.get_data(as_text=True))
 
-    def test_unsupported_recovery_reason_keeps_valid_local_session_redirect(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
-             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
-            response = self.client.get('/login?reason=unsupported')
+    def test_unsupported_recovery_reason_keeps_valid_database_session_redirect(self):
+        install_oauth_session(self.client)
+        response = self.client.get('/login?reason=unsupported')
         self.assertEqual(response.status_code, 302)
         self.assertEqual(response.headers['Location'], '/')
 
@@ -106,14 +98,6 @@ class TestAuthEntryPage(unittest.TestCase):
         with self.client.session_transaction() as flask_session:
             flask_session[self.PENDING_VIEW_KEY] = {'q': query, 't': int(time.time()) - age_seconds}
 
-    def _database_profile_patches(self):
-        return (
-            patch.object(jira_server, 'database_storage_enabled', return_value=True),
-            patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'connectionId': 'connection'}),
-            patch.object(jira_server, 'current_request_auth_context', return_value=object()),
-            patch.object(jira_server, 'oauth_session_data', return_value={}),
-        )
-
     def test_unauthenticated_link_entry_stashes_the_query_and_redirects_to_login(self):
         forbid_jira_http(self)
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -126,8 +110,9 @@ class TestAuthEntryPage(unittest.TestCase):
         self.assertLessEqual(abs(stash['t'] - int(time.time())), 5)
 
     def test_expired_session_link_entry_keeps_its_reason_and_stashes_the_query(self):
-        with self.client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = 'expired-session'
+        cookie = install_oauth_session(self.client)
+        with db_engine.session_scope() as db:
+            db.delete(db.get(models.BrowserSession, cookie['db_browser_session_id']))
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/jira-dashboard.html?' + self.SHARE_LINK)
         self.assertEqual(response.headers['Location'], '/login?reason=session_expired')
@@ -176,10 +161,8 @@ class TestAuthEntryPage(unittest.TestCase):
 
     def test_authenticated_database_entry_clears_a_stale_stash(self):
         self._set_stash(self.SHARE_LINK, age_seconds=3600)
-        patches = self._database_profile_patches()
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patches[0], patches[1], patches[2], patches[3]:
-            response = self.client.get('/jira-dashboard.html?' + self.SHARE_LINK)
+        install_oauth_session(self.client)
+        response = self.client.get('/jira-dashboard.html?' + self.SHARE_LINK)
         response.close()
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(self._stash())
@@ -193,27 +176,12 @@ class TestAuthEntryPage(unittest.TestCase):
         self.assertEqual(response.headers.getlist('Set-Cookie'), [])
 
     def test_authenticated_login_visit_redirects_to_the_stashed_link_and_pops_it(self):
-        profiles = {
-            'local': (
-                patch.object(jira_server, 'database_storage_enabled', return_value=False),
-                patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}),
-            ),
-            'database': self._database_profile_patches(),
-        }
-        for name, patches in profiles.items():
-            with self.subTest(profile=name):
-                self._set_stash(self.SHARE_LINK)
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-                    for active in patches:
-                        active.start()
-                    try:
-                        response = self.client.get('/login')
-                    finally:
-                        for active in patches:
-                            active.stop()
-                self.assertEqual(response.status_code, 302)
-                self.assertEqual(response.headers['Location'], '/?' + self.SHARE_LINK)
-                self.assertIsNone(self._stash())
+        install_oauth_session(self.client)
+        self._set_stash(self.SHARE_LINK)
+        response = self.client.get('/login')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/?' + self.SHARE_LINK)
+        self.assertIsNone(self._stash())
 
     def test_authenticated_login_visit_without_a_usable_stash_redirects_to_root(self):
         hostile = [
@@ -221,19 +189,17 @@ class TestAuthEntryPage(unittest.TestCase):
             ('v=1\r\nSet-Cookie: pwn=1', 5),
             (self.SHARE_LINK, 3600),
         ]
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
-             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
-            for query, age in hostile:
-                with self.subTest(query=query, age=age):
-                    self._set_stash(query, age_seconds=age)
-                    response = self.client.get('/login')
-                    parts = urlsplit(response.headers['Location'])
-                    self.assertEqual(response.headers['Location'], '/')
-                    self.assertEqual((parts.scheme, parts.netloc, parts.fragment), ('', '', ''))
-                    self.assertIsNone(self._stash())
-            response = self.client.get('/login')
-            self.assertEqual(response.headers['Location'], '/')
+        install_oauth_session(self.client)
+        for query, age in hostile:
+            with self.subTest(query=query, age=age):
+                self._set_stash(query, age_seconds=age)
+                response = self.client.get('/login')
+                parts = urlsplit(response.headers['Location'])
+                self.assertEqual(response.headers['Location'], '/')
+                self.assertEqual((parts.scheme, parts.netloc, parts.fragment), ('', '', ''))
+                self.assertIsNone(self._stash())
+        response = self.client.get('/login')
+        self.assertEqual(response.headers['Location'], '/')
 
     def test_login_pages_that_show_the_sign_in_action_keep_the_stash(self):
         self._set_stash(self.SHARE_LINK)
@@ -248,9 +214,7 @@ class TestAuthEntryPage(unittest.TestCase):
     def test_terminal_recovery_login_visit_keeps_the_stash_for_an_authenticated_session(self):
         self._set_stash(self.SHARE_LINK)
         before = self._stash()
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False), \
-             patch.object(jira_server, 'oauth_session_data', return_value={'access_token': 'present', 'cloudid': 'cloud'}):
-            response = self.client.get('/login?reason=session_expired')
+        install_oauth_session(self.client)
+        response = self.client.get('/login?reason=session_expired')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self._stash(), before)

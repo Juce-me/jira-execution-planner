@@ -1,8 +1,9 @@
 import { getEngReadingPresentation, subscribeEngReading, projectEngTableReadingOrder, setEngReadingTableRows, releaseEngReadingContext } from './engReadingAnchor.js';
 import * as React from 'react';
 import IssueCard from '../issues/IssueCard.jsx';
+import PlanningRowDetails from './PlanningRowDetails.jsx';
 import { createPortal } from 'react-dom';
-import useIssueFieldPopover from '../issues/useIssueFieldPopover.js';
+import ReviewColumnPopover from './PlanningPopover.jsx';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
@@ -23,32 +24,6 @@ import { publishPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { reviewLabels } from './planningReviewKinds.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
-
-function ReviewColumnPopover({ open, onClose, label, trigger, children, error, anchorClassName = '' }) {
-    const wrapperRef = React.useRef(null);
-    const target = document.body;
-    const { triggerRef, panelRef, focusTrigger } = useIssueFieldPopover({
-        blockClass: 'planning-review-popover', wrapperRef, portalTarget: target, active: open,
-        onDismiss: () => close(false), useVisualViewport: true, dependencies: [children, error],
-    });
-    const close = restoreFocus => {
-        if (panelRef.current?.contains(document.activeElement)) document.activeElement.blur();
-        onClose();
-        if (restoreFocus) focusTrigger();
-    };
-    // Focus synchronously so Escape works the moment the panel is open.
-    React.useLayoutEffect(() => {
-        if (open) (panelRef.current?.querySelector('[data-autofocus]') ?? panelRef.current)?.focus({ preventScroll: true });
-    }, [open]);
-    return <span className={`planning-review-popover-anchor${anchorClassName ? ` ${anchorClassName}` : ''}`} ref={wrapperRef}>
-        {React.cloneElement(trigger, { ref: triggerRef, 'aria-haspopup': 'dialog', 'aria-expanded': open })}
-        {open && createPortal(<div ref={panelRef} className="planning-review-popover" role="dialog" aria-label={label} tabIndex={-1}
-            onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true); } }}
-            onClick={event => { if (event.target.closest('[data-review-popover-close]')) close(true); }}>
-            {children}{error && <p className="planning-review-guidance" role="alert">{error}</p>}
-        </div>, target)}
-    </span>;
-}
 
 function TrimmedValue({ value, children = value }) {
     const editable = React.isValidElement(children) && typeof children.props.onOpen === 'function';
@@ -83,11 +58,11 @@ function DerivedMarker({ column, docked }) {
     </EpicHeaderValueReadout>;
 }
 
-function Selection({ row, selectedKeys, onToggleStory, onSelectStories }) {
+function Selection({ row, selectedKeys, onToggleStory, onSelectStories, disabled = false }) {
     const state = reviewSelectionState(row, selectedKeys);
     const input = React.useRef(null);
     React.useEffect(() => { if (input.current) input.current.indeterminate = state.mixed; }, [state.mixed]);
-    return <input ref={input} type="checkbox" checked={state.checked} disabled={state.disabled} aria-label={`Select ${row.key || row.summary}`} onChange={event => row.rowKind === 'story' ? onToggleStory?.(row.issue) : onSelectStories?.(state.tasks, event.target.checked)} />;
+    return <input ref={input} type="checkbox" checked={state.checked} disabled={state.disabled || disabled} aria-label={`Select ${row.key || row.summary}`} onChange={event => row.rowKind === 'story' ? onToggleStory?.(row.issue) : onSelectStories?.(state.tasks, event.target.checked)} />;
 }
 
 function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold }) {
@@ -115,23 +90,25 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold
         if (result.valid) setEditing(null);
         return result.valid;
     };
-    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving || review.isRowReadable?.(row) === false || review.unavailableIssueIds?.includes(row.issueId)} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
+    return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving || review.discarding || review.isRowReadable?.(row) === false || review.unavailableIssueIds?.includes(row.issueId)} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
 }
 
 export function PlanningReviewScopeDialog({ review }) {
     if (!review?.pendingScopeChange) return null;
     return <div className="planning-review-dialog-backdrop"><div className="planning-review-dialog" role="dialog" aria-modal="true" aria-labelledby="planning-review-leave-heading">
-        <h3 id="planning-review-leave-heading">Save this Sprint review?</h3><p>Your review has unsaved changes. Save or discard them before changing Sprint or group.</p>
+        <h3 id="planning-review-leave-heading">Save this plan?</h3><p>Save or discard all pending Team changes before leaving this scope. Story inclusion and layout belong to this Sprint; shared review columns and values span Sprints. Jira edits and capacity settings are saved separately.</p>
         {review.error && <p role="alert">{review.error}</p>}
-        <div className="planning-review-dialog-actions"><button type="button" className="planning-action-button" disabled={review.saving || !review.capabilities?.canSave || review.unconfirmed || Boolean(review.conflict) || review.groupBlocked} onClick={() => review.resolveScopeChange('save')}>Save review</button><button type="button" className="planning-action-button" disabled={review.saving} onClick={() => review.resolveScopeChange('discard')}>Discard</button><button type="button" className="planning-action-button" disabled={review.saving} onClick={() => review.resolveScopeChange('stay')}>Stay</button></div>
+        <div className="planning-review-dialog-actions"><button type="button" className="planning-action-button" disabled={review.saving || review.discarding || !review.capabilities?.canSave || review.unconfirmed || Boolean(review.conflict) || review.groupBlocked} onClick={() => review.resolveScopeChange('save')}>Save plan</button><button type="button" className="planning-action-button" disabled={review.saving || review.discarding} onClick={() => review.resolveScopeChange('discard')}>Discard changes</button><button type="button" className="planning-action-button" disabled={review.saving || review.discarding} onClick={() => review.resolveScopeChange('stay')}>Stay</button></div>
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel }) {
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, rowDetailsContext = {}, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel }) {
     const labels = React.useMemo(() => reviewLabels(workModel), [workModel]);
     // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
     const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
+    const [details, setDetails] = React.useState(null);
+    React.useEffect(() => { setDetails(null); }, [mode, review.groupId, review.sprintId, review.contextKey]);
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
     const draggedColumn = React.useRef(null);
     const [dropColumn, setDropColumn] = React.useState(null);
@@ -229,13 +206,14 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     if (!editing) stableOrder.current = sorted.map(row => row.id);
     const ordered = editing && stableOrder.current ? [...rows].sort((a, b) => stableOrder.current.indexOf(a.id) - stableOrder.current.indexOf(b.id)) : sorted;
     const displayed = editing || isRowHeld?.() || confirmedEdit?.keys?.length ? ordered : projectEngTableReadingOrder(ordered, readingPresentation, mode);
+    React.useLayoutEffect(() => { if (details && !details.trigger.isConnected) setDetails(null); }, [displayed]);
     React.useLayoutEffect(() => { setEngReadingTableRows(displayed); }, [displayed]);
     React.useEffect(() => () => { setEngReadingTableRows([]); releaseEngReadingContext(); }, []);
     React.useLayoutEffect(() => { if (confirmedEdit?.keys?.length) releaseEngReadingContext(); }, [confirmedEdit]);
     const tbodyRef = React.useRef(null);
     usePlanningRowMotion({ tbodyRef, orderSignature: displayed.map(row => `${row.rowKind}:${row.id || row.key}`).join('|'), pendingCount: pendingOriginals?.size || 0, confirmedEdit, ackConfirmed: onConfirmedEditHandled || (() => {}), isHeld: isRowHeld || (() => false) });
     const totals = planningReviewTotals(rows, columns, review.cells, derivedContext);
-    const editable = review.capabilities?.canSave && !review.saving;
+    const editable = review.capabilities?.canSave && !review.saving && !review.discarding;
     const trackedAction = (action, params = {}) => onReviewAction?.(action, { mode, ...params });
     // An Epic still waiting for Stories shows a chip beside its title, so the row keeps its one-line height.
     const summaryCell = row => {
@@ -244,8 +222,12 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         // Without the Key column the Summary still reaches Jira: an icon link stands in for the key.
         const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
         const share = !row.synthetic && (row.rowKind === 'epic' || row.rowKind === 'story') ? renderEpicShareControl?.(row.key, row.rowKind) : null;
-        if (!awaited && !jiraLink && !share) return title;
-        return <span className="planning-review-summary-line">{jiraLink}{title}{share}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? labels.child : labels.childPlural} awaited`} /> : null}</span>;
+        const detail = !row.synthetic && row.key ? <span data-planning-details-trigger style={{ position: 'relative', height: 0, flex: '0 0 24px' }}><IconButton size="sm" className="planning-review-column-action" style={{ position: 'absolute', top: -12, left: 0 }} aria-label={`View details for ${row.key}`} aria-haspopup="dialog" aria-expanded={details?.row.key === row.key}
+            onClick={event => { event.stopPropagation(); setDetails({ row, trigger: event.currentTarget }); }}>
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5" /><path d="M8 7.5v3M8 5.1v.1" /></svg>
+        </IconButton></span> : null;
+        if (!awaited && !jiraLink && !share && !detail) return title;
+        return <span className="planning-review-summary-line">{jiraLink}{title}{share}{detail}{awaited ? <StatusPill className={getIssueStatusClassName('Pending', 'planning-review-awaiting')} label={`${awaited} ${awaited === 1 ? labels.child : labels.childPlural} awaited`} /> : null}</span>;
     };
     const field = (row, fieldName, fallback) => !row.synthetic && renderFieldEditor ? (renderFieldEditor({ row, field: fieldName, value: fallback }) ?? fallback) : fallback;
     // The assignee capacity strip switches the rows through the same path without the analytics action (#323).
@@ -301,8 +283,11 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         <div className="planning-review-controls">
             <SegmentedControl className="eng-mode-control segmented-control-compact" ariaLabel="Planning review rows" options={[{ value: 'epic', label: labels.parentPlural }, { value: 'story', label: labels.childPlural }]} value={mode} onChange={changeMode} />
             <PlanningReviewStateCluster review={review} editable={editable}
-                onSave={async () => { const saved = await review.save(); trackedAction('save_review', { result: saved ? 'success' : 'failure' }); }}
-                onDiscard={() => { review.discard(); trackedAction('discard_review'); }} />
+                onSave={async () => {
+                    const saved = await review.save(), current = review.getState?.() || review;
+                    trackedAction('save_review', { result: saved ? 'success' : current.unconfirmed ? 'unknown' : current.conflict ? 'conflict' : 'failure' });
+                }}
+                onDiscard={async () => { if (await review.discard()) trackedAction('discard_review'); }} />
         </div>
     );
     const movable = column => ['key', 'summary'].includes(column.id) ? '' : ' planning-review-movable';
@@ -389,7 +374,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             onOpen={afterId => { setAddAfter(afterId); setOpenMenu('add'); setFormError(''); trackedAction('add_column_opened'); }} />
         {capabilityLine && <p className="planning-review-guidance">{review.capabilities?.reason === 'database_required' ? 'Review saving requires the application database.' : review.capabilities?.reason || 'Review saving is unavailable in this deployment.'}</p>}
         {review.error && <p className="planning-review-guidance" role="alert">{review.error}</p>}
-        {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
+        {(review.conflict || review.unconfirmed) && <div className="planning-review-recovery"><span>Your draft stays local until you choose a recovery action.</span><button type="button" className="planning-action-button" disabled={review.loading || review.saving || review.discarding} onClick={() => { void review.loadCurrent(); trackedAction('load_current_review'); }}>Load current and discard draft</button><button type="button" className="planning-action-button" disabled={review.loading || review.saving || review.discarding} onClick={() => { void review.reapply(); trackedAction('reapply_review'); }}>Refresh and reapply draft</button></div>}
         {formLine && <p role="alert" className="planning-review-guidance">{formError}</p>}
         {hintVisible && <div className="planning-review-hint">
             <p className="planning-review-guidance">Layout inherited from {resolveSprintName?.(review.inheritedFrom.sprintId) || 'an earlier Sprint'}.</p>
@@ -401,7 +386,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
             <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-planning-row-key={row.id || row.key} data-row-kind={row.rowKind} data-epic-key={row.synthetic ? undefined : row.rowKind === 'epic' ? row.key : row.epicKey} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
                 {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture /></td> : <>
-                <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} /></td>
+                <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} disabled={Boolean(review.discarding || review.unconfirmed || review.loading || review.planReady === false || review.capabilities?.canSave === false || row.rowKind === 'story' && review.unavailableIssueIds?.includes(row.issueId))} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.derived ? <PlanningReviewDerivedCell row={row} column={column} review={review} derivedContext={derivedContext} />
                         : column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
@@ -423,6 +408,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         </div>
         {dock?.header && createPortal(dockedTable('header', header(true), dockedHeader), document.body)}
         {dock?.footer && createPortal(dockedTable('footer', footer, dockedFooter), document.body)}
+        <PlanningRowDetails row={details?.row} triggerElement={details?.trigger} jiraUrl={jiraUrl} context={rowDetailsContext} onClose={() => setDetails(null)} />
         {!rows.length && <p className="planning-review-guidance">No rows in this scope.</p>}
     </section></ReviewLabelsContext.Provider>;
 }

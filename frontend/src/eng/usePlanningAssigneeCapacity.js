@@ -72,7 +72,6 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     let current = null, active = false, generation = 0, disposed = false, loadAbort = null, loadTimer = null, refreshing = false;
     const cache = new Map();
     const parked = new Map();
-    const csrf = { token: null };
     const listeners = new Set();
 
     const overlay = queue => (queue ? [...queue.rejected.values(), ...queue.failed.values(), ...queue.inFlight, ...queue.pending.values()] : []);
@@ -133,12 +132,12 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         }
     }
 
-    // Sends one chunk; resolves to the saved document or throws. A 403 csrf_required refetches the token once.
+    // Sends one chunk; resolves to the saved document or throws. A 403 csrf_required (rejected before dispatch) retries once with a fresh token.
     async function send(queue, chunk, planned) {
-        const call = () => saveCapacity(backendUrl, queue.sprintId, { teamId: queue.teamId, ...(planned ? { planned } : {}), changes: chunk }, { csrf });
+        const call = () => saveCapacity(backendUrl, queue.sprintId, { teamId: queue.teamId, ...(planned ? { planned } : {}), changes: chunk });
         try { return await call(); }
         catch (error) {
-            if (error.status === 403 && error.code === 'csrf_required') { csrf.token = null; return call(); }
+            if (error.status === 403 && error.code === 'csrf_required') return call();
             throw error;
         }
     }
@@ -408,7 +407,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         },
         // A new auth session: nothing read under the old one is reused; the shown document is held while it is re-read.
         resetSession() {
-            cache.clear(); csrf.token = null;
+            cache.clear();
             parked.forEach(clearUndo); clearUndo(current);
             if (current) publish({});
             if (current && active) void load(current);

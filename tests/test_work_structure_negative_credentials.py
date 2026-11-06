@@ -35,10 +35,10 @@ class NegativeCredentialBase(WorkStructureRouteBase):
                 raise AssertionError(f'fallback used: {name}')
             return tripped
 
-        for target in ('save_oauth_session', 'oauth_session_data', 'oauth_refresh_lock', 'build_jira_headers'):
+        for target in ('save_oauth_session', 'oauth_session_data', 'build_jira_headers'):
             self.stack.enter_context(patch.object(jira_server, target, side_effect=trap(target)))
-        self.stack.enter_context(patch.object(
-            epm_home, 'HomeGraphQLClient', side_effect=trap('HomeGraphQLClient')))
+        self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+        self.assertFalse(hasattr(jira_server, 'oauth_refresh_lock'))
         # Service-provider symbols (service-account credentials and their project-access scoping).
         for target in ('seed_service_integration', 'get_service_integration_summary',
                        'list_service_integration_summaries'):
@@ -147,10 +147,11 @@ class FallbackSymbolsAreRealTests(unittest.TestCase):
     """Guard the guard: every trapped symbol still exists, so a rename cannot silently disarm the gate."""
 
     def test_trapped_symbols_exist(self):
-        for name in ('save_oauth_session', 'oauth_session_data', 'oauth_refresh_lock', 'build_jira_headers',
+        for name in ('save_oauth_session', 'oauth_session_data', 'build_jira_headers',
                      'current_jira_request', 'current_jira_get', 'current_jira_search'):
             self.assertTrue(callable(getattr(jira_server, name)), name)
-        self.assertTrue(callable(epm_home.HomeGraphQLClient))
+        self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+        self.assertFalse(hasattr(jira_server, 'oauth_refresh_lock'))
         for name in ('seed_service_integration', 'get_service_integration_summary',
                      'list_service_integration_summaries'):
             self.assertTrue(callable(getattr(service_integrations, name)), name)

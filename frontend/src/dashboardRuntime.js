@@ -2,6 +2,10 @@ import {
     contextKey, quarterFromSprintName, quarterInRange, responseMatchesContext, sameCatalogContext,
 } from './workStructure/configurationContext.js';
 
+export function getLocalStorage(win = globalThis.window) {
+    try { return win?.localStorage || null; } catch (error) { return null; }
+}
+
 const UI_PREFS_KEY = 'jira_dashboard_ui_prefs_v1';
 const SPRINT_CATALOG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -610,14 +614,14 @@ function normalizeSameTabLoginUrl(value) {
 }
 
 // The three EPM capability fields of the config response. Production fails closed: a missing or mistyped field is
-// false/empty. Basic compatibility is the established `authMode === 'basic'` rule (service credentials).
+// false/empty. Only the supported OAuth profile can advertise these capabilities.
 export function normalizeEpmCapabilities(config) {
     const source = config && typeof config === 'object' ? config : {};
+    const oauth = source.authMode === 'atlassian_oauth';
     return {
-        basicCompatibility: source.authMode === 'basic',
-        viewEnabled: source.epmViewEnabled === true,
-        homeReadAvailable: source.epmHomeReadAvailable === true,
-        loginUrl: normalizeSameTabLoginUrl(source.epmHomeReadLoginUrl),
+        viewEnabled: oauth && source.epmViewEnabled === true,
+        homeReadAvailable: oauth && source.epmHomeReadAvailable === true,
+        loginUrl: oauth ? normalizeSameTabLoginUrl(source.epmHomeReadLoginUrl) : '',
     };
 }
 
@@ -636,7 +640,6 @@ export function normalizeEpmAccess(payload) {
 // The single EPM navigation rule. An unresolved access state hides navigation.
 export function isEpmNavigationVisible(capabilities, access) {
     if (!capabilities) return false;
-    if (capabilities.basicCompatibility === true) return true;
     return capabilities.viewEnabled === true
         && capabilities.homeReadAvailable === true
         && access?.state === 'available';

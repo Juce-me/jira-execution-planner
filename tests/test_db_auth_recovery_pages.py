@@ -1,30 +1,28 @@
 import os
-import tempfile
 import unittest
-from datetime import datetime, timedelta, timezone
+
 from unittest.mock import patch
 
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
-
-
-FULL_SCOPE = (
-    'read:me read:jira-work write:jira-work read:jira-user '
-    'read:board-scope:jira-software read:sprint:jira-software read:project:jira '
-    'offline_access'
-)
+from tests.db_oauth_test_helpers import seed_db_actor
+from tests.oauth_test_helpers import install_oauth_session
+from tests.postgres_test_db import fresh_database_url
 
 
 class DbAuthRecoveryPagesTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'recovery.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
+        environment = self._env_patch()
+        environment.start()
+        self.addCleanup(environment.stop)
+        auth_mode = patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth')
+        auth_mode.start()
+        self.addCleanup(auth_mode.stop)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -39,56 +37,20 @@ class DbAuthRecoveryPagesTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._tmpdir.cleanup()
 
     def _seed_user(self, *, account_id, account_type, user_status='active', connection_status='active'):
         with self.factory() as session:
-            workspace = session.query(models.Workspace).first()
-            if workspace is None:
-                workspace = models.Workspace(
-                    environment_key='local',
-                    name='Example',
-                    jira_site_url='https://example.atlassian.net',
-                    jira_cloud_id='cloud-123',
-                    created_by='test',
-                )
-                session.add(workspace)
-                session.flush()
-            user = models.User(
-                external_provider='atlassian',
-                external_subject=account_id,
-                email=f'{account_id}@example.com',
-                display_name=f'{account_id} User',
-                account_type=account_type,
-                status=user_status,
-                created_by='test',
-            )
-            session.add(user)
-            session.flush()
-            connection = models.AuthConnection(
-                user_id=user.id,
-                workspace_id=workspace.id,
-                provider='atlassian_oauth',
-                site_url='https://example.atlassian.net',
-                cloud_id='cloud-123',
-                scopes=FULL_SCOPE.split(),
-                scope_provenance='provider',
-                status=connection_status,
-                token_version=1,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(connection)
+            actor = seed_db_actor(session,
+                workspace={'cloud_id': 'cloud-123', 'site_url': 'https://example.atlassian.net'},
+                account_identity=account_id,
+                roles=('admin',) if account_type == 'admin' else ())
+            session.get(models.User, actor.user_id).status = user_status
+            session.get(models.AuthConnection, actor.connection_id).status = connection_status
             session.commit()
-            return workspace.id, user.id, connection.id
+            return actor.workspace_id, actor.user_id, actor.connection_id
 
     def _install_session(self, *, account_id, connection_id):
-        with self.client.session_transaction() as flask_session:
-            flask_session['db_oauth_session'] = {
-                'db_auth_connection_id': connection_id,
-                'db_token_version': '1',
-            }
+        install_oauth_session(self.client, db_auth_connection_id=connection_id)
 
     def _env_patch(self):
         return patch.dict(os.environ, {

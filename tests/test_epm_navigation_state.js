@@ -53,7 +53,7 @@ test('navigation is hidden and not ready until the capability fields arrive; mis
     });
 });
 
-test('disabled, missing-scope and Basic users make no access request; Basic stays visible', async () => {
+test('disabled, missing-scope and retired Basic profiles make no access request or navigation grant', async () => {
     await withFetch(() => json({ state: 'available' }), async (calls) => {
         const harness = createHarness({ backendUrl: 'http://synthetic' });
         for (const next of [config({ epmViewEnabled: false }), config({ epmHomeReadAvailable: false, epmHomeReadLoginUrl: '/login?reason=missing_scope' })]) {
@@ -64,7 +64,7 @@ test('disabled, missing-scope and Basic users make no access request; Basic stay
         }
         harness.state.applyEpmCapabilityConfig({ authMode: 'basic' });
         await harness.settle();
-        assert.equal(harness.state.showEpmNavigation, true);
+        assert.equal(harness.state.showEpmNavigation, false);
         assert.equal(harness.state.epmReadReady, true);
         assert.equal(calls.length, 0);
     });

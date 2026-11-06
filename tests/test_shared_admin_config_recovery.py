@@ -2,7 +2,6 @@ import contextlib
 import io
 import json
 import os
-import tempfile
 import unittest
 from dataclasses import replace
 from unittest.mock import patch
@@ -17,12 +16,12 @@ from backend.services.workspace_dashboard_config import (
     load_workspace_config,
     update_workspace_config_section,
 )
+from tests.postgres_test_db import fresh_database_url
 
 
 class SharedAdminConfigRecoveryTests(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'recovery.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         engine = create_engine(self.database_url, future=True)
         models.Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, future=True, expire_on_commit=False)
@@ -32,11 +31,13 @@ class SharedAdminConfigRecoveryTests(unittest.TestCase):
                 account_type='admin', status='active', created_by='test',
             )
             workspace = models.Workspace(id='workspace-1', environment_key='test', name='Workspace', created_by='test')
+            session.add_all([user, workspace])
+            session.flush()
             view = models.ViewConfig(
                 id='view-1', workspace_id=workspace.id, owner_user_id=user.id,
                 name='Default', view_type='mixed', payload={}, is_default=True,
             )
-            session.add_all([user, workspace, view])
+            session.add(view)
             session.flush()
             session.add(models.ViewConfigVersion(
                 id='version-1', view_config_id=view.id, version_number=3,
@@ -45,9 +46,6 @@ class SharedAdminConfigRecoveryTests(unittest.TestCase):
             ))
             session.commit()
         engine.dispose()
-
-    def tearDown(self):
-        self.tmpdir.cleanup()
 
     def _run(self, *extra):
         from scripts.promote_legacy_shared_admin_config import main
@@ -105,11 +103,12 @@ class SharedAdminConfigRecoveryTests(unittest.TestCase):
         self.assertEqual(loaded.payload, {'board': {'boardId': '7'}})
         self.assertEqual(loaded.config_revision, 4)
 
-        for raw in ('"scalar"', '{broken'):
+        # PostgreSQL rejects malformed JSON text, so a non-object array stands in for it.
+        for raw in ('"scalar"', '["broken"]'):
             engine = create_engine(self.database_url, future=True)
             with engine.begin() as connection:
                 connection.exec_driver_sql(
-                    "UPDATE workspace_dashboard_configs SET payload=? WHERE workspace_id='workspace-1'",
+                    "UPDATE workspace_dashboard_configs SET payload=%s WHERE workspace_id='workspace-1'",
                     (raw,),
                 )
             engine.dispose()
@@ -156,7 +155,7 @@ class SharedAdminConfigRecoveryTests(unittest.TestCase):
         engine = create_engine(self.database_url, future=True)
         with engine.connect() as connection:
             stored = json.loads(connection.exec_driver_sql(
-                "SELECT payload FROM workspace_dashboard_configs WHERE workspace_id='workspace-1'"
+                "SELECT CAST(payload AS TEXT) FROM workspace_dashboard_configs WHERE workspace_id='workspace-1'"
             ).scalar_one())
         engine.dispose()
         self.assertNotIn('epm', stored)
@@ -194,12 +193,13 @@ class SharedAdminConfigRecoveryTests(unittest.TestCase):
             site_url='https://example.atlassian.net', token_version='1',
             account_status='active', is_admin=True,
         )
+        # PostgreSQL rejects malformed JSON text, so a non-object array stands in for it.
         engine = create_engine(self.database_url, future=True)
         with engine.begin() as connection:
             connection.exec_driver_sql(
                 "INSERT INTO workspace_dashboard_configs "
                 "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                "VALUES ('dashboard-repair', 'workspace-1', 1, '{broken', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                "VALUES ('dashboard-repair', 'workspace-1', 1, '[\"broken\"]', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             )
         engine.dispose()
 

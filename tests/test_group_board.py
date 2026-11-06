@@ -1,18 +1,14 @@
 import ast
-import json
 import os
 import re
-import tempfile
 import unittest
-from types import SimpleNamespace
 
-from unittest.mock import patch
 
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import group_board
 from backend.services import shared_group_config
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 from tests.fixtures import groupBoardReference as reference
 
 import jira_server
@@ -715,119 +711,46 @@ def _round_trip_groups_payload(board):
     }
 
 
-class GroupBoardJsonRoundTripTests(unittest.TestCase):
-    """§12.1: board survives save -> reload in JSON config mode.
+class GroupBoardApiRoundTripTests(unittest.TestCase):
+    """Board composition survives the real workspace-shared DB API."""
 
-    This is the test that catches the silent-drop failure mode - if `board`
-    is ever removed from the whitelist dict in group_config.py, or from the
-    wiring in jira_server.py, this fails while the grammar-row tests above
-    (which call normalize_group_board directly) keep passing.
-    """
+    def setUp(self):
+        force_db_oauth_mode(self, jira_server)
+        self.client = jira_server.app.test_client()
+
+    def assert_round_trip(self, board):
+        before = self.client.get('/api/groups-config').get_json()
+        response = self.client.post('/api/groups-config', json={
+            **_round_trip_groups_payload(board), 'baseRevision': before['configRevision'],
+        })
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        saved = response.get_json()
+        self.assertEqual(saved['configRevision'], before['configRevision'] + 1)
+        self.assertEqual(saved['groups'][0]['board'], board)
+        reloaded = self.client.get('/api/groups-config').get_json()
+        self.assertEqual(reloaded['groups'][0]['board'], board)
+        self.assertEqual(reloaded['configRevision'], saved['configRevision'])
+        with db_engine.session_scope() as db:
+            row = db.query(models.WorkspaceGroupConfig).filter_by(
+                workspace_id=self.db_actor.workspace_id).one()
+            self.assertEqual(row.payload['groups'][0]['board'], board)
 
     def test_board_survives_save_and_reload(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        board = _round_trip_board()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({'version': 1, 'projects': {'selected': []}}, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                response = client.post(
-                    '/api/groups-config',
-                    json=_round_trip_groups_payload(board),
-                )
-                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-                self.assertEqual(response.get_json()['groups'][0]['board'], board)
-
-                reloaded = client.get('/api/groups-config').get_json()
-
-        self.assertEqual(reloaded['groups'][0]['board'], board)
+        self.assert_round_trip(_round_trip_board())
 
     def test_the_reference_configuration_survives_save_and_reload(self):
-        """§12.1's round-trip row names the 7-column §5.5 fixture, not a toy board.
+        self.assert_round_trip({**reference.reference_board(), 'doneEpicRetentionDays': 28})
 
-        The two-column board above is enough to catch a dropped `board` key; only
-        the reference fixture exercises every colour, both bounds, the star and
-        the multi-status columns in one payload.
-        """
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        board = {**reference.reference_board(), 'doneEpicRetentionDays': 28}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({'version': 1, 'projects': {'selected': []}}, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                response = client.post('/api/groups-config', json=_round_trip_groups_payload(board))
-                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-                self.assertEqual(response.get_json()['groups'][0]['board'], board)
-
-                reloaded = client.get('/api/groups-config').get_json()
-
-        self.assertEqual(reloaded['groups'][0]['board'], board)
-
-
-class GroupBoardInheritFlagJsonRoundTripTests(unittest.TestCase):
-    def test_flag_survives_save_and_reload_in_basic_mode(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        board = {**_round_trip_board(), 'inheritColumnColours': True}
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({'version': 1, 'projects': {'selected': []}}, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                response = client.post('/api/groups-config', json=_round_trip_groups_payload(board))
-                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-                self.assertEqual(response.get_json()['groups'][0]['board'], board)
-                reloaded = client.get('/api/groups-config').get_json()
-        self.assertEqual(reloaded['groups'][0]['board'], board)
+    def test_inherit_column_colours_flag_survives_save_and_reload(self):
+        self.assert_round_trip({**_round_trip_board(), 'inheritColumnColours': True})
 
 
 class GroupBoardDbRoundTripTests(unittest.TestCase):
     """§12.1: board survives save -> reload in DB (workspace-shared) config mode."""
 
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'group-board.db')}"
-        self.engine = db_engine.get_engine(self.database_url)
-        models.Base.metadata.create_all(self.engine)
-        self.factory = db_engine.session_factory(self.database_url)
-        with self.factory() as session:
-            workspace = models.Workspace(
-                environment_key='local',
-                name='Local',
-                jira_site_url='https://example.atlassian.net',
-                jira_cloud_id='cloud-1',
-                created_by='test',
-            )
-            user = models.User(
-                external_provider='atlassian',
-                external_subject='account-1',
-                account_type='user',
-                status='active',
-                created_by='test',
-            )
-            session.add_all([workspace, user])
-            session.commit()
-            self.workspace_id = workspace.id
-            self.user_id = user.id
-        self.context = SimpleNamespace(
-            workspace_id=self.workspace_id,
-            user_id=self.user_id,
-            auth_connection_id=f'connection-{self.user_id}',
-        )
-
-    def tearDown(self):
-        db_engine.dispose_engines()
-        self._tmpdir.cleanup()
+        force_db_oauth_mode(self, jira_server)
+        self.context = jira_server.current_request_auth_context()
 
     def test_board_survives_save_and_reload(self):
         board = _round_trip_board()
@@ -835,7 +758,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             self.context,
             fallback_loader=lambda: None,
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
 
         saved = shared_group_config.save_shared_groups(
@@ -843,7 +765,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             _round_trip_groups_payload(board),
             base_revision=loaded['configRevision'],
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
         self.assertEqual(saved['groups'][0]['board'], board)
 
@@ -851,7 +772,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             self.context,
             fallback_loader=lambda: None,
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
         self.assertEqual(reloaded['groups'][0]['board'], board)
 
@@ -862,7 +782,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             self.context,
             fallback_loader=lambda: None,
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
 
         saved = shared_group_config.save_shared_groups(
@@ -870,7 +789,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             _round_trip_groups_payload(board),
             base_revision=loaded['configRevision'],
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
         self.assertEqual(saved['groups'][0]['board'], board)
 
@@ -878,7 +796,6 @@ class GroupBoardDbRoundTripTests(unittest.TestCase):
             self.context,
             fallback_loader=lambda: None,
             validate_groups_config_fn=jira_server.validate_groups_config,
-            database_url=self.database_url,
         )
         self.assertEqual(reloaded['groups'][0]['board'], board)
 
@@ -895,49 +812,27 @@ class GroupBoardValidationRouteTests(unittest.TestCase):
     """
 
     def test_invalid_board_is_rejected_with_prefixed_error_and_not_persisted(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({
-                    'version': 1,
-                    'teamGroups': {
-                        'version': 1,
-                        'groups': [{
-                            'id': 'default',
-                            'name': 'Default',
-                            'teamIds': ['team-1'],
-                        }],
-                        'defaultGroupId': 'default',
-                    },
-                }, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                before = client.get('/api/groups-config').get_json()
-                invalid_board = _board([
-                    _column(id='col-00000001', name='First', statuses=['Status A'], star=True),
-                    _column(id='col-00000002', name='Second', statuses=['Status B'], star=True),
-                ])
-                response = client.post('/api/groups-config', json={
-                    'version': 1,
-                    'groups': [{
-                        'id': 'default',
-                        'name': 'Default',
-                        'teamIds': ['team-1'],
-                        'board': invalid_board,
-                    }],
-                    'defaultGroupId': 'default',
-                })
-                after = client.get('/api/groups-config').get_json()
-
+        force_db_oauth_mode(self, jira_server)
+        client = jira_server.app.test_client()
+        initial = client.get('/api/groups-config').get_json()
+        seeded = client.post('/api/groups-config', json={
+            **_round_trip_groups_payload(_round_trip_board()),
+            'baseRevision': initial['configRevision'],
+        })
+        self.assertEqual(seeded.status_code, 200, seeded.get_data(as_text=True))
+        before = client.get('/api/groups-config').get_json()
+        invalid_board = _board([
+            _column(id='col-00000001', name='First', statuses=['Status A'], star=True),
+            _column(id='col-00000002', name='Second', statuses=['Status B'], star=True),
+        ])
+        response = client.post('/api/groups-config', json={
+            **_round_trip_groups_payload(invalid_board), 'baseRevision': before['configRevision'],
+        })
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertEqual(
-            response.get_json().get('errors'),
-            ['Group "Default" board has more than one starred column.'],
-        )
-        self.assertEqual(after['groups'], before['groups'])
+        self.assertEqual(response.get_json().get('error'), 'invalid_groups_config')
+        self.assertEqual(response.get_json().get('errors'),
+                         ['Group "Default" board has more than one starred column.'])
+        self.assertEqual(client.get('/api/groups-config').get_json(), before)
 
 
 if __name__ == '__main__':

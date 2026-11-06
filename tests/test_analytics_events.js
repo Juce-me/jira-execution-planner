@@ -1529,6 +1529,11 @@ test('Planning review analytics excludes every custom column and issue value', a
     for(const action of ['review_options_opened','refresh_review']) assert.equal(buildPlanningReviewAnalyticsParams(action), null, `${action} was retired with its control`);
     for(const action of ['panel_expanded','panel_collapsed']) assert.deepEqual(buildPlanningReviewAnalyticsParams(action,{teamName:'Private team'}), {feature_name:'planning_review',source_surface:'planning',workflow_action:action});
     assert.deepEqual(buildPlanningReviewAnalyticsParams('save_result', { result: 'conflict' }), { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_result', result: 'conflict' });
+    for (const result of ['success', 'failure', 'conflict', 'unknown']) {
+        const saved = buildPlanningReviewAnalyticsParams('save_review', { result, operationId: 'private-operation', issueId: 'private-issue', value: 'private-value' });
+        assert.deepEqual(saved, { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_review', result });
+    }
+    assert.deepEqual(buildPlanningReviewAnalyticsParams('save_review', { result: 'private-error-message' }), { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_review' });
     for (const fieldName of ['summary', 'team']) {
         assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'story', sourceSurface: 'catch_up' }), null);
         assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'epic', sourceSurface: 'planning' }).feature_name, 'planning_review');

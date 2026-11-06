@@ -2,8 +2,6 @@
 import io
 import json
 import os
-from pathlib import Path
-import tempfile
 from threading import Event, Thread, current_thread
 import time
 import unittest
@@ -20,6 +18,7 @@ from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 from backend.db import engine as db_engine, models
 from backend.services import assignee_capacity as capacity
+from tests.postgres_test_db import fresh_database_url
 
 TEAM = 'team-a'
 
@@ -34,8 +33,7 @@ def context_for(workspace_id):
 
 class CapacityFixture(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'capacity.db')
+        self.url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.url))
         self.env = patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'})
         self.env.start()
@@ -50,7 +48,6 @@ class CapacityFixture(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
         db_engine.dispose_engines()
-        self.temp.cleanup()
 
     def get(self, sprint='20', team=TEAM, context=None):
         return capacity.get_document(context or self.context, sprint, team, self.url)
@@ -483,23 +480,27 @@ class AssigneeCapacityMigrationTests(unittest.TestCase):
         self.assertEqual(sql.count('DROP TABLE'), 1)
 
     def test_head_schema_matches_the_model(self):
-        with tempfile.TemporaryDirectory(dir='tests') as tmp:
-            url = 'sqlite+pysqlite:///' + str(Path(tmp).resolve() / 'head.db')
-            with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': url, 'DATABASE_CONNECTION_MODE': 'url'}):
-                command.upgrade(self.config(url), 'head')
-                from sqlalchemy import inspect
-                inspector = inspect(db_engine.get_engine(url))
-                columns = {c['name']: c for c in inspector.get_columns('planning_team_sprint_capacity')}
-                self.assertEqual(set(columns), set(models.PlanningTeamSprintCapacity.__table__.c.keys()))
-                self.assertTrue(columns['planned_capacity']['nullable'] and columns['planned_source']['nullable'])
-                checks = {c['name'] for c in inspector.get_check_constraints('planning_team_sprint_capacity')}
-                model_checks = {c.name for c in models.PlanningTeamSprintCapacity.__table__.constraints
-                                if c.__class__.__name__ == 'CheckConstraint'}
-                self.assertEqual(checks, model_checks)
-                self.assertIn('ck_planning_team_sprint_capacity_planned_pair', checks)
-                self.assertEqual([i['column_names'] for i in inspector.get_indexes('planning_team_sprint_capacity')],
-                                 [['workspace_id', 'team_id', 'sprint_order']])
-                db_engine.dispose_engines()
+        url = fresh_database_url(self.addCleanup)
+        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': url, 'DATABASE_CONNECTION_MODE': 'url'}):
+            command.upgrade(self.config(url.replace('%', '%%')), 'head')
+            from sqlalchemy import inspect
+            inspector = inspect(db_engine.get_engine(url))
+            columns = {c['name']: c for c in inspector.get_columns('planning_team_sprint_capacity')}
+            self.assertEqual(set(columns), set(models.PlanningTeamSprintCapacity.__table__.c.keys()))
+            self.assertTrue(columns['planned_capacity']['nullable'] and columns['planned_source']['nullable'])
+            checks = {c['name'] for c in inspector.get_check_constraints('planning_team_sprint_capacity')}
+            model_checks = {c.name for c in models.PlanningTeamSprintCapacity.__table__.constraints
+                            if c.__class__.__name__ == 'CheckConstraint'}
+            self.assertEqual(checks, model_checks)
+            self.assertIn('ck_planning_team_sprint_capacity_planned_pair', checks)
+            # PostgreSQL also reports the index that backs the unique constraint; it is checked as the constraint.
+            self.assertEqual([i['column_names'] for i in inspector.get_indexes('planning_team_sprint_capacity')
+                              if 'duplicates_constraint' not in i],
+                             [['workspace_id', 'team_id', 'sprint_order']])
+            self.assertEqual([(c['name'], c['column_names'])
+                              for c in inspector.get_unique_constraints('planning_team_sprint_capacity')],
+                             [('uq_planning_team_sprint_capacity', ['workspace_id', 'sprint_id', 'team_id'])])
+            db_engine.dispose_engines()
 
 
 @unittest.skipUnless(os.environ.get('REQUIRE_POSTGRES_REVIEW_CONCURRENCY') == '1',

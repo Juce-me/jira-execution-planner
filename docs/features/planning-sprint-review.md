@@ -1,17 +1,19 @@
 # Planning Sprint review
 
 Planning defaults to Table when no valid layout preference is saved. An explicit
-List choice remains remembered. The icon beside Open selected stories in Jira switches
-between List and a compact spreadsheet, including when no Stories are selected.
+List choice remains remembered while Table detail acceptance is pending. The layout
+toggle remains available in Planning options during this transition.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row of capacity and Product/Tech graph bars. Graph labels and the dashed target marker stay visible when any Product, Tech or Ad Hoc segment is hovered. Product/Tech fills use pale tints with dark labels; Ad Hoc retains its striped Product tint. Collapse panel returns
-expanded details to that same graph row. Show panel restores selection
-actions and per-Team capacity details without changing selection or fetching
-new datasets. List retains the full Planning overview. On narrow screens, the
-graphs stack to keep their values readable. Capacity errors remain visible in
-the compact row. Only the spreadsheet region widens; extra columns scroll inside it.
+one desktop row with Select All, Clear Selection, Undo, Planning options and the
+plan/capacity summary. Hiding capacity details keeps these controls and counts
+visible. Planning options contains Show/Hide capacity details, Open planned stories
+in Jira and Include by status. Each status group has explicit Include and Remove
+actions. Expanding capacity details reveals the existing graphs and Team capacity
+content without changing inclusion or fetching another dataset. Capacity errors
+remain visible when details are hidden. Only the spreadsheet region widens; extra
+columns scroll inside it.
 Summary titles and Teams in scope use bounded single lines with ellipsis in both
 read-only and editable profiles. Hover or keyboard focus reveals full text using
 the shared in-app readout above table/sticky layers. Clicking an editable title opens a wrapping editor inside its
@@ -57,14 +59,14 @@ treatment on hover, adding an inset blue ring that remains visible within the ce
 Keyboard focus keeps its existing light fill and visible outline. Disabled chips
 retain their resting appearance.
 
-Accepted is a computed number column right after the points column, visible by default
+Planned SP is a computed number column right after the points column, visible by default
 (it is optional, so it can be hidden, moved and restored like the other Jira columns, and its
 order and visibility save with the shared layout). A Story row shows its points only while
 that Story is ticked; an Epic row (and the No Epic group) shows the sum of its ticked real
 child Stories; awaiting-creation placeholders show nothing. The footer total is the sum over
 the rows in the current mode, so it reads 0 with nothing ticked. It stands in for the accepted
-numbers of the Planned Teams Effort panel inside the table, is never editable, and selecting
-Stories does not make the review dirty.
+numbers of the Planned Teams Effort panel inside the table and is never editable.
+Changing Story inclusion makes the shared plan dirty; Jira's Accepted status is unchanged.
 
 In Table view the Planned Teams Effort panel is a one-line strip (its title with a caret) until
 the user expands it, which keeps the table near the top of the page; its header is the toggle (a
@@ -72,7 +74,7 @@ native button, so it works by tap), the grid stays mounted but hidden while coll
 expanding neither refetches nor changes selection. The choice is a private browser preference
 (`planningTeamsEffortExpanded` in the saved UI preferences) that survives reloads; collapsed is
 the default. Planning List shows the full panel exactly as before. The accepted numbers it
-shows are also available in the table through the Accepted column.
+shows are also available in the table through the Planned SP column.
 
 The table's surfaces, borders and secondary text use the shared design tokens (`--bg-primary`,
 `--bg-secondary`, `--border`, `--text-primary`, `--text-secondary`) rather than slate literals, so it
@@ -96,8 +98,14 @@ Epics remain in the Epic table, marked with a "N Story awaited" chip beside the 
 placeholder shows its Team and links its parent Epic; it has no Jira key or
 Story Points and cannot be selected or edited. Table placeholders remain visible
 through Story status/priority filters, while Department, Team, project, Project
-Track and search scope still apply. List filtering retains its existing behavior. Selection reuses Planning
-Story selection and Undo; Epic checkboxes affect visible real child Stories.
+Track and search scope still apply. List filtering retains its existing behavior.
+The shared inclusion document belongs to a Department group, Sprint and review
+namespace. Team and ordinary filters project it without replacing other Teams'
+inclusion. Select All adds every matching real child Story, including rows below
+the viewport; Clear Selection removes matching included Stories only. Epic
+checkboxes use the same filtered child set. Undo reverses the last local inclusion
+gesture, up to 20 gestures. Legacy browser selections remain untouched and are
+not imported. A missing plan and a saved empty plan have distinct messages.
 Synthetic rows cannot edit Jira or store custom values. Team and Project columns
 appear for multiple admitted Teams/projects. Sort epics and Group by Initiative are not
 rendered in Table view (they never changed table ordering); List and Catch Up keep them and
@@ -111,11 +119,14 @@ focused review cell holds its row so neither the slide nor a filter can unmount 
 
 There is no table toolbar tier. The Epics/Stories switch (the shared SegmentedControl in its
 compact form, `eng-mode-control segmented-control-compact`) sits in the Filters row's
-view-controls slot, followed at the right end by Discard and Save, which appear only while
-the review has local changes (Discard asks for an inline confirmation, using the Filters
-button style; Save is the row's single filled button); a muted Loading… note shows there
+view-controls slot, followed at the right end by Discard changes and Save plan, which appear only while
+the review has local changes (Discard changes asks for an inline confirmation, using the Filters
+button style; Save plan is the row's single filled button); a muted Loading… note shows there
 while the review loads. There is
-no options menu or usage help: the app-header Refresh also reloads the shared
+no separate table toolbar: Planning options stays with the primary inclusion controls.
+Save plan commits pending inclusion across Teams together with app-owned review
+changes; Jira edits and capacity saves remain independent. Discard changes reads
+the latest confirmed document. The app-header Refresh also reloads the shared
 review (drafts are preserved; it leaves a review that is already loading or
 saving alone), and a third click on a sorted heading clears the sort.
 Column work happens in the table header. The corner + in the pinned select header cell

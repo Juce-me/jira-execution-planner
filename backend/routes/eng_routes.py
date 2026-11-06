@@ -178,7 +178,7 @@ def _story_readiness_effective_groups(context):
     db_context = context if is_db_auth_context(context) else None
     return shared_group_config.load_effective_groups(
         db_context,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        fallback_loader=None,
         validate_groups_config_fn=validate_groups_config,
         dashboard_loader=load_dashboard_config,
         groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
@@ -200,7 +200,7 @@ def _story_readiness_dashboard_snapshot(context, *, fresh=False):
     if fresh and is_db_auth_context(context):
         return build_db_config_repository().load_dashboard_config_snapshot(
             context,
-            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            fallback_loader=None,
             legacy_site_url=JIRA_URL or '',
         )
     return load_dashboard_config_snapshot()

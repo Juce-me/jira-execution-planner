@@ -3,12 +3,12 @@ import unittest
 
 import jira_server
 from backend.epm.rollup import EpmRollupDependencies, build_per_project_rollup
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 class BuildPerProjectRollupTests(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
 
     def make_deps(self, project, fetch_results):
         cache = {}
@@ -41,6 +41,7 @@ class BuildPerProjectRollupTests(unittest.TestCase):
             shape_epm_rollup_issue_payload=jira_server.shape_epm_rollup_issue_payload,
             dedupe_issues_by_key=jira_server.dedupe_issues_by_key,
             build_epm_rollup_hierarchy=jira_server.build_epm_rollup_hierarchy,
+            context=jira_server.current_request_auth_context(),
             cache=cache,
             cache_lock=threading.Lock(),
             cache_ttl_seconds=300,

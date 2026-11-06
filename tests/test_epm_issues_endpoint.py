@@ -5,7 +5,7 @@ from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 from backend.epm.issues import EpmIssuesDependencies, build_epm_project_issues_payload
 import jira_server
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 def make_auth_context():
@@ -45,7 +45,7 @@ def make_issue(key, parent_key='', labels=None):
 
 class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.testing = True
 
     def make_deps(self, project, fetch_results=None, context=None, now_values=None):
@@ -150,7 +150,7 @@ class BuildEpmProjectIssuesPayloadTests(unittest.TestCase):
 
 class TestEpmIssuesEndpoint(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()

@@ -22,7 +22,7 @@ import LoadingState from './ui/LoadingState.jsx';
 import JiraExportButton from './components/JiraExportButton.jsx';
 import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
-import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, selectSprintForScope, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey, sprintScopeOf } from './dashboardRuntime.js';
+import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, getLocalStorage, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, selectSprintForScope, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey, sprintScopeOf } from './dashboardRuntime.js';
 import { useSiblingQuarterStates } from './workStructure/useSiblingQuarterStates.js';
 import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission, sortSprintOptionRows } from './workStructure/configurationContext.js';
 import { onWorkContextStale, reportWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
@@ -35,10 +35,10 @@ import { useOnboardingController } from './onboarding/useOnboardingTour.js';
 import AuthRequiredGate from './components/AuthRequiredGate.jsx';
 import ConnectionRecoveryNotice from './components/ConnectionRecoveryNotice.jsx';
 import { AUTH_REQUIRED_EVENT, AUTHENTICATION_REQUIRED_CODE, isAuthenticationRequiredError, readPendingAuthenticationRequired } from './api/authRequired.js';
-import { completeAuthRecovery, getAuthRecoveryStores } from './api/authRecoveryCoordinator.js';
-import { clearAuthResumeState, getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
+import { completeAuthRecovery, getAuthRecoveryStores, registerAuthResumeCapture } from './api/authRecoveryCoordinator.js';
+import { getAuthResumeStorage, readAuthResumeState, writeAuthResumeState } from './api/authResumeState.js';
 import { connectionRecoveryPrincipalFromConfig } from './api/connectionRecoveryState.js';
-import { buildConnectionRecoveryShellState, buildConnectionRecoverySnapshot, useConnectionRecovery } from './api/useConnectionRecovery.js';
+import { buildConnectionRecoverySnapshot, useConnectionRecovery } from './api/useConnectionRecovery.js';
 import { IssueCardContext } from './issues/IssueCard.jsx';
 import { buildDependencyFocusPayload, buildDependencyFocusWithScreenState, buildDependencyKeySignature, buildIssueByKey } from './issues/dependencyFocusUtils.js';
 import { formatPriorityShort, getIssueStatusClassName } from './issues/issueViewUtils.js';
@@ -59,7 +59,8 @@ import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
 import PlanningAssigneeCapacity, { getAssigneeCapacityController } from './eng/PlanningAssigneeCapacity.jsx';
 import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
 import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
-import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
+import { createPlanningSprintReviewController, usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
+import { usePlanningAuthResumeRecovery } from './eng/usePlanningAuthResumeRecovery.js';
 import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
@@ -94,11 +95,10 @@ import IssueTeamEditor from './issues/IssueTeamEditor.jsx';
 import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
-import { createPlanningSelectionHandlers, persistPlanningSelectionState, selectedTaskKeysFromMap, selectedTaskMapFromKeys } from './eng/planningSelectionActions.js';
-import { usePlanningSelectionSync } from './eng/usePlanningSelectionSync.js';
+import { createPlanningSelectionHandlers } from './eng/planningSelectionActions.js';
 import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
 import { getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
-import { buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
+import { buildPlanningSelectionSummary, buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
 import { buildPriorityWeightMap } from './stats/priorityWeights.js';
@@ -183,12 +183,8 @@ import {
     extractEpmHierarchyNames
 } from './epm/epmProjectUtils.mjs';
 import {
-    PLANNING_SELECTION_MODE_DEFAULT_ALL,
     PLANNING_SELECTION_MODE_MANUAL,
-    buildPlanningScopeKey,
-    hasPlanningState,
-    loadPlanningState,
-    resolvePlanningTeamSelection
+    buildPlanningScopeKey
 } from './planningSelectionState.mjs';
 import { buildTeamSelectionScopeKey, loadTeamSelectionState, reconcileTeamSelectionState, resolveTeamSelectionHydrationState, saveTeamSelectionState } from './teamSelectionPersistence.mjs';
 import {
@@ -406,11 +402,25 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const setSelectedQuarter = (quarter, { explicit = true } = {}) => {
                 const canonical = canonicalQuarter(quarter);
                 if (!canonical) return;
-                quarterIntentRef.current = { quarter: canonical, explicit };
-                setQuarterIntentState(quarterIntentRef.current);
+                const commit = () => {
+                    quarterIntentRef.current = { quarter: canonical, explicit };
+                    setQuarterIntentState(quarterIntentRef.current);
+                };
+                if (canonical !== quarterIntentRef.current.quarter && planningReviewGuardRef.current && !pendingShellAuthResumeRef.current) void planningReviewGuardRef.current(commit);
+                else commit();
             };
             const [workBootstrap, setWorkBootstrap] = useState(() => readWorkConfigBootstrap(null));
-            const applyWorkBootstrap = next => setWorkBootstrap(previous => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
+            const applyWorkBootstrap = next => {
+                if (JSON.stringify(workBootstrap) === JSON.stringify(next)) return;
+                const quarter = quarterIntentRef.current.quarter || quarterFromSprintName(savedPrefsRef.current.sprintName) || calendarQuarter();
+                const namespace = bootstrap => {
+                    const summary = bootstrap.promoted ? configurationForQuarter(bootstrap.summaries, quarter) : null;
+                    return summary && normalizeWorkModel(summary.model) !== 'legacy' ? summary.id : null;
+                };
+                const commit = () => setWorkBootstrap(next);
+                if (namespace(next) !== namespace(workBootstrap) && planningReviewGuardRef.current && !pendingShellAuthResumeRef.current) void planningReviewGuardRef.current(commit);
+                else commit();
+            };
             const [observedQuarters, setObservedQuarters] = useState({});
             // Numbers-only per-source read diagnostics from the last catalog answer, by configuration id.
             const [catalogDiagnostics, setCatalogDiagnostics] = useState({});
@@ -858,9 +868,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
             const pageLoadRefreshRef = useRef(false);
             const [jiraUrl, setJiraUrl] = useState('');
-            const [selectedTasks, setSelectedTasks] = useState({});
-            const [planningSelectionMode, setPlanningSelectionMode] = useState(PLANNING_SELECTION_MODE_MANUAL);
-            const [canUndoPlanningSelection, setCanUndoPlanningSelection] = useState(false);
+            const planningReviewActionRef = useRef(null);
+            const planningReviewController = React.useMemo(() => createPlanningSprintReviewController({
+                backendUrl: BACKEND_URL, onReviewAction: (action, params) => planningReviewActionRef.current?.(action, params),
+            }), []);
+            const planningReviewState = React.useSyncExternalStore(planningReviewController.subscribe, planningReviewController.getState, planningReviewController.getState);
+            const selectedTasks = planningReviewController.getSelectedTasks();
+            const planningSelectionMode = PLANNING_SELECTION_MODE_MANUAL;
+            const canUndoPlanningSelection = Boolean(planningReviewState.canUndoInclusion);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
             const [planningLayout, setPlanningLayout] = useState(savedPrefsRef.current.planningLayout === 'list' ? 'list' : 'table');
             const [planningToolbarHost, setPlanningToolbarHost] = useState(null);
@@ -902,22 +917,15 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [isPlanningStuck, setIsPlanningStuck] = useState(false);
             const planningPanelRef = useRef(null);
             const planningHydratedScopeRef = useRef('');
-            const planningLoadedSelectionRef = useRef(null);
-            const planningBaselineScopeRef = useRef('');
             const authResumeSnapshotRef = useRef(null);
-            const pendingShellAuthResumeRef = useRef(null);
-            const pendingPlanningAuthResumeRef = useRef(null);
-            const authResumeShellSettledRef = useRef(null);
-            const planningAuthResumeLoadRef = useRef(null);
-            const planningAuthResumePersistenceFailedRef = useRef('');
-            const [authResumeStagedRevision, setAuthResumeStagedRevision] = useState(0);
-            const [planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision] = useState(0);
-            const clearAuthResumeWhenSettled = React.useCallback(() => {
-                if (readPendingAuthenticationRequired()) return;
-                if (planningAuthResumePersistenceFailedRef.current) return;
-                if (pendingShellAuthResumeRef.current || pendingPlanningAuthResumeRef.current) return;
-                clearAuthResumeState(getAuthResumeStorage(window));
-            }, []);
+            const authResumeTeamsRef = useRef([]), authResumeCapturedRef = useRef(false);
+            const {
+                pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, planningRecoveryRestoringRef,
+                authResumeShellSettledRef, planningAuthResumeLoadRef,
+                planningRecoveryError, setPlanningRecoveryError, authResumeStagedRevision, setAuthResumeStagedRevision,
+                planningAuthResumeLoadRevision, setPlanningAuthResumeLoadRevision,
+                clearAuthResumeWhenSettled, stageAuthResume, restorePlanningRecovery,
+            } = usePlanningAuthResumeRecovery();
             const teamSelectionHydratedScopeRef = useRef('');
             const teamSelectionHydratedSelectionRef = useRef(null); const teamSelectionCarryForwardRef = useRef(null);
             const teamSelectionSkipPersistScopeRef = useRef('');
@@ -2626,6 +2634,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return buildTeamSelectionScopeKey({ sprintId: selectedSprint, groupId: activeGroupId });
             }, [selectedSprint, activeGroupId]);
             authResumeSnapshotRef.current = {
+                version: 2,
                 principal: authResumePrincipalRef.current,
                 view: {
                     selectedView,
@@ -2635,23 +2644,37 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     settingsOpen: showGroupManage,
                     settingsTab: groupManageTab,
                 },
-                planning: {
-                    scopeKey: planningScopeKey,
-                    selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
-                    selectedTeams: normalizeSelectedTeams(selectedTeams),
-                    selectionMode: planningSelectionMode,
-                },
+                planning: null,
             };
+            authResumeTeamsRef.current = normalizeSelectedTeams(selectedTeams);
             useEffect(() => {
                 const captureAuthResume = () => {
+                    if (authResumeCapturedRef.current) return true;
+                    const current = planningReviewController.getState();
+                    const pendingRecovery = pendingPlanningAuthResumeRef.current;
+                    const required = Boolean(pendingRecovery || current.dirty || current.saving || current.unconfirmed || current.pendingOperation);
                     const principal = authResumePrincipalRef.current;
                     const tabStorage = getAuthResumeStorage(window);
-                    if (!tabStorage || !principal?.workspaceId || !principal?.viewConfigId) return;
-                    writeAuthResumeState(tabStorage, authResumeSnapshotRef.current);
+                    if (!tabStorage || !principal?.workspaceId || !principal?.viewConfigId) return !required;
+                    const planning = pendingRecovery || (required ? planningReviewController.capturePlanRecovery() : null);
+                    if (required && !planning) return false;
+                    const existing = pendingRecovery ? readAuthResumeState(tabStorage, principal) : null;
+                    if (existing?.version === 2 && JSON.stringify(existing.planning) === JSON.stringify(pendingRecovery)) {
+                        authResumeCapturedRef.current = true;
+                        return true;
+                    }
+                    const retained = writeAuthResumeState(tabStorage, {
+                        ...authResumeSnapshotRef.current,
+                        ...(planning ? { view: { ...authResumeSnapshotRef.current.view, activeGroupId: planning.scope.groupId, selectedSprint: planning.scope.sprintId } } : {}),
+                        planning: planning ? { ...planning, selectedTeams: pendingRecovery?.selectedTeams || authResumeTeamsRef.current } : null,
+                    });
+                    if (retained) authResumeCapturedRef.current = true;
+                    return retained || !required;
                 };
+                const unregister = registerAuthResumeCapture(captureAuthResume);
                 window.addEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
                 if (readPendingAuthenticationRequired()) captureAuthResume();
-                return () => window.removeEventListener(AUTH_REQUIRED_EVENT, captureAuthResume);
+                return () => { unregister(); window.removeEventListener(AUTH_REQUIRED_EVENT, captureAuthResume); };
             }, []);
             useEffect(() => {
                 const resume = pendingShellAuthResumeRef.current;
@@ -2674,17 +2697,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 settled.add('sprint');
             }, [sprintsLoading, availableSprints, selectedSprint, authResumeStagedRevision]);
             const buildDefaultGroupState = (groupId) => {
-                const hasStoredPlanningState = planningScopeKey
-                    ? hasPlanningState(window.localStorage, planningScopeKey)
-                    : false;
-                const planningState = planningScopeKey
-                    ? loadPlanningState(window.localStorage, planningScopeKey)
-                    : null;
-                const selectionModeFromPlanning = hasStoredPlanningState
-                    ? (planningState?.selectionMode || PLANNING_SELECTION_MODE_MANUAL)
-                    : (isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL);
                 const storedTeamSelectionState = teamSelectionScopeKey
-                    ? loadTeamSelectionState(window.localStorage, teamSelectionScopeKey)
+                    ? loadTeamSelectionState(getLocalStorage(), teamSelectionScopeKey)
                     : null;
                 const liveTeamSelection = storedTeamSelectionState
                     ? resolveTeamSelectionHydrationState({
@@ -2693,15 +2707,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
                     }).selectedTeams
                     : selectedTeams;
-                const selectedTeamsFromPlanning = resolvePlanningTeamSelection({
-                    scopedState: hasStoredPlanningState ? planningState : null,
-                    liveSelectedTeams: liveTeamSelection,
-                    savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
-                    savedPrefsSelectedTeam: savedPrefsRef.current.selectedTeam
-                });
-                const selectedTasksFromPlanning = hasStoredPlanningState
-                    ? selectedTaskMapFromKeys(planningState?.selectedTaskKeys || [])
-                    : {};
                 return {
                     sprintId: selectedSprint,
                     planningScopeKey,
@@ -2726,9 +2731,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
                     groupByInitiativeChoice: savedPrefsRef.current.groupByInitiativeChoice ?? null,
-                    selectedTeams: selectedTeamsFromPlanning,
-                    selectedTasks: selectedTasksFromPlanning,
-                    planningSelectionMode: selectionModeFromPlanning,
+                    selectedTeams: liveTeamSelection,
                     showPlanning,
                     showStats,
                     showScenario,
@@ -2784,8 +2787,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showProduct,
                 groupByInitiativeChoice,
                 selectedTeams,
-                selectedTasks,
-                planningSelectionMode,
                 showPlanning,
                 showStats,
                 showScenario,
@@ -2842,9 +2843,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setShowProduct(nextState.showProduct ?? true);
                 setGroupByInitiativeChoice(nextState.groupByInitiativeChoice ?? null);
                 setSelectedTeams(normalizeSelectedTeams(nextState.selectedTeams));
-                setSelectedTasks(nextState.selectedTasks || {});
-                setPlanningSelectionMode(nextState.planningSelectionMode || PLANNING_SELECTION_MODE_MANUAL);
-                setCanUndoPlanningSelection(false);
                 setShowPlanning(nextState.showPlanning ?? false);
                 setShowStats(nextState.showStats ?? false);
                 setShowScenario(nextState.showScenario ?? false);
@@ -3014,10 +3012,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const unavailableMode = (resume.engMode === 'planning' && isCompletedSprintSelected)
                     || (resume.engMode === 'scenario' && isCompletedSprintSelected);
                 const nextMode = unavailableMode ? 'catch-up' : resume.engMode;
-                if (resume.engMode === 'planning' && nextMode !== 'planning') {
-                    pendingPlanningAuthResumeRef.current = null;
-                    planningAuthResumeLoadRef.current = null;
-                }
                 setSelectedView(nextView);
                 setShowPlanning(nextMode === 'planning');
                 setShowStats(nextMode === 'statistics');
@@ -3056,11 +3050,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 }
             }, [showPlanning, isCompletedSprintSelected]);
 
-            useEffect(() => {
-                if (showPlanning && !isCompletedSprintSelected && !isFutureSprintSelected) {
-                    includePlanningTasksByStatus(['Accepted', 'In Progress']);
-                }
-            }, [showPlanning, isCompletedSprintSelected, isFutureSprintSelected]);
 
             useEffect(() => {
                 if (!showSprintDropdown) return;
@@ -3480,25 +3469,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     authResumePrincipalRef.current = resumePrincipal;
                     connectionRecoveryPrincipalRef.current = connectionRecoveryPrincipalFromConfig(config);
                     const resumeStorage = getAuthResumeStorage(window);
-                    const resume = resumeStorage && !planningAuthResumePersistenceFailedRef.current
+                    const resume = resumeStorage
                         ? readAuthResumeState(resumeStorage, resumePrincipal)
                         : null;
                     const connectionResume = consumeConnectionRecovery(connectionRecoveryPrincipalRef.current);
-                    if (resume) {
-                        pendingShellAuthResumeRef.current = resume.view;
-                        authResumeShellSettledRef.current = new Set();
-                        planningAuthResumeLoadRef.current = null;
-                        pendingPlanningAuthResumeRef.current = resume.view.selectedView === 'eng'
-                            && resume.view.engMode === 'planning'
-                            && resume.planning.scopeKey
-                            ? resume.planning
-                            : null;
-                        setAuthResumeStagedRevision(revision => revision + 1);
-                    } else if (connectionResume) {
-                        pendingShellAuthResumeRef.current = buildConnectionRecoveryShellState(connectionResume);
-                        authResumeShellSettledRef.current = new Set();
-                        setAuthResumeStagedRevision(revision => revision + 1);
-                    }
+                    stageAuthResume(resume, connectionResume);
                     markConnectionBootstrapHealthy('config');
                     clearServerConnectionError();
                     setJiraUrl(config.jiraUrl || '');
@@ -3566,8 +3541,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
 
             useEffect(() => {
-                if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;
-                if (boardScopeRequested) return;
+                const recoveringPlan = Boolean(pendingPlanningAuthResumeRef.current);
+                if (!recoveringPlan && (selectedView !== 'eng' || isStatsSourceOnlyStatsView || boardScopeRequested)) return;
                 if (!sprintCatalogReady || sprintsLoading || !selectedSprintInfo) return;
                 // Load tasks when sprint changes (team is filtered client-side)
                 if (selectedSprint === null) {
@@ -3588,7 +3563,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 }
 
                 const pendingPlanningResume = pendingPlanningAuthResumeRef.current;
-                const recoveryScopeKey = pendingPlanningResume?.scopeKey === planningScopeKey
+                const recoveryScopeKey = pendingPlanningResume?.scope?.groupId === String(activeGroupId)
+                    && pendingPlanningResume.scope.sprintId === String(selectedSprint)
                     ? planningScopeKey
                     : '';
                 const forceConfigRefresh =
@@ -3660,6 +3636,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
+                if (pendingPlanningAuthResumeRef.current || planningReviewController.getState().dirty || planningReviewController.getState().unconfirmed) {
+                    setPlanningRecoveryError('The Department is unavailable. Your unsaved plan is preserved.');
+                    return;
+                }
                 clearEngGroupScopeData();
                 setActiveGroupId(null);
                 markConnectionBootstrapHealthy('sprints');
@@ -4006,6 +3986,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 	                () => [...productTasks, ...techTasks],
 	                [productTasks, techTasks]
 	            );
+                const planningCandidateTasks = React.useMemo(() => [...new Map(capacityTasks
+                    .filter(task => /^[1-9][0-9]*$/.test(String(task.id || '')))
+                    .map(task => [String(task.id), task])).values()], [capacityTasks]);
 	            const readyToCloseTasks = React.useMemo(
 	                () => [...readyToCloseProductTasks, ...readyToCloseTechTasks],
 	                [readyToCloseProductTasks, readyToCloseTechTasks]
@@ -4166,7 +4149,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const validTeamIds = teamOptions
                     .map(team => String(team?.id || '').trim())
                     .filter(id => id && id !== 'all');
-                const storedState = loadTeamSelectionState(window.localStorage, teamSelectionScopeKey);
+                const storedState = loadTeamSelectionState(getLocalStorage(), teamSelectionScopeKey);
                 const baseState = resolveTeamSelectionHydrationState({
                     storedState, liveSelectedTeams: teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey ? teamSelectionCarryForwardRef.current.selectedTeams : undefined,
                     savedPrefsSelectedTeams: savedPrefsRef.current.selectedTeams,
@@ -4190,7 +4173,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
                     return sameTeams ? prev : nextSelectedTeams;
                 });
-                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                saveTeamSelectionState(getLocalStorage(), teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
                 if (teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey) teamSelectionCarryForwardRef.current = null;
             }, [
                 teamSelectionScopeKey,
@@ -4209,7 +4192,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     teamSelectionSkipPersistScopeRef.current = '';
                     return;
                 }
-                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, {
+                saveTeamSelectionState(getLocalStorage(), teamSelectionScopeKey, {
                     selectedTeams
                 });
             }, [teamSelectionScopeKey, selectedTeams]);
@@ -4233,7 +4216,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             // shared with the shareable-link apply. Callers set the React state themselves.
             const persistTeamSelection = (nextSelectedTeams) => {
                 if (!teamSelectionScopeKey) return;
-                saveTeamSelectionState(window.localStorage, teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
+                saveTeamSelectionState(getLocalStorage(), teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
                 teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
             };
             const toggleTeamSelection = (teamId) => {
@@ -4367,18 +4350,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const selectionTasks = baseFilteredTasks;
 
-            usePlanningSelectionSync({
-                shouldPreserveAutomaticSelection: () => epicRefresh.shouldPreserveAutomaticSelection(),
-                pendingPlanningAuthResumeRef, pendingShellAuthResumeRef, planningAuthResumeLoadRef, lastLoadedSprintRef,
-                teamSelectionHydratedSelectionRef, planningAuthResumePersistenceFailedRef, planningLoadedSelectionRef, planningBaselineScopeRef,
-                clearAuthResumeWhenSettled, normalizeSelectedTeams,
-                planningScopeKey, activeGroupId, selectedSprint, teamSelectionScopeKey, isFutureSprintSelected,
-                tasksFetched, productTasksLoading, techTasksLoading, selectionTasks, teamOptions,
-                selectedTasks, selectedTeams, planningSelectionMode, activeGroupTeamIds,
-                authResumeStagedRevision, planningAuthResumeLoadRevision,
-                setSelectedTasks, setSelectedTeams, setPlanningSelectionMode, setCanUndoPlanningSelection,
-            });
-
             const visibleTasks = React.useMemo(() => restorePlanningDisplay(baseFilteredTasks.filter(task => (
                 engCatchUpFilters.admitsStatus(task.fields.status?.name)
                 && engCatchUpFilters.admitsPriority(task.fields.priority?.name)
@@ -4480,16 +4451,42 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const payload = buildPlanningReviewAnalyticsParams(action, params);
                 if (payload) trackProductEvent('planning_action', payload);
             }, [trackProductEvent, trackSortChanged]);
+            planningReviewActionRef.current = trackPlanningReviewAction;
             if (sprintCatalogState.browserContextId) planningReviewBrowserContextRef.current = sprintCatalogState.browserContextId;
-            const planningReview = usePlanningSprintReview({
-                sprintId: selectedSprint, active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold && reviewGroupReady, groupId: reviewGroupId,
+            const planningReviewOwner = usePlanningSprintReview({
+                controller: planningReviewController,
+                sprintId: selectedSprint, active: (selectedView === 'eng' && showPlanning || Boolean(pendingPlanningAuthResumeRef.current)) && engWorkspaceConfigured && (!shareViewHold || Boolean(pendingPlanningAuthResumeRef.current)) && reviewGroupReady, groupId: reviewGroupId,
                 // The review namespace is the configuration (id + model), not its revision or the viewed quarter: an era switch
                 // loads the other namespace; a revision refresh after a stale write keeps the draft in place.
                 contextKey: `${authMode}|${jiraUrl}|${planningReviewBrowserContextRef.current}|${authResumeStagedRevision}|${workContext ? `${workContext.id}:${workModel}` : ''}`,
                 workModel,
+                planScope: { workspaceId: authResumePrincipalRef.current?.workspaceId || '', groupId: reviewGroupId, sprintId: String(selectedSprint || ''), namespaceId: workModel === 'legacy' ? null : workContext?.id || null },
+                candidateRows: planningCandidateTasks.map(task => ({ issueId: String(task.id), key: task.key, rowKind: 'story', synthetic: false })),
                 backendUrl: BACKEND_URL, rows: planningReviewRows, automaticHoldRef: planningAutomaticReadRef, onReviewAction: trackPlanningReviewAction,
             });
-            planningReviewGuardRef.current = planningReview.guardScopeChange;
+            const planningSourceReady = tasksFetched && !productTasksLoading && !techTasksLoading && !error;
+            const planningReview = { ...planningReviewOwner, capabilities: {
+                ...planningReviewOwner.capabilities,
+                canSave: Boolean(planningReviewOwner.capabilities.canSave && planningSourceReady && reviewGroupReady && !groupsLoading && !pendingPlanningAuthResumeRef.current),
+            } };
+            planningReviewGuardRef.current = callback => {
+                if (pendingPlanningAuthResumeRef.current) {
+                    setPlanningRecoveryError('Restore or discard the recovered plan before changing its scope.');
+                    return Promise.resolve(false);
+                }
+                return planningReview.guardScopeChange(callback);
+            };
+            useEffect(() => {
+                void restorePlanningRecovery({
+                    planningReview, groupsLoading, sprintsLoading, tasksFetched, productTasksLoading, techTasksLoading,
+                    pendingConnectionRecoveryRef, releaseConnectionRecoveryOwnership,
+                    restoreSelectedTeams: teams => setSelectedTeams(normalizeSelectedTeams(teams)),
+                });
+            }, [authResumeStagedRevision, planningAuthResumeLoadRevision, tasksFetched, productTasksLoading, techTasksLoading, groupsLoading, sprintsLoading, planningReview.planReady, planningReview.loading, planningReview.contextKey, planningReview.groupId, planningReview.sprintId, clearAuthResumeWhenSettled]);
+            const matchingPlanningTasks = React.useMemo(() => {
+                const authorized = new Set((planningReview.planEntries || []).map(entry => entry.issueId));
+                return visibleTasksForList.filter(task => authorized.has(String(task.id || '')));
+            }, [visibleTasksForList, planningReview.planEntries]);
             const planningReviewAdmittedCounts = React.useMemo(() => planningReviewScopeCounts({
                 tasks: capacityTasks, selectedTeamIds: selectedTeamSet, allTeams: isAllTeamsSelected,
                 groupTeamIds: activeGroupTeamIds, projects: savedSelectedProjects,
@@ -4836,37 +4833,17 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 toggleTaskSelection,
                 clearSelectedTasks,
                 selectAllVisiblePlanningTasks,
-                selectPlanningTasksByStatus,
+                selectPlanningReviewStories,
                 includePlanningTasksByStatus,
-                toggleIncludeByStatus,
+                removePlanningTasksByStatus,
                 undoPlanningSelectionChange
             } = createPlanningSelectionHandlers({
-                storage: window.localStorage,
-                planningScopeKey,
-                selectedTasks,
-                selectedTeams,
-                selectionTasks,
-                visibleTasksForList,
-                isFutureSprintSelected,
+                controller: planningReviewController,
+                selectionTasks: planningCandidateTasks,
+                visibleTasksForList: matchingPlanningTasks,
                 normalizeStatus,
-                normalizeSelectedTeams,
-                setPlanningSelectionMode,
-                setCanUndoPlanningSelection,
-                setSelectedTasks,
                 trackPlanningSelection,
-                planningLoadedSelectionRef
             });
-
-            const selectPlanningReviewStories = (stories, selected) => {
-                const next = { ...selectedTasks };
-                const visible = new Set(visibleTasksForList.map(task => task.key));
-                stories.forEach(task => { if (visible.has(task.key)) { if (selected) next[task.key] = true; else delete next[task.key]; } });
-                if (planningLoadedSelectionRef.current?.scopeKey === planningScopeKey) setCanUndoPlanningSelection(true);
-                setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-                persistPlanningSelectionState({ storage: window.localStorage, scopeKey: planningScopeKey, selectedTasks: next, selectionMode: PLANNING_SELECTION_MODE_MANUAL, selectedTeams, normalizeSelectedTeams });
-                setSelectedTasks(next);
-                trackPlanningSelection('select_epic_visible', next, selectionTasks);
-            };
 
             const canToggleSharedGroupExcludedCapacity = canEditSharedConfiguration && !(showGroupManage && isGroupDraftDirty);
 
@@ -4900,49 +4877,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return sum;
             };
 
-            const selectedTasksList = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return selectionTasks.filter(task => selectedTasks[task.key]);
-            }, [showPlanning, selectionTasks, selectedTasks]);
-            const acceptedStatusSet = React.useMemo(() => new Set(['accepted', 'in progress']), []);
-            const acceptedTasks = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return selectionTasks.filter(task =>
-                    acceptedStatusSet.has(normalizeStatus(task.fields.status?.name))
-                );
-            }, [showPlanning, selectionTasks, acceptedStatusSet]);
-            const todoPendingTasks = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return selectionTasks.filter(task => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    return status === 'to do' || status === 'pending';
-                });
-            }, [showPlanning, selectionTasks]);
-            const planningPostponedTasks = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return selectionTasks.filter(task => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    return status === 'postponed';
-                });
-            }, [showPlanning, selectionTasks]);
-            const planningAwaitingValidationTasks = React.useMemo(() => {
-                if (!showPlanning) return [];
-                return selectionTasks.filter(task => {
-                    const status = normalizeStatus(task.fields.status?.name);
-                    return status === 'awaiting validation';
-                });
-            }, [showPlanning, selectionTasks]);
-            const isAcceptedIncluded = acceptedTasks.length > 0 &&
-                acceptedTasks.every(task => selectedTasks[task.key]);
-            const isTodoIncluded = todoPendingTasks.length > 0 &&
-                todoPendingTasks.every(task => selectedTasks[task.key]);
-            const isPostponedIncluded = planningPostponedTasks.length > 0 &&
-                planningPostponedTasks.every(task => selectedTasks[task.key]);
-            const isAwaitingValidationIncluded = planningAwaitingValidationTasks.length > 0 &&
-                planningAwaitingValidationTasks.every(task => selectedTasks[task.key]);
+            const planningSelectionSummary = React.useMemo(() => buildPlanningSelectionSummary({
+                tasks: projectPlanningOriginals(planningCandidateTasks, planningOriginals), shownTasks: visibleTasksForList,
+                selectedTasks, selectedTeamIds: selectedTeamSet, allTeams: isAllTeamsSelected, getTeamInfo,
+            }), [planningCandidateTasks, planningOriginals, visibleTasksForList, selectedTasks, selectedTeamSet, isAllTeamsSelected, getTeamInfo]);
+            const selectedTasksList = showPlanning ? planningSelectionSummary.selectedTasks : [];
             const areAllVisiblePlanningTasksSelected = showPlanning &&
-                visibleTasksForList.length > 0 &&
-                visibleTasksForList.every(task => selectedTasks[task.key]);
+                matchingPlanningTasks.length > 0 &&
+                matchingPlanningTasks.every(task => selectedTasks[task.key]);
 
             const selectedPlanningTasksList = React.useMemo(() => {
                 if (!showPlanning) return [];
@@ -5665,7 +5607,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 sharedConfigReady, groupsLoading, groupsFailed: Boolean(groupsError || boardGroupsReadFailed), onboardingRequired: groupPreferences.onboardingRequired,
                 adminSettingsGate, sprintCatalogState, epmHomeReadReady, savedViewIsEpm: savedInitialViewRef.current === 'epm', visibleControlGroups,
                 pendingShellAuthResumeRef, pendingPlanningAuthResumeRef, pendingConnectionRecoveryRef, tourRunning: onboarding.run,
-                planningReviewBusy: Boolean(planningReview.dirty || planningReview.saving || planningReview.pendingScopeChange),
+                planningReviewBusy: Boolean(planningReview.saving || planningReview.discarding),
+                guardPlanningScopeChange: callback => planningReviewGuardRef.current(callback),
                 activeGroupId, selectedSprint, planningScopeKey, teamSelectionScopeKey, selectedView, selectedTeams, tasksFetched,
                 tasksLoading: productTasksLoading || techTasksLoading, engLoadsTasks: selectedView === 'eng' && !isStatsSourceOnlyStatsView && !boardScopeRequested,
                 activeGroupRef, planningHydratedScopeRef, restoringGroupRef, teamSelectionHydratedScopeRef, lastLoadedSprintRef, loadEpochRef,
@@ -5920,9 +5863,15 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             connectionRecoverySnapshotRef.current = () => {
                 const dirtyScenario = scenarioHasUnsavedChanges;
+                const planState = planningReviewController.getState();
+                const pendingRecovery = pendingPlanningAuthResumeRef.current;
+                const planRequired = Boolean(pendingRecovery || planState.dirty || planState.saving || planState.unconfirmed || planState.pendingOperation);
+                const planning = pendingRecovery || (planRequired ? planningReviewController.capturePlanRecovery() : null);
+                if (planRequired && !planning) throw new Error('planning_preservation_unavailable');
                 return buildConnectionRecoverySnapshot({
                     activeGroupId, dirtySettings: showGroupManage && isGroupDraftDirty,
                     principal: connectionRecoveryPrincipalRef.current,
+                    planning: planning ? { ...planning, selectedTeams: pendingRecovery?.selectedTeams || normalizeSelectedTeams(selectedTeams) } : null,
                     selectedSprint, selectedView,
                     scenario: dirtyScenario ? {
                         scopeKey: scenarioDraftMeta.scopeKey,
@@ -6174,23 +6123,39 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef}>
                     <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — open panel to retry' : capacityReadError ? 'Capacity unavailable — open panel to retry' : ''} table={planningLayout === 'table'}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
-                        onToggleLayout={() => { setPlanningLayout('list'); trackPlanningReviewAction('layout_list'); }}
+                        planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
+                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <EpicHeaderValueReadout alwaysOn value={`Planned stories: ${selectedCount}. Planned SP: ${selectedSP.toFixed(1)}. Shown: ${planningSelectionSummary.shownCount} stories, ${planningSelectionSummary.shownSP.toFixed(1)} SP. Hidden: ${planningSelectionSummary.hiddenCount} stories, ${planningSelectionSummary.hiddenSP.toFixed(1)} SP. Capacity-counted effort: ${sumPlanningStoryPoints(selectedPlanningTasksList).toFixed(1)} SP, excluding configured activities. ${capacityDataStale ? 'Capacity is stale.' : capacityReadError ? 'Capacity is unavailable.' : ''} ${selectedTeamEntries.map(entry => `${entry.name}: ${entry.hasCapacityValue ? entry.capacitySource === 'planned' ? 'stored team capacity' : 'Jira capacity' : 'capacity missing'}`).join('; ')}. Including a story changes this plan's capacity estimate. It does not change its Jira Sprint or status.`}>
+                            {({ discoveryProps }) => <span {...discoveryProps} tabIndex={0} className="planning-stats compact">
+                                {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
+                                <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
+                                {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
+                                <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
+                                {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
+                            </span>}
+                        </EpicHeaderValueReadout>}
+                        notice={<span className="planning-review-state-note" role="status">
+                            {pendingPlanningAuthResumeRef.current ? 'Restoring plan…' : !planningSourceReady || !planningReview.planReady ? planningReview.error || error ? <>Plan could not be loaded. <button type="button" className="planning-action-button" onClick={() => { if (!planningSourceReady) void retryEngLoad(); else void planningReview.refresh(); }}>Retry</button></> : 'Loading plan…'
+                                : planningReview.dirty ? ''
+                                : !planningReview.plan?.exists ? 'No saved plan yet. Include stories to preview capacity, then save your plan.'
+                                : planningReview.planEntries.every(entry => !entry.included) ? `${planningReview.confirmedOperationId ? 'Plan saved. ' : ''}No stories in this plan.`
+                                : planningReview.confirmedOperationId ? 'Plan saved' : ''}
+                        </span>}
                         actions={<PlanningActionBar
-                            isAcceptedIncluded={isAcceptedIncluded}
-                            isTodoIncluded={isTodoIncluded}
-                            isPostponedIncluded={isPostponedIncluded}
-                            isAwaitingValidationIncluded={isAwaitingValidationIncluded}
+                            enabled={planningReview.planReady && planningReview.capabilities.canSave && !planningReview.loading && !planningReview.discarding && !planningReview.unconfirmed && tasksFetched && !productTasksLoading && !techTasksLoading && !error}
                             areAllVisiblePlanningTasksSelected={areAllVisiblePlanningTasksSelected}
-                            hasVisibleTasks={visibleTasks.length > 0}
-                            hasVisiblePlanningTasks={visibleTasksForList.length > 0}
-                            hasPostponedTasks={planningPostponedTasks.length > 0}
-                            hasAwaitingValidationTasks={planningAwaitingValidationTasks.length > 0}
-                            selectedCount={selectedCount} selectedVisibleCount={selectedVisiblePlanningJiraKeys.length}
+                            hasVisiblePlanningTasks={matchingPlanningTasks.length > 0}
+                            matchingIncludedCount={matchingPlanningTasks.filter(task => selectedTasks[task.key]).length}
+                            selectedVisibleCount={selectedVisiblePlanningJiraKeys.length}
                             jiraUrl={jiraUrl}
-                            onToggleAccepted={() => toggleIncludeByStatus(['Accepted', 'In Progress'])}
-                            onToggleTodo={() => toggleIncludeByStatus(['To Do', 'Pending'])}
-                            onTogglePostponed={() => toggleIncludeByStatus(['Postponed'])}
-                            onToggleAwaitingValidation={() => toggleIncludeByStatus(['Awaiting Validation'])}
+                            statusGroups={[
+                                ['Accepted + In Progress', ['Accepted', 'In Progress']], ['To Do / Pending', ['To Do', 'Pending']],
+                                ['Postponed', ['Postponed']], ['Awaiting validation', ['Awaiting Validation']],
+                            ].map(([label, statuses]) => {
+                                const allowed = new Set(statuses.map(normalizeStatus));
+                                const matching = matchingPlanningTasks.filter(task => allowed.has(normalizeStatus(task.fields?.status?.name)));
+                                return { label, statuses, canInclude: matching.some(task => !selectedTasks[task.key]), canRemove: matching.some(task => selectedTasks[task.key]) };
+                            })}
+                            onIncludeStatus={includePlanningTasksByStatus} onRemoveStatus={removePlanningTasksByStatus}
                             onSelectAllVisible={selectAllVisiblePlanningTasks}
                             canUndoPlanningSelection={canUndoPlanningSelection}
                             onUndoPlanningSelection={undoPlanningSelectionChange}
@@ -6202,7 +6167,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             statusTransitionErrorCode={statusTransitions.transitionErrorCode}
                             statusTransitionResult={statusTransitions.transitionResult}
                         />}
-                        capacity={<PlanningCapacityBar compact={compactPlanningPanel} capacityEnabled={capacityEnabled} totalCapacityAdjusted={totalCapacityAdjusted} estimatedCapacityAdjusted={estimatedCapacityAdjusted} excludedCapacityAdjusted={excludedCapacityAdjusted}
+                        capacity={<PlanningCapacityBar childPlural={entityNames.childPlural} compact={compactPlanningPanel} capacityEnabled={capacityEnabled} totalCapacityAdjusted={totalCapacityAdjusted} estimatedCapacityAdjusted={estimatedCapacityAdjusted} excludedCapacityAdjusted={excludedCapacityAdjusted}
                             selectedCount={selectedCount} selectedSP={selectedSP} capacitySummary={capacitySummary} />}
                         teams={<PlanningTeamCapacityCards
                             entries={selectedTeamEntries}
@@ -6227,7 +6192,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             resolveTeamColor={resolveTeamColor}
                             getTeamCapacityMeta={getTeamCapacityMeta}
                         />}
-                        projects={<PlanningProjectSplitBar workModel={workModel} compact={compactPlanningPanel}
+                        projects={<PlanningProjectSplitBar childPlural={entityNames.childPlural} workModel={workModel} compact={compactPlanningPanel}
                             selectedProjectEntries={selectedProjectEntries}
                             excludedProjectStats={excludedProjectStats}
                             adHocProductSP={selectedAdHocProductSP}
@@ -6435,6 +6400,26 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         onDismiss={() => setConnectionRecoveryNotice(null)}
                         onReloadDiscard={() => recoverServerConnection({ manual: true, discardUnsaved: true })}
                     />
+                    {planningRecoveryError && <div className="planning-review-guidance" role="alert">
+                        {planningRecoveryError}
+                        <button type="button" className="planning-action-button" onClick={() => {
+                            setPlanningRecoveryError('');
+                            void Promise.resolve(retryEngLoad()).finally(() => {
+                                void planningReview.refresh();
+                                setPlanningAuthResumeLoadRevision(revision => revision + 1);
+                            });
+                        }}>Retry recovery</button>
+                        <button type="button" className="planning-action-button" disabled={planningRecoveryRestoringRef.current || planningReview.saving || planningReview.discarding} onClick={async () => {
+                            const recovered = pendingPlanningAuthResumeRef.current;
+                            if (recovered && !planningReview.dirty && !await planningReview.restorePlanRecovery(recovered)) return;
+                            if (!await planningReview.discard()) return;
+                            pendingPlanningAuthResumeRef.current = null;
+                            planningAuthResumeLoadRef.current = null;
+                            setPlanningRecoveryError('');
+                            clearAuthResumeWhenSettled();
+                            setPlanningAuthResumeLoadRevision(revision => revision + 1);
+                        }}>Discard changes</button>
+                    </div>}
 
                     {((selectedView === 'eng' && !engWorkspaceConfigured) || quarterNoticeScope) && (
                         <UnconfiguredWorkspaceNotice
@@ -6930,6 +6915,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}
                                         jiraUrl={jiraUrl} sprintId={selectedSprint} review={planningReview} getTeamInfo={getTeamInfo} excludedEpicSet={excludedEpicSet}
+                                        rowDetailsContext={{ backendUrl: BACKEND_URL, sprintId: selectedSprint, dependencyData, issueByKey, dependencyIncomplete, entityNames, InitiativeIcon }}
                                         admittedTeamCount={planningReviewAdmittedCounts.teams} admittedProjectCount={planningReviewAdmittedCounts.projects}
                                         renderPriorityIcon={renderPriorityIcon} renderEpicShareControl={renderEpicShareControl} renderFieldEditor={renderPlanningReviewFieldEditor} onReviewAction={trackPlanningReviewAction}
                                         pendingOriginals={planningOriginals} onHoldRow={key => holdEditor('table', key)}

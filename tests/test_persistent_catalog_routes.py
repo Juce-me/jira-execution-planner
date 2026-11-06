@@ -1,7 +1,6 @@
 import os
 import base64
 import json
-import tempfile
 import unittest
 import uuid
 from contextlib import contextmanager
@@ -11,7 +10,8 @@ import requests
 from sqlalchemy.exc import OperationalError
 
 import jira_server
-from backend.auth.context import RequestAuthContext
+from backend.auth.db_browser_sessions import create_browser_session
+from backend.auth.db_context import resolve_db_request_auth_context
 from backend.auth import db_tokens as db_tokens_module
 from backend.epm import home as epm_home_module
 from backend.auth.key_provider import key_provider_from_env
@@ -22,6 +22,7 @@ from backend.services.workspace_dashboard_config import acquire_workspace_config
 from backend.services.workspace_catalog_config import build_sprint_catalog_identity
 from backend.services.catalog_refresh_runtime import reset_catalog_refresh_runtime_for_tests
 from backend.services.catalog_refresh_runtime import CatalogCompletionError
+from tests.postgres_test_db import fresh_database_url
 
 
 class _FenceOrig(Exception):
@@ -62,8 +63,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
     def _db_catalog(self, *, board_id='17', payload=None, stale=False,
                     status='idle', failure_code=None):
         reset_catalog_refresh_runtime_for_tests()
-        tmpdir = tempfile.TemporaryDirectory()
-        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'route.db')}"
+        database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(database_url))
         factory = db_engine.session_factory(database_url)
         scopes = tuple(jira_server.ATLASSIAN_SCOPES.split())
@@ -78,7 +78,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 jira_cloud_id='route-cloud',
             )
             user = models.User(
-                id='route-user', external_provider='atlassian', external_subject='route-user',
+                id='route-user', external_provider='atlassian', external_subject='route-user', account_type='admin',
             )
             session.add_all([workspace, user])
             session.flush()
@@ -96,6 +96,9 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 key_provider=key_provider_from_env(key_env),
             )
             connection.expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
+            browser = create_browser_session(session, user_id=user.id,
+                                             workspace_id=workspace.id, auth_connection_id=connection.id)
+            browser_session_id = browser.id
             session.add(models.WorkspaceDashboardConfig(
                 workspace_id=workspace.id,
                 payload={'board': {'boardId': board_id}} if board_id else {'board': {}},
@@ -122,25 +125,17 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 ))
             session.commit()
             workspace_id = workspace.id
-        context = RequestAuthContext(
-            auth_mode='atlassian_oauth', user_id='route-user', stable_subject='route-user',
-            atlassian_account_id='route-user', workspace_id=workspace_id,
-            auth_connection_id='route-connection', cloud_id='route-cloud',
-            site_url='https://route.example.test', token_version='1', account_status='active',
-            is_admin=True, granted_scopes=scopes, granted_scopes_verified=True,
-        )
+        session_payload = {'db_browser_session_id': browser_session_id}
+        context = resolve_db_request_auth_context(session_payload, database_url=database_url)
         client = jira_server.app.test_client()
         with client.session_transaction() as flask_session:
-            flask_session['db_oauth_session'] = {
-                'db_auth_connection_id': 'route-connection', 'db_token_version': '1',
-            }
+            flask_session['db_oauth_session'] = session_payload
         try:
             forbidden = (
                 'current_jira_request', 'jira_search_request',
-                'oauth_session_data', 'save_oauth_session', 'oauth_refresh_lock',
+                'oauth_session_data', 'save_oauth_session',
                 'oauth_session_data_for_auth_context',
-                'save_oauth_session_for_auth_context',
-                'oauth_refresh_lock_for_auth_context', 'fetch_teams_from_jira_api',
+                'fetch_teams_from_jira_api',
             )
             forbidden_patches = [
                 patch.object(
@@ -148,27 +143,8 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                     side_effect=AssertionError(f'forbidden DB catalog path reached: {name}'),
                 ) for name in forbidden
             ]
-            local_store_methods = (
-                'persistence_enabled', 'read_persistent_token_store',
-                'write_persistent_token_store', '_drop_persistent_session',
-                '_save_persistent_session', '_load_persistent_session',
-                'existing_refresh_lock', 'drop_session',
-                'cleanup_expired_sessions', 'save_session', 'save_session_for_id',
-                'refresh_lock', 'refresh_lock_for_id', 'session_data',
-                'session_data_for_id', '_session_data_for_id',
-            )
-            forbidden_patches.extend(
-                patch.object(
-                    jira_server._LOCAL_OAUTH_STORE, name,
-                    side_effect=AssertionError(f'forbidden local OAuth store reached: {name}'),
-                ) for name in local_store_methods
-            )
-            forbidden_patches.extend((
-                patch.object(
-                    epm_home_module, '_read_metadata_credential',
-                    side_effect=AssertionError('forbidden Home credential resolver reached'),
-                ),
-            ))
+            self.assertFalse(hasattr(jira_server, '_LOCAL_OAUTH_STORE'))
+            self.assertFalse(hasattr(epm_home_module, '_read_metadata_credential'))
             for forbidden_patch in forbidden_patches:
                 forbidden_patch.start()
             with patch.dict(os.environ, {
@@ -184,7 +160,15 @@ class PersistentCatalogRouteTests(unittest.TestCase):
         finally:
             reset_catalog_refresh_runtime_for_tests()
             db_engine.dispose_engines()
-            tmpdir.cleanup()
+
+    @staticmethod
+    def _browser_payload(factory, connection_id):
+        with factory() as db:
+            connection = db.get(models.AuthConnection, connection_id)
+            browser = create_browser_session(db, user_id=connection.user_id,
+                workspace_id=connection.workspace_id, auth_connection_id=connection.id)
+            db.commit()
+            return {'db_browser_session_id': browser.id}
 
     @staticmethod
     def _response(status, payload):
@@ -489,10 +473,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 session.commit()
             client_b = jira_server.app.test_client()
             with client_b.session_transaction() as flask_session:
-                flask_session['db_oauth_session'] = {
-                    'db_auth_connection_id': 'route-connection-b',
-                    'db_token_version': '1',
-                }
+                flask_session['db_oauth_session'] = self._browser_payload(factory, 'route-connection-b')
             with patch.object(jira_server, 'current_jira_get', side_effect=AssertionError('shared hit called Jira')):
                 second = client_b.get('/api/sprints')
         self.assertEqual(first.status_code, 200)
@@ -1102,9 +1083,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 session.commit()
             client_b = jira_server.app.test_client()
             with client_b.session_transaction() as flask_session:
-                flask_session['db_oauth_session'] = {
-                    'db_auth_connection_id': 'route-connection-b', 'db_token_version': '1',
-                }
+                flask_session['db_oauth_session'] = self._browser_payload(factory, 'route-connection-b')
             with patch.object(
                 jira_server, 'current_jira_search',
                 side_effect=AssertionError('shared workspace cache hit searched Jira'),
@@ -1112,9 +1091,7 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 shared = client_b.get('/api/teams?sprint=101&all=true')
             client_c = jira_server.app.test_client()
             with client_c.session_transaction() as flask_session:
-                flask_session['db_oauth_session'] = {
-                    'db_auth_connection_id': 'route-connection-c', 'db_token_version': '1',
-                }
+                flask_session['db_oauth_session'] = self._browser_payload(factory, 'route-connection-c')
             isolated_payload = {'issues': [{
                 'fields': {'customfield_10001': {'id': 'isolated', 'name': 'Isolated'}},
             }], 'isLast': True}

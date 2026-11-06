@@ -44,8 +44,8 @@ class SecurityHeaderTests(unittest.TestCase):
         self.assertEqual(response.headers.get("Cache-Control"), "no-store")
 
     def test_credentialed_cors_allows_configured_origin(self):
-        response = self.client.get("/api/auth/status", headers={"Origin": "http://localhost:5050"})
-        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://localhost:5050")
+        response = self.client.get("/api/auth/status", headers={"Origin": "http://127.0.0.1:5050"})
+        self.assertEqual(response.headers.get("Access-Control-Allow-Origin"), "http://127.0.0.1:5050")
         self.assertEqual(response.headers.get("Access-Control-Allow-Credentials"), "true")
 
     def test_credentialed_cors_rejects_unconfigured_origin(self):

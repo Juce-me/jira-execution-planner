@@ -25,6 +25,14 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | ENG Planning assignee capacity (Capacity, Vacations, Notes, removed flag per person; stored team capacity `planned_capacity`/`planned_source`, "Team capacity (not in Jira)", never written to Jira by this store) | `planning_team_sprint_capacity` | Authenticated workspace users | `user_write` with requested-with and CSRF; read `authenticated_read` | Shared per workspace + Sprint + Team (a Team is part of this store's key, unlike review data, where Team stays a filter); no user columns; not stored in `workspace_dashboard_configs` or `shared_capacity_config`; a Sprint without a document reads the nearest earlier one, including its stored team capacity as `inherited` |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
 
+## Application Profile and Artifact Boundary
+
+The supported application profile is DB-backed Atlassian OAuth only. Omitted, empty or whitespace selectors default to `atlassian_oauth` and `db`; `db`, `database`, `postgres` and `postgresql` select the same storage backend. Local-loopback supported profiles may retain inert legacy credential/token-store keys without file access or import. Hosted/network local-store opt-in, cookie, origin, database connection and encryption constraints remain enforced.
+
+Browser authority comes from DB users, auth connections and opaque browser sessions; user tokens remain encrypted in `auth_tokens`. Legacy DB-cookie upgrades retain their validated version/recovery behavior. Basic headers, local-file cookies and old token files grant no authority. Existing historical service-integration rows stay preserved and unused as application authentication or Jira/Home read credentials.
+
+Explicit developer JSON artifact import/export is retained under its ownership and validation contracts. Automatic runtime JSON fallback/import is retired: a missing workspace configuration remains unconfigured, not a source of authority from operator files. No migration may infer a shared configuration owner from a private view or move EPM settings into workspace administrator storage.
+
 ## Exact Boundaries
 
 Administrator settings contain workspace Jira planning inputs: selected Jira projects, Jira source
@@ -39,7 +47,7 @@ In DB/OAuth mode, `resolve_effective_catalog_config` also reports `missing_admin
 when no selected projects and no `JQL_QUERY` exist, and `source` when no numeric Jira source Board
 resolves. `/api/config` returns it as `adminSettingsMissing`; while it is non-empty the dashboard starts
 no ENG Jira work, opens Admin settings for editors, and shows non-editors the `adminContacts` display
-names (never emails or ids). Basic and JSON-file modes do not report it.
+names (never emails or ids). DB-backed OAuth is the sole serving profile; retired Basic/API-token and live JSON/local-file OAuth selections fail closed before feature routes.
 
 In DB/OAuth mode, `resolve_effective_catalog_config` is the canonical resolver for Sprint and Team
 catalog identity. Sprint rows are keyed by `workspace_id + board_id`. Per-Sprint Team rows are keyed
@@ -115,7 +123,7 @@ a `groupId` selector. A group hidden by a user's visibility preference stays ful
 GET returns the schema, the Sprint's layouts, `viewRevision`, `inheritedFrom` and capabilities only. Batched values reads and saves authorize every requested immutable issue ID
 through the current user's OAuth Jira REST context; workspace sharing never grants Jira access.
 Inaccessible or nonexistent issues cannot expose saved cells. No Basic, service integration, Home,
-or local token-store fallback is supported. Other profiles return saving-unavailable guidance.
+or local token-store fallback is supported. Retired application profiles receive sanitized runtime-profile rejection before feature routing.
 
 A workspace/group schema-row transaction fence protects first-create, schema, view, and cell races.
 Schema changes require the current schema revision; layout changes require the Sprint's current view revision. Cell changes require only their own current
@@ -186,6 +194,9 @@ never touches Capacity, its verification columns, priority weights, groups or pr
 - `403 admin_required` is reserved for authenticated users attempting administrator-only writes.
 - Shared group writes and user-owned EPM writes require authenticated `user_write` plus the normal
   requested-with and token-bound CSRF checks, but no administrator check.
+- Token-bound CSRF tokens are single-use rows in `browser_csrf_tokens` (hash only, deleted with their
+  browser session). `GET /api/auth/csrf` requires `X-Requested-With: jira-execution-planner`; a CSRF
+  storage failure is `503 config_storage_unavailable` and the route is not dispatched.
 - `409` represents a revision conflict and must preserve the losing user's unsaved draft.
 
 ## Change Checklist

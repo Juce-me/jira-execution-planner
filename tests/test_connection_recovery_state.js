@@ -188,3 +188,29 @@ test('local JSON-mode principal round-trips a recovery capsule for the same Jira
     assert.equal(api.readConnectionRecoveryState(storage,
         api.connectionRecoveryPrincipalFromConfig({ jiraUrl: 'https://other.example.test' }), 1_001), null);
 });
+
+function sharedPlanning() {
+    return { scope: { workspaceId: 'workspace-1', groupId: 'group-1', sprintId: '101', namespaceId: null }, selectedTeams: ['team-1'], submission: null,
+        draft: { inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } };
+}
+
+test('an outage retains bounded Planning intent while a different mode is open', () => {
+    const api = loadModule(), snapshot = recoverySnapshot(), storage = createStorage();
+    snapshot.view.selectedSprint = '101'; snapshot.view.engMode = 'statistics'; snapshot.scenario = null;
+    snapshot.planning = sharedPlanning();
+    assert.equal(api.writeConnectionRecoveryState(storage, snapshot, 1000), true);
+    const restored = api.readConnectionRecoveryState(storage, snapshot.principal, 1001);
+    assert.deepEqual(JSON.parse(JSON.stringify(restored.planning)), snapshot.planning);
+    assert.equal(restored.view.engMode, 'statistics');
+});
+
+test('outage Planning uses the strict shared capsule validation and exact scope binding', () => {
+    const api = loadModule();
+    const base = { ...recoverySnapshot(), scenario: null, view: { ...recoverySnapshot().view, activeGroupId: 'group-1', selectedSprint: '101' }, planning: sharedPlanning() };
+    for (const mutate of [value => { value.planning.token = 'forbidden'; }, value => { value.planning.scope.workspaceId = 'different'; }, value => { value.planning.scope.groupId = 'other'; }, value => { value.planning.draft.inclusionChanges.push({ ...value.planning.draft.inclusionChanges[0] }); }, value => { value.planning.draft.baseScopeProof = 'x'.repeat(300000); }]) {
+        const snapshot = JSON.parse(JSON.stringify(base)); mutate(snapshot);
+        const storage = createStorage({ [api.CONNECTION_RECOVERY_STORAGE_KEY]: 'previous' });
+        assert.equal(api.writeConnectionRecoveryState(storage, snapshot, 1000), false);
+        assert.equal(storage.getItem(api.CONNECTION_RECOVERY_STORAGE_KEY), 'previous');
+    }
+});

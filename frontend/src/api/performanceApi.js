@@ -1,3 +1,4 @@
+import { fetchCsrfToken } from './authApi.js';
 import { getJson, postJson } from './http.js';
 
 // Operational diagnostics are intentionally outside product analytics.
@@ -5,7 +6,7 @@ export const fetchPerformanceContext = (backendUrl, options = {}) =>
     getJson(`${backendUrl}/api/performance/context`, 'Performance collection', { cache: 'no-store', ...options });
 
 export async function recordPerformanceLoad(backendUrl, observation) {
-    const { csrfToken } = await getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-store' });
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return postJson(`${backendUrl}/api/performance/loads`, observation, 'Performance observation', {
         headers: { 'X-CSRF-Token': csrfToken || '' },
     });

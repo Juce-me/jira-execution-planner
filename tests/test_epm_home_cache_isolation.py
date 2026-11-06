@@ -1,9 +1,9 @@
 import os
 import json
-import sqlite3
 import tempfile
 import threading
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +27,7 @@ from backend.services.user_view_config import (
 from backend.config.view_validation import ViewPayloadValidationError
 from backend.config.import_config import import_dashboard_config
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 def oauth_context(
@@ -165,7 +166,7 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, 'epm_view_disabled')
         self.assertEqual(len(cache), 1)
 
-    def test_goal_lookup_bypasses_process_cache_for_oauth_context(self):
+    def test_non_strict_goal_client_is_rejected_before_cache_or_transport(self):
         container_id = 'ari:cloud:townsquare::site/cloud-1'
         cache_key = epm_home._goal_cache_key(container_id, 'ROOT-100')
         epm_home._GOAL_BY_KEY_CACHE[cache_key] = {
@@ -179,18 +180,11 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
             'name': 'Fresh for current user',
         })
 
-        goal = epm_home.resolve_goal_by_key(
-            client,
-            'ROOT-100',
-            container_id,
-            context=oauth_context(),
-        )
-
-        self.assertEqual(goal['id'], 'fresh-goal')
-        self.assertEqual(client.execute_calls, 1)
+        with self.assertRaises(jira_server.AuthError) as raised:
+            epm_home.resolve_goal_by_key(client, 'ROOT-100', container_id, context=oauth_context())
+        self.assertEqual(raised.exception.code, 'auth_required')
+        self.assertEqual(client.execute_calls, 0)
         self.assertEqual(epm_home._GOAL_BY_KEY_CACHE[cache_key]['id'], 'cached-goal')
-        partitioned_key = build_jira_home_process_cache_key(oauth_context(), cache_key)
-        self.assertEqual(epm_home._GOAL_BY_KEY_CACHE[partitioned_key]['id'], 'fresh-goal')
 
     def test_epm_clear_removes_only_the_current_oauth_partition(self):
         user_a = oauth_context(user_id='user-a', connection_id='connection-a')
@@ -287,8 +281,7 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
         self.assertEqual((len(project_cache), len(issue_cache), len(rollup_cache)), (2, 2, 2))
 
     def test_effective_default_mutations_evict_only_after_commit_and_only_target_partition(self):
-        tmpdir = tempfile.TemporaryDirectory()
-        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'cache-invalidation.db')}"
+        database_url = fresh_database_url(self.addCleanup)
         engine = db_engine.get_engine(database_url)
         models.Base.metadata.create_all(engine)
         factory = db_engine.session_factory(database_url)
@@ -413,11 +406,10 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
                 )
             assert_not_evicted(before)
 
-            retry_error = IntegrityError(
-                'insert', {}, sqlite3.IntegrityError(
-                    'UNIQUE constraint failed: view_config_versions.view_config_id, view_config_versions.version_number'
-                ),
-            )
+            class PostgresUniqueViolation(Exception):
+                diag = SimpleNamespace(constraint_name='uq_view_config_versions_number')
+
+            retry_error = IntegrityError('insert', {}, PostgresUniqueViolation('duplicate key value'))
             with patch.object(user_view_config, '_run_mutation_once', side_effect=retry_error):
                 with self.assertRaises(UserViewConfigStorageError):
                     save_user_epm_config(target, payload('retry'), database_url=database_url, post_commit=after_commit)
@@ -435,11 +427,10 @@ class EpmHomeCacheIsolationTests(unittest.TestCase):
             for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
                 cache.clear()
             db_engine.dispose_engines()
-            tmpdir.cleanup()
 
     def test_legacy_import_invalidates_only_changed_owner_partition_after_commit(self):
         tmpdir = tempfile.TemporaryDirectory()
-        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'import-cache.db')}"
+        database_url = fresh_database_url(self.addCleanup)
         source_path = os.path.join(tmpdir.name, 'dashboard-config.json')
         engine = db_engine.get_engine(database_url)
         models.Base.metadata.create_all(engine)

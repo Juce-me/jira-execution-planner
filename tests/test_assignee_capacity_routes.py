@@ -1,5 +1,6 @@
 """Planning assignee capacity HTTP contract: policy, CSRF, isolation, limits and error bodies."""
 from dataclasses import replace
+from contextlib import nullcontext
 import os
 import unittest
 from unittest.mock import patch
@@ -14,7 +15,7 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.context = replace(self.context, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True)
-        self.url_env = patch.dict(os.environ, {'DATABASE_URL': self.url})
+        self.url_env = patch.dict(os.environ, {'DATABASE_URL': self.url, 'TEST_DATABASE_URL': self.url})
         self.url_env.start()
         self.mode = patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth')
         self.mode.start()
@@ -27,17 +28,25 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
     def tearDown(self):
         self.mode.stop()
         self.url_env.stop()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         super().tearDown()
 
     def headers(self):
-        token = self.client.get('/api/auth/csrf').get_json()['csrfToken']
+        token = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'}).get_json()['csrfToken']
         return {'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': token}
 
     def auth(self, context=None):
-        install_oauth_session(self.client)
-        return patch.object(jira_server, 'current_request_auth_context', return_value=context or self.context)
+        from backend.db import engine as db_engine, models
+        from tests.db_oauth_test_helpers import seed_db_actor
+        target = context or self.context
+        with db_engine.session_scope(self.url) as db:
+            workspace = db.get(models.Workspace, target.workspace_id)
+            workspace.jira_cloud_id = workspace.jira_cloud_id or ('synthetic-' + workspace.id)
+            workspace.jira_site_url = workspace.jira_site_url or 'https://example.atlassian.net'
+            actor = seed_db_actor(db, workspace=workspace,
+                                  account_identity=target.atlassian_account_id)
+        with self.client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = actor.session_payload
+        return nullcontext()
 
     def patch_doc(self, changes=None, team='team-a', path=None, **extra):
         return self.client.patch(path or self.path, json={'teamId': team, 'changes': [self.change] if changes is None else changes, **extra},
@@ -202,12 +211,14 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
 
     def test_storage_unavailable_bodies_are_503(self):
         with self.auth():
+            headers = self.headers()
             with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}):
-                response = self.client.patch(self.path, data='not json', content_type='application/json', headers=self.headers())
-                self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_storage_unavailable'}))
-                document = self.client.get(self.path + '?teamId=team-a').get_json()
-                self.assertFalse(document['capabilities']['canRead'])
-                self.assertEqual((document['rows'], document['planned']), ([], None))
+                response = self.client.patch(self.path, data='not json', content_type='application/json', headers=headers)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.get_json()['error'], 'runtime_storage_unsupported')
+                document = self.client.get(self.path + '?teamId=team-a')
+                self.assertEqual(document.status_code, 503)
+                self.assertEqual(document.get_json()['error'], 'runtime_storage_unsupported')
             with patch.object(capacity, 'apply_changes', side_effect=RuntimeError('boom')):
                 response = self.patch_doc()
                 self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_unavailable'}))

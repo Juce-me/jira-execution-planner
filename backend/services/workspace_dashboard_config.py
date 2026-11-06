@@ -71,8 +71,6 @@ def _remaining_milliseconds(budget):
 
 
 def acquire_workspace_config_fence(session, workspace_id, *, budget=None, nonblocking=False):
-    if session.bind.dialect.name != 'postgresql':
-        return True
     try:
         if nonblocking:
             return bool(session.execute(

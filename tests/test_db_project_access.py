@@ -2,52 +2,34 @@ import os
 import unittest
 from unittest.mock import patch
 
-from backend.auth.context import ProjectAccessSnapshot, RequestAuthContext
+from backend.auth.context import ProjectAccessSnapshot
+from backend.auth.db_context import resolve_db_request_auth_context
+from backend.db import engine as db_engine
 from backend.auth.project_access import project_access_denied_response, upsert_project_access_snapshot
 from backend.db import models
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
-
-
-def auth_context(*, project_access):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth',
-        user_id='user-1',
-        stable_subject='account-1',
-        atlassian_account_id='account-1',
-        workspace_id='workspace-1',
-        auth_connection_id='connection-1',
-        cloud_id='cloud-1',
-        site_url='https://example.atlassian.net',
-        token_version='1',
-        account_status='active',
-        is_admin=False,
-        project_access=tuple(project_access),
-        granted_scopes=tuple(FULL_OAUTH_SCOPE.split()),
-        granted_scopes_verified=True,
-    )
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session, set_up_db_oauth
 
 
 class TestProjectAccess(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
-        self._env_patcher = patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'jsonfile',
-            'DATABASE_URL': '',
-            'TEST_DATABASE_URL': '',
-        }, clear=False)
-        self._env_patcher.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
+        self.cookie = install_oauth_session(self.client)
 
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+    def auth_context(self, *, project_access):
+        context = resolve_db_request_auth_context(self.cookie)
+        with db_engine.session_scope() as db:
+            for snapshot in project_access:
+                upsert_project_access_snapshot(db, connection_id=context.auth_connection_id,
+                    workspace_id=context.workspace_id, project_key=snapshot.project_key,
+                    project_type=snapshot.project_type, status=snapshot.status)
+        return resolve_db_request_auth_context(self.cookie)
 
     def _allowed_response(self, project_type):
         other_type = 'tech' if project_type == 'product' else 'product'
-        context = auth_context(project_access=[
+        context = self.auth_context(project_access=[
             ProjectAccessSnapshot(project_key=project_type.upper(), project_type=project_type, status='accessible'),
             ProjectAccessSnapshot(project_key=other_type.upper(), project_type=other_type, status='inaccessible'),
         ])
@@ -62,7 +44,6 @@ class TestProjectAccess(unittest.TestCase):
             })
 
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
              patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
              patch.object(jira_server, 'get_sprint_field_id', return_value=None), \
@@ -80,7 +61,7 @@ class TestProjectAccess(unittest.TestCase):
         self._allowed_response('tech')
 
     def test_new_user_without_project_access_snapshot_can_probe_live_project_view(self):
-        context = auth_context(project_access=[])
+        context = self.auth_context(project_access=[])
         calls = []
 
         def jira_search(payload):
@@ -92,7 +73,6 @@ class TestProjectAccess(unittest.TestCase):
             })
 
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
              patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
              patch.object(jira_server, 'get_sprint_field_id', return_value=None), \
@@ -103,7 +83,7 @@ class TestProjectAccess(unittest.TestCase):
         self.assertGreaterEqual(len(calls), 1)
 
     def test_user_with_no_project_access_blocked_with_clear_state(self):
-        context = auth_context(project_access=[
+        context = self.auth_context(project_access=[
             ProjectAccessSnapshot(project_key='PROD', project_type='product', status='inaccessible'),
         ])
 
@@ -115,13 +95,12 @@ class TestProjectAccess(unittest.TestCase):
         self.assertEqual(payload.get_json()['recoveryUrl'], '/auth/missing-project-access')
 
     def test_unknown_access_avoids_startup_retry_storm(self):
-        context = auth_context(project_access=[
+        context = self.auth_context(project_access=[
             ProjectAccessSnapshot(project_key='PROD', project_type='product', status='unknown'),
         ])
         jira_calls = []
 
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'jira_search_request', side_effect=lambda payload: jira_calls.append(payload)):
             response = self.client.get('/api/tasks?project=product')
 

@@ -500,24 +500,16 @@ test('opening a link performs no mutating request outside the read-only allowlis
     expect(values).not.toContain('42');
 });
 
-test('the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)', async ({ browser }) => {
-    const jsonPage = await browser.newPage();
-    const jsonCalls = await installLinkFixture(jsonPage, { groupsSource: 'jsonfile', analytics: ANALYTICS_ENABLED });
-    await jsonPage.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => applyEvents(jsonPage).then(events => events.length)).toBe(1);
-    await expect.poll(async () => (await readPrefs(jsonPage)).groupVisibilityPreferences?.activeGroupId).toBe('grp-b');
-    expect(jsonCalls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
-
-    const dbPage = await browser.newPage();
-    const dbCalls = await installLinkFixture(dbPage, { groupsSource: 'workspace_db', analytics: ANALYTICS_ENABLED });
-    await dbPage.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => applyEvents(dbPage).then(events => events.length)).toBe(1);
-    await expect(groupToggle(dbPage)).toContainText('Beta');
-    await dbPage.waitForLoadState('networkidle');
-    expect(dbCalls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
-    expect((await readPrefs(dbPage)).groupVisibilityPreferences?.activeGroupId).toBe('grp-a');
-    await jsonPage.close();
-    await dbPage.close();
+test('a shared link selects its Department without changing the private DB favorite (V19)', async ({ browser }) => {
+    const page = await browser.newPage();
+    const calls = await installLinkFixture(page, { groupsSource: 'workspace_db', analytics: ANALYTICS_ENABLED });
+    await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
+    await expect(groupToggle(page)).toContainText('Beta');
+    await page.waitForLoadState('networkidle');
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
+    expect((await readPrefs(page)).groupVisibilityPreferences?.activeGroupId).toBe('grp-a');
+    await page.close();
 });
 
 for (const [mode, query, radio, flags] of [

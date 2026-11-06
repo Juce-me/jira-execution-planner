@@ -166,7 +166,7 @@ async function installApiMocks(page, calls) {
             return json(route, {
                 jiraUrl: 'https://jira.example',
                 capacityProject: '',
-                authMode: 'basic',
+                authMode: 'atlassian_oauth',
                 projectsConfigured: true,
                 userCanEditSettings: true,
                 environmentConfigExists: true,

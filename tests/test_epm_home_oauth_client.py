@@ -1,6 +1,6 @@
 """Task 2 of docs/plans/DONE-home-oauth-public-reads.md: one snapshot, bounded revalidation, warmed metadata.
 
-Synthetic data only (example.invalid, fake ids and tokens). DB mode uses the SQLite setup from
+Synthetic data only (example.invalid, fake ids and tokens). DB mode uses the PostgreSQL setup from
 tests/test_db_oauth_cutover.py; Home I/O is a fake `urlopen`. No live network.
 """
 
@@ -150,7 +150,7 @@ class SqlCounter:
 
 
 class DbStrictCase(unittest.TestCase):
-    """A SQLite DB-OAuth actor whose provider grant has every Home read scope, with a real browser session."""
+    """A PostgreSQL DB-OAuth actor whose provider grant has every Home read scope, with a real browser session."""
 
     def setUp(self):
         from tests import test_db_oauth_cutover as cutover
@@ -161,6 +161,7 @@ class DbStrictCase(unittest.TestCase):
             cache.clear()
         self.helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
         self.helper.setUp()
+        self.addCleanup(self.helper.doCleanups)
         self.addCleanup(self.helper.tearDown)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
@@ -691,7 +692,7 @@ class AggregateIndexTests(unittest.TestCase):
 
 
 class StrictPropagationInventoryTests(unittest.TestCase):
-    """Every reachable strict site re-raises typed failures (no empty result, no fallback); Basic keeps its fallback."""
+    """Every reachable strict site re-raises typed failures; retired clients fail before I/O."""
 
     KINDS = {401: 'auth_rejected', 403: 'access_denied', 'denied': 'access_denied', 429: 'rate_limited'}
     CONTAINER = 'ari:cloud:townsquare::site/cloud-1'
@@ -740,8 +741,7 @@ class StrictPropagationInventoryTests(unittest.TestCase):
         with self.assertRaises(HomeReadError) as raised:
             epm_home._fetch_or_build_home_project_record(self.client, self.row)
         self.assertEqual(raised.exception.category, 'invalid_response')
-        with self.assertRaises(HomeReadError):
-            epm_home._fetch_home_project_record(self.client, self.row)
+        self.assertFalse(hasattr(epm_home, '_fetch_home_project_record'))
 
     def test_the_startup_path_propagates_strict_failures_instead_of_returning_an_empty_catalog(self):
         context = jira_server.RequestAuthContext(
@@ -789,21 +789,16 @@ class StrictPropagationInventoryTests(unittest.TestCase):
                                                     epm_home.HomeAuthenticationError, KeyError, RuntimeError)))
         self.assertFalse(issubclass(AuthError, RuntimeError))
 
-    def test_basic_keeps_todays_fallback_at_each_site(self):
-        legacy = epm_home.HomeGraphQLClient('basic@example.invalid', 'basic-token')
-        expected = {
-            'resolve_goal_by_key direct lookup': None, 'resolve_goal_by_key search fallback': None,
-            'fetch_sub_goals': [], 'fetch_projects_for_goal': [], 'fetch_latest_project_update': [],
-            'fetch_project_tags': None,
-        }
-        for site, (_operation, _unknown, call) in self.sites().items():
-            for code in (401, 403, 429):
-                with self.subTest(site=site, status=code):
-                    def urlopen(request, timeout=None, code=code):
-                        raise HTTPError(request.full_url, code, 'fixture', {}, io.BytesIO(b''))
-                    with patch.object(epm_home, 'urlopen', urlopen):
-                        result = call(legacy)
-                    self.assertEqual(result, expected[site])
+    def test_retired_clients_are_rejected_at_each_site_before_network(self):
+        from types import SimpleNamespace
+
+        self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+        retired = SimpleNamespace(strict_public_read=False)
+        with patch.object(epm_home, 'urlopen', side_effect=AssertionError('retired network path')):
+            for site, (_operation, _unknown, call) in self.sites().items():
+                with self.subTest(site=site), self.assertRaises(AuthError) as raised:
+                    call(retired)
+                self.assertEqual(raised.exception.code, 'auth_required')
 
 
 class RouteRotationAndAuthorityTests(unittest.TestCase):

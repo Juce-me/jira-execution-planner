@@ -1,8 +1,9 @@
+import { fetchCsrfToken } from './authApi.js';
 import { apiFetch, getJson } from './http.js';
 import { applyContextToParams } from '../workStructure/configurationContext.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload) =>
-    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
+    fetchCsrfToken(backendUrl).then(({ csrfToken }) =>
         apiFetch(`${backendUrl}${path}`, {
             method: 'POST',
             headers: {

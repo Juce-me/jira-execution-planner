@@ -6,6 +6,11 @@ import jira_server
 
 
 class NetworkBindGuardTests(unittest.TestCase):
+    def setUp(self):
+        profile = patch.dict("os.environ", {"CONFIG_STORAGE_BACKEND": "db"})
+        profile.start()
+        self.addCleanup(profile.stop)
+
     def test_default_bind_host_is_loopback(self):
         self.assertEqual(jira_server.default_bind_host(), "127.0.0.1")
 
@@ -14,7 +19,7 @@ class NetworkBindGuardTests(unittest.TestCase):
              patch.dict("os.environ", {"ALLOW_NETWORK_BIND": ""}, clear=False):
             with self.assertRaises(jira_server.AuthError) as raised:
                 jira_server.validate_network_bind("0.0.0.0")
-        self.assertEqual(raised.exception.code, "network_bind_not_allowed")
+        self.assertEqual(raised.exception.code, "runtime_auth_unsupported")
 
     def test_oauth_mode_requires_secure_profile_for_network_bind(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -60,7 +65,8 @@ class NetworkBindGuardTests(unittest.TestCase):
             jira_query=None,
             server_port=None,
         )
-        with patch.object(jira_server, "parse_args", return_value=args), \
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "parse_args", return_value=args), \
              patch.object(jira_server, "validate_startup_auth_config"), \
              patch.object(jira_server, "default_bind_host", return_value="127.0.0.1"), \
              patch.object(jira_server, "validate_network_bind", return_value="127.0.0.1") as validate_bind, \

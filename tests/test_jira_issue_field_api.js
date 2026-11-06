@@ -40,22 +40,19 @@ test('editable field metadata uses encoded issue and logical field with tracked 
     assert.equal(h.calls[0][1].headers['X-Requested-With'], 'jira-execution-planner');
 });
 
-test('search and update share one in-flight CSRF request and send exact POST bodies', async () => {
-    let releaseCsrf;
+test('search and update each fetch their own single-use CSRF token and send exact POST bodies', async () => {
+    let issued = 0;
     const h = harness(async (url) => {
-        if (url.endsWith('/api/auth/csrf')) {
-            return new Promise(resolve => { releaseCsrf = () => resolve(jsonResponse({ csrfToken: 'csrf-one' })); });
-        }
+        if (url.endsWith('/api/auth/csrf')) return jsonResponse({ csrfToken: `csrf-${++issued}` });
         return jsonResponse(url.endsWith('/user-options') ? { options: [] } : { result: 'success', value: 2 });
     });
-    const search = h.api.searchIssueFieldUsers('/root', 'DEMO-1', { field: 'assignee', query: 'Ada' });
-    const update = h.api.updateIssueField('/root', 'DEMO-2', {
-        field: 'storyPoints', value: 2, baseValue: 1.5, baseUpdated: 'base', mappingRevision: 'rev',
-    });
-    await new Promise(resolve => setImmediate(resolve));
-    assert.equal(h.calls.filter(([url]) => url.endsWith('/api/auth/csrf')).length, 1);
-    releaseCsrf();
-    await Promise.all([search, update]);
+    await Promise.all([
+        h.api.searchIssueFieldUsers('/root', 'DEMO-1', { field: 'assignee', query: 'Ada' }),
+        h.api.updateIssueField('/root', 'DEMO-2', {
+            field: 'storyPoints', value: 2, baseValue: 1.5, baseUpdated: 'base', mappingRevision: 'rev',
+        }),
+    ]);
+    assert.equal(h.calls.filter(([url]) => url.endsWith('/api/auth/csrf')).length, 2);
 
     const posts = h.calls.filter(([url]) => !url.endsWith('/api/auth/csrf'));
     assert.deepEqual(posts.map(([url]) => url), [
@@ -65,10 +62,8 @@ test('search and update share one in-flight CSRF request and send exact POST bod
         { field: 'assignee', query: 'Ada' },
         { field: 'storyPoints', value: 2, baseValue: 1.5, baseUpdated: 'base', mappingRevision: 'rev' },
     ]);
-    posts.forEach(([, options]) => {
-        assert.equal(options.headers['X-CSRF-Token'], 'csrf-one');
-        assert.equal(options.headers['X-Requested-With'], 'jira-execution-planner');
-    });
+    assert.deepEqual(posts.map(([, options]) => options.headers['X-CSRF-Token']).sort(), ['csrf-1', 'csrf-2']);
+    posts.forEach(([, options]) => assert.equal(options.headers['X-Requested-With'], 'jira-execution-planner'));
 });
 
 test('field errors retain only approved typed conflict and retry details', async () => {

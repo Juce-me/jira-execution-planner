@@ -1,5 +1,4 @@
 """Add assignee search route (#323 Task 9): POST /api/eng/assignee-capacity/user-options."""
-import os
 import unittest
 from unittest.mock import patch
 
@@ -7,8 +6,10 @@ from backend.auth.jira_auth import AuthError
 from backend.routes import eng_routes
 from backend.services.jira_issue_field_edits import search_assignable_project_users
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
-from tests.test_jira_issue_field_routes import FakeResponse, verified_context
+from tests.oauth_test_helpers import set_up_db_oauth
+from tests.test_jira_issue_field_routes import FakeResponse, persisted_verified_context
+from backend.auth.db_context import invalidate_auth_status_cache
+from backend.db import engine as db_engine, models
 
 PATH = "/api/eng/assignee-capacity/user-options"
 PROJECTS = [{"key": "PRODA", "type": "product"}, {"key": "TECHA", "type": "tech"}]
@@ -38,33 +39,29 @@ class AssigneeCapacityUserOptionsRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self.env = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile", "DATABASE_URL": "", "TEST_DATABASE_URL": "",
-            "APP_ENVIRONMENT_KEY": "local",
-        }, clear=False)
-        self.env.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
+        self.context = persisted_verified_context(account_id='me-1')
+        self._install_context(self.context)
 
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self.env.stop()
+    def _install_context(self, context):
+        with self.client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
 
     def oauth_mode(self):
         return patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth")
 
     def headers(self):
         with self.oauth_mode():
-            token = self.client.get("/api/auth/csrf").get_json()["csrfToken"]
+            token = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"}).get_json()["csrfToken"]
         return {"X-Requested-With": "jira-execution-planner", "X-CSRF-Token": token}
 
     def post(self, body, *, jira=None, context=None, projects=PROJECTS, jql_query="", headers=None):
         jira = jira or FakeJira()
-        context = context or verified_context(account_id="me-1")
+        context = context or self.context
+        self._install_context(context)
         request_headers = self.headers() if headers is None else headers
         with self.oauth_mode(), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
              patch.object(jira_server, "current_jira_request", side_effect=jira), \
              patch.object(jira_server, "get_selected_projects_typed", return_value=projects), \
              patch.object(jira_server, "JQL_QUERY", jql_query):
@@ -166,11 +163,11 @@ class AssigneeCapacityUserOptionsRouteTests(unittest.TestCase):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(eng_routes, "search_assignable_project_users", side_effect=AssertionError("service reached")):
             response = self.client.post(PATH, data="{", content_type="application/json")
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json(), {"error": "jira_oauth_required"})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
     def test_missing_read_jira_user_scope_is_rejected(self):
-        context = verified_context(scopes="read:jira-work")
+        context = persisted_verified_context(scopes="read:jira-work")
         with patch.object(jira_server, "ATLASSIAN_SCOPES", "read:jira-work"):
             response, jira = self.post({"query": "ann"}, context=context)
         self.assertEqual(response.status_code, 401)
@@ -179,19 +176,19 @@ class AssigneeCapacityUserOptionsRouteTests(unittest.TestCase):
 
     def test_revoked_context_is_terminal(self):
         headers = self.headers()
-        with self.oauth_mode(), patch.object(
-            jira_server, "current_request_auth_context", side_effect=AuthError("auth_connection_revoked", "detail"),
-        ):
-            response = self.client.post(PATH, json={"query": "ann"}, headers=headers)
+        with db_engine.session_scope() as db:
+            db.get(models.AuthConnection, self.context.auth_connection_id).status = 'revoked'
+        invalidate_auth_status_cache()
+        response = self.client.post(PATH, json={'query': 'ann'}, headers=headers)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json()["error"], "auth_connection_revoked")
 
     def test_signed_in_context_is_passed_to_jira(self):
-        context = verified_context(account_id="user-a", workspace_id="workspace-a", cloud_id="cloud-a")
+        context = persisted_verified_context(account_id="user-a", workspace_id="workspace-a", cloud_id="cloud-a")
         jira = FakeJira({"PRODA": [person("u-2", "Ann")]})
         response, jira = self.post({"query": "ann"}, jira=jira, context=context)
         self.assertEqual(response.status_code, 200)
-        self.assertTrue(all(call[3] is context for call in jira.calls))
+        self.assertTrue(all(call[3] == context for call in jira.calls))
 
 
 class SearchAssignableProjectUsersServiceTests(unittest.TestCase):

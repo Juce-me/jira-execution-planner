@@ -970,8 +970,10 @@ test('blocked storage getters preserve the gate and use sanitized same-tab recov
             Object.defineProperty(window, property, {
                 configurable: true,
                 get() {
-                    Object.defineProperty(window, property, { configurable: true, value });
-                    throw new DOMException('blocked', 'SecurityError');
+                    // Keep storage unavailable until the explicit restore, including intervening bootstrap reads.
+                    const failure = new DOMException('blocked', 'SecurityError');
+                    failure.stack = new Error('synthetic blocked storage').stack;
+                    throw failure;
                 },
             });
         }
@@ -986,7 +988,7 @@ test('blocked storage getters preserve the gate and use sanitized same-tab recov
     await page.route('**/api/config**', async route => {
         configCalls += 1;
         if (authenticated) await blockNextStorageReads();
-        await json(route, { ...configPayload(), authMode: 'basic' });
+        await json(route, { ...configPayload(), authMode: 'atlassian_oauth' });
         configFulfilled += 1;
     });
     await page.route('**/api/analytics/context', route => {

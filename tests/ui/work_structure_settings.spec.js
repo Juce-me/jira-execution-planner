@@ -106,6 +106,11 @@ async function mockApp(page, {
         const p = url.pathname;
         if (p === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (p === '/api/auth/csrf') return json({ csrfToken: 'csrf-token' });
+        if (p === '/api/admin/users') return json({ users: [{
+            id: 'synthetic-admin', externalSubject: 'synthetic-admin-account',
+            displayName: 'Synthetic Admin', accountType: 'admin', status: 'active',
+            authConnections: [], projectAccess: [],
+        }] });
         if (p === '/api/analytics/context') return json({ enabled: false });
         if (p === '/api/version') return json({ enabled: false });
         if (p === '/api/config') {
@@ -122,6 +127,7 @@ async function mockApp(page, {
             return json({
                 jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: false,
                 userCanEditSettings: true, userCanEditEpmConfig: true, epm: shared.epm,
+                adminUserManagementAvailable: true, userIsToolAdmin: true,
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: state.revision,
                 workConfigurationsEnabled: featureEnabled, workConfigurationsPromoted: state.promoted,

@@ -126,6 +126,7 @@
 }
 
 .planning-review-summary .issue-summary-editor-inline { position: relative; display: flex; flex-direction: column; width: 100%; min-width: 0; }
+.planning-review-summary-line:has(.issue-summary-editor-inline) > [data-planning-details-trigger] { display: none; }
 /* Loading and saving show a spinner inside the input's right edge, so the row never grows for a status line. */
 .planning-review-summary .issue-summary-editor-busy { position: absolute; top: 3px; right: 6px; display: inline-flex; pointer-events: none; }
 .planning-review-summary .issue-summary-editor-inline:has(.issue-summary-editor-busy) textarea.issue-summary-editor-input { padding-right: 26px; }
@@ -137,6 +138,11 @@
 .planning-panel-visibility { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 6px; }
 .planning-panel [hidden] { display: none !important; }
 .planning-panel.open.planning-panel-compact { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.planning-panel-compact > .planning-actions { flex: 0 0 auto; margin: 0; }
+.planning-panel-compact > .planning-stats { flex: 1 1 auto; min-width: 0; }
+.planning-panel-compact > .planning-stats > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-panel-compact > .planning-review-state-note { flex: 0 1 auto; min-width: 0; }
+.planning-panel-compact > .planning-review-state-note:empty { display: none; }
 .planning-panel-compact .planning-panel-visibility { order: 2; flex: 0 0 auto; margin: 0; }
 .planning-panel-compact .planning-panel-graphs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .planning-panel-compact .planning-panel-capacity-graph, .planning-panel-compact .planning-panel-project-graph { min-width: 0; }
@@ -148,6 +154,10 @@
 .planning-panel-compact .capacity-bar-fill-label { overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) {
     .planning-panel.open.planning-panel-compact { flex-wrap: wrap; }
+    .planning-panel-compact > .planning-actions { flex: 1 1 100%; flex-wrap: wrap; }
+    .planning-panel-compact > .planning-actions { column-gap: 0.25rem; }
+    .planning-panel-compact > .planning-actions > .planning-action-button:not(.planning-icon-button),
+    .planning-panel-compact > .planning-actions > .uncheck-button { padding-inline: 0.55rem; }
     .planning-panel-compact .planning-panel-graphs { flex-basis: 100%; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .planning-panel-compact .planning-panel-visibility { margin-left: auto; }
 }

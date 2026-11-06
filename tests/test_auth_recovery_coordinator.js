@@ -836,3 +836,24 @@ test('exclusive lock callbacks contain only synchronous storage transactions', a
         clock: () => 2_000,
     });
 });
+
+test('navigation captures block on a failed or throwing owner and unregister cleanly', () => {
+    const isolated = loadModule();
+    assert.equal(isolated.captureAuthResumeBeforeNavigation(), true);
+    const removeGood = isolated.registerAuthResumeCapture(() => true);
+    const removeBad = isolated.registerAuthResumeCapture(() => false);
+    assert.equal(isolated.captureAuthResumeBeforeNavigation(), false);
+    removeBad();
+    const removeThrow = isolated.registerAuthResumeCapture(() => { throw new Error('capture failure'); });
+    assert.equal(isolated.captureAuthResumeBeforeNavigation(), false);
+    removeThrow(); removeGood();
+    assert.equal(isolated.captureAuthResumeBeforeNavigation(), true);
+});
+
+test('pending follower success can be inspected before capture without consuming it', () => {
+    const isolated = loadModule(), shared = createStorage({ [EXPECTED_SUCCESS_KEY]: JSON.stringify({ attemptId: 'complete', completedAt: 1000 }) }), tab = createStorage();
+    assert.equal(isolated.readPendingAuthRecoverySuccess(shared, tab, { now: 1001, requestStartedAt: 900 }).attemptId, 'complete');
+    assert.equal(tab.peek(EXPECTED_CONSUMED_KEY), null);
+    isolated.consumeAuthRecoverySuccess(shared, tab, { now: 1001, requestStartedAt: 900 });
+    assert.equal(isolated.readPendingAuthRecoverySuccess(shared, tab, { now: 1002, requestStartedAt: 900 }), null);
+});

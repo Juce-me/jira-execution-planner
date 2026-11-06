@@ -22,6 +22,9 @@ from backend.services.story_readiness import (
     project_story_readiness,
 )
 import jira_server
+from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session
+from backend.auth.db_context import resolve_db_request_auth_context
+from backend.db import engine as db_engine, models
 
 
 class _FakeResponse:
@@ -315,18 +318,25 @@ class StoryReadinessAliasSnapshotTests(unittest.TestCase):
 class StoryReadinessRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
+        jira_server.app.secret_key = 'synthetic-readiness-session'
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
+        self.context = resolve_db_request_auth_context(install_oauth_session(self.client))
+        self._save_config({'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]}})
         with eng_routes._STORY_READINESS_LOCK:
             eng_routes._STORY_READINESS_CACHE.clear()
             eng_routes._STORY_READINESS_INFLIGHT.clear()
 
+    def _save_config(self, config):
+        with db_engine.session_scope() as db:
+            row = db.query(models.WorkspaceDashboardConfig).filter_by(workspace_id=self.context.workspace_id).first()
+            if row is None:
+                db.add(models.WorkspaceDashboardConfig(workspace_id=self.context.workspace_id,
+                    payload=config, config_revision=5))
+            else:
+                row.payload = config
+
     def test_route_returns_complete_snapshot_and_exact_warm_cache_hit(self):
-        context = RequestAuthContext(
-            auth_mode="basic", user_id="local", stable_subject="local",
-            workspace_id="workspace", auth_connection_id="local-basic-connection",
-            atlassian_account_id="", cloud_id="", site_url="https://example.invalid", token_version="1",
-            account_status="active", is_admin=True,
-        )
         groups = {
             "configRevision": 3,
             "groups": [{"id": "dept", "teamIds": ["team-a"],
@@ -340,10 +350,7 @@ class StoryReadinessRouteTests(unittest.TestCase):
             "complete": True,
             "epics": [],
         }
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
-             patch.object(jira_server, "load_dashboard_config_snapshot", return_value=SimpleNamespace(
-                 payload=config, config_revision=5)), \
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(eng_routes, "_story_readiness_effective_groups", return_value=groups), \
              patch.object(eng_routes, "_story_readiness_team_catalog", return_value={
                  "team-a": {"id": "team-a", "name": "Alpha"}}), \
@@ -363,21 +370,13 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertEqual(compute.call_count, 1)
 
     def test_route_rejects_alias_shared_by_two_teams(self):
-        context = RequestAuthContext(
-            auth_mode="basic", user_id="local", stable_subject="local",
-            workspace_id="workspace", auth_connection_id="local-basic-connection",
-            atlassian_account_id="", cloud_id="", site_url="https://example.invalid", token_version="1",
-            account_status="active", is_admin=True,
-        )
         groups = {"configRevision": 3, "groups": [{
             "id": "dept", "teamIds": ["team-a", "team-b"],
             "teamLabels": {"team-a": ["label_team_a", "label_shared"], "team-b": ["label_shared"]},
         }]}
         config = {"projects": {"selected": [{"key": "PROJ", "type": "product"}]}}
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
-             patch.object(jira_server, "load_dashboard_config_snapshot", return_value=SimpleNamespace(
-                 payload=config, config_revision=5)), \
+        self._save_config(config)
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(eng_routes, "_story_readiness_effective_groups", return_value=groups), \
              patch.object(eng_routes, "_story_readiness_team_catalog", return_value={}), \
              patch.object(eng_routes, "_story_readiness_compute") as compute:
@@ -428,20 +427,11 @@ class StoryReadinessRouteTests(unittest.TestCase):
     _SCOPE = "sprint=42&sprintName=Sprint%2042&sprintState=active&groupId=dept"
 
     def _route_stack(self, compute):
-        context = RequestAuthContext(
-            auth_mode="basic", user_id="local", stable_subject="local",
-            workspace_id="workspace", auth_connection_id="local-basic-connection",
-            atlassian_account_id="", cloud_id="", site_url="https://example.invalid", token_version="1",
-            account_status="active", is_admin=True,
-        )
         groups = {"configRevision": 3, "groups": [{
             "id": "dept", "teamIds": ["team-a"], "teamLabels": {"team-a": "team_alpha"}}]}
         config = {"projects": {"selected": [{"key": "PROD", "type": "product"}]}}
         stack = ExitStack()
-        stack.enter_context(patch.object(jira_server, "JIRA_AUTH_MODE", "basic"))
-        stack.enter_context(patch.object(jira_server, "current_request_auth_context", return_value=context))
-        stack.enter_context(patch.object(jira_server, "load_dashboard_config_snapshot", return_value=SimpleNamespace(
-            payload=config, config_revision=5)))
+        stack.enter_context(patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"))
         stack.enter_context(patch.object(eng_routes, "_story_readiness_effective_groups", return_value=groups))
         stack.enter_context(patch.object(eng_routes, "_story_readiness_team_catalog", return_value={
             "team-a": {"id": "team-a", "name": "Alpha"}}))
@@ -505,15 +495,15 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertEqual(department.headers["X-Story-Readiness-Cache"], "miss")
         self.assertEqual(department.get_json()["epics"], [{"key": "PROD-1"}])
 
-    def test_epic_keys_bad_or_multiple_value_is_rejected_before_auth_or_jira(self):
+    def test_epic_keys_bad_or_multiple_value_is_rejected_before_feature_auth_or_jira(self):
         for value in ("not-a-key", "PROD-1,PROD-2", "PROD-1)%20OR%20(x"):
-            with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-                 patch.object(jira_server, "current_request_auth_context") as auth, \
+            with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+                 patch.object(jira_server, "current_request_auth_context", wraps=jira_server.current_request_auth_context) as auth, \
                  patch.object(eng_routes, "_story_readiness_compute") as compute:
                 response = self.client.get(f"/api/eng/story-readiness?{self._SCOPE}&epicKeys={value}")
             self.assertEqual(response.status_code, 400, value)
             self.assertEqual(response.get_json()["error"], "invalid_story_readiness_scope")
-            auth.assert_not_called()
+            auth.assert_called_once()
             compute.assert_not_called()
 
     def test_cache_key_gains_epic_keys_only_when_present(self):
@@ -561,9 +551,9 @@ class StoryReadinessRouteTests(unittest.TestCase):
             search_calls[1],
         )
 
-    def test_route_rejects_malformed_scope_before_auth_or_jira(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "current_request_auth_context") as auth:
+    def test_route_rejects_malformed_scope_after_middleware_auth_before_feature_work(self):
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_request_auth_context", wraps=jira_server.current_request_auth_context) as auth:
             response = self.client.get(
                 "/api/eng/story-readiness?sprint=not-an-id&sprintName=Sprint&sprintState=closed&groupId=dept"
             )
@@ -573,7 +563,7 @@ class StoryReadinessRouteTests(unittest.TestCase):
             "message": "Story readiness scope is invalid.",
         })
         self.assertEqual(response.headers["Cache-Control"], "private, no-store")
-        auth.assert_not_called()
+        auth.assert_called_once()
 
     def test_strict_producer_paginates_candidate_epics_for_active_and_future_sprints(self):
         eng_routes.bind_server_globals(vars(eng_routes))

@@ -1,7 +1,7 @@
 import unittest
 from unittest.mock import patch
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -24,7 +24,7 @@ class DummyResponse:
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestBurnoutStatsApi(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         app = jira_server.app
         app.testing = True
         self.client = app.test_client()

@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -12,6 +10,7 @@ from backend.services.shared_capacity_config import (
     load_shared_capacity_config,
     save_shared_capacity_config,
 )
+from tests.postgres_test_db import fresh_database_url
 
 
 def _context(workspace_id, user_id, site_url='https://one.example.test', cloud_id='cloud-one'):
@@ -25,8 +24,7 @@ def _context(workspace_id, user_id, site_url='https://one.example.test', cloud_i
 
 class SharedCapacityConfigTests(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'capacity.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         factory = db_engine.session_factory(self.database_url)
         with factory() as session:
@@ -45,7 +43,6 @@ class SharedCapacityConfigTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self.tmpdir.cleanup()
 
     def test_workspace_users_share_one_config_and_another_workspace_isolated(self):
         saved = save_shared_capacity_config(

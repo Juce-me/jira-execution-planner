@@ -176,6 +176,7 @@ export function createApplyController({ readOptions, now = clock }) {
     let planningRows = null;
     let pendingTrack = null;
     let trackQueued = false;
+    let scopeGuard = null, scopeApproval = null;
     const reported = new Set();
     const addReported = categories => (categories || []).forEach(category => reported.add(category));
 
@@ -242,6 +243,34 @@ export function createApplyController({ readOptions, now = clock }) {
         conclude({ result: 'partial', categories: unique([...reported, ...categories]) });
     };
 
+    const scopeKey = o => JSON.stringify([String(o.activeGroupId), String(o.selectedSprint)]);
+    const targetKey = resolution => JSON.stringify([String(resolution.scope.group.id), String(resolution.scope.sprint.id)]);
+    const currentGuard = guard => {
+        const snapshot = getShareViewSnapshot();
+        return !machine.finished && !readPendingAuthenticationRequired() && !snapshot.terminal
+            && snapshot.entry === guard.entry && scopeKey(readOptions()) === guard.origin;
+    };
+    const requestScopePermission = (o, entry, target) => {
+        const guard = { entry, target, origin: scopeKey(o), accepted: false };
+        scopeGuard = guard;
+        const finish = allowed => {
+            if (scopeGuard !== guard) return;
+            scopeGuard = null;
+            if (!currentGuard(guard)) return;
+            if (allowed !== true || !guard.accepted) {
+                machine = { ...machine, finished: true };
+                conclude({ result: 'cancelled', categories: [] });
+                return;
+            }
+            scopeApproval = guard;
+            controller.evaluate();
+        };
+        try {
+            Promise.resolve(o.guardPlanningScopeChange(() => { if (currentGuard(guard)) guard.accepted = true; }))
+                .then(finish, () => finish(false));
+        } catch { finish(false); }
+    };
+
     // Returns false when the link no longer resolves, which ends it.
     const runStage = (action, o, state) => {
         // The Planning table is unmounted by the first ENG load, which the hold delays until after Stage B, so its Epics/Stories
@@ -287,7 +316,7 @@ export function createApplyController({ readOptions, now = clock }) {
     const controller = {
         noteCommit() { commit += 1; },
         noteInterrupt(kind) { if (kind === 'deliberate' || interrupt === null) interrupt = kind; },
-        isPaused: () => isApplyPaused(readOptions()),
+        isPaused: () => { const o = readOptions(); return Boolean(scopeGuard || scopeApproval && o.planningReviewBusy) || isApplyPaused(o); },
         evaluate() {
             const snapshot = getShareViewSnapshot();
             const active = snapshot.phase === SHARE_VIEW_PHASES.PENDING || snapshot.phase === SHARE_VIEW_PHASES.RUNNING;
@@ -302,13 +331,29 @@ export function createApplyController({ readOptions, now = clock }) {
             try {
                 const o = readOptions();
                 const input = buildInput(o, state);
+                if (scopeGuard && scopeGuard.entry !== snapshot.entry) scopeGuard = null;
+                if (scopeApproval && !currentGuard(scopeApproval)) scopeApproval = null;
+                // Save/Discard inside the guard owns this wait. Its dialog interactions and
+                // asynchronous save time must not cancel or consume the link's active budget.
+                if (scopeGuard || scopeApproval && input.reviewBusy) {
+                    input.paused = true;
+                    input.reviewBusy = false;
+                }
                 interrupt = null;
                 const stepped = stepApplyMachine(machine, input);
+                const scopeAction = stepped.actions.find(action => action.type === 'run' && action.stage === 'A' && action.scopeChange);
+                if (scopeAction && typeof o.guardPlanningScopeChange === 'function'
+                    && (!scopeApproval || scopeApproval.entry !== snapshot.entry || scopeApproval.target !== targetKey(resolved))) {
+                    // Do not commit the tentative Stage A state until permission resolves.
+                    machine = { ...machine, active: stepped.state.active, lastNow: input.now, lastPaused: true };
+                    requestScopePermission(o, snapshot.entry, targetKey(resolved));
+                    return;
+                }
                 machine = stepped.state;
                 for (const action of stepped.actions) {
                     if (action.type === 'releaseHold') markShareViewScopeCommitted();
                     else if (action.type === 'cancelReveal') { revealCancelled = true; reveal?.cancel(); }
-                    else if (action.type === 'run') { failing = action; if (!runStage(action, o, state)) break; failing = null; }
+                    else if (action.type === 'run') { failing = action; if (!runStage(action, o, state)) break; if (action.stage === 'A') scopeApproval = null; failing = null; }
                     else conclude(action);
                 }
             } catch (error) {

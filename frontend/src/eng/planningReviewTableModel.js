@@ -168,7 +168,7 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
         { id: 'status', label: 'Status', type: 'text', optional: true },
         { id: 'priority', label: 'Priority', type: 'priority', optional: true },
         { id: 'storyPoints', label: mode === 'epic' ? 'Sprint SP' : 'Story Points', type: 'number', optional: true, aggregation: 'sum' },
-        { id: 'accepted', label: 'Accepted', type: 'number', optional: true, aggregation: 'sum' },
+        { id: 'accepted', label: 'Planned SP', type: 'number', optional: true, aggregation: 'sum' },
     ];
     // The fold runs on the unfiltered list, so admission-gated built-ins stay in it as anchors and are filtered afterwards.
     const gated = new Set();

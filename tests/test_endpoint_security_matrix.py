@@ -1,19 +1,10 @@
 import unittest
 from unittest.mock import patch
 
-from backend.auth.context import RequestAuthContext
+from backend.db import engine as db_engine, models
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
-
-def _verified_context(*, is_admin=False):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
-        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
-        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
-        site_url='https://example.atlassian.net', token_version='1', account_status='active',
-        is_admin=is_admin, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
-    )
 
 
 SECURITY_SAMPLES = {
@@ -73,11 +64,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
 
     def _request(self, method, path, **kwargs):
         return self.client.open(path, method=method, **kwargs)
@@ -86,7 +74,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         return patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth")
 
     def _csrf_token(self):
-        response = self.client.get("/api/auth/csrf")
+        response = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 
@@ -97,22 +85,21 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
                     response = self._request(method, path)
                     self.assertLess(response.status_code, 400, response.get_data(as_text=True))
 
-    def test_analytics_context_is_readable_in_basic_and_oauth_modes(self):
-        with patch.dict("os.environ", {"GA4_ENABLED": "false"}, clear=False):
-            for method, path in SECURITY_SAMPLES["public_context"]:
-                with self.subTest(mode="basic", path=path):
-                    response = self._request(method, path)
-                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-
-                with self._oauth_mode():
-                    with self.subTest(mode="oauth_unauthenticated", path=path):
+    def test_analytics_context_is_readable_anonymously_and_with_a_real_db_actor(self):
+        with patch.dict('os.environ', {'GA4_ENABLED': 'false'}, clear=False):
+            for authenticated in (False, True):
+                if authenticated:
+                    install_oauth_session(self.client, account_id='account-123')
+                for method, path in SECURITY_SAMPLES['public_context']:
+                    with self.subTest(authenticated=authenticated, path=path):
                         response = self._request(method, path)
                         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
-                    install_oauth_session(self.client, account_id="account-123")
-                    with self.subTest(mode="oauth_authenticated", path=path):
-                        response = self._request(method, path)
-                        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+    def test_analytics_context_rejects_retired_basic_profile_before_route_code(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
+            response = self.client.get('/api/analytics/context')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_anonymous_oauth_requests_cannot_read_or_write_app_data(self):
         protected_classes = [
@@ -279,7 +266,7 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
 
     def test_oauth_logout_requires_requested_with_but_not_token_bound_csrf(self):
         """OAuth logout requires the requested-with header but not token-bound CSRF."""
-        install_oauth_session(self.client, account_id='account-123')
+        browser_session = install_oauth_session(self.client, account_id='account-123')
         with self._oauth_mode():
             missing_header = self.client.post('/api/auth/logout')
 
@@ -294,6 +281,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json(), {'ok': True})
+        with db_engine.session_scope() as db:
+            self.assertIsNone(db.get(models.BrowserSession, browser_session['db_browser_session_id']))
 
     def test_unsafe_write_requests_require_token_bound_csrf_before_route_code(self):
         install_oauth_session(self.client, account_id="tool-admin-account")
@@ -314,10 +303,8 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         with self._oauth_mode():
             csrf_token = self._csrf_token()
 
-        non_admin_context = _verified_context(is_admin=False)
         with self._oauth_mode(), \
              patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
-             patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
              patch.object(jira_server, "load_dashboard_config", side_effect=AssertionError("route code reached")):
             response = self.client.post(
                 "/api/board-config",
@@ -333,29 +320,20 @@ class EndpointSecurityMatrixTests(unittest.TestCase):
         self.assertEqual(response.get_json()["recoveryUrl"], "/auth/admin-required")
 
     def test_shared_admin_write_allows_authenticated_user_when_admin_only_disabled(self):
-        install_oauth_session(self.client, account_id="regular-user-account")
-        with self._oauth_mode():
-            csrf_token = self._csrf_token()
-
-        non_admin_context = _verified_context(is_admin=False)
-        with self._oauth_mode(), \
-             patch.object(jira_server, "SETTINGS_ADMIN_ONLY", False), \
-             patch.object(jira_server, "current_request_auth_context", return_value=non_admin_context), \
-             patch.object(jira_server, "config_storage_db_enabled", return_value=False), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config"), \
-             patch.object(jira_server, "invalidate_sprints_cache"):
-            response = self.client.post(
-                "/api/board-config",
-                json={"boardId": "7", "boardName": "Synthetic board"},
-                headers={
-                    "X-Requested-With": "jira-execution-planner",
-                    "X-CSRF-Token": csrf_token,
-                },
-            )
-
+        install_oauth_session(self.client, account_id='regular-user-account')
+        before = self.client.get('/api/board-config').get_json()
+        csrf_token = self._csrf_token()
+        with patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', False):
+            response = self.client.post('/api/board-config', json={
+                'boardId': '7', 'boardName': 'Synthetic board', 'baseRevision': before['configRevision'],
+            }, headers={'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': csrf_token})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["boardId"], "7")
+        self.assertEqual(response.get_json()['boardId'], '7')
+        with db_engine.session_scope() as db:
+            user = db.query(models.User).filter_by(external_subject='regular-user-account').one()
+            self.assertEqual(user.account_type, 'user')
+            row = db.query(models.WorkspaceDashboardConfig).one()
+            self.assertEqual(row.payload['board']['boardId'], '7')
 
     def test_unclassified_oauth_api_returns_route_not_oauth_ready(self):
         with self._oauth_mode():

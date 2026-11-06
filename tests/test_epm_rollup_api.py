@@ -7,7 +7,7 @@ from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 import jira_server
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 def make_issue(key, issue_type='Story', summary=None, parent_key='', labels=None, sprint=None, epic_link='', status='To Do'):
@@ -78,7 +78,7 @@ def make_auth_context():
 
 class TestEpmRollupApi(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()
@@ -241,7 +241,7 @@ class TestEpmRollupApi(unittest.TestCase):
         self.assertEqual(call.args, (saved_config,))
         self.assertEqual(call.kwargs['tab'], 'active')
         self.assertEqual(call.kwargs['sub_goal_keys'], ['CHILD-A', 'CHILD-B'])
-        self.assertEqual(call.kwargs['context'].user_id, 'local-basic-user')
+        self.assertEqual(call.kwargs['context'].user_id, self.db_actor.user_id)
         self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
 
     def test_all_projects_rollup_filters_visible_projects_and_reports_duplicates(self):
@@ -808,7 +808,7 @@ class TestEpmRollupApi(unittest.TestCase):
             second = self.client.get('/api/epm/projects/project-1/rollup?tab=backlog')
             save = self.client.post('/api/epm/config', json={
                 'version': 2,
-                'labelPrefix': 'rnd_project_',
+                'labelPrefix': 'changed_project_*',
                 'scope': {'rootGoalKey': '', 'subGoalKeys': []},
                 'issueTypes': {
                     'initiative': ['Initiative'],
@@ -941,7 +941,7 @@ class TestEpmRollupApi(unittest.TestCase):
                 field_id = jira_server.resolve_epic_link_field_id(None)
 
             self.assertEqual(field_id, 'customfield_epiclink')
-            self.assertEqual(jira_server.EPIC_LINK_FIELD_CACHE, 'customfield_epiclink')
+            self.assertIsNone(jira_server.EPIC_LINK_FIELD_CACHE)
             self.assertEqual(jira_server.PARENT_NAME_FIELD_CACHE, 'customfield_parentname')
         finally:
             jira_server.EPIC_LINK_FIELD_CACHE = None

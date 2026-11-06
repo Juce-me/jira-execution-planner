@@ -1,23 +1,34 @@
 import unittest
 from unittest.mock import patch
 import json
-import os
 from pathlib import Path
-import tempfile
 from werkzeug.exceptions import NotFound
 
 from backend.auth.jira_auth import AuthError
+from backend.db import engine as db_engine, models
+from backend.epm.home import HomeReadAuth
 import jira_server
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 class TestEpmProjectsApi(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()
         jira_server.EPM_PROJECTS_CACHE.clear()
+
+    def _assert_home_fetch(self, mock_fetch, scope):
+        mock_fetch.assert_called_once()
+        self.assertEqual(mock_fetch.call_args.args, (scope,))
+        self.assertEqual(set(mock_fetch.call_args.kwargs), {'home_auth'})
+        authority = mock_fetch.call_args.kwargs['home_auth']
+        self.assertIsInstance(authority, HomeReadAuth)
+        self.assertEqual(authority.profile, 'public-read-v1')
+        self.assertEqual(authority.context.user_id, self.db_actor.user_id)
+        self.assertEqual(authority.context.workspace_id, self.db_actor.workspace_id)
+        self.assertEqual(authority.context.auth_connection_id, self.db_actor.connection_id)
 
     def _home_projects(self):
         return [
@@ -495,7 +506,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         response = self.client.get('/api/epm/projects')
 
         self.assertEqual(response.status_code, 200)
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         payload = response.get_json()
         project = payload['projects'][0]
         self.assertEqual(project['customName'], 'Synthetic Launch')
@@ -519,7 +530,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         response = self.client.get('/api/epm/projects?tab=active&subGoalKeys=child-a, CHILD-B')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']})
         self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B', 'CHILD-C'])
 
     @patch('jira_server.get_epm_config')
@@ -537,7 +548,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         response = self.client.get('/api/epm/projects?subGoalKeys=CHILD-A,CHILD-Z')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A']})
         self.assertEqual(saved_config['scope']['subGoalKeys'], ['CHILD-A', 'CHILD-B'])
 
     @patch('jira_server.get_epm_config')
@@ -594,7 +605,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         project = jira_server.find_epm_project_or_404('tsq-1')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(project['customName'], 'Synthetic Launch')
         self.assertEqual(project['displayName'], 'Synthetic Launch')
         self.assertEqual(project['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
@@ -757,7 +768,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         mock_get_epm_config.assert_not_called()
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         payload = response.get_json()
         self.assertEqual(payload['projects'][0]['displayName'], 'Preview Launch')
         self.assertEqual(payload['projects'][0]['resolvedLinkage']['labels'], ['synthetic_label_alpha'])
@@ -938,7 +949,7 @@ class TestEpmProjectsApi(unittest.TestCase):
         mock_fetch_projects.return_value = self._home_projects()
         home = jira_server.find_epm_project_or_404('home-2')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(home['id'], 'home-2')
         self.assertEqual(home['displayName'], 'Configured Home Two')
         self.assertEqual(home['label'], 'synthetic_label_home_two')
@@ -959,7 +970,7 @@ class TestEpmProjectsApi(unittest.TestCase):
 
         home = jira_server.find_epm_project_or_404('home-2')
 
-        mock_fetch_projects.assert_called_once_with({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self._assert_home_fetch(mock_fetch_projects, {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
         self.assertEqual(home['id'], 'home-2')
         self.assertEqual(home['displayName'], 'Configured Home Two')
         self.assertEqual(home['label'], 'synthetic_label_home_two')
@@ -996,39 +1007,40 @@ class TestEpmProjectsApi(unittest.TestCase):
         self.assertEqual(preview.get_json()['projects'][0]['id'], 'draft-abc')
         self.assertIsNone(preview.get_json()['projects'][0]['homeProjectId'])
 
-        tmpdir = tempfile.mkdtemp()
-        dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-        try:
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                first_response = self.client.post('/api/epm/config', json=draft_payload)
-                self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
-                first = first_response.get_json()
-                self.assertEqual(len(first['projects']), 1)
-                uuid_key = next(iter(first['projects']))
-                self.assertRegex(uuid_key, r'^[0-9a-f]{32}$')
-                self.assertEqual(first['projects'][uuid_key]['id'], uuid_key)
-                self.assertNotIn('homeProjectId', first['projects'][uuid_key])
-                self.assertNotIn('draft-abc', first['projects'])
-                self.assertNotIn('draft-abc', json.dumps(first['projects']))
+        first_response = self.client.post('/api/epm/config', json=draft_payload)
+        self.assertEqual(first_response.status_code, 200, first_response.get_data(as_text=True))
+        first = first_response.get_json()
+        self.assertEqual(len(first['projects']), 1)
+        uuid_key = next(iter(first['projects']))
+        self.assertRegex(uuid_key, r'^[0-9a-f]{32}$')
+        self.assertEqual(first['projects'][uuid_key]['id'], uuid_key)
+        self.assertNotIn('homeProjectId', first['projects'][uuid_key])
+        self.assertNotIn('draft-abc', first['projects'])
+        self.assertNotIn('draft-abc', json.dumps(first['projects']))
 
-                second_response = self.client.post('/api/epm/config', json=first)
-                self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
-                second = second_response.get_json()
-                self.assertEqual(list(second['projects']), [uuid_key])
-                self.assertEqual(second['projects'][uuid_key]['id'], uuid_key)
+        second_response = self.client.post('/api/epm/config', json={key: first[key] for key in draft_payload})
+        self.assertEqual(second_response.status_code, 200, second_response.get_data(as_text=True))
+        second = second_response.get_json()
+        self.assertEqual(list(second['projects']), [uuid_key])
+        self.assertEqual(second['projects'][uuid_key]['id'], uuid_key)
 
-                renamed = json.loads(json.dumps(second))
-                renamed['projects'][uuid_key]['name'] = 'Renamed'
-                third_response = self.client.post('/api/epm/config', json=renamed)
-                self.assertEqual(third_response.status_code, 200, third_response.get_data(as_text=True))
-                third = third_response.get_json()
-                self.assertEqual(list(third['projects']), [uuid_key])
-                self.assertEqual(third['projects'][uuid_key]['id'], uuid_key)
-                self.assertEqual(third['projects'][uuid_key]['name'], 'Renamed')
-        finally:
-            if os.path.exists(dashboard_path):
-                os.unlink(dashboard_path)
-            os.rmdir(tmpdir)
+        renamed = {key: json.loads(json.dumps(second[key])) for key in draft_payload}
+        renamed['projects'][uuid_key]['name'] = 'Renamed'
+        third_response = self.client.post('/api/epm/config', json=renamed)
+        self.assertEqual(third_response.status_code, 200, third_response.get_data(as_text=True))
+        third = third_response.get_json()
+        self.assertEqual(list(third['projects']), [uuid_key])
+        self.assertEqual(third['projects'][uuid_key]['id'], uuid_key)
+        self.assertEqual(third['projects'][uuid_key]['name'], 'Renamed')
+        with db_engine.session_scope() as db:
+            private = db.query(models.ViewConfig).filter_by(
+                workspace_id=self.db_actor.workspace_id, owner_user_id=self.db_actor.user_id,
+                is_default=True).one()
+            self.assertEqual(private.payload['epm']['projects'][uuid_key]['name'], 'Renamed')
+            self.assertTrue(private.payload['epm']['viewEnabled'])
+            shared = db.query(models.WorkspaceDashboardConfig).filter_by(
+                workspace_id=self.db_actor.workspace_id).one()
+            self.assertNotIn('epm', shared.payload)
 
     def test_projects_preview_rejects_non_string_home_project_id_before_normalizing(self):
         payload = self._mixed_config()

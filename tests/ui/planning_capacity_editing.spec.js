@@ -1299,7 +1299,7 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
     await expect(page.locator('form.team-capacity-editor')).toHaveCount(0);
     expect(capacityCalls(fixture.calls, 'PATCH')).toHaveLength(0);
 
-    fixture.state.authMode = 'basic';
+    fixture.state.capacityPayload.mutationEnabled = false;
     await page.evaluate(({ id, name }) => {
         const prefs = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
@@ -1310,7 +1310,11 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
     }, { id: sprintId, name: sprintName });
     await page.reload({ waitUntil: 'networkidle' });
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(3);
-    await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
+    await expect(page.locator('form.team-capacity-editor')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Edit .+ capacity$/ })).toHaveCount(0);
+    await page.locator('.team-stat-card', { hasText: 'Alpha' }).hover();
+    await expect(page.getByRole('link', { name: 'Open Alpha capacity ticket in Jira' })).toBeVisible();
+    expect(capacityCalls(fixture.calls, 'PATCH')).toHaveLength(0);
 });
 
 test('an empty future sprint explains missing issues and refreshes only Capacity', async ({ page }, testInfo) => {

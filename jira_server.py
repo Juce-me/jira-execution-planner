@@ -3,7 +3,7 @@
 from flask import abort, g, has_request_context, jsonify, redirect, request, send_file, send_from_directory, session
 import requests
 import argparse
-import base64
+import sys
 import copy
 import csv
 import dataclasses
@@ -16,7 +16,7 @@ import hashlib
 import threading
 import time
 import uuid
-from contextlib import nullcontext
+from contextlib import ExitStack, nullcontext
 from functools import partial
 from datetime import datetime, timedelta, date, timezone
 try:
@@ -51,14 +51,13 @@ from backend.auth.cache_policy import (
     jira_home_partitioned_process_cache_enabled,
     jira_home_process_cache_enabled,
 )
-from backend.auth.context import RequestAuthContext, build_auth_cache_key, stable_local_workspace_id
+from backend.auth.context import RequestAuthContext, build_auth_cache_key
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.auth.db_browser_sessions import create_browser_session, delete_browser_session, delete_browser_sessions_for_connection
-from backend.auth.csrf import csrf_session_data_for_auth_context, validate_csrf_token
 from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_context, revalidate_db_request_auth_context
 from backend.auth.db_tokens import db_oauth_session_data, store_oauth_callback_tokens
-from backend.auth.key_provider import key_provider_from_env
-from backend.auth.local_oauth_store import LocalOAuthStoreConfig, LocalOAuthTokenStore
+from backend.auth.key_provider import KeyProviderConfigurationError, key_provider_from_env
+from backend.auth.runtime_profile import normalize_runtime_profile, validate_supported_runtime_profile, RuntimeProfileError
 from backend.auth.project_access import project_access_denied_response
 from backend.auth.service_integrations import register_service_integration_cache_invalidator
 from backend.auth.share_view_stash import clear_share_view_stash, stash_share_view_query
@@ -130,6 +129,7 @@ from backend.services.alert_epics import (
     quote_jql_value,
 )
 from backend.services import planning_work as _planning_work
+from backend.services import planning_scope as _planning_scope
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
@@ -151,9 +151,9 @@ logger = logging.getLogger(__name__)
 
 # CONFIGURATION - Load from environment variables
 JIRA_URL = os.getenv('JIRA_URL')
-JIRA_EMAIL = os.getenv('JIRA_EMAIL')
-JIRA_TOKEN = os.getenv('JIRA_TOKEN')
-JIRA_AUTH_MODE = os.getenv('JIRA_AUTH_MODE', AUTH_MODE_BASIC).strip() or AUTH_MODE_BASIC
+JIRA_EMAIL = None  # Retired compatibility attribute; credentials are never consumed.
+JIRA_TOKEN = None  # Retired compatibility attribute; credentials are never consumed.
+JIRA_AUTH_MODE, _ = normalize_runtime_profile(os.getenv('JIRA_AUTH_MODE'), os.getenv('CONFIG_STORAGE_BACKEND'))
 ATLASSIAN_CLIENT_ID = os.getenv('ATLASSIAN_CLIENT_ID', '').strip()
 ATLASSIAN_CLIENT_SECRET = os.getenv('ATLASSIAN_CLIENT_SECRET', '').strip()
 ATLASSIAN_REDIRECT_URI = os.getenv('ATLASSIAN_REDIRECT_URI', '').strip()
@@ -166,9 +166,6 @@ app = create_app()
 app.secret_key = FLASK_SECRET_KEY or os.urandom(32)
 APP_ENVIRONMENT_KEY = os.getenv('APP_ENVIRONMENT_KEY', 'local').strip() or 'local'
 OAUTH_LOCAL_TOKEN_STORE_ALLOWED = os.getenv('OAUTH_LOCAL_TOKEN_STORE_ALLOWED', '').strip().lower() in {'1', 'true', 'yes'}
-OAUTH_TOKEN_STORE_TTL_SECONDS = int(os.getenv('OAUTH_TOKEN_STORE_TTL_SECONDS', '2592000'))
-OAUTH_TOKEN_STORE_MIN_TTL_SECONDS = 900
-OAUTH_TOKEN_STORE_PATH = os.getenv('OAUTH_TOKEN_STORE_PATH', '.oauth-token-store.json').strip()
 JQL_QUERY = os.getenv('JQL_QUERY', '').strip()
 JIRA_BOARD_ID = os.getenv('JIRA_BOARD_ID')  # Optional: board ID for faster sprint fetching
 JIRA_PRODUCT_PROJECT = os.getenv('JIRA_PRODUCT_PROJECT', 'PRODUCT ROADMAPS')
@@ -236,9 +233,6 @@ JIRA_ISSUE_CACHE_GENERATION = 0
 EPM_PROJECTS_CACHE = {}
 EPM_ISSUES_CACHE = {}
 EPM_ROLLUP_CACHE = {}
-OAUTH_TOKEN_STORE = {}
-OAUTH_TOKEN_STORE_LOCK = threading.RLock()
-OAUTH_REFRESH_LOCKS = {}
 EPM_PROJECTS_CACHE_TTL_SECONDS = 300
 EPM_ISSUES_CACHE_TTL_SECONDS = 300
 EPM_ROLLUP_CACHE_TTL_SECONDS = 300
@@ -382,19 +376,8 @@ def is_oauth_ready_api_path(path):
     return policy_is_oauth_ready_api_path(path)
 
 
-def bootstrap_tool_admin_account_ids():
-    raw = os.getenv('TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS', '')
-    return {account_id.strip() for account_id in raw.split(',') if account_id.strip()}
-
-
-def is_pre_db_tool_admin_account(atlassian_account_id):
-    account_id = str(atlassian_account_id or '').strip()
-    return bool(account_id)
-
-
 def store_db_oauth_callback_session_metadata(token_data, resource, user_profile):
-    if not database_storage_enabled():
-        return {}
+    require_db_oauth_profile()
     previous_browser_session_id = str(db_oauth_browser_session_data().get('db_browser_session_id') or '').strip()
     with session_scope() as db_session:
         stored = store_oauth_callback_tokens(
@@ -430,44 +413,12 @@ def current_auth_config():
     return AuthConfig(
         auth_mode=JIRA_AUTH_MODE,
         jira_url=JIRA_URL or '',
-        jira_email=JIRA_EMAIL or '',
-        jira_token=JIRA_TOKEN or '',
         client_id=ATLASSIAN_CLIENT_ID,
         client_secret=ATLASSIAN_CLIENT_SECRET,
         redirect_uri=ATLASSIAN_REDIRECT_URI,
         scopes=ATLASSIAN_SCOPES,
         flask_secret_key=FLASK_SECRET_KEY,
     )
-
-
-def _local_oauth_store_config():
-    return LocalOAuthStoreConfig(
-        auth_mode=JIRA_AUTH_MODE,
-        oauth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
-        environment_key=APP_ENVIRONMENT_KEY,
-        persistence_allowed=OAUTH_LOCAL_TOKEN_STORE_ALLOWED,
-        token_store_path=OAUTH_TOKEN_STORE_PATH,
-        ttl_seconds=OAUTH_TOKEN_STORE_TTL_SECONDS,
-    )
-
-
-_LOCAL_OAUTH_STORE = LocalOAuthTokenStore(
-    token_store=OAUTH_TOKEN_STORE,
-    refresh_locks=OAUTH_REFRESH_LOCKS,
-    store_lock=OAUTH_TOKEN_STORE_LOCK,
-    config=_local_oauth_store_config,
-    new_session_id=new_oauth_state,
-    now=lambda: time.time(),
-    logger=logger,
-)
-
-
-def _drop_oauth_session(session_id):
-    _LOCAL_OAUTH_STORE.drop_session(session_id)
-
-
-def _oauth_token_store_persistence_enabled():
-    return _LOCAL_OAUTH_STORE.persistence_enabled()
 
 
 def _db_oauth_browser_session_payload(data):
@@ -504,62 +455,51 @@ def strict_db_oauth_browser_session_data():
     return {}
 
 
-def _drop_browser_local_oauth_session():
-    session_id = session.pop('atlassian_oauth_session_id', None)
-    if session_id:
-        with (_LOCAL_OAUTH_STORE.existing_refresh_lock(session_id) or nullcontext()):
-            _drop_oauth_session(session_id)
+def require_db_oauth_profile():
+    try:
+        validate_supported_runtime_profile(JIRA_AUTH_MODE, os.getenv('CONFIG_STORAGE_BACKEND'))
+    except RuntimeProfileError as error:
+        raise AuthError(error.code, error.message) from error
 
 
 def save_oauth_session(data):
+    # Retired browser cookies are discarded without reading or mutating their token store.
+    session.pop('atlassian_oauth_session_id', None)
     if not data:
         session.pop('db_oauth_session', None)
-        _drop_browser_local_oauth_session()
         return
+    require_db_oauth_profile()
     payload = _db_oauth_browser_session_payload(data)
-    if payload:
-        session['db_oauth_session'] = payload
-        _drop_browser_local_oauth_session()
-        return
-    _LOCAL_OAUTH_STORE.save_session(session, data)
-
-
-def oauth_refresh_lock():
-    return _LOCAL_OAUTH_STORE.refresh_lock(session)
+    if not payload:
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    session['db_oauth_session'] = payload
 
 
 def oauth_session_data():
-    return _LOCAL_OAUTH_STORE.session_data(session)
+    return current_jira_session_data(current_request_auth_context())
 
 
 def jira_session_data():
-    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
-        return oauth_session_data()
-    return {}
-
-
-def oauth_session_id_from_auth_context(context):
-    connection_id = getattr(context, 'auth_connection_id', '') or ''
-    prefix = 'local-oauth-connection:'
-    if connection_id.startswith(prefix):
-        return connection_id[len(prefix):]
-    return ''
+    return oauth_session_data()
 
 
 def oauth_session_data_for_auth_context(context):
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return {}
-    session_id = oauth_session_id_from_auth_context(context)
-    if not session_id and is_db_auth_context(context):
-        return db_oauth_session_data_for_auth_context(context)
-    if not session_id:
-        return {}
-    return _LOCAL_OAUTH_STORE.session_data_for_id(session_id)
+    return current_jira_session_data(context)
 
 
 def db_oauth_session_data_for_auth_context(context, *, diagnostic_transport=None):
+    require_db_oauth_profile()
+    if not is_db_auth_context(context):
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
     with session_scope() as db_session:
         try:
+            if diagnostic_transport is not None: diagnostic_transport.budget.check('auth')
+            legacy_session_data = None
+            if not context.browser_session_id and has_request_context():
+                legacy_session_data = strict_db_oauth_browser_session_data()
+            context = revalidate_db_request_auth_context(
+                context, db_session=db_session, legacy_session_data=legacy_session_data,
+            )
             if diagnostic_transport is not None: diagnostic_transport.budget.check('auth')
             return db_oauth_session_data(
                 db_session,
@@ -575,37 +515,31 @@ def db_oauth_session_data_for_auth_context(context, *, diagnostic_transport=None
             raise
 
 
-def save_oauth_session_for_auth_context(context, data):
-    session_id = oauth_session_id_from_auth_context(context)
-    if not session_id:
-        return
-    _LOCAL_OAUTH_STORE.save_session_for_id(session_id, data)
-
-
-def oauth_refresh_lock_for_auth_context(context):
-    session_id = oauth_session_id_from_auth_context(context)
-    return _LOCAL_OAUTH_STORE.refresh_lock_for_id(session_id)
-
-
 def current_jira_session_data(context=None, *, diagnostic_transport=None):
-    if context is not None and JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
-        if is_db_auth_context(context): return db_oauth_session_data_for_auth_context(context, diagnostic_transport=diagnostic_transport)
-        return oauth_session_data_for_auth_context(context)
-    return jira_session_data()
+    require_db_oauth_profile()
+    context = context or current_jira_auth_context()
+    if not is_db_auth_context(context):
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+    return db_oauth_session_data_for_auth_context(context, diagnostic_transport=diagnostic_transport)
 
 
 def current_request_auth_context():
+    require_db_oauth_profile()
+    budget = getattr(g, '_planning_request_deadline', None) if has_request_context() else None
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         db_session_data = db_oauth_browser_session_data()
         if db_session_data:
             context = resolve_db_request_auth_context(
                 db_session_data,
                 required_scopes=ATLASSIAN_SCOPES,
+                **({'budget': budget} if budget is not None else {}),
             )
             if context.browser_session_id:
                 return context
             try:
-                with session_scope() as db_session:
+                with ExitStack() as budget_stack, session_scope() as db_session:
+                    if budget is not None:
+                        budget.bind(db_session, budget_stack)
                     browser_session = create_browser_session(
                         db_session,
                         user_id=context.user_id,
@@ -617,46 +551,10 @@ def current_request_auth_context():
                 return context
             session['db_oauth_session'] = {'db_browser_session_id': browser_session.id}
             return dataclasses.replace(context, browser_session_id=browser_session.id)
-    session_data = jira_session_data()
-    site_url = (session_data.get('site_url') or JIRA_URL or '').strip().rstrip('/')
-    cloud_id = session_data.get('cloudid', '')
-    workspace_id = stable_local_workspace_id(APP_ENVIRONMENT_KEY, site_url, cloud_id)
-    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
-        session_id = session.get('atlassian_oauth_session_id') or ''
-        account_id = session_data.get('account_id', '')
-        return RequestAuthContext(
-            auth_mode=AUTH_MODE_ATLASSIAN_OAUTH,
-            user_id=f'local-oauth-user:{account_id}',
-            stable_subject=account_id,
-            atlassian_account_id=account_id,
-            workspace_id=workspace_id,
-            auth_connection_id=f'local-oauth-connection:{session_id}',
-            cloud_id=cloud_id,
-            site_url=site_url,
-            token_version=str(session_data.get('stored_at', '1')),
-            account_status=session_data.get('account_status', ''),
-            is_admin=is_pre_db_tool_admin_account(account_id), display_name=session_data.get('display_name', ''),
-            granted_scopes=tuple(session_data.get('scope', '').split()) if session_data.get('scope_provenance') == 'provider' else (),
-            granted_scopes_verified=session_data.get('scope_provenance') == 'provider',
-        )
-    return RequestAuthContext(
-        auth_mode=AUTH_MODE_BASIC,
-        user_id='local-basic-user',
-        stable_subject='local-basic',
-        atlassian_account_id='',
-        workspace_id=workspace_id,
-        auth_connection_id='local-basic-connection',
-        cloud_id='',
-        site_url=site_url,
-        token_version='1',
-        account_status='active',
-        is_admin=True,
-    )
+    raise AuthError('auth_required', 'Atlassian authentication is required.')
 
 
 def oauth_auth_required_payload():
-    if not database_storage_enabled():
-        save_oauth_session({})
     return {
         'error': 'auth_required',
         'message': 'Your Jira sign-in expired. Sign in again to continue.',
@@ -664,14 +562,12 @@ def oauth_auth_required_payload():
     }, 401
 
 
-def csrf_session_data_for_request():
-    if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
-        context = scenario_draft_request_auth_context()
-        return csrf_session_data_for_auth_context(context)
-    return oauth_session_data()
+def csrf_request_auth_context():
+    return scenario_draft_request_auth_context()
 
 
 def scenario_draft_request_auth_context():
+    budget = getattr(g, '_planning_request_deadline', None) if has_request_context() else None
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH and database_storage_enabled():
         db_session_data = strict_db_oauth_browser_session_data()
         if not db_session_data:
@@ -679,6 +575,7 @@ def scenario_draft_request_auth_context():
         return resolve_db_request_auth_context(
             db_session_data,
             required_scopes=ATLASSIAN_SCOPES,
+            **({'budget': budget} if budget is not None else {}),
         )
     return current_request_auth_context()
 
@@ -692,26 +589,14 @@ def current_jira_auth_context(context=None):
 
 
 def current_oauth_session_callbacks(context=None, *, diagnostic_transport=None):
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
-        return {}
-    if context is not None:
-        if is_db_auth_context(context):
-            return {
-                'save_session': lambda data: None,
-                'reload_session': lambda: current_jira_session_data(context, diagnostic_transport=diagnostic_transport),
-                'refresh_lock': nullcontext(),
-            }
-        return {
-            'save_session': lambda data: save_oauth_session_for_auth_context(context, data),
-            'reload_session': lambda: oauth_session_data_for_auth_context(context),
-            'refresh_lock': oauth_refresh_lock_for_auth_context(context),
-        }
-    if not has_request_context():
+    require_db_oauth_profile()
+    context = context or current_jira_auth_context()
+    if not is_db_auth_context(context):
         raise AuthError('auth_required', 'Atlassian authentication is required.')
     return {
-        'save_session': save_oauth_session,
-        'reload_session': oauth_session_data,
-        'refresh_lock': oauth_refresh_lock(),
+        'save_session': lambda data: None,
+        'reload_session': lambda: current_jira_session_data(context, diagnostic_transport=diagnostic_transport),
+        'refresh_lock': nullcontext(),
     }
 
 
@@ -846,22 +731,17 @@ def auth_recovery_url(error_code):
 
 
 def validate_local_token_store_allowed():
-    if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH or database_storage_enabled():
-        return
-    environment = APP_ENVIRONMENT_KEY.strip().lower()
-    if environment not in {'local', 'dev'} or not OAUTH_LOCAL_TOKEN_STORE_ALLOWED:
-        raise AuthError(
-            'local_token_store_not_allowed',
-            'Local OAuth token storage requires APP_ENVIRONMENT_KEY=local or dev and OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true',
-        )
-    if OAUTH_TOKEN_STORE_TTL_SECONDS < OAUTH_TOKEN_STORE_MIN_TTL_SECONDS:
-        raise AuthError(
-            'oauth_token_store_ttl_too_low',
-            f'OAUTH_TOKEN_STORE_TTL_SECONDS must be at least {OAUTH_TOKEN_STORE_MIN_TTL_SECONDS} seconds for Atlassian OAuth local testing',
-        )
+    # Legacy settings stay inert only in the accepted local/dev loopback profile.
+    require_db_oauth_profile()
+    if _env_flag('OAUTH_LOCAL_TOKEN_STORE_ALLOWED'):
+        environment = str(os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY) or 'local').strip().lower()
+        host = default_bind_host() or '127.0.0.1'
+        if environment not in {'local', 'dev'} or host not in {'127.0.0.1', 'localhost', '::1'}:
+            raise AuthError('local_token_store_not_allowed', 'DB/OAuth hosted mode must not enable local token storage.')
 
 
 def validate_startup_auth_config():
+    require_db_oauth_profile()
     validate_auth_config(current_auth_config())
     validate_local_token_store_allowed()
     try:
@@ -872,6 +752,14 @@ def validate_startup_auth_config():
         validate_config_storage_startup()
     except ConfigStorageError as error:
         raise AuthError('config_storage_invalid', str(error))
+    try:
+        provider = key_provider_from_env()
+        probe_key = bytes(range(32))
+        wrapped = provider.wrap_key(probe_key, b'startup-validation')
+        if provider.unwrap_key(wrapped, b'startup-validation') != probe_key:
+            raise KeyProviderConfigurationError('Token encryption key probe failed.')
+    except KeyProviderConfigurationError:
+        raise AuthError('token_encryption_invalid', 'Token encryption configuration is invalid.') from None
     root = Path(__file__).resolve().parent
     for problem in (frontend_build_missing(root), frontend_build_stale(root)):
         if problem:
@@ -889,6 +777,7 @@ def default_bind_host():
 
 def validate_network_bind(host):
     """Validate and return the requested bind host, or raise AuthError with a stable code."""
+    require_db_oauth_profile()
     bind_host = (host or '').strip() or '127.0.0.1'
     if bind_host in {'127.0.0.1', 'localhost', '::1'}:
         return bind_host
@@ -898,14 +787,6 @@ def validate_network_bind(host):
             'network_bind_not_allowed',
             'Network bind requires ALLOW_NETWORK_BIND=true.',
         )
-
-    if JIRA_AUTH_MODE == AUTH_MODE_BASIC:
-        if not _env_flag('ALLOW_BASIC_AUTH_ON_NETWORK') or (os.getenv('APP_ENVIRONMENT_KEY', APP_ENVIRONMENT_KEY).strip().lower() != 'local'):
-            raise AuthError(
-                'basic_network_bind_not_allowed',
-                'Basic auth network bind requires ALLOW_BASIC_AUTH_ON_NETWORK=true and APP_ENVIRONMENT_KEY=local.',
-            )
-        return bind_host
 
     if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
         if not _env_flag('SESSION_COOKIE_SECURE'):
@@ -953,12 +834,8 @@ def redirect_unauthenticated_oauth_dashboard_entry():
             return None
         except AuthError:
             pass
-    data = oauth_session_data()
-    if data.get('access_token') and data.get('cloudid'):
-        clear_share_view_stash(session)
-        return None
     stash_share_view_query(request, session)
-    return redirect('/login?reason=session_expired' if session.get('atlassian_oauth_session_id') else '/login')
+    return redirect('/login?reason=session_expired' if session.get('db_oauth_session') else '/login')
 
 
 def utc_now_iso(timespec=None):
@@ -1018,32 +895,26 @@ def resilient_jira_get(url, *, params=None, headers=None, timeout=30, connect_ti
         retryable_status_codes=RETRYABLE_JIRA_STATUS_CODES
     )
 
-def parse_args():
+def parse_args(argv=None):
     """Parse CLI arguments to optionally override environment variables."""
+    argv = list(sys.argv[1:] if argv is None else argv)
+    retired = {'--jira_email', '--jira_token'}
+    # Reject exact and abbreviated credential flags before argparse can echo values.
+    explicit = [arg for arg in argv if arg.startswith('--') and any(flag.startswith(arg.split('=', 1)[0]) for flag in retired)]
+    try:
+        validate_supported_runtime_profile(explicit_legacy_cli_options=explicit)
+    except RuntimeProfileError as error:
+        raise AuthError(error.code, error.message) from error
     parser = argparse.ArgumentParser(description='Jira proxy server')
     parser.add_argument('--server_port', type=int, help='Port to run the server on (defaults to 5050 or SERVER_PORT env)')
-    parser.add_argument('--jira_email', help='Jira account email (overrides JIRA_EMAIL env)')
-    parser.add_argument('--jira_token', help='Jira API token (overrides JIRA_TOKEN env)')
     parser.add_argument('--jira_url', help='Base Jira URL, e.g. https://your-domain.atlassian.net (overrides JIRA_URL env)')
     parser.add_argument('--jira_query', help='JQL query to use for fetching issues (overrides JQL_QUERY env)')
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def add_clause_to_jql(jql: str, clause: str) -> str:
-    """Append a clause to JQL before ORDER BY if present."""
-    if not clause:
-        return jql
-
-    if 'ORDER BY' in jql:
-        parts = jql.split('ORDER BY')
-        base = parts[0].strip()
-        order = parts[1].strip()
-        if base:
-            return f"{base} AND {clause} ORDER BY {order}"
-        return f"{clause} ORDER BY {order}"
-    if not jql.strip():
-        return clause
-    return f"{jql} AND {clause}"
+    """Append a clause using the shared task-discovery insertion semantics."""
+    return _planning_scope.append_discovery_clause(jql, clause)
 
 
 def parse_iso_date(value):
@@ -1605,7 +1476,7 @@ def _load_capacity_config_for_operation(context, capacity_config):
     if context is None:
         context = _cache_policy_context()
     if context is None:
-        return load_request_capacity_config(source='jsonfile')
+        raise ConfigStorageError('Capacity operations require a DB OAuth context or explicit configuration')
     return load_request_capacity_config(context)
 
 
@@ -1741,19 +1612,8 @@ def extract_team_ids_from_jql(jql):
 
 
 def remove_team_filter_from_jql(jql):
-    """Remove Team[Team] filter from JQL query to fetch all teams."""
-    if not jql:
-        return jql
-    # Remove "Team[Team]" in (...) pattern
-    jql = re.sub(r'\s+AND\s+"Team\[Team\]"\s+in\s*\([^)]+\)', '', jql, flags=re.IGNORECASE)
-    jql = re.sub(r'"Team\[Team\]"\s+in\s*\([^)]+\)\s+AND\s+', '', jql, flags=re.IGNORECASE)
-    # Remove "Team[Team]" = "..." pattern
-    jql = re.sub(r'\s+AND\s+"Team\[Team\]"\s*=\s*[^\s]+', '', jql, flags=re.IGNORECASE)
-    jql = re.sub(r'"Team\[Team\]"\s*=\s*[^\s]+\s+AND\s+', '', jql, flags=re.IGNORECASE)
-    # Remove standalone Team[Team] filter (if it's the only filter before ORDER BY)
-    jql = re.sub(r'"Team\[Team\]"\s+in\s*\([^)]+\)\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
-    jql = re.sub(r'"Team\[Team\]"\s*=\s*[^\s]+\s*(?=ORDER BY|$)', '', jql, flags=re.IGNORECASE)
-    return jql.strip()
+    """Remove Team[Team] using the shared task-discovery replacement semantics."""
+    return _planning_scope.remove_discovery_team_filter(jql)
 
 
 def add_sprint_label_alternative_to_jql(jql, sprint_label):
@@ -1878,7 +1738,7 @@ def load_dashboard_config_snapshot(*, source='auto'):
     context = _current_dashboard_config_context_or_error()
     snapshot = build_db_config_repository().load_dashboard_config_snapshot(
         context,
-        fallback_loader=_load_dashboard_config_json,
+        fallback_loader=None,
         legacy_site_url=JIRA_URL or '',
     )
     if has_request_context():
@@ -1893,7 +1753,7 @@ def save_dashboard_config_section(section, value, *, base_revision):
         section,
         value,
         base_revision,
-        fallback_loader=_load_dashboard_config_json,
+        fallback_loader=None,
         legacy_site_url=JIRA_URL or '',
     )
     if has_request_context():
@@ -1986,13 +1846,6 @@ def get_selected_projects_typed():
     return result
 
 
-def _site_eligible_legacy_capacity_loader(context):
-    configured_site = _shared_capacity_config_service.normalize_site_url(JIRA_URL)
-    if configured_site != _shared_capacity_config_service.normalize_site_url(context.site_url):
-        return None
-    return _load_dashboard_config_json()
-
-
 def _load_json_capacity_config(context=None):
     config = _load_dashboard_config_json() or {}
     capacity = config.get('capacity') if isinstance(config, dict) else None
@@ -2030,27 +1883,17 @@ def load_request_capacity_config(context=None, *, source='auto'):
         return _load_json_capacity_config()
     if source == 'jsonfile':
         return _load_json_capacity_config(context)
-    if source == 'db':
-        if not is_db_auth_context(context):
-            raise ConfigStorageError('Capacity DB source requires a database-backed OAuth context')
-        return _shared_capacity_config_service.load_shared_capacity_config(
-            context,
-            fallback_loader=lambda: _site_eligible_legacy_capacity_loader(context),
-        )
-    if is_db_auth_context(context):
-        return _shared_capacity_config_service.load_shared_capacity_config(
-            context,
-            fallback_loader=lambda: _site_eligible_legacy_capacity_loader(context),
-        )
-    return _load_json_capacity_config(context)
+    if getattr(context, 'auth_mode', '') != AUTH_MODE_ATLASSIAN_OAUTH or not is_db_auth_context(context):
+        raise ConfigStorageError('Capacity requires a database-backed OAuth context')
+    return _shared_capacity_config_service.load_shared_capacity_config(context, fallback_loader=None)
 
 
 def get_capacity_config(context=None, *, source='auto'):
     """Compatibility wrapper for the workspace-owned Capacity configuration."""
     if context is None and has_request_context():
         context = current_request_auth_context()
-    if context is None:
-        return load_request_capacity_config(source='jsonfile')
+    if context is None and source != 'jsonfile':
+        raise ConfigStorageError('Capacity requires a DB OAuth context or explicit JSON source')
     return load_request_capacity_config(context, source=source)
 
 
@@ -2237,17 +2080,7 @@ def get_cached_epm_home_projects(epm_scope, force_refresh=False, home_auth=None)
 
 
 def build_jira_headers():
-    if JIRA_AUTH_MODE != AUTH_MODE_BASIC:
-        raise AuthError(
-            'route_not_oauth_ready',
-            'This Jira route has not been migrated to Atlassian OAuth yet',
-        )
-    credentials = base64.b64encode(f"{JIRA_EMAIL or ''}:{JIRA_TOKEN or ''}".encode()).decode()
-    return {
-        'Authorization': f'Basic {credentials}',
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-    }
+    raise AuthError('route_not_oauth_ready', 'This Jira route has not been migrated to Atlassian OAuth yet')
 
 
 _FIELD_ID_NOT_PROVIDED = object()
@@ -2636,9 +2469,7 @@ def fetch_home_site_cloud_id(context=None, home_auth=None):
         home_auth = resolve_epm_home_read_auth(auth_context)
     if home_auth is not None and home_auth.strict:
         return epm_home.fetch_home_site_cloud_id(home_auth=home_auth)
-    if auth_context is not None:
-        return epm_home.fetch_home_site_cloud_id(context=auth_context)
-    return epm_home.fetch_home_site_cloud_id()
+    raise AuthError('epm_view_disabled', 'Enable the EPM view in your settings to load EPM Home data.')
 
 
 def _build_epm_home_graphql_client(context=None, home_auth=None):
@@ -2647,12 +2478,7 @@ def _build_epm_home_graphql_client(context=None, home_auth=None):
         home_auth = resolve_epm_home_read_auth(auth_context)
     if home_auth is not None and home_auth.strict:
         return home_auth.client()
-    credential = epm_home._read_metadata_credential(auth_context)
-    return (
-        epm_home.build_home_graphql_client(credential)
-        if credential is not None
-        else epm_home.build_home_graphql_client()
-    )
+    raise AuthError('epm_view_disabled', 'Enable the EPM view in your settings to load EPM Home data.')
 
 
 def fetch_epm_goal_catalog(context=None, home_auth=None):
@@ -2891,7 +2717,7 @@ def load_request_effective_groups(context):
     """Effective shared groups for this auth boundary, with the same loaders as Story readiness."""
     return _shared_group_config_service.load_effective_groups(
         context if is_db_auth_context(context) else None,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        fallback_loader=None,
         validate_groups_config_fn=validate_groups_config,
         dashboard_loader=load_dashboard_config,
         groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
@@ -3637,27 +3463,9 @@ def fetch_tasks(include_team_name=False):
 
         # Build JQL query with sprint filter if provided
         jql_started = time.perf_counter()
-        base_jql = roles.base_jql(JQL_QUERY) if roles is not None else None
-        if use_template:
-            jql = apply_team_ids_to_template(team_ids)
-            if not jql:
-                jql = base_jql if roles is not None else build_base_jql()
-        elif team_ids:
-            # If team_ids provided (from group), filter by those teams
-            # Remove existing team filter from base JQL and add our own
-            jql = remove_team_filter_from_jql(base_jql if roles is not None else build_base_jql())
-            if roles is not None:
-                jql = add_clause_to_jql(jql, roles.team_clause(team_ids))
-            elif len(team_ids) == 1:
-                jql = add_clause_to_jql(jql, f'"Team[Team]" = "{team_ids[0]}"')
-            else:
-                quoted_teams = ', '.join(f'"{tid}"' for tid in team_ids)
-                jql = add_clause_to_jql(jql, f'"Team[Team]" in ({quoted_teams})')
-        else:
-            jql = base_jql if roles is not None else build_base_jql()
-
-        if sprint:
-            jql = add_clause_to_jql(jql, roles.sprint_clause(sprint) if roles is not None else f"Sprint = {sprint}")
+        base_jql = roles.base_jql(JQL_QUERY) if roles is not None else ('' if use_template else build_base_jql())
+        jql = _planning_scope.build_task_discovery_jql(
+            base_jql, team_ids, sprint, roles=roles, team_jql_template=JQL_QUERY_TEMPLATE)
 
         if team and team.lower() != 'all' and not use_template and not team_ids:
             jql = add_clause_to_jql(jql, roles.team_clause([team]) if roles is not None else f'"Team[Team]" = {team}')
@@ -3678,19 +3486,9 @@ def fetch_tasks(include_team_name=False):
                 project_name = JIRA_PRODUCT_PROJECT if project_filter == 'product' else JIRA_TECH_PROJECT
                 jql = add_clause_to_jql(jql, f'project = "{project_name}"')
 
-        if roles is not None:
-            issue_types = []
-            planning_clause = '' if lightweight_ready_to_close else roles.planning_clause()
-            if planning_clause:
-                jql = add_clause_to_jql(jql, planning_clause)
-        else:
-            issue_types = [] if lightweight_ready_to_close else get_configured_issue_types()
-        if issue_types:
-            if len(issue_types) == 1:
-                jql = add_clause_to_jql(jql, f'type = "{issue_types[0]}"')
-            else:
-                quoted_types = ', '.join(f'"{t}"' for t in issue_types)
-                jql = add_clause_to_jql(jql, f'type in ({quoted_types})')
+        if not lightweight_ready_to_close:
+            jql = _planning_scope.append_task_planning_clause(
+                jql, roles=roles, issue_types=None if roles is not None else get_configured_issue_types())
 
         tasks_jql = '' if (lightweight_ready_to_close and epic_keys_filter) else jql
         if lightweight_ready_to_close:
@@ -4968,20 +4766,10 @@ def post_scenario_overrides():
     scope_key = (body.get('scope_key') or '').strip()
     if database_storage_enabled():
         if JIRA_AUTH_MODE == AUTH_MODE_ATLASSIAN_OAUTH:
-            try:
-                data = csrf_session_data_for_request()
-            except AuthError as error:
-                return auth_error_response(error, 401)
-            except DatabaseConfigurationError:
-                return jsonify({
-                    'error': 'config_storage_unavailable',
-                    'message': 'Scenario drafts require database-backed configuration storage.',
-                }), 503
-            if not validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
-                return jsonify({
-                    'error': 'csrf_required',
-                    'message': 'A valid CSRF token is required for this request.',
-                }), 403
+            from backend.security.guards import require_token_bound_csrf_once
+            csrf_response = require_token_bound_csrf_once(sys.modules[__name__])
+            if csrf_response is not None:
+                return csrf_response
         if not scope_key:
             return jsonify({'error': 'scope_key is required'}), 400
         try:
@@ -7460,19 +7248,26 @@ def export_excel():
         }), 500
 
 
+def create_serving_app():
+    """Validate the application configured at import before exposing it to WSGI."""
+    validate_startup_auth_config()
+    validate_network_bind(default_bind_host())
+    return app
+
+
 def main():
     global JIRA_URL, JIRA_EMAIL, JIRA_TOKEN, JQL_QUERY, SERVER_PORT
 
-    args = parse_args()
+    try:
+        args = parse_args()
+    except AuthError as error:
+        log_error(str(error))
+        return 1
 
     # Apply CLI overrides while keeping env defaults as fallbacks
     if args.jira_url:
         JIRA_URL = args.jira_url
         os.environ['JIRA_URL'] = args.jira_url
-    if args.jira_email:
-        JIRA_EMAIL = args.jira_email
-    if args.jira_token:
-        JIRA_TOKEN = args.jira_token
     if args.jira_query:
         JQL_QUERY = args.jira_query
     if args.server_port:
@@ -7483,7 +7278,7 @@ def main():
         validate_startup_auth_config()
     except AuthError as error:
         log_error(str(error))
-        log_info('Please copy .env.example to .env and configure either basic auth or Atlassian OAuth')
+        log_info('Please copy .env.example to .env and configure DB-backed Atlassian OAuth')
         return 1
 
     try:
@@ -7502,7 +7297,7 @@ def main():
             f'Jira={JIRA_URL}',
             f'Auth={JIRA_AUTH_MODE}',
         ])
-        effective_board_id = '' if database_enabled and not local_file_state_enabled() else get_effective_board_id(source='jsonfile')
+        effective_board_id = '' if database_enabled else get_effective_board_id(source='jsonfile')
         if effective_board_id:
             summary_parts.append(f'Board={effective_board_id}')
         log_info(f'Startup: {" | ".join(summary_parts)}')

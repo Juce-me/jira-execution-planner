@@ -23,19 +23,6 @@ const headers = (csrfToken = '') => ({
     ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {}),
 });
 
-const csrfTokenRequests = new Map();
-
-function fetchMutationCsrfToken(backendUrl) {
-    const key = String(backendUrl || '');
-    if (csrfTokenRequests.has(key)) return csrfTokenRequests.get(key);
-    const request = Promise.resolve(fetchCsrfToken(backendUrl))
-        .finally(() => {
-            if (csrfTokenRequests.get(key) === request) csrfTokenRequests.delete(key);
-        });
-    csrfTokenRequests.set(key, request);
-    return request;
-}
-
 function normalizedConflictValue(value) {
     if (typeof value === 'string') return value;
     if (value?.id && typeof value.id === 'string') return { id: value.id, name: typeof value.name === 'string' ? value.name : '' };
@@ -93,7 +80,7 @@ export function fetchEditableIssueField(backendUrl, issueKey, field, { signal } 
 }
 
 export async function searchIssueFieldUsers(backendUrl, issueKey, payload, { signal } = {}) {
-    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return trackedFetch('jira_issue_field_edits', issueFieldUrl(backendUrl, issueKey, 'user-options'), {
         method: 'POST', cache: 'no-cache', signal, headers: headers(csrfToken || ''),
         body: JSON.stringify(stampWriteBody(payload)),
@@ -101,7 +88,7 @@ export async function searchIssueFieldUsers(backendUrl, issueKey, payload, { sig
 }
 
 export async function updateIssueField(backendUrl, issueKey, payload, { signal } = {}) {
-    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return trackedFetch('jira_issue_field_edits', issueFieldUrl(backendUrl, issueKey, 'field'), {
         method: 'POST', cache: 'no-cache', signal, headers: headers(csrfToken || ''),
         body: JSON.stringify(stampWriteBody(payload)),
@@ -119,7 +106,7 @@ export function fetchIssueTransitionOptions(backendUrl, issueKeys, { signal } = 
 }
 
 export async function transitionIssues(backendUrl, payload, { signal } = {}) {
-    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return trackedFetch('jira_issue_transitions', `${backendUrl}/api/issues/transitions`, {
         method: 'POST',
         cache: 'no-cache',
@@ -149,7 +136,7 @@ export function fetchIssuePriorityOptions(backendUrl, { issueKey, signal } = {})
 }
 
 export async function updateIssuePriorities(backendUrl, payload, { signal } = {}) {
-    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return trackedFetch('jira_issue_priorities', `${backendUrl}/api/issues/priorities`, {
         method: 'POST',
         cache: 'no-cache',
@@ -170,7 +157,7 @@ export function fetchIssueProjectTrackOptions(backendUrl, { issueKey, signal } =
 }
 
 export async function updateIssueProjectTrack(backendUrl, payload, { signal } = {}) {
-    const { csrfToken } = await fetchMutationCsrfToken(backendUrl);
+    const { csrfToken } = await fetchCsrfToken(backendUrl);
     return trackedFetch('jira_issue_project_track', `${backendUrl}/api/issues/project-track`, {
         method: 'POST',
         cache: 'no-cache',

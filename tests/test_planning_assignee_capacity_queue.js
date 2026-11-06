@@ -209,15 +209,14 @@ test('read-only and read-failure states', async () => {
     assert.equal(broken.controller.getState().load, 'error');
 });
 
-test('the CSRF cache object is shared by every PATCH of the queue', async () => {
+test('the queue never hands a CSRF token cache to its PATCHes', async () => {
     const seen = [];
-    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, _p, options) => { seen.push(options.csrf); options.csrf.token = 'synthetic'; return { revision: 2, rows: [] }; } });
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, _p, options) => { seen.push(options); return { revision: 2, rows: [] }; } });
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
     await settle();
     controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown); await fire();
     controller.commit({ key: 'u1', field: 'capacity', value: '7' }, buildShown); await fire();
-    assert.equal(seen.length, 2);
-    assert.equal(seen[0], seen[1]);
+    assert.deepEqual(seen, [undefined, undefined], 'each PATCH fetches its own single-use token inside the API wrapper');
 });
 
 test('a change the server refuses (400) waits for Retry or Discard and never rides along with later commits', async () => {
@@ -339,14 +338,11 @@ test('returning to a scope whose save is still running reuses its queue: one req
     assert.equal(controller.getState().document.rows[0].capacity, '6');
 });
 
-test('a 403 csrf_required clears the cached token and resends once with a fresh one', async () => {
-    const tokens = [];
+test('a 403 csrf_required (rejected before dispatch) resends the chunk once', async () => {
     let calls = 0;
-    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, _p, options) => {
+    const { controller, buildShown, fire } = await fixture({ save: async () => {
         calls += 1;
-        tokens.push(options.csrf.token);
-        if (calls === 1) { options.csrf.token = 'stale'; const error = new Error('csrf'); error.status = 403; error.code = 'csrf_required'; throw error; }
-        options.csrf.token = 'fresh';
+        if (calls === 1) { const error = new Error('csrf'); error.status = 403; error.code = 'csrf_required'; throw error; }
         return { revision: 2, rows: [] };
     } });
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
@@ -354,11 +350,7 @@ test('a 403 csrf_required clears the cached token and resends once with a fresh 
     controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
     await fire();
     assert.equal(calls, 2);
-    assert.deepEqual(tokens, [null, null], 'the second attempt starts without the rejected token');
     assert.equal(controller.getState().save, 'saved');
-    controller.commit({ key: 'u1', field: 'capacity', value: '7' }, buildShown);
-    await fire();
-    assert.equal(tokens.at(-1), 'fresh', 'the refetched token is reused by the queue');
 });
 
 test('D6: the document is read once per one-Team scope whether or not the strip is expanded', async () => {

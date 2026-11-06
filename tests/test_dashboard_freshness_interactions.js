@@ -100,7 +100,7 @@ test('current catalog authority fences queued ENG acquisition without changing i
 });
 
 function normalEngLoadEffect({ cached = true, overrides = {} } = {}) {
-    const guard = source.indexOf("if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;");
+    const guard = source.indexOf("if (!recoveringPlan && (selectedView !== 'eng' || isStatsSourceOnlyStatsView || boardScopeRequested)) return;");
     const start = source.lastIndexOf('useEffect(() => {', guard);
     const end = source.indexOf('\n\n            useEffect(() => {', guard);
     assert.ok(guard >= 0 && start >= 0 && end > guard, 'exercise the actual normal ENG load effect and dependencies');
@@ -157,9 +157,32 @@ test('a pending shareable link holds the normal ENG load until it is released, u
     released.capture().callback();
     assert.equal(released.calls.length, 1, 'the same scope loads once the hold is released');
 
-    const capsule = normalEngLoadEffect({ cached: false, overrides: { shareViewHold: true, pendingPlanningAuthResumeRef: { current: { scopeKey: 'planning::sample-sprint::sample-group' } } } });
+    const capsule = normalEngLoadEffect({ cached: false, overrides: { shareViewHold: true, pendingPlanningAuthResumeRef: { current: { scope: { groupId: 'sample-group', sprintId: 'sample-sprint' } } } } });
     capsule.capture().callback();
     assert.equal(capsule.calls.length, 1, 'only the recovery load can clear the capsule the link waits for');
+});
+
+for (const [name, surface] of [
+    ['another top-level view', { selectedView: 'epm' }],
+    ['a source-only Statistics tab', { isStatsSourceOnlyStatsView: true }],
+    ['the strict Board', { boardScopeRequested: true }],
+]) test(`normal ENG acquisition stays suppressed in ${name}, except for a pending Planning recovery`, () => {
+    const ordinary = normalEngLoadEffect({ cached: false, overrides: surface });
+    assert.equal(ordinary.capture().callback(), undefined);
+    assert.deepEqual(ordinary.calls, []);
+    assert.deepEqual(ordinary.writes, []);
+    assert.equal(ordinary.inputs.groupLoadVersionRef.current, 7);
+
+    const recovery = normalEngLoadEffect({ cached: true, overrides: {
+        ...surface,
+        pendingPlanningAuthResumeRef: { current: { scope: { groupId: 'sample-group', sprintId: 'sample-sprint' } } },
+    } });
+    const cleanup = recovery.capture().callback();
+    assert.equal(recovery.calls.length, 1, 'a matching pending recovery must refresh its complete Department source even on a cache hit');
+    assert.equal(recovery.inputs.planningAuthResumeLoadRef.current.scopeKey, recovery.scopeKey);
+    assert.equal(recovery.calls[0].shouldApplyResult(), true);
+    cleanup();
+    assert.equal(recovery.calls[0].shouldApplyResult(), false);
 });
 
 test('held catalog display cannot authorize a normal ENG acquisition before validation', () => {
@@ -192,7 +215,7 @@ for (const [name, cached, changes] of [
     ['changed Team scope', true, { activeGroupTeamIds: ['sample-other-team'] }],
     ['partial lane completion', true, { lastLoadedSprintRef: { current: null } }],
     ['forced configuration refresh', true, { configRefreshNonce: 1, pendingConfigRefreshRef: { current: 1 } }],
-    ['auth recovery', true, { authResumeStagedRevision: 1, pendingPlanningAuthResumeRef: { current: { scopeKey: 'planning::sample-sprint::sample-group' } } }],
+    ['auth recovery', true, { authResumeStagedRevision: 1, pendingPlanningAuthResumeRef: { current: { scope: { groupId: 'sample-group', sprintId: 'sample-sprint' } } } }],
 ]) test(`normal ENG ${name} starts one validated owner load and fences its retired completion`, async () => {
     const h = normalEngLoadEffect({ cached, overrides: changes });
     const effect = h.capture();

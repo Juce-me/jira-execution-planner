@@ -1,20 +1,20 @@
 const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
+const { DB_OAUTH_SETUP_TIMEOUT_MS, startDbOAuthServer } = require('./db_oauth_fixture');
 const path = require('node:path');
 const esbuild = require('esbuild');
 const { python, pythonMissingReason } = require('./python_interpreter');
 
 const root = path.resolve(__dirname, '../..');
-let port;
 let baseUrl;
 let server;
 let clientBundle;
 
 test.skip(Boolean(pythonMissingReason), pythonMissingReason);
 
-function prototypeSource(serverPort) { return String.raw`
+function prototypeSource() { return String.raw`
 import time
 import uuid
+import json
 from flask import Flask, Response, request
 from gunicorn.app.base import BaseApplication
 from backend.services.eng_board_stream import (
@@ -98,7 +98,7 @@ def stream():
 class PrototypeApplication(BaseApplication):
     def load_config(self):
         settings = {
-            'bind': '127.0.0.1:${serverPort}', 'workers': 1, 'threads': 8,
+            'bind': 'fd://' + str(FIXTURE_LISTENER.fileno()), 'workers': 1, 'threads': 8,
             'timeout': 120, 'accesslog': None, 'errorlog': '-', 'loglevel': 'warning',
         }
         for key, value in settings.items():
@@ -107,14 +107,12 @@ class PrototypeApplication(BaseApplication):
     def load(self):
         return app
 
+print(json.dumps({'ready': True, 'baseUrl': 'http://localhost:' + str(FIXTURE_PORT)}), flush=True)
 PrototypeApplication().run()
 `; }
 
 test.beforeAll(async () => {
-    // Avoid a separate test-process bind probe, which restricted sandboxes may
-    // reject even though the approved Flask child can bind its own listener.
-    port = 20_000 + (process.pid % 20_000);
-    baseUrl = `http://127.0.0.1:${port}`;
+    test.setTimeout(DB_OAUTH_SETUP_TIMEOUT_MS + 30000);
     clientBundle = esbuild.buildSync({
         entryPoints: [path.join(root, 'frontend/src/api/engBoardApi.js')],
         bundle: true,
@@ -123,15 +121,9 @@ test.beforeAll(async () => {
         globalName: 'EngBoardStreamClient',
         platform: 'browser',
     }).outputFiles[0].text;
-    server = spawn(python, ['-u', '-c', prototypeSource(port)], {
-        cwd: root,
-        env: { ...process.env, DATABASE_URL: '', TEST_DATABASE_URL: '' },
-        stdio: 'inherit',
-    });
+    server = await startDbOAuthServer({ python, mode: 'stream' });
+    baseUrl = server.baseUrl;
     for (let attempt = 0; attempt < 100; attempt += 1) {
-        if (server.exitCode !== null) {
-            throw new Error('isolated Flask stream prototype exited early');
-        }
         try {
             if ((await fetch(`${baseUrl}/health`)).ok) return;
         } catch (error) {}
@@ -140,15 +132,7 @@ test.beforeAll(async () => {
     throw new Error('isolated Flask stream prototype did not become ready');
 });
 
-test.afterAll(async () => {
-    if (server && server.exitCode === null) {
-        server.kill('SIGTERM');
-        await Promise.race([
-            new Promise(resolve => server.once('exit', resolve)),
-            new Promise(resolve => setTimeout(resolve, 2000)),
-        ]);
-    }
-});
+test.afterAll(async () => { await server?.stop(); });
 
 test('real Flask stream renders a validated frame while the response remains open', async ({ page }) => {
     await page.goto(baseUrl);

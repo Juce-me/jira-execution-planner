@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from copy import deepcopy
@@ -16,12 +14,12 @@ from backend.db import models
 from backend.services import work_structure as ws
 from backend.services import workspace_dashboard_config as storage
 from scripts import check_work_configuration_rollback as rollback
+from tests.postgres_test_db import drop_database, fresh_database_url
 
 
 class StorageHarness(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'work.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         engine = create_engine(self.database_url, future=True)
         models.Base.metadata.create_all(engine)
         self.factory = sessionmaker(bind=engine, future=True, expire_on_commit=False)
@@ -42,7 +40,6 @@ class StorageHarness(unittest.TestCase):
 
     def tearDown(self):
         self.engine.dispose()
-        self.tmpdir.cleanup()
 
     def seed(self, payload, revision=4, **columns):
         with self.factory() as session:
@@ -680,8 +677,10 @@ class RollbackCheckerTests(StorageHarness):
         self.assertEqual(rollback.main(['--workspace-id', 'workspace-2'], database_url=self.database_url), 0)
 
     def test_unavailable_database_reports_two_without_details(self):
+        missing = fresh_database_url()
+        drop_database(missing)
         with mock.patch('sys.stderr'):
-            self.assertEqual(rollback.main(['--workspace-id', 'w'], database_url='sqlite+pysqlite:////nonexistent-dir/x.db'), 2)
+            self.assertEqual(rollback.main(['--workspace-id', 'w'], database_url=missing), 2)
 
 
 class PrivateViewOwnershipTests(unittest.TestCase):

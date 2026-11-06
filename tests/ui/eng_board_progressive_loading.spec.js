@@ -1,5 +1,4 @@
-const { spawn } = require('node:child_process');
-const readline = require('node:readline');
+const { startDbOAuthServer } = require('./db_oauth_fixture');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
@@ -15,7 +14,7 @@ const campaignServer = String.raw`
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util, json, os, re, sys, threading, time
 from types import SimpleNamespace
-from unittest.mock import patch
+from backend.db import engine as db_engine, models
 from urllib.parse import parse_qs, urlparse
 baseline=os.environ.get('BOARD_BASELINE_ROOT')
 if baseline:
@@ -31,6 +30,15 @@ from backend.services.eng_board_stream import EngBoardRequestTransport
 from tests.test_eng_board_routes import FakeResponse, board_query, board_snapshot, db_context, epic, child
 if os.environ.get('BOARD_FIXTURE_STARTUP_FAILURE'):
     print('{malformed startup',flush=True); raise SystemExit(2)
+context = db_context()
+with db_engine.session_scope() as db:
+    db.add(models.WorkspaceDashboardConfig(workspace_id=context.workspace_id,
+        payload={'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]}, 'board': {'boardId': '701'}}))
+    db.add(models.WorkspaceGroupConfig(workspace_id=context.workspace_id,
+        payload={'version': 2, 'groups': [{'id': 'department-a', 'name': 'Synthetic Department', 'teamIds': ['team-a']}],
+                 'defaultGroupId': 'department-a'}))
+    db.add(models.UserGroupPreference(workspace_id=context.workspace_id, user_id=context.user_id,
+        visible_group_ids=['department-a'], active_group_id='department-a', customized=True, onboarding_done=True))
 class State:
     def __init__(self): self.lock=threading.Lock(); self.events=[]; self.gates={}; self.scenario='component_page_2'; self.sample='unset'; self.component_calls=0; self.parent_calls=0; self.update_id=0; self.eligible_counts={}; self.pending_update_ids=[]
     def record(self,event,**fields):
@@ -128,13 +136,24 @@ class H(BaseHTTPRequestHandler):
         S.record('request_entry',stage='component_index',captureMs=None)
         components=tuple(f'C{i}' for i in range(41)) if S.scenario=='component_batch_2' else (() if S.scenario=='team_parent_lookup_2' else ('Component A',))
         teams=('team-a',) if S.scenario=='team_parent_lookup_2' else ()
-        snap=board_snapshot(query=board_query(scope=scope,sprint_id=None,focused_column_id=focused),focused_column_id=focused,components=components,teams=teams)
+        query=board_query(scope=scope,sprint_id=None,focused_column_id=focused)
+        try:
+            authority=eng_board_routes._load_authority(context,query)[0]
+            secret=b'synthetic-campaign-secret'
+            snap=board_snapshot(context=context,query=query,focused_column_id=focused,components=components,teams=teams,
+                authority_payload=authority,secret_key=secret,scope_version=eng_board_routes.eng_board.build_scope_version(secret,authority,token_version=context.token_version))
+            assert getattr(snap,'adapter','db_oauth')=='db_oauth'
+        except Exception as error:
+            import traceback
+            S.record('authority_error',errorType=type(error).__name__,frames=[
+                {'file':os.path.relpath(frame.filename,FIXTURE_ROOT) if frame.filename.startswith(str(FIXTURE_ROOT)) else os.path.basename(frame.filename),
+                 'line':frame.lineno,'symbol':frame.name} for frame in traceback.extract_tb(error.__traceback__)])
+            return self.send_json(503,{'error':'synthetic_authority_failure'})
         self.send_response(200); self.send_header('Content-Type','application/x-ndjson'); self.send_header('Cache-Control','no-store'); self.send_header('X-Accel-Buffering','no'); self.send_header('Transfer-Encoding','chunked'); self.end_headers()
         try:
-            with patch.object(eng_board_routes,'_assert_current',return_value=db_context()):
-                for line in eng_board_routes._frame_stream(SimpleNamespace(current_jira_search=search),snap,EngBoardRequestTransport()):
-                    frame=json.loads(line); raw=line if isinstance(line,bytes) else line.encode(); updates=S.candidate_updates() if frame.get('membership')=='candidate' else []; S.record('frame_yield',frameType=frame['type'],sequence=frame['sequence'],membership=frame.get('membership'),eligibleUpdateIds=updates,bytes=len(raw),outcome=frame.get('outcome'),epicCount=frame.get('epicCount'),childCount=frame.get('childCount'),diagnostics=frame.get('diagnostics'))
-                    self.wfile.write(f'{len(raw):X}\r\n'.encode()+raw+b'\r\n'); self.wfile.flush()
+            for line in eng_board_routes._frame_stream(SimpleNamespace(current_jira_search=search),snap,EngBoardRequestTransport()):
+                frame=json.loads(line); raw=line if isinstance(line,bytes) else line.encode(); updates=S.candidate_updates() if frame.get('membership')=='candidate' else []; S.record('frame_yield',frameType=frame['type'],sequence=frame['sequence'],membership=frame.get('membership'),eligibleUpdateIds=updates,bytes=len(raw),outcome=frame.get('outcome'),epicCount=frame.get('epicCount'),childCount=frame.get('childCount'),diagnostics=frame.get('diagnostics'))
+                self.wfile.write(f'{len(raw):X}\r\n'.encode()+raw+b'\r\n'); self.wfile.flush()
             self.wfile.write(b'0\r\n\r\n'); self.wfile.flush()
         except (BrokenPipeError,ConnectionResetError): S.record('client_cancelled')
         except Exception as error:
@@ -146,66 +165,23 @@ class H(BaseHTTPRequestHandler):
         if p.path=='/__test__/reset': S.reset(body.get('scenario','component_page_2'),body.get('sampleId','unset')); return self.send_json(200,{'reset':True})
         if p.path=='/__test__/release-all': S.release_all(); return self.send_json(200,{'released':True})
         return self.send_json(404,{'error':'not_found'})
-s=ThreadingHTTPServer(('127.0.0.1',0),H); print(json.dumps({'port':s.server_address[1]}),flush=True)
+s=ThreadingHTTPServer(('127.0.0.1',0),H)
+register_fixture_endpoint(FIXTURE_ROOT,'127.0.0.1',s.server_address[1])
+register_fixture_endpoint(FIXTURE_ROOT,'localhost',s.server_address[1])
+print(json.dumps({'ready':True,'baseUrl':'http://localhost:'+str(s.server_address[1])}),flush=True)
 try: s.serve_forever(poll_interval=.05)
 finally: S.release_all(); s.server_close()
 `;
 
-async function terminateSpawnedChild(child, lines) {
-    lines?.close();
-    try {
-        if (child.exitCode !== null || child.signalCode !== null) return;
-        child.kill('SIGTERM');
-        await Promise.race([
-            new Promise(resolve => child.once('exit', resolve)),
-            new Promise(resolve => setTimeout(resolve, 3000)),
-        ]);
-        if (child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGKILL');
-            await Promise.race([
-                new Promise(resolve => child.once('exit', resolve)),
-                new Promise(resolve => setTimeout(resolve, 3000)),
-            ]);
-        }
-        if (child.exitCode === null && child.signalCode === null) throw new Error('campaign child did not terminate');
-    } finally {
-        activeCampaignChildren.delete(child);
-    }
+async function terminateSpawnedChild(child) {
+    try { await child.stop(); }
+    finally { activeCampaignChildren.delete(child); }
 }
 
 async function startDiagnosticServer(sourceRoot = null, { forceStartupFailure = false } = {}) {
-    const env = { ...process.env, CONFIG_STORAGE_BACKEND: 'jsonfile' };
-    if (sourceRoot) env.BOARD_BASELINE_ROOT = sourceRoot;
-    if (forceStartupFailure) env.BOARD_FIXTURE_STARTUP_FAILURE = '1';
-    const child = spawn(python, ['-c', campaignServer], { cwd: repoRoot, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = await startDbOAuthServer({ python, mode: 'campaign', historical: Boolean(sourceRoot), forceStartupFailure });
     activeCampaignChildren.add(child);
-    let lines = null;
-    const messages = [];
-    let stderr = '';
-    try {
-        lines = readline.createInterface({ input: child.stdout });
-        child.stderr.on('data', chunk => { stderr = `${stderr}${chunk}`.slice(-2000); });
-        const startup = await new Promise((resolve, reject) => {
-            const timeout = setTimeout(() => fail(new Error('campaign server startup timed out')), 10000);
-            const cleanup = () => {
-                clearTimeout(timeout); lines.off('line', onLine); child.off('error', onError); child.off('exit', onExit);
-            };
-            const fail = error => { cleanup(); reject(error); };
-            const onError = error => fail(error);
-            const onExit = (code, signal) => fail(new Error(`campaign server exited during startup (${code ?? signal}): ${stderr}`));
-            const onLine = line => {
-                let message;
-                try { message = JSON.parse(line); } catch (error) { fail(new Error(`malformed campaign startup: ${error.message}`)); return; }
-                messages.push(message);
-                if (Number.isInteger(message.port) && message.port > 0) { cleanup(); resolve(message); }
-            };
-            lines.on('line', onLine); child.once('error', onError); child.once('exit', onExit);
-        });
-        return { child, origin: `http://127.0.0.1:${startup.port}`, messages, lines };
-    } catch (error) {
-        await terminateSpawnedChild(child, lines);
-        throw error;
-    }
+    return { child, origin: child.baseUrl };
 }
 
 async function control(server, pathname, options) {
@@ -504,6 +480,11 @@ async function runHeldScenario(page, scenario, gate, {
             record, timing_evidence: timingEvidence(evidence, events), events,
         }, null, 2)}\n`);
         return record;
+    } catch (error) {
+        fs.mkdirSync(outputDir, { recursive: true });
+        fs.writeFileSync(path.join(outputDir, `${scenario}-failure-events.json`), JSON.stringify(
+            await control(server, '/__test__/events'), null, 2));
+        throw error;
     } finally {
         if (evidence?.cdp) try { await evidence.cdp.detach(); } catch (_) {}
         if (!released) try { await control(server, `/__test__/release?gate=${gate}`); } catch (_) {}
@@ -556,7 +537,7 @@ test('diagnoses strict Component owner activation and Board request routing', as
         { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
     ])).toThrow(/assigned to multiple candidates/);
     await expect(startDiagnosticServer(null, { forceStartupFailure: true })).rejects.toThrow(
-        /malformed campaign startup/);
+        /Synthetic DB\/OAuth fixture stopped/);
     expect(activeCampaignChildren.size).toBe(0);
     const server = await startDiagnosticServer();
     const browserRequests = [];

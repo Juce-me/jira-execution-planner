@@ -177,6 +177,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("capacity-read", "/api/capacity", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("planned-capacity-read", "/api/planned-capacity", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("test-connection", "/api/test", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("eng-review-operation-read", "/api/eng/sprints/<sprint_id>/review/operations/<operation_id>", PUBLIC_METHODS, "authenticated_read", "dynamic"),
     EndpointPolicy("eng-review-read", "/api/eng/sprints/<sprint_id>/review", PUBLIC_METHODS, "authenticated_read", "dynamic"),
     EndpointPolicy("eng-review-values-read", "/api/eng/sprints/<sprint_id>/review/values/read", frozenset({"POST"}), "user_write", "dynamic"),
     EndpointPolicy("eng-review-write", "/api/eng/sprints/<sprint_id>/review", frozenset({"PATCH"}), "user_write", "dynamic"),

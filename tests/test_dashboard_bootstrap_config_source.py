@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -7,6 +6,7 @@ from unittest.mock import patch
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.postgres_test_db import drop_database, fresh_database_url
 
 
 FULL_SCOPE = (
@@ -19,12 +19,9 @@ FULL_SCOPE = (
 def _assert_bootstrap_returns_resolved_view_with_source_metadata():
     jira_server.app.config['TESTING'] = True
     jira_server.app.secret_key = 'test-secret'
-    jira_server.OAUTH_TOKEN_STORE.clear()
-    jira_server.OAUTH_REFRESH_LOCKS.clear()
     client = jira_server.app.test_client()
-    tmpdir = tempfile.TemporaryDirectory()
+    database_url = fresh_database_url()
     try:
-        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'bootstrap-config.db')}"
         db_engine.get_engine(database_url)
         models.Base.metadata.create_all(db_engine.get_engine(database_url))
         factory = db_engine.session_factory(database_url)
@@ -151,9 +148,7 @@ def _assert_bootstrap_returns_resolved_view_with_source_metadata():
         }
     finally:
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        tmpdir.cleanup()
+        drop_database(database_url)
 
 
 class DashboardBootstrapConfigSourceTests(unittest.TestCase):
@@ -161,16 +156,11 @@ class DashboardBootstrapConfigSourceTests(unittest.TestCase):
         _assert_bootstrap_returns_resolved_view_with_source_metadata()
 
     def test_bootstrap_returns_fixed_storage_error_for_private_epm_read_failure(self):
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.config['TESTING'] = True
         client = jira_server.app.test_client()
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=type('Context', (), {
-            'site_url': 'https://example.atlassian.net', 'auth_mode': 'basic', 'is_admin': True,
-        })()), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=type('Snapshot', (), {
-                 'payload': {}, 'config_revision': None,
-             })()), \
-             patch.object(jira_server, 'get_board_config', return_value={}), \
+        with patch.object(jira_server, 'get_board_config', return_value={}), \
              patch.object(jira_server, 'get_epm_config', side_effect=jira_server.ConfigStorageError('sensitive detail')):
             response = client.get('/api/config')
 

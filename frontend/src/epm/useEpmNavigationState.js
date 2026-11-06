@@ -7,12 +7,12 @@ import { isEpmNavigationVisible, normalizeEpmAccess, normalizeEpmCapabilities } 
 const DENIED_ACCESS = { state: 'denied', homeReadAvailable: false, loginUrl: '', message: '' };
 const UNAVAILABLE_ACCESS = { state: 'unavailable', homeReadAvailable: false, loginUrl: '', message: '' };
 
-const sameCapabilities = (a, b) => Boolean(a) && a.basicCompatibility === b.basicCompatibility
-    && a.viewEnabled === b.viewEnabled && a.homeReadAvailable === b.homeReadAvailable && a.loginUrl === b.loginUrl;
+const sameCapabilities = (a, b) => Boolean(a) && a.viewEnabled === b.viewEnabled
+    && a.homeReadAvailable === b.homeReadAvailable && a.loginUrl === b.loginUrl;
 
 // Owns the EPM capability fields of the config response, the one bounded EPM access read and the single
-// navigation rule. Access is read only for an enabled user whose Home scopes are verified (never for Basic,
-// disabled or missing-scope users); a refresh keeps the held decision until the new one arrives.
+// navigation rule. Access is read only for an enabled OAuth user whose Home scopes are verified;
+// a refresh keeps the held decision until the new one arrives.
 export function useEpmNavigationState({ backendUrl }) {
     const [capabilities, setCapabilities] = React.useState(null);
     const [access, setAccess] = React.useState(null);
@@ -30,8 +30,7 @@ export function useEpmNavigationState({ backendUrl }) {
         setAccess(DENIED_ACCESS);
     }, []);
 
-    const reads = Boolean(capabilities) && !capabilities.basicCompatibility
-        && capabilities.viewEnabled && capabilities.homeReadAvailable;
+    const reads = Boolean(capabilities) && capabilities.viewEnabled && capabilities.homeReadAvailable;
     React.useEffect(() => {
         requestIdRef.current += 1;
         if (!reads) {

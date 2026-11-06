@@ -1,4 +1,5 @@
 import { normalizeScenarioDraftOverrides } from '../scenario/scenarioDraftOverrides.js';
+import { normalizeSharedPlanningRecovery } from './authResumeState.js';
 
 export const CONNECTION_RECOVERY_STORAGE_KEY = 'jira_dashboard_connection_recovery_v1';
 export const CONNECTION_RECOVERY_ATTEMPT_KEY = 'jira_dashboard_connection_recovery_attempt_v1';
@@ -103,13 +104,20 @@ function normalizeScenario(value) {
 }
 
 function normalizeSnapshot(value, stored = false) {
-    if (!hasExactKeys(value, stored ? STORED_KEYS : SNAPSHOT_KEYS)) return null;
+    const keys = stored ? STORED_KEYS : SNAPSHOT_KEYS;
+    const hasPlanning = Object.hasOwn(value || {}, 'planning');
+    if (!hasExactKeys(value, hasPlanning ? [...keys, 'planning'] : keys)) return null;
     const principal = normalizePrincipal(value.principal);
     const outage = normalizeOutage(value.outage);
     const view = normalizeView(value.view);
     const scenario = normalizeScenario(value.scenario);
     if (!principal || !outage || !view || scenario === undefined || typeof value.droppedSettings !== 'boolean') return null;
     const normalized = { principal, outage, view, droppedSettings: value.droppedSettings, scenario };
+    if (hasPlanning) {
+        const planning = normalizeSharedPlanningRecovery(value.planning, principal);
+        if (planning === undefined || planning && (planning.scope.groupId !== view.activeGroupId || planning.scope.sprintId !== view.selectedSprint)) return null;
+        normalized.planning = planning;
+    }
     if (!stored) return normalized;
     if (value.version !== CONNECTION_RECOVERY_VERSION || !Number.isFinite(value.capturedAt) || value.capturedAt < 0) return null;
     return { version: value.version, capturedAt: value.capturedAt, ...normalized };

@@ -1,15 +1,15 @@
-import os
 import unittest
 from contextlib import ExitStack
 from unittest.mock import patch
 
-from backend.auth.context import RequestAuthContext
+from backend.auth.db_context import resolve_db_request_auth_context, invalidate_auth_status_cache
+from backend.db import engine as db_engine, models
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError
 from backend.routes import capacity_routes
 from backend.services.capacity import CapacityInputError, CapacityServiceError
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session, set_up_db_oauth
 
 
 class FakeResponse:
@@ -22,48 +22,23 @@ class FakeResponse:
         return self._payload
 
 
-def verified_context(*, scopes=None, connection_id='local-oauth-connection:session-1', is_admin=False):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth',
-        user_id='synthetic-user',
-        stable_subject='synthetic-subject',
-        atlassian_account_id='synthetic-account',
-        workspace_id='synthetic-workspace',
-        auth_connection_id=connection_id,
-        cloud_id='synthetic-cloud',
-        site_url='https://example.atlassian.net',
-        token_version='1',
-        account_status='active',
-        is_admin=is_admin,
-        granted_scopes=tuple((scopes or FULL_OAUTH_SCOPE).split()),
-        granted_scopes_verified=True,
-    )
-
-
 class OAuthCapacityRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        self.env = patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'jsonfile',
-            'DATABASE_URL': '',
-            'TEST_DATABASE_URL': '',
-            'APP_ENVIRONMENT_KEY': 'local',
-        }, clear=False)
-        self.env.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
 
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self.env.stop()
+    def _context(self, *, scopes=FULL_OAUTH_SCOPE, is_admin=False):
+        payload = install_oauth_session(self.client, scope=scopes, roles=('admin',) if is_admin else ())
+        return resolve_db_request_auth_context(payload)
 
     def _oauth_mode(self):
         return patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth')
 
     def _csrf_token(self):
         with self._oauth_mode():
-            response = self.client.get('/api/auth/csrf')
+            response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()['csrfToken']
 
@@ -136,8 +111,8 @@ class OAuthCapacityRouteTests(unittest.TestCase):
     def test_non_loopback_basic_is_hidden(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             response = self._patch(environ_base={'REMOTE_ADDR': '198.51.100.20'})
-        self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.get_json(), {'error': 'not_found'})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_loopback_basic_rejects_valid_and_malformed_body_before_parsing(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
@@ -148,14 +123,14 @@ class OAuthCapacityRouteTests(unittest.TestCase):
                 data='{',
                 content_type='application/json',
             )
-        self.assertEqual(valid.status_code, 403)
-        self.assertEqual(valid.get_json(), {'error': 'jira_oauth_required'})
-        self.assertEqual(malformed.status_code, 403)
-        self.assertEqual(malformed.get_json(), {'error': 'jira_oauth_required'})
+        self.assertEqual(valid.status_code, 503)
+        self.assertEqual(valid.get_json()['error'], 'runtime_auth_unsupported')
+        self.assertEqual(malformed.status_code, 503)
+        self.assertEqual(malformed.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_signed_in_non_admin_uses_context_config_and_jira_request(self):
         install_oauth_session(self.client)
-        context = verified_context(is_admin=False)
+        context = self._context(is_admin=False)
         captured = {'jira': []}
 
         def jira_request(method, path, **kwargs):
@@ -173,15 +148,9 @@ class OAuthCapacityRouteTests(unittest.TestCase):
             'resolve_capacity_field_id',
             'fetch_epm_home_projects',
             'db_oauth_session_data',
-            'save_oauth_session_for_auth_context',
         )
         with ExitStack() as stack:
             stack.enter_context(self._oauth_mode())
-            stack.enter_context(patch.object(
-                jira_server,
-                'current_request_auth_context',
-                return_value=context,
-            ))
             config_loader = stack.enter_context(patch.object(
                 jira_server,
                 'load_request_capacity_config',
@@ -210,12 +179,12 @@ class OAuthCapacityRouteTests(unittest.TestCase):
         })
         config_loader.assert_called_once_with(context)
         self.assertEqual([call[0] for call in captured['jira']], ['GET', 'PUT'])
-        self.assertTrue(all(call[2]['context'] is context for call in captured['jira']))
+        self.assertTrue(all(call[2]['context'] == context for call in captured['jira']))
         self.assertEqual(captured['jira'][1][2]['json_body'], {'fields': {'customfield_12345': 6.0}})
 
     def test_already_current_response_is_preserved(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
 
         def jira_request(method, _path, **_kwargs):
             self.assertEqual(method, 'GET')
@@ -226,7 +195,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
             }})
 
         with self._oauth_mode(), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_request_capacity_config', return_value={
                  'project': 'CAP', 'fieldId': 'customfield_12345',
                  'requiresResolution': False, 'mutationEnabled': True,
@@ -237,7 +205,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()['result'], 'already_current')
 
     def test_route_and_service_succeed_with_all_forbidden_route_dependencies_disabled(self):
-        context = verified_context()
+        context = self._context()
         captured = []
 
         def jira_request(method, path, **kwargs):
@@ -262,7 +230,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
             'oauth_session_data',
             'db_oauth_session_data',
             'save_oauth_session',
-            'oauth_refresh_lock',
         )
         with jira_server.app.test_request_context(
             '/api/capacity/CAP-101',
@@ -281,11 +248,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
                     'JIRA_AUTH_MODE',
                     'atlassian_oauth',
                 ))
-                stack.enter_context(patch.object(
-                    capacity_routes,
-                    'current_request_auth_context',
-                    return_value=context,
-                ))
+                jira_server.session['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
                 stack.enter_context(patch.object(
                     capacity_routes,
                     'load_request_capacity_config',
@@ -306,18 +269,12 @@ class OAuthCapacityRouteTests(unittest.TestCase):
                         create=True,
                         side_effect=AssertionError(f'forbidden dependency reached: {name}'),
                     ))
-                stack.enter_context(patch.object(
-                    capacity_routes,
-                    'OAUTH_TOKEN_STORE',
-                    object(),
-                    create=True,
-                ))
                 response = capacity_routes.patch_capacity('CAP-101')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['result'], 'success')
         self.assertEqual([call[0] for call in captured], ['GET', 'PUT'])
-        self.assertTrue(all(call[2]['context'] is context for call in captured))
+        self.assertTrue(all(call[2]['context'] == context for call in captured))
 
     def test_route_unconditionally_requires_provider_verified_write_scope(self):
         read_scopes = 'read:me read:jira-work'
@@ -337,10 +294,9 @@ class OAuthCapacityRouteTests(unittest.TestCase):
     def test_db_context_unconditionally_requires_provider_verified_write_scope(self):
         read_scopes = 'read:me read:jira-work'
         install_oauth_session(self.client, scope=read_scopes, scope_provenance='provider')
-        context = verified_context(scopes=read_scopes, connection_id='db-connection-1')
+        context = self._context(scopes=read_scopes)
         with self._oauth_mode(), \
              patch.object(jira_server, 'ATLASSIAN_SCOPES', read_scopes), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_request_capacity_config', side_effect=AssertionError('config reached')), \
              patch.object(jira_server, 'current_jira_request', side_effect=AssertionError('Jira reached')):
             response = self._patch(headers=self._authorized_headers())
@@ -353,15 +309,11 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_db_context_with_unknown_scope_provenance_requires_reauthentication(self):
         install_oauth_session(self.client)
-        context = verified_context(connection_id='db-connection-1')
-        context = RequestAuthContext(
-            **{
-                **context.__dict__,
-                'granted_scopes_verified': False,
-            },
-        )
+        context = self._context()
+        with db_engine.session_scope() as db:
+            db.get(models.AuthConnection, context.auth_connection_id).scope_provenance = 'unknown'
+        invalidate_auth_status_cache()
         with self._oauth_mode(), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_request_capacity_config', side_effect=AssertionError('config reached')), \
              patch.object(jira_server, 'current_jira_request', side_effect=AssertionError('Jira reached')):
             response = self._patch(headers={'X-Requested-With': 'jira-execution-planner'})
@@ -386,9 +338,8 @@ class OAuthCapacityRouteTests(unittest.TestCase):
     def test_global_guard_rejects_db_context_missing_configured_write_scope(self):
         read_scopes = 'read:me read:jira-work'
         install_oauth_session(self.client, scope=read_scopes, scope_provenance='provider')
-        context = verified_context(scopes=read_scopes, connection_id='db-connection-1')
+        context = self._context(scopes=read_scopes)
         with self._oauth_mode(), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_request_capacity_config', side_effect=AssertionError('config reached')):
             response = self._patch(headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 401)
@@ -407,7 +358,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_config_preconditions_stop_before_service_and_field_catalog(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         cases = [
             ({'project': 'CAP', 'fieldId': '', 'requiresResolution': False, 'mutationEnabled': False}, 'capacity_config_missing'),
             ({'project': 'CAP', 'fieldId': 'customfield_12345', 'requiresResolution': True, 'mutationEnabled': False}, 'capacity_config_conflict'),
@@ -415,7 +366,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
         ]
         for config, expected_error in cases:
             with self.subTest(expected_error=expected_error), self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', return_value=config), \
                  patch.object(jira_server, 'current_jira_request', side_effect=AssertionError('Jira reached')), \
                  patch.object(jira_server, 'get_fields', create=True, side_effect=AssertionError('field catalog reached')), \
@@ -444,9 +394,8 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_input_errors_are_fixed(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         with self._oauth_mode(), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              patch.object(jira_server, 'load_request_capacity_config', return_value={
                  'project': 'CAP', 'fieldId': 'customfield_12345',
                  'requiresResolution': False, 'mutationEnabled': True,
@@ -458,7 +407,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_service_error_matrix_and_conflict_payload_are_allowlisted(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         cases = {
             'capacity_forbidden': 403,
             'capacity_issue_not_found': 404,
@@ -475,7 +424,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
         for code, expected_status in cases.items():
             error = CapacityServiceError(code, 418, current_capacity=7 if code == 'capacity_conflict' else 99)
             with self.subTest(code=code), self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', return_value={
                      'project': 'CAP', 'fieldId': 'customfield_12345',
                      'requiresResolution': False, 'mutationEnabled': True,
@@ -492,7 +440,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_auth_errors_preserve_only_fixed_recovery_fields(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         cases = {
             'auth_required': ('/login?reason=session_expired', None),
             'account_disabled': (None, '/auth/account-disabled'),
@@ -504,7 +452,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
             install_oauth_session(self.client)
             error = jira_server.AuthError(code, 'Fixed safe message')
             with self.subTest(code=code), self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', return_value={
                      'project': 'CAP', 'fieldId': 'customfield_12345',
                      'requiresResolution': False, 'mutationEnabled': True,
@@ -520,7 +467,7 @@ class OAuthCapacityRouteTests(unittest.TestCase):
                 self.assertEqual(body['recoveryUrl'], recovery_url)
 
     def test_real_service_propagates_jira_auth_failures_from_get_and_put_to_recovery(self):
-        context = verified_context()
+        context = self._context()
         cases = (
             ('GET', jira_server.AuthError('auth_required', 'Synthetic expired session'), 'auth_required', 'loginUrl', '/login?reason=session_expired'),
             ('PUT', jira_server.AuthError('auth_connection_stale', 'Reconnect required.'), 'auth_connection_stale', 'recoveryUrl', '/auth/reconnect'),
@@ -541,7 +488,6 @@ class OAuthCapacityRouteTests(unittest.TestCase):
                 }})
 
             with self.subTest(failing_method=failing_method, error_code=error_code), self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', return_value={
                      'project': 'CAP', 'fieldId': 'customfield_12345',
                      'requiresResolution': False, 'mutationEnabled': True,
@@ -556,13 +502,12 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_storage_failures_are_fixed_and_do_not_leak(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         for error in (
             ConfigStorageError('secret storage DSN'),
             DatabaseConfigurationError('secret database password'),
         ):
             with self.subTest(error=type(error).__name__), self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', side_effect=error):
                 response = self._patch(headers=self._authorized_headers())
             self.assertEqual(response.status_code, 503)
@@ -574,10 +519,9 @@ class OAuthCapacityRouteTests(unittest.TestCase):
 
     def test_generic_failures_expose_only_fixed_upstream_error(self):
         install_oauth_session(self.client)
-        context = verified_context()
+        context = self._context()
         with self.assertLogs('jira_server', level='ERROR') as logs:
             with self._oauth_mode(), \
-                 patch.object(jira_server, 'current_request_auth_context', return_value=context), \
                  patch.object(jira_server, 'load_request_capacity_config', return_value={
                      'project': 'CAP', 'fieldId': 'customfield_12345',
                      'requiresResolution': False, 'mutationEnabled': True,
@@ -601,5 +545,5 @@ class BasicCapacityRouteTests(unittest.TestCase):
              patch.object(jira_server, 'load_request_capacity_config', side_effect=AssertionError('config reached')), \
              patch.object(jira_server, 'current_jira_request', side_effect=AssertionError('Jira reached')):
             response = self.client.patch('/api/capacity/CAP-101', json={})
-        self.assertEqual(response.status_code, 403)
-        self.assertEqual(response.get_json(), {'error': 'jira_oauth_required'})
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')

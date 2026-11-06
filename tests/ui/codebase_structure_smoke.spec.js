@@ -891,6 +891,7 @@ async function installApiMocks(page, calls, options = {}) {
         });
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/admin/users') return json({ users: [{ id: 'synthetic-admin', externalSubject: 'synthetic-admin-account', displayName: 'Synthetic Admin', accountType: 'admin', status: 'active', authConnections: [], projectAccess: [] }] });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-capacity-smoke' });
         if (url.pathname === '/api/eng/story-readiness') {
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
@@ -908,7 +909,9 @@ async function installApiMocks(page, calls, options = {}) {
             return json({
                 jiraUrl: 'https://jira.example',
                 capacityProject: options.capacityProject || '',
-                authMode: options.authMode || '',
+                authMode: options.authMode || 'atlassian_oauth',
+                adminUserManagementAvailable: true,
+                userIsToolAdmin: true,
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
@@ -1530,7 +1533,7 @@ test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ pa
 test('ENG Board persists in ui prefs and survives a group switch', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
-        authMode: 'basic',
+        authMode: 'atlassian_oauth',
         analyticsContext: { enabled: true },
         groups: [
             { id: 'grp-default', name: 'Default', teamIds: groupTeamIds, teamLabels: { 'team-alpha': 'alpha_label', 'team-beta': 'beta_label' }, excludedCapacityEpics: [] },
@@ -1678,7 +1681,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
             tech: { [techEpicFixture.key]: techEpicFixture },
         },
         useCommittedDist: true,
-        authMode: 'basic',
+        authMode: 'atlassian_oauth',
         analyticsContext: { enabled: true },
     });
     await page.setViewportSize({ width: 1028, height: 720 });
@@ -1746,7 +1749,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
         source_surface: 'dashboard',
         query_length_bucket: '11_25',
         result_count_bucket: '1_5',
-        auth_mode: 'basic',
+        auth_mode: 'atlassian_oauth',
     });
     expect(Object.keys(populatedSearchEvent).sort()).toEqual([
         'auth_mode',
@@ -3236,7 +3239,7 @@ for (const width of [1280, 375]) test(`Project Track hides duplicate totals for 
         board: null, width, selectedTeams: ['team-alpha'],
         issues: scope => sourceIssues.filter(issue => scope.sprintIds.map(String).includes(String(issue.fields.customfield_10101[0].id))
             && scope.teamIds.includes(issue.fields.teamId)),
-        analyticsContext: { enabled: true }, authMode: 'basic',
+        analyticsContext: { enabled: true }, authMode: 'atlassian_oauth',
         sprints: [
             { id: selectedSprintId, name: selectedSprintName, state: 'active' },
             { id: longSprintId, name: longSprintName, state: 'future' },
@@ -4293,16 +4296,27 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
         const context = await browser.newContext();
         const page = await context.newPage();
         const calls = [];
-        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], useCommittedDist: true });
+        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], useCommittedDist: true,
+            authMode: 'atlassian_oauth' });
         await seedStatsContractPrefs(page, { showStats: !['catch-up', 'planning'].includes(mode),
             showPlanning: mode === 'planning', statsView: ['catch-up', 'planning'].includes(mode) ? 'teams' : mode });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
         if (!['excludedCapacity', 'monoCrossShare', 'projectTrack'].includes(mode)) await waitForCallCount(calls, isTaskListRequest, 2);
         await settleContract(page);
-        // Extend the frozen ledger by exactly one cached directory read; no live Team discovery.
-        const expectedRequests = [...coldModeRequestContracts[mode], canonicalContract({
+        // The original empty-auth ledger predates the supported OAuth fixture. This
+        // deliberately incomplete config snapshot owes eight section reads; OAuth
+        // initialization also reads analytics context once, even when transport is off.
+        // Keep these exact additions in every mode, alongside the cached name directory.
+        const expectedRequests = [...coldModeRequestContracts[mode], ...[
+            '/api/team-catalog', '/api/board-config', '/api/capacity/config',
+            '/api/sprint-field/config', '/api/parent-name-field/config',
+            '/api/story-points-field/config', '/api/team-field/config',
+            '/api/delivery-owner-field/config', '/api/issue-types/config',
+        ].map(pathname => canonicalContract({
+            body: null, csrf: 'absent', method: 'GET', params: {}, pathname, requestedWith: null,
+        })), canonicalContract({
             body: null, csrf: 'absent', method: 'GET', params: {},
-            pathname: '/api/team-catalog', requestedWith: null,
+            pathname: '/api/analytics/context', requestedWith: 'jira-execution-planner',
         })];
         expect(requestMultiset(calls)).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
         const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
@@ -4325,7 +4339,7 @@ test('Statistics preserves analytics event contracts', async ({ page }) => {
     // duration_bucket contract without depending on browser/host scheduling delays.
     await page.addInitScript(() => Object.defineProperty(performance, 'now', { value: () => 100 }));
     const calls = [];
-    await installApiMocks(page, calls, { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
+    await installApiMocks(page, calls, { useCommittedDist: true, authMode: 'atlassian_oauth', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
     await seedStatsContractPrefs(page);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await settleContract(page);
@@ -5612,12 +5626,17 @@ const coldModeRequestContracts = {
 const statsAnalyticsBaseline = {
     "start": [
         {
+            "event": "userevent", "trigger": "userevent", "event_type": "event",
+            "event_name": "login", "feature_name": "auth", "method": "atlassian_oauth",
+            "result": "success", "source_surface": "dashboard", "auth_mode": "atlassian_oauth"
+        },
+        {
             "event": "pageview",
             "trigger": "pageview",
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/teams",
@@ -5654,12 +5673,17 @@ const statsAnalyticsBaseline = {
     ],
     "actions": [
         {
+            "event": "userevent", "trigger": "userevent", "event_type": "event",
+            "event_name": "login", "feature_name": "auth", "method": "atlassian_oauth",
+            "result": "success", "source_surface": "dashboard", "auth_mode": "atlassian_oauth"
+        },
+        {
             "event": "pageview",
             "trigger": "pageview",
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/teams",
@@ -5709,7 +5733,7 @@ const statsAnalyticsBaseline = {
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/mono_cross_share",
@@ -5758,7 +5782,7 @@ const statsAnalyticsBaseline = {
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/project_track",
@@ -6119,7 +6143,7 @@ test('Statistics lazy failure twice offers reload guidance', async ({ page }) =>
 });
 
 test('Statistics missing deployed assets offer a working page reload', async ({ page }, testInfo) => {
-    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true } });
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'atlassian_oauth', analyticsContext: { enabled: true } });
     await seedStatsContractPrefs(page);
     const { requests } = await installLazyStatsProbe(page, { missingChunk: true, missingManifest: true });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -6179,7 +6203,7 @@ for (const [name, mutateManifest] of [
 });
 
 test('Statistics lazy failure preserves terminal root auth lock', async ({ page }) => {
-    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic' });
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'atlassian_oauth' });
     await seedStatsContractPrefs(page);
     const { requests } = await installLazyStatsProbe(page);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -6356,7 +6380,8 @@ test('Admin settings lazy Retry refetches the chunk after one abort and keeps th
     await tabs.getByRole('tab', { name: 'Jira source', exact: true }).click();
     await expect(dialog.getByText('Jira Source', { exact: true })).toBeVisible();
     await tabs.getByRole('tab', { name: 'Access', exact: true }).click();
-    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'App administrators' })).toBeVisible();
+    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toHaveCount(0);
     await tabs.getByRole('tab', { name: 'Performance', exact: true }).click();
     await expect(dialog.getByRole('status')).toContainText('No loads recorded in this selection yet.');
     await dialog.getByRole('button', { name: 'Departments', exact: true }).click();

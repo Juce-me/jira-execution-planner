@@ -3,10 +3,13 @@ import logging
 
 from contextlib import ExitStack
 
-from flask import g, jsonify, request, session
+from flask import g, jsonify, request
+from sqlalchemy.exc import SQLAlchemyError
+from backend.services.sprint_review import PlanningDeadline, ReviewError
 
-from backend.auth.csrf import validate_csrf_token
-from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AUTH_MODE_BASIC, AuthError
+from backend.auth.csrf_store import CsrfStorageUnavailable, consume_csrf_token
+from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
+from backend.auth.runtime_profile import RuntimeProfileError, validate_supported_runtime_profile
 from backend.auth.scope_policy import missing_context_oauth_scopes
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
@@ -61,11 +64,7 @@ def _environment_key(server):
 
 
 def _is_oauth_mode(server):
-    return getattr(server, "JIRA_AUTH_MODE", AUTH_MODE_BASIC) == AUTH_MODE_ATLASSIAN_OAUTH
-
-
-def _is_basic_mode(server):
-    return getattr(server, "JIRA_AUTH_MODE", AUTH_MODE_BASIC) == AUTH_MODE_BASIC
+    return getattr(server, "JIRA_AUTH_MODE", AUTH_MODE_ATLASSIAN_OAUTH) == AUTH_MODE_ATLASSIAN_OAUTH
 
 
 def _auth_required(server):
@@ -111,6 +110,17 @@ def _strict_db_browser_session_data(server):
     return strict_session()
 
 
+def _planning_auth_failure(error):
+    budget = getattr(g, '_planning_request_deadline', None)
+    if budget is None:
+        raise error
+    try:
+        budget.remaining()
+    except ReviewError as expired:
+        return _json_response({'error': expired.code, 'noCommit': True}, expired.status)
+    return _json_response({'error': getattr(error, 'code', 'planning_auth_unavailable'), 'noCommit': True}, 503)
+
+
 def _require_real_oauth_session(server, policy_class):
     try:
         db_storage = database_storage_enabled()
@@ -124,41 +134,42 @@ def _require_real_oauth_session(server, policy_class):
             return format_auth_error_response(server, error)
         except (ConfigStorageError, DatabaseConfigurationError) as error:
             return _config_storage_unavailable(error)
+        except (ReviewError, SQLAlchemyError) as error:
+            return _planning_auth_failure(error)
         if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
             return _missing_scope_required()
         return None
 
-    if db_storage and policy_class == "workspace_write":
-        return _auth_required(server)
-
-    data = server.oauth_session_data()
-    if not data.get("access_token") or not data.get("cloudid"):
-        return _auth_required(server)
-    try:
-        context = server.current_request_auth_context()
-    except AuthError as error:
-        return format_auth_error_response(server, error)
-    except (ConfigStorageError, DatabaseConfigurationError) as error:
-        return _config_storage_unavailable(error)
-    if missing_context_oauth_scopes(context, server.ATLASSIAN_SCOPES):
-        return _missing_scope_required()
-    return None
+    return _auth_required(server)
 
 
 def _require_token_bound_csrf(server):
     try:
-        if database_storage_enabled() and server.db_oauth_browser_session_data():
-            data = server.csrf_session_data_for_request()
-        else:
-            data = server.oauth_session_data()
+        context = server.csrf_request_auth_context()
+        consumed = consume_csrf_token(context, request.headers.get("X-CSRF-Token"),
+                                      budget=getattr(g, "_planning_request_deadline", None))
     except AuthError as error:
         return format_auth_error_response(server, error)
     except (ConfigStorageError, DatabaseConfigurationError) as error:
         return _config_storage_unavailable(error)
-    if validate_csrf_token(session, data, request.headers.get("X-CSRF-Token")):
+    except ReviewError as error:
+        return _planning_auth_failure(error)
+    except (CsrfStorageUnavailable, SQLAlchemyError) as error:
+        # Never dispatched: Planning callers must learn that nothing was committed.
+        if getattr(g, '_planning_request_deadline', None) is not None:
+            return _planning_auth_failure(error)
+        return _config_storage_unavailable(error)
+    if consumed:
         g.security_csrf_validated = True
         return None
     return _csrf_required("A valid CSRF token is required for this request.")
+
+
+def require_token_bound_csrf_once(server):
+    """Route-level fallback: delegate to the one policy unless the middleware already consumed a token."""
+    if getattr(g, "security_csrf_validated", False):
+        return None
+    return _require_token_bound_csrf(server)
 
 
 def _require_admin(server):
@@ -172,14 +183,6 @@ def _require_admin(server):
         return None
     payload, status = server.admin_required_payload()
     return _json_response(payload, status)
-
-
-def _require_basic_local(server):
-    if not _is_basic_mode(server):
-        return None
-    if _environment_key(server) in {"local", "dev"} and _loopback_request():
-        return None
-    return _not_found()
 
 
 def _require_dev_local(server):
@@ -220,6 +223,8 @@ def _diagnostic_path(path):
 def register_security_guards(flask_app):
     @flask_app.before_request
     def enforce_endpoint_security_policy():
+        if request.method == 'PATCH' and request.url_rule is not None and request.url_rule.rule == '/api/eng/sprints/<sprint_id>/review':
+            g._planning_request_deadline = PlanningDeadline()
         server = get_jira_server()
         if _diagnostic_path(request.path):
             local_response = _require_dev_local(server)
@@ -260,8 +265,15 @@ def register_security_guards(flask_app):
             return _not_found()
 
         policy_class = policy.policy_class
-        # Planning summary/Team capabilities must reject legacy profiles before
-        # the compatibility OAuth guard can resolve a local token store.
+        if policy_class != "public_page":
+            try:
+                validate_supported_runtime_profile(
+                    getattr(server, 'JIRA_AUTH_MODE', None), os.getenv('CONFIG_STORAGE_BACKEND'),
+                )
+            except RuntimeProfileError as error:
+                return _json_response({'error': error.code, 'message': error.message}, 503)
+
+        # Planning summary/Team capabilities require the strict DB session guard.
         if url_rule in {'/api/issues/<issue_key>/editable-fields', '/api/issues/<issue_key>/field'}:
             payload = request.get_json(silent=True) if request.method != 'GET' and request.is_json else None
             field = request.args.get('field') if request.method == 'GET' else payload.get('field') if isinstance(payload, dict) else None
@@ -285,14 +297,8 @@ def register_security_guards(flask_app):
             if strict_response is not None:
                 return strict_response
         if policy_class == "legacy_basic_local":
-            if _is_oauth_mode(server):
-                return _route_not_oauth_ready()
-            return _require_basic_local(server)
+            return _route_not_oauth_ready()
 
-        if _is_basic_mode(server):
-            return _require_basic_local(server)
-        if not _is_oauth_mode(server):
-            return None
         if policy_class not in PROTECTED_POLICY_CLASSES:
             return None
 

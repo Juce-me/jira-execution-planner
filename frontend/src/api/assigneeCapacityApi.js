@@ -4,8 +4,8 @@ import { trackedFetch } from './http.js';
 export const ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS = 20000;
 const url = (backendUrl, sprintId, query = '') => `${backendUrl}/api/eng/sprints/${encodeURIComponent(String(sprintId))}/assignee-capacity${query}`;
 
-// `csrf` is a caller-owned { token } cache so one save queue fetches the CSRF token once.
-async function request(backendUrl, sprintId, query, method, payload, { signal, csrf = null, timeoutMs = ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS } = {}) {
+// Every write fetches its own single-use CSRF token; tokens are never cached or shared.
+async function request(backendUrl, sprintId, query, method, payload, { signal, timeoutMs = ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS } = {}) {
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener('abort', abort, { once: true });
@@ -13,8 +13,8 @@ async function request(backendUrl, sprintId, query, method, payload, { signal, c
     let timedOut = false, dispatched = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     try {
-        const csrfToken = method === 'GET' ? null : csrf?.token || await Promise.race([
-            fetchCsrfToken(backendUrl).then(result => { const token = result?.csrfToken; if (csrf && token) csrf.token = token; return token; }),
+        const csrfToken = method === 'GET' ? null : await Promise.race([
+            fetchCsrfToken(backendUrl).then(result => result?.csrfToken),
             new Promise((resolve, reject) => {
                 if (controller.signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
                 else controller.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });

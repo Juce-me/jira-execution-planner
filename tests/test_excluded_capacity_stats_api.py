@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 class FakeJiraResponse:
@@ -16,11 +17,7 @@ class FakeJiraResponse:
 
 class ExcludedCapacityStatsApiTests(unittest.TestCase):
     def setUp(self):
-        self._auth_mode_patcher = patch.object(jira_server, "JIRA_AUTH_MODE", "basic")
-        self._auth_mode_patcher.start()
-
-    def tearDown(self):
-        self._auth_mode_patcher.stop()
+        force_db_oauth_mode(self, jira_server)
 
     def test_excluded_capacity_source_fetches_range_with_next_page_token_contract(self):
         sprint_field = "customfield_sprint"

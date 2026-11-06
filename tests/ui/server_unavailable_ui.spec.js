@@ -15,7 +15,7 @@ async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
     page.on('request', request => {
         if (request.resourceType() === 'document') state.documents += 1;
     });
-    const fixture = await installDashboardFixture(page, { authMode: 'basic' });
+    const fixture = await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await routes();
     await page.route('**/api/sprints**', route => {
         if (state.failSprints) return route.abort('connectionrefused');
@@ -56,7 +56,7 @@ test('Retry connection probes config and performs one clean document reload', as
     page.on('request', request => {
         if (request.resourceType() === 'document') documentRequests += 1;
     });
-    const fixture = await installDashboardFixture(page, { authMode: 'basic' });
+    const fixture = await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await page.route('**/api/sprints**', route => {
         if (failSprints) return route.abort('connectionrefused');
         return route.fallback();
@@ -87,7 +87,7 @@ test('a concurrent config 401 wins over connection recovery and never reloads', 
     page.on('request', request => {
         if (request.resourceType() === 'document') documentRequests += 1;
     });
-    await installDashboardFixture(page, { authMode: 'basic' });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await page.route('**/api/config?**', route => {
         if (!authRequired) return route.fallback();
         return route.fulfill({
@@ -123,7 +123,7 @@ test('automatic visible-return reload runs once per outage and then requires exp
     page.on('request', request => {
         if (request.resourceType() === 'document') documentRequests += 1;
     });
-    await installDashboardFixture(page, { authMode: 'basic' });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await page.route('**/api/sprints**', route => {
         if (failSprints) return route.abort('connectionrefused');
         return route.fallback();
@@ -157,7 +157,7 @@ test('explicit Retry reloads clean state even when the optional recovery capsule
     page.on('request', request => {
         if (request.resourceType() === 'document') documentRequests += 1;
     });
-    await installDashboardFixture(page, { authMode: 'basic' });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await page.route('**/api/sprints**', route => {
         if (failSprints) return route.abort('connectionrefused');
         return route.fallback();
@@ -222,7 +222,7 @@ test('a startup config read that never answers times out into the banner, and Re
         if (request.resourceType() === 'document') documents += 1;
         else if (new URL(request.url()).pathname.startsWith('/api/')) paths.push(new URL(request.url()).pathname);
     });
-    await installDashboardFixture(page, { authMode: 'basic' });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await page.route('**/api/config?**', route => {
         if (!holdConfig) return route.fallback();
         hungRoutes.push(route);

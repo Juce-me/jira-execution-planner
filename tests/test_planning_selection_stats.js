@@ -188,3 +188,22 @@ test('combined model buckets selected, team-project and excluded stats under one
     assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I1']), techProjectKeys, normalizeEpicKey, 'rnd_2027'), { OTHER: 8 });
     assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys), { PRODUCT: 8 });
 });
+
+test('shared plan totals retain hidden included work, deduplicate IDs and follow Team rather than filters', async () => {
+    const { buildPlanningSelectionSummary } = await loadUtils();
+    const a = { id: '1', ...task('SYN-1', { teamId: 'a', customfield_10004: 3 }) };
+    const b = { id: '2', ...task('SYN-2', { teamId: 'a', customfield_10004: 5 }) };
+    const other = { id: '3', ...task('SYN-3', { teamId: 'b', customfield_10004: 8 }) };
+    const result = buildPlanningSelectionSummary({ tasks: [a, b, other, a], shownTasks: [a], selectedTasks: { 'SYN-1': true, 'SYN-2': true, 'SYN-3': true }, selectedTeamIds: new Set(['a']), allTeams: false, getTeamInfo });
+    assert.deepEqual(result.selectedTasks, [a, b]);
+    assert.deepEqual([result.count, result.sp, result.shownCount, result.shownSP, result.hiddenCount, result.hiddenSP], [2, 8, 1, 3, 1, 5]);
+});
+
+test('planned effort distinguishes missing estimates from an explicit zero', async () => {
+    const { buildPlanningSelectionSummary } = await loadUtils();
+    const tasks = [0, null, 'invalid'].map((value, index) => ({ id: String(index + 1), ...task('SYN-' + (index + 1), { customfield_10004: value }) }));
+    const result = buildPlanningSelectionSummary({ tasks, shownTasks: tasks, selectedTasks: Object.fromEntries(tasks.map(issue => [issue.key, true])), selectedTeamIds: new Set(), allTeams: true, getTeamInfo });
+    assert.equal(result.sp, 0);
+    assert.equal(result.count, 3);
+    assert.equal(result.missingEstimateCount, 2);
+});

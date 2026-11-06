@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from types import SimpleNamespace
 
@@ -15,12 +13,12 @@ from backend.services.workspace_dashboard_config import (
     save_workspace_team_catalog,
     update_workspace_config_section,
 )
+from tests.postgres_test_db import fresh_database_url
 
 
 class WorkspaceDashboardConfigServiceTests(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'service.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         engine = create_engine(self.database_url, future=True)
         models.Base.metadata.create_all(engine)
         factory = sessionmaker(bind=engine, future=True, expire_on_commit=False)
@@ -39,9 +37,6 @@ class WorkspaceDashboardConfigServiceTests(unittest.TestCase):
         self.admin_a = self._context('workspace-1', 'user-1', 'https://site-1.atlassian.net')
         self.admin_b = self._context('workspace-1', 'user-2', 'https://site-1.atlassian.net')
         self.other = self._context('workspace-2', 'user-3', 'https://site-2.atlassian.net')
-
-    def tearDown(self):
-        self.tmpdir.cleanup()
 
     def _context(self, workspace_id, user_id, site_url):
         return SimpleNamespace(workspace_id=workspace_id, user_id=user_id, site_url=site_url)
@@ -130,7 +125,7 @@ class WorkspaceDashboardConfigServiceTests(unittest.TestCase):
         update_workspace_config_section(self.admin_a, 'board', {'boardId': '7'}, 0, database_url=self.database_url)
         engine = create_engine(self.database_url, future=True)
         with engine.connect() as connection:
-            event = connection.exec_driver_sql("SELECT event_type, metadata FROM audit_events").first()
+            event = connection.exec_driver_sql("SELECT event_type, CAST(metadata AS TEXT) FROM audit_events").first()
         engine.dispose()
         self.assertEqual(event[0], 'workspace_dashboard_config_updated')
         self.assertIn('board', event[1])

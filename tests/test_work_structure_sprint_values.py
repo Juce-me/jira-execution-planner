@@ -105,7 +105,7 @@ class SprintValueReadTests(CatalogBase):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
             basic = jira_server.app.test_client().get(PATH)
-        self.assertEqual((basic.status_code, basic.get_json()['error']), (409, 'work_configuration_setup_required'))
+        self.assertEqual((basic.status_code, basic.get_json()['error']), (503, 'runtime_auth_unsupported'))
 
     def test_unpromoted_states_never_reach_a_json_loader(self):
         self.seed(promoted=False)

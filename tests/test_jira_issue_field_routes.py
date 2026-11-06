@@ -1,4 +1,3 @@
-import os
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +10,10 @@ from backend.services.jira_issue_field_edits import (
     load_editable_field,
 )
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session, set_up_db_oauth
+from tests.db_oauth_test_helpers import seed_db_actor
+from backend.auth.db_context import resolve_db_request_auth_context, invalidate_auth_status_cache
+from backend.db import engine as db_engine, models
 
 
 class FakeResponse:
@@ -44,31 +46,44 @@ def verified_context(*, account_id="account-1", workspace_id="workspace-1",
     )
 
 
+def persisted_verified_context(**kwargs):
+    """Translate test descriptors into persisted identity; supplied DB ids are never authority."""
+    descriptor = verified_context(**kwargs)
+    with db_engine.session_scope() as db:
+        actor = seed_db_actor(db,
+            workspace={'cloud_id': descriptor.cloud_id, 'site_url': descriptor.site_url},
+            account_identity={'account_id': descriptor.atlassian_account_id,
+                              'display_name': descriptor.display_name},
+            token_data={'scope': ' '.join(descriptor.granted_scopes)})
+        connection = db.get(models.AuthConnection, actor.connection_id)
+        connection.scope_provenance = 'provider' if descriptor.granted_scopes_verified else 'unknown'
+    invalidate_auth_status_cache()
+    return resolve_db_request_auth_context(actor.session_payload)
+
+
 class JiraIssueFieldRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self.env = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-            "APP_ENVIRONMENT_KEY": "local",
-        }, clear=False)
-        self.env.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
+        self.context = self._context()
 
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self.env.stop()
+    def _install_context(self, context):
+        with self.client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
+
+    def _context(self, **kwargs):
+        context = persisted_verified_context(**kwargs)
+        self._install_context(context)
+        return context
 
     def oauth_mode(self):
         return patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth")
 
     def csrf_token(self):
         with self.oauth_mode():
-            response = self.client.get("/api/auth/csrf")
+            response = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 
@@ -95,7 +110,7 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
     def test_metadata_regular_non_admin_uses_context_and_server_field_ids(self):
-        context = verified_context()
+        context = self._context()
         captured = {}
 
         def fake_load(issue_key, field, *, jira_request, context, field_ids):
@@ -108,7 +123,6 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             }
 
         with self.oauth_mode(), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
              patch.object(jira_server, "get_story_points_field_id", return_value="customfield_98765"), \
              patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_24680"), \
              patch.object(jira_server, "get_team_field_id", return_value="customfield_13579"), \
@@ -118,7 +132,7 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
                 headers={"X-Requested-With": "jira-execution-planner"},
             )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertIs(captured["context"], context)
+        self.assertEqual(captured["context"], context)
         self.assertIs(captured["jira_request"], jira_server.current_jira_request)
         self.assertEqual(captured["field_ids"], {
             "assignee": "assignee", "deliveryOwner": "customfield_24680",
@@ -162,12 +176,12 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
                 self.client.post("/api/issues/DEMO-1/field", data="{", content_type="application/json"),
             ]
         for response in responses:
-            self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-            self.assertEqual(response.get_json(), {"error": "jira_oauth_required"})
+            self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+            self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
             self.assertEqual(response.headers["Cache-Control"], "no-store")
 
     def test_search_regular_user_passes_exact_context_and_field_ids(self):
-        context = verified_context(account_id="user-a", workspace_id="workspace-a", cloud_id="cloud-a")
+        context = self._context(account_id="user-a", workspace_id="workspace-a", cloud_id="cloud-a")
         captured = {}
 
         def fake_search(issue_key, payload, *, jira_request, context, field_ids):
@@ -175,7 +189,6 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             return {"issueKey": issue_key, "field": payload["field"], "options": [], "limited": True}
 
         with self.oauth_mode(), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
              patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
              patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_owner"), \
              patch.object(eng_routes, "search_field_users", side_effect=fake_search):
@@ -185,11 +198,11 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
                 headers=self.write_headers(),
             )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertIs(captured["context"], context)
+        self.assertEqual(captured["context"], context)
         self.assertEqual(captured["field_ids"]["deliveryOwner"], "customfield_owner")
 
     def test_update_reloads_field_ids_at_request_entry_and_injects_invalidation(self):
-        context = verified_context()
+        context = self._context()
         captured = {}
 
         def fake_update(issue_key, payload, *, jira_request, context, field_ids, invalidate):
@@ -201,7 +214,6 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             }
 
         with self.oauth_mode(), \
-             patch.object(jira_server, "current_request_auth_context", return_value=context), \
              patch.object(jira_server, "get_story_points_field_id", return_value="customfield_changed"), \
              patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_owner"), \
              patch.object(eng_routes, "update_issue_field", side_effect=fake_update):
@@ -211,16 +223,15 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             )
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(captured["field_ids"]["storyPoints"], "customfield_changed")
-        self.assertIs(captured["context"], context)
+        self.assertEqual(captured["context"], context)
         self.assertIs(captured["invalidate"], eng_routes.clear_jira_issue_status_caches)
 
     def test_update_rejects_three_decimal_story_points_before_jira(self):
         # The real service runs; the stale mapping revision stops a valid value before any Jira call.
-        context = verified_context()
+        context = self._context()
         for value, status, error in ((0.755, 400, "invalid_value"), (0.75, 409, "field_mapping_changed")):
             payload = {**self.mutation_payload(), "value": value}
             with self.subTest(value=value), self.oauth_mode(), \
-                 patch.object(jira_server, "current_request_auth_context", return_value=context), \
                  patch.object(jira_server, "get_story_points_field_id", return_value="customfield_sp"), \
                  patch.object(jira_server, "get_delivery_owner_field_id", return_value="customfield_owner"), \
                  patch.object(jira_server, "current_jira_request", side_effect=AssertionError("Jira reached")):
@@ -234,16 +245,16 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
         read_only = "read:jira-work"
         cases = [
             ("GET", "/api/issues/DEMO-1/editable-fields?field=assignee", None,
-             verified_context(scopes=read_only), "read:jira-user", "missing_oauth_scope"),
+             self._context(account_id='synthetic-scope-one', scopes=read_only), "read:jira-user", "missing_oauth_scope"),
             ("GET", "/api/issues/DEMO-1/editable-fields?field=storyPoints", None,
-             verified_context(scopes=read_only, verified=False), "provenance", "auth_required"),
+             self._context(account_id='synthetic-scope-two', scopes=read_only, verified=False), "provenance", "auth_required"),
             ("POST", "/api/issues/DEMO-1/field", self.mutation_payload(),
-             verified_context(scopes="read:jira-work"), "write:jira-work", "missing_oauth_scope"),
+             self._context(account_id="synthetic-scope-three", scopes="read:jira-work"), "write:jira-work", "missing_oauth_scope"),
         ]
         for method, path, payload, context, label, expected_error in cases:
+            self._install_context(context)
             with self.subTest(label=label), self.oauth_mode(), \
                  patch.object(jira_server, "ATLASSIAN_SCOPES", read_only), \
-                 patch.object(jira_server, "current_request_auth_context", return_value=context), \
                  patch.object(eng_routes, "load_editable_field", side_effect=AssertionError("service reached")), \
                  patch.object(eng_routes, "update_issue_field", side_effect=AssertionError("service reached")):
                 headers = {"X-Requested-With": "jira-execution-planner"}
@@ -254,14 +265,11 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             self.assertEqual(response.get_json()["error"], expected_error)
 
     def test_revoked_auth_remains_terminal_401(self):
-        revoked = AuthError("auth_connection_revoked", "raw provider detail")
-        with self.oauth_mode(), patch.object(
-            jira_server, "current_request_auth_context", side_effect=revoked,
-        ):
-            response = self.client.get(
-                "/api/issues/DEMO-1/editable-fields?field=assignee",
-                headers={"X-Requested-With": "jira-execution-planner"},
-            )
+        with db_engine.session_scope() as db:
+            db.get(models.AuthConnection, self.context.auth_connection_id).status = 'revoked'
+        invalidate_auth_status_cache()
+        response = self.client.get('/api/issues/DEMO-1/editable-fields?field=assignee',
+            headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         self.assertEqual(response.get_json()["error"], "auth_connection_revoked")
         self.assertEqual(response.get_json()["recoveryUrl"], "/auth/reconnect")
@@ -336,29 +344,24 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
             }
 
         contexts = [
-            verified_context(account_id="a", workspace_id="workspace-a", cloud_id="cloud-a"),
-            verified_context(account_id="b", workspace_id="workspace-b", cloud_id="cloud-b"),
+            self._context(account_id="a", workspace_id="workspace-a", cloud_id="cloud-a"),
+            self._context(account_id="b", workspace_id="workspace-b", cloud_id="cloud-b"),
         ]
         for context in contexts:
+            self._install_context(context)
             with self.oauth_mode(), \
-                 patch.object(jira_server, "current_request_auth_context", return_value=context), \
                  patch.object(eng_routes, "load_editable_field", side_effect=fake_load):
                 response = self.client.get(
                     "/api/issues/DEMO-1/editable-fields?field=storyPoints",
                     headers={"X-Requested-With": "jira-execution-planner"},
                 )
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(observed, [
-            ("user:a", "workspace-a", "cloud-a"),
-            ("user:b", "workspace-b", "cloud-b"),
-        ])
+        self.assertEqual(observed, [(context.user_id, context.workspace_id, context.cloud_id) for context in contexts])
+        self.assertNotEqual(contexts[0].user_id, contexts[1].user_id)
+        self.assertNotEqual(contexts[0].workspace_id, contexts[1].workspace_id)
 
 
 class CurrentJiraRequestCapturedContextTests(unittest.TestCase):
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-
     def test_db_oauth_context_works_without_flask_request_or_forbidden_fallbacks(self):
         context = verified_context(
             account_id="db-user", workspace_id="workspace-db", cloud_id="cloud-db",
@@ -377,7 +380,7 @@ class CurrentJiraRequestCapturedContextTests(unittest.TestCase):
              }), \
              patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_request), \
              patch.object(jira_server, "oauth_session_data", side_effect=AssertionError("local OAuth fallback reached")), \
-             patch("backend.epm.home._read_metadata_credential", side_effect=AssertionError("Home fallback reached")):
+             patch("builtins.open", side_effect=AssertionError("legacy file fallback reached")):
             response = jira_server.current_jira_request(
                 "GET", "/rest/api/3/issue/DEMO-1", context=context, timeout=10,
             )
@@ -436,28 +439,12 @@ class CurrentJiraRequestCapturedContextTests(unittest.TestCase):
             for call in outbound
         ))
 
-    def test_local_context_still_uses_actual_local_oauth_store(self):
-        jira_server.OAUTH_TOKEN_STORE["session-local"] = {
-            "access_token": "synthetic-local-bearer", "refresh_token": "synthetic-refresh",
-            "expires_at": 9999999999, "cloudid": "cloud-local", "stored_at": 9999999999,
-        }
-        context = verified_context(
-            account_id="local-user", cloud_id="cloud-local",
-            connection_id="local-oauth-connection:session-local",
-        )
-        outbound = []
-
-        def fake_request(method, url, **kwargs):
-            outbound.append((method, url, kwargs))
-            return FakeResponse(200)
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server.HTTP_SESSION, "request", side_effect=fake_request):
-            jira_server.current_jira_request(
-                "GET", "/rest/api/3/issue/DEMO-1", context=context, timeout=10,
-            )
-        self.assertEqual(outbound[0][2]["headers"]["Authorization"], "Bearer synthetic-local-bearer")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    def test_local_context_rejects_without_file_or_transport_io(self):
+        context = verified_context(account_id='local-user', cloud_id='cloud-local',
+                                   connection_id='local-oauth-connection:session-local')
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch('builtins.open', side_effect=AssertionError('No legacy file I/O')), \
+             patch.object(jira_server.HTTP_SESSION, 'request', side_effect=AssertionError('No provider I/O')):
+            with self.assertRaises(AuthError) as raised:
+                jira_server.current_jira_request('GET', '/rest/api/3/issue/DEMO-1', context=context, timeout=10)
+        self.assertEqual(raised.exception.code, 'auth_required')

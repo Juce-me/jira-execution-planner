@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 from backend.auth.project_access import home_3lo_gate_mode
 from backend.epm import home as epm_home
 import jira_server
+from tests.oauth_test_helpers import set_up_db_oauth
 
 
 class TestHome3loGateOutcomes(unittest.TestCase):
@@ -49,6 +50,7 @@ class TestHome3loGateOutcomes(unittest.TestCase):
             entry['query'] for entry in epm_home.PUBLIC_READ_V1_REGISTRY.values()))
 
     def test_authorize_url_requests_no_home_write_manage_or_delete_scope(self):
+        set_up_db_oauth(self)
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
@@ -56,8 +58,7 @@ class TestHome3loGateOutcomes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
+             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False):
             jira_server.app.config['TESTING'] = True
             response = jira_server.app.test_client().get('/api/auth/atlassian/login')
 

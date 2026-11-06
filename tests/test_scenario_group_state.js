@@ -208,7 +208,6 @@ setScenarioDragState
 scenarioDragStateRef
 scenarioDragFrameRef
 scenarioDragLockRefreshRef
-scenarioRealtimeCsrfRef
 scenarioHistoryRefreshControllerRef
 scenarioHistoryActionControllerRef
 scenarioViewRangeRef

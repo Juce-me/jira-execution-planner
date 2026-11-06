@@ -1,9 +1,9 @@
-import os
-import tempfile
+import threading
 import unittest
 import uuid
 from dataclasses import replace
 from datetime import timedelta, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from backend.auth.context import RequestAuthContext
@@ -19,6 +19,8 @@ from backend.services.workspace_catalog_cache import (
 from backend.services.workspace_catalog_config import resolve_effective_catalog_config
 from backend.services.sprint_teams import SprintTeamPayload
 from backend.services.workspace_dashboard_config import save_workspace_team_catalog
+from backend.services import workspace_catalog_cache as catalog_cache
+from tests.postgres_test_db import fresh_database_url
 
 
 class _Budget:
@@ -42,8 +44,7 @@ def _context(workspace_id, user_id, site='https://one.example.test'):
 
 class WorkspaceCatalogCacheTests(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'catalog.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
@@ -87,7 +88,6 @@ class WorkspaceCatalogCacheTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self.tmpdir.cleanup()
 
     def resolve(self, session, context):
         return resolve_effective_catalog_config(
@@ -443,6 +443,154 @@ class WorkspaceCatalogCacheTests(unittest.TestCase):
         self.assertEqual(directory['directory']['name'], 'Newest directory')
         self.assertEqual(directory['bare']['name'], 'Newest bare')
         self.assertEqual(directory['issue']['name'], 'Issue name')
+
+
+    def test_board_snapshot_reuses_the_budgeted_session_without_committing(self):
+        self._publish_sprints(self.a, [{'id': 5, 'name': '2027Q1'}])
+        config = self.config(self.a)
+        with self.factory() as session:
+            with patch.object(catalog_cache.db_engine, 'session_scope', side_effect=AssertionError('hidden read session')), \
+                    patch.object(session, 'commit', side_effect=AssertionError('caller owns commit')):
+                snapshot = catalog_cache.load_sprint_catalog(
+                    self.a, config=config, session=session, budget=self.budget)
+                self.assertEqual(snapshot.payload, [{'id': 5, 'name': '2027Q1'}])
+                self.assertIsNotNone(snapshot.catalog_version)
+                self.assertTrue(session.in_transaction())
+        self.assertIn('actor_validation', self.budget.phases)
+
+    def test_scoped_snapshot_reuses_the_budgeted_session_without_committing(self):
+        store = catalog_cache.ScopedSprintCatalogStore()
+        config = SimpleNamespace(sprint_identity='si1:caller-owned')
+        store.begin(config.sprint_identity, 'read', workspace_id=self.one_id, config_digest='config')
+        store.publish(config.sprint_identity, 'read', [{'id': 5, 'name': '2027Q1'}],
+                      workspace_id=self.one_id, source_digest='source')
+        with self.factory() as session:
+            with patch.object(catalog_cache.db_engine, 'session_scope', side_effect=AssertionError('hidden read session')), \
+                    patch.object(session, 'commit', side_effect=AssertionError('caller owns commit')):
+                snapshot = catalog_cache.load_scoped_sprint_catalog(
+                    self.a, config=config, store=store, session=session, budget=self.budget)
+                self.assertEqual(snapshot.payload, [{'id': 5, 'name': '2027Q1'}])
+                self.assertTrue(session.in_transaction())
+        self.assertIn('scoped_catalog_snapshot', self.budget.phases)
+
+
+class ScopedSprintProofGuardTests(unittest.TestCase):
+    def published(self):
+        store = catalog_cache.ScopedSprintCatalogStore()
+        config = SimpleNamespace(sprint_identity='si1:synthetic', source_digest='synthetic-digest', configuration_id=None)
+        self.assertTrue(store.begin(config.sprint_identity, 'first', workspace_id='synthetic', config_digest='configuration'))
+        self.assertTrue(store.publish(config.sprint_identity, 'first', [{'id': 101, 'name': '2027Q1'}],
+                                      workspace_id='synthetic', source_digest=config.source_digest))
+        return store, config, store.proof(config, '101')
+
+    def test_guard_keeps_publication_and_retirement_waiting_until_exit(self):
+        class ObservedLock:
+            def __init__(self):
+                self.lock, self.waiting = threading.Lock(), threading.Event()
+
+            def acquire(self, *args, **kwargs):
+                if self.lock.locked():
+                    self.waiting.set()
+                return self.lock.acquire(*args, **kwargs)
+
+            def release(self):
+                self.lock.release()
+
+            def __enter__(self):
+                self.acquire()
+                return self
+
+            def __exit__(self, *args):
+                self.release()
+
+        for action in ('publish', 'retire', 'clear'):
+            with self.subTest(action=action):
+                store, config, proof = self.published()
+                self.assertTrue(store.begin(config.sprint_identity, 'next', workspace_id='synthetic', config_digest='configuration'))
+                lock = ObservedLock()
+                store._lock = lock
+                completed, errors = threading.Event(), []
+
+                def mutate():
+                    try:
+                        if action == 'publish':
+                            store.publish(config.sprint_identity, 'next', [{'id': 101, 'name': '2027Q1'}],
+                                          workspace_id='synthetic', source_digest=config.source_digest)
+                        elif action == 'retire':
+                            store.retire_workspace('synthetic')
+                        else:
+                            store.clear()
+                    except Exception as error:
+                        errors.append(error)
+                    finally:
+                        completed.set()
+
+                worker = threading.Thread(target=mutate, daemon=True)
+                try:
+                    with store.proof_guard(proof, timeout=1) as matches:
+                        self.assertTrue(matches)
+                        worker.start()
+                        self.assertTrue(lock.waiting.wait(5), 'writer reached the held store lock')
+                        self.assertFalse(completed.is_set())
+                finally:
+                    if worker.ident is not None:
+                        worker.join(5)
+                self.assertFalse(worker.is_alive())
+                self.assertEqual(errors, [])
+                self.assertTrue(completed.is_set())
+                self.assertFalse(store.matches(proof))
+
+    def test_changed_publication_is_rejected_and_exception_releases_the_guard(self):
+        store, config, proof = self.published()
+        self.assertTrue(store.begin(config.sprint_identity, 'next', workspace_id='synthetic', config_digest='configuration'))
+        self.assertTrue(store.publish(config.sprint_identity, 'next', [{'id': 101, 'name': '2027Q1'}],
+                                      workspace_id='synthetic', source_digest=config.source_digest))
+        with store.proof_guard(proof, timeout=0) as matches:
+            self.assertFalse(matches)
+        current = store.proof(config, '101')
+        with self.assertRaisesRegex(RuntimeError, 'synthetic rollback'):
+            with store.proof_guard(current, timeout=0) as matches:
+                self.assertTrue(matches)
+                raise RuntimeError('synthetic rollback')
+        acquired = store._lock.acquire(timeout=0)
+        self.assertTrue(acquired, 'failed save must release the process proof guard')
+        if acquired:
+            store._lock.release()
+
+    def test_guard_wait_uses_remaining_budget_and_a_finite_ceiling(self):
+        class BusyLock:
+            def __init__(self):
+                self.waits = []
+
+            def acquire(self, *, timeout):
+                self.waits.append(timeout)
+                return False
+
+        store, _, proof = self.published()
+        lock = BusyLock()
+        store._lock = lock
+        for remaining in (0, 0.125, 300):
+            with self.assertRaises(catalog_cache.ScopedSprintCatalogBusy):
+                with store.proof_guard(proof, timeout=remaining):
+                    self.fail('a busy guard cannot be admitted')
+        self.assertEqual(lock.waits, [0, 0.125, 5])
+        for invalid in (float('inf'), float('nan'), -1, True):
+            with self.assertRaises(ValueError):
+                with store.proof_guard(proof, timeout=invalid):
+                    self.fail('invalid budget cannot enter a proof guard')
+
+    def test_budgeted_snapshot_does_not_wait_past_an_exhausted_lock_budget(self):
+        store, config, _ = self.published()
+        store._lock.acquire()
+        try:
+            with self.assertRaises(catalog_cache.ScopedSprintCatalogBusy):
+                store.snapshot(config.sprint_identity, timeout=0)
+        finally:
+            store._lock.release()
+        self.assertEqual(store.snapshot(config.sprint_identity, timeout=1).payload,
+                         [{'id': 101, 'name': '2027Q1'}])
+
+
 
 
 if __name__ == '__main__':

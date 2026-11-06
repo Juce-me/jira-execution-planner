@@ -71,9 +71,12 @@ test('a flat entry (no nested fields.missingFields) is rewritten in its own shap
     assert.equal(recomputeMissingPlanningInfo({ held, refreshedStories: [story('S-1', { customfield_10004: 5 })], epicKey: 'EPIC-1' }).length, 0);
 });
 
-test('a ghost is hidden once an actionable story for that team exists, but not for blocked, done, killed or incomplete ones', () => {
+test('a ghost is hidden once an open or Done story for that team exists, but not for blocked, killed or incomplete ones', () => {
     assert.equal(shouldHideReadinessGhost({ epicKey: 'EPIC-1', teamId: 't1', stories: [story('S-1')] }), true);
-    for (const name of ['Blocked', 'Done', 'Killed', 'Incomplete']) {
+    for (const name of ['Done', ' DONE ']) {
+        assert.equal(shouldHideReadinessGhost({ epicKey: 'EPIC-1', teamId: 't1', stories: [story('S-1', { status: { name } })] }), true, name);
+    }
+    for (const name of ['Blocked', 'Killed', 'Incomplete']) {
         assert.equal(shouldHideReadinessGhost({ epicKey: 'EPIC-1', teamId: 't1', stories: [story('S-1', { status: { name } })] }), false, name);
     }
     assert.equal(shouldHideReadinessGhost({ epicKey: 'EPIC-1', teamId: 't2', stories: [story('S-1')] }), false);
@@ -91,6 +94,9 @@ test('the hierarchy drops a Stories Required ghost the held stories already cove
         const covered = buildEngWorkHierarchy({ mode, sprint, storyEpicGroups: [group([story('S-1')])], readinessSnapshot: snapshot });
         assert.deepEqual(covered.alertTargets.map(target => target.team.id), ['t2'], mode);
         assert.deepEqual(covered.epicGroups[0].rows.filter(row => row.kind === 'story_requirement').map(row => row.team.id), ['t2'], mode);
+        const completed = buildEngWorkHierarchy({ mode, sprint, storyEpicGroups: [group([story('S-1', { status: { name: 'Done' } })])], readinessSnapshot: snapshot });
+        assert.deepEqual(completed.alertTargets.map(target => target.team.id), ['t2'], mode);
+        assert.deepEqual(completed.epicGroups[0].rows.filter(row => row.kind === 'story_requirement').map(row => row.team.id), ['t2'], mode);
         const blocked = buildEngWorkHierarchy({ mode, sprint, storyEpicGroups: [group([story('S-1', { status: { name: 'Blocked' } })])], readinessSnapshot: snapshot });
         assert.deepEqual(blocked.alertTargets.map(target => target.team.id), ['t1', 't2'], mode);
     }

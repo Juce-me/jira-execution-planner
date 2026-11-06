@@ -39,6 +39,18 @@ test('DELIVERY roleTypes name Epic/Initiative/Objective with kinds from levels',
     assert.deepEqual([names.childLevel, names.parentLevel, names.ancestorLevel], [1, 2, 3]);
 });
 
+test('DELIVERY carries its configured Jira type ids for the type icons; Legacy and unusable ids carry none', async () => {
+    const { resolveEntityNames } = await load();
+    const delivery = resolveEntityNames('rnd_2027', DELIVERY_TYPES, null, 'd1');
+    assert.deepEqual([delivery.childTypeId, delivery.parentTypeId, delivery.ancestorTypeId], ['6', '11700', '12723']);
+    const bare = resolveEntityNames('rnd_2027');
+    assert.deepEqual([bare.childTypeId, bare.parentTypeId, bare.ancestorTypeId], [null, null, null]);
+    const odd = resolveEntityNames('rnd_2027', { planning: type(null, 'Epic', 1), parent: type('../x', 'Initiative', 2), ancestor: type(12723, 'Objective', 3) });
+    assert.deepEqual([odd.childTypeId, odd.parentTypeId, odd.ancestorTypeId], [null, null, null]);
+    const legacy = resolveEntityNames('legacy', { planning: type('10002', 'Story', 0), parent: type('10000', 'Epic', 1), ancestor: type('10001', 'Initiative', 2) });
+    assert.deepEqual([legacy.childTypeId, legacy.parentTypeId, legacy.ancestorTypeId], [null, null, null]);
+});
+
 test('new model without a capture falls back to the model defaults, Strategy included', async () => {
     const { resolveEntityNames } = await load();
     const names = resolveEntityNames('rnd_2027');
@@ -73,6 +85,31 @@ test('non-increasing levels fall back to every model-default level; names stay',
     assert.deepEqual([nulls.childKind, nulls.parentKind, nulls.ancestorKind], ['story', 'epic', 'initiative']);
     const blank = resolveEntityNames('rnd_2027', { planning: type('6', '  ', 1), parent: null, ancestor: null, optionalAncestor: null });
     assert.equal(blank.child, 'Epic', 'a blank capture never names a role');
+});
+
+test('a captured level without its neighbours keeps the sequence increasing', async () => {
+    const { resolveEntityNames } = await load();
+    const parentOnly = resolveEntityNames('rnd_2027', { planning: null, parent: type('7', 'Objective', 3), ancestor: null, optionalAncestor: null });
+    assert.equal(parentOnly.parentKind, 'objective');
+    assert.deepEqual([parentOnly.childLevel, parentOnly.parentLevel, parentOnly.ancestorLevel], [1, 3, 4]);
+    const reversed = resolveEntityNames('rnd_2027', { planning: type('6', 'Epic', 3), parent: type('7', 'Initiative', 2), ancestor: type('8', 'Objective', 1) });
+    assert.deepEqual([reversed.childLevel, reversed.parentLevel, reversed.ancestorLevel], [1, 2, 3], 'captured [3,2,1] takes the defaults');
+    const gap = resolveEntityNames('rnd_2027', { planning: type('6', 'Epic', 1), parent: null, ancestor: type('8', 'Objective', 2) });
+    assert.deepEqual([gap.childLevel, gap.parentLevel, gap.ancestorLevel], [1, 2, 3], 'no room for the missing parent takes the defaults');
+    const childHigh = resolveEntityNames('legacy', { planning: type('6', 'Feature', 2), parent: null, ancestor: null });
+    assert.deepEqual([childHigh.childLevel, childHigh.parentLevel, childHigh.ancestorLevel], [2, 3, 4]);
+});
+
+test('entityArticle is acronym-aware and shared by every surface', async () => {
+    const { entityArticle } = await load();
+    const cases = { Initiative: 'an', OKR: 'an', Theme: 'a', 'UX goal': 'a', Epic: 'an', SLA: 'an', Story: 'a', '': 'a' };
+    for (const [word, article] of Object.entries(cases)) assert.equal(entityArticle(word), article, word);
+    const fs = require('node:fs');
+    for (const file of ['frontend/src/stats/StatsPanel.jsx', 'frontend/src/eng/EngView.jsx', 'frontend/src/onboarding/onboardingSteps.js']) {
+        const source = fs.readFileSync(path.join(__dirname, '..', file), 'utf8');
+        assert.match(source, /entityArticle/, file);
+        assert.doesNotMatch(source, /\/\^\[aeiou\]\/|Cross = an /, `${file} has no local article rule`);
+    }
 });
 
 test('plural rule handles irregular and all-caps names', async () => {

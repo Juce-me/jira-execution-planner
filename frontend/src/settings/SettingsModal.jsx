@@ -24,6 +24,7 @@ export default function SettingsModal(props) {
         saveDisabled = false,
         saveTitle = '',
         saveLabel = 'Save',
+        saveNote = '',
         showDiscardConfirm = false,
         onDiscard,
         onKeepEditing,
@@ -112,6 +113,7 @@ export default function SettingsModal(props) {
                     </div>
                     {showSave && (
                         <div className="group-modal-button-row">
+                            {saveNote && <span className="group-modal-meta" data-settings-save-note>{saveNote}</span>}
                             <button
                                 className="compact"
                                 onClick={onSave}

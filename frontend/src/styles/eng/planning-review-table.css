@@ -28,7 +28,11 @@
 /* Real Epics and Stories without points; the same red tint the alerts and board use. */
 .planning-review-table tbody tr.planning-review-zero-sp td { background: #fff1f0; }
 .planning-review-heading, .planning-review-text-button { background: transparent; color: inherit; border: 0; padding: 0; font: inherit; font-weight: 600; letter-spacing: normal; margin: 0; box-shadow: none; }
-@media (hover: hover) { .planning-review-heading:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { box-shadow: var(--hover-overlay), var(--hover-ring-inset); } }
+/* Exception to the button ring: a hovered sort heading highlights its whole header cell with the foundation overlay tint. */
+@media (hover: hover) {
+    .planning-review-heading:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) { box-shadow: none; }
+    .planning-review-table thead th:has(.planning-review-heading:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))) { background-image: linear-gradient(color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent), color-mix(in srgb, currentColor calc(var(--overlay-pct) * 1%), transparent)); }
+}
 .planning-review-recovery { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); margin: 0.5rem 0; max-width: 100%; box-sizing: border-box; }
 .planning-review-dialog-backdrop { position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center; padding: 1rem; background: rgba(15,23,42,0.35); }
 .planning-review-dialog { box-sizing: border-box; width: 420px; max-width: 100%; background: #fff; color: #334155; border-radius: 12px; padding: 1.25rem; box-shadow: 0 16px 48px #0f172a33; }

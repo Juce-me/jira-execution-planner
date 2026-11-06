@@ -64,8 +64,8 @@ function issueRow(issue, rowKind, getTeamInfo) {
     };
 }
 
-export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mode = 'epic', getTeamInfo = getTaskTeamInfo, workModel } = {}) {
-    const { parent: parentName, child: childName } = reviewLabels(workModel);
+export function buildPlanningReviewRows({ epicGroups = [], visibleTasks = [], mode = 'epic', getTeamInfo = getTaskTeamInfo, workModel, names } = {}) {
+    const { parent: parentName, child: childName } = reviewLabels(names || workModel);
     const visibleKeys = new Set(visibleTasks.map(task => task.key));
     const rows = [];
     const represented = new Set();
@@ -158,8 +158,8 @@ export function nearestBoundary(edges, x, threshold = 5) {
 
 // `derived: true` places columns by the saved order plus each new column's `after` anchor and appends the other row kind's
 // derived columns (Story number sums up to Epics, every Epic column down to Stories); without it the columns are unchanged.
-export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {}, derived = false, workModel } = {}) {
-    const labels = reviewLabels(workModel);
+export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customColumns = [], hidden = new Set(), admittedTeamCount, admittedProjectCount, layout = {}, derived = false, workModel, names } = {}) {
+    const labels = reviewLabels(names || workModel);
     const teams = new Set(rows.flatMap(row => row.rowKind === 'epic' ? row.teamsInScope || [] : [row.team?.name || 'Unknown Team']));
     const projects = new Set(rows.filter(row => !row.synthetic).map(row => row.project).filter(Boolean));
     const columns = [

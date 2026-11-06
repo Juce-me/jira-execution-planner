@@ -333,6 +333,7 @@ export function useOnboardingController({
 
 export default function useOnboardingTour({
     steps = [],
+    stepsByModule = ONBOARDING_STEPS_BY_MODULE,
     run = false,
     completedModules,
     onSkip,
@@ -361,7 +362,7 @@ export default function useOnboardingTour({
     const activeSteps = moduleSession.activeModule
         ? (moduleSession.activeModule === 'catch-up'
             ? steps
-            : (ONBOARDING_STEPS_BY_MODULE[moduleSession.activeModule] || []))
+            : (stepsByModule[moduleSession.activeModule] || []))
         : [];
     const activeModuleComplete = isOnboardingModuleComplete(
         normalizedCompletedModules,
@@ -444,13 +445,13 @@ export default function useOnboardingTour({
                 completedModules: normalizedCompletedModules,
             }, { moduleId, requestNonce });
         });
-        const moduleSteps = moduleId === 'catch-up' ? steps : (ONBOARDING_STEPS_BY_MODULE[moduleId] || []);
+        const moduleSteps = moduleId === 'catch-up' ? steps : (stepsByModule[moduleId] || []);
         const firstStepId = moduleSteps[0]?.id || '';
         if (firstStepId) {
             setSessionState({ sessionOpen: false, currentStepId: firstStepId });
         }
         onModuleRequestConsumed?.(requestNonce);
-    }, [activeSurface, clearStepUnlock, moduleRequest, normalizedCompletedModules, onModuleRequestConsumed, run, steps]);
+    }, [activeSurface, clearStepUnlock, moduleRequest, normalizedCompletedModules, onModuleRequestConsumed, run, steps, stepsByModule]);
 
     React.useEffect(() => {
         const activeModule = moduleSession.activeModule;

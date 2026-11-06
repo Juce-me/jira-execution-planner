@@ -294,7 +294,7 @@ test('Planning controls consume enabled vocabulary while chart placement and rev
         ['planning/stat-cards.css','.uncheck-button:hover',{'color':'var(--text-primary)','box-shadow':'var(--hover-overlay), var(--hover-ring)'}],
         ['planning/stat-cards.css','.team-capacity-action:is(button, a):hover',{'background-image':'none','box-shadow':'var(--hover-overlay), var(--hover-ring)'}],
         ['planning/stat-cards.css','.team-capacity-editor-action:is(button):hover',{'background-image':'none','box-shadow':'var(--hover-overlay), var(--hover-ring)'}],
-        ['eng/planning-review-table.css','.planning-review-heading:hover',{'box-shadow':'var(--hover-overlay), var(--hover-ring-inset)'}],
+        ['eng/planning-review-table.css','.planning-review-heading:hover',{'box-shadow':'none'}],
         ['eng/planning-review-table.css','.planning-review-input:hover',{'border-bottom-color':'currentColor','box-shadow':'none'}],
         ['eng/planning-review-table.css','.planning-review-capacity .epic-stat-toggle:hover',{'background':'#f1f5f9','color':'var(--text-secondary)','filter':'none','box-shadow':'var(--hover-ring-inset)'}],
         ['eng/planning-review-table.css','.planning-review-capacity .epic-stat-toggle.active:hover',{'background':'#ecfdf5','color':'#166534','border-color':'#86efac','filter':'none','box-shadow':'var(--hover-ring-inset)'}],
@@ -307,6 +307,10 @@ test('Planning controls consume enabled vocabulary while chart placement and rev
         assert.deepEqual(rule.declarations,Object.entries(properties).map(([property,value])=>({property,value})),selector);
     }
     const table=parseRules(read('frontend/src/styles/eng/planning-review-table.css'),'table');
+    // Recorded exception: a hovered sort heading tints its whole header cell instead of framing the heading text.
+    const headCell=table.find(rule=>rule.selector===`.planning-review-table thead th:has(.planning-review-heading:hover${gates})`);
+    assert.ok(headCell&&inHoverMedia(headCell),'sort heading highlights its header cell');
+    assert.match(declaration(headCell,'background-image'),/^linear-gradient\(color-mix\(in srgb, currentColor calc\(var\(--overlay-pct\) \* 1%\), transparent\)/);
     assert.ok(!table.some(rule=>rule.selector==='.planning-review-text-button:hover'),'no rendered consumer for legacy text-button');
     assert.ok(table.some(rule=>rule.selector==='.planning-review-boundary-hit:hover'&&declaration(rule,'box-shadow')==='none'),'transparent boundary hit region stays unframed');
     const capacity=parseRules(read('frontend/src/styles/planning/capacity.css'),'capacity');

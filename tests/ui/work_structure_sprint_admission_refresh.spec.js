@@ -23,7 +23,7 @@ test.beforeAll(async () => {
 const field = (id, name) => ({ fieldId: id, fieldName: name });
 const FIELDS = { sprint: field('customfield_19901', 'Sprint'), storyPoints: field('customfield_19902', 'Story Points'), team: field('customfield_19904', 'Team') };
 
-async function mockApp(page, { prefs = { selectedView: 'eng', selectedQuarter: '2027Q1', sprintName: '2027Q1' } } = {}) {
+async function mockApp(page, { prefs = { selectedView: 'eng', selectedQuarter: '2027Q1', sprintName: '2027Q1' }, rekeyedTeam = false } = {}) {
     const state = { log: [], revision: 2, legacyName: 'Legacy', posts: 0, sprints: [{ id: 45459, name: '2027Q1', state: 'active' }] };
     const bundle = () => ({
         version: 1, promotionRevision: 6,
@@ -99,8 +99,8 @@ async function mockApp(page, { prefs = { selectedView: 'eng', selectedQuarter: '
             if (Number(url.searchParams.get('configurationRevision')) !== current) return json({ error: 'configuration_scope_changed' }, 409);
             return json({ sprints: id === 'delivery' ? state.sprints : [], context: { configurationId: id, configurationRevision: current } });
         }
-        if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' } }, meta: {} });
-        if (p === '/api/teams') return json({ teams: [{ id: 'team-platform', name: 'Platform Team' }] });
+        if (p === '/api/team-catalog') return json({ catalog: { 'team-platform': { id: 'team-platform', name: 'Platform Team' }, ...(rekeyedTeam ? { 'team-new': { id: 'team-new', name: 'Platform Team' } } : {}) }, meta: {} });
+        if (p === '/api/teams') return json({ teams: [{ id: rekeyedTeam ? 'team-new' : 'team-platform', name: 'Platform Team' }] });
         if (p === '/api/tasks-with-team-name') return json({ issues: [], epics: {}, epicsInScope: [] });
         if (p === '/api/missing-info') return json({ issues: [], epics: [] });
         if (p === '/api/projects') return json({ projects: [] });
@@ -123,6 +123,25 @@ async function start(page, options) {
     await quiet(page);
     return state;
 }
+
+test('a configured old Team ID warns when the selected Sprint has its same-name replacement', async ({ page }) => {
+    await start(page, { rekeyedTeam: true });
+    await expect.poll(() => page.locator('.sprint-dropdown-toggle').first().textContent()).toContain('2027Q1');
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    const warning = dialog.getByRole('status').filter({ hasText: 'Platform Team: this Team ID was not seen' });
+    await expect(warning).toBeVisible();
+    const chip = dialog.locator('.selected-team-chip').filter({ hasText: 'Platform Team' });
+    await expect(chip).toContainText('not in selected Sprint');
+    const warningNode = await warning.elementHandle();
+    const chipNote = await chip.locator('.group-modal-meta').elementHandle();
+    await warningNode.evaluate(node => { node.style.display = 'none'; });
+    await chipNote.evaluate(node => { node.style.display = 'none'; });
+    await dialog.screenshot({ path: path.join(shotDir, 'team-warning-before.png'), animations: 'disabled' });
+    await warningNode.evaluate(node => { node.style.display = ''; });
+    await chipNote.evaluate(node => { node.style.display = ''; });
+    await dialog.screenshot({ path: path.join(shotDir, 'team-warning-after.png'), animations: 'disabled' });
+});
 
 test('cold load admits the Sprint the DELIVERY catalog holds for the viewed quarter', async ({ page }) => {
     const state = await start(page);

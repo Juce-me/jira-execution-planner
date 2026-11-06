@@ -179,7 +179,7 @@ test('a stale configuration answer re-reads the configuration silently instead o
     await expect(page.locator('.story-readiness-notice')).toHaveCount(0);
 });
 
-const LINK_NOTICE = /in this quarter (has|have) a Jira parent that is not/;
+const LINK_NOTICE = /in this view (has|have) a Jira parent that is not/;
 const mismatches = (parentCount, ancestorCount, keys) => ({
     digest: 'digest-delivery', observed: { planning: 'Epic', parent: 'Initiative' },
     linkMismatches: { parentCount, ancestorCount, keys },
@@ -191,7 +191,7 @@ test('a DELIVERY Epic whose Jira parent is not an Initiative shows one notice an
     const notices = page.locator('.story-readiness-notice', { hasText: LINK_NOTICE });
     await expect(notices).toHaveCount(1);
     await expect(notices.first()).toHaveText(
-        '1 Epic in this quarter has a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.');
+        '1 Epic in this view has a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.');
     await expect(page.locator('.task-item', { hasText: 'Second sample epic' })).toBeVisible();
 });
 
@@ -200,8 +200,8 @@ test('several mismatched links use the plural and an Initiative mismatch names t
     await expect(page.locator('.task-item').first()).toBeVisible();
     const notices = page.locator('.story-readiness-notice', { hasText: LINK_NOTICE });
     await expect(notices).toHaveText([
-        '2 Epics in this quarter have a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.',
-        '1 Initiative in this quarter has a Jira parent that is not an Objective. An administrator can review Field mapping in Settings.',
+        '2 Epics in this view have a Jira parent that is not an Initiative. An administrator can review Field mapping in Settings.',
+        '1 Initiative in this view has a Jira parent that is not an Objective. An administrator can review Field mapping in Settings.',
     ]);
 });
 

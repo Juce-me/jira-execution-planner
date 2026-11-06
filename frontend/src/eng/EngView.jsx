@@ -1,10 +1,11 @@
 import * as React from 'react';
 import IssueCard from '../issues/IssueCard.jsx';
+import WorkTypeGlyph from '../issues/WorkTypeGlyph.jsx';
 import { subscribeEngReading, getEngReadingPresentation } from './engReadingAnchor.js';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
 import AlertPinBar from './AlertPinBar.jsx';
-import { WORK_MODEL_LEGACY, formatEntityCount, resolveEntityNames } from './engWorkModel.js';
+import { WORK_MODEL_LEGACY, entityArticle, formatEntityCount, resolveEntityNames } from './engWorkModel.js';
 
 const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
@@ -58,7 +59,7 @@ export default function EngView({
     const mismatches = entityNames ? workTypes?.linkMismatches : null;
     const linkNotices = mismatches ? [['child', 'parent', mismatches.parentCount], ['parent', 'ancestor', mismatches.ancestorCount]]
         .filter(([, , count]) => count > 0)
-        .map(([role, parentRole, count]) => `${formatEntityCount(count, entityNames, role)} in this quarter ${count === 1 ? 'has' : 'have'} a Jira parent that is not ${/^[aeiou]/i.test(entityNames[parentRole]) ? 'an' : 'a'} ${entityNames[parentRole]}. An administrator can review Field mapping in Settings.`) : [];
+        .map(([role, parentRole, count]) => `${formatEntityCount(count, entityNames, role)} in this view ${count === 1 ? 'has' : 'have'} a Jira parent that is not ${entityArticle(entityNames[parentRole])} ${entityNames[parentRole]}. An administrator can review Field mapping in Settings.`) : [];
 
     if (sprintCatalogLoading) {
         return <LoadingState title="Loading sprints" message="Resolving sprint values from Jira." />;
@@ -160,7 +161,11 @@ export default function EngView({
                                             {ini && (
                                                 <>
                                                     <div className="initiative-header" data-onboarding-target="hierarchy-initiative">
-                                                        <InitiativeIcon className="initiative-header-icon" title={names.ancestor.toUpperCase()} />
+                                                        {names.ancestorTypeId ? (
+                                                            <span className="initiative-icon initiative-header-icon" aria-hidden="true" title={names.ancestor.toUpperCase()}>
+                                                                <WorkTypeGlyph level={names.ancestorLevel} typeId={names.ancestorTypeId} InitiativeIcon={InitiativeIcon} size={14} />
+                                                            </span>
+                                                        ) : <InitiativeIcon className="initiative-header-icon" title={names.ancestor.toUpperCase()} />}
                                                         <div className={`initiative-label ${isMultiEpic ? '' : 'initiative-label-only'}`}>
                                                             <span className="initiative-label-name">{ini.summary}</span>
                                                             <a

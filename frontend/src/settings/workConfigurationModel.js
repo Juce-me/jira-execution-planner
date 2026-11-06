@@ -352,6 +352,44 @@ export function adoptServerOwned(draft, latest) {
 
 export const isPromotedBundle = bundle => Number.isInteger(bundle?.promotionRevision) && bundle.promotionRevision > 0;
 
+// Saved configurations whose configured Jira type ids lack a captured name in their app-config summary
+// `roleTypes`, or whose capture no longer matches the loaded catalog (a Jira rename or level change). A Save
+// of the unchanged bundle lets the server capture them (`capture_role_types`). Only a ready catalog and a known
+// summary are judged, so a failed or loading read never asks for a save. Legacy compatibility slots and the
+// captured name filter keep fixed names (`entry_role_types`) and are never compared.
+const ROLE_TYPE_SLOTS = { planning: 'planningIssueTypeId', parent: 'parentIssueTypeId', ancestor: 'ancestorIssueTypeId', optionalAncestor: 'optionalAncestorIssueTypeId' };
+export function typeNamesNeedingSave({ entries = [], summaries = [], catalogFor = () => null }) {
+    return entries.filter(entry => {
+        const catalog = catalogFor(entry.id);
+        const summary = (summaries || []).find(item => item?.id === entry.id);
+        if (catalog?.state !== 'ready' || !summary) return false;
+        return Object.entries(ROLE_TYPE_SLOTS).some(([slot, key]) => {
+            const id = entry.hierarchy?.[key];
+            if (!id) return false;
+            if (entry.model === MODEL_LEGACY && (slot === 'planning'
+                ? Array.isArray(entry.legacyIssueTypeNames) : entry.legacyHierarchyModes?.[slot] === 'compatibility')) return false;
+            const type = catalog.types.find(item => item.id === id);
+            const name = String(type?.name || '').trim();
+            if (!name || name.length > 255) return false;
+            const captured = summary.roleTypes?.[slot];
+            return !captured || captured.id !== id || captured.name !== name || captured.hierarchyLevel !== type.hierarchyLevel;
+        });
+    }).map(entry => entry.id);
+}
+
+// What a Discard acknowledges: the listed configurations with their summary captures and the catalog types their
+// slots name. A new capture, a Jira rename or another listed configuration changes it, so the request returns.
+export function typeNamesSignature({ ids = [], entries = [], summaries = [], catalogFor = () => null }) {
+    if (!ids.length) return '';
+    return JSON.stringify(ids.map(id => {
+        const entry = (entries || []).find(item => item.id === id);
+        const types = catalogFor(id)?.types || [];
+        const configured = Object.values(ROLE_TYPE_SLOTS).map(key => types.find(type => type.id === entry?.hierarchy?.[key]) || null)
+            .map(type => (type ? [type.id, type.name, type.hierarchyLevel] : null));
+        return [id, (summaries || []).find(item => item?.id === id)?.roleTypes ?? null, configured];
+    }));
+}
+
 // Unpromoted workspace seen through a promoted conflict, or any conflict: keep the user's draft,
 // retarget it at the latest bundle. Returns {draft, baseline, promoted}.
 export function rebaseOntoLatest(draft, latest) {

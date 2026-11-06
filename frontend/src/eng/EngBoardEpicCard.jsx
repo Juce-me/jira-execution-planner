@@ -27,7 +27,7 @@ import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
 export default function EngBoardEpicCard({
     epicGroup, renderPriorityIcon, onOpen, onDragStart, onDragEnd, isDragging = false, isRejected = false,
     workItemLabel = 'stories',
-    issueFieldEdits = null, jiraUrl = '', shareControl = null,
+    issueFieldEdits = null, jiraUrl = '', shareControl = null, issueKind = 'epic',
 }) {
     const epic = (epicGroup && epicGroup.epic) || {};
     const key = (epicGroup && epicGroup.key) || epic.key || '';
@@ -61,7 +61,7 @@ export default function EngBoardEpicCard({
                         statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''}
                         recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''}
                         configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                        onOpen={() => issueFieldEdits?.openEditor({ issueKey: key, field, issueKind: 'epic', sourceSurface: 'board' })}
+                        onOpen={() => issueFieldEdits?.openEditor({ issueKey: key, field, issueKind, sourceSurface: 'board' })}
                         onClose={issueFieldEdits?.closeEditor} onSearch={issueFieldEdits?.search} onSelect={issueFieldEdits?.submit}
                         onReload={issueFieldEdits?.reload} onCheckJira={issueFieldEdits?.checkJira}
                     />

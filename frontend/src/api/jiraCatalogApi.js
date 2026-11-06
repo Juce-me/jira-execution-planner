@@ -15,6 +15,10 @@ const postJsonWithCsrf = (backendUrl, path, payload) =>
         })
     );
 
+// A Jira issue type's own icon (PNG), read by the server with the viewer's Jira auth. Kept relative: the page's CSP
+// allows images from its own origin only.
+export const issueTypeIconUrl = typeId => `/api/issue-type-icon/${typeId}`;
+
 export const fetchJiraLabels = (backendUrl, { query = '', prefix = '', limit = 20 } = {}) => {
     const params = new URLSearchParams({ limit: String(limit) });
     if (query) {

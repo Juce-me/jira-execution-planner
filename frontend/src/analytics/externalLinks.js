@@ -1,4 +1,4 @@
-const SAFE_ISSUE_KINDS = new Set(['initiative', 'epic', 'story', 'mixed', 'unknown']);
+const SAFE_ISSUE_KINDS = new Set(['objective', 'initiative', 'epic', 'story', 'mixed', 'unknown']);
 const SAFE_HOME_LINK_TYPES = new Set(['jira_home_project', 'jira_home_update']);
 
 function normalizeIssueKind(issueKind, fallback = 'story') {

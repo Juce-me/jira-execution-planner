@@ -374,6 +374,7 @@ def jira_get(
     refresh_http_post=requests.post,
     cooperative_budget=None,
     diagnostic_observer=None,
+    accept=None,
     **kwargs,
 ):
     save_session = save_session or (lambda data: None)
@@ -387,9 +388,12 @@ def jira_get(
         cooperative_budget=cooperative_budget,
         diagnostic_observer=diagnostic_observer,
     )
+    headers = build_jira_headers(config, active_session)
+    if accept:
+        headers["Accept"] = accept
     return http_get(
         build_jira_api_url(config, context, path),
-        headers=build_jira_headers(config, active_session),
+        headers=headers,
         **kwargs,
     )
 

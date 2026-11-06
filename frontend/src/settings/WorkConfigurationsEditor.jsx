@@ -345,6 +345,7 @@ export default function WorkConfigurationsEditor({
                     </label>
                 </div>
                 <div id="work-config-panel" className="work-config-panel" role="tabpanel" aria-labelledby={`work-config-tab-${tab}`}>
+                    {workConfig.typeNamesToSave.includes(entry.id) && <p className="group-field-helper work-config-note" role="status" data-work-config-type-names>Jira type names need saving.</p>}
                     {entry.model === MODEL_RND && !entry.scope.projects.length && (
                         <div className="group-modal-warning work-config-note" data-setup-guidance>
                             {entry.name} is not ready: choose its Jira project.

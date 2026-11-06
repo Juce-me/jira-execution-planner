@@ -10,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAN = ROOT / 'docs' / 'plans' / 'EXEC-quarterly-work-structure-migration.md'
+PLAN = ROOT / 'docs' / 'plans' / 'DONE-quarterly-work-structure-migration.md'
 
 
 def _load_generator():

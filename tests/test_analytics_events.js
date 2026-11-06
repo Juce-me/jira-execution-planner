@@ -438,7 +438,7 @@ test('issue_status_action accepts the eng status transition enum params and reje
         );
     }
 
-    for (const issueTypeMix of ['stories', 'epics', 'subtasks', 'mixed']) {
+    for (const issueTypeMix of ['stories', 'epics', 'subtasks', 'initiatives', 'objectives', 'mixed']) {
         assert.deepEqual(
             sanitizeAnalyticsParams({
                 feature_name: 'eng_status_transitions',
@@ -1257,6 +1257,9 @@ test('issue field edit analytics builder emits only the fixed bounded contract',
             field_name: 'delivery_owner', issue_kind: 'epic', source_surface: 'board', result: 'unknown',
         },
     );
+    assert.equal(buildIssueFieldEditAnalyticsParams('open', {
+        fieldName: 'assignee', issueKind: 'objective', sourceSurface: 'catch_up',
+    }).issue_kind, 'objective');
     assert.equal(Object.keys(buildIssueFieldEditAnalyticsParams('submit', {
         fieldName: 'story_points', issueKind: 'story', sourceSurface: 'planning', result: 'failure',
     })).length, 5);
@@ -1265,6 +1268,7 @@ test('issue field edit analytics builder emits only the fixed bounded contract',
         ['cancel', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'catch_up' }],
         ['open', { fieldName: 'raw_field', issueKind: 'story', sourceSurface: 'catch_up' }],
         ['open', { fieldName: 'assignee', issueKind: 'subtask', sourceSurface: 'catch_up' }],
+        ['open', { fieldName: 'assignee', issueKind: 'deliverable', sourceSurface: 'board' }],
         ['open', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'scenario' }],
         ['result', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'board', result: 'partial' }],
         ['result', { fieldName: 'assignee', issueKind: 'story', sourceSurface: 'board' }],

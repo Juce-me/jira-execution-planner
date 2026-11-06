@@ -2,6 +2,8 @@ import * as React from 'react';
 import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import { DEFAULT_MAX_JQL_KEYS, buildJiraClosedEpicsSearchUrl, buildJiraCohortIssueSearchUrl } from '../jiraExportUtils.mjs';
 import OpenEpicsChart from './OpenEpicsChart.jsx';
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from '../stats/statsScope.js';
 
 // `word` is the lowercase plural role word of the viewed configuration ('epics' for Legacy).
 const completedDescriptions = word => ({
@@ -23,7 +25,9 @@ function buildCohortSearchUrl({
     cohortSelectedRow,
     cohortProjectFilter,
     activeGroupMissingComponents,
-    burnoutScopedTeamIds
+    burnoutScopedTeamIds,
+    issueType,
+    issueTypeId
 }) {
     return buildJiraCohortIssueSearchUrl({
         jiraUrl,
@@ -32,7 +36,8 @@ function buildCohortSearchUrl({
         groupBy: cohortGroupBy,
         rowKey: cohortSelectedRow,
         statuses: buildStatusList(rows),
-        issueType: 'Epic',
+        issueType,
+        issueTypeId,
         projectKey: cohortProjectFilter,
         components: activeGroupMissingComponents,
         teamIds: burnoutScopedTeamIds
@@ -52,10 +57,12 @@ export default function LeadTimesEpicCharts({
     cohortSelectedRow,
     cohortProjectFilter,
     activeGroupMissingComponents,
-    burnoutScopedTeamIds
+    burnoutScopedTeamIds,
+    issueType = 'Epic',
+    issueTypeId = null
 }) {
-    const parents = roles?.parents || 'Epics';
-    const word = parents.toLowerCase();
+    const { parent, parents } = roles || roleLabels(null);
+    const word = lowerEntityWord(parents);
     const COMPLETED_DESCRIPTIONS = completedDescriptions(word);
     const searchFilters = {
         jiraUrl,
@@ -65,18 +72,20 @@ export default function LeadTimesEpicCharts({
         cohortSelectedRow,
         cohortProjectFilter,
         activeGroupMissingComponents,
-        burnoutScopedTeamIds
+        burnoutScopedTeamIds,
+        issueType,
+        issueTypeId
     };
     const openJiraSearchUrl = React.useMemo(
         () => buildCohortSearchUrl({ ...searchFilters, rows: cohortOpenBars }),
-        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds]
+        [cohortOpenBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueType, issueTypeId]
     );
     // Created describes its set by a created-date JQL; the closed modes link exactly the Epics the chart lists.
     const completedJiraSearchUrl = React.useMemo(
         () => (cohortMode === 'created'
             ? buildCohortSearchUrl({ ...searchFilters, rows: cohortCompletedBars })
             : buildJiraClosedEpicsSearchUrl(jiraUrl, cohortCompletedBars.map((item) => item.key))),
-        [cohortMode, cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds]
+        [cohortMode, cohortCompletedBars, jiraUrl, cohortStartQuarter, cohortEndQuarter, cohortGroupBy, cohortSelectedRow, cohortProjectFilter, activeGroupMissingComponents, burnoutScopedTeamIds, issueType, issueTypeId]
     );
 
     return (
@@ -88,6 +97,7 @@ export default function LeadTimesEpicCharts({
                     description={cohortSelectedRowLabel ? '' : 'Created within the selected Lead Times quarter range and still non-terminal today.'}
                     items={cohortOpenBars}
                     itemWord={word}
+                    itemName={parent}
                     jiraBaseUrl={jiraUrl}
                     jiraSearchUrl={openJiraSearchUrl}
                     jiraSearchLabel={`Open all open ${word} in Jira`}
@@ -105,6 +115,7 @@ export default function LeadTimesEpicCharts({
                     description={cohortSelectedRowLabel ? '' : COMPLETED_DESCRIPTIONS[cohortMode] || COMPLETED_DESCRIPTIONS.created}
                     items={cohortCompletedBars}
                     itemWord={word}
+                    itemName={parent}
                     jiraBaseUrl={jiraUrl}
                     jiraSearchUrl={completedJiraSearchUrl}
                     jiraSearchLabel={`Open all completed ${word} in Jira`}

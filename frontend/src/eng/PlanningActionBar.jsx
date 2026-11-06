@@ -1,8 +1,10 @@
 import * as React from 'react';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import PlanningPopover from './PlanningPopover.jsx';
+import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
-export const PLANNING_SCOPE_HELP = 'Applies to all stories matching the current Team and filters, including rows below.';
+export const planningScopeHelp = (childWords = 'stories') =>
+    `Applies to all ${childWords} matching the current Team and filters, including rows below.`;
 
 // Retained until Table details acceptance allows the last Planning List callers to be removed.
 export function PlanningLayoutToggle({ planningLayout = 'list', onTogglePlanningLayout }) {
@@ -15,8 +17,8 @@ export function PlanningLayoutToggle({ planningLayout = 'list', onTogglePlanning
     </button>;
 }
 
-function ScopedAction({ children, descriptionId, ...props }) {
-    return <EpicHeaderValueReadout value={PLANNING_SCOPE_HELP} alwaysOn suppressed={props.disabled}>
+function ScopedAction({ children, descriptionId, help, ...props }) {
+    return <EpicHeaderValueReadout value={help} alwaysOn suppressed={props.disabled}>
         {({ triggerRef, pointerProps, focusProps }) => <button type="button" ref={triggerRef} {...pointerProps} {...focusProps} {...props} aria-describedby={descriptionId}>{children}</button>}
     </EpicHeaderValueReadout>;
 }
@@ -27,8 +29,10 @@ export default function PlanningActionBar({
     onSelectAllVisible, canUndoPlanningSelection, onUndoPlanningSelection, onClearSelected, onOpenSelectedInJira,
     statusGroups = [], onIncludeStatus, onRemoveStatus, panelControl = null,
     planningLayout = 'table', onTogglePlanningLayout,
-    statusTransitionError = '', statusTransitionErrorCode = '', statusTransitionResult = null,
+    statusTransitionError = '', statusTransitionErrorCode = '', statusTransitionResult = null, entityNames = null,
 }) {
+    const childWords = lowerEntityWord((entityNames || resolveEntityNames()).childPlural);
+    const scopeHelp = planningScopeHelp(childWords);
     const [statusOpen, setStatusOpen] = React.useState(false);
     const scopeId = React.useId();
     const undoId = React.useId();
@@ -42,11 +46,11 @@ export default function PlanningActionBar({
         return `Status updated for ${succeeded}, ${failed} failed.`;
     })();
     return <div className="planning-actions">
-        <span id={scopeId} className="planning-review-sr-only">{PLANNING_SCOPE_HELP}</span>
+        <span id={scopeId} className="planning-review-sr-only">{scopeHelp}</span>
         <span id={undoId} className="planning-review-sr-only">Undo the last inclusion change.</span>
-        <ScopedAction className={`planning-action-button${areAllVisiblePlanningTasksSelected ? ' active' : ''}`} descriptionId={scopeId}
+        <ScopedAction className={`planning-action-button${areAllVisiblePlanningTasksSelected ? ' active' : ''}`} descriptionId={scopeId} help={scopeHelp}
             disabled={!enabled || !hasVisiblePlanningTasks || areAllVisiblePlanningTasksSelected} onClick={onSelectAllVisible}>Select All</ScopedAction>
-        <ScopedAction className="uncheck-button" descriptionId={scopeId} disabled={!enabled || matchingIncludedCount === 0} onClick={onClearSelected}>Clear Selection</ScopedAction>
+        <ScopedAction className="uncheck-button" descriptionId={scopeId} help={scopeHelp} disabled={!enabled || matchingIncludedCount === 0} onClick={onClearSelected}>Clear Selection</ScopedAction>
         <button type="button" className="planning-action-button" aria-describedby={undoId} title="Undo the last inclusion change."
             disabled={!enabled || !canUndoPlanningSelection} onClick={onUndoPlanningSelection}>Undo</button>
         <PlanningPopover open={statusOpen} onClose={() => setStatusOpen(false)} label="Planning options"
@@ -57,8 +61,8 @@ export default function PlanningActionBar({
                 {panelControl && React.cloneElement(panelControl, { className: 'pop-opt pop-opt-plain', 'data-review-popover-close': true,
                     children: <span className="pop-opt-content"><span className="pop-opt-label">{panelControl.props.children}</span></span> })}
                 <button type="button" className="pop-opt pop-opt-plain" data-review-popover-close onClick={onOpenSelectedInJira}
-                    disabled={selectedVisibleCount === 0 || !jiraUrl} title="Open planned stories matching the current Team and filters in Jira">
-                    <span className="pop-opt-content"><span className="pop-opt-label">Open planned stories in Jira</span></span>
+                    disabled={selectedVisibleCount === 0 || !jiraUrl} title={`Open planned ${childWords} matching the current Team and filters in Jira`}>
+                    <span className="pop-opt-content"><span className="pop-opt-label">{`Open planned ${childWords} in Jira`}</span></span>
                 </button>
                 {onTogglePlanningLayout && <PlanningLayoutToggle planningLayout={planningLayout} onTogglePlanningLayout={onTogglePlanningLayout} />}
             </div></div>

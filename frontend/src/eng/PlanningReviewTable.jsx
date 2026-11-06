@@ -22,7 +22,8 @@ import { takeInitialPlanningRowMode } from '../shareView/store.js';
 import { peekInitialPlanningRowMode } from '../shareView/store.js';
 import { publishPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
-import { reviewLabels } from './planningReviewKinds.js';
+import { reviewLabels, reviewRowIssueKind } from './planningReviewKinds.js';
+import { resolveEntityNames } from './engWorkModel.js';
 import { buildPlanningReviewRows, buildPlanningReviewColumns, hasZeroStoryPoints, reviewSelectionState, reviewValue, selectedStoryPoints, sortPlanningReviewRows, planningReviewTotals } from './planningReviewTableModel.js';
 
 function TrimmedValue({ value, children = value }) {
@@ -93,17 +94,20 @@ function CustomCell({ row, column, review, editing, setEditing, focusNew, onHold
     return <><input ref={ref} className={`planning-review-input ${error ? 'invalid' : ''}`} type="text" inputMode={column.type === 'number' ? 'decimal' : 'text'} aria-label={`${column.label} for ${row.key}`} aria-invalid={Boolean(error)} maxLength={column.type === 'text' ? 500 : 16} value={draft} disabled={!review.capabilities?.canSave || review.saving || review.discarding || review.isRowReadable?.(row) === false || review.unavailableIssueIds?.includes(row.issueId)} onFocus={() => { initialInput.current = draft; hold(true); setEditing(row.id); }} onChange={event => { setDraft(event.target.value); const result = review.setCell(row, column, event.target.value); setError(result.error || ''); }} onBlur={() => { hold(false); return commit(); }} onKeyDown={event => { if (event.key === 'Enter') { if (commit()) ref.current.blur(); } else if (event.key === 'Escape') { cancelBlur.current = true; review.setCell(row, column, initialInput.current); setDraft(initialInput.current); setError(''); setEditing(null); ref.current.blur(); } }} />{error && <span className="planning-review-validation" role="alert">{error}</span>}</>;
 }
 
-export function PlanningReviewScopeDialog({ review }) {
+export function PlanningReviewScopeDialog({ review, entityNames = null }) {
     if (!review?.pendingScopeChange) return null;
+    const child = (entityNames || resolveEntityNames()).child;
     return <div className="planning-review-dialog-backdrop"><div className="planning-review-dialog" role="dialog" aria-modal="true" aria-labelledby="planning-review-leave-heading">
-        <h3 id="planning-review-leave-heading">Save this plan?</h3><p>Save or discard all pending Team changes before leaving this scope. Story inclusion and layout belong to this Sprint; shared review columns and values span Sprints. Jira edits and capacity settings are saved separately.</p>
+        <h3 id="planning-review-leave-heading">Save this plan?</h3><p>Save or discard all pending Team changes before leaving this scope. {child} inclusion and layout belong to this Sprint; shared review columns and values span Sprints. Jira edits and capacity settings are saved separately.</p>
         {review.error && <p role="alert">{review.error}</p>}
         <div className="planning-review-dialog-actions"><button type="button" className="planning-action-button" disabled={review.saving || review.discarding || !review.capabilities?.canSave || review.unconfirmed || Boolean(review.conflict) || review.groupBlocked} onClick={() => review.resolveScopeChange('save')}>Save plan</button><button type="button" className="planning-action-button" disabled={review.saving || review.discarding} onClick={() => review.resolveScopeChange('discard')}>Discard changes</button><button type="button" className="planning-action-button" disabled={review.saving || review.discarding} onClick={() => review.resolveScopeChange('stay')}>Stay</button></div>
     </div></div>;
 }
 
-export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, rowDetailsContext = {}, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel }) {
-    const labels = React.useMemo(() => reviewLabels(workModel), [workModel]);
+export default function PlanningReviewTable({ epicGroups = [], visibleTasks = [], selectedStoryKeys = new Set(), onToggleStory, onSelectStories, jiraUrl = '', review, getTeamInfo, admittedTeamCount, admittedProjectCount, renderPriorityIcon, renderEpicShareControl, renderFieldEditor, rowDetailsContext = {}, onReviewAction, toolbarHost, excludedEpicSet = new Set(), pendingOriginals = null, onHoldRow, confirmedEdit = null, onConfirmedEditHandled, isRowHeld, onInteractionChange, derived = true, groupName = '', resolveSprintName, inheritedHintDismissals = {}, onDismissInheritedHint, workModel, entityNames = null }) {
+    const names = React.useMemo(() => entityNames || resolveEntityNames(workModel), [entityNames, workModel]);
+    const labels = React.useMemo(() => reviewLabels(names), [names]);
+    const kindOf = role => reviewRowIssueKind(role, names); // analytics kind of a row role
     // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
     const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
     const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
@@ -140,13 +144,13 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const stableOrder = React.useRef(null);
     // The dashboard passes a fresh Set every render; key the memo on its content instead.
     const selectionSignature = Array.from(selectedStoryKeys).sort().join('|');
-    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo, workModel }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature, workModel]);
+    const rows = React.useMemo(() => buildPlanningReviewRows({ epicGroups, visibleTasks, mode, getTeamInfo, names }).map(row => ({ ...row, accepted: selectedStoryPoints(row, selectedStoryKeys), capacity: row.synthetic ? '' : excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included' })), [epicGroups, visibleTasks, mode, getTeamInfo, excludedEpicSet, selectionSignature, names]);
     const scroller = React.useRef(null);
     const dockedHeader = React.useRef(null), dockedFooter = React.useRef(null);
     const [dock, setDock] = React.useState(null);
     // Derived columns come from both row kinds' definitions; their values read the loaded cells through `derivedContext`.
-    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived, workModel });
-    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived, workModel });
+    const allColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount, admittedProjectCount, layout: review.layouts?.[mode], derived, names });
+    const layoutColumns = buildPlanningReviewColumns({ rows, mode, customColumns: review.columns, admittedTeamCount: 2, admittedProjectCount: 2, layout: review.layouts?.[mode], derived, names });
     const derivedContext = { isLoaded: (issueId, rowKind) => review.isRowReadable?.({ rowKind, issueId }) === true, forceLoading: Boolean(review.forceLoading) };
     const columns = allColumns.filter(column => column.required || !hidden.has(column.id));
     const keyHidden = !columns.some(column => column.id === 'key');
@@ -220,7 +224,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         const title = <TrimmedValue value={row.summary}>{field(row, 'summary', row.summary)}</TrimmedValue>;
         const awaited = row.rowKind === 'epic' ? row.requirements?.length || 0 : 0;
         // Without the Key column the Summary still reaches Jira: an icon link stands in for the key.
-        const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
+        const jiraLink = keyHidden && !row.synthetic ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="planning-review-jira-link" target="_blank" rel="noopener noreferrer" aria-label={`Open ${row.key} in Jira`} title={`Open ${row.key} in Jira`} analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf(row.rowKind), sourceSurface: 'planning' })}><JiraMarkIcon /></TrackedExternalLink> : null;
         const share = !row.synthetic && (row.rowKind === 'epic' || row.rowKind === 'story') ? renderEpicShareControl?.(row.key, row.rowKind) : null;
         const detail = !row.synthetic && row.key ? <span data-planning-details-trigger style={{ position: 'relative', height: 0, flex: '0 0 24px' }}><IconButton size="sm" className="planning-review-column-action" style={{ position: 'absolute', top: -12, left: 0 }} aria-label={`View details for ${row.key}`} aria-haspopup="dialog" aria-expanded={details?.row.key === row.key}
             onClick={event => { event.stopPropagation(); setDetails({ row, trigger: event.currentTarget }); }}>
@@ -385,19 +389,19 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
         <div ref={scroller} className="planning-review-scroll" tabIndex={0} aria-label="Planning review spreadsheet">
             <table className={`planning-review-table${keyHidden ? ' planning-review-key-hidden' : ''}${dock?.header ? ' planning-review-header-docked' : ''}${dock?.footer ? ' planning-review-footer-docked' : ''}`}>{header()}
             <tbody ref={tbodyRef}>{displayed.map(row => <tr key={`${row.rowKind}:${row.id || row.key}`} data-planning-row-key={row.id || row.key} data-row-kind={row.rowKind} data-epic-key={row.synthetic ? undefined : row.rowKind === 'epic' ? row.key : row.epicKey} data-review-row={`${row.rowKind}:${row.id || row.key}`} data-issue-key={row.synthetic ? undefined : row.key} className={row.synthetic ? 'planning-review-synthetic' : hasZeroStoryPoints(row) ? 'planning-review-zero-sp' : ''}>
-                {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture /></td> : <>
+                {row.readingDeparture ? <td colSpan={columns.length + 1}><IssueCard task={row.issue} jiraUrl={jiraUrl} teamLabel={row.issue.fields?.teamName || ''} readingDeparture entityNames={names} /></td> : <>
                 <td className="planning-review-selection"><Selection row={row} selectedKeys={selectedStoryKeys} onToggleStory={onToggleStory} onSelectStories={onSelectStories} disabled={Boolean(review.discarding || review.unconfirmed || review.loading || review.planReady === false || review.capabilities?.canSave === false || row.rowKind === 'story' && review.unavailableIssueIds?.includes(row.issueId))} /></td>
                 {columns.map(column => <td key={column.id} className={`planning-review-${column.id}${column.custom || column.derived ? ' planning-review-custom' : ''} planning-review-${column.type === 'number' ? 'numeric' : 'text'}${movable(column)}`}>
                     {column.derived ? <PlanningReviewDerivedCell row={row} column={column} review={review} derivedContext={derivedContext} />
                         : column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
-                        : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: row.rowKind, sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
+                        : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf(row.rowKind), sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
                         : column.id === 'summary' ? summaryCell(row)
                         : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
                         : column.id === 'accepted' ? row.accepted ?? ''
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />
                         : column.id === 'team' ? field(row, 'team', row.team?.name || 'Unknown Team')
-                        : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: 'epic', sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
+                        : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf('epic'), sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
                         : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))

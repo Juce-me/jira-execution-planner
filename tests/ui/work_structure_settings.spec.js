@@ -87,9 +87,9 @@ function promotedBundle({ delivery = {}, legacy = {}, promotionRevision = 6 } = 
 // per-entry revision bumps, plus injectable failures.
 async function mockApp(page, {
     featureEnabled = true, promoted = false, revision = 3, bundle = virtualBundle(), typesDelay = 0, typesStatus = 200,
-    types = TYPES, failPriorityOnce = false,
+    types = TYPES, failPriorityOnce = false, summaries = [], analyticsEnabled = false,
 } = {}) {
-    const state = { promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
+    const state = { summaries: clone(summaries), afterWorkPost: null, promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(() => {
@@ -111,7 +111,7 @@ async function mockApp(page, {
             displayName: 'Synthetic Admin', accountType: 'admin', status: 'active',
             authConnections: [], projectAccess: [],
         }] });
-        if (p === '/api/analytics/context') return json({ enabled: false });
+        if (p === '/api/analytics/context') return json(analyticsEnabled ? { enabled: true, measurementId: 'G-SYNTHETIC', ga4UserId: 'synthetic-user', debugMode: false } : { enabled: false });
         if (p === '/api/version') return json({ enabled: false });
         if (p === '/api/config') {
             const shared = {
@@ -131,7 +131,7 @@ async function mockApp(page, {
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: state.revision,
                 workConfigurationsEnabled: featureEnabled, workConfigurationsPromoted: state.promoted,
-                workConfigurationSummaries: [], adminSettingsMissingByConfiguration: {},
+                workConfigurationSummaries: state.summaries, adminSettingsMissingByConfiguration: {},
             });
         }
         if (p === '/api/work-structure/config' && method === 'GET') {
@@ -168,6 +168,7 @@ async function mockApp(page, {
             state.revision += 1;
             state.bundle = { version: 1, promotionRevision: state.promoted ? state.bundle.promotionRevision : state.revision, configurations };
             state.promoted = true;
+            state.afterWorkPost?.(state);
             return json({ workConfigurations: state.bundle, configRevision: state.revision, changedConfigurationIds: changed, promoted: true });
         }
         if (p === '/api/issue-types' && url.searchParams.get('configurationId')) {
@@ -190,6 +191,10 @@ async function mockApp(page, {
                 version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'] }], defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
                 preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: ['platform'], activeGroupId: 'platform', effectiveVisibleGroupIds: ['platform'] },
             });
+        }
+        if (p === '/api/groups-config' && method === 'POST') {
+            state.groupPosts = (state.groupPosts || 0) + 1;
+            return json({ ...body, configRevision: 3, source: 'workspace_db' });
         }
         if (p === '/api/groups-preferences') return json({ preferences: {} });
         if (p === '/api/sprints') return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
@@ -981,4 +986,128 @@ test('DELIVERY shares the Legacy Sprint, Story Points and Team fields; Sprint an
     // Back to shared through the explicit action.
     await reopened.locator('[data-field-share="sprint"]').getByRole('button', { name: 'Same as Legacy' }).click();
     await expect(reopened.locator('[data-field-share="sprint"]')).toContainText('Same as Legacy');
+});
+
+test('a saved workspace without captured Jira type names asks for one Save of the unchanged bundle, then settles', async ({ page }) => {
+    const bundle = promotedBundle();
+    const summary = (id, roleTypes) => ({ id, name: id === 'legacy' ? 'Legacy' : 'DELIVERY', revision: 1, model: id === 'legacy' ? 'legacy' : 'rnd_2027', roleTypes });
+    const legacyNames = { planning: { id: null, name: 'Story', hierarchyLevel: 0 }, parent: { id: null, name: 'Epic', hierarchyLevel: 1 }, ancestor: { id: null, name: 'Initiative', hierarchyLevel: 2 }, optionalAncestor: null };
+    const state = await mockApp(page, {
+        promoted: true, revision: 6, bundle,
+        summaries: [summary('legacy', legacyNames), summary('delivery', { planning: null, parent: null, ancestor: null, optionalAncestor: null })],
+    });
+    // The server's names-only path: the unchanged bundle is stored as is and the names are captured.
+    state.afterWorkPost = current => {
+        current.summaries = [summary('legacy', legacyNames), summary('delivery', {
+            planning: { id: '19002', name: 'Epic', hierarchyLevel: 1 }, parent: { id: '19003', name: 'Initiative', hierarchyLevel: 2 }, ancestor: null, optionalAncestor: null,
+        })];
+    };
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    // Legacy keeps its compatibility names: with only its catalog loaded there is nothing to capture.
+    await nested(dialog, 'Field mapping').click();
+    await expect(dialog.locator('[data-catalog-state]')).toHaveCount(0);
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await expect(saveButton(dialog)).toBeDisabled();
+    await selectConfiguration(dialog, 'delivery');
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveText('Jira type names need saving.');
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveClass('group-field-helper work-config-note');
+    await expect(dialog.locator('[data-settings-save-note]')).toHaveText('Jira type names need saving: DELIVERY.');
+    await selectConfiguration(dialog, 'legacy');
+    await expect(dialog.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await expect(dialog.locator('[data-settings-save-note]')).toHaveText('Jira type names need saving: DELIVERY.');
+    await selectConfiguration(dialog, 'delivery');
+    await expect(saveButton(dialog)).toBeEnabled();
+    await saveButton(dialog).click();
+    await expect(dialog).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(1);
+    expect(state.workPosts[0].workConfigurations).toEqual(bundle);
+    expect(state.workPosts[0].clearProjectsForConfigurationIds).toEqual([]);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Admin' }).click();
+    await projectTab(reopened);
+    await selectConfiguration(reopened, 'delivery');
+    await nested(reopened, 'Field mapping').click();
+    // The catalog is loaded and the captured names match it, so nothing is left to save.
+    await expect(reopened.locator('[data-catalog-state]')).toHaveCount(0);
+    await expect(reopened.locator('[data-mapping-key="parentIssueTypeId"]')).toContainText('Initiative');
+    await expect(reopened.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await expect(saveButton(reopened)).toBeDisabled();
+    await expect(reopened.locator('[data-settings-save-note]')).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(1);
+});
+
+const uncapturedSummaries = () => [
+    { id: 'legacy', name: 'Legacy', revision: 1, model: 'legacy', roleTypes: { planning: { id: null, name: 'Story', hierarchyLevel: 0 }, parent: { id: null, name: 'Epic', hierarchyLevel: 1 }, ancestor: { id: null, name: 'Initiative', hierarchyLevel: 2 }, optionalAncestor: null } },
+    { id: 'delivery', name: 'DELIVERY', revision: 1, model: 'rnd_2027', roleTypes: { planning: null, parent: null, ancestor: null, optionalAncestor: null } },
+];
+async function openWithPendingNames(page, options = {}) {
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle(), summaries: uncapturedSummaries(), ...options });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await expect(dialog.locator('[data-work-config-type-names]')).toBeVisible();
+    return { state, dialog };
+}
+
+test('Discard acknowledges uncaptured type names for the session: reopening asks nothing', async ({ page }) => {
+    const { state, dialog } = await openWithPendingNames(page);
+    await dialog.getByRole('button', { name: 'Cancel' }).click();
+    await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const reopened = page.getByRole('dialog').first();
+    await reopened.getByRole('button', { name: 'Departments' }).click();
+    await expect(reopened.getByRole('tab', { name: 'Team groups' })).toBeVisible();
+    await expect(saveButton(reopened)).toBeDisabled();
+    await expect(reopened.locator('.group-modal-dirty')).toHaveCount(0);
+    await expect(reopened.locator('[data-settings-save-note]')).toHaveCount(0);
+    await reopened.getByRole('button', { name: 'Admin' }).click();
+    await projectTab(reopened);
+    await selectConfiguration(reopened, 'delivery');
+    await expect(reopened.locator('[data-work-config-type-names]')).toHaveCount(0);
+    await reopened.getByRole('button', { name: 'Cancel' }).click();
+    await expect(page.getByRole('button', { name: 'Discard', exact: true })).toHaveCount(0);
+    await expect(reopened).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(0);
+});
+
+test('a names-only Save posts the bundle without Board side effects or admin analytics', async ({ page }) => {
+    const { state, dialog } = await openWithPendingNames(page, { analyticsEnabled: true });
+    const before = state.calls.length;
+    await saveButton(dialog).click();
+    await expect(dialog).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(1);
+    await page.waitForTimeout(300);
+    const delta = state.calls.slice(before).map(call => call.pathname);
+    expect(delta.filter(path => path === '/api/config')).toHaveLength(1);
+    expect(delta.filter(path => path === '/api/sprints')).toEqual([]);
+    const sections = await page.evaluate(() => (window.dataLayer || [])
+        .filter(entry => entry?.event_name === 'settings_action' && ['save', 'save_result'].includes(entry.workflow_action))
+        .map(entry => entry.section));
+    expect(sections.length).toBeGreaterThan(0);
+    expect(sections).not.toContain('admin');
+});
+
+test('an unrelated Departments Save carries pending type names without Board side effects or admin analytics', async ({ page }) => {
+    const { state, dialog } = await openWithPendingNames(page, { analyticsEnabled: true });
+    await dialog.getByRole('button', { name: 'Departments' }).click();
+    await dialog.locator('.group-list-item.active input').first().fill('Platform renamed');
+    const before = state.calls.length;
+    await saveButton(dialog).click();
+    await expect(page.locator('.group-modal')).toHaveCount(0);
+    expect(state.workPosts).toHaveLength(1);
+    expect(state.workPosts[0].workConfigurations).toEqual(promotedBundle());
+    expect(state.groupPosts).toBe(1);
+    await page.waitForTimeout(300);
+    const delta = state.calls.slice(before).map(call => call.pathname);
+    expect(delta.filter(path => path === '/api/sprints')).toEqual([]);
+    const sections = await page.evaluate(() => (window.dataLayer || [])
+        .filter(entry => entry?.event_name === 'settings_action' && ['save', 'save_result'].includes(entry.workflow_action))
+        .map(entry => entry.section));
+    expect(sections).toContain('departments');
+    expect(sections).not.toContain('admin');
 });

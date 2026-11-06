@@ -14,6 +14,7 @@
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
 import { epicStatusName } from './engTaskUtils.js';
+import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import {
     BOARD_COLUMN_COLOURS,
     DEFAULT_COLUMN_COLOUR,
@@ -25,7 +26,9 @@ import {
 // `^col-[0-9a-f]{8}$` — a stored id could never collide with it. A group with no usable board gets
 // this first-run column, and the view offers the composer (§6.1).
 export const UNCONFIGURED_COLUMN_ID = 'board-unconfigured';
-export const UNCONFIGURED_COLUMN_NAME = 'All epics';
+// Named by the parent level's configured Jira type ("All epics" in Legacy).
+export const unconfiguredColumnName = (names = resolveEntityNames()) => `All ${lowerEntityWord(names.parentPlural)}`;
+export const UNCONFIGURED_COLUMN_NAME = unconfiguredColumnName();
 
 // §6.1 / §5.5 fixture 2. The stable name-based three-phase default, in board reading order.
 // Colours are BOARD_COLUMN_COLOURS members so a derived board is savable without the validator
@@ -168,7 +171,7 @@ export function resolveBoardColumnOwner(columns) {
 // `columns` is the stored `board.columns[]`; `epicGroups` is dashboard.jsx's groupTasksByEpic
 // output. Columns with no statuses do not render (§6.1) — the validator makes that a save-time
 // error, but a config that predates the validator can still contain one.
-export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKeys = null } = {}) {
+export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKeys = null, names = undefined } = {}) {
     // Strict Board frames already contain the server's resolved column identity for every Epic.
     // When that explicit membership is supplied it is authoritative: preserve declared column
     // order (including empty terminal columns) and never re-derive ownership from status.
@@ -195,7 +198,7 @@ export function buildBoardColumns({ columns = [], epicGroups = [], columnEpicKey
     // Rendered even at zero epics: "this board is not set up" is more use than "nothing here".
     if (!live.length) {
         return [renderColumn(
-            syntheticColumn(UNCONFIGURED_COLUMN_ID, UNCONFIGURED_COLUMN_NAME, 'isUnconfigured'),
+            syntheticColumn(UNCONFIGURED_COLUMN_ID, unconfiguredColumnName(names), 'isUnconfigured'),
             epics,
         )];
     }

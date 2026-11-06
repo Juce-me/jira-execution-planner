@@ -17,6 +17,7 @@ export function useEngProjectTrackTransitions({
     sourceSurface,
     mutationScopeKey = '',
     trackIssueProjectTrackAction,
+    issueKind = 'epic',
     onAuthRecoveryRequired,
     onApplyLocalProjectTrack,
     onProjectTrackSuccessRefresh,
@@ -83,7 +84,7 @@ export function useEngProjectTrackTransitions({
         requestTokenRef.current = token;
         setProjectTrackOptions(null);
         setProjectTrackOptionsLoading(true);
-        trackIssueProjectTrackAction('project_track_options_open', buildProjectTrackActionAnalyticsParams({ sourceSurface }));
+        trackIssueProjectTrackAction('project_track_options_open', buildProjectTrackActionAnalyticsParams({ sourceSurface, issueKind }));
 
         fetchIssueProjectTrackOptions(backendUrl, { issueKey: key })
             .then((payload) => {
@@ -102,7 +103,7 @@ export function useEngProjectTrackTransitions({
                     requestTokenRef.current = null;
                 }
             });
-    }, [backendUrl, sourceSurface, trackIssueProjectTrackAction, onAuthRecoveryRequired, closeProjectTrackControl]);
+    }, [backendUrl, sourceSurface, issueKind, trackIssueProjectTrackAction, onAuthRecoveryRequired, closeProjectTrackControl]);
 
     const submitProjectTrackChange = React.useCallback(async (targetTrack, epicKey) => {
         const target = String(targetTrack || '').trim();
@@ -116,7 +117,7 @@ export function useEngProjectTrackTransitions({
             ? activeProjectTrackTarget.currentTrack
             : '';
         const mutationScope = mutationScopeKey;
-        const analyticsBaseParams = buildProjectTrackActionAnalyticsParams({ sourceSurface, targetTrack: target });
+        const analyticsBaseParams = buildProjectTrackActionAnalyticsParams({ sourceSurface, targetTrack: target, issueKind });
 
         trackIssueProjectTrackAction('project_track_change_submit', analyticsBaseParams);
         setProjectTrackError('');
@@ -187,7 +188,7 @@ export function useEngProjectTrackTransitions({
                 setProjectTrackSubmitting(false);
             }
         }
-    }, [activeProjectTrackTarget, sourceSurface, mutationScopeKey, backendUrl, trackIssueProjectTrackAction, onApplyLocalProjectTrack, onProjectTrackSuccessRefresh, onAuthRecoveryRequired, mutationCoordinator]);
+    }, [activeProjectTrackTarget, sourceSurface, issueKind, mutationScopeKey, backendUrl, trackIssueProjectTrackAction, onApplyLocalProjectTrack, onProjectTrackSuccessRefresh, onAuthRecoveryRequired, mutationCoordinator]);
 
     return {
         activeProjectTrackTarget,

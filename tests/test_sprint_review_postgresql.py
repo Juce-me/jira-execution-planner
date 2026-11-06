@@ -105,14 +105,12 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
         return {'issueId': issue, 'rowKind': 'story', 'columnId': self.column['id'], 'value': value, 'baseRevision': base}
 
     def rows(self):
+        # Only columns every group-table revision has, so the read also works below the namespace revision.
+        schema, view = models.WorkspaceGroupReviewSchema, models.GroupSprintReviewView
         with db_engine.session_scope(self.url) as session:
-            # Migration rollback assertions also run before namespace columns exist.
-            schemas = session.query(models.WorkspaceGroupReviewSchema.group_id,
-                models.WorkspaceGroupReviewSchema.schema_revision, models.WorkspaceGroupReviewSchema.columns).all()
-            views = session.query(models.GroupSprintReviewView.sprint_id,
-                models.GroupSprintReviewView.view_revision, models.GroupSprintReviewView.layouts).all()
+            schemas = session.query(schema.group_id, schema.schema_revision, schema.columns).all()
             return ([(s.group_id, s.schema_revision, [c['id'] for c in s.columns]) for s in schemas],
-                    sorted((v.sprint_id, v.view_revision, v.layouts) for v in views))
+                    sorted(tuple(v) for v in session.query(view.sprint_id, view.view_revision, view.layouts).all()))
 
     def wait_until_blocked(self, count=1):
         """Wait until `count` other backends wait on a lock while touching the group schema table."""
@@ -1193,8 +1191,8 @@ class SprintReviewPostgresqlTests(unittest.TestCase):
             self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 0)
 
     def test_session_timeouts_are_restored_inside_the_transaction_and_set_for_the_step(self):
-        self.rewind()  # Exercise the adoption revision against its historical input schema.
         revision = self.revision_module()
+        self.rewind()  # the revision runs against its own schema: 0022 later replaces its conflict target
         self.seed_review_legacy()
         seen = {}
         original = revision._lock_legacy

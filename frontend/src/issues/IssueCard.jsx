@@ -174,7 +174,7 @@ export default function IssueCard({
             recoveryMode: active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : '',
             configurationChanged: active && issueFieldEdits.outcome?.configurationChanged === true,
             jiraUrl,
-            onOpen: () => issueFieldEdits.openEditor({ issueKey: task.key, field, issueKind: 'story', sourceSurface: statusTransitionSourceSurface }),
+            onOpen: () => issueFieldEdits.openEditor({ issueKey: task.key, field, issueKind: (entityNames || LEGACY_NAMES).childKind, sourceSurface: statusTransitionSourceSurface }),
             onClose: issueFieldEdits.closeEditor,
             onReload: issueFieldEdits.reload,
             onCheckJira: issueFieldEdits.checkJira,
@@ -233,12 +233,13 @@ export default function IssueCard({
                 )}
                 <div className="task-headline">
                     <span className="story-icon" aria-hidden="true" title={(entityNames || LEGACY_NAMES).child.toUpperCase()}>
-                        <WorkTypeGlyph level={(entityNames || LEGACY_NAMES).childLevel} InitiativeIcon={InitiativeIcon} />
+                        <WorkTypeGlyph level={(entityNames || LEGACY_NAMES).childLevel} typeId={entityNames?.childTypeId} InitiativeIcon={InitiativeIcon} />
                     </span>
                     {priorityTransitionEnabled ? (
                         <PriorityTransitionMenu
                             issue={task}
                             fallbackIssueType="Story"
+                            issueKind={entityNames?.childKind}
                             priorityLabel={task.fields.priority?.name}
                             renderPriorityIcon={renderPriorityIcon}
                             isOpen={priorityTransitionActiveKey === task.key}
@@ -284,6 +285,7 @@ export default function IssueCard({
                         <StatusTransitionMenu
                             issue={task}
                             fallbackIssueType="Story"
+                            issueKind={entityNames?.childKind}
                             statusLabel={statusName}
                             statusClassName={statusClassName || getIssueStatusClassName(statusName)}
                             sourceSurface={statusTransitionSourceSurface}

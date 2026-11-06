@@ -29,7 +29,7 @@ import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { useStatusColourStyle } from '../issues/StatusColourContext.jsx';
 import EmptyState from '../ui/EmptyState.jsx';
 import LoadingState from '../ui/LoadingState.jsx';
-import { workEntityNames } from './engWorkModel.js';
+import { formatEntityCount, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
 // The ENG Group Board (§6.1). Presentational over engBoardColumns.js: every rule that can be
 // stated without a DOM lives there, so this file owns rendering, the centring measurement and the
@@ -108,9 +108,11 @@ export default function EngBoardView({
     loading = false, error = null, onRetry,
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
-    workModel, workContext = null,
+    workModel, workContext = null, entityNames = null,
 }) {
-    const names = workEntityNames(workModel);
+    // EntityNames from the App (configured Jira type names); model defaults when absent. Kinds come from it too. Memoised:
+    // the column model depends on it, and a fresh object each render would rebuild the columns and break reading restore.
+    const names = React.useMemo(() => entityNames || resolveEntityNames(workModel), [entityNames, workModel]);
     const statusStyle = useStatusColourStyle();
     const boardPresentationRef = React.useRef(null);
     const [readingRevision, setReadingRevision] = React.useState(0);
@@ -123,7 +125,7 @@ export default function EngBoardView({
     const columns = React.useMemo(
         () => {
             if (!Array.isArray(strictColumns)) {
-                return projectColumns(buildBoardColumns({ columns: board?.columns || [], epicGroups }));
+                return projectColumns(buildBoardColumns({ columns: board?.columns || [], epicGroups, names }));
             }
             const admitted = new Set(epicGroups.map((group) => group.key));
             return projectColumns(strictColumns.map((column) => {
@@ -138,7 +140,7 @@ export default function EngBoardView({
                 };
             }));
         },
-        [board, epicGroups, strictColumns, readingRevision],
+        [board, epicGroups, strictColumns, readingRevision, names],
     );
     const scaleMax = boardScaleMax(columns);
     const configStarredId = React.useMemo(
@@ -1067,7 +1069,7 @@ export default function EngBoardView({
     // State-specific returns live after every hook so loading/error changes never alter hook order.
     // Match EngView's fetch-state precedence and presentation: loading wins over an older error.
     const hasStrictContent = Array.isArray(strictColumns) && strictColumns.length > 0;
-    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : names.childPlural.toLowerCase();
+    const strictWorkItemLabel = Array.isArray(strictColumns) ? 'work items' : lowerEntityWord(names.childPlural);
     // §7.1/D19: Board owns its facet set, sharing Catch Up's chip grammar only.
     const filterBar = (
             <EngFilterBar
@@ -1084,7 +1086,7 @@ export default function EngBoardView({
                 boardColumns={board?.columns || []}
                 renderPriorityIcon={renderPriorityIcon}
                 disabled={authorityPending || (!hasStrictContent && (loading || Boolean(error)))}
-                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : names.childPlural} />}
+                viewControls={<EngBoardHelp scaleMax={scaleMax} workItemLabel={Array.isArray(strictColumns) ? 'work items' : names.childPlural} entityNames={names} />}
             />
     );
     if (loading && (!hasStrictContent || (authorityPending && epicGroups.length === 0))) {
@@ -1129,7 +1131,7 @@ export default function EngBoardView({
                         <div>
                             <span className="board-head-title">{names.parentPlural} by column</span>
                             <div className="board-head-sub board-first-run">
-                                This group&apos;s board is not set up yet, so every {names.parent.toLowerCase()} in scope sits in one column.
+                                This group&apos;s board is not set up yet, so every {lowerEntityWord(names.parent)} in scope sits in one column.
                                 Compose columns in Settings → Departments → Boards.
                             </div>
                         </div>
@@ -1160,12 +1162,12 @@ export default function EngBoardView({
                 </span>
 
             {hasNoEpics ? (
-                <EmptyState title="No epics found" className="eng-empty-results">
+                <EmptyState title={`No ${lowerEntityWord(names.parentPlural)} found`} className="eng-empty-results">
                     {/* Cause-neutral by default: this also renders on a cold load before tasks
                         arrive, and on a genuinely empty scope with nothing ticked, so naming the
                         filters unconditionally would assert a cause that is often false. */}
                     <p>
-                        There are no epics matching the current criteria.
+                        There are no {lowerEntityWord(names.parentPlural)} matching the current criteria.
                         {engFilters.activeFacetCount > 0 ? ' Clear a filter in the bar above.' : ''}
                     </p>
                 </EmptyState>
@@ -1254,7 +1256,7 @@ export default function EngBoardView({
                                     )}
                                     <span className="nm">{column.name}</span>
                                     <span className="ct">{column.epicCount}</span>
-                                    <span className="sp">{names.parentPlural.toLowerCase()} · {column.epicGroups.some(group => group.childrenIncomplete)
+                                    <span className="sp">{lowerEntityWord(column.epicCount === 1 ? names.parent : names.parentPlural)} · {column.epicGroups.some(group => group.childrenIncomplete)
                                         ? (column.epicGroups.some(group => group.childrenLoading) ? 'SP pending' : 'SP unavailable')
                                         : `${column.storyPoints.toFixed(1)} sp`}</span>
                                     <span className="col-breach" title="Min/Max is set in Group Board settings">
@@ -1276,7 +1278,7 @@ export default function EngBoardView({
                                     type="button"
                                     className="col-strip"
                                     title={stripTitle}
-                                    aria-label={`Focus ${column.name}, ${column.epicCount} epics, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
+                                    aria-label={`Focus ${column.name}, ${lowerEntityWord(formatEntityCount(column.epicCount, names, 'parent'))}, ${column.epicGroups.some(group => group.childrenIncomplete) ? (column.epicGroups.some(group => group.childrenLoading) ? 'story points pending' : 'story points unavailable') : `${column.storyPoints.toFixed(1)} story points`}`}
                                     onClick={(event) => focusFoldedRail(event, column.id)}
                                 >
                                     <span
@@ -1304,6 +1306,7 @@ export default function EngBoardView({
                                             issueFieldEdits={epicGroup.epic ? issueFieldEdits : null}
                                             jiraUrl={jiraUrl}
                                             shareControl={renderEpicShareControl?.(epicGroup.key, column.id)}
+                                            issueKind={names.parentKind}
                                         />
                                     ))}
                                 </div>
@@ -1337,7 +1340,7 @@ export default function EngBoardView({
                         menuLabel={drop.confirm ? `Move ${drop.epicKey} to ${drop.confirm.status}?` : `Move ${drop.epicKey} to ${dropColumn.name}`}
                         leadingContent={drop.confirm ? (
                             <div className="status-transition-menu-note eng-board-drop-warn" role="alert">
-                                {`${drop.epicKey} has ${drop.confirm.open} open ${drop.confirm.open === 1 ? names.child.toLowerCase() : names.childPlural.toLowerCase()}`}
+                                {`${drop.epicKey} has ${drop.confirm.open} open ${drop.confirm.open === 1 ? lowerEntityWord(names.child) : lowerEntityWord(names.childPlural)}`}
                             </div>
                         ) : null}
                         options={dropOptions}
@@ -1385,9 +1388,10 @@ export default function EngBoardView({
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
                     workModel={workModel}
+                    entityNames={names}
                     onSortChange={() => freshnessBridge?.current.release?.()}
                     workItemLabel={strictWorkItemLabel}
-                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : names.child.toLowerCase()}
+                    workItemLabelSingular={Array.isArray(strictColumns) ? 'work item' : lowerEntityWord(names.child)}
                     onSubmitStatusTransition={submitPanelStatus}
                     onClose={closePanel}
                 />

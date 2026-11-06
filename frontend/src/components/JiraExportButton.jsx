@@ -4,6 +4,7 @@ import { buildJiraIssueListLinkAnalytics } from '../analytics/externalLinks.js';
 import { normalizeJiraExportKeys, openJiraIssueSearch } from '../jiraExportUtils.mjs';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
+import { lowerEntityWord, resolveEntityNames } from '../eng/engWorkModel.js';
 
 const DEFAULT_WORK_ITEM_LABELS = Object.freeze({
     label: 'Open work items',
@@ -29,7 +30,11 @@ export default function JiraExportButton({
     opener,
     sourceSurface = 'dashboard',
     onboardingTarget = '',
+    entityNames = null,
 }) {
+    // Menu copy names the parent and child levels by their configured Jira types; the export kinds stay tokens.
+    const names = entityNames || resolveEntityNames();
+    const [parentWord, parentWords, childWord, childWords] = [names.parent, names.parentPlural, names.child, names.childPlural].map(lowerEntityWord);
     const [isOpen, setIsOpen] = React.useState(false);
     const [warning, setWarning] = React.useState('');
     const rootRef = React.useRef(null);
@@ -137,14 +142,14 @@ export default function JiraExportButton({
             </IconButton>
             {isOpen && hasAnyKeys && (
                 <div className="jira-export-menu" role="menu">
-                    {renderMenuItem('epics', 'Open epics', 'epic', 'epics')}
+                    {renderMenuItem('epics', `Open ${parentWords}`, parentWord, parentWords)}
                     {hasWorkItemExport
                         ? renderMenuItem(
                             'work_items', resolvedWorkItemLabels.label,
                             resolvedWorkItemLabels.singular,
                             resolvedWorkItemLabels.plural,
                         )
-                        : renderMenuItem('stories', 'Open stories', 'story', 'stories')}
+                        : renderMenuItem('stories', `Open ${childWords}`, childWord, childWords)}
                 </div>
             )}
             {warning && (

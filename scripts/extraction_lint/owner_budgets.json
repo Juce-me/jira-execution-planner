@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7499,
+    "lineCeiling": 7502,
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,
@@ -1880,6 +1880,7 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
+            "entityNames",
             "excludedEpicSet",
             "normalizeEpicKey",
             "scenario",
@@ -1887,6 +1888,7 @@
             "selectedSprint"
           ],
           "expandedInputNames": [
+            "entityNames",
             "excludedEpicSet",
             "excludedEpicSet.has",
             "normalizeEpicKey",
@@ -1990,13 +1992,13 @@
             "selectedSprint"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 101,
+          "expandedInputCount": 102,
           "returnCount": 0,
-          "propCount": 5,
+          "propCount": 6,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 101,
+          "expandedInputCeiling": 102,
           "returnCeiling": 0,
-          "propCeiling": 5,
+          "propCeiling": 6,
           "unresolved": [],
           "inventory": {
             "rationale": "SC4 checkpoint (frozen from the current-base scratch dry run before R4a; reported to the operator with the R4a commit)."
@@ -2773,6 +2775,7 @@
         {
           "exportName": "useScenarioLayout",
           "inputNames": [
+            "entityNames",
             "excludedEpicSet",
             "isAllTeamsSelected",
             "normalizeEpicKey",
@@ -2835,6 +2838,7 @@
           ],
           "propNames": [],
           "expandedInputNames": [
+            "entityNames",
             "excludedEpicSet",
             "isAllTeamsSelected",
             "normalizeEpicKey",
@@ -2951,11 +2955,11 @@
             "showScenario"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 114,
+          "expandedInputCount": 115,
           "returnCount": 31,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 114,
+          "expandedInputCeiling": 115,
           "returnCeiling": 31,
           "propCeiling": 0,
           "unresolved": [
@@ -3086,7 +3090,7 @@
             {
               "path": "frontend/src/scenario/useScenarioPlanner.js",
               "symbol": "useScenarioLayout",
-              "line": 223,
+              "line": 228,
               "phase": "hook execution"
             }
           ],
@@ -3118,6 +3122,7 @@
             "cleanupSprintFetch",
             "connectionRecoveryScenarioStartedRef",
             "connectionRecoveryStagedRevision",
+            "entityNames",
             "excludedEpicSet",
             "groupsLoading",
             "isAllTeamsSelected",
@@ -3224,6 +3229,7 @@
             "cleanupSprintFetch",
             "connectionRecoveryScenarioStartedRef",
             "connectionRecoveryStagedRevision",
+            "entityNames",
             "excludedEpicSet",
             "groupsLoading",
             "isAllTeamsSelected",
@@ -3251,11 +3257,11 @@
             "visibleControlGroups"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 34,
+          "expandedInputCount": 35,
           "returnCount": 67,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 34,
+          "expandedInputCeiling": 35,
           "returnCeiling": 67,
           "propCeiling": 0,
           "unresolved": [],
@@ -3303,7 +3309,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useScenarioPlanner",
-              "line": 5274,
+              "line": 4313,
               "phase": "hook execution"
             }
           ],
@@ -5188,6 +5194,7 @@
             "onTestConfiguration",
             "saveDisabled",
             "saveLabel",
+            "saveNote",
             "saveTitle",
             "showDiscardConfirm",
             "showSave",
@@ -5216,6 +5223,7 @@
             "onTestConfiguration",
             "saveDisabled",
             "saveLabel",
+            "saveNote",
             "saveTitle",
             "showDiscardConfirm",
             "showSave",
@@ -5234,18 +5242,18 @@
             "validationMessages.map"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 29,
+          "expandedInputCount": 30,
           "returnCount": 0,
-          "propCount": 26,
+          "propCount": 27,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 29,
+          "expandedInputCeiling": 30,
           "returnCeiling": 0,
-          "propCeiling": 26,
+          "propCeiling": 27,
           "unresolved": [
             "forwarded input validationActions"
           ],
           "inventory": {
-            "sourceDigest": "17c5f11022b8d12db827169225dd128c16c1dd5cb8b81e54b5782619912f2fa4",
+            "sourceDigest": "67fc1aba45947279c20b0d01f7654c6d4b14fdc7518c7761afcf7f458ab48b32",
             "reviewed": true,
             "memberNames": [
               "activeTab",
@@ -5261,6 +5269,7 @@
               "onTestConfiguration",
               "saveDisabled",
               "saveLabel",
+              "saveNote",
               "saveTitle",
               "showDiscardConfirm",
               "showSave",
@@ -5278,7 +5287,7 @@
               "validationMessages.length",
               "validationMessages.map"
             ],
-            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "validationActions is an opaque React render value checked for truthiness and placed in JSX; no dependency member is read. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: saveNote is a display string beside Save."
           },
           "callers": [
             {
@@ -13174,6 +13183,7 @@
             "saveSprintFieldConfig",
             "saveStoryPointsFieldConfig",
             "saveTeamFieldConfig",
+            "scenarioPlannerAccess",
             "seedSharedFieldConfigs",
             "selectedProjectsDraft",
             "selectedSprint",
@@ -13343,6 +13353,10 @@
             "saveSprintFieldConfig",
             "saveStoryPointsFieldConfig",
             "saveTeamFieldConfig",
+            "scenarioPlannerAccess",
+            "scenarioPlannerAccess.isDirty",
+            "scenarioPlannerAccess.save",
+            "scenarioPlannerAccess.setEnabled",
             "seedSharedFieldConfigs",
             "selectedProjectsDraft",
             "selectedProjectsDraft.length",
@@ -13402,6 +13416,7 @@
             "workConfig.applyBootstrap",
             "workConfig.dirty",
             "workConfig.mode",
+            "workConfig.namesOnly",
             "workConfig.prepareKeepMine",
             "workConfig.reload",
             "workConfig.restoreDraft",
@@ -13412,11 +13427,11 @@
             "workspaceConfigConflict.workConfigurations"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 169,
+          "expandedInputCount": 174,
           "returnCount": 11,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 169,
+          "expandedInputCeiling": 174,
           "returnCeiling": 11,
           "propCeiling": 0,
           "unresolved": [
@@ -13442,7 +13457,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "06944a2d66cb9d40ee134d58ca3930c2dbd11ddfede332fe6d29eb975c2ed736",
+            "sourceDigest": "512c125d605be0fb27f796a3a617ee07ac71c757947e4c05740b4d4e0745ef82",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -13547,6 +13562,10 @@
               "saveSprintFieldConfig",
               "saveStoryPointsFieldConfig",
               "saveTeamFieldConfig",
+              "scenarioPlannerAccess",
+              "scenarioPlannerAccess.isDirty",
+              "scenarioPlannerAccess.save",
+              "scenarioPlannerAccess.setEnabled",
               "seedSharedFieldConfigs",
               "selectedProjectsDraft",
               "selectedProjectsDraft.length",
@@ -13606,6 +13625,7 @@
               "workConfig.applyBootstrap",
               "workConfig.dirty",
               "workConfig.mode",
+              "workConfig.namesOnly",
               "workConfig.prepareKeepMine",
               "workConfig.reload",
               "workConfig.restoreDraft",
@@ -13615,7 +13635,7 @@
               "workspaceConfigConflict.currentRevision",
               "workspaceConfigConflict.workConfigurations"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-03: workConfig.namesOnly keeps a names-only bundle Save out of Board invalidation and admin analytics; the scenarioPlannerAccess members were already read here and are now registered."
           },
           "callers": [
             {
@@ -13957,6 +13977,7 @@
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
             "workConfigMode",
+            "workConfigTypeNamesNote",
             "workspaceConfigConflict"
           ],
           "expandedInputNames": [
@@ -13996,16 +14017,17 @@
             "unsavedSectionsCount",
             "useLatestWorkspaceConfig",
             "workConfigMode",
+            "workConfigTypeNamesNote",
             "workspaceConfigConflict"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 37,
+          "expandedInputCount": 38,
           "returnCount": 0,
-          "propCount": 37,
+          "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 37,
+          "expandedInputCeiling": 38,
           "returnCeiling": 0,
-          "propCeiling": 37,
+          "propCeiling": 38,
           "unresolved": [
             "spread input groupConfigValidationErrors",
             "forwarded input groupManageTab",
@@ -14014,7 +14036,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "b81445a162361237fc065faa9818e2ff117914bcce5727861b15ec3828158370",
+            "sourceDigest": "eb779e91b9ccdf54d750cccd98492f6f11d362cf0f398d2887809176eef481a0",
             "reviewed": true,
             "memberNames": [
               "activeSettingsModalTab",
@@ -14053,9 +14075,10 @@
               "unsavedSectionsCount",
               "useLatestWorkspaceConfig",
               "workConfigMode",
+              "workConfigTypeNamesNote",
               "workspaceConfigConflict"
             ],
-            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "groupConfigValidationErrors is spread into the validationMessages array (an array of strings, not a dependency bag); groupManageTab is a string and groupsConfigConflict and workspaceConfigConflict are plain data objects forwarded to the conflict-message builders. The 34 props are explicit name={name} attributes plus children, evaluated during App's render after their declarations; the container has no hook. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-03: workConfigTypeNamesNote is a display string forwarded as saveNote."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -15866,6 +15889,7 @@
           "propNames": [
             "activeGroupMissingComponents",
             "analytics",
+            "entityNames",
             "jiraUrl",
             "links",
             "onSelectBurnoutTask",
@@ -15881,6 +15905,7 @@
             "analytics",
             "analytics.trackStatsAction",
             "analytics.trackStatsAnalyticsAction",
+            "entityNames",
             "jiraUrl",
             "links",
             "links.buildPriorityStatLink",
@@ -16024,22 +16049,23 @@
             "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 145,
+          "expandedInputCount": 146,
           "returnCount": 0,
-          "propCount": 11,
+          "propCount": 12,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 145,
+          "expandedInputCeiling": 146,
           "returnCeiling": 0,
-          "propCeiling": 11,
+          "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "sourceDigest": "0337065405ca80121e1952edeab456eb47a2d45c4ff759bdd25c333c61d1c496",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
               "analytics",
               "analytics.trackStatsAction",
               "analytics.trackStatsAnalyticsAction",
+              "entityNames",
               "jiraUrl",
               "links",
               "links.buildPriorityStatLink",
@@ -16182,7 +16208,7 @@
               "workSetupNotice.onOpenSettings",
               "workSetupNotice.scope"
             ],
-            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-03: entityNames (the App's EntityNames) names the role words and is read only by the same copy."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -16195,6 +16221,7 @@
           "propNames": [
             "activeGroupMissingComponents",
             "analytics",
+            "entityNames",
             "jiraUrl",
             "links",
             "onSelectBurnoutTask",
@@ -16210,6 +16237,7 @@
             "analytics",
             "analytics.trackStatsAction",
             "analytics.trackStatsAnalyticsAction",
+            "entityNames",
             "jiraUrl",
             "links",
             "links.buildPriorityStatLink",
@@ -16353,22 +16381,23 @@
             "workSetupNotice.scope"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 145,
+          "expandedInputCount": 146,
           "returnCount": 0,
-          "propCount": 11,
+          "propCount": 12,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 145,
+          "expandedInputCeiling": 146,
           "returnCeiling": 0,
-          "propCeiling": 11,
+          "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "e7b8231509dfe200f4d7d85f96c68b0eb9e426e31d2e9ea9f543d0cefb6e284e",
+            "sourceDigest": "0337065405ca80121e1952edeab456eb47a2d45c4ff759bdd25c333c61d1c496",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
               "analytics",
               "analytics.trackStatsAction",
               "analytics.trackStatsAnalyticsAction",
+              "entityNames",
               "jiraUrl",
               "links",
               "links.buildPriorityStatLink",
@@ -16511,7 +16540,7 @@
               "workSetupNotice.onOpenSettings",
               "workSetupNotice.scope"
             ],
-            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+            "rationale": " Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-03: entityNames (the App's EntityNames) names the role words and is read only by the same copy."
           },
           "callers": [],
           "remainingAppReaders": [],
@@ -17937,7 +17966,9 @@
             "entityNames.model",
             "entityNames.parent",
             "entityNames.parent.toUpperCase",
+            "entityNames.parentKind",
             "entityNames.parentLevel",
+            "entityNames.parentTypeId",
             "epicGroup",
             "epicGroup.epic",
             "epicGroup.epic.assignee.displayName",
@@ -18056,11 +18087,11 @@
             "toggleTaskSelection"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 124,
+          "expandedInputCount": 126,
           "returnCount": 0,
           "propCount": 38,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 124,
+          "expandedInputCeiling": 126,
           "returnCeiling": 0,
           "propCeiling": 38,
           "unresolved": [
@@ -18073,7 +18104,7 @@
             "bag storySubtasksByKey dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "7e91102a979ff3dcd0fc4ec10a3629d0451f4898aebda276fd0e731c7877e24a",
+            "sourceDigest": "99a417174e858412b4209778e1695032cce0d137074b1e48647ca797979a73c1",
             "reviewed": true,
             "memberNames": [
               "canEditSharedConfiguration",
@@ -18994,22 +19025,24 @@
             "workConfig.setTechnicalIds",
             "workConfig.tabFor",
             "workConfig.technicalIds",
+            "workConfig.typeNamesToSave",
+            "workConfig.typeNamesToSave.includes",
             "workConfig.validation",
             "workConfig.validation.errors"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 23,
+          "expandedInputCount": 25,
           "returnCount": 0,
           "propCount": 7,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 23,
+          "expandedInputCeiling": 25,
           "returnCeiling": 0,
           "propCeiling": 7,
           "unresolved": [
             "bag workConfig member alias errors"
           ],
           "inventory": {
-            "sourceDigest": "c6d6ea30849bdc09e418f3870eedc830b5056dd076f79d290f0242447dc8fefa",
+            "sourceDigest": "2a836484be58dd413c323ad32471786747c8c2069216499b45e95feac5ec2187",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19033,10 +19066,12 @@
               "workConfig.setTechnicalIds",
               "workConfig.tabFor",
               "workConfig.technicalIds",
+              "workConfig.typeNamesToSave",
+              "workConfig.typeNamesToSave.includes",
               "workConfig.validation",
               "workConfig.validation.errors"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here. Fix round 1: the status line is shown only on a listed configuration (typeNamesToSave.includes)."
           },
           "callers": [
             {
@@ -19098,6 +19133,7 @@
             "loadState",
             "missingByConfiguration",
             "mode",
+            "namesOnly",
             "patch",
             "prepareKeepMine",
             "promoted",
@@ -19124,6 +19160,8 @@
             "technicalIds",
             "testSaved",
             "typeCatalogFor",
+            "typeNamesNote",
+            "typeNamesToSave",
             "uiFor",
             "unavailable",
             "userCanEdit",
@@ -19143,11 +19181,11 @@
           ],
           "outerParameterCount": 1,
           "expandedInputCount": 8,
-          "returnCount": 52,
+          "returnCount": 55,
           "propCount": 0,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 8,
-          "returnCeiling": 52,
+          "returnCeiling": 55,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
@@ -19156,7 +19194,7 @@
             "forwarded input onBootstrap"
           ],
           "inventory": {
-            "sourceDigest": "d87dab7acea78527bbba3402a9ea91d42f06fa266285b7dd8802e82697b67fcf",
+            "sourceDigest": "020139739fd3f2c712e2608092fa1c80e9c2ef3de20d9c6d6aec224482636b56",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -19168,7 +19206,7 @@
               "setGroupTesting",
               "visible"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added typeNamesToSave return is a derived display/dirty value from loaded summaries and catalogs; no new members. Fix round 1: namesOnly and typeNamesNote are derived display/save-classification values; Discard acknowledgement is hook-local state; no new members."
           },
           "callers": [
             {
@@ -19245,8 +19283,11 @@
         "settings"
       ],
       "exports": [
+        "ALWAYS_SHARED_FIELDS",
         "BLANK_FIELD",
         "DELIVERY_PROJECT_LIMIT_MESSAGE",
+        "FIELD_MODE_OWN",
+        "FIELD_MODE_SHARED",
         "HIERARCHY_SLOTS",
         "LEGACY_FIELDS",
         "MODEL_LEGACY",
@@ -19255,6 +19296,7 @@
         "QUARTER_MESSAGE",
         "REQUIRED_FIELDS",
         "RND_FIELDS",
+        "SHARED_FIELDS",
         "addProjectToEntry",
         "adoptServerOwned",
         "applyEntryPatch",
@@ -19265,12 +19307,16 @@
         "deriveLegacyEdits",
         "describeHierarchyRow",
         "dirtyConfigurationIds",
+        "effectiveEntry",
         "entryById",
         "fieldErrorFromServer",
         "hierarchyLabels",
         "hierarchyLevelOffset",
+        "incompleteTabs",
+        "inheritedBoard",
         "isEntryDirty",
         "isPromotedBundle",
+        "isSharedField",
         "isValidQuarter",
         "missingMappings",
         "missingSummary",
@@ -19285,6 +19331,7 @@
         "sourceCause",
         "sprintRefreshLine",
         "sprintValueOptions",
+        "typeNamesNeedingSave",
         "typedSprintOption",
         "validateBundle"
       ],

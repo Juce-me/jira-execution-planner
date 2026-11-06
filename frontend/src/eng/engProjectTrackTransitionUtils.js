@@ -1,3 +1,5 @@
+import { summarizeIssueTypeMix } from './engStatusTransitionUtils.js';
+
 // Canonical Epic Project Track values. Mirrors backend.services.jira_issue_project_track's
 // CANONICAL_TRACKS tuple; the browser only ever normalizes to/validates against this pair.
 
@@ -24,16 +26,17 @@ const PROJECT_TRACK_SOURCE_SURFACES = new Set(['catch_up', 'planning', 'board'])
 // Builds the shared issue_project_track_action params for project_track_options_open,
 // project_track_change_submit, and project_track_change_result. targetTrack is omitted for
 // project_track_options_open, where no target track has been chosen yet, so no value_state
-// key is sent. issue_type_mix is always 'epics' (Project Track only exists on Epics) and
+// key is sent. issue_type_mix is the parent role's kind (Project Track lives on the parent: 'epics'
+// in Legacy, 'initiatives' for the new model; `issueKind` is EntityNames.parentKind) and
 // selected_count_bucket is always '1_5' (this is a single-issue change), matching the eng
 // priority/status siblings' bucketing conventions without duplicating them for a fixed count.
-export function buildProjectTrackActionAnalyticsParams({ sourceSurface, targetTrack, result } = {}) {
+export function buildProjectTrackActionAnalyticsParams({ sourceSurface, targetTrack, result, issueKind = 'epic' } = {}) {
     const params = {
         // Allowlisted rather than passed through, so an unknown surface can never become a new
         // GA4 value. Board is the third: the epic detail panel edits Project Track (§6.5.4), and
         // the earlier planning-or-catch_up collapse reported every Board change as Catch Up.
         source_surface: PROJECT_TRACK_SOURCE_SURFACES.has(sourceSurface) ? sourceSurface : 'catch_up',
-        issue_type_mix: 'epics',
+        issue_type_mix: summarizeIssueTypeMix([{ issueKind }]),
         selected_count_bucket: '1_5',
     };
     const valueState = normalizeProjectTrackValue(targetTrack).toLowerCase();

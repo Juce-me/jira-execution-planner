@@ -1,3 +1,5 @@
+import { lowerEntityWord } from '../eng/engWorkModel.js';
+import { roleLabels } from './statsScope.js';
 import * as React from 'react';
 
 function BurnoutChart({
@@ -22,7 +24,8 @@ function BurnoutChart({
     formatBurndownValue,
     resolveBurnoutPointer,
     buildBurnoutTaskFilter,
-    onAnalyticsAction
+    onAnalyticsAction,
+    words = roleLabels(null)
 }) {
     return (
         <div className={`stats-view ${open ? 'open' : ''}`}>
@@ -335,13 +338,13 @@ function BurnoutChart({
                                         style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#6b7280', opacity: 1 }}
                                     >
                                         <strong style={{ color: burnoutChartModel.teamColors?.[event.teamName] || '#374151' }}>
-                                            {event.issueKey || 'Story'}
+                                            {event.issueKey || words.child}
                                         </strong> · {String(event.status || 'closed').toUpperCase()} · {event.teamName} · {event.assigneeName}
                                     </div>
                                 ))}
                                 {(burnoutHoverPoint.row?.details?.closed || []).length > 5 && (
                                     <div className="burnout-hover-row muted">
-                                        +{(burnoutHoverPoint.row?.details?.closed || []).length - 5} more closed stories
+                                        +{(burnoutHoverPoint.row?.details?.closed || []).length - 5} more closed {lowerEntityWord(words.children)}
                                     </div>
                                 )}
                             </div>

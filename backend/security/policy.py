@@ -119,6 +119,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("jira-boards", "/api/boards", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("jira-sprints", "/api/sprints", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("jira-issue-types", "/api/issue-types", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("jira-issue-type-icon", "/api/issue-type-icon/<type_id>", PUBLIC_METHODS, "authenticated_read", "dynamic"),
     EndpointPolicy("selected-projects-read", "/api/projects/selected", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("selected-projects-write", "/api/projects/selected", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("board-config-read", "/api/board-config", PUBLIC_METHODS, "authenticated_read"),

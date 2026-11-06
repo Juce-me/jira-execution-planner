@@ -68,7 +68,8 @@ export function isStatusTransitionSurfaceEnabled({ selectedView, showPlanning, s
 // used by Story tasks across dashboard.jsx) or the flat shape used by epicGroups' epic
 // entries and expanded-subtask items (status/summary directly on the object, no issueType).
 // fallbackIssueType supplies the issue type for shapes that never carry one (Epic/Subtask).
-export function buildCatchUpStatusTargets(issue, fallbackIssueType = '') {
+// issueKind is the row's role kind from EntityNames (story|epic|initiative|objective); analytics prefers it over the name.
+export function buildCatchUpStatusTargets(issue, fallbackIssueType = '', issueKind = '') {
     const key = String(issue?.key || '').trim();
     if (!key) return null;
     const fields = issue?.fields || null;
@@ -77,7 +78,7 @@ export function buildCatchUpStatusTargets(issue, fallbackIssueType = '') {
     const summary = String(fields?.summary || issue?.summary || '');
     // Loaded Story Points (nested Jira shape or flat), kept only so analytics can bucket the clicked Story; absent when the issue carries none.
     const storyPoints = fields ? fields.customfield_10004 : issue?.storyPoints;
-    return { key, issueType, currentStatus, summary, ...(storyPoints === undefined ? {} : { storyPoints }) };
+    return { key, issueType, currentStatus, summary, ...(storyPoints === undefined ? {} : { storyPoints }), ...roleIssueKind(issueKind) };
 }
 
 // Maps subtask keys to the parent Story keys whose expanded subtask lists contain them,
@@ -104,22 +105,22 @@ function classifyIssueTypeToken(issueType) {
     return 'story';
 }
 
+const ROLE_ISSUE_KINDS = new Set(['story', 'epic', 'initiative', 'objective']);
+const ISSUE_TYPE_MIX_BY_KIND = { story: 'stories', epic: 'epics', subtask: 'subtasks', initiative: 'initiatives', objective: 'objectives' };
+
+// Only a known role kind rides a target; anything else is dropped so the name rule applies.
+export function roleIssueKind(issueKind) {
+    return ROLE_ISSUE_KINDS.has(issueKind) ? { issueKind } : {};
+}
+
+// A target's role kind when present, else today's Jira-name rule (EPM, cohort and Stats targets carry no kind).
+const targetKind = target => (ROLE_ISSUE_KINDS.has(target?.issueKind) ? target.issueKind : classifyIssueTypeToken(target?.issueType));
+
 export function summarizeIssueTypeMix(targets) {
     const list = Array.isArray(targets) ? targets : [];
-    let hasEpic = false;
-    let hasStory = false;
-    let hasSubtask = false;
-    list.forEach((target) => {
-        const type = classifyIssueTypeToken(target?.issueType);
-        if (type === 'epic') hasEpic = true;
-        else if (type === 'subtask') hasSubtask = true;
-        else hasStory = true;
-    });
-    const distinctCount = [hasEpic, hasStory, hasSubtask].filter(Boolean).length;
-    if (distinctCount > 1) return 'mixed';
-    if (hasEpic) return 'epics';
-    if (hasSubtask) return 'subtasks';
-    return 'stories';
+    const kinds = new Set(list.map(targetKind));
+    if (kinds.size > 1) return 'mixed';
+    return ISSUE_TYPE_MIX_BY_KIND[[...kinds][0] || 'story'];
 }
 
 // Turns backend per-issue transition results (which carry raw issue keys and error text)
@@ -167,15 +168,20 @@ export function buildSelectedSpBucket(storyPoints) {
 // for (a Planning status pill writes only its own issue, whatever is selected), so ONLY
 // Planning sends it and only for a Story target; Epic and Subtask actions, Catch Up and
 // Board omit it rather than reporting an unrelated bucket. (Before issue #250 it was
-// the selection's Story points, which are no longer related to the write.)
+// the selection's Story points, which are no longer related to the write.) "Story" is the
+// planning leaf: `leafKind` is EntityNames.childKind (`epic` for the new model), default Legacy.
 export function buildStatusActionAnalyticsParams({
     sourceSurface,
     targets = [],
     status,
+    leafKind = 'story',
 } = {}) {
     const list = Array.isArray(targets) ? targets : [];
     const uniqueKeyCount = new Set(list.map((target) => String(target?.key || target || '').trim()).filter(Boolean)).size;
-    const storyTargets = list.filter((target) => classifyIssueTypeToken(target?.issueType) === 'story');
+    // A kind-less target (EPM, cohort, Stats) is the leaf only under the Legacy name rule; the new model needs a role kind.
+    const isLeaf = target => (ROLE_ISSUE_KINDS.has(target?.issueKind) ? target.issueKind === leafKind
+        : leafKind === 'story' && classifyIssueTypeToken(target?.issueType) === 'story');
+    const storyTargets = list.filter(isLeaf);
     return {
         source_surface: sourceSurface,
         ...(status === undefined ? {} : { status_bucket: buildStatusBucket(status) }),

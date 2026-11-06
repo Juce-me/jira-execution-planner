@@ -123,7 +123,7 @@ export function EpicBlock({
                         <IssuePersonEditor issueKey={epicGroup.key} field={field} fieldLabel={label} currentValue={value} isOpen={active} metadata={active ? issueFieldEdits.metadata : null}
                             suggestions={active ? issueFieldEdits.suggestions : []} query={active ? issueFieldEdits.searchQuery : ''} loading={active && issueFieldEdits.status === 'loading'} searching={active && issueFieldEdits.searching}
                             submitting={active && ['queued', 'saving'].includes(issueFieldEdits.status)} pending={issueFieldEdits.pendingIssueKeys.has(epicGroup.key)} error={active ? issueFieldEdits.errorMessage : ''} statusMessage={active && issueFieldEdits.status === 'confirmed' ? 'Saved in Jira.' : active && issueFieldEdits.outcome?.status === 'observed' ? 'Current value loaded from Jira.' : ''} recoveryMode={active && issueFieldEdits.status === 'conflict' ? 'reload' : active && issueFieldEdits.status === 'unknown' ? 'check_jira' : ''} configurationChanged={active && issueFieldEdits.outcome?.configurationChanged === true} jiraUrl={jiraUrl}
-                            onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: 'epic', sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
+                            onOpen={() => issueFieldEdits.openEditor({ issueKey: epicGroup.key, field, issueKind: entityNames.parentKind, sourceSurface: statusTransitionSourceSurface })} onClose={issueFieldEdits.closeEditor} onSearch={issueFieldEdits.search} onSelect={issueFieldEdits.submit} onReload={issueFieldEdits.reload} onCheckJira={issueFieldEdits.checkJira} />
                     </span>
                 )}
             </EpicHeaderValueReadout>
@@ -147,13 +147,14 @@ export function EpicBlock({
                     <div className="epic-title">
                         <div className="epic-title-row">
                         <span className="epic-icon" aria-hidden="true" title={entityNames.parent.toUpperCase()}>
-                            <WorkTypeGlyph level={entityNames.parentLevel} InitiativeIcon={InitiativeIcon} />
+                            <WorkTypeGlyph level={entityNames.parentLevel} typeId={entityNames.parentTypeId} InitiativeIcon={InitiativeIcon} />
                         </span>
                         {effectivePriority.name && (
                             (priorityTransitionEnabled && epicGroup.key !== 'NO_EPIC') ? (
                                 <PriorityTransitionMenu
                                     issue={{ key: epicGroup.key, priority: epicOwnPriority, summary: epicTitle }}
                                     fallbackIssueType="Epic"
+                                    issueKind={entityNames.parentKind}
                                     priorityLabel={effectivePriority.name}
                                     currentPriorityLabel={epicOwnPriority}
                                     renderPriorityIcon={renderPriorityIcon}
@@ -268,6 +269,7 @@ export function EpicBlock({
                                             <StatusTransitionMenu
                                                 issue={{ key: epicGroup.key, status: epicStatus, summary: epicTitle }}
                                                 fallbackIssueType="Epic"
+                                                issueKind={entityNames.parentKind}
                                                 statusLabel={epicStatus}
                                                 statusClassName={epicStatusClassName}
                                                 sourceSurface={statusTransitionSourceSurface}

@@ -29,7 +29,7 @@ test('planning action row includes select all for currently visible planning tas
     assert.match(source, /hasVisiblePlanningTasks=\{matchingPlanningTasks\.length > 0\}/);
     assert.match(componentSource, /onSelectAllVisible/);
     assert.match(componentSource, /areAllVisiblePlanningTasksSelected/);
-    assert.match(componentSource, /Applies to all stories matching the current Team and filters, including rows below\./);
+    assert.match(componentSource, /planningScopeHelp = \(childWords = 'stories'\) =>\s*`Applies to all \$\{childWords\} matching the current Team and filters, including rows below\.`/);
     assert.match(componentSource, />\s*Select All\s*</);
 });
 

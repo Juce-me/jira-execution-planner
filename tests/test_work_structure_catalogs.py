@@ -25,6 +25,7 @@ from backend.services.workspace_catalog_cache import (
     ScopedSprintCatalogStore,
     capture_sprint_proof,
     claim_catalog_refresh,
+    load_scoped_sprint_catalog,
     publish_catalog,
 )
 from backend.services.workspace_catalog_config import (
@@ -556,6 +557,19 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
                 response = self.sprints('?configurationId=delivery&refresh=true')
                 self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
                 self.assertEqual([row['id'] for row in response.get_json()['sprints']], [99])
+
+    def test_incomplete_refresh_keeps_previously_observed_sprints(self):
+        scan = [{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'future')]})], 'isLast': True}]
+        fake = self.jira_with_delivery_board([], scan_pages=scan)
+        self.assertEqual([row['id'] for row in self.sprints('?configurationId=delivery').get_json()['sprints']], [201])
+        fake.scan_pages = [{'issues': [], 'isLast': False, 'nextPageToken': 'next'},
+                           {'issues': [], 'isLast': False}]
+        response = self.sprints('?configurationId=delivery&refresh=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['id'] for row in response.get_json()['sprints']], [201])
+        observed = self.sources()[1].observed_source
+        snapshot = load_scoped_sprint_catalog(self.worker_context(), config=observed)
+        self.assertEqual(snapshot.failure_code, 'catalog_incomplete')
 
     def test_board_failure_is_covered_by_a_complete_scan(self):
         self.jira_with_delivery_board([], scan_pages=self.epic_scan)

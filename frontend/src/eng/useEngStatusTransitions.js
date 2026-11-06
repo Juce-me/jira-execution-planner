@@ -105,6 +105,7 @@ export function useEngStatusTransitions({
     sourceSurface,
     mutationScopeKey = '',
     trackIssueStatusAction,
+    leafKind = 'story',
     onAuthRecoveryRequired,
     onApplyLocalStatus,
     onAlertDataInvalidated,
@@ -188,6 +189,7 @@ export function useEngStatusTransitions({
         const trackOptionsOpen = () => trackIssueStatusAction('status_options_open', buildStatusActionAnalyticsParams({
             sourceSurface,
             targets: list,
+            leafKind,
         }));
 
         if (transitionOptionsCache.has(signature)) {
@@ -237,10 +239,10 @@ export function useEngStatusTransitions({
                 setTransitionOptionsLoading(false);
             }
         }
-    }, [backendUrl, sourceSurface, trackIssueStatusAction, onAuthRecoveryRequired]);
+    }, [backendUrl, sourceSurface, trackIssueStatusAction, leafKind, onAuthRecoveryRequired]);
 
-    const openSingleIssueStatusControl = React.useCallback((issue, fallbackIssueType) => {
-        const target = buildCatchUpStatusTargets(issue, fallbackIssueType);
+    const openSingleIssueStatusControl = React.useCallback((issue, fallbackIssueType, issueKind) => {
+        const target = buildCatchUpStatusTargets(issue, fallbackIssueType, issueKind);
         if (!target) return;
         setTransitionResult(null);
         setActiveSingleIssueTarget(target);
@@ -248,8 +250,8 @@ export function useEngStatusTransitions({
         void loadTransitionOptions([target]);
     }, [loadTransitionOptions]);
 
-    const prefetchSingleIssueStatusOptions = React.useCallback((issue, fallbackIssueType) => {
-        const target = buildCatchUpStatusTargets(issue, fallbackIssueType);
+    const prefetchSingleIssueStatusOptions = React.useCallback((issue, fallbackIssueType, issueKind) => {
+        const target = buildCatchUpStatusTargets(issue, fallbackIssueType, issueKind);
         if (!target || optionsRequestRef.current.signature === transitionOptionCacheKey([target])) return;
         void prefetchTransitionOptions(backendUrl, [target]);
     }, [backendUrl]);
@@ -288,6 +290,7 @@ export function useEngStatusTransitions({
             sourceSurface,
             targets,
             status,
+            leafKind,
         });
 
         // One explicit issue on every surface: take the optimistic local patch + per-key pending
@@ -467,6 +470,7 @@ export function useEngStatusTransitions({
         }
     }, [
         sourceSurface,
+        leafKind,
         activeSingleIssueTarget,
         storySubtasksByKey,
         mutationScopeKey,

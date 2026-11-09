@@ -322,7 +322,7 @@
   - `plannedFor(entry)`, true when the numbers map has the entry's Team in the current Sprint and its status `canSave`;
   - one reconcile row per differing Team, in card order. The dismissal key `${sprintId}|${teamId}` and signature `${stored}|${ticket}` are unchanged.
 
-- [ ] **Step 1: Write failing Playwright cases:**
+- [x] **Step 1: Write failing Playwright cases:**
   - Saving and status:
     - each card's pencil saves only its own Team and Sprint;
     - saves for two Teams overlap and both land;
@@ -341,10 +341,10 @@
   - Geometry and layout:
     - settled hover, focus and geometry assertions for pencils, editor controls, Retry/Discard and every reconcile action;
     - pinned-stack height checks at the G1 Team count, compact and expanded, at 1440×900 and 1280×720. If the rows break the existing sticky contract, stop and ask; do not invent a collapse UI.
-- [ ] **Step 2:** Run. Expected: FAIL.
-- [ ] **Step 3:** Implement with the existing rail, banner and button classes and the strip's Discard copy.
-- [ ] **Step 4:** Run. Expected: PASS. Capture "after" screenshots matching Task 0.
-- [ ] **Step 5:** Commit `Edit, retry and reconcile each Team's stored number on its card (#323)`.
+- [x] **Step 2:** Run. Expected: FAIL.
+- [x] **Step 3:** Implement with the existing rail, banner and button classes and the strip's Discard copy.
+- [x] **Step 4:** Run. Expected: PASS. Capture "after" screenshots matching Task 0.
+- [x] **Step 5:** Commit `Edit, retry and reconcile each Team's stored number on its card (#323)`.
 
 ### Task 6: One-click push to the matched ticket (D1 (a) or (b) only)
 
@@ -630,6 +630,11 @@ Each item is done only with its named evidence recorded in Execution evidence (c
   - Budgets: `dashboard.jsx` 7476 to 7478 lines (ceiling 7502), `useEffect(` 74 unchanged, `useMemo(` 70 to 71 (ceiling 72, unchanged); `useEngCapacity.js` 458 to 469 lines (ceiling 470). `eng.useEngCapacity` re-synced: `scope.cardTeamIds` added, the three `plannedCapacity.*` members removed, expanded inputs 76/76 (the frozen 67 was stale at HEAD), new `sourceDigest`. `scripts/extraction_lint/run.sh`: owner-budget problems 79 at HEAD to 75 (the four stale `useEngCapacity` problems are gone, none added); 111 ESLint warnings and the `WorkConfigurationsEditor.jsx` handle violation unchanged (pre-existing).
 
 Operator decisions (2026-11-06): the recommended options were accepted.
+- **Task 5: per-Team card editing, status and reconciliation (2026-11-09).** **Operator design change:** screenshots of the brief's reconcile banner rows showed that with all 12 G1 Teams mismatched the expanded sticky stack reaches 894 px at 1280x720 (504 px with two rows) and covers the table. Two variants were rejected: actions inside the card, and rows in flow above the table. The operator approved a hover rail: every Team's card edits its own stored number with its pencil. A failed save shows ↻ Retry (`retryTeam`) and × Discard (`discardTeamPlanned`, stored-number draft only; accessible names "Retry" and "Discard changes") in the existing hover/focus rail beside the pencil. The error is read from their portaled `EpicHeaderValueReadout`, the D4 400 reads "Team capacity not saved: the server refused it.", and the compact overview status says "Team capacity not saved — show capacity details to retry". A mismatch marks its card (`data-capacity-attention="mismatch"`); its → icon renders only with an `onPushTeam` handler, which Task 6 wires. There are no banner rows, Use ticket value, Not now or dismissal key, and no in-card status block, so the card never grows. The one CSS change is a three-icon variant of the existing `.team-capacity-label-row` reserve rule (hover/focus and `hover: none`), keyed on `data-capacity-rail-icons="3"`. Editors call `ensureTeamDocument` on open; commits wait for that read and are dropped on a scope change; the mirror runs per Team after user-initiated reads; a Jira editor save settles a `user` number to `jira` in any scope. Commands (Node 20, after `npm run build`):
+  - Changed Playwright cases (`planning_assignee_capacity` and `planning_capacity_editing`, `--workers=4`): RED `8 failed, 12 passed` against the prototype build (the → without a handler, title overlap with three icons, the banner cases), GREEN `20 passed`.
+  - `node --test tests/test_*.js`: `# pass 3631`, `# fail 0`. `tests.test_codebase_structure_budgets`: `Ran 9 tests`, `OK`. `scripts/extraction_lint/run.sh`: unchanged from HEAD (111 warnings, 75 owner-budget problems, the pre-existing `WorkConfigurationsEditor.jsx` violation).
+  - Chromium `planning_assignee_capacity`, `planning_capacity_editing`, `planning_review_integration` and `design_system_hover_eng` (`--workers=4`): HEAD `249 passed, 1 failed, 3 skipped` (253); after `261 passed, 1 failed, 3 skipped` (265). The same pre-existing failure in both runs: `design_system_hover_eng.spec.js:284`.
+  - 12 Teams at 1440x900 and 1280x720: card heights are identical idle, hovered, mismatched and failed; editor-open is within 1 px (a pre-existing 0.8 px); idle titles are whole; the compact and expanded pinned stacks are unchanged. Captures are in `tmp/planning-323-every-team/task5/after/` (prototype variants in `variants/`, `variants2/`, `variants3/`).
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.
 - **D2:** zero-effort Teams count in totals and the project split; "Capacity:" availability is judged only over Teams with effort or a capacity value.
 - **D3:** the Team-selector set; today's set until work is known; no stored-number pencil and no Jira read for unresolved or comma-containing names.

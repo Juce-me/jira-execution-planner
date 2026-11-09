@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { usePlanningTeamCapacitySaveStatus } from './PlanningTeamCapacityCards.jsx';
 
 // The Table summary in the overview row: short parts joined by " · ", warnings only when above zero (2026-11-09).
 export function PlanningOverviewSummary({ childPlural = 'stories', planned = false, count = 0, sp = 0, capacity = null, unestimated = 0, hidden = 0 }) {
@@ -12,12 +13,15 @@ export function PlanningOverviewSummary({ childPlural = 'stories', planned = fal
 }
 
 export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
+    // A Team's stored number that did not save is told while compact, where its card is hidden (#323).
+    const teamSaveStatus = usePlanningTeamCapacitySaveStatus();
+    const status = capacityStatus || (compact ? teamSaveStatus : '');
     const panelControl = <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
         aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>;
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>
         {/* The summary and note sit in the action row's flexible gap. */}
         {React.isValidElement(actions) ? React.cloneElement(actions, { panelControl, summary, notice }) : <>{summary}{notice}</>}
-        {capacityStatus && <span className="planning-panel-capacity-status" role="status">{capacityStatus}</span>}
+        {status && <span className="planning-panel-capacity-status" role="status">{status}</span>}
         <div id="planning-panel-details" hidden={compact} className="planning-panel-graphs">
             <div className="planning-panel-capacity-graph" aria-label="Planned effort and capacity">{planReady ? capacity : <p className="planning-review-guidance">Planned effort is unavailable until this plan is loaded.</p>}</div>
             <div className="planning-panel-team-details">{teams}</div>

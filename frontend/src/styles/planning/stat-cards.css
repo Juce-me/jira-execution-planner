@@ -181,6 +181,12 @@
             padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
         }
 
+        /* Three rail icons: a mismatch push or a failed save's Retry and Discard beside the pencil (#323). */
+        .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing):hover .team-capacity-label-row,
+        .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing):focus-within .team-capacity-label-row {
+            padding-right: calc(72px + 0.44rem + 0.55rem + 0.4rem);
+        }
+
         .team-stat-card.team-card.is-capacity-editing.has-capacity-share .team-stat-label {
             width: auto;
         }
@@ -377,6 +383,10 @@
 
             .team-stat-card.team-card.has-capacity-actions:not(.is-capacity-editing) .team-capacity-label-row {
                 padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
+            }
+
+            .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing) .team-capacity-label-row {
+                padding-right: calc(72px + 0.44rem + 0.55rem + 0.4rem);
             }
         }
 

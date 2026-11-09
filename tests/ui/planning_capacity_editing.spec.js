@@ -1872,3 +1872,105 @@ for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status
     else { await page.waitForTimeout(150); await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await expect(page.getByText('Capacity could not be refreshed. Retry before editing.', { exact: true })).toHaveCount(0); }
     expect(capacityCalls(calls.slice(since), 'PATCH')).toHaveLength(0);
 });
+
+// ---- #323 Task 5: the mismatch push icon (→) joins the card's hover rail only with a push handler (Task 6 wires it) ----
+
+let pushHarness;
+function buildPushHarness() {
+    if (pushHarness) return pushHarness;
+    pushHarness = esbuild.buildSync({
+        stdin: {
+            contents: `
+                import React from 'react';
+                import { createRoot } from 'react-dom/client';
+                import PlanningTeamCapacityCards from './frontend/src/eng/PlanningTeamCapacityCards.jsx';
+                import { PlanningAssigneeCapacityContext } from './frontend/src/eng/PlanningAssigneeCapacity.jsx';
+                const numbers = Object.freeze({ sprintId: '3001', byTeam: Object.freeze({ 'team-a': Object.freeze({ value: 14, source: 'user' }), 'team-b': Object.freeze({ value: 30, source: 'jira' }) }) });
+                const status = Object.freeze({ load: 'ready', readError: '', save: 'idle', error: '', canSave: true });
+                const noop = () => {};
+                const controller = { subscribe: () => noop, getPlannedNumbers: () => numbers, subscribeTeam: () => noop, getTeamStatus: () => status,
+                    ensureTeamDocument: noop, mirrorTeamPlanned: () => false, commitTeamPlanned: () => false, retryTeam: noop, discardTeamPlanned: noop };
+                const context = { oneTeam: false, teamId: '', state: { plannedSave: '' }, controller, getTeamStatus: controller.getTeamStatus, subscribeTeam: controller.subscribeTeam };
+                const entry = (id, name, key, ticket, sp) => ({ id, name, storyPoints: sp, capacityTargetState: 'matched', capacityIssueKey: key, capacityTargetTeamName: name,
+                    capacityTargetCapacity: ticket, hasCapacityValue: true, teamCapacity: ticket, rawCapacity: ticket, capacitySource: 'jira', plannedEditable: false });
+                const entries = [entry('team-a', 'Alpha Team', 'CAP-1', 20, 12), entry('team-b', 'Beta Team', 'CAP-2', 30, 8)];
+                window.__pushes = [];
+                createRoot(document.getElementById('root')).render(
+                    <PlanningAssigneeCapacityContext.Provider value={context}>
+                        <PlanningTeamCapacityCards entries={entries} capacityEnabled canOpenCapacityJira canEditCapacity jiraUrl="https://jira.example"
+                            sprintName="2026Q3" scopeSignature="scope" resolveTeamColor={() => '#7a8bc4'} getTeamCapacityMeta={() => ({ status: '' })}
+                            updateCapacityRequest={() => new Promise(noop)} onPushTeam={window.__withPushHandler ? push => window.__pushes.push(push) : undefined} />
+                    </PlanningAssigneeCapacityContext.Provider>
+                );
+            `,
+            resolveDir: repoRoot,
+            loader: 'jsx',
+        },
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+    return pushHarness;
+}
+
+async function mountPushHarness(page, withHandler) {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="width: 760px; margin: 40px;"></div></body></html>');
+    await page.addStyleTag({ content: `${fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8')}\n*,*::before,*::after{animation:none!important;transition:none!important}` });
+    await page.evaluate(value => { window.__withPushHandler = value; }, withHandler);
+    await page.addScriptTag({ content: buildPushHarness() });
+    await expect(page.locator('.team-stat-card')).toHaveCount(2);
+}
+
+const pushCard = (page, teamId) => page.locator(`.team-stat-card[data-capacity-team="${teamId}"]`);
+const pushButton = page => pushCard(page, 'team-a').getByRole('button', { name: 'Apply Alpha Team team capacity to Jira' });
+
+test('the mismatch → is absent without a push handler: the rail keeps only Jira and the pencil', async ({ page }) => {
+    await mountPushHarness(page, false);
+    await expect(pushCard(page, 'team-a')).toHaveAttribute('data-capacity-attention', 'mismatch');
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+});
+
+test('with a push handler the mismatch → sits left of the pencil in the hover rail, with the pencil\'s geometry, hover, focus and readout, and calls the handler for its own Team only', async ({ page }) => {
+    await mountPushHarness(page, true);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    expect(await card.locator('.team-capacity-action-rail').evaluate(node => getComputedStyle(node).opacity), 'idle: hidden with the pencil').toBe('0');
+    expect(await card.locator('.team-stat-label').evaluate(node => node.scrollWidth <= node.clientWidth), 'idle title whole').toBe(true);
+    await card.hover();
+    const button = pushButton(page);
+    await expect(button).toBeVisible();
+    expect(await card.locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
+        .toEqual(['Open Alpha Team capacity ticket in Jira', 'Apply Alpha Team team capacity to Jira', 'Edit Alpha Team capacity']);
+    const pencil = card.getByRole('button', { name: 'Edit Alpha Team capacity' });
+    const [box, pencilBox, cardBox] = [await button.boundingBox(), await pencil.boundingBox(), await card.boundingBox()];
+    expect(box.width).toBeCloseTo(pencilBox.width, 1); expect(box.height).toBeCloseTo(pencilBox.height, 1);
+    expect(Math.abs(box.y - pencilBox.y)).toBeLessThanOrEqual(0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(pencilBox.x + 0.5);
+    expect(box.x).toBeGreaterThanOrEqual(cardBox.x); expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    expect(cardBox.height, 'the rail never grows the card').toBeCloseTo(idle.height, 2);
+    expect(await card.evaluate(node => node.querySelector('.team-stat-label').getBoundingClientRect().right <= node.querySelector('.team-capacity-action-rail').getBoundingClientRect().left + 0.5), 'three icons stay clear of the title').toBe(true);
+    await button.hover();
+    await page.waitForTimeout(150);
+    expect(await button.boundingBox()).toEqual(box);
+    expect(await button.evaluate(node => getComputedStyle(node).boxShadow)).not.toBe('none');
+    const readout = page.locator('.epic-full-value-readout');
+    await expect(readout).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    const [c, r] = [await card.boundingBox(), await readout.boundingBox()];
+    const clip = { x: Math.min(c.x, r.x) - 8, y: Math.min(c.y, r.y) - 8 };
+    clip.width = Math.max(c.x + c.width, r.x + r.width) + 8 - clip.x; clip.height = Math.max(c.y + c.height, r.y + r.height) + 8 - clip.y;
+    await page.screenshot({ path: path.join(repoRoot, 'tmp', 'planning-323-every-team', 'task5', 'after', 'card-push-hover-1280x720.png'), clip, scale: 'device' });
+    await button.focus();
+    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    await expect(button).toBeFocused();
+    expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
+    await button.click();
+    expect(await page.evaluate(() => window.__pushes)).toEqual([{ teamId: 'team-a', issueKey: 'CAP-1', stored: 14, ticket: 20 }]);
+    await pushCard(page, 'team-b').hover();
+    await expect(pushCard(page, 'team-b').getByRole('button', { name: /^Apply / }), 'equal numbers: no push').toHaveCount(0);
+});

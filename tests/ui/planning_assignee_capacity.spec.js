@@ -4275,7 +4275,7 @@ test('an automatic follow-up while a card editor is open does not run, and runs 
     expect(server.state.patches).toEqual([]);
 });
 
-test('a failed stored-number read keeps the numbers and enables no pencil; the next Refresh recovers with no PATCH', async ({ page }) => {
+test('a failed stored-number read keeps the numbers, says so in the overview state note and enables no pencil; the next Refresh clears the note and recovers with no PATCH', async ({ page }) => {
     let failRead = false;
     const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
     const batch = server.batch;
@@ -4297,10 +4297,19 @@ test('a failed stored-number read keeps the numbers and enables no pencil; the n
         await teamCard(page, teamId).hover();
         await expect(teamPencil(page, teamId, name), `${teamId}: no pencil is enabled over a failed read`).toBeDisabled();
     }
+    // The failure is told in the action row's existing state note (no added line), expanded and compact.
+    const note = page.locator('.planning-panel .planning-actions > .planning-review-state-note');
+    await expect(note).toHaveText('Capacity could not be refreshed. Retry before editing.');
+    await expect(addedStatusLine(page)).toHaveCount(0);
+    await hideDetails(page);
+    await expect(note).toHaveText('Capacity could not be refreshed. Retry before editing.');
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
+    await showCards(page);
     failRead = false;
     storeOn(server, 'team-beta', '9');
     await headerRefresh(page).click();
     await storedOn(page, 'team-beta', '9.0');
+    await expect(page.locator('.planning-panel .planning-actions > .planning-review-state-note', { hasText: 'could not be refreshed' }), 'a successful read clears the note').toHaveCount(0);
     await teamCard(page, 'team-alpha').hover();
     await expect(teamPencil(page, 'team-alpha', 'Alpha Team')).toBeEnabled();
     await settled(page);
@@ -4334,10 +4343,14 @@ for (const rows of ['Epics', 'Stories']) test(`an automatic stored-number refres
         return { stackTop: Math.round(stack.top), stackBottom: Math.round(stack.bottom), dockedTop: Math.round(docked.top), scrollY: Math.round(window.scrollY), key: row.dataset.issueKey, rowTop: Math.round(row.getBoundingClientRect().top) };
     });
     const before = await read();
+    await expect(page.locator('.planning-panel .planning-actions > .planning-stats')).toContainText('Cap 20.0 SP');
     const since = calls.length;
     storeOn(server, 'team-beta', '9');
     await lifecycle.returnAfter(13 * 60000);
     await expect.poll(() => batchReads(calls, since).length, 'the automatic follow-up read the stored numbers').toBe(1);
+    // The new number is rendered: the card and the compact overview's Cap total.
+    await storedOn(page, 'team-beta', '9.0');
+    await expect(page.locator('.planning-panel .planning-actions > .planning-stats')).toContainText('Cap 23.0 SP');
     await settled(page);
     expect(await read(), `${rows}: pinned stack, docked header and reading position`).toEqual(before);
     await page.screenshot({ path: `tmp/planning-323-every-team/task7/reading-position-${rows.toLowerCase()}-1280x720.png`, animations: 'disabled' });

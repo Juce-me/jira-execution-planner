@@ -39,6 +39,9 @@ class EffectiveCatalogConfig:
     # supplement is an issue-scanned source of the same configuration (never a Board row).
     observed_source: 'EffectiveCatalogConfig | None' = None
     is_observed_supplement: bool = False
+    # The stored entry's Board is blank and ``board_id`` came from another configuration
+    # (``work_structure.inherit_board``): its Sprint ids are not this configuration's own.
+    board_inherited: bool = False
 
 
 def _digest(value):
@@ -461,9 +464,21 @@ def resolve_catalog_sources(session, context, *, runtime_inputs, flag_enabled=No
     entries = work_structure.catalog_entries(snapshot, flag_enabled=flag_enabled)
     if entries is None:
         return None
-    return tuple(
-        _entry_catalog_config(context, snapshot, entry, runtime_inputs) for entry in entries
-    )
+    stored_boards = {
+        item['id']: item['scope']['boardId']
+        for item in work_structure.stored_bundle(snapshot.payload)['configurations']
+    }
+    sources = []
+    for entry in entries:
+        source = _entry_catalog_config(context, snapshot, entry, runtime_inputs)
+        if entry['scope']['boardId'] and not stored_boards.get(entry['id']):
+            observed = source.observed_source
+            source = replace(
+                source, board_inherited=True,
+                observed_source=observed and replace(observed, board_inherited=True),
+            )
+        sources.append(source)
+    return tuple(sources)
 
 
 def resolve_configuration_catalog_config(

@@ -508,6 +508,26 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
             {'key': 'PLAN-7', 'fields': {DELIVERY_SPRINT_FIELD: [sprint_value(45459, '2027Q1', 'future')]}},
         ], 'isLast': True}]
 
+    def inherit_legacy_board(self):
+        with self.factory() as session:
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            payload = deepcopy(row.payload)
+            payload['workConfigurations']['configurations'][1]['scope']['boardId'] = ''
+            row.payload = payload
+            session.commit()
+
+    def test_board_inherited_is_set_only_for_a_blank_stored_board(self):
+        legacy, delivery = self.sources()
+        self.assertFalse(legacy.board_inherited)
+        self.assertFalse(delivery.board_inherited, 'DELIVERY has its own Board')
+        self.inherit_legacy_board()
+        legacy, delivery = self.sources()
+        self.assertFalse(legacy.board_inherited)
+        self.assertTrue(delivery.board_inherited)
+        self.assertEqual(delivery.source_mode, 'board')
+        self.assertEqual(delivery.board_id, '7001')
+        self.assertTrue(delivery.observed_source.board_inherited)
+
     def jira_with_delivery_board(self, delivery_values, **kwargs):
         fake = FakeJira(board_values=[{**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001}], **kwargs)
         plain_get = fake.get

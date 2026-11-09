@@ -1,8 +1,36 @@
 # DELIVERY Initiative Allocation and Board-only Sprints Implementation Plan
 
-> **Status:** Planned, not started (2026-11-09). Branch `feature/quarterly-allocation-split-sprint-scoping` (PR 334), base for execution `35c110d3`. Reworks parts of [DONE-delivery-allocation-split-and-sprint-scoping.md](DONE-delivery-allocation-split-and-sprint-scoping.md); that plan stays the record of what shipped first.
+> **Status:** Done. Executed on branch `feature/quarterly-allocation-split-sprint-scoping` (PR 334) from base `e4bc1f41`, head `5519d54c` (2026-11-09); kept for audit context only. Reworks parts of [DONE-delivery-allocation-split-and-sprint-scoping.md](DONE-delivery-allocation-split-and-sprint-scoping.md); that plan stays the record of what shipped first.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution record:** the task bodies below are the pre-execution contract and their checkboxes were not ticked; per-task results are in Execution status at the end, and Outcome and Current Accuracy record where the implementation differs.
+
+## Outcome
+
+Implemented with changes; the implementation is now the source of truth. All eight tasks and the final-review fix wave shipped. Divergences from the task bodies (details in Execution status):
+
+- The client Board stream validator (`engBoardApi.js`) accepts the optional epic `projectClassification` and child `none` on every stream, because it cannot see the model; only the server writer (`EngBoardStreamWriter(delivery=...)`) enforces DELIVERY-only. A Legacy stream carrying the key would not be rejected client-side.
+- No Board stream version bump: `ENG_BOARD_PROTOCOL_VERSION` stays 1 (the key is additive and gated; bumping would change every Legacy frame), and no Board cache keys frame shape.
+- The `dev_routes.py` Board measurement campaign stays on the Legacy `product|tech|other` contract (diagnostics only; follow-up in `docs/TODO.md`).
+- `engAllocationFilter` is also saved in the UI prefs (Project Track is not, so "persisted like `engProjectTrackFilter`" could not survive a reload, Review Focus 2) and seeds a new group's default.
+- In DELIVERY the capacity hook receives `showProduct`/`showTech` as true: the Allocation facet, like Project Track, does not scale capacity.
+- The Planned Teams Effort table gained a DELIVERY-only No Allocation column group (Task 5 fix round; not in the task body, required by the acceptance checklist).
+- The 17-column DELIVERY Stats Teams table sits in a `[data-allocation="delivery"]` frame that scrolls horizontally.
+- DELIVERY Initiative alerts classify through `allocationClassOf` with `epicDetails[key].allocationClass` first, then the alert's own `allocationClass`/`projectClass`, because `epicsInScope` / `readyToClose*EpicsInScope` alert records carry no class. Stamping `allocationClass` on those records server-side changes the alerts request contract (`test_alerts_request_reads_no_allocation`) and is an open operator decision in `docs/TODO.md`; until then an alert whose Initiative is not in `epicDetails` stays No Allocation.
+- Task 3 kept the Board precedence helpers until Task 4 deleted them; readiness tests live in `tests/test_story_readiness.py`; several named test modules did not exist and their real equivalents ran (Execution status, Tasks 1, 3 and 6).
+
+## Current Accuracy
+
+Partially accurate: Goal, Spec, Lead defaults and the acceptance checklist describe what shipped, with the divergences above; the task bodies are the pre-execution contract and Execution status is the per-task record.
+
+Gate results at head `5519d54c` (2026-11-09, this worktree, Node 20 via `fnm`, the parent checkout's `.venv` Python):
+
+- `npm run build`: OK.
+- `<PYENV> python -m unittest discover -s tests`: Ran 3432 tests, OK (skipped=61).
+- `npm run test:frontend:unit`: 3527 tests, 3527 pass, 0 fail.
+- `npx playwright test tests/ui --browser=chromium --workers=4` (`JEP_TEST_BASE_URL` on a local 5051 server, not 5050): 2306 passed, 19 skipped, 1 failed: `planning_review_integration.spec.js:708` ("Table sticky summary compacts 2 Team scope with one Team selected…", line 738 expects the assignee-strip readout to contain `Selected`, received `Unassigned (effort)3 SP effort · 100% of selected`). It fails alone too and fails identically at the base `e4bc1f41` (run from a `git archive` copy); its spec and the assignee-strip sources are unchanged on this branch. It is the pre-existing failure already recorded in `docs/TODO.md` and the earlier DONE plan (spec drift since `95c982de` moved the Selected header past the last segment), not a regression of this plan.
+- `tests.test_agents_md_learnings`, `tests.test_codebase_structure_budgets`: OK; `tests/test_dashboard_regrowth_guard.js`: 3 pass.
+
+Unverified: headed Firefox/WebKit, live Jira (DELIVERY Allocation values, shared-Board ranges), and the extraction lint (no CI runs it; 66 enforced problems, all present at the base, per Task 8 Step 1).
 
 **Goal:** In DELIVERY (`rnd_2027`), Product/Tech becomes an Initiative property read only from the Initiative's own Allocation, with a third class "No Allocation" that the filter, capacity totals, split bar, alerts and Stats show like "No Project Track"; Board-mode Sprints come only from the Board (own or inherited), split between configurations by quarter range; "Refresh Sprint values" reads the effective (inherited) Board and Sprint field.
 

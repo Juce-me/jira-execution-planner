@@ -79,7 +79,7 @@ RICE = (Reach x Impact x Confidence) / Effort
   - Re-keyed Teams: a Department holding the old and new id of one Team cannot relate them for readiness; giving both the same label trips the shared-label guard. Do not merge ids by name.
   - Label search shows a Jira autocomplete timeout (`/api/jira/labels` 503) as an empty result instead of a readable failure.
   - The extraction lint reports 66 enforced problems on the branch (70 before the DELIVERY Initiative Allocation re-sync; none from the D3b commit), including a `WorkConfigurationsEditor.jsx` handle-in-deps violation; no CI runs it.
-  - DELIVERY Initiative Allocation ([plan](plans/EXEC-delivery-initiative-allocation-and-board-sprints.md)) follow-ups:
+  - DELIVERY Initiative Allocation ([plan](plans/DONE-delivery-initiative-allocation-and-board-sprints.md)) follow-ups:
     - The DELIVERY Stats Teams Total counts (`frontend/src/stats/StatsTeamsView.jsx`) still link to the Product/Tech project JQL, which does not match the single-project DELIVERY lane; the Product, Tech and No Allocation counts carry no link.
     - The Effort Split summary cards (Excluded, Ad Hoc share, Product total, Tech share) have no No Allocation share, so in DELIVERY the shares and Excluded no longer add up to 100%.
     - At 1280px the 17-column DELIVERY Stats Teams table scrolls horizontally inside its `[data-allocation="delivery"]` frame and the Team column scrolls out of view; pin it or tighten the columns.

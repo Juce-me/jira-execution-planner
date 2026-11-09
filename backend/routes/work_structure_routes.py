@@ -656,21 +656,33 @@ def _unique_values(values):
     return [{'value': value} for value in dict.fromkeys(value for value in values if value)]
 
 
+def _raise_on_expired_sign_in(response):
+    if response.status_code == 401:
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+
+
 def _createmeta_allocation_values(auth_context, field_id, project_key, issue_type_id):
-    """Complete option list from the user's create metadata, or None when unreadable or absent."""
-    response = get_jira_server().current_jira_get(
-        f'/rest/api/3/issue/createmeta/{project_key}/issuetypes/{issue_type_id}',
-        params={'maxResults': 200}, timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
-    )
-    if response.status_code != 200:
+    """Complete option list from the user's create metadata, or None when unreadable, absent or unlisted
+    (so autocomplete runs).  Only an expired sign-in propagates."""
+    try:
+        response = get_jira_server().current_jira_get(
+            f'/rest/api/3/issue/createmeta/{project_key}/issuetypes/{issue_type_id}',
+            params={'maxResults': 200}, timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
+        )
+        _raise_on_expired_sign_in(response)
+        if response.status_code != 200:
+            return None
+        body = response.json() or {}
+        fields = body.get('fields') or body.get('values') or []
+        field = next((item for item in fields if isinstance(item, dict) and item.get('fieldId') == field_id), None)
+        allowed = field.get('allowedValues') if field is not None else None
+        if not allowed or not isinstance(allowed, list):
+            return None
+        return [str(item.get('value') or '').strip() for item in allowed if isinstance(item, dict)]
+    except AuthError:
+        raise
+    except Exception:
         return None
-    body = response.json() or {}
-    fields = body.get('fields') or body.get('values') or []
-    field = next((item for item in fields if isinstance(item, dict) and item.get('fieldId') == field_id), None)
-    if field is None:
-        return None
-    return [str((item or {}).get('value') or '').strip() for item in field.get('allowedValues') or []
-            if isinstance(item, dict)]
 
 
 def _autocomplete_allocation_values(auth_context, field_number, query):
@@ -680,6 +692,7 @@ def _autocomplete_allocation_values(auth_context, field_number, query):
         params={'fieldName': f'cf[{field_number}]', 'fieldValue': query},
         timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
     )
+    _raise_on_expired_sign_in(response)
     if response.status_code != 200:
         return None
     values = []
@@ -702,11 +715,7 @@ def get_work_structure_allocation_options():
         auth_context, failure = _feature_context()
         if failure is not None:
             return failure
-        state = work_structure_service.work_configuration_state(
-            workspace_snapshot(auth_context).payload,
-            flag_enabled=work_structure_service.work_configurations_enabled(),
-        )
-        if not state.promoted and not state.flag_enabled:
+        if not work_structure_service.work_configurations_enabled():
             return work_error_response(WorkConfigError('configuration_feature_disabled'))
         field_id = request.args.get('fieldId', '').strip()
         project_key = request.args.get('projectKey', '').strip()

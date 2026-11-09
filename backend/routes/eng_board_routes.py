@@ -704,8 +704,8 @@ def _allocation_options(snapshot):
 
 def _objective_allocations(server, snapshot, transport, initiatives, field_id):
     """``{Objective key: raw Allocation}`` for the typed Objectives of blank Initiatives, as ``fetch_tasks`` reads
-    them: distinct keys in batches of 40, nothing when every Initiative has a value.  A failed batch leaves its
-    Objectives unread, which counts as Product."""
+    them: distinct keys in batches of 40, nothing when every Initiative has a value.  A failed or malformed batch
+    leaves its Objectives unread, which counts as Product; only a sign-in failure (``AuthError``) propagates."""
     term = snapshot.work_request.roles.ancestor_term()
     if not field_id or term is None or term[0] != 'id':
         return {}
@@ -725,10 +725,12 @@ def _objective_allocations(server, snapshot, transport, initiatives, field_id):
         payload = {'jql': f'issueKey in ({",".join(batch)})', 'maxResults': len(batch), 'fields': [field_id]}
         try:
             page = _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout())
-        except BoardJiraUnavailable:
+        except (BoardJiraUnavailable, eng_board.EngBoardError):
             continue
-        for issue in page.get('issues') or []:
-            objectives[issue.get('key')] = (issue.get('fields') or {}).get(field_id)
+        issues = page.get('issues') if isinstance(page, dict) else None
+        for issue in issues if isinstance(issues, list) else []:
+            if isinstance(issue, dict) and isinstance(issue.get('fields'), dict):
+                objectives[issue.get('key')] = issue['fields'].get(field_id)
     return objectives
 
 

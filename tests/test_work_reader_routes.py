@@ -730,3 +730,32 @@ class BoardSelectorTests(unittest.TestCase):
         self.assertEqual(query.scope, 'all_work')
         with self.assertRaises(eng_board_routes.BoardRouteError):
             eng_board_routes._parse_query(MultiDict([('departmentId', 'd'), ('scope', 'all_work'), ('bogus', '1')]))
+
+
+class BoardObjectiveBatchTests(unittest.TestCase):
+    """A3b: an unreadable Objective batch counts as Product; only sign-in failures stop the Board."""
+
+    def setUp(self):
+        roles = Mock()
+        roles.ancestor_term.return_value = ('id', '10003')
+        self.snapshot = Mock(work_request=Mock(roles=roles))
+        self.initiatives = [{'key': 'PLAN-I1', 'fields': {
+            'customfield_9': None,
+            'parent': {'key': 'PLAN-O1', 'fields': {'issuetype': {'id': '10003'}}}}}]
+
+    def read(self, page_effect):
+        with patch.object(eng_board_routes, '_search_page', side_effect=page_effect):
+            return eng_board_routes._objective_allocations(
+                Mock(), self.snapshot, Mock(), self.initiatives, 'customfield_9')
+
+    def test_malformed_batches_leave_their_objectives_unread(self):
+        for effect in (eng_board.EngBoardError('board_projection_invalid', phase='index'),
+                       [['not', 'a', 'page']], [{'issues': ['not an issue']}], [{'issues': 'bogus'}]):
+            with self.subTest(effect=effect):
+                self.assertEqual(self.read(effect), {})
+
+    def test_a_readable_batch_is_used_and_sign_in_failure_still_raises(self):
+        page = {'issues': [{'key': 'PLAN-O1', 'fields': {'customfield_9': {'value': 'Platform'}}}]}
+        self.assertEqual(self.read([page]), {'PLAN-O1': {'value': 'Platform'}})
+        with self.assertRaises(eng_board_routes.AuthError):
+            self.read(eng_board_routes.AuthError('auth_required', 'Atlassian authentication is required.'))

@@ -1078,7 +1078,8 @@ def _configuration_completion_response(auth_context, selected, configuration_id,
         'browserContextId': catalog_browser_context_id(auth_context),
         'configurationId': config.configuration_id,
     }
-    if not config.sprint_identity:
+    # An inherited Board with no own scan lists as setup_required; never complete from Board rows.
+    if not config.sprint_identity or (config.board_inherited and config.observed_source is None):
         return _catalog_response(
             {'error': 'catalog_identity_changed', 'sprintCatalogSource': source}, 409, started_at,
         )

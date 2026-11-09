@@ -471,7 +471,9 @@ def resolve_catalog_sources(session, context, *, runtime_inputs, flag_enabled=No
     sources = []
     for entry in entries:
         source = _entry_catalog_config(context, snapshot, entry, runtime_inputs)
-        if entry['scope']['boardId'] and not stored_boards.get(entry['id']):
+        # Only DELIVERY narrows a borrowed Board to its own scan; Legacy keeps Board-only discovery.
+        if (entry['model'] == work_structure.MODEL_RND_2027 and entry['scope']['boardId']
+                and not stored_boards.get(entry['id'])):
             observed = source.observed_source
             source = replace(
                 source, board_inherited=True,

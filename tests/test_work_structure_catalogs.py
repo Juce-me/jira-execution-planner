@@ -1,8 +1,10 @@
 """Task 3A/3B: configuration Sprint sources, Team publication without a Board row, selectors."""
 
 import unittest
+import time
 import uuid
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
@@ -532,6 +534,18 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
         self.assertEqual(delivery.board_id, '7001')
         self.assertTrue(delivery.observed_source.board_inherited)
 
+    def test_legacy_borrowing_the_delivery_board_keeps_its_board_rows(self):
+        with self.factory() as session:
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            payload = deepcopy(row.payload)
+            payload['workConfigurations']['configurations'][0]['scope']['boardId'] = ''
+            row.payload = payload
+            session.commit()
+        legacy, delivery = self.sources()
+        self.assertEqual(legacy.board_id, '19095')
+        self.assertFalse(legacy.board_inherited, 'only DELIVERY narrows an inherited Board to its scan')
+        self.assertFalse(delivery.board_inherited)
+
     def jira_with_delivery_board(self, delivery_values, **kwargs):
         fake = FakeJira(board_values=[{**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001}], **kwargs)
         plain_get = fake.get
@@ -603,6 +617,22 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
         self.assertEqual(completion.status_code, 200, completion.get_data(as_text=True))
         self.assertEqual([row['id'] for row in completion.get_json()['sprints']], [202],
                          'completion of the scan attempt reads the scan, not the inherited Board')
+
+    def test_inherited_board_without_a_scan_never_completes_from_board_rows(self):
+        self.inherit_legacy_board()
+        delivery = replace(self.sources()[1], observed_source=None)
+        from backend.routes import settings_routes
+        with jira_server.app.test_request_context(), \
+                patch.object(settings_routes, 'read_catalog_completion',
+                             side_effect=AssertionError('inherited Board completion read')), \
+                patch.object(settings_routes, 'read_scoped_sprint_completion',
+                             side_effect=AssertionError('missing scan completion read')):
+            response = settings_routes._configuration_completion_response(
+                self.worker_context(), (delivery,), 'delivery', str(uuid.uuid4()), 'identity',
+                time.perf_counter())
+        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'catalog_identity_changed',
+                         'the client re-lists and sees setup_required, as the listing reports')
 
     def test_inherited_board_pending_or_failed_scan_never_falls_back_to_board_rows(self):
         self.inherit_legacy_board()

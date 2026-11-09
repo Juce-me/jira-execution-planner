@@ -158,15 +158,9 @@ const noSubscription = () => () => {};
 const noNumbers = () => null;
 const NO_STATUSES = new Map();
 const isFailedSave = save => save === 'failed' || save === 'rejected';
-// The stored-number save state a card shows: the strip's own Team keeps the strip's planned-only state (a person-row
-// failure belongs to the strip), every other Team its owner's save state.
-function plannedSaveOf(context, teamId, status) {
-    if (context?.oneTeam && String(context.teamId) === teamId) {
-        const save = context.state?.plannedSave || '';
-        return save === 'failed' && status?.save === 'rejected' ? 'rejected' : save;
-    }
-    return status && status.save !== 'idle' ? status.save : '';
-}
+// The stored-number save state a card shows: the Team's stored-number slot only (a person-row failure belongs to the strip).
+const plannedSaveOf = status => (status && status.plannedSave && status.plannedSave !== 'idle' ? status.plannedSave : '');
+const teamsText = count => `${count} Team${count === 1 ? '' : 's'}`;
 
 // Every card Team's status, through its own Team subscription; the map keeps its identity until one status changes.
 function useTeamStatuses(controller, idsKey) {
@@ -188,15 +182,18 @@ function useTeamStatuses(controller, idsKey) {
     return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-// The compact overview's status line for a Team whose stored number did not save (the cards are hidden while compact).
+// The overview status line, compact and expanded: stored-number saves in flight and failed ones (the cards stay unchanged;
+// a failed card's Retry and Discard are in its hover rail).
 export function usePlanningTeamCapacitySaveStatus() {
     const context = usePlanningAssigneeCapacityView();
     const controller = context?.controller || null;
     const getSnapshot = () => {
         const byTeam = controller?.getPlannedNumbers()?.byTeam;
         if (!byTeam) return '';
-        const failed = Object.keys(byTeam).some(teamId => isFailedSave(plannedSaveOf(context, teamId, controller.getTeamStatus(teamId))));
-        return failed ? 'Team capacity not saved — show capacity details to retry' : '';
+        const saves = Object.keys(byTeam).map(teamId => plannedSaveOf(controller.getTeamStatus(teamId)));
+        const failed = saves.filter(isFailedSave).length, saving = saves.filter(save => save === 'saving').length;
+        const count = n => `${n} Team save${n === 1 ? '' : 's'}`;
+        return [failed ? `${count(failed)} failed — hover a card to retry` : '', saving ? `Saving ${teamsText(saving)}…` : ''].filter(Boolean).join(' · ');
     };
     return React.useSyncExternalStore(controller ? controller.subscribe : noSubscription, getSnapshot, getSnapshot);
 }
@@ -661,22 +658,23 @@ export default function PlanningTeamCapacityCards({
                     const targetMatched = entry.capacityTargetState === 'matched' && Boolean(entry.capacityIssueKey);
                     const targetSuppressed = invalidTargets.has(entry.capacityIssueKey);
                     const jiraIssueUrl = buildJiraIssueUrl(jiraUrl, entry.capacityIssueKey);
-                    const showJira = !actionsGloballySuppressed && targetMatched && !targetSuppressed
+                    const teamStatus = statusOf(entry);
+                    const storedPlanned = plannedOf(entry);
+                    const plannedSave = storedPlanned ? plannedSaveOf(teamStatus) : '';
+                    // At most three rail icons: a failed save's Retry and Discard take the place of the Jira link and the push.
+                    const showFailedIcons = !actionsGloballySuppressed && !isEditing && isFailedSave(plannedSave);
+                    const showJira = !actionsGloballySuppressed && !showFailedIcons && targetMatched && !targetSuppressed
                         && canOpenCapacityJira && Boolean(jiraIssueUrl);
                     const showPencil = !actionsGloballySuppressed && targetMatched && !targetSuppressed
                         && canEditCapacity && !configEditingSuppressed;
                     // No ticket: the stored number's own pencil, shown while the Team's save right is unknown or granted and
                     // enabled once it is granted.
-                    const teamStatus = statusOf(entry);
-                    const storedPlanned = plannedOf(entry);
                     const showPlannedPencil = !actionsGloballySuppressed && !targetMatched && entry.plannedEditable === true
                         && Boolean(storedPlanned && teamStatus) && teamStatus.canSave !== false;
                     const plannedEditing = isEditing && activeEditor.mode === 'planned';
                     const plannedShown = entry.capacitySource === 'planned';
-                    const plannedSave = storedPlanned ? plannedSaveOf(assignee, String(entry.id), teamStatus) : '';
                     const mismatch = mismatchOf(entry);
-                    const showPush = !actionsGloballySuppressed && Boolean(mismatch) && typeof onPushTeam === 'function';
-                    const showFailedIcons = !actionsGloballySuppressed && !isEditing && isFailedSave(plannedSave);
+                    const showPush = !actionsGloballySuppressed && !showFailedIcons && Boolean(mismatch) && typeof onPushTeam === 'function';
                     const hasActionRail = showJira || showPencil || showPlannedPencil || showPush || showFailedIcons;
                     const railIcons = [showJira, showPush, showFailedIcons, showFailedIcons, showPencil, showPlannedPencil].filter(Boolean).length;
                     const capacityValuePresent = capacityEnabled && entry.hasCapacityValue;

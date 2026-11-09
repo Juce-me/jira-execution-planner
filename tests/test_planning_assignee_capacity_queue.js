@@ -968,7 +968,7 @@ test('A fails while B succeeds; A keeps Retry and Discard', async () => {
     controller.commitTeamPlanned('A', '10');
     controller.commitTeamPlanned('B', '20');
     await fire();
-    assert.deepEqual(controller.getTeamStatus('A'), { load: 'ready', readError: '', save: 'failed', error: 'Server unavailable', canSave: true });
+    assert.deepEqual(controller.getTeamStatus('A'), { load: 'ready', readError: '', save: 'failed', error: 'Server unavailable', canSave: true, plannedSave: 'failed' });
     assert.equal(controller.getTeamStatus('B').save, 'idle');
     assert.equal(numberOf(controller, 'A'), 10, 'the failed number stays shown');
     assert.equal(numberOf(controller, 'B'), 20);
@@ -1469,4 +1469,37 @@ test('an evicted Team\'s subscriber is notified', async () => {
     controller.ensureTeamDocument('t6'); // the sixth owner evicts t1, the oldest clean one
     await settle();
     assert.ok(heard > 0);
+});
+
+test('getTeamStatus.plannedSave covers only the stored-number slot: a person-row failure leaves it idle, a planned failure or refusal sets it, and the other fields keep their shape', async () => {
+    let status = 503;
+    const { controller, buildShown, fire } = await fixture({ save: async (_u, _s, payload) => { if (status) { const error = new Error('Server said no'); error.status = status; throw error; } return { revision: 2, rows: [], planned: payload.planned ? { value: payload.planned.value, source: payload.planned.source } : undefined }; } });
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1'], active: true });
+    await settle();
+    assert.deepEqual(Object.keys(controller.getTeamStatus('t1')).sort(), ['canSave', 'error', 'load', 'plannedSave', 'readError', 'save']);
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    // A person-row failure: the owner is failed, the stored-number slot is not.
+    controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
+    await fire();
+    assert.equal(controller.getTeamStatus('t1').save, 'failed');
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    // Leaving for another scope keeps the owner and its failure; the slot stays idle there too.
+    controller.setScope({ sprintId: '100', teamId: '', active: false });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1', 't2'], active: true });
+    await settle();
+    assert.equal(controller.getTeamStatus('t1').save, 'failed');
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    // A stored-number commit that fails, then one the server refuses.
+    assert.equal(controller.commitTeamPlanned('t1', '14', 'user'), true);
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'saving');
+    await fire();
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'failed');
+    status = 400;
+    controller.retryTeam('t1');
+    await settle();
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'rejected');
+    controller.discardTeamPlanned('t1');
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    assert.equal(controller.getTeamStatus('t1').save, 'rejected', 'the person-row change is still refused');
 });

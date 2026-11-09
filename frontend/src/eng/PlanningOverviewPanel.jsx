@@ -13,9 +13,10 @@ export function PlanningOverviewSummary({ childPlural = 'stories', planned = fal
 }
 
 export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
-    // A Team's stored number that did not save is told while compact, where its card is hidden (#323).
+    // Stored-number saves in flight or failed, compact and expanded (#323): the cards never grow, and a failed card's
+    // Retry and Discard show only in its hover rail.
     const teamSaveStatus = usePlanningTeamCapacitySaveStatus();
-    const status = capacityStatus || (compact ? teamSaveStatus : '');
+    const status = capacityStatus || teamSaveStatus;
     const panelControl = <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
         aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>;
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>

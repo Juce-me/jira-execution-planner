@@ -332,7 +332,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     const flush = queue => { if (!queue) return; if (queue.timer != null) { clearTimer(queue.timer); queue.timer = null; } if (queue.pending.size || queue.failed.size) { revive(queue); void pump(queue); } };
 
     // The stored team number ("Team capacity (not in Jira)"): `value` is a validated wire string or null to clear; `source`
-    // is `user` (typed) or `jira` (Use ticket value, or after the user's own Jira save). A no-op sends nothing.
+    // is `user` (typed) or `jira` (after the user's own Jira save). A no-op sends nothing.
     function commitPlannedTo(queue, value, source) {
         if (!queue?.document || !canSaveOwner(queue)) return false;
         const planned = value == null ? { value: null } : { value, source };
@@ -404,7 +404,14 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             else if (!halted(queue) && ((queue.running && !queue.silent) || queue.pending.size || queue.inFlight.length)) save = 'saving';
         }
         const error = save === 'rejected' || save === 'failed' ? queue.error : '';
-        return { load, readError, save, error, canSave };
+        // The stored-number slot alone (the cards' Retry and Discard); `save` covers the whole owner, person rows included.
+        let plannedSave = 'idle';
+        if (queue) {
+            if (holdsPlanned(queue.rejected.values())) plannedSave = 'rejected';
+            else if (holdsPlanned(queue.failed.values())) plannedSave = 'failed';
+            else if (!halted(queue) && (holdsPlanned(queue.inFlight) || holdsPlanned(queue.pending.values()))) plannedSave = 'saving';
+        }
+        return { load, readError, save, error, canSave, plannedSave };
     }
 
     // The batch read of the projected Teams (more than one: one Team derives from its full GET). A rejected read is a

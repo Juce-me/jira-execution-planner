@@ -152,7 +152,7 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
             self.assertEqual((cleared['planned'], cleared['revision']), (None, 2))
 
     def test_stored_team_capacity_paths_never_write_jira(self):
-        """#323 DoD 19: typing, Use ticket value and the mirror write only the store, never the Jira capacity write."""
+        """#323 DoD 19: typing, the settle to jira after a Jira save and the mirror write only the store, never the Jira capacity write."""
         from backend.routes import capacity_routes
         from backend.services import capacity as capacity_service
         forbidden = AssertionError('Jira capacity write reached from a stored-number path')

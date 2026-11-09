@@ -242,7 +242,7 @@
   - It is frozen and identity-stable while values and sources are unchanged; a source change, such as inherited to user, is a stored-number change.
   - It holds no save or load state.
   - It is the overlay of owners' local values on batch records.
-- **Per-Team status for cards:** `getTeamStatus(teamId) -> { load: 'idle'|'loading'|'ready'|'error', readError, save: 'idle'|'saving'|'failed'|'rejected', error, canSave }`.
+- **Per-Team status for cards:** `getTeamStatus(teamId) -> { load: 'idle'|'loading'|'ready'|'error', readError, save: 'idle'|'saving'|'failed'|'rejected', error, canSave, plannedSave: 'idle'|'saving'|'failed'|'rejected' }`. `save` covers the whole owner, person rows included. `plannedSave` covers the stored-number slot only; it was added in the Task 5 fix round so the cards' Retry and Discard never show for a person-row failure.
   - Exposed through the provider context, with subscription via `subscribeTeam(teamId, listener)`.
 - **Per-Team commands:**
   - `commitTeamPlanned(teamId, value, source = 'user')`;
@@ -635,6 +635,22 @@ Operator decisions (2026-11-06): the recommended options were accepted.
   - `node --test tests/test_*.js`: `# pass 3631`, `# fail 0`. `tests.test_codebase_structure_budgets`: `Ran 9 tests`, `OK`. `scripts/extraction_lint/run.sh`: unchanged from HEAD (111 warnings, 75 owner-budget problems, the pre-existing `WorkConfigurationsEditor.jsx` violation).
   - Chromium `planning_assignee_capacity`, `planning_capacity_editing`, `planning_review_integration` and `design_system_hover_eng` (`--workers=4`): HEAD `249 passed, 1 failed, 3 skipped` (253); after `261 passed, 1 failed, 3 skipped` (265). The same pre-existing failure in both runs: `design_system_hover_eng.spec.js:284`.
   - 12 Teams at 1440x900 and 1280x720: card heights are identical idle, hovered, mismatched and failed; editor-open is within 1 px (a pre-existing 0.8 px); idle titles are whole; the compact and expanded pinned stacks are unchanged. Captures are in `tmp/planning-323-every-team/task5/after/` (prototype variants in `variants/`, `variants2/`, `variants3/`).
+- **Task 5 fix round 1 (2026-11-09), FIX_BASE `59407762`.**
+  - I1: `getTeamStatus` gains the additive `plannedSave` (stored-number slot only). The cards' ↻/× and their failure text use it, so a person-row failure from One Team scope no longer shows them in two Teams.
+  - I2: the existing overview status line shows "Saving N Teams…" and "N Team saves failed — hover a card to retry", compact and expanded, and only while a save is in flight or failed. The cards are unchanged. With 12 Teams the line adds at most one line to the pinned stack, compact (panel ≤ 72.8 px) and expanded, at 1440x900 and 1280x720.
+  - The rail shows at most three icons: in the failed state ↻ · × · pencil replace the Jira link and →.
+  - The editor-open row is pinned to its measured value: 58.59 px idle and 59.39 px editing, the same at ed255bda (a throwaway check at both sizes), so the 0.8 px is pre-existing.
+  - A Team-selection scope-change case is added.
+  - Two stale "Use ticket value" comments are fixed.
+  - Commands (Node 20, after `npm run build`):
+    - changed Playwright cases: RED `7 failed, 1 passed` against `59407762`, GREEN `8 passed`;
+    - queue test: RED `75 pass, 1 fail`, GREEN `76 pass`;
+    - `node --test tests/test_*.js`: `# pass 3632`, `# fail 0`;
+    - `tests.test_assignee_capacity_routes`: `Ran 19 tests`, `OK`;
+    - budgets: `OK`;
+    - lint: unchanged from HEAD (111 warnings, 75 owner-budget problems, the pre-existing handle violation);
+    - Chromium on the four specs: `264 passed, 1 failed, 3 skipped` (268). The failure is the same pre-existing `design_system_hover_eng.spec.js:284`.
+  - Captures: `tmp/planning-323-every-team/task5/after/panel-saving-2-teams-1440x900.png` and `panel-failed-expanded-1440x900.png`.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.
 - **D2:** zero-effort Teams count in totals and the project split; "Capacity:" availability is judged only over Teams with effort or a capacity value.
 - **D3:** the Team-selector set; today's set until work is known; no stored-number pencil and no Jira read for unresolved or comma-containing names.

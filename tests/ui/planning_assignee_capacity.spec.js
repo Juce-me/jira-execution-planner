@@ -3326,10 +3326,10 @@ async function hideDetails(page) {
     await expect(page.locator('#planning-panel-details')).toBeHidden();
 }
 
-test('two Teams: each card pencil saves only its own Team and Sprint, the two saves overlap and both land, and one editor is open at a time', async ({ page }) => {
+test('two Teams: each card pencil saves only its own Team and Sprint, the two saves overlap and both land, the overview says Saving 2 Teams…, and one editor is open at a time', async ({ page }) => {
     let releasePatches;
-    const bothArrived = new Promise(resolve => { releasePatches = resolve; });
-    const server = teamsServer({ holdPatch: async () => { if (server.state.patches.length >= 2) releasePatches(); await bothArrived; } });
+    const held = new Promise(resolve => { releasePatches = resolve; });
+    const server = teamsServer({ holdPatch: () => held });
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket, analytics: true });
     await openPlanning(page);
     await showCards(page);
@@ -3351,10 +3351,15 @@ test('two Teams: each card pencil saves only its own Team and Sprint, the two sa
     await expect(teamInput(page, 'team-alpha', 'Alpha Team')).toHaveCount(0);
     await page.keyboard.press('Escape');
     expect([...server.state.gets].sort(), 'opening an editor reads only that Team').toEqual(['team-alpha', 'team-beta']);
-    // Both saves are in flight together (neither answers before the other arrives) and both land.
+    // Both saves are in flight together (neither is answered before both arrive); the expanded overview says so, then both land.
     await typeTeamNumber(page, 'team-alpha', 'Alpha Team', '14');
     await typeTeamNumber(page, 'team-beta', 'Beta Team', '6');
     await expect.poll(() => server.state.patches.length).toBe(2);
+    await expect(overviewStatus(page)).toHaveText('Saving 2 Teams…');
+    await page.mouse.move(5, 600);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/after/panel-saving-2-teams-1440x900.png', animations: 'disabled' });
+    releasePatches();
+    await expect(overviewStatus(page)).toHaveCount(0);
     await storedOn(page, 'team-alpha', '14.0');
     await storedOn(page, 'team-beta', '6.0');
     expect(teamPatches(server, 'team-alpha').map(patch => [patch.sprintId, patch.body])).toEqual([[String(futureSprintId), { teamId: 'team-alpha', planned: { value: '14', source: 'user' }, changes: [] }]]);
@@ -3367,7 +3372,7 @@ test('two Teams: each card pencil saves only its own Team and Sprint, the two sa
 });
 
 
-test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the error readout, and in the compact overview, while the other Team saves; the card does not grow', async ({ page }) => {
+test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the error readout, and in the overview expanded and compact, while the other Team saves; the card does not grow', async ({ page }) => {
     let failAlpha = true;
     const server = teamsServer({ patchStatus: teamId => (teamId === 'team-alpha' && failAlpha ? 503 : 0) });
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
@@ -3393,9 +3398,13 @@ test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the
     await expect(valueReadout(page)).toHaveText('Discard changes · Team capacity not saved.');
     expect(await cardHeights(page)).toEqual(before);
     await expect(railButton(page, 'team-beta', 'Retry')).toHaveCount(0);
-    // Compact: the cards are hidden, so the overview says so.
+    // The overview line tells it while expanded (the rail shows only on hover) and while compact (the cards are hidden).
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
+    await page.mouse.move(5, 600);
+    await page.waitForTimeout(200);
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/after/panel-failed-expanded-1440x900.png', animations: 'disabled' });
     await hideDetails(page);
-    await expect(overviewStatus(page)).toHaveText('Team capacity not saved — show capacity details to retry');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
     expect((await page.locator('.planning-panel').boundingBox()).height).toBeLessThanOrEqual(COMPACT_STATUS_HEIGHT);
     await showCards(page);
     // Retry resends only Alpha's change.
@@ -3455,7 +3464,7 @@ test('D4: the document-limit 400 reads as that Team\'s visible rejection in the 
     await hoverRail(page, 'team-alpha', 'Retry');
     await expect(valueReadout(page)).toHaveText('Retry · Team capacity not saved: the server refused it.');
     await hideDetails(page);
-    await expect(overviewStatus(page)).toHaveText('Team capacity not saved — show capacity details to retry');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
     expect(server.storedOf('team-alpha')).toBeNull();
 });
 
@@ -3502,6 +3511,73 @@ test('two Teams: after a Jira editor save the Team\'s stored user number settles
     expect(server.state.gets, 'only the edited Team read its document').toEqual(['team-alpha']);
     await expect(mismatchCards(page)).toHaveCount(0);
     expect(await capacityEvents(page)).toEqual(['capacity_edit_open', 'capacity_change_submit', 'capacity_change_result']);
+});
+
+test('I1: a person-row failure from One Team scope shows no ↻ or × on that Team\'s card in two Teams; the failure stays in the strip', async ({ page }) => {
+    const server = teamsServer({ rows: { 'team-alpha': [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '6', vacations: null, notes: null, removed: false }] }, patchStatus: () => 503 });
+    await install(page, { server, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('9'); await capacity.press('Enter');
+    await expect(strip(page).locator('[data-assignee-save-failed]')).toBeVisible();
+    await pickTeam(page, 'Beta Team');
+    await expect(strip(page)).toHaveCount(0);
+    await showCards(page);
+    await expect(teamCard(page, 'team-alpha')).toHaveCount(1);
+    await expect(teamCard(page, 'team-alpha')).not.toHaveAttribute('data-capacity-attention', /./);
+    await teamCard(page, 'team-alpha').hover();
+    await expect(railButton(page, 'team-alpha', 'Retry')).toHaveCount(0);
+    await expect(railButton(page, 'team-alpha', 'Discard changes')).toHaveCount(0);
+    await expect(overviewStatus(page), 'no stored number is failing').toHaveCount(0);
+    // Back in One Team scope the strip still shows its own failure with the draft.
+    await pickTeam(page, 'Beta Team');
+    await expect(strip(page)).toBeVisible();
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Not saved');
+    if (!(await table(page).isVisible())) await expand(page);
+    await expect(strip(page).locator('[data-assignee-save-failed]')).toBeVisible();
+    await expect(rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveValue('9');
+});
+
+test('the rail never shows more than three icons: a failed settle on a ticketed Team shows ↻ · × · pencil without the Jira link', async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14' }, patchStatus: teamId => (teamId === 'team-alpha' ? 503 : 0) });
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }) });
+    await openPlanning(page);
+    await showCards(page);
+    await alphaCard(page).hover();
+    expect(await alphaCard(page).locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
+        .toEqual(['Open Alpha Team capacity ticket in Jira', 'Edit Alpha Team capacity']);
+    await alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+    await alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).fill('15');
+    await alphaCard(page).getByRole('button', { name: 'Save Alpha Team capacity' }).click();
+    await expect.poll(() => jiraWrites(calls).length).toBe(1);
+    // The settle to jira fails: the card shows Retry and Discard in place of the Jira link.
+    await expect(alphaCard(page)).toHaveAttribute('data-capacity-attention', 'failed');
+    await page.evaluate(() => document.activeElement?.blur());
+    await alphaCard(page).hover();
+    expect(await alphaCard(page).locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
+        .toEqual(['Retry', 'Discard changes', 'Edit Alpha Team capacity']);
+    await expect(alphaCard(page)).toHaveAttribute('data-capacity-rail-icons', '3');
+    expect(await alphaCard(page).evaluate(node => node.querySelector('.team-stat-label').getBoundingClientRect().right <= node.querySelector('.team-capacity-action-rail').getBoundingClientRect().left + 0.5)).toBe(true);
+    expect(await page.locator('.planning-team-capacity-cards .team-capacity-action-rail').evaluateAll(rails => Math.max(...rails.map(rail => rail.children.length)))).toBeLessThanOrEqual(3);
+});
+
+test('a header Team-selection change while a card editor is open closes it without saving', async ({ page }) => {
+    const server = teamsServer();
+    await install(page, { server, selectedTeams: twoTeams, scopeTeamIds: ['team-alpha', 'team-beta', 'team-gamma'], capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
+    await openPlanning(page);
+    await showCards(page);
+    await teamCard(page, 'team-alpha').hover();
+    await teamPencil(page, 'team-alpha', 'Alpha Team').click();
+    await teamInput(page, 'team-alpha', 'Alpha Team').fill('14');
+    // No pointer: add Gamma to the selection through dispatched clicks, so only the scope change can close the editor.
+    await page.locator('.team-dropdown-toggle:visible').dispatchEvent('click');
+    await page.locator('.team-dropdown-panel:visible').getByText('Gamma Team', { exact: true }).dispatchEvent('click');
+    await expect(teamCard(page, 'team-gamma')).toHaveCount(1);
+    await expect(page.locator('.planning-team-capacity-cards .team-capacity-editor')).toHaveCount(0);
+    await page.keyboard.press('Enter');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(server.state.patches, 'the open editor saved nothing after the Team change').toEqual([]);
 });
 
 test('request ledger: the per-Team mirror writes only an idle loaded owner after a user-initiated read, never after an automatic one, and never creates a document', async ({ page }) => {
@@ -3673,16 +3749,22 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await teamCard(page, 'team-01').hover();
     await teamCard(page, 'team-01').getByRole('button', { name: 'Edit Synthetic Team 01 capacity' }).click();
     await expect(teamCard(page, 'team-01').locator('.team-capacity-editor')).toHaveCount(1);
-    // Known pre-existing 0.8px: the editor row is 0.8px taller than the idle microbar stack (HEAD behaviour, reported).
+    // Pre-existing at ed255bda (measured 58.59 idle → 59.39 editing on the edited row): the editor row is 0.8px taller than
+    // the idle microbar stack; the other row is unchanged.
     const editing = await cardHeights(page);
-    editing.forEach((height, index) => expect(Math.abs(height - baseline[index]), `editor open, card ${index + 1}`).toBeLessThanOrEqual(1));
+    editing.forEach((height, index) => (index < 6 ? expect(height, `editor row, card ${index + 1}`).toBeCloseTo(59.39, 1) : expect(height, `card ${index + 1}`).toBe(baseline[index])));
+    expect(baseline.slice(0, 6).every(height => Math.abs(height - 58.59) < 0.05), 'idle edited row').toBe(true);
     await page.keyboard.press('Escape');
     await typeTeamNumber(page, 'team-12', 'Synthetic Team 12', '7');
     await expect(teamCard(page, 'team-12')).toHaveAttribute('data-capacity-attention', 'failed');
     await rest();
     expect(await cardHeights(page), 'failed').toEqual(baseline);
     expect(await titlesWhole(), 'idle titles with a failure').toBe(true);
-    expect(await pinnedHeights(page), 'expanded stack with a failure').toEqual(base.expanded);
+    // The overview status line shows the failure while expanded: it adds that one line to the pinned stack and nothing else.
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
+    const expandedFailed = await pinnedHeights(page);
+    expect(expandedFailed.stack - base.expanded.stack, 'expanded stack with the status line').toBeGreaterThan(0);
+    expect(expandedFailed.stack - base.expanded.stack, 'expanded stack with the status line').toBeLessThanOrEqual(COMPACT_STATUS_LINE + 0.5);
     await teamCard(page, 'team-12').hover();
     await page.waitForTimeout(150);
     expect(await cardHeights(page), 'failed and hovered').toEqual(baseline);

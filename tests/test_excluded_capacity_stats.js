@@ -254,6 +254,37 @@ test('buildEffortTypeSplitRows falls back to key prefix and keeps scoped empty t
     );
 });
 
+test('Effort Split adds a no_allocation series for the new model only', async () => {
+    const { buildEffortTypeSplitRows } = await loadModule();
+    const selectedSprint = { id: 101, name: 'S1', startDate: '2026-04-01' };
+    const stamped = (stamp, values) => ({ ...story({ teamId: 'team-alpha', teamName: 'Alpha', sprintId: 101, sprintName: 'S1', projectKey: 'DLV', ...values }), stamp });
+    const tasks = [
+        stamped('product', { key: 'DLV-1', epicKey: 'INI-P', points: 3 }),
+        stamped('tech', { key: 'DLV-2', epicKey: 'INI-T', points: 5 }),
+        stamped('none', { key: 'DLV-3', epicKey: 'INI-N', points: 2 }),
+        // Excluded scope still wins first; Ad Hoc keeps its own bucket whatever its side.
+        stamped('none', { key: 'DLV-4', epicKey: 'INI-X', points: 4 }),
+        stamped('none', { key: 'DLV-5', epicKey: 'INI-ADHOC', points: 1 }),
+    ].map(({ stamp, ...task }) => ({ ...task, fields: { ...task.fields, projectClassification: stamp } }));
+    const options = { excludedEpicKeys: ['INI-X'], adHocEpicKeys: ['INI-ADHOC'], techProjectKeys: ['DLV'], teams: [{ id: 'team-alpha', name: 'Alpha' }, { id: 'team-beta', name: 'Beta' }] };
+    const [alpha, beta] = buildEffortTypeSplitRows(tasks, selectedSprint, options);
+    assert.deepEqual(
+        { total: alpha.totalPoints, excluded: alpha.excludedCapacityPoints, adHoc: alpha.adHocPoints, product: alpha.productPoints, tech: alpha.techPoints, none: alpha.nonePoints },
+        { total: 15, excluded: 4, adHoc: 1, product: 3, tech: 5, none: 2 }
+    );
+    assert.deepEqual(alpha.segments.none, { key: 'none', label: 'No Allocation', points: 2, percent: 0.133 });
+    assert.deepEqual(Object.keys(alpha.segments), ['excludedCapacity', 'adHoc', 'product', 'tech', 'none']);
+    // A DELIVERY team with no work still carries an empty No Allocation segment.
+    assert.equal(beta.nonePoints, 0);
+    assert.deepEqual(beta.segments.none, { key: 'none', label: 'No Allocation', points: 0, percent: 0 });
+
+    // Legacy (no stamp): the same rows keep exactly the four buckets and no nonePoints key.
+    const legacy = buildEffortTypeSplitRows(tasks.map(task => ({ ...task, fields: { ...task.fields, projectClassification: undefined } })), selectedSprint, options);
+    assert.equal('nonePoints' in legacy[0], false);
+    assert.deepEqual(Object.keys(legacy[0].segments), ['excludedCapacity', 'adHoc', 'product', 'tech']);
+    assert.equal(legacy[0].techPoints, 10);
+});
+
 test('summarizeEffortTypeSplitTotals aggregates type shares for summary cards', async () => {
     const { summarizeEffortTypeSplitTotals } = await loadModule();
     const totals = summarizeEffortTypeSplitTotals([

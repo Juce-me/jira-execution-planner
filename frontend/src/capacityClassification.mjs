@@ -25,7 +25,8 @@ function normalizeKey(value) {
     return String(value || '').trim().toUpperCase();
 }
 
-function projectStamp(issue) {
+// The DELIVERY Allocation stamp, or null (Legacy work is never stamped).
+export function projectStamp(issue) {
     const stamp = issue?.fields?.projectClassification ?? issue?.projectClassification;
     return stamp === 'product' || stamp === 'tech' || stamp === 'none' ? stamp : null;
 }

@@ -42,6 +42,18 @@ test('capacity side product/tech/both', () => {
   assert.equal(summarizeProjectTrackTotals(buildProjectTrackSprintSeries(tasks, { ...base, capacitySide: 'both' })).total, 13);
 });
 
+test('DELIVERY No Allocation work counts only under capacity side both', () => {
+  const stamped = (key, sp, stamp) => {
+    const task = story(key, sp, 'Committed', 10, { projectKey: 'DLV' });
+    return { ...task, fields: { ...task.fields, projectClassification: stamp } };
+  };
+  const tasks = [stamped('DLV-1', 5, 'product'), stamped('DLV-2', 8, 'tech'), stamped('DLV-3', 2, 'none')];
+  const total = side => summarizeProjectTrackTotals(buildProjectTrackSprintSeries(tasks, { ...base, techProjectKeys: new Set(['DLV']), capacitySide: side })).total;
+  assert.equal(total('product'), 5);
+  assert.equal(total('tech'), 8);
+  assert.equal(total('both'), 15);
+});
+
 test('exclude toggles drop ad hoc / excluded epics', () => {
   const tasks = [story('PROD-1', 5, 'Committed', 10, { epicKey: 'AD-1' }),
                  story('PROD-2', 4, 'Committed', 10, { epicKey: 'EX-1' })];

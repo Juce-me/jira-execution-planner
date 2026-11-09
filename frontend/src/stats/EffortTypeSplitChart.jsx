@@ -11,6 +11,8 @@ const BUCKETS = [
     { key: 'product', label: 'Product' },
     { key: 'tech', label: 'Tech' }
 ];
+// DELIVERY (new model) only: No Allocation work, drawn last.
+const DELIVERY_BUCKETS = [...BUCKETS, { key: 'none', label: 'No Allocation' }];
 const READOUT_EDGE_GUTTER = 12;
 const READOUT_POINTER_GAP = 12;
 const READOUT_MAX_WIDTH = 220;
@@ -18,7 +20,7 @@ const READOUT_HEIGHT = 72;
 const READOUT_VERTICAL_INSET = 56;
 const FULL_SEGMENT_LABEL_MIN_WIDTH = 10.5;
 
-const SERIES_ANALYTICS_TOKENS = { excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc' };
+const SERIES_ANALYTICS_TOKENS = { excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc', none: 'no_allocation' };
 
 function seriesAnalyticsToken(bucketKey) {
     return SERIES_ANALYTICS_TOKENS[bucketKey] || bucketKey;
@@ -75,9 +77,11 @@ export default function EffortTypeSplitChart({
     onToggleBucket,
     onAnalyticsAction,
     formatExcludedPoints,
-    formatPercent
+    formatPercent,
+    noAllocation = false
 }) {
-    const activeBuckets = BUCKETS.filter(bucket => visibleBuckets?.[bucket.key] !== false);
+    const buckets = noAllocation ? DELIVERY_BUCKETS : BUCKETS;
+    const activeBuckets = buckets.filter(bucket => visibleBuckets?.[bucket.key] !== false);
     const rowList = Array.isArray(rows) ? rows : [];
     const [hovered, setHovered] = React.useState(null);
     const readout = hovered ? (
@@ -93,7 +97,7 @@ export default function EffortTypeSplitChart({
     return (
         <div className="effort-type-split-chart" role="group" aria-label="Effort split by type across teams">
             <div className="effort-type-split-legend">
-                {BUCKETS.map(bucket => {
+                {buckets.map(bucket => {
                     const isActive = visibleBuckets?.[bucket.key] !== false;
                     return (
                         <button

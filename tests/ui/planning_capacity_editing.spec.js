@@ -1906,6 +1906,7 @@ function buildPushHarness() {
                     const [props, setProps] = React.useState(() => ({ canEditCapacity: true, scopeSignature: 'scope', withRequest: window.__withRequest !== false }));
                     const [entries, setEntries] = React.useState(() => [entry('team-a', 'Alpha Team', 'CAP-1', 20, 12), entry('team-b', 'Beta Team', 'CAP-2', 30, 8), entry('team-c', 'Gamma Team', 'CAP-3', 7, 4)]);
                     window.__setProps = patch => setProps(previous => ({ ...previous, ...patch }));
+                    window.__patchEntry = (id, patch) => setEntries(list => list.map(item => (item.id === id ? { ...item, ...patch } : item)));
                     return (
                         <PlanningAssigneeCapacityContext.Provider value={context}>
                             <PlanningTeamCapacityCards entries={entries} capacityEnabled canOpenCapacityJira canEditCapacity={props.canEditCapacity} jiraUrl="https://jira.example"
@@ -2185,5 +2186,20 @@ test('with → hovered only its readout shows: the card\'s own value tooltip is 
         await card.getByRole(name.startsWith('Open') ? 'link' : 'button', { name }).hover();
         expect(await cardTooltip(), name).toBe('none');
     }
+});
+
+test('after a conflict the card scales Jira\'s value by the card\'s capacity multiplier, also when the read ticket was 0', async ({ page }) => {
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityTargetCapacity: 0, rawCapacity: 0, teamCapacity: 0, capacityMultiplier: 0.5 }));
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 0.0');
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page))[0].payload).toMatchObject({ expectedCapacity: 0, capacity: 5 });
+    await settlePush(page, 0, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 10 });
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 5.0');
+    // A changed read value (any other path) drops the display override at once.
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityTargetCapacity: 12, rawCapacity: 12, teamCapacity: 6 }));
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 6.0');
+    await hoverPush(page, 'team-c', 'Gamma Team');
+    await expect(pushReadout(page)).toHaveText('Apply 5 SP to Jira (ticket 12 SP)');
 });
 

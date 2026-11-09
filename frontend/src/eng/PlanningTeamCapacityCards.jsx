@@ -455,12 +455,15 @@ export default function PlanningTeamCapacityCards({
         submissionRef.current = null;
     }, []);
 
+    // A push conflict still describes this ticket only while the read value is the one that push saw; a changed read value
+    // (the user's own Jira save, a new read) ends the override at once.
+    const conflictOf = entry => {
+        const push = pushesRef.current.get(String(entry.id));
+        return push?.state === 'conflict' && push.readTicket === entry.capacityTargetCapacity ? push : null;
+    };
     // The matched ticket's value as shown: Jira's current value after a push conflict (display only, never stored),
     // else the last read.
-    const conflictTicketOf = entry => {
-        const push = pushesRef.current.get(String(entry.id));
-        return push?.state === 'conflict' ? push.ticket : entry.capacityTargetCapacity;
-    };
+    const conflictTicketOf = entry => (conflictOf(entry) ? pushesRef.current.get(String(entry.id)).ticket : entry.capacityTargetCapacity);
 
     const openEditor = (entry) => {
         if (
@@ -594,6 +597,8 @@ export default function PlanningTeamCapacityCards({
                 sprintName: candidate.sprintName,
                 scopeSignature: candidate.scopeSignature,
             });
+            // The user's own save replaces whatever a failed or conflicted push said about this ticket.
+            if (pushesRef.current.has(candidate.displayedTeamId) && !pushAbortRefs.current.has(candidate.displayedTeamId)) setPush(candidate.displayedTeamId, null);
             onAnalyticsAction?.('capacity_change_result', { result: 'success' });
             // The user's own Jira save also settles a number they typed, in any scope: that Team's stored `user` number
             // becomes {ticket value, jira}.
@@ -680,7 +685,7 @@ export default function PlanningTeamCapacityCards({
         if (row.candidate.capacity == null || getSubmitBlockedReason(row.candidate)) return;
         const controller = new AbortController();
         pushAbortRefs.current.set(teamId, controller);
-        const base = { stored: offer.stored, ticket: offer.ticket, scopeSignature };
+        const base = { stored: offer.stored, ticket: offer.ticket, readTicket: entry.capacityTargetCapacity, scopeSignature };
         setPush(teamId, { ...base, state: 'pending', message: '' });
         syncInteraction();
         try {
@@ -794,10 +799,10 @@ export default function PlanningTeamCapacityCards({
                 {sortedTeams.map((entry) => {
                     // After a push conflict the card's Cap line shows Jira's current value (display only, never stored;
                     // scaled like the read value).
-                    const conflict = pushes.get(String(entry.id));
-                    const readScale = typeof entry.teamCapacity === 'number' && entry.rawCapacity > 0 ? entry.teamCapacity / entry.rawCapacity : 1;
-                    const shownCapacity = conflict?.state === 'conflict'
-                        ? { hasCapacityValue: conflict.ticket != null, teamCapacity: conflict.ticket == null ? null : conflict.ticket * readScale }
+                    const conflict = conflictOf(entry);
+                    const multiplier = typeof entry.capacityMultiplier === 'number' ? entry.capacityMultiplier : 1;
+                    const shownCapacity = conflict
+                        ? { hasCapacityValue: conflict.ticket != null, teamCapacity: conflict.ticket == null ? null : conflict.ticket * multiplier }
                         : entry;
                     const isEditing = Boolean(activeEditor && activeEditor.displayedTeamId === String(entry.id));
                     const targetMatched = entry.capacityTargetState === 'matched' && Boolean(entry.capacityIssueKey);
@@ -822,7 +827,9 @@ export default function PlanningTeamCapacityCards({
                     // The → offers a mismatch, and keeps showing a push in flight or failed (its readout says why); it needs the
                     // current mutation right, and is unavailable while pending or when no mismatch is left to push (a blocked target).
                     // A conflict compares with Jira's current value, so an equal value removes it.
-                    const push = pushes.get(String(entry.id)) || null;
+                    // A conflict that no longer describes the read value is no longer this card's state.
+                    const ownPush = pushes.get(String(entry.id)) || null;
+                    const push = ownPush?.state === 'conflict' ? conflict : ownPush;
                     const showPush = !actionsGloballySuppressed && !showFailedIcons && canEditCapacity && typeof updateCapacityRequest === 'function'
                         && Boolean(mismatch || push?.state === 'pending' || push?.state === 'failed');
                     const pushUnavailable = push?.state === 'pending' || !mismatch;

@@ -633,6 +633,8 @@ export function buildSelectedTeamEntries({
             planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null,
             rawCapacity,
             hasCapacityValue: numeric.matched,
+            // The factor between a Jira ticket value and the card's Cap (a Product-only share), for values the card shows.
+            capacityMultiplier,
             capacityIssueKey: target.state === 'matched' ? target.issueKey : '',
             capacityTargetTeamName: target.state === 'matched' ? target.teamName : '',
             capacityTargetCapacity: target.state === 'matched' ? target.capacity : null,

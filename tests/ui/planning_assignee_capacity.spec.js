@@ -4080,6 +4080,18 @@ test('after a push conflict the card\'s Cap line shows Jira\'s current value, no
     await expect.poll(() => jira.held.length).toBe(2);
     expect(jira.held[1].body).toMatchObject({ capacity: 15, expectedCapacity: 22, teamName: 'Alpha Team' });
     expect(jiraWrites(calls)).toHaveLength(2);
+    // The editor's save lands: the conflict is over, the card shows Jira's new value and → follows the new comparison.
+    jira.held[1].answer(200, { issueKey: 'CAP-101', teamName: 'Alpha Team', previousCapacity: 22, capacity: 15, result: 'success' });
+    await expect(teamCard(page, 'team-alpha').locator('.team-capacity-editor')).toHaveCount(0);
+    await expect(teamCard(page, 'team-alpha').locator('.microbar-meta')).toContainText('Cap 15.0');
+    await expect(pushStatus(page), 'the push note is gone').toHaveCount(0);
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '15', source: 'jira' }, changes: [] });
+    await expect(mismatchCards(page)).toHaveCount(0);
+    await page.mouse.move(5, 600);
+    await teamCard(page, 'team-alpha').hover();
+    await expect(pushOf(page, 'team-alpha', 'Alpha Team'), 'stored 15 equals Jira 15: no push').toHaveCount(0);
+    expect(jiraWrites(calls)).toHaveLength(2);
 });
 
 test('leaving Planning while a push is in flight and another Team\'s editor is open does not block the automatic Planning refresh afterwards', async ({ page }) => {

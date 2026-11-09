@@ -297,7 +297,7 @@ export function resolveEngCatchUpFilters({
         allocationFacet: Boolean(model.allocation),
         allocationClassOf: (item) => allocationClassOf(item, model.epicDetails),
         admitsAllocation,
-        admitsProject: (isTech) => (model.allocation ? admitsAllocation(isTech ? 'tech' : 'product') : admits(projectsView, isTech ? 'tech' : 'product')),
+        admitsProject: (isTech) => admits(projectsView, isTech ? 'tech' : 'product'),
         admitsProjectTrack: (task) => {
             if (trackView.isNeutral) return true;
             const classification = classifyEpicProjectTrack(epicForTask(task, model.epicDetails));

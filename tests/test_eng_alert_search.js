@@ -156,3 +156,30 @@ test('DELIVERY Initiative alerts follow the Initiative class; Tech-only keeps Te
     const legacyTechOnly = resolveEngCatchUpFilters({ model: legacyModel, showProduct: false });
     assert.deepEqual(legacyEpics.filter((item) => admitsAlertEpicProject(item, legacyTechOnly, techKeys)).map((item) => item.key), ['TECH-1', 'PROD-2']);
 });
+
+// Production shape: empty, future-routed and ready-to-close Initiative alerts come from epicsInScope and carry neither
+// projectClass nor allocationClass; their class is the Initiative record's `allocationClass` in epicDetails.
+test('DELIVERY alerts without a class read the Initiative class from epicDetails', async () => {
+    const { admitsAlertEpicProject, filterEngAlertCollections } = await loadModule();
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const epicDetails = {
+        'PLAN-10': { key: 'PLAN-10', allocationClass: 'product' },
+        'PLAN-11': { key: 'PLAN-11', allocationClass: 'tech' },
+        'PLAN-12': { key: 'PLAN-12', allocationClass: 'none' },
+    };
+    const model = buildEngCatchUpFacetModel({ tasks: [], epicDetails, workModel: 'rnd_2027' });
+    const alertEpics = ['PLAN-10', 'PLAN-11', 'PLAN-12', 'PLAN-13'].map((key) => ({ key, summary: key, status: { name: 'To Do' } }));
+    const admitted = (allocation) => alertEpics
+        .filter((item) => admitsAlertEpicProject(item, resolveEngCatchUpFilters({ model, allocation }), new Set()))
+        .map((item) => item.key);
+    assert.deepEqual(admitted(['product']), ['PLAN-10']);
+    assert.deepEqual(admitted(['tech']), ['PLAN-11']);
+    // Not in epicDetails (its Initiative not loaded): No Allocation.
+    assert.deepEqual(admitted([]), ['PLAN-12', 'PLAN-13']);
+    assert.deepEqual(admitted(undefined), ['PLAN-10', 'PLAN-11', 'PLAN-12', 'PLAN-13']);
+    const filters = resolveEngCatchUpFilters({ model, allocation: ['tech'] });
+    const filtered = filterEngAlertCollections({ emptyEpicsForAlert: alertEpics, futureRoutedEpics: alertEpics, doneStoryEpics: alertEpics }, '', epicDetails, {
+        matchesEpicFilters: (item) => admitsAlertEpicProject(item, filters, new Set()),
+    });
+    for (const key of ['emptyEpicsForAlert', 'futureRoutedEpics', 'doneStoryEpics']) assert.deepEqual(filtered[key].map((item) => item.key), ['PLAN-11'], key);
+});

@@ -866,18 +866,17 @@ def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
     )
 
 
-def _configuration_cache_envelope(auth_context, config, snapshot, *, refresh_started=False, identity_of=None):
-    """Envelope of ``snapshot``; ``identity_of`` names the configuration whose identity it answers as."""
+def _configuration_cache_envelope(auth_context, config, snapshot, *, refresh_started=False):
+    """Envelope of ``snapshot`` for configuration ``config``."""
     cache = _catalog_cache_envelope(auth_context, config, snapshot, refresh_started=refresh_started)
-    owner = identity_of or config
     cache.update({
-        'identity': build_projection_identity(owner),
-        'rowIdentity': owner.sprint_identity,
+        'identity': build_projection_identity(config),
+        'rowIdentity': config.sprint_identity,
         'configurationId': config.configuration_id,
         'configurationRevision': config.configuration_revision,
-        'sourceMode': owner.source_mode,
+        'sourceMode': config.source_mode,
         'sourceDigest': config.source_digest,
-        'boardId': owner.board_id or None,
+        'boardId': config.board_id or None,
     })
     return cache
 

@@ -129,10 +129,6 @@ function expectInside(inner, outer) {
     expect(inner.bottom).toBeLessThanOrEqual(outer.bottom + 0.5);
 }
 
-// Serial: the Legacy test compares its Projects rows with the Allocation rows the first test measured.
-test.describe.configure({ mode: 'serial' });
-let deliveryOptionHeight = null;
-
 test('Allocation facet shows Product, Tech and No Allocation for the new model', async ({ page }) => {
     await mockApp(page, 'delivery');
     await openFilters(page);
@@ -161,7 +157,6 @@ test('Allocation facet shows Product, Tech and No Allocation for the new model',
         expect(Math.abs(item.count.right - reference.count.right)).toBeLessThanOrEqual(0.5);
         expect(Math.abs(item.box.height - allocation.options[0].box.height)).toBeLessThanOrEqual(0.5);
     });
-    deliveryOptionHeight = allocation.options[0].box.height;
     for (const [facet, read] of [['projects', allocation], ['track', track]]) {
         for (const { box, clipped, text } of read.text) {
             expect(clipped, `${facet}: ${text}`).toBe(false);
@@ -204,14 +199,21 @@ test('allocation facet empty selection persists', async ({ page }) => {
     await expect(group(page, 'projects').locator('.pop-neutral')).toContainText('No Allocation');
 });
 
-test('Legacy keeps the Projects facet and never shows No Allocation', async ({ page }) => {
+test('Legacy keeps the Projects facet and never shows No Allocation', async ({ page, browser }) => {
     await mockApp(page, 'legacy');
     await openFilters(page);
     await expect(group(page, 'projects').locator('.pop-facet')).toHaveText('Projects');
     await expect(popover(page)).not.toContainText('No Allocation');
     const legacy = await readGroup(page, 'projects');
-    expect(deliveryOptionHeight).not.toBeNull();
-    for (const item of legacy.options) expect(Math.abs(item.box.height - deliveryOptionHeight)).toBeLessThanOrEqual(0.5);
+    // Its rows have the height of the DELIVERY Allocation rows, measured here in a separate context.
+    const context = await browser.newContext();
+    const deliveryPage = await context.newPage();
+    await mockApp(deliveryPage, 'delivery');
+    await openFilters(deliveryPage);
+    const allocation = await readGroup(deliveryPage, 'projects');
+    await context.close();
+    expect(allocation.options.length).toBe(2);
+    for (const item of legacy.options) expect(Math.abs(item.box.height - allocation.options[0].box.height)).toBeLessThanOrEqual(0.5);
     await popover(page).screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'legacy-projects-facet.png'), animations: 'disabled' });
     expect(await visibleKeys(page)).toEqual(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-4']);
 });

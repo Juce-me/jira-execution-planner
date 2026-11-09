@@ -23,6 +23,7 @@ RICE = (Reach x Impact x Confidence) / Effort
 | 22 | JQL builder (replace regex) | Backend | 5 | 1 | 50% | 2 | **1.25** |
 | 25 | Frontend tests | Frontend | 3 | 2 | 50% | 3 | **1.0** |
 
+- DELIVERY Initiative alerts without a class (operator decision pending): empty, future-routed and ready-to-close Initiative alerts come from `epicsInScope` / `readyToClose*EpicsInScope`, which carry no `allocationClass`; the client reads the class from `epicDetails` (`admitsAlertEpicProject` in `frontend/src/eng/engAlertFilters.js`), so an alert whose Initiative is not loaded there stays No Allocation under the Allocation facet until the server stamps `allocationClass` on those records. That stamp changes the alerts request contract (`test_alerts_request_reads_no_allocation`).
 - Compact sticky header at 390px with two or more visible Department groups: the "Find in view" search field covers the "Catch Up" mode radio and blocks its click (found while building the two-group Playwright fixture for #267; the existing 390px sticky-heading test in `tests/ui/planning_review_integration.spec.js` stays on the one-group fixture until fixed). Needs a product fix with geometry checks on every sibling control of that header.
 
 ## Deferred

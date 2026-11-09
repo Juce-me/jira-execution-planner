@@ -728,7 +728,8 @@ def _search_page(server, snapshot, transport, payload, timeout):
 
 def _frame_stream(server, snapshot, transport, *, generation_id=None,
                   _candidate_updates=None):
-    writer = EngBoardStreamWriter(delivery=bool(_allocation_options(snapshot)))
+    allocation = _allocation_options(snapshot)
+    writer = EngBoardStreamWriter(delivery=bool(allocation))
     generation_id = secrets.token_urlsafe(24) if generation_id is None else generation_id
     sequence = 0
     started = time.monotonic()
@@ -809,7 +810,6 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         })
         index_started = time.monotonic()
         terminal_statuses = snapshot.board['columns'][-1]['statuses']
-        allocation = _allocation_options(snapshot)
         epic_fields = tuple(dict.fromkeys(eng_board.EPIC_FIELDS + tuple(
             value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id,
                                 allocation.get('allocation_field_id')) if value

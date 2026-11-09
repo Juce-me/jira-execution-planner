@@ -126,6 +126,8 @@ Status: done in e4ea6194; divergences: `projectKey` and `issueTypeId` are option
 
 Status: done in 5c7cddec; divergences: `epic_details[key]['allocation']` holds the normalized value string, not the raw option; the Objective is the Initiative's typed ancestor (`epic_details[...]['initiative']`), so an Initiative parent of another type counts as no Objective; the excluded-capacity source also reads each Initiative's Allocation and typed parent in its existing summary batch and is stamped (`tests/test_work_structure_stats.py`); the stats stamp test lives there, not in `test_work_reader_routes.py`. **Gap:** the Board reads no Objective, so a blank Epic under a blank Initiative that has a parent is `unavailable` (Product) on the Board even when the Objective is Tech; Catch Up, Planning and Stats do read it. No Board cache/scope change was needed: the cohort already carries the configuration digest, which covers `allocationTypes` (pinned in `tests/test_eng_board_stream.py`).
 
+Follow-up A3b: done in 9069ee50; closes the Board gap above. After the index phase the Board reads the typed Objectives (`ancestorIssueTypeId`) of blank Initiatives through `allocation_classification.objective_keys_to_read`, in batches of 40 via the Board's own search transport, and `project_board` takes them as `allocation_objectives`. Divergences: the read is gated on blank Initiatives, not on blank Epics, because the Board knows its Epics only after the child phase (so a blank Initiative whose Epics all carry a value still costs its Objective's batch share, within `ceil(objectives/40)`); a failed batch is skipped (Product), never a Board error; the stream test lives in `tests/test_work_reader_routes.py` `ComponentBoardStreamTests`, where the DELIVERY Board fixture is.
+
 ### Task A4: Frontend split
 
 1. Failing tests first (rewrite the list above):
@@ -163,6 +165,8 @@ Status: done in 12f4b606; divergences: the Allocation search is disabled with a 
 2. Implement: add `board_inherited: bool = False` to `EffectiveCatalogConfig` (`workspace_catalog_config.py:16`). Set it in `resolve_catalog_sources` (459-472) by comparing `stored_bundle(snapshot.payload)` entries with the effective ones. Do not touch `work_structure.py`, which belongs to Track A.
 3. Verify: `.venv/bin/python -m unittest tests.test_work_structure_catalogs`.
 
+Status: done in 08d6f4c7; divergences: the observed (scan) supplement of an inherited source also carries `board_inherited=True`; the test is in `ObservedOnBoardConfigurationTests`.
+
 ### Task B2: Own-source Sprint ids
 
 1. Failing tests first, in `ObservedOnBoardConfigurationTests`:
@@ -172,6 +176,8 @@ Status: done in 12f4b606; divergences: the Allocation search is disabled with a 
    - An own Board keeps every existing assertion (lines 523-593), and Legacy never scans.
 2. Implement. In `_configuration_source_result` (`settings_routes.py:883-951`) and `admit_sprint_source` (`work_structure_routes.py:265-287`), when `config.board_inherited` is set, skip the Board snapshot and use the observed source's rows and envelope, keeping `sourceMode` and `identity` as today. Update the comments that state "Board row wins" so they name the own-Board case.
 3. Verify: `.venv/bin/python -m unittest tests.test_work_structure_catalogs tests.test_work_structure_sprint_values`.
+
+Status: done in dc3c1b5c; divergences: Sprint completion polling (`_configuration_completion_response`) also reads the scan for an inherited Board, since the envelope's `refreshAttemptId` is the scan's; `_configuration_cache_envelope` gained `identity_of` so the scan envelope answers with the configuration's `identity`/`rowIdentity`/`sourceMode`/`boardId`; an inherited-Board DELIVERY without a scan source (no projects or Sprint field) is `setup_required` instead of `ready`. Also rewritten on purpose (not in the list above): `SourceCatalogTests.test_board_and_issue_sources_merge_in_range_with_original_ids` (DELIVERY inherits, so its 2027Q1 is the retained scanned id 201, not Board 102) and `test_blank_source_is_setup_required_and_does_not_lock_the_other_era` (DELIVERY now `setup_required`, Legacy still answers).
 
 ### Task B3: Suffix rows
 
@@ -185,6 +191,8 @@ Status: done in 12f4b606; divergences: the Allocation search is disabled with a 
    - Grep guard: `rg -n " - (legacy|delivery)" backend jira_server.py` hits only the label builder.
 2. Implement. `collect_sprint_values` keys rows by name, and when a name has more than one configuration it emits one row per configuration with `label`. The suffix comes from the configuration **id** (`legacy` or `delivery`), lowercase as specified, not the editable display name. `sprintValueOptions` and `SprintRanges` (`WorkConfigurationsEditor.jsx:96-108`) set `id` to the unique key and `onSelect` to `option.value`.
 3. Verify: `.venv/bin/python -m unittest tests.test_work_structure_sprint_values` and `npm run build && node --test tests/test_work_structure_settings.js`. Then `npx playwright test tests/ui/work_structure_settings.spec.js --browser=chromium` with a screenshot of the Scope picker showing both rows.
+
+Status: done in 9d706d65; divergences: every row carries `label` (equal to `value` unless shared); the option `id` is the label, which is `value` plus the configuration id when shared; `collect_sprint_values` also reports an inherited-Board source without a scan as `setup_required` (`test_setup_required_and_pending_sources_are_reported_not_errors` rewritten); the C3 uniqueness pin and the grep guard (only the label builder in `work_structure_routes.py` matches) were checked in the test and by hand; screenshot `tmp/screenshots/scope-picker-suffix.png` (synthetic data, not committed).
 
 ## Track C — integration, docs and gates (after A and B)
 

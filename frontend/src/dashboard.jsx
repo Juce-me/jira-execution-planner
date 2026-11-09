@@ -64,6 +64,7 @@ import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
 import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
+import CapacityNoAllocationCells from './eng/CapacityNoAllocationCells.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
 import { isTechIssue } from './capacityClassification.mjs';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
@@ -6463,11 +6464,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 </div>
                             )}
                             <div className="capacity-grid-wrapper">
-                                <div className="capacity-grid">
+                                <div className="capacity-grid" data-allocation={isCombinedWorkModel(workModel) ? 'delivery' : undefined}>
                                     <div className="capacity-row capacity-group-row">
                                         <div className="capacity-cell"></div>
                                         <div className="capacity-group-cell product">Product</div>
                                         <div className="capacity-group-cell tech">Tech</div>
+                                        {isCombinedWorkModel(workModel) && <div className="capacity-group-cell">No Allocation</div>}
                                         <div className="capacity-group-cell total">Total</div>
                                     </div>
                                     <div className="capacity-row capacity-header-row">
@@ -6478,6 +6480,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                         <div className="capacity-cell metric tech-col">To Do / Pending</div>
                                         <div className="capacity-cell metric tech-col">Postponed</div>
                                         <div className="capacity-cell metric tech-col divider-right">Accepted</div>
+                                        {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells header />}
                                         <div className="capacity-cell metric total-col">To Do / Pending</div>
                                         <div className="capacity-cell metric total-col">Postponed</div>
                                         <div className="capacity-cell metric total-col divider-right">Accepted</div>
@@ -6605,6 +6608,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                                 </div>
                                             </div>
 
+                                            {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells breakdown={info.none} formatValue={formatCapacityValue} getMetricClass={getMetricClass} />}
                                             <div className="capacity-cell metric total-col">
                                                 <div className="postponed-cell">
                                                     <span className={getMetricClass(info.total.todoPending, 'todo', info.total.accepted)}>
@@ -6783,6 +6787,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                             </div>
                                             </div>
 
+                                        {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells total breakdown={capacityTotals.none} formatValue={formatCapacityValue} getMetricClass={getMetricClass} />}
                                         <div className="capacity-cell metric total-col capacity-total">
                                             <div className="postponed-cell">
                                                 <span className={getMetricClass(capacityTotals.total.todoPending, 'todo', capacityTotals.total.accepted)}>

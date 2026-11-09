@@ -132,7 +132,7 @@ NEW_MODEL_EXPECTED_PAIRS = {
 NEW_MODEL_CLASSIFICATION_EXPECTED = {
     'ordinary': {'projectType': 'product', 'capacityType': 'product', 'productSubtype': 'standard'},
     'tech': {'projectType': 'tech', 'capacityType': 'tech', 'productSubtype': None},
-    'ad_hoc': {'projectType': 'product', 'capacityType': 'ad_hoc', 'productSubtype': 'ad_hoc'},  # Ad Hoc beats Tech
+    'ad_hoc': {'projectType': 'product', 'capacityType': 'ad_hoc', 'productSubtype': 'ad_hoc'},  # unstamped Ad Hoc is Product
 }
 # Legacy classifyCapacityIssue results for the same situations (PINNED).
 LEGACY_CLASSIFICATION_EXPECTED = {

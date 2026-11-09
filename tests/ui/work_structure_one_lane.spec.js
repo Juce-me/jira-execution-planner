@@ -189,6 +189,21 @@ test('new-model split bar shows Product, Tech and No Allocation (screenshot)', a
     await page.locator('#split').screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-split-bar-no-allocation.png'), animations: 'disabled' });
 });
 
+test('new-model split bar: a 100% Ad Hoc Tech side keeps its label painted above the Ad Hoc subsegment', async ({ page }) => {
+    await openHarness(page);
+    await page.setViewportSize({ width: 720, height: 240 });
+    await page.addStyleTag({ path: path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.css') });
+    await page.evaluate(() => window.__oneLane.mount('split', { pair: 'ad_hoc', stamp: 'tech' }));
+    await expect(page.locator('#split .project-bar-fill.tech-adhoc')).toHaveCount(1);
+    const hit = await page.evaluate(() => {
+        const label = document.querySelector('#split .project-bar-fill.tech .capacity-bar-fill-label');
+        const box = label.getBoundingClientRect();
+        const top = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+        return { topIsLabel: top === label || label.contains(top), topClass: top?.className || '' };
+    });
+    expect(hit.topIsLabel, `label covered by ${hit.topClass}`).toBe(true);
+});
+
 test('new-model compact split bar names No Allocation in its readout', async ({ page }) => {
     await openHarness(page);
     await page.evaluate(() => window.__oneLane.mount('split', { pair: 'allocation', compact: true }));

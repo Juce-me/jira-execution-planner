@@ -31,11 +31,10 @@ export default function PlanningProjectSplitBar({
     const hasAdHoc = adHocSP > 0;
     // Width of the Ad Hoc subsegment relative to the whole bar (sits inside Product).
     const adHocPct = productSP > 0 ? (adHocSP / productSP) * productPct : 0;
-    // DELIVERY Ad Hoc on the Tech or No Allocation side: a subsegment at the start of that side, clear of its right-aligned label.
+    // DELIVERY Ad Hoc on the Tech or No Allocation side: a subsegment drawn inside that side's fill, from its start and
+    // beneath its label; the side's tooltip reports it ("Incl. Ad Hoc").
     const techAdHocSP = Math.min(adHocStats.TECH || 0, techSP);
-    const techAdHocPct = techSP > 0 ? (techAdHocSP / techSP) * techPct : 0;
     const noneAdHocSP = Math.min(adHocStats.NONE || 0, noneSP);
-    const noneAdHocPct = noneSP > 0 ? (noneAdHocSP / noneSP) * nonePct : 0;
 
     return (
         <>
@@ -76,17 +75,16 @@ export default function PlanningProjectSplitBar({
                             style={{ left: `${productPct}%`, width: `${techPct}%`, ...(nonePct > 0 ? { borderRadius: 0 } : {}) }}
                             data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${techAdHocSP > 0 ? ` Incl. Ad Hoc: ${techAdHocSP.toFixed(1)} SP.` : ''}${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
                         >
+                            {techAdHocSP > 0 && (
+                                <div
+                                    className="project-bar-fill tech-adhoc"
+                                    style={{ left: 0, width: `${(techAdHocSP / techSP) * 100}%`, borderRadius: techAdHocSP >= techSP && nonePct === 0 ? '0 6px 6px 0' : 0 }}
+                                />
+                            )}
                             {!compact && techPct > 15 && (
                                 <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
                             )}
                         </div>
-                        )}
-                        {techAdHocSP > 0 && (
-                            <div
-                                className="project-bar-fill tech-adhoc"
-                                style={{ left: `${productPct}%`, width: `${techAdHocPct}%`, borderRadius: techAdHocSP >= techSP && nonePct === 0 ? '0 6px 6px 0' : 0 }}
-                                data-tooltip={`Ad Hoc (included Tech): ${techAdHocSP.toFixed(1)} SP of ${techSP.toFixed(1)} Tech SP.`}
-                            />
                         )}
                         {/* No Allocation fill (DELIVERY only), after Tech */}
                         {showNone && (
@@ -95,17 +93,16 @@ export default function PlanningProjectSplitBar({
                             style={{ left: `${productPct + techPct}%`, width: `${nonePct}%` }}
                             data-tooltip={`No Allocation: ${noneSP.toFixed(1)} SP (${nonePct.toFixed(0)}% of selected).${noneAdHocSP > 0 ? ` Incl. Ad Hoc: ${noneAdHocSP.toFixed(1)} SP.` : ''}${excludedNone > 0 ? ` Excluded: ${excludedNone.toFixed(1)} SP.` : ''}`}
                         >
+                            {noneAdHocSP > 0 && (
+                                <div
+                                    className="project-bar-fill none-adhoc"
+                                    style={{ left: 0, width: `${(noneAdHocSP / noneSP) * 100}%`, borderRadius: noneAdHocSP >= noneSP ? '0 6px 6px 0' : 0 }}
+                                />
+                            )}
                             {!compact && nonePct > 25 && (
                                 <span className="capacity-bar-fill-label">No Allocation {nonePct.toFixed(0)}% · {noneSP.toFixed(1)} SP</span>
                             )}
                         </div>
-                        )}
-                        {noneAdHocSP > 0 && (
-                            <div
-                                className="project-bar-fill none-adhoc"
-                                style={{ left: `${productPct + techPct}%`, width: `${noneAdHocPct}%`, borderRadius: noneAdHocSP >= noneSP ? '0 6px 6px 0' : 0 }}
-                                data-tooltip={`Ad Hoc (included No Allocation): ${noneAdHocSP.toFixed(1)} SP of ${noneSP.toFixed(1)} No Allocation SP.`}
-                            />
                         )}
                         {compact && <span className="capacity-bar-fill-label planning-compact-readout">Product {productSP.toFixed(1)} · Tech {techSP.toFixed(1)}{showNone ? ` · No Allocation ${noneSP.toFixed(1)}` : ''} SP</span>}
                         {/* 70% target marker */}

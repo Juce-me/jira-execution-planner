@@ -19,7 +19,7 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7503,
+    "lineCeiling": 7508,
     "hookCeilings": {
       "useState": 121,
       "useEffect": 74,

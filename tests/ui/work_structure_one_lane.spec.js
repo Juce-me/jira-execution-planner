@@ -72,12 +72,13 @@ test('Legacy keeps its two lane requests and the Backlog source', async ({ page 
     expect(calls.filter(call => call.pathname !== '/api/tasks-with-team-name').length).toBe(1);
 });
 
-test('Projects (Product/Tech) facet is shown for the new model, as for Legacy', async ({ page }) => {
+test('the new model labels the Product/Tech facet Allocation; Legacy keeps Projects', async ({ page }) => {
     await openHarness(page);
-    for (const workModel of ['rnd_2027', undefined]) {
+    for (const [workModel, label] of [['rnd_2027', 'Allocation'], [undefined, 'Projects']]) {
         await page.evaluate(model => window.__oneLane.mount('filters', { workModel: model }), workModel);
         await page.getByRole('button', { name: /Filters/ }).click();
         await expect(page.locator('.pop-group[data-facet="projects"]')).toHaveCount(1);
+        await expect(page.locator('.pop-group[data-facet="projects"] .pop-facet')).toHaveText(label);
         await expect(page.locator('.pop-group[data-facet="status"]')).toHaveCount(1);
         await page.keyboard.press('Escape');
     }

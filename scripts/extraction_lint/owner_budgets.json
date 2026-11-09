@@ -21,7 +21,7 @@
     "path": "frontend/src/dashboard.jsx",
     "lineCeiling": 7508,
     "hookCeilings": {
-      "useState": 121,
+      "useState": 122,
       "useEffect": 74,
       "useRef": 86,
       "useMemo": 72,

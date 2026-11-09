@@ -27,11 +27,13 @@ function leadTimesFilters(snapshot) {
 
 // The Board's facet selection and explicitly focused column. A facet the selection leaves absent is neutral, and a single-option
 // or both-ticked state is neutral too, so only a narrowing facet is carried.
-function boardViewState(mode, snapshot, focusColumn) {
+// DELIVERY's Allocation is the one Board facet that can be explicitly empty ("No Allocation only").
+function boardViewState(mode, snapshot, focusColumn, combinedWorkModel) {
     if (mode !== 'board') return {};
     const selection = snapshot.engBoardFilterSelection || {};
     const out = {};
     BOARD_FACET_KEYS.forEach(([facet, key]) => { if (Array.isArray(selection[facet]) && selection[facet].length) out[key] = [...selection[facet]]; });
+    if (combinedWorkModel && Array.isArray(selection.projects) && !selection.projects.length) out.bprojects = [];
     if (Array.isArray(selection.assignee) && selection.assignee[0] === 'unassigned') out.bassignee = ['unassigned'];
     if (Array.isArray(selection.track) && selection.track.length < 2) out.btrack = [...selection.track];
     // An explicit Epic target names its own column; otherwise the column the sender explicitly focused.
@@ -45,7 +47,8 @@ function boardViewState(mode, snapshot, focusColumn) {
 // encoder drops keys equal to their defaults and keys that do not apply to the mode, layout or Statistics view.
 const BOARD_FACET_KEYS = [['priority', 'bpriority'], ['projects', 'bprojects']];
 
-export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, layout, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus }) {
+// `combinedWorkModel` (DELIVERY) carries the Allocation facet as `alloc`; Legacy carries `lanes`.
+export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, layout, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus, combinedWorkModel = false }) {
     const rendered = SHARE_VIEW_ALERT_KEYS.filter(key => Number(alertCounts?.[key] || 0) > 0);
     // A link to one alert group opens only that group's card; every other card is folded.
     const targetKey = focus?.kind === 'alertTeam' ? (focus.anchor === 'followupEpics' ? 'followup' : focus.anchor) : null;
@@ -62,10 +65,11 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
         find: searchQuery,
         status: snapshot.engStatusFilter, priority: snapshot.engPriorityFilter,
         track: Array.isArray(snapshot.engProjectTrackFilter) ? [...snapshot.engProjectTrackFilter] : undefined,
-        lanes: { product: snapshot.showProduct, tech: snapshot.showTech },
+        lanes: combinedWorkModel ? undefined : { product: snapshot.showProduct, tech: snapshot.showTech },
+        alloc: combinedWorkModel && Array.isArray(snapshot.engAllocationFilter) ? [...snapshot.engAllocationFilter] : undefined,
         initiatives: typeof snapshot.groupByInitiativeChoice === 'boolean' ? snapshot.groupByInitiativeChoice : undefined,
         sort, layout, rows: rowsMode || undefined,
-        ...boardViewState(mode, snapshot, focus?.column),
+        ...boardViewState(mode, snapshot, focus?.column, combinedWorkModel),
         stats: statsView, ...range, ...(rangeKind === 'quarter' ? leadTimesFilters(snapshot) : {}),
         alerts: rendered.length ? (snapshot.showAlertsPanel || targetKey ? (expanded.length ? expanded : 'none') : 'off') : undefined,
         alertTeam: focus?.kind === 'alertTeam' ? { anchor: focus.anchor, id: focus.id } : undefined,

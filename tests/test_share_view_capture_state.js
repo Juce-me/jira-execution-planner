@@ -167,3 +167,19 @@ test('only a Lead Times capture carries the Lead Times filters', () => {
     }
     assert.doesNotMatch(received({ snapshot: { ...input().snapshot, ...extras } }).query, /\b(?:lproject|lexclude|lstatus|lgroupby)=/);
 });
+
+test('a DELIVERY capture writes alloc and never lanes; Legacy keeps lanes and never alloc', () => {
+    const delivery = received({ combinedWorkModel: true, snapshot: { ...input().snapshot, engAllocationFilter: [], showTech: false } });
+    assert.deepEqual(delivery.state.alloc, []);
+    assert.equal(Object.hasOwn(delivery.state, 'lanes'), false);
+    assert.match(delivery.query, /&alloc=none/);
+    assert.equal(Object.hasOwn(received({ combinedWorkModel: true }).state, 'alloc'), false, 'neutral Allocation is omitted');
+    assert.deepEqual(received({ mode: 'planning', combinedWorkModel: true, snapshot: { ...input().snapshot, engAllocationFilter: ['tech'] } }).state.alloc, ['tech']);
+    const legacy = received({ snapshot: { ...input().snapshot, engAllocationFilter: [], showTech: false } });
+    assert.deepEqual(legacy.state.lanes, { product: true, tech: false });
+    assert.equal(Object.hasOwn(legacy.state, 'alloc'), false);
+    // The Board's DELIVERY "No Allocation only" (an explicit empty Projects selection) travels as bprojects=none.
+    const board = received({ mode: 'board', combinedWorkModel: true, snapshot: { ...input().snapshot, engBoardFilterSelection: { projects: [] } } });
+    assert.deepEqual(board.state.bprojects, []);
+    assert.equal(Object.hasOwn(received({ mode: 'board', snapshot: { ...input().snapshot, engBoardFilterSelection: { projects: [] } } }).state, 'bprojects'), false);
+});

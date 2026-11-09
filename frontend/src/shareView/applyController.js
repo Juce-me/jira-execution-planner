@@ -143,6 +143,7 @@ function runStageCFacets(o, state, mode) {
     if (has(apply, 'status')) o.setEngStatusFilter(apply.status);
     if (has(apply, 'priority')) o.setEngPriorityFilter(apply.priority);
     if (has(apply, 'track')) o.setEngProjectTrackFilter(apply.track);
+    if (has(apply, 'alloc')) o.setEngAllocationFilter(apply.alloc);
     return reported;
 }
 

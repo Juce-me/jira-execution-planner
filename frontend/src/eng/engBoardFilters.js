@@ -10,7 +10,7 @@
 
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
-import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
+import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { classifyEpicProjects } from './engBoardCardModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
@@ -67,11 +67,21 @@ function hasNoProjectTrack(epic) {
     return classification.kind === 'unset';
 }
 
+// DELIVERY: an Initiative's Allocation class is its own (`projectClassification` on a Board frame,
+// `allocationClass` on an Initiative record), never derived from its children; unreadable is `none`.
+const ALLOCATION_CLASSES = ['product', 'tech', 'none'];
+function epicAllocationClass(epic) {
+    const value = epic?.projectClassification ?? epic?.allocationClass;
+    return ALLOCATION_CLASSES.includes(value) ? value : 'none';
+}
+
 // `names` is the viewed configuration's EntityNames (the model's defaults when absent).
 export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false, workModel, names = resolveEntityNames(workModel) } = {}) {
+    const allocation = isCombinedWorkModel(workModel);
     const scopeTotal = epicGroups.length;
     const priorityCounts = {};
-    const projectCounts = { tech: 0, product: 0, other: 0 };
+    const projectCounts = allocation ? { product: 0, tech: 0 } : { tech: 0, product: 0, other: 0 };
+    let noAllocationCount = 0;
     const trackCounts = { committed: 0, flexible: 0 };
     let untrackedCount = 0;
     let unassigned = 0;
@@ -80,10 +90,16 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         const label = priorityAxisLabel(group.epic);
         if (label) priorityCounts[label] = (priorityCounts[label] || 0) + 1;
 
-        const { isTech, isProduct, isOther } = classifyEpicProjects(group, isTechTask);
-        if (isTech) projectCounts.tech += 1;
-        if (isProduct) projectCounts.product += 1;
-        if (isOther) projectCounts.other += 1;
+        if (allocation) {
+            const classId = epicAllocationClass(group.epic);
+            if (classId === 'none') noAllocationCount += 1;
+            else projectCounts[classId] += 1;
+        } else {
+            const { isTech, isProduct, isOther } = classifyEpicProjects(group, isTechTask);
+            if (isTech) projectCounts.tech += 1;
+            if (isProduct) projectCounts.product += 1;
+            if (isOther) projectCounts.other += 1;
+        }
 
         if (!(group.epic && group.epic.assignee)) unassigned += 1;
         const id = normalizeTrackId(group.epic);
@@ -114,7 +130,19 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 neutralTotal: scopeTotal,
                 options: PRIORITY_AXIS.map((label) => ({ id: label, label })),
             },
-            {
+            allocation ? {
+                // DELIVERY: Allocation, built like Project Track; both unticked is "No Allocation only".
+                id: 'projects',
+                label: 'Allocation',
+                kind: 'multi',
+                allowEmpty: true,
+                showZeroCountOptions: true,
+                emptyLabel: 'No Allocation',
+                emptyDescription: `No Allocation — showing ${lowerEntityWord(names.parentPlural)} without a value`,
+                emptyTotal: noAllocationCount,
+                neutralTotal: scopeTotal,
+                options: [{ id: 'product', label: 'Product' }, { id: 'tech', label: 'Tech' }],
+            } : {
                 // D41: Tech and Product do not partition the scope — an epic with stories on
                 // both sides counts under both — so both-ticked needs neutralTotal too, or the
                 // option-sum would double-count it.
@@ -161,7 +189,8 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
 }
 
 export function resolveEngBoardFilters({ model, selection = {} } = {}) {
-    const { facets, counts, scopeTotal, isTechTask = () => false, names } = model;
+    const { facets, counts, scopeTotal, isTechTask = () => false, names, workModel } = model;
+    const allocation = isCombinedWorkModel(workModel);
     // A scope change (sprint/group/team — O6) can hide or drop a ticked option; this is what
     // stops that reaching the empty set §7.3 forbids, exactly like Catch Up's own resolve step.
     const reconciled = reconcileSelection({ facets, selection, counts });
@@ -184,12 +213,17 @@ export function resolveEngBoardFilters({ model, selection = {} } = {}) {
         // `isTechTask` comes from `model` — see the comment there — not from this call site.
         admitsEpic: (epicGroup) => {
             if (!admits(priorityView, priorityAxisLabel(epicGroup.epic))) return false;
-            const { isTech, isProduct, isOther } = classifyEpicProjects(epicGroup, isTechTask);
-            const admitsProjects = projectsView.isNeutral
-                || (isTech && admits(projectsView, 'tech'))
-                || (isProduct && admits(projectsView, 'product'))
-                || (isOther && admits(projectsView, 'other'));
-            if (!admitsProjects) return false;
+            if (allocation) {
+                const classId = epicAllocationClass(epicGroup.epic);
+                if (projectsView.isEmptySelection ? classId !== 'none' : !admits(projectsView, classId)) return false;
+            } else {
+                const { isTech, isProduct, isOther } = classifyEpicProjects(epicGroup, isTechTask);
+                const admitsProjects = projectsView.isNeutral
+                    || (isTech && admits(projectsView, 'tech'))
+                    || (isProduct && admits(projectsView, 'product'))
+                    || (isOther && admits(projectsView, 'other'));
+                if (!admitsProjects) return false;
+            }
             const epic = epicGroup.epic;
             if (!admits(assigneeView, (epic && epic.assignee) ? ASSIGNEE_ANYONE : ASSIGNEE_UNASSIGNED)) return false;
             if (trackView.isEmptySelection) return hasNoProjectTrack(epic);

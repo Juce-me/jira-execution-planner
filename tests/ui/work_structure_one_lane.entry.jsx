@@ -50,7 +50,7 @@ function AlertsHarness({ workModel }) {
 
 function FiltersHarness({ workModel }) {
     const tasks = [task('PLAN-E1', 8, 'PLAN-I1'), task('PLAN-E2', 5, 'PLAN-I1', 'tech')];
-    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: item => isTechIssue(item, new Set()), names: resolveEntityNames(workModel) }), [workModel]);
+    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: item => isTechIssue(item, new Set()), workModel, names: resolveEntityNames(workModel) }), [workModel]);
     const resolved = React.useMemo(() => resolveEngCatchUpFilters({ model }), [model]);
     return (
         <EngFilterBar

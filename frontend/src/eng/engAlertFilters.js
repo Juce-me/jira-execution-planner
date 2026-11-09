@@ -10,6 +10,16 @@ function uniqueEpicsFromRequirements(entries) {
     });
 }
 
+// Whether the Catch Up project facet admits an alert's Epic. DELIVERY reads the Initiative's own
+// Allocation class (`projectClass`, unreadable = No Allocation); Legacy keeps the Product/Tech
+// rule: a `tech` class, or a Tech project key unless the class says Product.
+export function admitsAlertEpicProject(epic, filters, techProjectKeys = new Set()) {
+    if (filters.allocationFacet) return filters.admitsAllocation(filters.allocationClassOf({ projectClass: epic?.projectClass }));
+    const projectClass = String(epic?.projectClass || '').trim().toLowerCase();
+    const projectKey = String(epic?.projectKey || epic?.key || '').split('-')[0].toUpperCase();
+    return filters.admitsProject(projectClass === 'tech' || (projectClass !== 'product' && techProjectKeys.has(projectKey)));
+}
+
 export function filterEngAlertCollections(collections, query, epicDetails = {}, {
     visibleTaskKeys = null,
     matchesEpicFilters = null,

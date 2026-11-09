@@ -90,7 +90,7 @@ function createRig({ link, search, options = {} } = {}) {
         setCohortGroupBy: spy('setCohortGroupBy'), setCohortStatusToggles: spy('setCohortStatusToggles'),
         setExcludedCapacityStartSprintId: spy('setExcludedCapacityStartSprintId'), setExcludedCapacityEndSprintId: spy('setExcludedCapacityEndSprintId'),
         setShowAlertsPanel: spy('setShowAlertsPanel'), setBoardStrictScope: spy('setBoardStrictScope'), setSelectedTeams: spy('setSelectedTeams'),
-        setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'), setEngBoardFilterSelection: spy('setEngBoardFilterSelection'), setBoardView: spy('setBoardView'),
+        setEngStatusFilter: spy('setEngStatusFilter'), setEngPriorityFilter: spy('setEngPriorityFilter'), setEngProjectTrackFilter: spy('setEngProjectTrackFilter'), setEngAllocationFilter: spy('setEngAllocationFilter'), setEngBoardFilterSelection: spy('setEngBoardFilterSelection'), setBoardView: spy('setBoardView'),
         alertFlags: Object.fromEntries(ALERT_KEYS.map(key => [key, [true, spy(`flag:${key}`)]])),
         ...options,
     };
@@ -116,7 +116,7 @@ function createRig({ link, search, options = {} } = {}) {
 
 const LINK = {
     version: 1, mode: 'catch-up', group: 'grp-b', sprint: '42', teams: ['t3'], find: 'login', lanes: { product: false, tech: true },
-    initiatives: true, sort: 'status', alerts: ['blocked'], status: { only: ['in progress'] }, priority: { hidden: ['major'] }, track: [],
+    initiatives: true, sort: 'status', alerts: ['blocked'], status: { only: ['in progress'] }, priority: { hidden: ['major'] }, track: [], alloc: [],
 };
 
 // What React would have committed after Stage A (the Department and Sprint are now the link's).
@@ -171,7 +171,7 @@ test('a scope-changing Catch Up link applies scope, fields, Teams and facets in 
     assert.deepEqual(rig.take(), [], 'the hydrate effect already applied the carried-forward Teams');
     rig.tick();
     assert.deepEqual(rig.take(), [
-        ['setEngStatusFilter', { only: ['In Progress'] }], ['setEngPriorityFilter', { hidden: ['Major'] }], ['setEngProjectTrackFilter', []],
+        ['setEngStatusFilter', { only: ['In Progress'] }], ['setEngPriorityFilter', { hidden: ['Major'] }], ['setEngProjectTrackFilter', []], ['setEngAllocationFilter', []],
     ]);
     rig.tick();
     assert.deepEqual(rig.store.log.slice(-1), [['finish', 'done', []]]);

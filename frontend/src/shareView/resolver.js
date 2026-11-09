@@ -100,8 +100,9 @@ function resolveTrackFacet(link, optionIds, reported) {
 }
 
 // options = { status, priority, track }: the facet option ids present when the scope has loaded.
-// `apply.track` is an own property holding undefined when the link leaves it neutral; a skipped
-// key is absent, so callers test Object.hasOwn(apply, key).
+// `apply.track` and `apply.alloc` are own properties holding undefined when the link leaves them
+// neutral; a skipped key is absent, so callers test Object.hasOwn(apply, key). `alloc` (DELIVERY
+// Allocation) names a closed vocabulary the codec already checked, so it applies as decoded.
 export function resolveShareViewFacets(state, options, mode = state.mode) {
     const apply = {};
     const reported = [];
@@ -112,6 +113,7 @@ export function resolveShareViewFacets(state, options, mode = state.mode) {
         status: resolveMultiFacet(state.status, SHARE_VIEW_DEFAULTS.status, options.status, reported),
         priority: resolveMultiFacet(state.priority, SHARE_VIEW_DEFAULTS.priority, priorityIds, reported),
         track: resolveTrackFacet(state.track, options.track, reported),
+        alloc: { value: linkValue(state, 'alloc') },
     };
     for (const [key, facet] of Object.entries(resolved)) {
         if (facet) apply[key] = facet.value;

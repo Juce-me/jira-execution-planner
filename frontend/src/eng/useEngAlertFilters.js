@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { filterEngAlertCollections } from './engAlertFilters.js';
+import { admitsAlertEpicProject, filterEngAlertCollections } from './engAlertFilters.js';
 
 function buildAlertKeySets(collections) {
     return {
@@ -52,11 +52,7 @@ export function useEngAlertFilters({
         [visibleTasks]
     );
     const matchesEpicFilters = React.useCallback((epic) => {
-        const projectClass = String(epic?.projectClass || '').trim().toLowerCase();
-        const projectKey = String(epic?.projectKey || epic?.key || '').split('-')[0].toUpperCase();
-        const isTechEpic = projectClass === 'tech'
-            || (projectClass !== 'product' && techProjectKeys.has(projectKey));
-        return filters.admitsProject(isTechEpic)
+        return admitsAlertEpicProject(epic, filters, techProjectKeys)
             && filters.admitsEpicProjectTrack(epic)
             && filters.admitsStatus(epic?.status?.name)
             && filters.admitsPriority(epic?.priority?.name)

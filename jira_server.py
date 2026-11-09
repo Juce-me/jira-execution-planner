@@ -130,6 +130,7 @@ from backend.services.alert_epics import (
     quote_jql_value,
 )
 from backend.services import planning_work as _planning_work
+from backend.services import allocation_classification as _allocation
 from backend.services import priority_weights as _priority_weights_service
 from backend.services import team_catalog as _team_catalog_service
 from backend.services import group_config as _group_config_service
@@ -3003,7 +3004,9 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
         delivery_owner_field = roles.delivery_owner_field_id
         team_field = roles.team_field_id
         ancestor_term = roles.ancestor_term()
+        allocation_field = '' if roles.is_legacy else roles.allocation_field_id
     else:
+        allocation_field = ''
         epic_field = epic_name_field or PARENT_NAME_FIELD_DEFAULT
         project_track_field = get_project_track_field_id()
         delivery_owner_field = get_delivery_owner_field_id()
@@ -3014,7 +3017,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
     for start in range(0, len(keys_list), batch_size):
         batch_keys = keys_list[start:start + batch_size]
         jql = f'issueKey in ({",".join(batch_keys)})'
-        fields = [value for value in ('summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field, 'updated', 'project', 'components', team_field) if value]
+        fields = [value for value in ('summary', 'status', 'priority', 'reporter', 'assignee', 'parent', epic_field, project_track_field, 'updated', 'project', 'components', team_field, allocation_field) if value]
         # Delivery Owner is only requested once an admin has configured a field id (O11).
         payload = {'jql': jql, 'maxResults': len(batch_keys), 'fields': fields + ([delivery_owner_field] if delivery_owner_field else [])}
 
@@ -3045,6 +3048,8 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
                 # Omitted while unconfigured: "no field is set up" must not read as "no owner".
                 if delivery_owner_field:
                     epic_details[key]['deliveryOwner'] = shape_jira_person(fields.get(delivery_owner_field))
+                if allocation_field:
+                    epic_details[key]['allocation'] = _allocation.allocation_value(fields.get(allocation_field))
                 # Extract initiative from parent if present
                 parent = fields.get('parent')
                 if parent and parent.get('key'):
@@ -3069,6 +3074,26 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
             log_warning(f'Epic batch fetch error: {exc}')
 
     return epic_details
+
+
+def allocation_stamps(issues, epic_details, roles, context=None):
+    """DELIVERY ``{Epic key: 'product'|'tech'}``; Objectives are read in batches of 40 only for blank Initiatives."""
+    field_id = roles.allocation_field_id
+    keys = _allocation.objective_keys_to_read(issues, epic_details, field_id) if field_id else []
+    objectives = {}
+    for start in range(0, len(keys), 40):
+        batch = keys[start:start + 40]
+        payload = {'jql': f'issueKey in ({",".join(batch)})', 'maxResults': len(batch), 'fields': [field_id]}
+        try:  # a failed batch leaves its Objectives unavailable, which counts as Product
+            resp = jira_search_request(payload, context=context) if context is not None else jira_search_request(payload)
+            if resp.status_code != 200:
+                log_warning(f'Objective allocation batch failed: status={resp.status_code}')
+                continue
+            for issue in resp.json().get('issues') or []:
+                objectives[issue.get('key')] = (issue.get('fields') or {}).get(field_id)
+        except Exception as exc:
+            log_warning(f'Objective allocation batch error: {exc}')
+    return _allocation.stamp_epics(issues, epic_details, objectives, field_id, roles.allocation_types)
 
 
 def derive_epic_jql(base_jql: str, team_ids=None, roles=None) -> str:
@@ -3762,6 +3787,9 @@ def fetch_tasks(include_team_name=False):
             fields_list.append(epic_link_field_id)
         if team_field_id:
             fields_list.append(team_field_id)
+        stamps_allocation = roles is not None and not roles.is_legacy and not lightweight_ready_to_close
+        if stamps_allocation and roles.allocation_field_id:
+            fields_list.append(roles.allocation_field_id)
 
         max_results = 250
         page_size = 100
@@ -3956,6 +3984,7 @@ def fetch_tasks(include_team_name=False):
             for epic in epics_in_scope:
                 mark_child_data_completeness(epic, roles, child_read_failures)
         slim_build_started = time.perf_counter()
+        classifications = allocation_stamps(collected_issues, epic_details, roles) if stamps_allocation else None
         slim_issues = []
         for issue in collected_issues:
             fields = issue.get('fields', {})
@@ -3998,6 +4027,8 @@ def fetch_tasks(include_team_name=False):
                         'projectName': project_field.get('name', '')
                     }
                 }
+                if classifications is not None:
+                    slim_issue['fields']['projectClassification'] = classifications.get(issue.get('key'), 'product')
                 subtask_summary = build_embedded_subtask_summary(fields.get('subtasks'))
                 if subtask_summary.get('total', 0) > 0:
                     slim_issue['fields']['subtaskSummary'] = subtask_summary
@@ -6240,6 +6271,9 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
 
     project_track_field = roles.project_track_field_id if roles is not None else get_project_track_field_id()
     configuration = roles.context if roles is not None else None
+    # DELIVERY: each Initiative's Allocation and typed Objective parent feed the Product/Tech stamp.
+    allocation_field = roles.allocation_field_id if roles is not None and not roles.is_legacy else ''
+    ancestor_term = roles.ancestor_term() if allocation_field else None
 
     now = time.time()
     summaries_by_normalized = {}
@@ -6249,10 +6283,8 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
             cache_key = excluded_capacity_epic_summary_cache_key(normalized, context=context, configuration=configuration)
             entry = EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE.get(cache_key)
             if entry and now - entry.get('timestamp', 0) < EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE_TTL_SECONDS \
-                    and 'projectTrack' in entry and 'status' in entry:
-                summaries_by_normalized[normalized] = {
-                    'summary': entry.get('summary', ''), 'projectTrack': entry.get('projectTrack'),
-                    'status': entry.get('status'), 'assignee': entry.get('assignee')}
+                    and 'projectTrack' in entry and 'status' in entry and (not allocation_field or 'allocation' in entry):
+                summaries_by_normalized[normalized] = {key: value for key, value in entry.items() if key != 'timestamp'}
             else:
                 missing_keys.append(normalized)
 
@@ -6261,7 +6293,8 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
         batch = missing_keys[index:index + batch_size]
         fetched = {}
         epic_records = fetch_issues_by_keys(
-            batch, [field for field in ('summary', project_track_field, 'status', 'assignee') if field], context=context)
+            batch, [field for field in ('summary', project_track_field, 'status', 'assignee', allocation_field,
+                                        'parent' if allocation_field else '') if field], context=context)
         for epic in epic_records:
             ef = epic.get('fields') or {}
             key = str(epic.get('key') or '').strip().upper()
@@ -6272,6 +6305,12 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
             assignee = ef.get('assignee') or None
             fetched[key] = {'summary': str(ef.get('summary') or '').strip(), 'projectTrack': track,
                             'status': (ef.get('status') or {}).get('name'), 'assignee': shape_jira_person(assignee)}
+            if allocation_field:
+                fetched[key]['allocation'] = _allocation.allocation_value(ef.get(allocation_field))
+                parent = ef.get('parent') or {}
+                parent_type = ((parent.get('fields') or {}).get('issuetype') or {}).get('id')
+                if ancestor_term and parent.get('key') and str(parent_type or '') == ancestor_term[1]:
+                    fetched[key]['initiative'] = {'key': parent['key']}
         with _cache_lock:
             if get_jira_issue_cache_generation() == cache_generation:
                 for normalized in batch:
@@ -6379,6 +6418,8 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
         epic_link_field_id,
         team_field_id,
     )
+    if roles is not None and not roles.is_legacy and roles.allocation_field_id:
+        fields_list.append(roles.allocation_field_id)
 
     cache_enabled = context is not None and jira_home_partitioned_process_cache_enabled(context)
     cache_key = _excluded_capacity_stats_source_cache_key(
@@ -6449,6 +6490,10 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
         build_excluded_capacity_issue_payload(issue, team_field_id, epic_link_field_id, sprint_field_id, epic_summary_by_key, team_name_by_id, roles=roles)
         for issue in collected_issues
     ]
+    if roles is not None and not roles.is_legacy:
+        classifications = allocation_stamps(collected_issues, epic_summary_by_key, roles, context=context)
+        for item in issues_payload:
+            item['fields']['projectClassification'] = classifications.get(item['key'], 'product')
 
     result = {
         'issues': issues_payload,

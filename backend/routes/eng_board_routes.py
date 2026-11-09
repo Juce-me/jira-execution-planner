@@ -694,6 +694,14 @@ def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, compl
     }
 
 
+def _allocation_options(snapshot):
+    """DELIVERY classifies children by Allocation (field id + mapping from the admitted context); Legacy by project."""
+    roles = snapshot.work_request.roles if snapshot.work_request is not None else None
+    if roles is None or roles.is_legacy:
+        return {}
+    return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': roles.allocation_types}
+
+
 def _search_page(server, snapshot, transport, payload, timeout):
     if snapshot.adapter == 'basic_json':
         _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
@@ -799,8 +807,10 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         })
         index_started = time.monotonic()
         terminal_statuses = snapshot.board['columns'][-1]['statuses']
+        allocation = _allocation_options(snapshot)
         epic_fields = tuple(dict.fromkeys(eng_board.EPIC_FIELDS + tuple(
-            value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id) if value
+            value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id,
+                                allocation.get('allocation_field_id')) if value
         )))
         search_page = lambda payload: _search_page(
             server, snapshot, transport, payload, transport.budget.jira_retry_timeout(),
@@ -910,6 +920,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
             value for value in (
                 snapshot.epic_link_field_id, snapshot.sprint_field_id, snapshot.story_points_field_id,
                 snapshot.team_field_id, snapshot.project_track_field_id, snapshot.delivery_owner_field_id,
+                allocation.get('allocation_field_id'),
             ) if value
         )))
         child_budget = eng_board.UniqueKeyBudget(eng_board.MAX_CHILDREN)
@@ -940,7 +951,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                         story_points_field_id=snapshot.story_points_field_id,
                         team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
                         project_track_field_id=snapshot.project_track_field_id,
-                        delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                        delivery_owner_field_id=snapshot.delivery_owner_field_id, **allocation,
                     )
                     for row in projection['epics']:
                         progress = progress_by_epic[row['key']]
@@ -1010,7 +1021,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                 team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
                 project_track_field_id=snapshot.project_track_field_id,
                 delivery_owner_field_id=snapshot.delivery_owner_field_id,
-                require_children=snapshot.query.scope == 'sprint',
+                require_children=snapshot.query.scope == 'sprint', **allocation,
             )
             shells = _shells(projection)
             children_wire = [child for epic in projection['epics'] for child in epic['children']]

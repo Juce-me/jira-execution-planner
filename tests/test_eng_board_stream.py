@@ -403,6 +403,29 @@ class EngBoardStreamWriterTests(unittest.TestCase):
             writer.write(complete_frame(sequence=2))
 
 
+class EngBoardAllocationCohortTests(unittest.TestCase):
+    def test_allocation_mapping_changes_the_scope_cohort_through_the_configuration_digest(self):
+        from tests.test_planning_work_profiles import bundle, context
+
+        def mapped(kind):
+            return lambda value: value['configurations'][1].update(allocationTypes=[{'value': 'Growth', 'type': kind}])
+
+        def cohort(work_context):
+            # The workConfiguration material of eng_board_routes._capture_snapshot.
+            return eng_board.build_scope_cohort_digest(
+                b'k' * 32, workspace_id=1, site_id='site', user_id=1, department_id='d',
+                shared_config_revisions={'groups': 1, 'dashboard': 1},
+                shared_config_content={'workConfiguration': {
+                    'id': work_context.configuration_id, 'revision': work_context.revision,
+                    'digest': work_context.digest, 'parent': 'issuetype = 10001'}},
+                effective_projects=(('PLAN', 'other'),), project_access=[], fields={}, eligible_issue_types=('10002',),
+                components=(), teams=(), board={}, scope='all_work', sprint_id=None)
+        tech, product = context(value=bundle(mapped('tech'))), context(value=bundle(mapped('product')))
+        self.assertNotEqual(tech.digest, product.digest)
+        self.assertNotEqual(cohort(tech), cohort(product))
+        self.assertEqual(cohort(tech), cohort(context(value=bundle(mapped('tech')))))
+
+
 class EngBoardPrototypeTests(unittest.TestCase):
     def test_diagnostics_peak_child_searches_is_bounded_by_the_search_limit(self):
         def writer_after_start():

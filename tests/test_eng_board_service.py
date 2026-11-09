@@ -802,6 +802,34 @@ class EngBoardProjectionTests(unittest.TestCase):
             'authoritative': True,
         })
 
+    def test_delivery_children_classify_by_allocation_while_legacy_keeps_the_project_map(self):
+        field = 'customfield_40001'
+        types = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
+        initiatives = [issue('P-1', project_key='PLAN'), issue('P-2', project_key='PLAN')]
+        initiatives[0]['fields'][field] = {'value': 'Platform'}
+        initiatives[1]['fields']['parent'] = {'key': 'P-O1'}  # an Objective the Board does not read
+        children = [issue('P-10', parent='P-1', project_key='PLAN'), issue('P-11', parent='P-1', project_key='PLAN'),
+                    issue('P-20', parent='P-2', project_key='PLAN'), issue('P-21', parent='P-2', project_key='PLAN')]
+        children[1]['fields'][field] = {'value': 'Growth'}
+        children[3]['fields'][field] = {'value': 'Platform'}
+        projection = eng_board.project_board(
+            initiatives, children, project_map=(('PLAN', 'other'),), columns=self.columns,
+            allocation_field_id=field, allocation_types=types,
+        )
+        classes = {child['key']: child['projectClassification']
+                   for epic in projection['epics'] for child in epic['children']}
+        self.assertEqual({'P-10': 'tech', 'P-11': 'product', 'P-20': 'product', 'P-21': 'tech'}, classes)
+        unmapped = eng_board.project_board(
+            initiatives, children[:1], project_map=(('PLAN', 'other'),), columns=self.columns,
+            allocation_field_id='', allocation_types=[],
+        )
+        self.assertEqual('product', unmapped['epics'][0]['children'][0]['projectClassification'])
+        legacy = eng_board.project_board(
+            [issue('P-1')], [issue('P-10', parent='P-1', project_key='OPS')],
+            project_map=(('PROD', 'product'), ('OPS', 'other')), columns=self.columns,
+        )
+        self.assertEqual('other', legacy['epics'][0]['children'][0]['projectClassification'])
+
     def test_unknown_status_falls_back_to_first_column_and_epic_link_precedes_parent(self):
         children = [issue('P-10', parent='P-2', epic_link='P-1')]
         result = eng_board.project_board(

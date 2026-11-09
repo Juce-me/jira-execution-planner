@@ -1,6 +1,17 @@
 # DELIVERY Allocation split and per-configuration Sprint scoping
 
-> **Status:** Planned, not started. Drafted 2026-11-09 on `feature/quarterly-allocation-split-sprint-scoping`; no code changed yet.
+> **Status:** Done. Executed on branch `feature/quarterly-allocation-split-sprint-scoping` (Tracks A and B, A3b and Track C steps 1-3, 2026-11-09); kept for audit context only. The full gate run (fresh `npm ci`, full Python suite, `npm run test:frontend:unit`, full Chromium `tests/ui`) is recorded by the lead under Track C step 4.
+
+## Outcome
+
+Implemented with changes. DELIVERY splits Product/Tech by its mapped Allocation (server stamp `projectClassification`, client split, one `project=all` lane request), Settings maps Allocation values with the Legacy project picker's controls, each configuration takes its Sprint ids only from its own sources, and same-named Scope Sprint values show as `<name> - legacy` / `<name> - delivery` rows. The divergences are recorded in each task's Status line. Two behaviour changes follow from them and are intended:
+
+- An inherited-Board DELIVERY entry with no scan source (no projects or no Sprint field) is `setup_required` instead of `ready` (Task B2, B3).
+- A DELIVERY quarter that no Epic carries yet shows no Sprint until the scan sees one: an inherited Board contributes no DELIVERY Sprint row (Q1, literal reading, Task B2).
+
+## Current Accuracy
+
+Partially accurate: the goal, owner decisions, assumptions and acceptance checklist describe what shipped; the task bodies are the pre-execution contract, and where a task's Status line records a divergence the implementation is the source of truth. The extraction lint is still red with the same 70 enforced problems as the merge base (none added here); see Track C step 1.
 
 **Goal:** In the DELIVERY (`rnd_2027`) configuration, the Allocation field decides Product vs Tech (instead of one combined lane), mapped in Settings with the Legacy project picker's controls. Each configuration takes its Sprint ids only from its own sources, and same-named Sprints from both configurations show as two labelled rows wherever they share a list.
 
@@ -206,15 +217,19 @@ Status: done in 9d706d65; divergences: every row carries `label` (equal to `valu
    - `docs/design-system.md` row 22: name the Allocation picker as a reuse of the project picker. No new kind.
 4. Full gates (root AGENTS.md section 10): `npm ci` (fresh worktree), `npm run build`, `python3 -m unittest discover -s tests`, `npm run test:frontend:unit`, `npx playwright test tests/ui --browser=chromium --workers=4`. Read every summary line.
 
+Status (steps 1-3): done. Step 1: `owner_budgets.json` raises only the dashboard ceiling (exact, 7503), `JiraFieldSettings.jsx` (958 lines, ceiling 1060) and `WorkConfigurationsEditor.jsx` (381 lines, ceiling 420); it records the twelve Allocation picker props on `JiraFieldSettings` (`propCount`/`propCeiling` 170, `expandedInputNames` +14) and drops the removed `workModel` input of `useEngCapacity`. `useEngCapacity.js` (452), `workConfigurationFormProps.js` (288) and `workConfigurationModel.js` (502) were already within their ceilings. No `sourceDigest` is re-stamped: both reviewed interfaces were already stale on the merge base (`a4466e5e`), so re-stamping would claim a review of drift this plan did not make. The extraction lint is red on the merge base and on this head with the same 70 enforced problems and 107 ESLint warnings (ratchet 106); this plan adds none. `tests.test_codebase_structure_budgets` and `tests/test_dashboard_regrowth_guard.js` pass. Step 2: allowlist row added to the No-Event Allowlist in `docs/README_ANALYTICS.md`. Step 3: the DONE plan's current-accuracy note, SUPPORT design (Allocation paragraph), `docs/TODO.md` (the undecided D-D/D-E/D-C item removed), `docs/ontology.md` (Quarterly project configurations: DELIVERY Product/Tech, inherited-Board Sprint rows, Scope suffix labels, Allocation consumer; `Verified on` 2026-11-09) and the `docs/design-system.md` Settings mapping picker row (reuse, no new kind). Step 4: recorded by the lead.
+
 ## Acceptance checklist
 
-- [ ] DELIVERY Catch Up, Planning, Board and Stats show Product and Tech from Allocation. Unmapped, blank and unavailable values count as Product, and Ad Hoc beats Tech.
-- [ ] DELIVERY still makes exactly one `project=all` lane request, and Legacy requests are byte-identical.
-- [ ] The Objective fallback costs at most `ceil(objectives/40)` extra batches, and none when every Initiative is set.
-- [ ] Settings shows `Allocation` and a Product/Tech value picker built only from existing classes. Save stores `allocationTypes`, a mapping change changes the configuration digest, and the Sprint catalogs keep their `source_digest`.
-- [ ] A stale bundle without `allocationTypes` cannot erase the stored mapping.
-- [ ] The option list works under user OAuth (createmeta, then autocomplete, then a typed value), with no admin scope.
-- [ ] A DELIVERY entry with an inherited Board never lists or admits a Legacy Board Sprint id, and an own Board keeps the Board-wins rule.
-- [ ] The Scope picker shows `2027Q1 - legacy` and `2027Q1 - delivery` as separate rows. Selecting either stores `2027Q1`, and no Sprint name, saved `sprintName` or share link carries a suffix.
+- [x] DELIVERY Catch Up, Planning, Board and Stats show Product and Tech from Allocation. Unmapped, blank and unavailable values count as Product, and Ad Hoc beats Tech.
+- [x] DELIVERY still makes exactly one `project=all` lane request, and Legacy requests are byte-identical.
+- [x] The Objective fallback costs at most `ceil(objectives/40)` extra batches, and none when every Initiative is set.
+- [x] Settings shows `Allocation` and a Product/Tech value picker built only from existing classes. Save stores `allocationTypes`, a mapping change changes the configuration digest, and the Sprint catalogs keep their `source_digest`.
+- [x] A stale bundle without `allocationTypes` cannot erase the stored mapping.
+- [x] The option list works under user OAuth (createmeta, then autocomplete, then a typed value), with no admin scope.
+- [x] A DELIVERY entry with an inherited Board never lists or admits a Legacy Board Sprint id, and an own Board keeps the Board-wins rule.
+- [x] The Scope picker shows `2027Q1 - legacy` and `2027Q1 - delivery` as separate rows. Selecting either stores `2027Q1`, and no Sprint name, saved `sprintName` or share link carries a suffix.
 - [ ] Every test in "rewritten on purpose" is updated deliberately, with no assertion deleted without a replacement.
 - [ ] Budgets, analytics row, docs and full gates done (Track C), and screenshots of the Settings Scope tab and the DELIVERY split bar attached.
+
+Checklist evidence (2026-11-09, Track C, at the Track C budgets commit): `.venv` Python `tests.test_work_structure tests.test_planning_work_profiles tests.test_work_structure_allocation_options tests.test_endpoint_policy_inventory tests.test_allocation_classification tests.test_eng_board_service tests.test_eng_board_stream tests.test_work_reader_routes tests.test_work_structure_stats tests.test_work_structure_catalogs tests.test_work_structure_sprint_values`: `Ran 322 tests`, `OK`. After `npm run build`, Node 20 `node --test` over `test_work_structure_classification`, `test_eng_board_filters`, `test_eng_board_card_model`, `test_eng_board_view_model`, `test_work_structure_settings`, `test_capacity_classification`, `test_planning_selection_stats`: 106 pass, 0 fail. Chromium `work_structure_settings`, `work_structure_one_lane`, `work_structure_scope_sprint_values`: 66 passed. The option-list item is proven against mocked Jira only (createmeta, autocomplete and typed-value cases); no live Jira check was run. The suffix item is proven for the Scope picker, the saved bare value and the backend grep guard; share links carry Sprint ids and were not changed. Unticked: the rewritten-tests item (recorded per task in the Status lines, not re-audited in Track C; the concurrent read-only review covers it) and the last item (budgets, analytics row and docs are done; the full gates are the lead's step 4; the Scope tab, Scope picker and split-bar screenshots exist only as uncommitted local captures with synthetic data).

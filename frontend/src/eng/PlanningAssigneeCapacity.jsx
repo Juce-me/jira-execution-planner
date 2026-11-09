@@ -217,9 +217,10 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
 }
 
 // Wraps the Planning overview: holds the assignee capacity state for one selected Team and renders the in-flow strip
-// into the host element after the controls stack. Cards, bar and every other slot are untouched.
+// into the host element after the controls stack, and projects the stored number of every displayed Team (`teamIds`).
+// Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
-    children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
+    children, enabled, selectedTeamIds, teamIds = null, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
     getTeamInfo, normalizeStatus, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null, entityNames = null,
 }) {
     const names = entityNames || resolveEntityNames();
@@ -232,6 +233,12 @@ export default function PlanningAssigneeCapacity({
     React.useLayoutEffect(() => { setHost(document.getElementById(HOST_ID)); });
     // D6: the document is read whenever one Team is selected (the pinned bar's strip needs it), expanded or not.
     const { state, controller } = usePlanningAssigneeCapacity({ backendUrl, sprintId: sprintId ? String(sprintId) : '', teamId, active: oneTeam });
+    // Every displayed Team's stored number (one owner per Team; one Team derives from its full GET, more use the batch read).
+    const teamIdsKey = JSON.stringify(teamIds ? [...teamIds].map(String) : []);
+    React.useEffect(() => {
+        const ids = JSON.parse(teamIdsKey);
+        controller.setProjectionScope({ sprintId: sprintId ? String(sprintId) : '', teamIds: ids, active: Boolean(enabled && ids.length) });
+    }, [controller, sprintId, teamIdsKey, enabled]);
     const editors = React.useRef(new Set()).current;
     const normalizeRef = React.useRef(normalizeStatus), teamInfoRef = React.useRef(getTeamInfo);
     normalizeRef.current = normalizeStatus; teamInfoRef.current = getTeamInfo;
@@ -308,7 +315,7 @@ export default function PlanningAssigneeCapacity({
     const tinted = Number(rawCapacity) > 0;
     // The stored team number as shown (own, gray inherited or pending), for the team card's editor and reconcile banner.
     const planned = React.useMemo(() => effectivePlanned(effective), [effective]);
-    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller }), [oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller]);
+    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller, getTeamStatus: controller.getTeamStatus, subscribeTeam: controller.subscribeTeam }), [oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller]);
 
     const readOnly = !state.capabilities.canSave;
     const hidden = state.load === 'ready' && !state.capabilities.canRead;

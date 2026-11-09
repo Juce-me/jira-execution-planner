@@ -259,7 +259,7 @@
   - eviction drops only clean, idle owners past 5 (an evicted displayed owner reloads lazily; the numbers map is unaffected);
   - running, dirty, failed, rejected and stopped owners are never evicted.
 
-- [ ] **Step 1: Write failing queue tests:**
+- [x] **Step 1: Write failing queue tests:**
   - "Team A delayed while Team B saves; B publishes first";
   - "A fails while B succeeds; A keeps Retry and Discard";
   - "revisiting failed A restores its draft";
@@ -275,13 +275,13 @@
   - "the numbers map keeps identity across save-state changes";
   - "a fifth concurrent PATCH waits for a slot";
   - "nine token fetches before the first PATCH dispatches: the evicted token's 403 `csrf_required` is retried once and lands".
-- [ ] **Step 2:** Rewrite the predecessor test "a failed background save is kept per scope … at most five scopes are kept" to the new eviction rule.
-- [ ] **Step 3:** Run `node --test tests/test_planning_assignee_capacity_queue.js`. Expected: FAIL.
-- [ ] **Step 4: Implement** owners as `Map<scopeKey, { queue, document, load }>`.
+- [x] **Step 2:** Rewrite the predecessor test "a failed background save is kept per scope … at most five scopes are kept" to the new eviction rule.
+- [x] **Step 3:** Run `node --test tests/test_planning_assignee_capacity_queue.js`. Expected: FAIL.
+- [x] **Step 4: Implement** owners as `Map<scopeKey, { queue, document, load }>`.
   - Reuse `newQueue`, `pump`, `recover`, `mergeInto` and the write-epoch fencing per owner.
   - The provider calls `setProjectionScope` in its own effect (App gains no effect).
-- [ ] **Step 5:** Run the queue tests and the full `node --test tests/test_*.js`, then `npm run build` and the strip cases of `tests/ui/planning_assignee_capacity.spec.js` (Chromium). Expected: PASS.
-- [ ] **Step 6:** Commit `Give every Team its own capacity save owner (#323)`.
+- [x] **Step 5:** Run the queue tests and the full `node --test tests/test_*.js`, then `npm run build` and the strip cases of `tests/ui/planning_assignee_capacity.spec.js` (Chromium). Expected: PASS.
+- [x] **Step 6:** Commit `Give every Team its own capacity save owner (#323)`.
 
 ### Task 4: Numbers and cards for every displayed Team
 
@@ -616,6 +616,9 @@ Each item is done only with its named evidence recorded in Execution evidence (c
 - **Task 2: Batch read client (2026-11-09).** `readPlannedNumbers` in `frontend/src/api/assigneeCapacityApi.js` (planned chunks of at most 500 ids and 128 KiB UTF-8, one in flight, 413 halves, single-id 413 goes to `failedTeamIds`, one csrf_required retry, 401 and abort stop the sequence).
   - RED: `node --test tests/test_assignee_capacity_api.js` (Node 20) `# tests 11`, `# pass 3`, `# fail 8`.
   - GREEN: the same command `# tests 11`, `# pass 11`, `# fail 0`; `npm run build` completed; `node --test tests/test_*.js` `# tests 3601`, `# pass 3601`, `# fail 0`, `# skipped 0`; isolated runner `tests.test_codebase_structure_budgets` `Ran 9 tests`, `OK`.
+- **Task 3: Keyed per-Team owners (2026-11-09).** `frontend/src/eng/usePlanningAssigneeCapacity.js` keeps one owner per Sprint and Team in a `Map` (the existing per-scope queue object, which already held `document`, now also holds `load`, `readError` and its own read abort); the strip API is unchanged and acts on the strip Team's owner. New: `setProjectionScope`, `refreshProjection`, `getPlannedNumbers` (frozen, identity-stable, owner drafts over the newer of batch record and owner document), `getTeamStatus`/`subscribeTeam`, `commitTeamPlanned`, `mirrorTeamPlanned`, `retryTeam`, `discardTeamPlanned`, `ensureTeamDocument`, `flushTeam`; `MAX_CONCURRENT_SAVES = 4` PATCH slots with the pre-dispatch `csrf_required` retry inside the slot; a 401 stops every owner (drafts kept, nothing replayed); eviction past five drops only clean, idle owners and keeps their number as the batch record. A strip revisit reuses an owner that holds its document (no second GET). `getPlannedSnapshot` stays for App until Task 4. The provider takes a `teamIds` prop (default none, so nothing is projected until Task 4 passes it) and calls `setProjectionScope` in its own effect; its context adds `getTeamStatus` and `subscribeTeam`. dashboard.jsx is unchanged.
+  - RED (Node 20): `node --test tests/test_planning_assignee_capacity_queue.js` `# tests 65`, `# pass 49`, `# fail 16` (the 15 new cases and the rewritten eviction case).
+  - GREEN: the same command `# tests 65`, `# pass 65`, `# fail 0`; `npm run build` completed; `node --test tests/test_*.js` `# tests 3616`, `# pass 3616`, `# fail 0`; isolated runner `tests.test_codebase_structure_budgets` `Ran 9 tests`, `OK`; `npx playwright test tests/ui/planning_assignee_capacity.spec.js tests/ui/planning_capacity_editing.spec.js --browser=chromium --workers=4` `136 passed`, `3 skipped`, the same as before the change.
 
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.

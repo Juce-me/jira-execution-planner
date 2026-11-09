@@ -13,36 +13,44 @@
 //   ordinary Product-> 'product' / 'product' / 'standard'
 //   ordinary Tech   -> 'tech'    / 'tech'    / null
 
-import { isCombinedWorkModel } from './eng/engWorkModel.js';
-
-// New (`rnd_2027`) model: one combined lane, no Product/Tech attribution. The grouping parent is an
-// Initiative and Epic leaves inherit Ad Hoc from it (`epicKey`/`parentKey` carry the parent key).
-//   ordinary combined -> 'other' / 'other'  / null
-//   Ad Hoc combined   -> 'other' / 'ad_hoc' / null
+// New (`rnd_2027`) model: the server stamps each Epic with `projectClassification` ('product'|'tech')
+// from its Allocation (Board children carry it at the top level). The stamp decides before project
+// keys, and Ad Hoc still wins over it. Its grouping parent is an Initiative, so Ad Hoc is keyed on
+// the Initiative key that `epicKey`/`parentKey` carry.
 
 function normalizeKey(value) {
     return String(value || '').trim().toUpperCase();
 }
 
-export function classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet, workModel } = {}) {
+function projectStamp(issue) {
+    const stamp = issue?.fields?.projectClassification ?? issue?.projectClassification;
+    return stamp === 'product' || stamp === 'tech' ? stamp : null;
+}
+
+// Product/Tech side without Ad Hoc: the Allocation stamp when present, otherwise the project key.
+export function isTechIssue(issue, techProjectKeys) {
+    const stamp = projectStamp(issue);
+    if (stamp) return stamp === 'tech';
     const techKeys = techProjectKeys instanceof Set ? techProjectKeys : new Set();
+    const fields = issue?.fields || {};
+    const rawProjectKey = fields.projectKey || issue?.projectKey
+        || String(issue?.key || '').split('-')[0];
+    const projectKey = normalizeKey(rawProjectKey);
+    return Boolean(projectKey && techKeys.has(projectKey));
+}
+
+export function classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet } = {}) {
     const adHocKeys = adHocEpicSet instanceof Set ? adHocEpicSet : new Set();
 
     const fields = issue?.fields || {};
     // Story-level records carry their parent epic in `epicKey`/`parentKey`;
     // Epic-level cohort records carry their own key in `key`.
     const epicKey = normalizeKey(fields.epicKey || fields.parentKey || issue?.key);
-    if (isCombinedWorkModel(workModel)) {
-        return { projectType: 'other', capacityType: epicKey && adHocKeys.has(epicKey) ? 'ad_hoc' : 'other', productSubtype: null };
-    }
     if (epicKey && adHocKeys.has(epicKey)) {
         return { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' };
     }
 
-    const rawProjectKey = fields.projectKey || issue?.projectKey
-        || String(issue?.key || '').split('-')[0];
-    const projectKey = normalizeKey(rawProjectKey);
-    if (projectKey && techKeys.has(projectKey)) {
+    if (isTechIssue(issue, techProjectKeys)) {
         return { projectType: 'tech', capacityType: 'tech', productSubtype: null };
     }
 

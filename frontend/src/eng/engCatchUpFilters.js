@@ -23,7 +23,7 @@
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
 import { getStatusPhaseRank } from './engTaskUtils.js';
-import { WORK_MODEL_LEGACY, isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
+import { WORK_MODEL_LEGACY, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
 import {
     classifyEpicProjectTrack,
@@ -119,9 +119,6 @@ function epicForTask(task, epicDetails) {
 
 // `names` is the viewed configuration's EntityNames (Legacy defaults when absent).
 export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {}, names = LEGACY_NAMES } = {}) {
-    // The combined model has one lane: the Projects (Product/Tech) facet stays in the positional facet list
-    // but is hidden, never counted and never filtering.
-    const combinedLane = isCombinedWorkModel(names.model);
     const statusCounts = countBy(tasks, (task) => task.fields?.status?.name);
     const priorityCounts = countBy(tasks, (task) => priorityAxisLabel(task.fields?.priority?.name));
     const projectCounts = { tech: 0, product: 0 };
@@ -130,7 +127,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
     let trackEpicTotal = 0;
     let unsetTrackEpicTotal = 0;
     tasks.forEach((task) => {
-        if (!combinedLane) projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
+        projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
         const epicKey = String(task?.fields?.epicKey || '').trim();
         const epic = epicForTask(task, epicDetails);
         if (!epicKey || !epic || countedEpicKeys.has(epicKey)) return;
@@ -170,7 +167,6 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
             {
                 id: 'projects',
                 label: 'Projects',
-                ...(combinedLane ? { hidden: true } : {}),
                 kind: 'multi',
                 neutralTotal: scopeTotal,
                 options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],

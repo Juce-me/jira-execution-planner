@@ -141,6 +141,14 @@ class NewModelExpectationsAreDataOnlyTests(unittest.TestCase):
             self.assertEqual(expected['selected_team_total'], 8, name)
         self.assertEqual(ref.NEW_MODEL_EXPECTED_PAIRS['excluded']['included_allocation'], 0)
         self.assertEqual(ref.NEW_MODEL_EXPECTED_PAIRS['excluded']['excluded_report'], 8)
+        for name, expected in ref.NEW_MODEL_EXPECTED_PAIRS.items():
+            # The Allocation split partitions the included allocation into Product and Tech.
+            self.assertEqual(expected['product'] + expected['tech'], expected['included_allocation'], name)
+
+    def test_new_model_classification_uses_the_legacy_product_tech_shapes(self):
+        legacy = ref.LEGACY_CLASSIFICATION_EXPECTED
+        self.assertEqual(ref.NEW_MODEL_CLASSIFICATION_EXPECTED, {
+            'ordinary': legacy['ordinary'], 'tech': legacy['tech'], 'ad_hoc': legacy['ad_hoc']})
 
 
 if __name__ == '__main__':

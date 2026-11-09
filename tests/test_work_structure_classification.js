@@ -1,22 +1,25 @@
-// Task 4B/4C/4D (frontend): the combined `rnd_2027` lane. Constants re-derive the Python reference fixture
-// (tests/fixtures/work_structure_reference.py: NEW_MODEL_EXPECTED_PAIRS, SP oracle) in JS; Legacy stays pinned.
+// Task 4B/4C/4D (frontend): the one `rnd_2027` request lane, split Product/Tech by the server's Allocation stamp.
+// Constants re-derive the Python reference fixture (tests/fixtures/work_structure_reference.py:
+// NEW_MODEL_EXPECTED_PAIRS, SP oracle) in JS; Legacy stays pinned.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const NEW = 'rnd_2027';
-const sp = (key, value, { epic = 'PLAN-I1', status = 'To Do' } = {}) => ({
+const sp = (key, value, { epic = 'PLAN-I1', status = 'To Do', stamp } = {}) => ({
     key,
-    fields: { customfield_10004: value, epicKey: epic, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: status } },
+    fields: { customfield_10004: value, epicKey: epic, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: status },
+        ...(stamp ? { projectClassification: stamp } : {}) },
 });
 const getTeamInfo = issue => ({ id: issue.fields.teamId, name: issue.fields.teamName });
 const normalizeEpicKey = value => String(value || '').trim().toUpperCase();
 
 // NEW_MODEL_EXPECTED_PAIRS (8-SP leaf under Initiative PLAN-I1)
 const PAIRS = {
-    ordinary: { excluded: [], adHoc: [], combined: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
-    ad_hoc: { excluded: [], adHoc: ['PLAN-I1'], combined: 8, adHocSp: 8, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
-    excluded: { excluded: ['PLAN-I1'], adHoc: [], combined: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 0, excludedReport: 8 },
+    ordinary: { excluded: [], adHoc: [], combined: 8, product: 8, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    tech: { stamp: 'tech', excluded: [], adHoc: [], combined: 8, product: 0, tech: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    ad_hoc: { excluded: [], adHoc: ['PLAN-I1'], combined: 8, product: 8, tech: 0, adHocSp: 8, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    excluded: { excluded: ['PLAN-I1'], adHoc: [], combined: 0, product: 0, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 0, excludedReport: 8 },
 };
 const SP_SOURCE_VALUES = [null, '', 8, '3.5', 'n/a'];
 const SP_EXPECTED_TOTAL = 11.5;
@@ -30,16 +33,23 @@ async function load() {
     return { ...classification, ...stats, ...capacity };
 }
 
-test('classifyCapacityIssue: combined model never says Product/Tech; Legacy output unchanged', async () => {
-    const { classifyCapacityIssue } = await load();
+test('classifyCapacityIssue: the Allocation stamp decides Product/Tech, Ad Hoc wins; Legacy output unchanged', async () => {
+    const { classifyCapacityIssue, isTechIssue } = await load();
     const adHocEpicSet = new Set(['PLAN-I1']);
     const issue = sp('PLAN-E1', 8);
-    assert.deepEqual(classifyCapacityIssue(issue, { workModel: NEW, adHocEpicSet: new Set() }),
-        { projectType: 'other', capacityType: 'other', productSubtype: null });
-    assert.deepEqual(classifyCapacityIssue(issue, { workModel: NEW, adHocEpicSet }),
-        { projectType: 'other', capacityType: 'ad_hoc', productSubtype: null });
-    // A Tech project key cannot reattribute combined work.
-    assert.equal(classifyCapacityIssue(issue, { workModel: NEW, techProjectKeys: new Set(['PLAN']) }).projectType, 'other');
+    const tech = sp('PLAN-E2', 8, { stamp: 'tech' });
+    const product = sp('PLAN-E3', 8, { stamp: 'product' });
+    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet: new Set() }), { projectType: 'tech', capacityType: 'tech', productSubtype: null });
+    assert.deepEqual(classifyCapacityIssue(product, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
+    assert.deepEqual(classifyCapacityIssue(issue, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
+    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet }), { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' });
+    // The stamp beats the project key both ways; a Board child carries it at the top level.
+    assert.equal(classifyCapacityIssue(product, { techProjectKeys: new Set(['PLAN']) }).projectType, 'product');
+    assert.equal(classifyCapacityIssue({ key: 'PLAN-E4', projectClassification: 'tech' }, {}).projectType, 'tech');
+    assert.equal(isTechIssue(tech, new Set()), true);
+    assert.equal(isTechIssue(product, new Set(['PLAN'])), false);
+    assert.equal(isTechIssue(issue, new Set(['PLAN'])), true);
+    assert.equal(isTechIssue({ key: 'OLD-1', fields: {} }, new Set(['OLD'])), true);
     // Legacy: pinned (LEGACY_CLASSIFICATION_EXPECTED).
     assert.deepEqual(classifyCapacityIssue(issue, { adHocEpicSet: new Set() }), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
     assert.deepEqual(classifyCapacityIssue(issue, { workModel: 'legacy', adHocEpicSet }), { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' });
@@ -49,7 +59,7 @@ test('classifyCapacityIssue: combined model never says Product/Tech; Legacy outp
 for (const [name, pair] of Object.entries(PAIRS)) {
     test(`8-SP ${name} pair keeps the separate denominators and never doubles to 16 SP`, async () => {
         const u = await load();
-        const tasks = [sp('PLAN-E1', 8)];
+        const tasks = [sp('PLAN-E1', 8, { stamp: pair.stamp })];
         const excludedEpicSet = new Set(pair.excluded);
         const adHocEpicSet = new Set(pair.adHoc);
         const techProjectKeys = new Set();
@@ -57,18 +67,20 @@ for (const [name, pair] of Object.entries(PAIRS)) {
         const selectedPlanningTasksList = u.buildSelectedPlanningTasksList(tasks, excludedEpicSet, normalizeEpicKey);
 
         assert.equal(u.buildSelectedTeamStats(selectedTasksList, getTeamInfo)['team-a'].storyPoints, pair.selectedTeam);
-        const allocation = u.buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet, NEW);
-        assert.equal(allocation.OTHER || 0, pair.includedAllocation);
-        assert.equal(allocation.PRODUCT, undefined);
-        assert.equal(allocation.TECH, undefined);
-        assert.equal((u.buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey, NEW).OTHER) || 0, pair.excludedReport);
-        const teamProject = u.buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet, NEW);
-        assert.equal(teamProject['team-a']?.other || 0, pair.includedAllocation);
-        assert.equal(teamProject['team-a']?.product || 0, 0);
-        assert.equal(teamProject['team-a']?.tech || 0, 0);
-        const adHocSp = selectedPlanningTasksList.reduce((sum, task) => sum + (u.classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel: NEW }).capacityType === 'ad_hoc' ? 8 : 0), 0);
+        const allocation = u.buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
+        assert.equal(allocation.PRODUCT || 0, pair.product);
+        assert.equal(allocation.TECH || 0, pair.tech);
+        assert.equal(allocation.OTHER, undefined);
+        const excludedReport = u.buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
+        assert.equal((excludedReport.PRODUCT || 0) + (excludedReport.TECH || 0), pair.excludedReport);
+        assert.equal(excludedReport.OTHER, undefined);
+        const teamProject = u.buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
+        assert.equal(teamProject['team-a']?.product || 0, pair.product);
+        assert.equal(teamProject['team-a']?.tech || 0, pair.tech);
+        assert.equal(teamProject['team-a']?.other, undefined);
+        const adHocSp = selectedPlanningTasksList.reduce((sum, task) => sum + (u.classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType === 'ad_hoc' ? 8 : 0), 0);
         assert.equal(adHocSp, pair.adHocSp);
-        assert.equal(pair.combined, pair.includedAllocation);
+        assert.equal(pair.combined, pair.product + pair.tech);
     });
 }
 
@@ -91,22 +103,24 @@ test('SP parser oracle: null, empty, 8, 3.5 and n/a aggregate to 11.5 and stay d
     assert.deepEqual(tasks.map(formatStoryPointsLabel), ['0 SP', '0 SP', '8 SP', '3.5 SP', '0 SP']);
 });
 
-test('combined capacity: team stats use one `other` breakdown, project capacity one OTHER bucket', async () => {
+test('new-model capacity: team stats and project capacity use the Product/Tech buckets and the 70/30 split', async () => {
     const u = await load();
     const task = sp('PLAN-E1', 8);
     const stats = u.buildTeamCapacityStats({
-        showPlanning: true, capacityEnabled: true, capacityTasks: [task], normalizeStatus: value => String(value).toLowerCase(),
-        getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(), workModel: NEW,
+        showPlanning: true, capacityEnabled: true, capacityTasks: [task, sp('PLAN-E2', 5, { stamp: 'tech' })],
+        normalizeStatus: value => String(value).toLowerCase(), getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(),
     });
-    assert.deepEqual(stats['team-a'].other, { todoPending: 8, accepted: 0, postponed: 0 });
-    assert.equal(stats['team-a'].product.todoPending + stats['team-a'].tech.todoPending, 0);
+    assert.equal('other' in stats['team-a'], false);
+    assert.deepEqual(stats['team-a'].product, { todoPending: 8, accepted: 0, postponed: 0 });
+    assert.deepEqual(stats['team-a'].tech, { todoPending: 5, accepted: 0, postponed: 0 });
     const [entry] = u.buildTeamCapacityEntries(stats);
-    assert.equal(entry.total.todoPending, 8);
+    assert.equal(entry.total.todoPending, 13);
     const capacity = u.buildProjectCapacity({
         showPlanning: true, capacityEnabled: true, displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
-        selectedTeamProjectStats: {}, getTeamNetCapacity: () => 20, capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true, workModel: NEW,
+        selectedTeamProjectStats: { 'team-a': { product: 8, tech: 0 } }, getTeamNetCapacity: () => 20,
+        capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true,
     });
-    assert.deepEqual(capacity, { OTHER: 20 });
+    assert.deepEqual(capacity, { PRODUCT: 14, TECH: 6 });
     const legacy = u.buildTeamCapacityStats({
         showPlanning: true, capacityEnabled: true, capacityTasks: [task], normalizeStatus: value => String(value).toLowerCase(),
         getTeamInfo, techProjectKeys: new Set(),
@@ -115,30 +129,37 @@ test('combined capacity: team stats use one `other` breakdown, project capacity 
     assert.equal('other' in u.buildTeamCapacityEntries(legacy)[0], false);
 });
 
-test('combined Catch Up and Board filter models hide the Projects facet and never count Product/Tech', async () => {
+test('new-model Catch Up and Board filter models show and count the Projects facet from the stamp', async () => {
     const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
     const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
     const { buildEngBoardFacetModel, resolveEngBoardFilters } = await import('../frontend/src/eng/engBoardFilters.js');
-    const tasks = [sp('PLAN-E1', 8), sp('PLAN-E2', 5)];
-    const catchUp = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true, names: resolveEntityNames(NEW) });
-    assert.equal(catchUp.facets.find(facet => facet.id === 'projects').hidden, true);
-    assert.deepEqual(catchUp.counts.projects, { tech: 0, product: 0 });
-    const resolved = resolveEngCatchUpFilters({ model: catchUp });
-    assert.equal(resolved.admitsProject(true), true);
+    const { isTechIssue } = await load();
+    const isTechTask = task => isTechIssue(task, new Set());
+    const tasks = [sp('PLAN-E1', 8, { stamp: 'tech' }), sp('PLAN-E2', 5)];
+    const catchUp = buildEngCatchUpFacetModel({ tasks, isTechTask, names: resolveEntityNames(NEW) });
+    assert.equal(catchUp.facets.find(facet => facet.id === 'projects').hidden, undefined);
+    assert.deepEqual(catchUp.counts.projects, { tech: 1, product: 1 });
+    const resolved = resolveEngCatchUpFilters({ model: catchUp, showTech: false });
+    assert.equal(resolved.admitsProject(true), false);
+    assert.equal(resolved.admitsProject(false), true);
     assert.equal(resolved.readoutUnit, 'of 2 epics');
     const legacy = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true });
     assert.equal(legacy.facets.find(facet => facet.id === 'projects').hidden, undefined);
     assert.equal(resolveEngCatchUpFilters({ model: legacy }).readoutUnit, 'of 2 stories');
 
-    const groups = [{ key: 'PLAN-I1', epic: { key: 'PLAN-I1', summary: 'I' }, tasks: [sp('PLAN-E1', 8)] }];
-    const board = buildEngBoardFacetModel({ epicGroups: groups, isTechTask: () => false, workModel: NEW });
-    assert.equal(board.facets.find(facet => facet.id === 'projects').hidden, true);
-    assert.deepEqual(board.counts.projects, { tech: 0, product: 0, other: 0 });
-    const boardResolved = resolveEngBoardFilters({ model: board });
-    assert.equal(boardResolved.admitsEpic(groups[0]), true);
+    const groups = [{ key: 'PLAN-I1', epic: { key: 'PLAN-I1', summary: 'I' }, tasks: [sp('PLAN-E1', 8, { stamp: 'tech' })] },
+        { key: 'PLAN-I2', epic: { key: 'PLAN-I2', summary: 'J' }, tasks: [sp('PLAN-E2', 5, { epic: 'PLAN-I2' })] }];
+    const board = buildEngBoardFacetModel({ epicGroups: groups, isTechTask, workModel: NEW });
+    assert.equal(board.facets.find(facet => facet.id === 'projects').hidden, undefined);
+    assert.deepEqual(board.counts.projects, { tech: 1, product: 1, other: 0 });
+    const boardResolved = resolveEngBoardFilters({ model: board, selection: { projects: ['product'] } });
+    assert.equal(boardResolved.admitsEpic(groups[0]), false);
+    assert.equal(boardResolved.admitsEpic(groups[1]), true);
+    groups.pop();
+    const single = resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups, isTechTask, workModel: NEW }) });
     // One is singular in every configuration (the count rule); the subject names the parent level.
-    assert.equal(boardResolved.readoutUnit, 'of 1 initiative');
-    assert.equal(boardResolved.subject, 'Filtering initiatives');
+    assert.equal(single.readoutUnit, 'of 1 initiative');
+    assert.equal(single.subject, 'Filtering initiatives');
     assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups }) }).readoutUnit, 'of 1 epic');
 });
 

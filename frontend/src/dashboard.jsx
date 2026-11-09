@@ -65,6 +65,7 @@ import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
+import { isTechIssue } from './capacityClassification.mjs';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
 import { useWorkEntityNames } from './eng/useWorkEntityNames.js';
 import { storyReadinessAnswersAwaited, useStoryReadiness } from './eng/useStoryReadiness.js';
@@ -4090,7 +4091,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
             const isTechTask = React.useCallback(
-                (task) => techProjectKeys.has(String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase()),
+                (task) => isTechIssue(task, techProjectKeys),
                 [techProjectKeys]
             );
             // Search and team scope only, over the ungated product+tech merge: `tasks` already
@@ -5108,7 +5109,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
                 selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
             } = useEngCapacity({
-                scope, workModel,
+                scope,
                 showPlanning, capacityEnabled, showProduct, showTech,
                 selectedTasksList, selectedPlanningTasksList, selectedSP, getTeamInfo,
                 normalizeStatus, normalizeEpicKey, BACKEND_URL, loadEpochRef,
@@ -6229,7 +6230,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             resolveTeamColor={resolveTeamColor}
                             getTeamCapacityMeta={getTeamCapacityMeta}
                         />}
-                        projects={<PlanningProjectSplitBar workModel={workModel} compact={compactPlanningPanel}
+                        projects={<PlanningProjectSplitBar compact={compactPlanningPanel}
                             selectedProjectEntries={selectedProjectEntries}
                             excludedProjectStats={excludedProjectStats}
                             adHocProductSP={selectedAdHocProductSP}

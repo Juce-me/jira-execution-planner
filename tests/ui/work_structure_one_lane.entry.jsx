@@ -11,11 +11,13 @@ import { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } from '../../front
 import { resolveEntityNames } from '../../frontend/src/eng/engWorkModel.js';
 import { buildSelectedProjectStats, buildExcludedProjectStats, buildSelectedPlanningTasksList } from '../../frontend/src/eng/planningSelectionStats.js';
 import { buildSelectedProjectEntries } from '../../frontend/src/eng/planningCapacityUtils.js';
-import { classifyCapacityIssue } from '../../frontend/src/capacityClassification.mjs';
+import { classifyCapacityIssue, isTechIssue } from '../../frontend/src/capacityClassification.mjs';
 import { useEngSprintData } from '../../frontend/src/eng/useEngSprintData.js';
 
-const task = (key, sp, epicKey) => ({
-    key, fields: { customfield_10004: sp, epicKey, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: 'To Do' }, priority: { name: 'Medium' } },
+// `stamp` is the server's DELIVERY Allocation classification (`fields.projectClassification`).
+const task = (key, sp, epicKey, stamp) => ({
+    key, fields: { customfield_10004: sp, epicKey, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: 'To Do' }, priority: { name: 'Medium' },
+        ...(stamp ? { projectClassification: stamp } : {}) },
 });
 const normalize = value => String(value || '').trim().toUpperCase();
 
@@ -47,8 +49,8 @@ function AlertsHarness({ workModel }) {
 }
 
 function FiltersHarness({ workModel }) {
-    const tasks = [task('PLAN-E1', 8, 'PLAN-I1')];
-    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: () => false, names: resolveEntityNames(workModel) }), [workModel]);
+    const tasks = [task('PLAN-E1', 8, 'PLAN-I1'), task('PLAN-E2', 5, 'PLAN-I1', 'tech')];
+    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: item => isTechIssue(item, new Set()), names: resolveEntityNames(workModel) }), [workModel]);
     const resolved = React.useMemo(() => resolveEngCatchUpFilters({ model }), [model]);
     return (
         <EngFilterBar
@@ -58,18 +60,19 @@ function FiltersHarness({ workModel }) {
     );
 }
 
-function SplitHarness({ workModel, pair, compact }) {
-    const tasks = [task('PLAN-E1', 8, 'PLAN-I1')];
+// `stamp` marks the Epic as the server stamps it in DELIVERY; Legacy tasks carry none.
+function SplitHarness({ pair, compact, stamp }) {
+    const tasks = [task('PLAN-E1', 8, 'PLAN-I1', stamp)];
     const excluded = new Set(pair === 'excluded' ? ['PLAN-I1'] : []);
     const adHoc = new Set(pair === 'ad_hoc' ? ['PLAN-I1'] : []);
     const planning = buildSelectedPlanningTasksList(tasks, excluded, normalize);
-    const stats = buildSelectedProjectStats(planning, new Set(), adHoc, workModel);
+    const stats = buildSelectedProjectStats(planning, new Set(), adHoc);
     const entries = buildSelectedProjectEntries({ showPlanning: true, selectedProjectStats: stats, capacityEnabled: false, projectCapacity: {} });
-    const adHocSp = planning.reduce((sum, item) => sum + (classifyCapacityIssue(item, { techProjectKeys: new Set(), adHocEpicSet: adHoc, workModel }).capacityType === 'ad_hoc' ? 8 : 0), 0);
+    const adHocSp = planning.reduce((sum, item) => sum + (classifyCapacityIssue(item, { techProjectKeys: new Set(), adHocEpicSet: adHoc }).capacityType === 'ad_hoc' ? 8 : 0), 0);
     return (
         <PlanningProjectSplitBar
-            workModel={workModel} compact={compact} selectedProjectEntries={entries} adHocProductSP={adHocSp}
-            excludedProjectStats={buildExcludedProjectStats(tasks, excluded, new Set(), normalize, workModel)}
+            compact={compact} selectedProjectEntries={entries} adHocProductSP={adHocSp}
+            excludedProjectStats={buildExcludedProjectStats(tasks, excluded, new Set(), normalize)}
         />
     );
 }

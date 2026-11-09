@@ -1,4 +1,4 @@
-// Task 4B/4C/4D UI proof for the combined `rnd_2027` lane, against fully mocked routes (no Jira, no DB, no server).
+// Task 4B/4C/4D UI proof for the one `rnd_2027` request lane (split Product/Tech by the Allocation stamp), against fully mocked routes (no Jira, no DB, no server).
 // The dashboard composition does not yet pass the work model to the ENG hooks/components, so the REAL components and the REAL
 // useEngSprintData closure are mounted in a small harness page with the model injected (tests/ui/work_structure_one_lane.entry.jsx).
 // Synthetic data only.
@@ -72,52 +72,57 @@ test('Legacy keeps its two lane requests and the Backlog source', async ({ page 
     expect(calls.filter(call => call.pathname !== '/api/tasks-with-team-name').length).toBe(1);
 });
 
-test('Projects (Product/Tech) facet is hidden for the combined model and present for Legacy', async ({ page }) => {
+test('Projects (Product/Tech) facet is shown for the new model, as for Legacy', async ({ page }) => {
     await openHarness(page);
-    for (const [workModel, expectedFacet] of [['rnd_2027', 0], [undefined, 1]]) {
+    for (const workModel of ['rnd_2027', undefined]) {
         await page.evaluate(model => window.__oneLane.mount('filters', { workModel: model }), workModel);
         await page.getByRole('button', { name: /Filters/ }).click();
-        await expect(page.locator('.pop-group[data-facet="projects"]')).toHaveCount(expectedFacet);
+        await expect(page.locator('.pop-group[data-facet="projects"]')).toHaveCount(1);
         await expect(page.locator('.pop-group[data-facet="status"]')).toHaveCount(1);
         await page.keyboard.press('Escape');
     }
 });
 
-for (const [pair, selected, adHoc, excluded] of [['ordinary', '8.0', null, null], ['ad_hoc', '8.0', '8.0', null], ['excluded', null, null, '8.0']]) {
-    test(`combined split bar: ${pair} 8-SP pair shows one lane, never Product/Tech and never 16 SP`, async ({ page }) => {
+// The new model splits by the server's Allocation stamp; an unstamped Epic is Product (plan A2), Ad Hoc beats Tech (A3).
+for (const [pair, stamp, label, adHoc, excluded] of [
+    ['ordinary', undefined, 'Product 100% · 8.0 SP', null, null],
+    ['ordinary', 'tech', 'Tech 100% · 8.0 SP', null, null],
+    ['ad_hoc', 'tech', 'Product 100% · 8.0 SP', '8.0', null],
+    ['excluded', undefined, null, null, 'Product'],
+]) {
+    test(`new-model split bar: ${pair} 8-SP ${stamp || 'unstamped'} Epic splits Product/Tech and never doubles to 16 SP`, async ({ page }) => {
         await openHarness(page);
-        await page.evaluate(arg => window.__oneLane.mount('split', arg), { workModel: 'rnd_2027', pair });
-        const bar = page.locator('#split');
-        const text = (await bar.innerText()).replace(/\s+/g, ' ');
-        expect(text).not.toMatch(/Product|Tech|16\.0/);
-        if (selected) {
-            await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(1);
-            expect(text).toContain(`Selected · ${selected} SP`);
+        await page.evaluate(arg => window.__oneLane.mount('split', arg), { pair, stamp });
+        const text = (await page.locator('#split').innerText()).replace(/\s+/g, ' ');
+        expect(text).not.toMatch(/16\.0/);
+        await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(0);
+        if (label) {
+            expect(text).toContain(label);
             if (adHoc) expect(text).toContain(`Ad Hoc ${adHoc}`);
+            await expect(page.locator('#split .capacity-bar-marker')).toHaveCount(1);
         } else {
-            // Excluded work leaves the included allocation entirely; its 8 SP is the excluded report.
-            const tooltip = await page.locator('#split .project-bar-fill.product').getAttribute('data-tooltip');
-            expect(tooltip).toContain(`Excluded: ${excluded} SP`);
+            // Excluded work leaves the included allocation entirely; its 8 SP is reported on its own side.
+            const tooltip = await page.locator(`#split .project-bar-fill.${excluded.toLowerCase()}`).getAttribute('data-tooltip');
+            expect(tooltip).toContain('Excluded: 8.0 SP');
         }
     });
 }
 
 for (const compact of [false, true]) {
-    test(`combined split bar (${compact ? 'compact' : 'full'}): no Product/Tech label, tooltip or 70/30 target marker anywhere in the DOM`, async ({ page }) => {
+    test(`new-model split bar (${compact ? 'compact' : 'full'}): Product/Tech readout and the 70/30 target marker`, async ({ page }) => {
         await openHarness(page);
-        await page.evaluate(arg => window.__oneLane.mount('split', arg), { workModel: 'rnd_2027', pair: 'ad_hoc', compact });
-        await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(1);
-        await expect(page.locator('#split .capacity-bar-marker')).toHaveCount(0);
-        await expect(page.locator('#split .planning-stat-label')).toHaveCount(0);
-        const tooltips = await page.locator('#split [data-tooltip]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-tooltip')));
-        expect(tooltips.length).toBeGreaterThan(0);
-        for (const tip of tooltips) expect(tip).not.toMatch(/Product|Tech|70|30%/);
+        await page.evaluate(arg => window.__oneLane.mount('split', arg), { pair: 'ordinary', stamp: 'tech', compact });
+        await expect(page.locator('#split .capacity-bar-marker')).toHaveCount(1);
+        await expect(page.locator('#split .capacity-bar-marker')).toHaveAttribute('data-tooltip', 'Product / Tech target: 70% / 30%');
+        await expect(page.locator('#split .project-bar-fill.tech')).toHaveCount(1);
+        await expect(page.locator('#split .planning-stat-label')).toHaveCount(compact ? 0 : 1);
+        if (compact) await expect(page.locator('#split .planning-compact-readout')).toHaveText('Product 0.0 · Tech 8.0 SP');
     });
 }
 
 test('Legacy split bar still reports Product and Tech', async ({ page }) => {
     await openHarness(page);
-    await page.evaluate(() => window.__oneLane.mount('split', { workModel: undefined, pair: 'ordinary' }));
+    await page.evaluate(() => window.__oneLane.mount('split', { pair: 'ordinary' }));
     const text = (await page.locator('#split').innerText()).replace(/\s+/g, ' ');
     expect(text).toContain('Product');
     await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(0);

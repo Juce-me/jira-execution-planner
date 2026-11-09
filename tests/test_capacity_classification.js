@@ -97,16 +97,20 @@ test('empty Ad Hoc set leaves Tech story as Tech', async () => {
     );
 });
 
-test('combined (rnd_2027) model classifies as other/other and other/ad_hoc with no Product subtype', async () => {
+test('new (rnd_2027) model: the Allocation stamp decides Product/Tech over the project key, and Ad Hoc still wins', async () => {
     const { classifyCapacityIssue } = await loadUtils();
-    const issue = { key: 'PLAN-E1', fields: { projectKey: 'TECH', epicKey: 'ADHOC-1' } };
+    const stamped = (key, epicKey, stamp) => ({ key, fields: { projectKey: 'TECH', epicKey, projectClassification: stamp } });
 
     assert.deepEqual(
-        classifyCapacityIssue({ key: 'PLAN-E2', fields: { projectKey: 'TECH', epicKey: 'EPIC-9' } }, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
-        { projectType: 'other', capacityType: 'other', productSubtype: null }
+        classifyCapacityIssue(stamped('PLAN-E2', 'EPIC-9', 'product'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'product', capacityType: 'product', productSubtype: 'standard' }
     );
     assert.deepEqual(
-        classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
-        { projectType: 'other', capacityType: 'ad_hoc', productSubtype: null }
+        classifyCapacityIssue({ key: 'PLAN-E3', fields: { projectKey: 'PROD', epicKey: 'EPIC-9', projectClassification: 'tech' } }, { techProjectKeys, adHocEpicSet }),
+        { projectType: 'tech', capacityType: 'tech', productSubtype: null }
+    );
+    assert.deepEqual(
+        classifyCapacityIssue(stamped('PLAN-E1', 'ADHOC-1', 'tech'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' }
     );
 });

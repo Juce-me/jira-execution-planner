@@ -10,7 +10,7 @@
 
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
-import { isCombinedWorkModel, lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
+import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { classifyEpicProjects } from './engBoardCardModel.js';
 import { buildFacetView, countActiveFacets, reconcileSelection } from './engFilterFacets.js';
@@ -69,8 +69,6 @@ function hasNoProjectTrack(epic) {
 
 // `names` is the viewed configuration's EntityNames (the model's defaults when absent).
 export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => false, workModel, names = resolveEntityNames(workModel) } = {}) {
-    // Combined model: one lane, so the Projects (Product/Tech/Other) facet is hidden, uncounted and never filters.
-    const combinedLane = isCombinedWorkModel(workModel);
     const scopeTotal = epicGroups.length;
     const priorityCounts = {};
     const projectCounts = { tech: 0, product: 0, other: 0 };
@@ -83,11 +81,9 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
         if (label) priorityCounts[label] = (priorityCounts[label] || 0) + 1;
 
         const { isTech, isProduct, isOther } = classifyEpicProjects(group, isTechTask);
-        if (!combinedLane) {
-            if (isTech) projectCounts.tech += 1;
-            if (isProduct) projectCounts.product += 1;
-            if (isOther) projectCounts.other += 1;
-        }
+        if (isTech) projectCounts.tech += 1;
+        if (isProduct) projectCounts.product += 1;
+        if (isOther) projectCounts.other += 1;
 
         if (!(group.epic && group.epic.assignee)) unassigned += 1;
         const id = normalizeTrackId(group.epic);
@@ -124,7 +120,6 @@ export function buildEngBoardFacetModel({ epicGroups = [], isTechTask = () => fa
                 // option-sum would double-count it.
                 id: 'projects',
                 label: 'Projects',
-                ...(combinedLane ? { hidden: true } : {}),
                 kind: 'multi',
                 neutralTotal: scopeTotal,
                 options: [

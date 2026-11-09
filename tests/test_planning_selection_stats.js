@@ -179,12 +179,16 @@ test('edited fractional story points recalculate selected fixtures without chang
     assert.equal(stories[0].fields.customfield_10004, 1.5);
 });
 
-test('combined model buckets selected, team-project and excluded stats under one OTHER lane', async () => {
+test('new model buckets selected, team-project and excluded stats by the Allocation stamp, never OTHER', async () => {
     const { buildSelectedProjectStats, buildSelectedTeamProjectStats, buildExcludedProjectStats } = await loadUtils();
-    const tasks = [task('PLAN-E1', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I1', customfield_10004: 8 })];
+    const tasks = [
+        task('PLAN-E1', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I1', customfield_10004: 8, projectClassification: 'tech' }),
+        task('PLAN-E2', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I1', customfield_10004: 3 }),
+    ];
 
-    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(), 'rnd_2027'), { OTHER: 8 });
-    assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, new Set(), 'rnd_2027'), { 'team-a': { product: 0, tech: 0, other: 8 } });
-    assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I1']), techProjectKeys, normalizeEpicKey, 'rnd_2027'), { OTHER: 8 });
-    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys), { PRODUCT: 8 });
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set()), { TECH: 8, PRODUCT: 3 });
+    assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, new Set()), { 'team-a': { product: 3, tech: 8 } });
+    assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I1']), techProjectKeys, normalizeEpicKey), { TECH: 8, PRODUCT: 3 });
+    // Ad Hoc wins over the Tech stamp.
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(['PLAN-I1'])), { PRODUCT: 11 });
 });

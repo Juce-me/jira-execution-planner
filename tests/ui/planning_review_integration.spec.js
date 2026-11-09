@@ -173,7 +173,8 @@ async function installPlanningFixture(page, {
 
     await installDashboardShell(page);
     sharedReviewMocks.set(page, createPlanningReviewMock({ initialPlans }));
-    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), {planningLayout, ...(selectedTeams ? {selectedTeams, activeGroupId: 'group-alpha'} : {})});
+    // `planningLayout: null` seeds no preferences; 'list' seeds a stale List preference (Planning is the Table only, #323).
+    if (planningLayout) await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), {...(planningLayout === 'list' ? { planningLayout } : {}), ...(selectedTeams ? {selectedTeams, activeGroupId: 'group-alpha'} : {})});
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -344,7 +345,7 @@ async function bounds(page) {
 
 for (const [width, height] of [[1440, 900], [1280, 720]]) test(`shared Planning controls retain stable labels, full-match actions and focus help at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    const fixture = await installPlanningFixture(page, { planningLayout: 'table', longTable: true });
+    const fixture = await installPlanningFixture(page, { longTable: true });
     await openPlanning(page, { expectStories: false });
     await page.getByRole('radio', { name: 'Stories', exact: true }).check();
     const panel = page.locator('.planning-panel');
@@ -456,7 +457,7 @@ async function overviewRowGeometry(panel) {
 
 for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overview row: direct controls in order, right-aligned details, no options menu, List toggle or summary readout at ${width}x${height}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height });
-    await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
+    await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
     await openPlanning(page, { expectStories: false });
     const panel = page.locator('.planning-panel');
     await expect(panel).toHaveClass(/planning-panel-compact/);
@@ -556,7 +557,7 @@ async function expectNoteRow(panel, label, { height = 46.9, summary = true } = {
 for (const [width, height] of [[1280, 720], [1440, 900]]) test(`state notes shrink beside the summary and never clip its values at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     // 1. No saved plan: the long guidance note with its summary, then with the worst-case summary.
-    await installPlanningFixture(page, { planningLayout: 'table' });
+    await installPlanningFixture(page, {});
     await openPlanning(page, { expectStories: false });
     const panel = page.locator('.planning-panel');
     await expect(panel.locator('.planning-review-state-note')).toContainText('No saved plan yet.');
@@ -601,7 +602,7 @@ test('Catch Up List keeps its own controls and stored choices and gains no Plann
 // wraps, ellipsizes or overflows its label, sits inside the popover, and the popover sits inside the viewport.
 for (const [width, height] of [[1280, 720], [1440, 900], [390, 844]]) test(`Include by status toggles stay one line tall inside the popover and the viewport at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
-    await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
+    await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
     await openPlanning(page, { expectStories: false });
     const panel = page.locator('.planning-panel');
     const lineHeight = (await panel.getByRole('button', { name: 'Undo', exact: true }).boundingBox()).height;
@@ -628,7 +629,7 @@ for (const [width, height] of [[1280, 720], [1440, 900], [390, 844]]) test(`Incl
 });
 
 test('Include by status: one line of status toggles with included/total counts that include the rest or remove all and stay open', async ({ page }, testInfo) => {
-    const fixture = await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
+    const fixture = await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
     await openPlanning(page, { expectStories: false });
     await page.getByRole('radio', { name: 'Stories', exact: true }).check();
     const checked = page.locator('.planning-review-table tbody input[type=checkbox]:checked');
@@ -685,7 +686,7 @@ test('Include by status: one line of status toggles with included/total counts t
 });
 
 test('a capacity read error stays visible while the overview is compact', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table', capacityProject: 'CAP' });
+    await installPlanningFixture(page, { capacityProject: 'CAP' });
     await page.route('**/api/capacity?*', route => json(route, { error: 'capacity_unavailable' }, 500));
     await openPlanning(page, { expectStories: false });
     const panel = page.locator('.planning-panel');
@@ -701,7 +702,7 @@ test('a capacity read error stays visible while the overview is compact', async 
 });
 
 test('the app-header Refresh also reloads the shared review', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table' });
+    await installPlanningFixture(page, {});
     let reads = 0;
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { reads += 1; return json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }); });
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
@@ -715,7 +716,7 @@ test('the app-header Refresh also reloads the shared review', async ({ page }) =
 });
 
 test('dirty noninitial Sprint review survives Jira catalog refresh and guards an explicit Sprint change', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table' });
+    await installPlanningFixture(page, {});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaVersion:1,sprintId:String(futureSprintId),schemaRevision:0,columns:[],capabilities:{canRead:true,canSave:true} }));
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
     await openPlanning(page, { expectStories: false });
@@ -736,7 +737,7 @@ test('dirty noninitial Sprint review survives Jira catalog refresh and guards an
 });
 
 test('catalog capability loss preserves drafts and recovery invalidates a queued scope clear', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table' });
+    await installPlanningFixture(page, {});
     let unavailable = false;
     await page.route('**/api/sprints*', route => unavailable
         ? json(route, {error:'sprint_board_required'}, 409)
@@ -761,7 +762,7 @@ test('catalog capability loss preserves drafts and recovery invalidates a queued
 });
 
 test('review 401 locks the mounted dashboard and never replays the failed read', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
+    await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
     let reviewReads = 0, expired = false;
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => {
         reviewReads++;
@@ -785,7 +786,7 @@ test('review 401 locks the mounted dashboard and never replays the failed read',
 });
 
 for (const passive of [true, false]) test(`table status chips retain shared presentation with Settings ${passive ? 'open' : 'closed'}`, async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table' });
+    await installPlanningFixture(page, {});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, {schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await openPlanning(page, { expectStories: false });
     if (passive) await page.getByRole('button', { name: /manage team groups/i }).click();
@@ -803,7 +804,7 @@ for (const passive of [true, false]) test(`table status chips retain shared pres
 
 for (const width of [390, 1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
-    await installPlanningFixture(page, { planningLayout: 'table', authMode: 'atlassian_oauth' });
+    await installPlanningFixture(page, { authMode: 'atlassian_oauth' });
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
     await page.route('**/api/issues/PLAN-1/editable-fields?*', route => json(route, { editable: true, currentValue: 1, mappingRevision: 'synthetic', baseUpdated: 'synthetic' }));
     let savedPoints;
@@ -856,7 +857,7 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
 });
 
  test('Stories expose Epic and explicit metadata, totals stay visible and Story Points save through Jira editor', async ({page}) => {
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth'});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     let saved;
     await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
@@ -888,7 +889,7 @@ for (const width of [390, 1280]) test(`Story rows match compact Epic row height 
 });
 
 test('Planning table Story Points save two decimals, round a third before the single POST, reject negatives and cancel on Escape', async ({page}) => {
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth'});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-1/editable-fields?*',route=>json(route,{editable:true,currentValue:1,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     const bodies=[];
@@ -922,7 +923,7 @@ test('Planning table Story Points save two decimals, round a third before the si
 for (const passive of [true,false]) for(const width of [390,1280]) test(`summaries truncate and reveal the full text with Settings ${passive ? 'open' : 'closed'} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth',summary});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await openPlanning(page, { expectStories: false });
@@ -950,7 +951,7 @@ for (const passive of [true,false]) for(const width of [390,1280]) test(`summari
 for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page},testInfo)=>{
     const summary='Original summary';let saved=[];
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth',summary});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>json(route,{editable:true,currentValue:saved.at(-1)||summary,mappingRevision:'synthetic',baseUpdated:'synthetic'}));
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{saved.push(route.request().postDataJSON().value);return json(route,{value:saved.at(-1),result:'updated',mappingRevision:'synthetic'});});
@@ -985,7 +986,7 @@ for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, b
 test('Summary loading and saving show a spinner inside the input and never change the row height',async({page})=>{
     const summary='Original summary';let release,hold;const gate=new Promise(resolve=>{release=resolve});const saveGate=new Promise(resolve=>{hold=resolve});
     await page.setViewportSize({width:1280,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth',summary});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
     await page.route('**/epm-burst.svg',route=>route.fulfill({path:'assets/epm-burst.svg',contentType:'image/svg+xml'}));
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',async route=>{await gate;return json(route,{editable:true,currentValue:summary,mappingRevision:'synthetic',baseUpdated:'synthetic'});});
@@ -1014,7 +1015,7 @@ test('Summary loading and saving show a spinner inside the input and never chang
 });
 
 test('Summary conflict stays inside the cell and reloads before another edit',async({page})=>{
-    let writes=0,reads=0;await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth',summary:'Original summary'});
+    let writes=0,reads=0;await installPlanningFixture(page,{authMode:'atlassian_oauth',summary:'Original summary'});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     await page.route('**/api/issues/PLAN-EPIC/editable-fields?*',route=>{reads++;return json(route,{editable:true,currentValue:reads===1?'Original summary':'Current Jira summary',mappingRevision:'synthetic',baseUpdated:'synthetic'});});
     await page.route('**/api/issues/PLAN-EPIC/field',route=>{writes++;return json(route,{error:'stale_issue'},409);});
@@ -1030,7 +1031,7 @@ test('Summary conflict stays inside the cell and reloads before another edit',as
 });
 
 test('table shows readiness-only Epics and placeholders when no Jira Stories exist',async({page})=>{
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth'});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route('**/api/tasks-with-team-name?*',route=>json(route,{issues:[],epics:{},epicsInScope:[],names:{}}));
     await installUncreatedReadiness(page);
     await openPlanning(page,{expectStories:false});
@@ -1047,7 +1048,7 @@ async function installUncreatedReadiness(page) {
 }
 
 test('table keeps uncreated Stories through Story filters',async({page})=>{
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth'});await installUncreatedReadiness(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});await installUncreatedReadiness(page);await openPlanning(page,{expectStories:false});
     const table=page.locator('.planning-review-table');await expect(table.getByRole('link',{name:'PLAN-EMPTY',exact:true})).toHaveCount(1);
     await page.locator('.filterbar .fb-trigger').click();
     const status=page.locator('.popover [data-facet="status"]');
@@ -1059,7 +1060,7 @@ test('table keeps uncreated Stories through Story filters',async({page})=>{
 });
 
 for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
-    const fixture=await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds,selectedTeams,capacityProject:'CAP',initialPlans:{[futureSprintId]:{includedIssueIds:futureStories.map(story=>story.id)}}});
+    const fixture=await installPlanningFixture(page,{scopeTeamIds,selectedTeams,capacityProject:'CAP',initialPlans:{[futureSprintId]:{includedIssueIds:futureStories.map(story=>story.id)}}});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
     await openPlanning(page,{expectStories:false});
     const panel=page.locator('.planning-panel');
@@ -1115,7 +1116,7 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
 });
 
 test('compact Table panel fits narrow screens and restores normal Planning in Scenario',async({page})=>{
-    await page.setViewportSize({width:390,height:900});await installPlanningFixture(page,{planningLayout:'table'});await openPlanning(page,{expectStories:false});
+    await page.setViewportSize({width:390,height:900});await installPlanningFixture(page,{});await openPlanning(page,{expectStories:false});
     const panel=page.locator('.planning-panel');await expect(panel).toHaveClass(/planning-panel-compact/);
     await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Cap unavailable');
     const primary=panel.locator('.planning-actions button');
@@ -1200,7 +1201,7 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
 
 for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row switch is the shared compact control in the Filters row, and Sort leaves Table view only at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await expect(page.locator('.planning-review-toolbar, .planning-review-toolbar-slot')).toHaveCount(0);
     const controls=page.locator('.filterbar-wrap .fb-view-controls');
     const rowSwitch=controls.getByRole('radiogroup',{name:'Planning review rows'});
@@ -1219,7 +1220,7 @@ for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row s
 
 for (const [width,height] of [[1440,900],[1280,720]]) for (const selectedTeams of [null,['team-alpha']]) test(`the pinned stack with the table header docked is at most 175px at ${width}x${height}${selectedTeams?' with one Team selected':''}`,async({page})=>{
     await page.setViewportSize({width,height});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta'],selectedTeams});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{longTable:true,scopeTeamIds:['team-alpha','team-beta'],selectedTeams});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
     const docked=page.locator('.planning-review-docked-header');await expect(docked).toBeVisible();
@@ -1283,7 +1284,7 @@ test('Planned Teams Effort is a collapsed strip in Table view, expands without r
 
 test('the Planned Teams Effort toggle keeps a readable, stationary hover',async({page},testInfo)=>{
     await page.setViewportSize({width:1440,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     const toggle=effortToggle(page);
     await hoverEvidence(page,toggle,testInfo,'planning-effort-header',{foundation:true,clipped:true,readableDescendants:true});
     const read=()=>toggle.evaluate(node=>{
@@ -1301,7 +1302,7 @@ test('the Planned Teams Effort toggle keeps a readable, stationary hover',async(
 
 test('the docked header follows the sticky stack when its offset changes without any scroll or resize',async({page})=>{
     await page.setViewportSize({width:1280,height:800});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await page.locator('.planning-review-scroll').evaluate(node=>scrollTo(0,scrollY+node.getBoundingClientRect().top+250));
     const docked=page.locator('.planning-review-docked-header'),stack=page.locator('.planning-review-sticky-stack');
@@ -1316,7 +1317,7 @@ test('the docked header follows the sticky stack when its offset changes without
 
 test('Discard and Save sit at the right end of the Filters row only while the review is dirty, and no popup is covered by them',async({page})=>{
     await page.setViewportSize({width:1280,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
+    await installPlanningFixture(page,{scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     const row=page.locator('.filterbar-wrap .filterbar'),controls=row.locator('.fb-view-controls');
     await expect(controls.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
     await expect(controls.getByRole('button',{name:'Discard changes',exact:true})).toHaveCount(0);
@@ -1370,7 +1371,7 @@ for (const width of [1280, 390]) test(`Catch Up shares the second controls row b
 
 for (const width of [1280,390]) test(`document scroll docks table headings below the measured controls at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:900});
-    await installPlanningFixture(page,{planningLayout:'table',longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);
+    await installPlanningFixture(page,{longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);
     await openPlanning(page,{expectStories:false});
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const scroll=page.locator('.planning-review-scroll'), stack=page.locator('.planning-review-sticky-stack');
@@ -1404,7 +1405,7 @@ for (const width of [1280,390]) test(`document scroll docks table headings below
 async function automaticPlanningFixture(page, { longTable = false, derived = false, groups = 1 } = {}) {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page);
-    const fixture = await installPlanningFixture(page, { planningLayout: 'table', longTable, groups, initialPlans: { [futureSprintId]: {
+    const fixture = await installPlanningFixture(page, { longTable, groups, initialPlans: { [futureSprintId]: {
         includedIssueIds: longTable ? Array.from({ length: 60 }, (_, index) => String(8001 + index)) : futureStories.map(story => story.id),
     } } });
     const state = { remote: false, readGate: null, schemaStatus: 200, readStatus: 200, schemaReads: 0, values: [], primary: [], saveCalls: [], saveGate: null, saveStatus: 200, canRead: true, unavailable: [], limit: null, reviewGroups: [] };
@@ -1562,7 +1563,7 @@ test('automatic Planning table retains document anchor, horizontal offset, selec
 });
 
 test('the priority menu on the last Planning row overlays the table fully on screen without resizing it', async ({page}) => {
-    await installPlanningFixture(page,{planningLayout:'table',authMode:'atlassian_oauth'});
+    await installPlanningFixture(page,{authMode:'atlassian_oauth'});
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/,route=>json(route,{schemaRevision:0,columns:[],capabilities:{canRead:false,canSave:false}}));
     const priorities=['Blocker','Critical','Major','Minor','Low','Trivial'].map((name,index)=>({id:String(index+1),name}));
     await page.route('**/api/issues/priorities/options*',route=>json(route,{priorities}));

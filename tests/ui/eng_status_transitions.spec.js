@@ -1068,7 +1068,7 @@ async function openPlanningTable(page, { selectAll = false } = {}) {
 }
 
 test('Planning Table Story pill changes only its own row when no Story is selected', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ planningLayout: 'table', selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanningTable(page);
@@ -1085,7 +1085,7 @@ test('Planning Table Story pill changes only its own row when no Story is select
 });
 
 test('Planning Table Story pill ignores the selected Stories', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ planningLayout: 'table', selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanningTable(page, { selectAll: true });
@@ -1098,7 +1098,7 @@ test('Planning Table Story pill ignores the selected Stories', async ({ page }) 
 });
 
 test('Planning Table Epic pill changes only that Epic even with Stories selected', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ planningLayout: 'table', selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanningTable(page, { selectAll: true });
@@ -1112,7 +1112,7 @@ test('Planning Table Epic pill changes only that Epic even with Stories selected
 });
 
 test('Planning Table Story status updates optimistically and keeps other pills usable', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ planningLayout: 'table', selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 3000 });
     await page.goto(appBaseUrl);
     await openPlanningTable(page);
@@ -1139,7 +1139,7 @@ test('Planning Table Story status updates optimistically and keeps other pills u
 });
 
 test('Planning Table Story status rolls back and reports a failed change', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ planningLayout: 'table', selectedSprint: futureSprintId, sprintName: futureSprintName }));
+    await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const failedTransition = body => ({
         requested: 1,
         succeeded: 0,
@@ -1197,7 +1197,7 @@ function unexpectedCallsSince(calls, index) {
 
 for (const layout of ['List', 'Table']) {
     test(`Planning ${layout} Story status change shows at once and makes no other read`, async ({ page }) => {
-        await setPrefs(page, catchUpPrefs({ ...(layout === 'Table' ? { planningLayout: 'table' } : {}), selectedSprint: futureSprintId, sprintName: futureSprintName }));
+        await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
         const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 800 });
         await page.goto(appBaseUrl);
         if (layout === 'Table') await openPlanningTable(page);

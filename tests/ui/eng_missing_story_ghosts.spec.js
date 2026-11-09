@@ -343,8 +343,14 @@ test('Planning requests readiness without starting Catch Up alert sources', asyn
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-    // Planning is the Table only (#323): the readiness-only Epic is a Table row.
-    await expect(page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'ZERO-EPIC', exact: true }) })).toHaveCount(1);
+    // Planning is the Table only (#323): the readiness-only Epic row carries its awaited requirement, and the Story rows
+    // show the requirement as its awaiting-creation placeholder.
+    const epicRow = page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'ZERO-EPIC', exact: true }) });
+    await expect(epicRow).toHaveCount(1);
+    await expect(epicRow.locator('.planning-review-awaiting')).toBeVisible();
+    await expect(epicRow.locator('.planning-review-awaiting')).toContainText('1 Story awaited');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(page.locator('.planning-review-table tbody tr').filter({ hasText: 'awaiting creation' }).filter({ has: page.locator('a[href$="/browse/ZERO-EPIC"]') })).toHaveCount(1);
     await waitForCall(calls, '/api/eng/story-readiness');
     expect(calls.filter(call => (
         call.pathname === '/api/missing-info'

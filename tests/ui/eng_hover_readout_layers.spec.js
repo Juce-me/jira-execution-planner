@@ -230,7 +230,7 @@ test('Board card passive priority readout paints, passes the pointer and leaves 
 });
 
 test('Planning Table editable priority cell readout paints above the docked table header', async ({ page }) => {
-    await open(page, { showPlanning: true, planningLayout: 'table' }, { ready: 'table button.task-priority-icon[data-priority]' });
+    await open(page, { showPlanning: true }, { ready: 'table button.task-priority-icon[data-priority]' });
     const icon = page.locator('table tbody button.task-priority-icon[data-priority]').first();
     expectPaintedAndOnScreen(await hoverAndProbe(page, icon, 'planning-table-editable-cell'));
     await page.evaluate(() => window.scrollTo(0, 400));
@@ -245,7 +245,7 @@ test('Planning Table editable priority cell readout paints above the docked tabl
 
 test('read-only Planning Table priority cell shows the name beside the icon and mounts no duplicate readout', async ({ page }) => {
     // A non-OAuth session renders the read-only cell: the icon followed by the priority name.
-    await open(page, { showPlanning: true, planningLayout: 'table' }, { ready: 'table .task-priority-icon[data-priority]', authMode: 'jira_basic' });
+    await open(page, { showPlanning: true }, { ready: 'table .task-priority-icon[data-priority]', authMode: 'jira_basic' });
     const icon = page.locator('table tbody .task-priority-icon[data-priority]').first();
     expect(await icon.evaluate(node => node.tagName)).toBe('SPAN');
     const label = await icon.getAttribute('data-priority');

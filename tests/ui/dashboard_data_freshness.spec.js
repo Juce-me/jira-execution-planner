@@ -1114,7 +1114,7 @@ for (const kind of ['Stories', 'Epics']) test(`Planning Table ${kind} refreshes 
     const scenario = buildScenario();
     Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
     const { ctx, lifecycle } = await setup(page, { scenario,
-        prefs: { planningLayout: 'table' },
+        prefs: {},
         configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
             ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
         })),

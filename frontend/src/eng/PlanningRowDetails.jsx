@@ -45,7 +45,7 @@ function DetailsContent({ row, jiraUrl, context, panelRef, onClose, onSizeChange
     const dependencyContext = { dependencyData, issueByKey: knownIssues, visibleTaskKeySet: new Set(),
         dependencyFocus: related ? { taskKey: issue.key, action: related.category } : null,
         onHoverEnter: () => {}, onHoverLeave: () => {} };
-    const card = (task, isLeaf = true) => <IssueCard key={task.key} task={task.key === issue.key ? task : { ...task, fields: { ...task.fields, subtaskSummary: null } }} jiraUrl={jiraUrl} showPlanning={false} allowSelection={false}
+    const card = (task, isLeaf = true) => <IssueCard key={task.key} task={task.key === issue.key ? task : { ...task, fields: { ...task.fields, subtaskSummary: null } }} jiraUrl={jiraUrl} allowSelection={false}
         shouldRenderIssueDependencies={task.key === issue.key} dependencyContext={dependencyContext}
         entityNames={isLeaf ? entityNames : { ...entityNames, child: entityNames.parent, childLevel: entityNames.parentLevel }} InitiativeIcon={InitiativeIcon} isPlanningLeaf={isLeaf}
         subtaskState={storySubtasksByKey[task.key]} onToggleSubtasks={task.key === issue.key ? () => {

@@ -159,8 +159,8 @@ test('EpicBlock passes the planning-leaf role only in the new model; Legacy edit
         statusTransitions: { activeSingleIssueTarget: null }, priorityTransitions: { activePriorityTarget: null }, projectTrackTransitions: { activeProjectTrackTarget: null },
         issueFieldEdits: { activeEditor: null, pendingIssueKeys: new Set(), status: 'idle' }, issueFieldEditsEnabled: true, jiraUrl: 'https://jira.example',
         excludedEpicSet: new Set(), normalizeEpicKey: String, stickyEpicFocusKey: null, epicRefMap: { current: new Map() }, statusTransitionEnabled: false,
-        renderPriorityIcon: () => null, showStats: false, showPlanning: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() },
-        selectedTasks: {}, getTeamInfo: () => ({}), shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false, entityNames,
+        renderPriorityIcon: () => null, showStats: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() },
+        getTeamInfo: () => ({}), shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false, entityNames,
     });
     const editableKeys = entityNames => {
         const html = renderToStaticMarkup(React.createElement(EpicBlock, props(entityNames)));
@@ -169,7 +169,7 @@ test('EpicBlock passes the planning-leaf role only in the new model; Legacy edit
     };
     assert.deepEqual(editableKeys(LEGACY), ['SYN-4'], 'Legacy edits only by the Story/Epic name test, as before');
     assert.deepEqual(editableKeys(RENAMED), ['SYN-2', 'SYN-3', 'SYN-4'], 'every new-model planning row is the planning leaf');
-    const capacityTitle = entityNames => renderToStaticMarkup(React.createElement(EpicBlock, { ...props(entityNames), showPlanning: true, canEditSharedConfiguration: true }))
+    const capacityTitle = entityNames => renderToStaticMarkup(React.createElement(EpicBlock, { ...props(entityNames), showStats: true, canEditSharedConfiguration: true }))
         .match(/class="epic-stat-toggle[^"]*"[^>]*title="([^"]+)"/)[1];
     assert.equal(capacityTitle(LEGACY), 'Include/exclude this epic in shared group capacity and reporting');
     assert.equal(capacityTitle(RENAMED), 'Include/exclude this theme in shared group capacity and reporting');

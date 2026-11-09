@@ -618,7 +618,7 @@ test('Planning Jira export follows Team, search, priority and Sprint scope witho
 test('Planning Jira export uses filtered Story keys in Table layout', async ({ page }, testInfo) => {
     await installPlanningFixture(page);
     // Planning has no List toggle (2026-11-06): the Table layout comes from the saved preference.
-    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: 'table'})));
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({})));
     await page.goto(appBaseUrl);
     await selectSprint(page, futureSprintName);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
@@ -1109,6 +1109,10 @@ test('planning epic excluded-capacity toggle updates shared group config', async
     const included = epicRow.getByRole('button', { name: /Included/ });
     await included.hover();
     await expect(included).toHaveCSS('transform', 'none');
+    // The Table chip keeps its light Included fill and readable ink and draws the inset hover ring inside the clipped cell.
+    await expect(included).toHaveCSS('background-color', 'rgb(236, 253, 245)');
+    await expect(included).toHaveCSS('color', 'rgb(22, 101, 52)');
+    await expect.poll(() => included.evaluate(node => getComputedStyle(node).boxShadow)).toMatch(/inset/);
     await epicRow.screenshot({ path: testInfo.outputPath('included-hover.png') });
     await included.click();
     await expect(epicRow.getByRole('button', { name: /Excluded/ })).toBeVisible();

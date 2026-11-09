@@ -27,15 +27,15 @@ function visibleBand() {
 
 // The first row whose bottom is below the sticky stack, with its viewport top: the row the reader is looking at. A reorder that moves
 // rows above it would shift it, so the caller scrolls by the measured displacement to keep it where it was.
-export function viewportAnchor(rows, idOf = row => row.dataset.reviewRow) {
+export function viewportAnchor(rows) {
     if (window.scrollY === 0) return null; // like native scroll anchoring, a page at its top stays at its top
     const bandTop = visibleBand().top;
     const row = rows.find(candidate => candidate.getBoundingClientRect().bottom > bandTop + 1);
-    return row ? { id: idOf(row), top: row.getBoundingClientRect().top } : null;
+    return row ? { id: row.dataset.reviewRow, top: row.getBoundingClientRect().top } : null;
 }
 
-export function restoreViewportAnchor(rows, anchor, idOf = row => row.dataset.reviewRow) {
-    const row = anchor && rows.find(candidate => idOf(candidate) === anchor.id);
+export function restoreViewportAnchor(rows, anchor) {
+    const row = anchor && rows.find(candidate => candidate.dataset.reviewRow === anchor.id);
     const delta = row ? row.getBoundingClientRect().top - anchor.top : 0;
     if (Math.abs(delta) >= 1) window.scrollBy({ top: delta, left: 0, behavior: 'instant' });
 }

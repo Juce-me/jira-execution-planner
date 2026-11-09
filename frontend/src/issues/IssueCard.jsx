@@ -23,7 +23,6 @@ export default function IssueCard({
     teamLabel,
     statusClassName,
     renderPriorityIcon = () => null,
-    showPlanning = false,
     readingDeparture = false,
     allowSelection = false,
     isSelected = false,
@@ -73,7 +72,7 @@ export default function IssueCard({
     const isKilled = statusName === 'Killed';
     const isDone = statusName === 'Done';
     const isIncomplete = normalizeIssueStatus(statusName) === 'incomplete';
-    const canSelect = !readingDeparture && (showPlanning || allowSelection);
+    const canSelect = !readingDeparture && allowSelection;
     const embeddedSubtaskSummary = task.fields.subtaskSummary || null;
     const activeSubtaskSummary = subtaskState?.summary || embeddedSubtaskSummary;
     const subtaskProgress = buildStorySubtaskProgress(activeSubtaskSummary);
@@ -211,7 +210,7 @@ export default function IssueCard({
 
     return (
         <div
-            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${showPlanning ? 'is-planning-selectable' : ''} ${showPlanning && isSelected ? 'is-planning-selected' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading || isLeaving ? 'is-removing' : ''}`}
+            className={`task-item priority-${task.fields.priority?.name.toLowerCase()} ${isDone ? 'status-done' : ''} ${isKilled ? 'status-killed' : ''} ${isIncomplete ? 'status-incomplete' : ''} ${dependencyModel.isFocusActive && !dependencyModel.isRelated ? 'is-dimmed' : ''} ${dependencyModel.isFocused ? 'is-focused' : ''} ${dependencyModel.isUpstream ? 'is-upstream' : ''} ${dependencyModel.isDownstream ? 'is-downstream' : ''} ${isRemoveFading || isLeaving ? 'is-removing' : ''}`}
             data-reading-departure={readingDeparture || undefined}
             data-task-key={task.key}
             data-task-id={task.id || task.key}
@@ -269,13 +268,12 @@ export default function IssueCard({
                             {task.fields.summary}
                         </a>
                     </h3>
-                    {canSelect && !showPlanning && selectionCheckbox}
+                    {canSelect && selectionCheckbox}
                 </div>
                 <div className="task-header-right">
                     <span className="task-inline-meta">
                         {taskKeyLink}
                         {storyPointsNode}
-                        {showPlanning && selectionCheckbox}
                     </span>
                 </div>
             </div>

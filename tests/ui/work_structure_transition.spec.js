@@ -292,7 +292,7 @@ test('a stale stamp keeps the Story Points draft, refreshes the configuration on
 });
 
 test('Planning table (combined): Initiatives/Epics, native review kinds, stamped review calls; era round trip keeps independent layouts', async ({ page }) => {
-    const state = await start(page, { prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', planningLayout: 'table', showPlanning: true } });
+    const state = await start(page, { prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', showPlanning: true } });
     await expect(page.locator('.task-item, .planning-review-region').first()).toBeVisible();
     const region = page.getByRole('region', { name: 'Planning Sprint review' });
     if (!(await region.isVisible())) await page.getByRole('radio', { name: 'Planning', exact: true }).click();

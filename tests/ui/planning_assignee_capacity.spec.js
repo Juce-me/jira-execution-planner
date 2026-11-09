@@ -88,7 +88,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
     await installDashboardShell(page);
     // Planning counts only Stories included in the shared plan (#331); the previous default selection becomes a saved plan of every Story.
     sharedReviewMocks.set(page, createPlanningReviewMock({ initialPlans: { [futureSprintId]: { includedIssueIds: issues.map(issue => issue.id) } } }));
-    await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { planningLayout: 'table', selectedTeams, activeGroupId: 'group-alpha', ...prefs });
+    await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), { selectedTeams, activeGroupId: 'group-alpha', ...prefs });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());

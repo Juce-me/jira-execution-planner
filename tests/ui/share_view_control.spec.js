@@ -703,7 +703,7 @@ async function openShareFixture(page, layout = 'list', withSynthetic = false) {
     }
     if (layout === 'list') await openCatchUp(page, ctx, { width: 1440, height: 900 });
     else {
-        await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true, planningLayout: 'table' }));
+        await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true }));
         await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
         await expect(page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-1"]')).toBeVisible();
     }

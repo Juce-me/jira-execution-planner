@@ -1010,6 +1010,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicRefMap = useRef(new Map());
             const stickyEpicFrameRef = useRef(null);
+            const renderedLayoutRef = useRef({}); // the latest sticky-focus key and Planning offset (rendered or requested): a same-value setState is skipped (#323 DoD 9)
             const groupStateRef = useRef(new Map()), issueEditStateRef = useRef(createEngIssueEditState()), mutationScopeRef = useRef('');
             const { planningOriginals, holdEditor, deferReorder, isHeld, confirmedEdit, noteEditStart, noteConfirmed, ackConfirmed } = usePlanningIssueEdits({ issueEditState: issueEditStateRef.current, onReorderReleased: key => reorderLanesFor(key) });
             const restoringGroupRef = useRef(false);
@@ -4169,12 +4170,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 teamSelectionHydratedScopeRef.current = teamSelectionScopeKey;
                 teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
                 teamSelectionSkipPersistScopeRef.current = hydrationWillUpdateSelection ? teamSelectionScopeKey : '';
-                setSelectedTeams(prev => {
-                    const normalizedPrev = normalizeSelectedTeams(prev);
-                    const sameLength = normalizedPrev.length === nextSelectedTeams.length;
-                    const sameTeams = sameLength && normalizedPrev.every((id, index) => id === nextSelectedTeams[index]);
-                    return sameTeams ? prev : nextSelectedTeams;
-                });
+                const sameTeams = (value) => { const normalized = normalizeSelectedTeams(value); return normalized.length === nextSelectedTeams.length && normalized.every((id, index) => id === nextSelectedTeams[index]); };
+                // Skips a same-value setState: it would still queue an update that costs App a render later (#323 DoD 9).
+                if (!sameTeams(selectedTeams)) setSelectedTeams(prev => (sameTeams(prev) ? prev : nextSelectedTeams));
                 saveTeamSelectionState(getLocalStorage(), teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
                 if (teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey) teamSelectionCarryForwardRef.current = null;
             }, [
@@ -4513,6 +4511,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0;
             const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight + pinHeight;
             alertStackRef.current = { compactHeight: compactHeaderOffset, filterBarHeight, pinHeight }; // read after two frames, so the pinned × sees the pin cleared
+            renderedLayoutRef.current = { stickyEpicFocusKey, planningOffset };
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
@@ -4534,7 +4533,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             nextStickyKey = epicKey;
                         }
                     });
-                    setStickyEpicFocusKey(prev => (prev === nextStickyKey ? prev : nextStickyKey));
+                    // A same-value setState still queues an update that costs App a render later (#323 DoD 9), so skip it.
+                    if (renderedLayoutRef.current.stickyEpicFocusKey !== nextStickyKey) { renderedLayoutRef.current.stickyEpicFocusKey = nextStickyKey; setStickyEpicFocusKey(nextStickyKey); }
                 };
 
                 const scheduleStickyEpicFocus = () => {
@@ -5481,7 +5481,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (!node) return;
                 const updateOffset = () => {
                     const height = node.getBoundingClientRect().height || 0;
-                    setPlanningOffset(height);
+                    if (renderedLayoutRef.current.planningOffset !== height) { renderedLayoutRef.current.planningOffset = height; setPlanningOffset(height); }
                 };
                 updateOffset();
                 // ResizeObserver catches content changes and CSS transitions

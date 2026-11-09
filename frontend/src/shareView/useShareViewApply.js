@@ -68,7 +68,9 @@ export function useShareViewApply(options) {
         controller.noteCommit();
         controller.evaluate();
         controller.flushTrack(options.trackShareViewAction, options.analyticsReady);
-        setShareDisabled(isShareDisabled(options, selectApplyTerminal()));
+        // This effect runs after every commit; a same-value setState would still queue an update that costs a render (#323).
+        const nextShareDisabled = isShareDisabled(options, selectApplyTerminal());
+        if (nextShareDisabled !== shareDisabled) setShareDisabled(nextShareDisabled);
     });
 
     React.useEffect(() => {

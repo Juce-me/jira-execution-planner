@@ -660,6 +660,8 @@ test('capacity edit and cancel keep one accessible 28px editor and restore focus
     await page.setViewportSize({ width: 1028, height: 720 });
     const { calls } = await openPlanning(page);
     const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    // The baseline is taken after Show capacity details has finished its transition (the cards' width animates for ~400 ms).
+    await page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
     const originalBox = await card.boundingBox();
 
     await card.hover();

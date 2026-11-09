@@ -1855,6 +1855,28 @@ test('after Enter commits a cell, Cmd/Ctrl+Z undoes it', async ({ page }) => {
     await expect(undoButton(page)).toBeDisabled();
 });
 
+// The cell containers are focusable only so Enter can keep focus in the table; a pointer click on their padding shows no ring.
+test('a pointer click on an assignee cell\'s padding shows no focus outline', async ({ page }, testInfo) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const input = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    const cell = rowOf(page, 'acc-ann').locator('td.planning-review-storyPoints').first();
+    await expect(cell.getByRole('textbox', { name: 'Capacity for Ann Synthetic' })).toHaveCount(1);
+    const [cellBox, inputBox] = [await cell.boundingBox(), await input.boundingBox()];
+    const gap = inputBox.x - cellBox.x;
+    expect(gap, 'the cell has padding left of its input').toBeGreaterThan(2);
+    await page.mouse.click(cellBox.x + gap / 2, cellBox.y + cellBox.height / 2);
+    await page.mouse.move(5, 600);
+    const ring = await page.evaluate(() => { const node = document.activeElement, style = getComputedStyle(node);
+        return { tag: node.tagName, focusVisible: node.matches(':focus-visible'), outline: style.outlineStyle === 'none' || parseFloat(style.outlineWidth) === 0 ? 'none' : `${style.outlineStyle} ${style.outlineWidth}`, shadow: style.boxShadow }; });
+    // The click focuses the cell container (Chromium, Firefox and WebKit), which paints no ring for a pointer focus.
+    expect(ring, 'no ring on a pointer-focused cell').toEqual({ tag: 'TD', focusVisible: false, outline: 'none', shadow: 'none' });
+    expect(server.state.patches).toHaveLength(0);
+    await rowOf(page, 'acc-ann').screenshot({ path: `tmp/planning-323-every-team/task8/pointer-cell-click-${testInfo.project.name || 'default'}.png`, animations: 'disabled' });
+});
+
 test('while a cell is being edited, Cmd/Ctrl+Z is the input\'s native undo', async ({ page }) => {
     const server = capacityServer({ rows: annRows() });
     await install(page, { server });

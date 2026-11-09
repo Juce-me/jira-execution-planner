@@ -850,18 +850,6 @@ def classify_project(fields, project_map, *, fallback_product_projects=(), fallb
     return 'other'
 
 
-def _allocation_class(key, fields, epic_key, epic_by_key, field_id, allocation_types, objectives):
-    """DELIVERY child (Epic) over its Board epic (Initiative) and that Initiative's Objective.
-
-    ``objectives`` holds the Objectives the route read (``{key: raw Allocation}``); a parent missing from it
-    is ``unavailable`` and counts as Product."""
-    initiative = epic_by_key[epic_key].get('fields') or {}
-    details = {epic_key: {'allocation': allocation_classification.allocation_value(initiative.get(field_id)) if field_id else None,
-                          'initiative': {'key': (initiative.get('parent') or {}).get('key')}}}
-    leaf = {'key': key, 'fields': {'epicKey': epic_key, **({field_id: fields.get(field_id)} if field_id else {})}}
-    return allocation_classification.stamp_epics([leaf], details, objectives, field_id, allocation_types)[key]
-
-
 def _text(value, *, nullable=False):
     if value is None and nullable:
         return None
@@ -1043,16 +1031,20 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
                   story_points_field_id='customfield_10004', team_field_id='customfield_30101',
                   sprint_field_id='customfield_10101', project_track_field_id='customfield_35024',
                   delivery_owner_field_id=None, fallback_product_projects=(), fallback_tech_projects=(),
-                  require_children=False, allocation_field_id='', allocation_types=None,
-                  allocation_objectives=None):
-    """``allocation_types`` (a list, DELIVERY only) classifies children by Allocation instead of by project;
-    ``allocation_objectives`` (``{Objective key: raw Allocation}``) answers blank Initiatives."""
+                  require_children=False, allocation_field_id='', allocation_types=None):
+    """``allocation_types`` (a list, DELIVERY only) classifies each Board epic (Initiative) once by its own
+    Allocation (``product|tech|none``) and stamps that class on the epic and on its children."""
     epic_by_key = {}
     for row in epics:
         key = _normalized_key(row.get('key') if isinstance(row, dict) else None)
         if not key or key in epic_by_key:
             raise EngBoardError('board_projection_invalid', phase='shape', reason='epic.key')
         epic_by_key[key] = row
+    epic_classes = None if allocation_types is None else {
+        key: allocation_classification.classify_initiative(
+            row['fields'].get(allocation_field_id)
+            if allocation_field_id and isinstance(row.get('fields'), dict) else None, allocation_types)
+        for key, row in epic_by_key.items()}
     status_to_column = {}
     for column in columns:
         for status in column['statuses']:
@@ -1092,9 +1084,7 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
             'projectClassification': classify_project(
                 fields, project_map, fallback_product_projects=fallback_product_projects,
                 fallback_tech_projects=fallback_tech_projects,
-            ) if allocation_types is None else _allocation_class(
-                key, fields, epic_key, epic_by_key, allocation_field_id, allocation_types,
-                allocation_objectives or {}),
+            ) if epic_classes is None else epic_classes[epic_key],
         })
     result_epics = []
     for epic_key in sorted(epic_by_key):
@@ -1117,6 +1107,7 @@ def project_board(epics, children, *, project_map, columns, epic_link_field_id=N
             'updated': _shape_value('epic.updated', _text, fields.get('updated'), nullable=True),
             'parent': _shape_value('epic.parent', _parent, fields.get('parent')),
             'columnId': status_to_column.get(status['name'], fallback_column_id),
+            **({} if epic_classes is None else {'projectClassification': epic_classes[epic_key]}),
             'children': sorted(child_map[epic_key], key=lambda item: item['key']),
         })
     projection = {'epics': result_epics}

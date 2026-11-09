@@ -395,6 +395,46 @@ class EngBoardStreamWriterTests(unittest.TestCase):
                 'type': 'progress', 'columnId': 'todo', 'loadedChildren': 0, 'byEpic': [],
             })
 
+    def test_delivery_writer_accepts_the_none_class_and_legacy_frames_are_unchanged(self):
+        epic = {
+            'key': 'PLAN-I1', 'summary': 'Initiative', 'status': {'id': '1', 'name': 'To Do'},
+            'priority': None, 'assignee': None, 'deliveryOwner': None, 'projectTrack': None,
+            'updated': None, 'parent': None, 'columnId': 'todo',
+        }
+        child = {
+            'key': 'PLAN-E1', 'epicKey': 'PLAN-I1', 'summary': 'Epic', 'status': {'id': '1', 'name': 'To Do'},
+            'priority': None, 'issueType': {'id': '10002', 'name': 'Epic'}, 'assignee': None, 'updated': None,
+            'storyPoints': 3, 'team': None, 'project': {'id': '3', 'name': 'Plan'},
+            'projectClassification': 'none', 'sprintIds': [],
+        }
+
+        def column(epic_value, child_value):
+            return {'protocolVersion': 1, 'generationId': 'generation-1', 'sequence': 1, 'type': 'column',
+                    'columnId': 'todo', 'epics': [epic_value], 'children': [child_value], 'authoritative': True}
+
+        def write(frame, *, delivery):
+            writer = EngBoardStreamWriter(delivery=delivery)
+            writer.write(start_frame())
+            return writer.write(frame)
+        for value in ('product', 'tech', 'none'):
+            with self.subTest(value=value):
+                write(column({**epic, 'projectClassification': value},
+                             {**child, 'projectClassification': value}), delivery=True)
+        write(column(epic, child), delivery=True)  # the epic key is optional
+        for epic_value, child_value in (({**epic, 'projectClassification': 'bogus'}, child),
+                                        ({**epic, 'projectClassification': 'other'}, child),
+                                        (epic, {**child, 'projectClassification': 'bogus'})):
+            with self.subTest(epic=epic_value, child=child_value):
+                with self.assertRaises(EngBoardFrameError):
+                    write(column(epic_value, child_value), delivery=True)
+        # Legacy: no epic class, children stay product|tech|other.
+        legacy_child = {**child, 'projectClassification': 'other'}
+        write(column(epic, legacy_child), delivery=False)
+        for epic_value, child_value in (({**epic, 'projectClassification': 'tech'}, legacy_child), (epic, child)):
+            with self.subTest(legacy_epic=epic_value, legacy_child=child_value):
+                with self.assertRaises(EngBoardFrameError):
+                    write(column(epic_value, child_value), delivery=False)
+
     def test_writer_closes_after_terminal_frame(self):
         writer = EngBoardStreamWriter()
         writer.write(start_frame())

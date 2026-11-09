@@ -568,14 +568,21 @@ class ComponentBoardStreamTests(unittest.TestCase):
         authoritative = [f for f in frames if f['type'] == 'index' and f.get('membership') == 'authoritative']
         self.assertEqual([['PLAN-I1']], [[e['key'] for e in f['epics']] for f in authoritative])
 
-    def test_delivery_children_carry_the_allocation_classification(self):
+    def test_board_reads_no_objective_and_no_child_allocation_field(self):
         field = 'customfield_40001'
 
         def mapped(bundle):
             bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
+        objective_type = {'id': '10010', 'name': 'Objective'}
         leaves = {key: json.loads(json.dumps(row)) for key, row in self.LEAVES.items()}
-        leaves['PLAN-E1']['fields'][field] = {'value': 'Platform'}
-        leaves['PLAN-E2']['fields'][field] = {'value': 'Growth'}
+        leaves['PLAN-E1']['fields'][field] = {'value': 'Growth'}     # an Epic's own value is ignored
+        leaves['PLAN-E2']['fields'][field] = {'value': 'Platform'}
+        leaves['PLAN-E4'] = leaf('PLAN-E4', 'PLAN-I2', 3, ('Component A',))
+        valued = parent_shell('PLAN-I1')
+        valued['fields'][field] = {'value': 'Platform'}
+        blank = parent_shell('PLAN-I2')
+        blank['fields']['parent'] = {'key': 'PLAN-O1', 'fields': {'issuetype': objective_type}}
+        blank['fields'][field] = None
         fields_seen = []
         original = eng_board_routes._search_page
 
@@ -583,67 +590,21 @@ class ComponentBoardStreamTests(unittest.TestCase):
             fields_seen.append(list(payload.get('fields') or []))
             return original(server, snapshot, transport, payload, timeout)
         with patch.object(self, 'LEAVES', leaves), patch.object(eng_board_routes, '_search_page', side_effect=spy):
-            frames, _calls = self.stream(self.snapshot(('Component A', 'Component B'), mutate=mapped))
+            frames, calls = self.stream(self.snapshot(('Component A', 'Component B'), mutate=mapped),
+                                        initiatives={'PLAN-I1': valued, 'PLAN-I2': blank})
         self.assertEqual('success', frames[-1].get('outcome'), frames)
         classes = {child['key']: child['projectClassification'] for frame in frames if frame['type'] == 'column'
                    for child in frame['children']}
-        self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E2': 'product'}, classes)
-        self.assertEqual([False, True, True], [field in fields for fields in fields_seen])  # leaf discovery, Initiatives, children
-
-    def test_delivery_board_reads_the_objective_only_for_blank_initiatives_in_batches_of_40(self):
-        field = 'customfield_40001'
-
-        def mapped(bundle):
-            bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
-        objective_type = {'id': '10010', 'name': 'Objective'}
-
-        def initiative(key, objective=None, allocation=None, parent_type=objective_type):
-            row = parent_shell(key)
-            if objective:
-                row['fields']['parent'] = {'key': objective, 'fields': {'issuetype': parent_type}}
-            row['fields'][field] = {'value': allocation} if allocation else None
-            return row
-        objective_reads = []
-
-        def run(initiatives, objectives):
-            leaves = {key: json.loads(json.dumps(row)) for key, row in self.LEAVES.items()}
-            for index, key in enumerate(sorted(initiatives)):
-                leaves[f'PLAN-E{index + 10}'] = leaf(f'PLAN-E{index + 10}', key, 1, ('Component A',))
-            original = eng_board_routes._search_page
-            objective_reads.clear()
-
-            def spy(server, snapshot, transport, payload, timeout):
-                if payload.get('fields') == [field]:
-                    keys = re.findall(r'PLAN-O\d+', payload['jql'])
-                    objective_reads.append(keys)
-                    return {'issues': [{'key': key, 'fields': {field: objectives.get(key)}} for key in keys],
-                            'isLast': True}
-                return original(server, snapshot, transport, payload, timeout)
-            with patch.object(self, 'LEAVES', leaves), \
-                    patch.object(eng_board_routes, '_search_page', side_effect=spy):
-                frames, _calls = self.stream(self.snapshot(('Component A',), mutate=mapped),
-                                             initiatives=initiatives)
-            self.assertEqual('success', frames[-1].get('outcome'), frames)
-            return {child['key']: child['projectClassification'] for frame in frames if frame['type'] == 'column'
-                    for child in frame['children']}
-
-        # Every Initiative carries a value: no Objective read at all.
-        valued = {'PLAN-I1': initiative('PLAN-I1', 'PLAN-O1', 'Growth')}
-        self.assertEqual({'PLAN-E1': 'product', 'PLAN-E10': 'product'}, run(valued, {}))
-        self.assertEqual([], objective_reads)
-        # A blank Initiative under a Tech Objective: its blank Epics are Tech, the valued Epic keeps its own.
-        blank = {'PLAN-I1': initiative('PLAN-I1', 'PLAN-O1')}
-        classes = run(blank, {'PLAN-O1': {'value': 'Platform'}})
-        self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E10': 'tech'}, classes)
-        self.assertEqual([['PLAN-O1']], objective_reads)
-        # 41 distinct Objectives cost exactly two reads; an untyped parent is not an Objective and is never read.
-        many = {f'PLAN-I{n}': initiative(f'PLAN-I{n}', f'PLAN-O{n}') for n in range(1, 42)}
-        many['PLAN-I99'] = initiative('PLAN-I99', 'PLAN-O99', parent_type={'id': '10001', 'name': 'Initiative'})
-        classes = run(many, {f'PLAN-O{n}': {'value': 'Platform'} for n in range(1, 42)})
-        self.assertEqual([40, 1], [len(keys) for keys in objective_reads])
-        self.assertNotIn('PLAN-O99', [key for keys in objective_reads for key in keys])
-        self.assertEqual('product', classes[f'PLAN-E{len(many) + 9}'], 'PLAN-I99 sorts last: untyped parent')
-        self.assertEqual({'tech'}, {classes[f'PLAN-E{n}'] for n in range(10, 51)})
+        self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E2': 'tech', 'PLAN-E4': 'none'}, classes)
+        epic_frames = [frame for frame in frames if frame['type'] in {'index', 'column'}]
+        self.assertTrue(epic_frames)
+        for frame in epic_frames:
+            expected = {'PLAN-I1': 'tech', 'PLAN-I2': 'none'}
+            for epic in frame['epics']:
+                self.assertEqual(expected[epic['key']], epic['projectClassification'], frame['type'])
+        self.assertFalse(any('PLAN-O1' in jql for jql in calls))   # no Objective read
+        # Leaf discovery, Initiatives, children: only the Initiative read carries the Allocation field.
+        self.assertEqual([False, True, False], [field in fields for fields in fields_seen])
 
     def test_a_plus_b_shows_both_epics_under_one_initiative(self):
         frames, _calls = self.stream(self.snapshot(('Component A', 'Component B')))
@@ -737,32 +698,3 @@ class BoardSelectorTests(unittest.TestCase):
         self.assertEqual(query.scope, 'all_work')
         with self.assertRaises(eng_board_routes.BoardRouteError):
             eng_board_routes._parse_query(MultiDict([('departmentId', 'd'), ('scope', 'all_work'), ('bogus', '1')]))
-
-
-class BoardObjectiveBatchTests(unittest.TestCase):
-    """A3b: an unreadable Objective batch counts as Product; only sign-in failures stop the Board."""
-
-    def setUp(self):
-        roles = Mock()
-        roles.ancestor_term.return_value = ('id', '10003')
-        self.snapshot = Mock(work_request=Mock(roles=roles))
-        self.initiatives = [{'key': 'PLAN-I1', 'fields': {
-            'customfield_9': None,
-            'parent': {'key': 'PLAN-O1', 'fields': {'issuetype': {'id': '10003'}}}}}]
-
-    def read(self, page_effect):
-        with patch.object(eng_board_routes, '_search_page', side_effect=page_effect):
-            return eng_board_routes._objective_allocations(
-                Mock(), self.snapshot, Mock(), self.initiatives, 'customfield_9')
-
-    def test_malformed_batches_leave_their_objectives_unread(self):
-        for effect in (eng_board.EngBoardError('board_projection_invalid', phase='index'),
-                       [['not', 'a', 'page']], [{'issues': ['not an issue']}], [{'issues': 'bogus'}]):
-            with self.subTest(effect=effect):
-                self.assertEqual(self.read(effect), {})
-
-    def test_a_readable_batch_is_used_and_sign_in_failure_still_raises(self):
-        page = {'issues': [{'key': 'PLAN-O1', 'fields': {'customfield_9': {'value': 'Platform'}}}]}
-        self.assertEqual(self.read([page]), {'PLAN-O1': {'value': 'Platform'}})
-        with self.assertRaises(eng_board_routes.AuthError):
-            self.read(eng_board_routes.AuthError('auth_required', 'Atlassian authentication is required.'))

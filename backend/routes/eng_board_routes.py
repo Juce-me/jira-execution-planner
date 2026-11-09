@@ -19,7 +19,7 @@ from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
-from backend.services import allocation_classification, eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
+from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
 from backend.services.eng_board_stream import (
     ENG_BOARD_PROTOCOL_VERSION, EngBoardChildScheduler, EngBoardRequestDeadline,
     EngBoardFrameError, EngBoardRequestTransport, EngBoardStreamWriter,
@@ -625,6 +625,7 @@ class _CandidateIndexPolicy:
             columns=self.snapshot.board['columns'],
             project_track_field_id=self.snapshot.project_track_field_id,
             delivery_owner_field_id=self.snapshot.delivery_owner_field_id,
+            **_allocation_options(self.snapshot),
         )
         delta_shells = _shells(projection)
         if frozenset(row['key'] for row in delta_shells) != delta_keys:
@@ -695,43 +696,12 @@ def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, compl
 
 
 def _allocation_options(snapshot):
-    """DELIVERY classifies children by Allocation (field id + mapping from the admitted context); Legacy by project."""
+    """DELIVERY classifies each Initiative by its own Allocation (field id + mapping from the admitted context);
+    Legacy classifies children by project."""
     roles = snapshot.work_request.roles if snapshot.work_request is not None else None
     if roles is None or roles.is_legacy:
         return {}
     return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': roles.allocation_types}
-
-
-def _objective_allocations(server, snapshot, transport, initiatives, field_id):
-    """``{Objective key: raw Allocation}`` for the typed Objectives of blank Initiatives, as ``fetch_tasks`` reads
-    them: distinct keys in batches of 40, nothing when every Initiative has a value.  A failed or malformed batch
-    leaves its Objectives unread, which counts as Product; only a sign-in failure (``AuthError``) propagates."""
-    term = snapshot.work_request.roles.ancestor_term()
-    if not field_id or term is None or term[0] != 'id':
-        return {}
-    details = {}
-    for row in initiatives:
-        fields = row.get('fields') or {}
-        parent = fields.get('parent') or {}
-        parent_type = ((parent.get('fields') or {}).get('issuetype') or {}).get('id')
-        details[row['key']] = {'allocation': allocation_classification.allocation_value(fields.get(field_id))}
-        if parent.get('key') and str(parent_type or '') == term[1]:
-            details[row['key']]['initiative'] = {'key': parent['key']}
-    keys = allocation_classification.objective_keys_to_read(
-        [{'fields': {'epicKey': key}} for key in details], details, field_id)
-    objectives = {}
-    for start in range(0, len(keys), 40):
-        batch = keys[start:start + 40]
-        payload = {'jql': f'issueKey in ({",".join(batch)})', 'maxResults': len(batch), 'fields': [field_id]}
-        try:
-            page = _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout())
-        except (BoardJiraUnavailable, eng_board.EngBoardError):
-            continue
-        issues = page.get('issues') if isinstance(page, dict) else None
-        for issue in issues if isinstance(issues, list) else []:
-            if isinstance(issue, dict) and isinstance(issue.get('fields'), dict):
-                objectives[issue.get('key')] = issue['fields'].get(field_id)
-    return objectives
 
 
 def _search_page(server, snapshot, transport, payload, timeout):
@@ -758,7 +728,7 @@ def _search_page(server, snapshot, transport, payload, timeout):
 
 def _frame_stream(server, snapshot, transport, *, generation_id=None,
                   _candidate_updates=None):
-    writer = EngBoardStreamWriter()
+    writer = EngBoardStreamWriter(delivery=bool(_allocation_options(snapshot)))
     generation_id = secrets.token_urlsafe(24) if generation_id is None else generation_id
     sequence = 0
     started = time.monotonic()
@@ -934,7 +904,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         index_projection = eng_board.project_board(
             epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
             project_track_field_id=snapshot.project_track_field_id,
-            delivery_owner_field_id=snapshot.delivery_owner_field_id,
+            delivery_owner_field_id=snapshot.delivery_owner_field_id, **allocation,
         )
         index_shells = _shells(index_projection)
         yield emit('index', epics=index_shells,
@@ -942,9 +912,6 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                    if snapshot.query.scope in {'all_work', 'component'} else 'candidate')
         discovery_complete = True
         raw_by_key = {str(row['key']).strip().upper(): row for row in epics}
-        if allocation:
-            allocation['allocation_objectives'] = _objective_allocations(
-                server, snapshot, transport, epics, allocation['allocation_field_id'])
         column_keys = {
             column['id']: [row['key'] for row in index_shells if row['columnId'] == column['id']]
             for column in snapshot.board['columns']
@@ -955,7 +922,6 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
             value for value in (
                 snapshot.epic_link_field_id, snapshot.sprint_field_id, snapshot.story_points_field_id,
                 snapshot.team_field_id, snapshot.project_track_field_id, snapshot.delivery_owner_field_id,
-                allocation.get('allocation_field_id'),
             ) if value
         )))
         child_budget = eng_board.UniqueKeyBudget(eng_board.MAX_CHILDREN)

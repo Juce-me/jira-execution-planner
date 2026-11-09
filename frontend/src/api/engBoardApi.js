@@ -120,11 +120,17 @@ function parent(value) {
     named(value.issueType);
 }
 
+// DELIVERY Initiatives carry their own Allocation class (`none` = No Allocation); Legacy epics omit it.
+const DELIVERY_CLASSES = ['product', 'tech', 'none'];
+
 function epic(value) {
     exact(value, [
         'key', 'summary', 'status', 'priority', 'assignee', 'deliveryOwner', 'projectTrack',
         'updated', 'parent', 'columnId',
-    ]);
+    ], ['projectClassification']);
+    if (Object.prototype.hasOwnProperty.call(value, 'projectClassification')) {
+        oneOf(value.projectClassification, DELIVERY_CLASSES);
+    }
     string(value.key, MAX.identity);
     string(value.summary, MAX.summary);
     named(value.status);
@@ -153,7 +159,7 @@ function child(value) {
     number(value.storyPoints, { nullable: true });
     nullableNamed(value.team);
     named(value.project);
-    oneOf(value.projectClassification, ['product', 'tech', 'other']);
+    oneOf(value.projectClassification, ['product', 'tech', 'other', 'none']);
     array(value.sprintIds, MAX.sprintIds, item => number(item, { integer: true }));
 }
 

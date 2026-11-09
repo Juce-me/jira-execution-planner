@@ -182,8 +182,8 @@ function useTeamStatuses(controller, idsKey) {
     return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
-// The overview status line, compact and expanded: stored-number saves in flight and failed ones (the cards stay unchanged;
-// a failed card's Retry and Discard are in its hover rail).
+// The overview row's state note, compact and expanded: stored-number saves in flight and failed ones (the cards stay
+// unchanged; a failed card's Retry and Discard are in its hover rail).
 export function usePlanningTeamCapacitySaveStatus() {
     const context = usePlanningAssigneeCapacityView();
     const controller = context?.controller || null;
@@ -193,7 +193,7 @@ export function usePlanningTeamCapacitySaveStatus() {
         const saves = Object.keys(byTeam).map(teamId => plannedSaveOf(controller.getTeamStatus(teamId)));
         const failed = saves.filter(isFailedSave).length, saving = saves.filter(save => save === 'saving').length;
         const count = n => `${n} Team save${n === 1 ? '' : 's'}`;
-        return [failed ? `${count(failed)} failed — hover a card to retry` : '', saving ? `Saving ${teamsText(saving)}…` : ''].filter(Boolean).join(' · ');
+        return [failed ? `${count(failed)} failed: hover a card to retry` : '', saving ? `Saving ${teamsText(saving)}…` : ''].filter(Boolean).join(' · ');
     };
     return React.useSyncExternalStore(controller ? controller.subscribe : noSubscription, getSnapshot, getSnapshot);
 }

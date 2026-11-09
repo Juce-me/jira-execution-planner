@@ -1503,3 +1503,37 @@ test('getTeamStatus.plannedSave covers only the stored-number slot: a person-row
     assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
     assert.equal(controller.getTeamStatus('t1').save, 'rejected', 'the person-row change is still refused');
 });
+
+test('a stored-number commit for a Team whose document read failed is kept: it is sent on the projection right, and a failure stays a failed draft with Retry and Discard', async () => {
+    let failSave = true;
+    const sent = [];
+    const { controller, fire } = await fixture({
+        fetch: async () => { const error = new Error('read failed'); error.status = 500; throw error; },
+        read: async (_u, sprintId, teamIds) => ({ sprintId, capabilities: caps, byTeam: Object.fromEntries(teamIds.map(id => [id, { revision: 0, planned: null, inherited: null }])), failedTeamIds: [] }),
+        save: async (_u, _s, payload) => { sent.push(payload); if (failSave) { const error = new Error('Server unavailable'); error.status = 503; throw error; } return { revision: 1, rows: [], planned: payload.planned }; },
+    });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1', 't2'], active: true });
+    await settle();
+    controller.ensureTeamDocument('t1');
+    await settle();
+    assert.equal(controller.getTeamStatus('t1').load, 'error', 'the document read failed');
+    assert.equal(controller.getTeamStatus('t1').canSave, true, 'the batch read grants the right');
+    assert.equal(controller.commitTeamPlanned('t1', '14', 'user'), true, 'the typed number is kept');
+    await fire();
+    assert.deepEqual(sent.map(payload => payload.planned), [{ value: '14', source: 'user' }]);
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'failed');
+    assert.equal(controller.getPlannedNumbers().byTeam.t1.value, 14, 'the failed draft stays shown');
+    failSave = false;
+    controller.retryTeam('t1');
+    await settle();
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    assert.equal(controller.getTeamStatus('t1').canSave, true, 'the saved document keeps the right');
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.t1, { value: 14, source: 'user' });
+    // Discard of a second failed draft brings the saved number back.
+    failSave = true;
+    controller.commitTeamPlanned('t1', '16', 'user');
+    await fire();
+    controller.discardTeamPlanned('t1');
+    assert.equal(controller.getTeamStatus('t1').plannedSave, 'idle');
+    assert.equal(controller.getPlannedNumbers().byTeam.t1.value, 14);
+});

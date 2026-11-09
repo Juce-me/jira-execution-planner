@@ -3232,7 +3232,7 @@ test('twelve Teams: cards for every Team with work, settled screenshots, and the
 // Per-Team stored numbers for one Sprint (the others are empty): the full GET answers its `teamId`, the batch read every
 // requested Team, and a PATCH writes only its body's `teamId` (a guarded `onlyIfSource` write only an existing own one).
 // `patchStatus(teamId, n)` answers that Team's n-th PATCH with an error; `holdPatch(teamId, n)` may delay it.
-function teamsServer({ planned = {}, rows = {}, capabilities = caps, patchStatus = null, holdPatch = null } = {}) {
+function teamsServer({ planned = {}, rows = {}, capabilities = caps, patchStatus = null, holdPatch = null, holdGet = null, getStatus = null } = {}) {
     const state = { docs: {}, gets: [], reads: [], patches: [] };
     const keyOf = (sprintId, teamId) => `${sprintId}|${teamId}`;
     for (const teamId of new Set([...Object.keys(planned), ...Object.keys(rows)])) {
@@ -3250,7 +3250,13 @@ function teamsServer({ planned = {}, rows = {}, capabilities = caps, patchStatus
         const request = route.request();
         const url = new URL(request.url());
         const sprintId = decodeURIComponent(url.pathname.split('/')[4]);
-        if (request.method() === 'GET') { state.gets.push(url.searchParams.get('teamId')); return json(route, docOf(sprintId, url.searchParams.get('teamId'))); }
+        if (request.method() === 'GET') {
+            const teamId = url.searchParams.get('teamId');
+            state.gets.push(teamId);
+            if (holdGet) await holdGet(teamId);
+            const status = getStatus?.(teamId);
+            return status ? json(route, { error: 'review_unavailable' }, status) : json(route, docOf(sprintId, teamId));
+        }
         const body = requestBody(request);
         state.patches.push({ sprintId, body });
         const n = state.patches.filter(patch => patch.body.teamId === body.teamId).length;
@@ -3302,10 +3308,22 @@ async function hoverRail(page, teamId, name) {
     await expect(valueReadout(page)).toHaveCount(1);
     return button;
 }
-const overviewStatus = page => page.locator('.planning-panel-capacity-status');
+// Stored-number saves and failures are told in the overview row's existing state-note slot (#323 Task 5 fix round 2), never
+// in an added line: the pinned stack keeps its height.
+const overviewStatus = page => page.locator('.planning-panel .planning-actions > .planning-review-state-note', { hasText: /Team saves? failed|Saving \d+ Teams?…/ });
+const addedStatusLine = page => page.locator('.planning-panel-capacity-status');
+// The summary's values stay whole beside the note, and the note stays one line clear of Details (as the state-note geometry test).
+async function expectNoteBesideSummary(page, label) {
+    const geometry = await page.locator('.planning-panel .planning-actions').first().evaluate(row => {
+        const rect = node => node.getBoundingClientRect();
+        const summary = row.querySelector(':scope > .planning-stats'), note = row.querySelector(':scope > .planning-review-state-note'), details = row.querySelector('.planning-panel-collapse');
+        const s = rect(summary);
+        return { summaryUnclipped: summary.scrollWidth <= summary.clientWidth, partsInside: [...summary.children].every(part => rect(part).left >= s.left - 0.5 && rect(part).right <= s.right + 0.5),
+            noteWhiteSpace: getComputedStyle(note).whiteSpace, noteClearOfDetails: rect(note).right <= rect(details).left, noteOnRow: rect(note).top >= rect(row).top - 0.5 && rect(note).bottom <= rect(row).bottom + 0.5 };
+    });
+    expect(geometry, label).toEqual({ summaryUnclipped: true, partsInside: true, noteWhiteSpace: 'nowrap', noteClearOfDetails: true, noteOnRow: true });
+}
 // The compact row is 46.9px; a status line adds one line under it (planning_review_integration's COMPACT_ERROR_HEIGHT).
-const COMPACT_STATUS_HEIGHT = 72.8;
-const COMPACT_STATUS_LINE = COMPACT_STATUS_HEIGHT - 46.875;
 // A control's label is on one line (every text rect shares one top) and is not clipped.
 const singleLine = locator => locator.evaluate(node => {
     const range = document.createRange(); range.selectNodeContents(node);
@@ -3356,8 +3374,16 @@ test('two Teams: each card pencil saves only its own Team and Sprint, the two sa
     await typeTeamNumber(page, 'team-beta', 'Beta Team', '6');
     await expect.poll(() => server.state.patches.length).toBe(2);
     await expect(overviewStatus(page)).toHaveText('Saving 2 Teams…');
+    await expect(addedStatusLine(page)).toHaveCount(0);
+    await expectNoteBesideSummary(page, 'saving, expanded');
     await page.mouse.move(5, 600);
-    await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/after/panel-saving-2-teams-1440x900.png', animations: 'disabled' });
+    await page.locator('.planning-panel .planning-actions').first().screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/action-row-saving-2-teams-expanded-1440x900.png', animations: 'disabled' });
+    await hideDetails(page);
+    await expect(overviewStatus(page)).toHaveText('Saving 2 Teams…');
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
+    await expectNoteBesideSummary(page, 'saving, compact');
+    await page.locator('.planning-panel .planning-actions').first().screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/action-row-saving-2-teams-compact-1440x900.png', animations: 'disabled' });
+    await showCards(page);
     releasePatches();
     await expect(overviewStatus(page)).toHaveCount(0);
     await storedOn(page, 'team-alpha', '14.0');
@@ -3399,13 +3425,14 @@ test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the
     expect(await cardHeights(page)).toEqual(before);
     await expect(railButton(page, 'team-beta', 'Retry')).toHaveCount(0);
     // The overview line tells it while expanded (the rail shows only on hover) and while compact (the cards are hidden).
-    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+    await expect(addedStatusLine(page)).toHaveCount(0);
     await page.mouse.move(5, 600);
     await page.waitForTimeout(200);
-    await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/after/panel-failed-expanded-1440x900.png', animations: 'disabled' });
+    await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/panel-failed-expanded-1440x900.png', animations: 'disabled' });
     await hideDetails(page);
-    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
-    expect((await page.locator('.planning-panel').boundingBox()).height).toBeLessThanOrEqual(COMPACT_STATUS_HEIGHT);
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
     await showCards(page);
     // Retry resends only Alpha's change.
     failAlpha = false;
@@ -3464,7 +3491,7 @@ test('D4: the document-limit 400 reads as that Team\'s visible rejection in the 
     await hoverRail(page, 'team-alpha', 'Retry');
     await expect(valueReadout(page)).toHaveText('Retry · Team capacity not saved: the server refused it.');
     await hideDetails(page);
-    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
     expect(server.storedOf('team-alpha')).toBeNull();
 });
 
@@ -3580,6 +3607,33 @@ test('a header Team-selection change while a card editor is open closes it witho
     expect(server.state.patches, 'the open editor saved nothing after the Team change').toEqual([]);
 });
 
+test('a typed number is kept when its Team\'s document read fails: it is saved, or kept as a failed draft with ↻ Retry and × Discard', async ({ page }) => {
+    let releaseGet;
+    const getHeld = new Promise(resolve => { releaseGet = resolve; });
+    let failPatch = true;
+    const server = teamsServer({ holdGet: () => getHeld, getStatus: teamId => (teamId === 'team-alpha' ? 500 : 0), patchStatus: () => (failPatch ? 503 : 0) });
+    await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    // The editor's document read is still running when the number is saved, and then fails.
+    await teamCard(page, 'team-alpha').hover();
+    await teamPencil(page, 'team-alpha', 'Alpha Team').click();
+    await teamInput(page, 'team-alpha', 'Alpha Team').fill('14');
+    await teamInput(page, 'team-alpha', 'Alpha Team').press('Enter');
+    releaseGet();
+    await expect.poll(() => teamPatches(server, 'team-alpha').length).toBe(1);
+    expect(teamPatches(server, 'team-alpha')[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'user' }, changes: [] });
+    await expect(teamCard(page, 'team-alpha')).toHaveAttribute('data-capacity-attention', 'failed');
+    await storedOn(page, 'team-alpha', '14.0');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+    failPatch = false;
+    await teamCard(page, 'team-alpha').hover();
+    await railButton(page, 'team-alpha', 'Retry').click();
+    await expect.poll(() => server.storedOf('team-alpha')).toEqual({ value: '14', source: 'user' });
+    await expect(teamCard(page, 'team-alpha')).not.toHaveAttribute('data-capacity-attention', /./);
+    await expect(overviewStatus(page)).toHaveCount(0);
+});
+
 test('request ledger: the per-Team mirror writes only an idle loaded owner after a user-initiated read, never after an automatic one, and never creates a document', async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page);
@@ -3679,7 +3733,7 @@ test('settled hover, focus and geometry: card pencils, editor controls, ↻ Retr
     expect(await controls[2].boundingBox()).toEqual(cancelBox);
     expect(await controls[2].evaluate(node => getComputedStyle(node).boxShadow)).not.toBe('none');
     await page.mouse.move(5, 600);
-    await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task5/after/cards-editor-open-1440x900.png', animations: 'disabled' });
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/cards-editor-open-1440x900.png', animations: 'disabled' });
     await controls[0].press('Escape');
     // ↻ Retry and × Discard on a failed card: the pencil's size, frame, hover and focus, in the rail beside it.
     await typeTeamNumber(page, 'team-gamma', 'Gamma Team', '7');
@@ -3700,7 +3754,7 @@ test('settled hover, focus and geometry: card pencils, editor controls, ↻ Retr
     const [card, readout] = [await teamCard(page, 'team-gamma').boundingBox(), await valueReadout(page).boundingBox()];
     const clip = { x: Math.min(card.x, readout.x) - 8, y: Math.min(card.y, readout.y) - 8 };
     clip.width = Math.max(card.x + card.width, readout.x + readout.width) + 8 - clip.x; clip.height = Math.max(card.y + card.height, readout.y + readout.height) + 8 - clip.y;
-    await page.screenshot({ path: 'tmp/planning-323-every-team/task5/after/card-failed-hover-1440x900.png', clip, scale: 'device' });
+    await page.screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/card-failed-hover-1440x900.png', clip, scale: 'device' });
 });
 
 // G1: twelve Teams. Team 12 has no ticket (it can fail a typed number); the others have tickets.
@@ -3741,11 +3795,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     expect(await titlesWhole(), 'idle titles with mismatches').toBe(true);
     expect(run.compact, 'compact stack with mismatches').toEqual(base.compact);
     expect(run.expanded, 'expanded stack with mismatches').toEqual(base.expanded);
-    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/after/cards-12-idle-${size}.png`, animations: 'disabled' });
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/spec-captures/cards-12-idle-${size}.png`, animations: 'disabled' });
     await teamCard(page, 'team-02').hover();
     await page.waitForTimeout(150);
     expect(await cardHeights(page), 'hovered').toEqual(baseline);
-    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/after/cards-12-hover-${size}.png`, animations: 'disabled' });
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/spec-captures/cards-12-hover-${size}.png`, animations: 'disabled' });
     await teamCard(page, 'team-01').hover();
     await teamCard(page, 'team-01').getByRole('button', { name: 'Edit Synthetic Team 01 capacity' }).click();
     await expect(teamCard(page, 'team-01').locator('.team-capacity-editor')).toHaveCount(1);
@@ -3760,19 +3814,21 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await rest();
     expect(await cardHeights(page), 'failed').toEqual(baseline);
     expect(await titlesWhole(), 'idle titles with a failure').toBe(true);
-    // The overview status line shows the failure while expanded: it adds that one line to the pinned stack and nothing else.
-    await expect(overviewStatus(page)).toHaveText('1 Team save failed — hover a card to retry');
-    const expandedFailed = await pinnedHeights(page);
-    expect(expandedFailed.stack - base.expanded.stack, 'expanded stack with the status line').toBeGreaterThan(0);
-    expect(expandedFailed.stack - base.expanded.stack, 'expanded stack with the status line').toBeLessThanOrEqual(COMPACT_STATUS_LINE + 0.5);
+    // The failure is told in the action row's state note: the pinned stack keeps its exact height, expanded and compact.
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+    await expect(addedStatusLine(page)).toHaveCount(0);
+    expect(await pinnedHeights(page), 'expanded stack with the note').toEqual(base.expanded);
+    await expectNoteBesideSummary(page, `failed, expanded ${size}`);
     await teamCard(page, 'team-12').hover();
     await page.waitForTimeout(150);
     expect(await cardHeights(page), 'failed and hovered').toEqual(baseline);
-    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/after/cards-12-failed-hover-${size}.png`, animations: 'disabled' });
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task5/spec-captures/cards-12-failed-hover-${size}.png`, animations: 'disabled' });
     await rest();
     await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
     const compactFailed = await pinnedHeights(page);
-    expect(compactFailed.panel, 'the compact status line').toBeLessThanOrEqual(COMPACT_STATUS_HEIGHT);
-    expect(compactFailed.stack - base.compact.stack).toBeLessThanOrEqual(COMPACT_STATUS_LINE + 0.5);
+    expect(compactFailed, 'compact stack with the note').toEqual(base.compact);
+    expect(compactFailed.panel).toBe(46.875);
+    await expectNoteBesideSummary(page, `failed, compact ${size}`);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

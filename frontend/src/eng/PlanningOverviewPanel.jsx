@@ -13,16 +13,16 @@ export function PlanningOverviewSummary({ childPlural = 'stories', planned = fal
 }
 
 export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
-    // Stored-number saves in flight or failed, compact and expanded (#323): the cards never grow, and a failed card's
-    // Retry and Discard show only in its hover rail.
+    // Stored-number saves in flight or failed (#323) take the action row's state note, compact and expanded, ahead of the
+    // plan note: the row keeps its height (the cards never grow; a failed card's Retry and Discard are in its hover rail).
     const teamSaveStatus = usePlanningTeamCapacitySaveStatus();
-    const status = capacityStatus || teamSaveStatus;
+    const note = teamSaveStatus ? <span className="planning-review-state-note" role="status">{teamSaveStatus}</span> : notice;
     const panelControl = <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
         aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>;
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>
         {/* The summary and note sit in the action row's flexible gap. */}
-        {React.isValidElement(actions) ? React.cloneElement(actions, { panelControl, summary, notice }) : <>{summary}{notice}</>}
-        {status && <span className="planning-panel-capacity-status" role="status">{status}</span>}
+        {React.isValidElement(actions) ? React.cloneElement(actions, { panelControl, summary, notice: note }) : <>{summary}{note}</>}
+        {capacityStatus && <span className="planning-panel-capacity-status" role="status">{capacityStatus}</span>}
         <div id="planning-panel-details" hidden={compact} className="planning-panel-graphs">
             <div className="planning-panel-capacity-graph" aria-label="Planned effort and capacity">{planReady ? capacity : <p className="planning-review-guidance">Planned effort is unavailable until this plan is loaded.</p>}</div>
             <div className="planning-panel-team-details">{teams}</div>

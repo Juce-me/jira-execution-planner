@@ -1964,7 +1964,7 @@ test('with a push handler the mismatch → sits left of the pencil in the hover 
     const [c, r] = [await card.boundingBox(), await readout.boundingBox()];
     const clip = { x: Math.min(c.x, r.x) - 8, y: Math.min(c.y, r.y) - 8 };
     clip.width = Math.max(c.x + c.width, r.x + r.width) + 8 - clip.x; clip.height = Math.max(c.y + c.height, r.y + r.height) + 8 - clip.y;
-    await page.screenshot({ path: path.join(repoRoot, 'tmp', 'planning-323-every-team', 'task5', 'after', 'card-push-hover-1280x720.png'), clip, scale: 'device' });
+    await page.screenshot({ path: path.join(repoRoot, 'tmp', 'planning-323-every-team', 'task5', 'spec-captures', 'card-push-hover-1280x720.png'), clip, scale: 'device' });
     await button.focus();
     await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
     await expect(button).toBeFocused();

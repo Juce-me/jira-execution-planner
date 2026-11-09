@@ -651,6 +651,17 @@ Operator decisions (2026-11-06): the recommended options were accepted.
     - lint: unchanged from HEAD (111 warnings, 75 owner-budget problems, the pre-existing handle violation);
     - Chromium on the four specs: `264 passed, 1 failed, 3 skipped` (268). The failure is the same pre-existing `design_system_hover_eng.spec.js:284`.
   - Captures: `tmp/planning-323-every-team/task5/after/panel-saving-2-teams-1440x900.png` and `panel-failed-expanded-1440x900.png`.
+- **Task 5 fix round 2 (2026-11-09), FIX_BASE `e3c1e91e`.**
+  - The stored-number save status moves from the added line to the overview row's existing `.planning-review-state-note` slot: "Saving N Teams…" and "N Team saves failed: hover a card to retry", compact and expanded. It takes priority over the plan note. The pinned stack and panel are exactly unchanged: compact 46.875 px, and the expanded stack equals its baseline, with 12 Teams at 1440x900 and 1280x720. The summary stays unclipped. The pre-existing capacity-error line is unchanged.
+  - Lost queued commit: reproduced. A typed number whose Team document read failed was dropped. `commitTeamPlanned` now also accepts a stored-number commit once an editor asked for the document (`ensureTeamDocument`) and that read is running or failed, on the projection's save right for that Sprint. A Team nobody opened still refuses. The saved document takes the projection's capabilities. A failure is the normal failed draft with Retry and Discard.
+  - Commands (Node 20, after `npm run build`):
+    - changed Playwright cases: RED `6 failed, 1 passed` against `e3c1e91e`, GREEN `7 passed`;
+    - queue test: RED `76 pass, 1 fail`, GREEN `77 pass`;
+    - `node --test tests/test_*.js`: `# pass 3633`, `# fail 0`;
+    - budgets: `OK`;
+    - lint: unchanged from HEAD;
+    - Chromium on the four specs: `265 passed, 1 failed, 3 skipped` (269), with the same pre-existing `design_system_hover_eng.spec.js:284` failure.
+  - Comparison captures: `tmp/planning-323-every-team/task5/after/`, against `variants3/` at both sizes. Idle cards are byte-identical. The hover crops differ only in the hovered title's ellipsis, from the approved three-icon reserve rule. The specs' own captures go to `task5/spec-captures/`.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.
 - **D2:** zero-effort Teams count in totals and the project split; "Capacity:" availability is judged only over Teams with effort or a capacity value.
 - **D3:** the Team-selector set; today's set until work is known; no stored-number pencil and no Jira read for unresolved or comma-containing names.

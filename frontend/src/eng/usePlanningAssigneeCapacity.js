@@ -99,6 +99,11 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
 
     const halted = queue => Boolean(queue.stopped || authStopped);
     const canSaveOwner = queue => queue.document?.capabilities?.canSave === true && !halted(queue);
+    // A stored-number commit needs the owner's document, except once an editor asked for it (`ensureTeamDocument`) and
+    // that read is still running or failed: then it rides on the projection's right for that Sprint (the PATCH carries the
+    // whole number), so a typed value is never dropped. A Team nobody opened still refuses.
+    const canSavePlannedOwner = queue => (queue.document ? canSaveOwner(queue)
+        : (queue.load === 'loading' || queue.load === 'error') && !halted(queue) && projection?.active === true && projection.sprintId === queue.sprintId && projection.teamIds.includes(queue.teamId) && projection.capabilities?.canSave === true);
     const overlay = queue => (queue ? [...queue.rejected.values(), ...queue.failed.values(), ...queue.inFlight, ...queue.pending.values()] : []);
     const holdsPlanned = changes => [...changes].some(isPlannedChange);
     // The projection's batch record for an owner's Team, if the owner is in the projected Sprint.
@@ -234,7 +239,9 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     }
 
     // The saved document: an own one (no inherited part) that keeps the stored team number the server returned.
-    const asDocument = (queue, data) => ({ ...queue.document, teamId: queue.teamId, sprintId: queue.sprintId, revision: data.revision, rows: data.rows || [],
+    // Without a document of its own (a commit on the projection's right), the saved one takes the projection's capabilities.
+    const asDocument = (queue, data) => ({ ...queue.document, capabilities: queue.document?.capabilities || projection?.capabilities || { canRead: false, canSave: false },
+        teamId: queue.teamId, sprintId: queue.sprintId, revision: data.revision, rows: data.rows || [],
         planned: data.planned !== undefined ? data.planned ?? null : effectivePlanned(queue.document), inherited: null });
 
     // An unconfirmed PATCH: read the document back and resend only the fields that differ.
@@ -334,11 +341,11 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     // The stored team number ("Team capacity (not in Jira)"): `value` is a validated wire string or null to clear; `source`
     // is `user` (typed) or `jira` (after the user's own Jira save). A no-op sends nothing.
     function commitPlannedTo(queue, value, source) {
-        if (!queue?.document || !canSaveOwner(queue)) return false;
+        if (!queue || !canSavePlannedOwner(queue)) return false;
         const planned = value == null ? { value: null } : { value, source };
         const previous = shownPlannedOf(recordFor(queue), queue);
         if (isPlannedNoop(previous, planned)) return true;
-        enqueue(queue, [{ assigneeKey: PLANNED_SLOT, planned }], { type: 'planned', planned: previous, inheriting: !(queue.document.revision > 0) && !overlay(queue).length });
+        enqueue(queue, [{ assigneeKey: PLANNED_SLOT, planned }], { type: 'planned', planned: previous, inheriting: !(queue.document?.revision > 0) && !overlay(queue).length });
         return true;
     }
     // Silent database-only mirror of the Jira ticket value after a user-initiated capacity read: only into an existing own

@@ -266,13 +266,24 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
     for config in candidates:
         if not config.sprint_identity:
             continue
-        snapshot = sprint_source_snapshot(auth_context, config)
-        rows = [] if snapshot.payload is None else [
-            (config, item) for item in in_range_sprints(config, snapshot.payload)]
-        incomplete = snapshot.payload is None
         observed = config.observed_source
+        if config.board_inherited:
+            # An inherited Board's ids are another configuration's: admit through the own scan only.
+            if observed is None:
+                continue
+            scanned = sprint_source_snapshot(auth_context, observed)
+            rows = [] if scanned.payload is None else [
+                (observed, item) for item in in_range_sprints(observed, scanned.payload)]
+            incomplete = scanned.payload is None
+            observed = None
+        else:
+            snapshot = sprint_source_snapshot(auth_context, config)
+            rows = [] if snapshot.payload is None else [
+                (config, item) for item in in_range_sprints(config, snapshot.payload)]
+            incomplete = snapshot.payload is None
         if observed is not None:
-            # Board rows win a same-name tie; the issue scan only adds quarters the Board lacks.
+            # With its own Board, Board rows win a same-name tie; the issue scan only adds
+            # quarters the Board lacks.
             scanned = sprint_source_snapshot(auth_context, observed)
             if scanned.payload is not None:
                 names = {item.get('name') for _source, item in rows}

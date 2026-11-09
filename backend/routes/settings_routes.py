@@ -866,16 +866,18 @@ def _get_db_sprints(auth_context, *, force_refresh, completion_attempt_id,
     )
 
 
-def _configuration_cache_envelope(auth_context, config, snapshot, *, refresh_started=False):
+def _configuration_cache_envelope(auth_context, config, snapshot, *, refresh_started=False, identity_of=None):
+    """Envelope of ``snapshot``; ``identity_of`` names the configuration whose identity it answers as."""
     cache = _catalog_cache_envelope(auth_context, config, snapshot, refresh_started=refresh_started)
+    owner = identity_of or config
     cache.update({
-        'identity': build_projection_identity(config),
-        'rowIdentity': config.sprint_identity,
+        'identity': build_projection_identity(owner),
+        'rowIdentity': owner.sprint_identity,
         'configurationId': config.configuration_id,
         'configurationRevision': config.configuration_revision,
-        'sourceMode': config.source_mode,
+        'sourceMode': owner.source_mode,
         'sourceDigest': config.source_digest,
-        'boardId': config.board_id or None,
+        'boardId': owner.board_id or None,
     })
     return cache
 
@@ -888,7 +890,7 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
         'fromQuarter': config.from_quarter, 'throughQuarter': config.through_quarter,
         'sourceMode': config.source_mode, 'sprints': [], 'cache': None,
     }
-    if not config.sprint_identity:
+    if not config.sprint_identity or (config.board_inherited and config.observed_source is None):
         base.update(
             state='setup_required',
             missingFields=list(config.missing_admin_settings),
@@ -897,24 +899,37 @@ def _configuration_source_result(auth_context, config, *, force_refresh):
         base['diagnostics'] = work_routes.source_diagnostics('setup_required', base['code'])
         return base, None, None
     resolve = catalog_configuration_resolver(config.configuration_id)
-    if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
+    if config.board_inherited:
+        # An inherited Board's Sprint ids belong to the configuration that owns it: this
+        # configuration lists only its own issue scan, and never falls back to Board rows.
+        source = config.observed_source
+        snapshot, started = _load_and_refresh_scoped_snapshot(
+            auth_context, source, catalog_configuration_resolver(config.configuration_id, observed=True),
+            force_refresh,
+        )
+    elif config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
+        source = config
         snapshot, started = _load_and_refresh_scoped_snapshot(
             auth_context, config, resolve, force_refresh,
         )
     else:
+        source = config
         snapshot, started = _load_and_refresh_board_snapshot(
             auth_context, config, resolve, force_refresh,
         )
-    cache = _configuration_cache_envelope(auth_context, config, snapshot, refresh_started=started)
+    cache = _configuration_cache_envelope(
+        auth_context, source, snapshot, refresh_started=started, identity_of=config,
+    )
     rows = None
     if snapshot.payload is not None:
-        rows = in_range_sprints(config, snapshot.payload)
+        rows = in_range_sprints(source, snapshot.payload)
     scanned = None
     observed_rows = None
-    if config.observed_source is not None:
+    if config.observed_source is not None and source is config:
         # A Board lists only its own Sprints: also scan the configuration's scoped issues so a
         # Sprint carried by its work but absent from the Board is admitted. A failed or pending
-        # scan never degrades the Board result; the Board row wins a same-name tie.
+        # scan never degrades the Board result; with its own Board, the Board row wins a
+        # same-name tie.
         observed = config.observed_source
         scan, scan_started = _load_and_refresh_scoped_snapshot(
             auth_context, observed, catalog_configuration_resolver(config.configuration_id, observed=True),
@@ -1067,12 +1082,15 @@ def _configuration_completion_response(auth_context, selected, configuration_id,
         return _catalog_response(
             {'error': 'catalog_identity_changed', 'sprintCatalogSource': source}, 409, started_at,
         )
-    row_identity = config.sprint_identity if expected_identity == projection else expected_identity
+    # An inherited Board's attempts are the own issue scan's (``_configuration_source_result``).
+    scan = config.observed_source if config.board_inherited else None
+    row_source = scan or config
+    row_identity = row_source.sprint_identity if expected_identity == projection else expected_identity
     resolve = catalog_configuration_resolver(config.configuration_id)
     try:
-        if config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
+        if scan is not None or config.source_mode == work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
             snapshot = read_scoped_sprint_completion(
-                auth_context, attempt_id=attempt_id, expected_identity=row_identity, config=config,
+                auth_context, attempt_id=attempt_id, expected_identity=row_identity, config=row_source,
             )
         else:
             snapshot = read_catalog_completion(
@@ -1087,11 +1105,13 @@ def _configuration_completion_response(auth_context, selected, configuration_id,
         return _catalog_response(
             {'error': error.code, 'sprintCatalogSource': source}, 409, started_at,
         )
-    cache = _configuration_cache_envelope(auth_context, config, snapshot, refresh_started=False)
+    cache = _configuration_cache_envelope(
+        auth_context, row_source, snapshot, refresh_started=False, identity_of=config,
+    )
     if snapshot.payload is not None:
         rows = [
             {**item, 'configurationId': config.configuration_id, 'sourceIdentity': cache['identity']}
-            for item in in_range_sprints(config, snapshot.payload)
+            for item in in_range_sprints(row_source, snapshot.payload)
         ]
         return _catalog_response({'sprints': rows, 'cache': cache}, 200, started_at)
     if cache['refreshStatus'] == 'failed':

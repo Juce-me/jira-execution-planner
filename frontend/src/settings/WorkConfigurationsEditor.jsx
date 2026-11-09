@@ -4,7 +4,7 @@ import { searchAllocationOptions as requestAllocationOptions, searchBoards as re
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, inheritedBoard, rangeLabel, savedSourceReady, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, inheritedBoard, rangeLabel, refreshableSources, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
 const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
@@ -68,7 +68,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, 
     const options = React.useMemo(() => sprintValueOptions(sprintValues), [sprintValues]);
     const sprintRefresh = workConfig.sprintRefresh;
     // Nothing is readable from Jira until the first Save promotes the bundle: before that no configuration exists server-side.
-    const savedSources = workConfig.promoted ? (workConfig.baseline?.configurations || []).filter(savedSourceReady) : [];
+    const savedSources = workConfig.promoted ? refreshableSources(workConfig.baseline?.configurations || []) : [];
     return (
         <div className="work-config-ranges">
             <div className="work-config-ranges-head" data-sprint-refresh>

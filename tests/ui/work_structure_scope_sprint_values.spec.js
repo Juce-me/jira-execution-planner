@@ -48,9 +48,14 @@ const bundle = () => ({
     }],
 });
 
-async function mockApp(page, { sprintValuesStatus = 200, values = VALUES, promoted = true, pendingRefresh = false, sources = [] } = {}) {
+async function mockApp(page, { sprintValuesStatus = 200, values = VALUES, promoted = true, pendingRefresh = false, sources = [], inheritedDelivery = false } = {}) {
     const state = { revision: 6, bundle: bundle(), workPosts: [], valueRequests: [], sprintCalls: [] };
     if (!promoted) delete state.bundle.promotionRevision;
+    if (inheritedDelivery) {
+        const entry = state.bundle.configurations[1];
+        entry.scope = { projects: [], boardId: '' };
+        entry.fields.sprint = blank();
+    }
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(() => {
@@ -363,6 +368,15 @@ test('Refresh Sprint values reads each saved configuration from Jira, finishes p
     ]);
     await expect(refreshButton(dialog)).toHaveText('Refresh Sprint values');
     await expect(dialog.locator('[data-sprint-refresh-failed]')).toHaveCount(0);
+});
+
+test('Refresh Sprint values includes a DELIVERY that inherits Legacy\'s Board', async ({ page }) => {
+    const state = await mockApp(page, { inheritedDelivery: true });
+    const dialog = await openScope(page);
+    await expect(refreshButton(dialog)).toBeEnabled();
+    await refreshButton(dialog).click();
+    await expect.poll(() => state.sprintCalls.filter(call => call.refresh === 'true').map(call => call.configurationId)).toEqual(['legacy', 'delivery']);
+    await expect(refreshButton(dialog)).toHaveText('Refresh Sprint values');
 });
 
 test('before the first Save there is nothing to refresh, so no Refresh button and no explanatory text', async ({ page }) => {

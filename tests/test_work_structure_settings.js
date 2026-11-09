@@ -475,6 +475,18 @@ test('a blank Board shows the nearest configuration\'s Board as inherited; an ex
     assert.equal(inheritedBoard([{ id: 'legacy', scope: { boardId: '' } }, { id: 'delivery', scope: { boardId: '' } }], 'delivery'), null);
 });
 
+test('refreshableSources: an inherited Board and shared Sprint field make DELIVERY refreshable', async () => {
+    const { refreshableSources } = await loadModel();
+    const entries = [legacy(), delivery()];
+    assert.deepEqual(refreshableSources(entries).map(entry => entry.id), ['legacy', 'delivery']);
+});
+
+test('a configuration with no Board, no projects and no inherited Board is not refreshable', async () => {
+    const { refreshableSources } = await loadModel();
+    const entries = [legacy({ scope: { projects: [], boardId: '' } }), delivery()];
+    assert.deepEqual(refreshableSources(entries), []);
+});
+
 test('DELIVERY Sprint and Story Points share Legacy\'s mapping until overridden; an own blank is a deliberate clear; Team is always shared', async () => {
     const { effectiveEntry, missingMappings, patchBundleEntry, entryById } = await loadModel();
     const shared = { fieldId: '', fieldName: '', mode: 'shared' };

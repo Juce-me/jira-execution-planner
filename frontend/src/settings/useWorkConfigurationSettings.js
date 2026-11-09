@@ -25,7 +25,7 @@ import {
     patchBundleEntry,
     rebaseOntoLatest,
     removeProjectFromEntry,
-    savedSourceReady,
+    refreshableSources,
     typeNamesNeedingSave,
     typeNamesSignature,
     validateBundle,
@@ -180,7 +180,7 @@ export function useWorkConfigurationSettings({
     // reloads the Sprint values. Only saved sources are read: the server never sees a draft.
     const [sprintRefresh, setSprintRefresh] = React.useState({ status: 'idle', failed: 0 });
     const refreshSprintValues = React.useCallback(async () => {
-        const targets = promotedRef.current ? (baselineRef.current?.configurations || []).filter(savedSourceReady) : [];
+        const targets = promotedRef.current ? refreshableSources(baselineRef.current?.configurations || []) : [];
         if (!targets.length) return;
         setSprintRefresh({ status: 'running', failed: 0 });
         let failed = 0;

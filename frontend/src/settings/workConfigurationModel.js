@@ -499,4 +499,7 @@ export function sourceCause(diagnostics, quarter) {
 export const savedSourceReady = entry => Boolean(entry && (entry.scope?.boardId
     || ((entry.scope?.projects || []).length > 0 && entry.fields?.sprint?.fieldId)));
 
+// The saved configurations Jira can be read for, each judged by what it runs with: an inherited Board and a shared Sprint field count.
+export const refreshableSources = configurations => (configurations || []).filter(entry => savedSourceReady(effectiveEntry(configurations, entry)));
+
 export const sprintRefreshLine = entry => `Save ${entry?.name || 'this configuration'}'s project and Sprint field first, or type the Sprint value (for example 2027Q1).`;

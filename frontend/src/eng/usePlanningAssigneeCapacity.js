@@ -197,7 +197,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         if (!create) return null;
         queue = newQueue(String(sprintId), String(teamId), null);
         owners.set(key, queue);
-        evict(queue);
+        if (evict(queue)) emit();
         return queue;
     }
     // Team commands act on the projection's Sprint (else the strip's); an editor's owner keeps that Sprint and Team.
@@ -297,7 +297,15 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                     if (planned && done === 0) unsentKeys.add(PLANNED_SLOT);
                     const unsent = queue.inFlight.filter(change => unsentKeys.has(change.assigneeKey));
                     queue.inFlight = [];
-                    if (isAuthError(error)) { unsent.forEach(change => mergeInto(queue.pending, change)); queue.stopped = true; authStopped = true; report(queue, { save: 'idle' }); }
+                    if (isAuthError(error)) {
+                        unsent.forEach(change => mergeInto(queue.pending, change));
+                        queue.stopped = true;
+                        // The stop is controller-wide: the first 401 changes every Team's status, so every Team is told.
+                        const first = !authStopped;
+                        authStopped = true;
+                        report(queue, { save: 'idle' });
+                        if (first) emit();
+                    }
                     else {
                         unsent.forEach(change => mergeInto(isRejected(error) ? queue.rejected : queue.failed, change));
                         queue.error = error.message || 'Assignee capacity could not be saved.';

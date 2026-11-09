@@ -1436,3 +1436,34 @@ test('a non-strip owner\'s change notifies only that Team\'s listeners', async (
     assert.ok(heard.A > 0);
     assert.equal(heard.B, 0);
 });
+
+// ---- Fix round 2: controller-wide status changes reach every Team ----
+
+test('a 401 on one Team\'s PATCH notifies every Team: the others show the stop', async () => {
+    const { controller, fire } = await fixture({ fetch: teamDocs(), read: batch(), save: async () => { throw Object.assign(new Error('signed out'), { name: 'AuthenticationRequiredError' }); } });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.ensureTeamDocument('A');
+    controller.ensureTeamDocument('B');
+    await settle();
+    assert.equal(controller.getTeamStatus('A').canSave, true);
+    const heard = [];
+    controller.subscribeTeam('A', () => heard.push(controller.getTeamStatus('A')));
+    controller.commitTeamPlanned('B', '20');
+    await fire();
+    assert.ok(heard.length > 0, 'A is told');
+    assert.equal(heard.at(-1).canSave, false);
+    assert.equal(heard.at(-1).save, 'idle');
+});
+
+test('an evicted Team\'s subscriber is notified', async () => {
+    const teams = ['t1', 't2', 't3', 't4', 't5', 't6'];
+    const { controller } = await fixture({ fetch: teamDocs(), read: batch() });
+    controller.setProjectionScope({ sprintId: '100', teamIds: teams, active: true });
+    await settle();
+    for (const team of teams.slice(0, 5)) { controller.ensureTeamDocument(team); await settle(); }
+    let heard = 0;
+    controller.subscribeTeam('t1', () => { heard += 1; });
+    controller.ensureTeamDocument('t6'); // the sixth owner evicts t1, the oldest clean one
+    await settle();
+    assert.ok(heard > 0);
+});

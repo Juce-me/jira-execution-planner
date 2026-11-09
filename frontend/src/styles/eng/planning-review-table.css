@@ -146,9 +146,10 @@
 .planning-panel [hidden] { display: none !important; }
 .planning-panel.open.planning-panel-compact { display: flex; align-items: center; gap: 8px; padding: 8px; }
 .planning-panel-compact > .planning-actions { flex: 1 1 auto; min-width: 0; margin: 0; }
-/* Table: the short summary and the state note sit in the action row's flexible gap, before the right-aligned details
-   button. The summary is one inline line whose values never shrink; only the whole line ellipsizes, as a last resort. */
-.planning-actions > .planning-stats { display: block; flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Table: the short summary and the state note sit in the action row before the right-aligned details button. The summary
+   is one inline line that never shrinks beside the note (it ellipsizes only when it alone is wider than the row); the
+   note is the only shrinkable item, one line, ellipsized as a last resort. */
+.planning-actions > .planning-stats { display: block; flex: 0 0 auto; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planning-actions > .planning-review-state-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .planning-actions > .planning-review-state-note:empty { display: none; }
 .planning-panel-compact .planning-panel-visibility { order: 2; flex: 0 0 auto; margin: 0; }

@@ -530,6 +530,60 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overvie
     expect((await panel.boundingBox()).height).toBeLessThanOrEqual(46.9);
 });
 
+// Re-review (2026-11-09): the summary never shrinks beside a state note; the note is the only shrinkable item, one line,
+// ellipsized as a last resort. Each realistic note keeps the single 46.875px row and stays clear of Details.
+async function noteRowGeometry(panel) {
+    return panel.locator('.planning-actions').first().evaluate(row => {
+        const rect = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom }; };
+        const note = row.querySelector(':scope > .planning-review-state-note');
+        return { row: rect(row), details: rect(row.querySelector('.planning-panel-collapse')), note: note && note.textContent ? rect(note) : null,
+            noteText: note?.textContent || '', noteWhiteSpace: note ? getComputedStyle(note).whiteSpace : '',
+            retry: note?.querySelector('button') ? { ...rect(note.querySelector('button')), clipped: note.querySelector('button').scrollWidth > note.querySelector('button').clientWidth } : null };
+    });
+}
+async function expectNoteRow(panel, label, { height = 46.9, summary = true } = {}) {
+    const geometry = await noteRowGeometry(panel);
+    expect(geometry.note, `${label}: a note is shown`).not.toBeNull();
+    expect(geometry.noteWhiteSpace, `${label}: the note is one line`).toBe('nowrap');
+    expect(geometry.note.top, label).toBeGreaterThanOrEqual(geometry.row.top - 0.5); expect(geometry.note.bottom, label).toBeLessThanOrEqual(geometry.row.bottom + 0.5);
+    expect(geometry.note.right, `${label}: the note stays clear of Details`).toBeLessThanOrEqual(geometry.details.left);
+    expect(geometry.details.right, `${label}: Details stays right-aligned`).toBeCloseTo(geometry.row.right, 0);
+    if (summary) expectSummaryInSlot(await overviewSummaryGeometry(panel), label);
+    expect((await panel.boundingBox()).height, `${label}: one row`).toBeLessThanOrEqual(height);
+    return geometry;
+}
+
+for (const [width, height] of [[1280, 720], [1440, 900]]) test(`state notes shrink beside the summary and never clip its values at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    // 1. No saved plan: the long guidance note with its summary, then with the worst-case summary.
+    await installPlanningFixture(page, { planningLayout: 'table' });
+    await openPlanning(page, { expectStories: false });
+    const panel = page.locator('.planning-panel');
+    await expect(panel.locator('.planning-review-state-note')).toContainText('No saved plan yet.');
+    await page.mouse.move(5, height - 5);
+    await expectNoteRow(panel, 'no saved plan');
+    await fillWorstCaseSummary(panel);
+    await expectNoteRow(panel, 'no saved plan, worst-case summary');
+    // 2. A saved plan: "Plan saved" with the worst-case summary.
+    await page.reload(); await openPlanning(page, { expectStories: false });
+    await panel.getByRole('button', { name: 'Select All', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(panel.locator('.planning-review-state-note')).toHaveText('Plan saved');
+    await fillWorstCaseSummary(panel);
+    await page.mouse.move(5, height - 5);
+    await expectNoteRow(panel, 'plan saved, worst-case summary');
+    // 3. The plan cannot load: the error note with Retry (no summary while the plan is not ready).
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'review_unavailable' }) }));
+    await page.reload(); await openPlanning(page, { expectStories: false });
+    await expect(panel.locator('.planning-review-state-note')).toContainText('Plan could not be loaded.');
+    await page.mouse.move(5, height - 5);
+    const error = await expectNoteRow(panel, 'plan load error', { summary: false });
+    expect(error.retry, 'Retry is shown').not.toBeNull();
+    expect(error.retry.clipped).toBe(false);
+    expect(error.retry.right, 'Retry is not cut off by the note').toBeLessThanOrEqual(error.note.right + 0.5);
+    await expect(panel.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
+});
+
 test('Catch Up List keeps its own controls and gains no Planning overview row', async ({ page }) => {
     await installPlanningFixture(page, { planningLayout: 'table' });
     await page.goto(appBaseUrl);

@@ -5062,6 +5062,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 capacityScopePinRef, capacityScopeKeyRef, capacityReadGuardRef, activeCapacityTeamsRef, plannedCapacity, capacityLoading, capacityReadError, capacityDataStale,
             });
 
+            // Always returns a PriorityIcon element: the menu trigger copies its props and withoutReadout clones it.
             const renderPriorityIcon = (priority, idSeed) => {
                 const name = String(priority || '').toLowerCase();
                 const label = priority || 'None';

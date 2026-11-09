@@ -13,6 +13,7 @@ import SegmentedControl from '../ui/SegmentedControl.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
+import { withoutReadout } from '../issues/PriorityIcon.jsx';
 import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
 import PlanningReviewColumnMenu from './PlanningReviewColumnMenu.jsx';
 import PlanningReviewStateCluster from './PlanningReviewStateCluster.jsx';
@@ -396,7 +397,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.custom ? <CustomCell row={row} column={column} review={review} editing={editing === row.id} setEditing={setEditing} onHold={onHoldRow} focusNew={newColumnId === column.id && row === displayed.find(item => !item.synthetic && item.issueId)} />
                         : column.id === 'key' ? (row.synthetic ? row.rowKind === 'requirement' ? 'Not created' : '—' : <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.key)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf(row.rowKind), sourceSurface: 'planning' })}>{row.key}</TrackedExternalLink>)
                         : column.id === 'summary' ? summaryCell(row)
-                        : column.id === 'priority' ? field(row, 'priority', <span>{renderPriorityIcon?.(row.priority)} {row.priority || '—'}</span>)
+                        : column.id === 'priority' ? field(row, 'priority', <span>{withoutReadout(renderPriorityIcon?.(row.priority))} {row.priority || '—'}</span>)
                         : column.id === 'accepted' ? row.accepted ?? ''
                         : column.id === 'storyPoints' ? (row.rowKind === 'requirement' ? '—' : row.rowKind === 'story' ? field(row, 'storyPoints', row.storyPoints ?? 0) : row.storyPoints ?? 0)
                         : column.id === 'teamsInScope' ? <TrimmedValue value={reviewValue(row, column, review.cells) || '—'} />

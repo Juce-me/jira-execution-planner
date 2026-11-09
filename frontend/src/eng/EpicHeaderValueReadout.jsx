@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 // `transient` (default off, with `alwaysOn`) makes the readout follow a mouse or pen by hover only: their click neither
 // pins it nor focuses the trigger; a touch tap still pins it, and a pinned readout also closes on scroll.
 // `pointerTransparent` (default off) lets the pointer pass through the readout, so it never covers a control beneath it.
+// Truncation is measured (ResizeObserver, font loads) only without `alwaysOn`, where it decides whether a readout exists.
 export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, transient = false, pointerTransparent = false, children }) {
     const triggerRef = React.useRef(null);
     const readoutRef = React.useRef(null);
@@ -47,6 +48,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
     }, [measureSelector, alwaysOn]);
 
     React.useLayoutEffect(() => {
+        if (alwaysOn) return undefined;
         measureTruncation();
         const node = triggerRef.current;
         if (!node || typeof ResizeObserver === 'undefined') return undefined;
@@ -55,9 +57,10 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
         const measuredNode = measureSelector ? node.querySelector?.(measureSelector) : null;
         if (measuredNode && measuredNode !== node) observer.observe(measuredNode);
         return () => observer.disconnect();
-    }, [measureTruncation, measureSelector, value]);
+    }, [alwaysOn, measureTruncation, measureSelector, value]);
 
     React.useEffect(() => {
+        if (alwaysOn) return undefined;
         const fontSet = document.fonts;
         if (!fontSet?.ready) return undefined;
         let active = true;
@@ -74,7 +77,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
             if (frame != null) window.cancelAnimationFrame(frame);
             fontSet.removeEventListener?.('loadingdone', measureAfterFontLoad);
         };
-    }, [measureTruncation]);
+    }, [alwaysOn, measureTruncation]);
 
     React.useLayoutEffect(() => {
         if (!nativeSelector) return undefined;

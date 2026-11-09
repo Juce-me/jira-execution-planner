@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
-const { mockDashboard, appBaseUrl, catchUpPrefs, parkPointer } = require('./eng_epic_refresh_fixture');
+const { mockDashboard, appBaseUrl, catchUpPrefs, parkPointer, groupsConfigPayload } = require('./eng_epic_refresh_fixture');
 
 // Hover readouts above ENG priority glyphs must paint on top of every sticky tier (the sticky `.epic-header`,
 // `.filterbar-wrap` and the stuck Planning panel). The fixture serves the full built `frontend/dist/dashboard.css`,
@@ -11,12 +11,31 @@ test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: 'reduce' });
 
 const evidenceDir = process.env.JEP_READOUT_EVIDENCE_DIR || '';
 
-async function open(page, prefs = {}) {
+const BOARD_COLUMNS = [
+    { id: 'todo', name: 'To do', colour: '#597ef7', star: true, statuses: ['To Do', 'In Progress'], min: null, max: null },
+    { id: 'done', name: 'Done', colour: '#52c41a', star: false, statuses: ['Done'], min: null, max: null },
+];
+
+async function open(page, prefs = {}, { ready = '.task-item[data-task-key="E1-S12"]', authMode = '' } = {}) {
     const ctx = await mockDashboard(page);
+    if (authMode) ctx.respond('/api/config', ({ json }) => json({ jiraUrl: 'https://jira.example', capacityProject: '', authMode, projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true }));
+    ctx.scenario.epics['EPIC-1'].priority = 'Blocker';
     ctx.respond('/api/issues/priorities/options', ({ json }) => json({ priorities: [{ id: '1', name: 'Highest', rank: 10 }, { id: '2', name: 'Low', rank: 50 }], source: 'jira' }));
+    ctx.respond('/api/groups-config', ({ json }) => json({ ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, board: { columns: BOARD_COLUMNS } })) }));
     await page.addInitScript(value => window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), catchUpPrefs(prefs));
+    // Counts truncation observers attached to priority icons: an always-on readout mounts none (initial-load cost).
+    await page.addInitScript(() => {
+        window.__priorityIconObservers = 0;
+        const Native = window.ResizeObserver;
+        window.ResizeObserver = class extends Native {
+            observe(target, options) {
+                if (target?.classList?.contains('task-priority-icon')) window.__priorityIconObservers += 1;
+                return super.observe(target, options);
+            }
+        };
+    });
     await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
-    await expect(page.locator('.task-item[data-task-key="E1-S12"]')).toBeAttached();
+    await expect(page.locator(ready).first()).toBeAttached();
     await page.addStyleTag({ content: '* { animation: none !important; transition: none !important; }' });
     return ctx;
 }
@@ -45,6 +64,11 @@ async function hoverAndProbe(page, trigger, name) {
     await expect(readout(page)).toHaveCount(1);
     await expect(readout(page)).toBeVisible();
     await expect(readout(page)).toHaveText(label);
+    return probeReadout(page);
+}
+
+// What is painted at the visible readout's top-edge centre and four corners, plus its box against the viewport.
+async function probeReadout(page) {
     return readout(page).evaluate((el) => {
         const previous = el.style.pointerEvents;
         el.style.pointerEvents = 'auto';
@@ -160,8 +184,10 @@ test('the priority readout never intercepts the pointer and closes when the menu
         return Boolean(hit && (hit === el || el.contains(hit)));
     });
     expect(optionOnTop).toBe(true);
-    // Hovering an option's priority marker inside the menu raises no readout over the next option.
+    // An option's priority marker sits beside its name, so hovering it raises no readout and the next option stays on top.
     await option.locator('.task-priority-icon').hover();
+    await page.waitForTimeout(200);
+    await expect(readout(page)).toHaveCount(0);
     const next = menu.getByRole('menuitem').nth(1);
     const nextOnTop = await next.evaluate((el) => {
         const b = el.getBoundingClientRect();
@@ -174,3 +200,97 @@ test('the priority readout never intercepts the pointer and closes when the menu
     await parkPointer(page);
     await expect(readout(page)).toHaveCount(0);
 });
+
+test('negative control: the paint probe reports a readout covered by a sticky tier', async ({ page }) => {
+    await open(page);
+    await stickEpicHeader(page, 'EPIC-1');
+    expectPaintedAndOnScreen(await hoverAndProbe(page, epicTrigger(page, 'EPIC-1'), 'negative-control-before'));
+    // Drop the readout below the sticky filter bar's stacking level and place it over the bar: the probe must see the bar.
+    await readout(page).evaluate((el) => {
+        const bar = document.querySelector('.filterbar-wrap').getBoundingClientRect();
+        el.style.zIndex = '1';
+        el.style.top = `${bar.top + 2}px`;
+    });
+    const covered = await probeReadout(page);
+    const hits = Object.values(covered.hits);
+    expect(hits.filter(hit => hit === 'readout')).toEqual([]);
+    const inBar = await readout(page).evaluate((el) => {
+        const b = el.getBoundingClientRect();
+        return [[b.left + b.width / 2, b.top + 1], [b.left + 4, b.bottom - 4]].map(([x, y]) => Boolean(document.elementFromPoint(x, y)?.closest('.filterbar-wrap')));
+    });
+    expect(inBar, JSON.stringify(covered.hits)).toEqual([true, true]);
+});
+
+test('an always-on priority readout mounts no truncation observer on any icon', async ({ page }) => {
+    await open(page);
+    expect(await page.locator('.task-priority-icon').count()).toBeGreaterThan(10);
+    expect(await page.evaluate(() => window.__priorityIconObservers)).toBe(0);
+});
+
+test('Board card passive priority readout paints, passes the pointer and leaves the card click opening its panel', async ({ page }) => {
+    await open(page, { showBoard: true }, { ready: '.ecard[data-epic-key="EPIC-1"]' });
+    const card = page.locator('.ecard[data-epic-key="EPIC-1"]');
+    const icon = card.locator('.ecard-open .task-priority-icon[data-priority]');
+    await expect(icon).toHaveAttribute('data-priority', 'Blocker');
+    expect(await icon.evaluate(node => node.tagName)).toBe('SPAN');
+    expectPaintedAndOnScreen(await hoverAndProbe(page, icon, 'board-card-passive'));
+    expect(await page.evaluate(() => window.__priorityIconObservers)).toBe(0);
+    // The click lands on the icon inside .ecard-open: the card still opens its panel.
+    await icon.click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+});
+
+test('Planning Table editable priority cell readout paints above the docked table header', async ({ page }) => {
+    await open(page, { showPlanning: true, planningLayout: 'table' }, { ready: 'table button.task-priority-icon[data-priority]' });
+    const icon = page.locator('table tbody button.task-priority-icon[data-priority]').first();
+    expectPaintedAndOnScreen(await hoverAndProbe(page, icon, 'planning-table-editable-cell'));
+    await page.evaluate(() => window.scrollTo(0, 400));
+    await page.waitForTimeout(300);
+    const docked = await page.locator('table tbody button.task-priority-icon[data-priority]').evaluateAll(nodes => {
+        const header = document.querySelector('table thead')?.getBoundingClientRect();
+        return nodes.findIndex(node => node.getBoundingClientRect().top > (header?.bottom || 0) + 4 && node.getBoundingClientRect().bottom < window.innerHeight - 60);
+    });
+    expect(docked).toBeGreaterThanOrEqual(0);
+    expectPaintedAndOnScreen(await hoverAndProbe(page, page.locator('table tbody button.task-priority-icon[data-priority]').nth(docked), 'planning-table-cell-scrolled'));
+});
+
+test('read-only Planning Table priority cell shows the name beside the icon and mounts no duplicate readout', async ({ page }) => {
+    // A non-OAuth session renders the read-only cell: the icon followed by the priority name.
+    await open(page, { showPlanning: true, planningLayout: 'table' }, { ready: 'table .task-priority-icon[data-priority]', authMode: 'jira_basic' });
+    const icon = page.locator('table tbody .task-priority-icon[data-priority]').first();
+    expect(await icon.evaluate(node => node.tagName)).toBe('SPAN');
+    const label = await icon.getAttribute('data-priority');
+    await expect(icon.locator('xpath=..')).toContainText(label);
+    await icon.scrollIntoViewIfNeeded();
+    const box = await icon.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.waitForTimeout(300);
+    await expect(readout(page)).toHaveCount(0);
+});
+
+test.describe('touch', () => {
+    test.use({ hasTouch: true });
+
+    test('a tap on a Board card priority icon pins its label, opens the panel unchanged and keeps the card draggable', async ({ page }) => {
+        await open(page, { showBoard: true }, { ready: '.ecard[data-epic-key="EPIC-1"]' });
+        const card = page.locator('.ecard[data-epic-key="EPIC-1"]');
+        const icon = card.locator('.ecard-open .task-priority-icon[data-priority]');
+        await page.evaluate(() => {
+            window.__prevented = [];
+            for (const type of ['pointerdown', 'touchstart', 'mousedown']) {
+                window.addEventListener(type, event => { if (event.target.closest?.('.task-priority-icon')) window.__prevented.push(`${type}:${event.defaultPrevented}`); });
+            }
+        });
+        await icon.tap();
+        await expect(page.getByRole('dialog')).toBeVisible();
+        await expect(readout(page)).toHaveText('Blocker');
+        expect(await page.evaluate(() => window.__prevented.filter(entry => entry.endsWith(':true')))).toEqual([]);
+        // Drag starts from the icon exactly as from the card's plain title text.
+        const dragFrom = selector => card.locator(selector).evaluate(node => node.dispatchEvent(new DragEvent('dragstart', { bubbles: true, cancelable: true })));
+        expect(await dragFrom('.ecard-open .task-priority-icon')).toBe(await dragFrom('.etitle'));
+        // An outside tap closes the pinned label.
+        await page.touchscreen.tap(5, 5);
+        await expect(readout(page)).toHaveCount(0);
+    });
+});
+

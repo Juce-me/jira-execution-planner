@@ -10,9 +10,7 @@ import { resolveEngFilterOptionVisual } from './engFilterOptionVisuals.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getProjectTrackEmoji } from './engTaskUtils.js';
-
-// Filter options show the priority name beside its icon, so the icon renders without its hover readout.
-const withoutReadout = icon => (React.isValidElement(icon) ? React.cloneElement(icon, { readout: false }) : icon);
+import { withoutReadout } from '../issues/PriorityIcon.jsx';
 
 // The compact ENG filter bar: a Filters trigger with its facet popover, the readout, the chips
 // lane and a slot for the consumer's own view controls. Presentational — it owns no data, no

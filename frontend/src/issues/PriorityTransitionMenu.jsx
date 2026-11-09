@@ -1,6 +1,7 @@
 import * as React from 'react';
 import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
 import EpicHeaderValueReadout from '../eng/EpicHeaderValueReadout.jsx';
+import { withoutReadout } from './PriorityIcon.jsx';
 import { normalizeIssueStatus } from './issueViewUtils.js';
 import { isRecognizedPriorityIconName, sortPriorityOptionsByRank } from '../eng/engPriorityTransitionUtils.js';
 
@@ -151,7 +152,7 @@ export default function PriorityTransitionMenu({
                             );
                         }
                         return renderPriorityIcon
-                            ? renderPriorityIcon(option.name, `${issueKey}-${option.id}`)
+                            ? withoutReadout(renderPriorityIcon(option.name, `${issueKey}-${option.id}`))
                             : null;
                     }}
                     onSelect={(option) => { if (!previewDescriptor) onSubmit?.(option.id, issueKey); }}

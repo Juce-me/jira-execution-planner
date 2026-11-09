@@ -208,13 +208,14 @@ test('buildTeamCapacityStats counts Ad Hoc Tech-project stories as Product capac
     ]);
 });
 
-test('buildDisplayedTeamOptions filters by selected teams with story points', async () => {
+test('buildDisplayedTeamOptions before work is known keeps pointed Teams plus explicitly selected Teams (#323 D3)', async () => {
     const { buildDisplayedTeamOptions, buildTeamSpTotals } = await loadUtils();
     const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
     const teamOptions = [
         { id: 'all', name: 'All Teams' },
         { id: 'team-a', name: 'Team A' },
-        { id: 'team-b', name: 'Team B' }
+        { id: 'team-b', name: 'Team B' },
+        { id: 'team-c', name: 'Team C' }
     ];
     const teamSpTotals = buildTeamSpTotals([
         { key: 'PROD-1', fields: { customfield_10004: '3', teamId: 'team-a', teamName: 'Team A' } },
@@ -223,13 +224,14 @@ test('buildDisplayedTeamOptions filters by selected teams with story points', as
 
     assert.deepEqual(teamSpTotals, { 'team-a': 3 });
     assert.deepEqual(
-        buildDisplayedTeamOptions({
-            teamOptions,
-            isAllTeamsSelected: false,
-            selectedTeamSet: new Set(['team-a', 'team-b']),
-            teamSpTotals
-        }),
-        [{ id: 'team-a', name: 'Team A' }]
+        buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: false, selectedTeamSet: new Set(['team-a', 'team-b']), teamSpTotals }),
+        [{ id: 'team-a', name: 'Team A' }, { id: 'team-b', name: 'Team B' }],
+        'a selected zero-effort Team keeps its card'
+    );
+    assert.deepEqual(
+        buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: true, selectedTeamSet: new Set(), teamSpTotals }),
+        [{ id: 'team-a', name: 'Team A' }],
+        'All Teams before work is known: the pointed Teams (today\'s set)'
     );
 });
 
@@ -867,4 +869,116 @@ test('#323 resolvePlannedCapacity: the no-ticket predicate and the stored-number
     assert.equal(unknownCount.noTicketKeys.size, 0, 'an unknown issue count (failed or other-scope read) is not "no ticket"');
     const none = resolvePlannedCapacity({ ...ready, capacityState: settled, teamNames: ['Alpha'], plannedCapacityByTeam: null });
     assert.deepEqual([[...none.noTicketKeys], none.capacityByTeam], [['alpha'], {}], 'editable even before any number is stored');
+});
+
+// ---- #323 Task 4: numbers and cards for every displayed Team ------------------------------------------------------
+
+const numbersOf = (sprintId, byTeam) => ({ sprintId, byTeam: Object.fromEntries(Object.entries(byTeam).map(([teamId, value]) => [teamId, { value, source: value == null ? null : 'user' }])) });
+
+test('#323 buildPlannedCapacityByTeam maps every displayed Team, drops ambiguous and unresolved keys, and ignores another Sprint', async () => {
+    const { buildPlannedCapacityByTeam } = await loadUtils();
+    const displayedTeamOptions = [{ id: 't-a', name: 'Alpha' }, { id: 't-b', name: 'R&D Beta' }];
+    const plannedCapacity = numbersOf('100', { 't-a': 14, 't-b': 0, 't-x': 9 });
+    assert.deepEqual(buildPlannedCapacityByTeam({ plannedCapacity, displayedTeamOptions, sprintId: '100' }), { alpha: 14, beta: 0 }, 'zero is a value; an undisplayed Team adds nothing');
+    assert.deepEqual(buildPlannedCapacityByTeam({ plannedCapacity, displayedTeamOptions, sprintId: 100 }), { alpha: 14, beta: 0 }, 'Sprint ids compare as strings');
+    assert.equal(buildPlannedCapacityByTeam({ plannedCapacity, displayedTeamOptions, sprintId: '101' }), null, 'another Sprint\'s map is ignored');
+    assert.equal(buildPlannedCapacityByTeam({ plannedCapacity: null, displayedTeamOptions, sprintId: '100' }), null);
+    assert.equal(buildPlannedCapacityByTeam({ plannedCapacity: numbersOf('100', { 't-a': null }), displayedTeamOptions, sprintId: '100' }), null, 'an absent number yields no entry');
+    // Two displayed Teams with one capacity key: neither gets a stored number.
+    const ambiguous = [{ id: 't-a', name: 'Alpha' }, { id: 't-a2', name: 'Product - Alpha' }, { id: 't-b', name: 'Beta' }];
+    assert.deepEqual(buildPlannedCapacityByTeam({ plannedCapacity: numbersOf('100', { 't-a': 1, 't-a2': 2, 't-b': 3 }), displayedTeamOptions: ambiguous, sprintId: '100' }), { beta: 3 });
+    // An unresolved name (the raw-id fallback) or a name with a comma gets no stored number.
+    const unresolved = [{ id: 'team-raw', name: 'team-raw' }, { id: 't-c', name: 'Core, Platform' }, { id: 't-b', name: 'Beta' }];
+    assert.deepEqual(buildPlannedCapacityByTeam({ plannedCapacity: numbersOf('100', { 'team-raw': 4, 't-c': 5, 't-b': 6 }), displayedTeamOptions: unresolved, sprintId: '100' }), { beta: 6 });
+});
+
+test('#323 D3: cards for every displayed Team; selected zero-effort Teams are kept and All Teams follows the Team-selector set', async () => {
+    const { buildDisplayedTeamOptions } = await loadUtils();
+    const teamOptions = [{ id: 'all', name: 'All Teams' }, { id: 't-a', name: 'Alpha' }, { id: 't-b', name: 'Beta' }, { id: 't-c', name: 'Gamma' }];
+    const teamSpTotals = { 't-a': 5 };
+    assert.deepEqual(
+        buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: false, selectedTeamSet: new Set(['t-b']), teamSpTotals, cardTeamIds: ['t-b'] }).map(team => team.id),
+        ['t-b'], 'an explicitly selected zero-effort Team keeps its card');
+    assert.deepEqual(
+        buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: true, selectedTeamSet: new Set(), teamSpTotals, cardTeamIds: ['t-a', 't-b'] }).map(team => team.id),
+        ['t-a', 't-b'], 'All Teams: the Team-selector set (Sprint work or awaited Stories), not only pointed Teams');
+    assert.deepEqual(
+        buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: false, selectedTeamSet: new Set(['t-a']), teamSpTotals, cardTeamIds: ['t-a', 't-c'] }).map(team => team.id),
+        ['t-a'], 'a specific selection never shows an unselected Team');
+});
+
+test('#323 buildPlanningCardTeamIds: today\'s set before work is known, the Team-selector set after it', async () => {
+    const { buildPlanningCardTeamIds } = await loadUtils();
+    const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
+    const teamOptions = [{ id: 'all', name: 'All Teams' }, { id: 't-a', name: 'Alpha' }, { id: 't-b', name: 'Beta' }, { id: 't-c', name: 'Gamma' }, { id: 't-d', name: 'Delta' }];
+    const tasks = [
+        { key: 'S-1', fields: { customfield_10004: 3, teamId: 't-a', teamName: 'Alpha' } },
+        { key: 'S-2', fields: { customfield_10004: 0, teamId: 't-b', teamName: 'Beta' } },
+    ];
+    const readinessEpics = [{ missingTeams: [{ id: 't-c' }] }];
+    const base = { teamOptions, tasks, getTeamInfo, readinessEpics };
+    assert.deepEqual(buildPlanningCardTeamIds({ ...base, workKnown: false, selectedTeamIds: ['all'], isAllTeamsSelected: true }), ['t-a'], 'All Teams before work is known: pointed Teams');
+    assert.deepEqual(buildPlanningCardTeamIds({ ...base, workKnown: true, selectedTeamIds: ['all'], isAllTeamsSelected: true }), ['t-a', 't-b', 't-c'], 'after: Sprint work or awaited Stories; Delta has neither');
+    assert.deepEqual(buildPlanningCardTeamIds({ ...base, workKnown: false, selectedTeamIds: ['t-d', 't-a'], isAllTeamsSelected: false }), ['t-a', 't-d'], 'explicitly selected Teams, before work is known');
+    assert.deepEqual(buildPlanningCardTeamIds({ ...base, workKnown: true, selectedTeamIds: ['t-d', 't-a'], isAllTeamsSelected: false }), ['t-a', 't-d'], 'explicitly selected Teams are always kept and never widened');
+});
+
+test('#323 substring guard: "Core" never borrows the "Platform Core" ticket or a stored key, displayed or not', async () => {
+    const { resolveUniqueCapacityValue, resolveUniqueCapacityTarget, resolvePlannedCapacity } = await loadUtils();
+    const capacityByTeam = { 'platform core': 8 };
+    const capacityTargetsByTeam = { 'platform core': { state: 'matched', issueKey: 'CAP-9', teamName: 'Platform Core', capacity: 8 } };
+    for (const configuredTeamKeys of [new Set(['core', 'platform core']), new Set(['core', 'platform core', 'beta'])]) {
+        const options = { configuredTeamKeys };
+        assert.deepEqual(resolveUniqueCapacityValue(capacityByTeam, 'Core', options), { matched: false, value: null });
+        assert.deepEqual(resolveUniqueCapacityTarget(capacityTargetsByTeam, 'Core', options), { state: 'missing' });
+        assert.deepEqual(resolveUniqueCapacityValue(capacityByTeam, 'Platform Core', options), { matched: true, value: 8 }, 'Platform Core still matches its own');
+        assert.deepEqual(resolveUniqueCapacityTarget(capacityTargetsByTeam, 'Platform Core', options), capacityTargetsByTeam['platform core']);
+    }
+    // A zero-effort Team matches exactly only, even when the other key is not a configured Team.
+    assert.deepEqual(resolveUniqueCapacityValue(capacityByTeam, 'Core', { exactOnly: true }), { matched: false, value: null });
+    assert.deepEqual(resolveUniqueCapacityTarget(capacityTargetsByTeam, 'Core', { exactOnly: true }), { state: 'missing' });
+    // Without options the existing containment fallback is unchanged.
+    assert.deepEqual(resolveUniqueCapacityValue(capacityByTeam, 'Core'), { matched: true, value: 8 });
+    // A stored number merged under "core" is never a substring candidate for another configured Team.
+    const merged = { core: 5 };
+    assert.deepEqual(resolveUniqueCapacityValue(merged, 'Alpha Core', { configuredTeamKeys: new Set(['core', 'alpha core']) }), { matched: false, value: null });
+    // resolvePlannedCapacity: Core has no ticket (editable, its own stored number); Platform Core keeps its Jira number.
+    const settled = { capacityByTeam, capacityTargetsByTeam, capacityIssueCount: 1 };
+    const configuredTeamKeys = new Set(['core', 'platform core']);
+    for (const teamNames of [['Core', 'Platform Core'], ['Core']]) {
+        const result = resolvePlannedCapacity({
+            capacityEnabled: true, capacityState: settled, teamNames, plannedCapacityByTeam: { core: 3, 'platform core': 4 },
+            matchOptions: () => ({ configuredTeamKeys }),
+        });
+        assert.deepEqual([...result.noTicketKeys], ['core'], JSON.stringify(teamNames));
+        assert.deepEqual(result.capacityByTeam, { core: 3 }, JSON.stringify(teamNames));
+    }
+});
+
+test('#323 D2: zero-effort Teams with capacity count in totals, multiplier and project split; availability ignores Teams with neither', async () => {
+    const { buildCapacityTotalsSummary, buildProjectCapacity, buildDisplayedTeamOptions, isCapacityTotalAvailable } = await loadUtils();
+    const { buildTeamOptionsForScope } = await import('../frontend/src/teamSelectionUtils.mjs');
+    const getTeamInfo = task => ({ id: task.fields.teamId, name: task.fields.teamName });
+    // Team A comes from both the catalog and the tasks; it appears (and counts) once.
+    const tasks = [{ key: 'S-1', fields: { customfield_10004: 5, teamId: 't-a', teamName: 'Alpha' } }, { key: 'S-2', fields: { customfield_10004: 0, teamId: 't-z', teamName: 'Zero' } }];
+    const teamOptions = buildTeamOptionsForScope({ capacityTasks: tasks, activeGroupTeamIds: ['t-a', 't-z', 't-a'], teamNameLookup: { 't-a': 'Alpha' }, getTeamInfo });
+    const displayed = buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: true, selectedTeamSet: new Set(), teamSpTotals: { 't-a': 5 }, cardTeamIds: ['t-a', 't-z'] });
+    assert.deepEqual(displayed, [{ id: 't-a', name: 'Alpha' }, { id: 't-z', name: 'Zero' }]);
+    const capacity = { Alpha: 10, Zero: 6 };
+    const summary = buildCapacityTotalsSummary({ capacityEnabled: true, displayedTeamOptions: displayed, getTeamCapacity: name => capacity[name] || 0, excludedCapacityByTeamId: {}, capacityMultiplier: 0.7 });
+    assert.equal(summary.totalCapacityBase, 16, 'the zero-effort Team\'s capacity counts');
+    assert.ok(Math.abs(summary.totalCapacityAdjusted - 11.2) < 1e-9, 'the multiplier applies to it');
+    const split = buildProjectCapacity({ showPlanning: true, capacityEnabled: true, displayedTeamOptions: displayed, selectedTeamProjectStats: { 't-a': { product: 5, tech: 0 } },
+        getTeamNetCapacity: team => capacity[team.name] || 0, capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true });
+    assert.ok(Math.abs(split.PRODUCT - 11.2) < 1e-9 && Math.abs(split.TECH - 4.8) < 1e-9, JSON.stringify(split));
+    // Jira-only totals over pointed Teams are unchanged by D3.
+    const pointed = buildDisplayedTeamOptions({ teamOptions, isAllTeamsSelected: true, selectedTeamSet: new Set(), teamSpTotals: { 't-a': 5 } });
+    assert.equal(buildCapacityTotalsSummary({ capacityEnabled: true, displayedTeamOptions: pointed, getTeamCapacity: name => capacity[name] || 0, excludedCapacityByTeamId: {}, capacityMultiplier: 1 }).totalCapacityBase, 10);
+    // "Capacity:" availability: only Teams with effort or a capacity value are judged.
+    const entry = (hasEffort, hasCapacityValue) => ({ hasEffort, hasCapacityValue });
+    assert.equal(isCapacityTotalAvailable([entry(true, true), entry(false, false)]), true, 'a zero-effort Team with no number does not make it unavailable');
+    assert.equal(isCapacityTotalAvailable([entry(true, true), entry(false, true)]), true);
+    assert.equal(isCapacityTotalAvailable([entry(true, true), entry(true, false)]), false, 'a pointed Team with no number does');
+    assert.equal(isCapacityTotalAvailable([entry(false, false)]), false, 'nothing to judge');
+    assert.equal(isCapacityTotalAvailable([]), false);
 });

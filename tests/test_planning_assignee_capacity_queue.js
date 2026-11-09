@@ -502,12 +502,13 @@ test('a planned commit rides with row changes in one PATCH; the gray number stay
     const save = deferred();
     const { controller, calls, buildShown, fire, model } = await fixture({ document: doc({ revision: 0, rows: [], planned: null, inherited }), save: async (_url, _sprint, payload) => { calls.patches.push({ payload }); return save.promise; } });
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1'], active: true });
     await settle();
-    assert.deepEqual(controller.getPlannedSnapshot(), { sprintId: '100', teamId: 't1', value: 12, source: 'inherited' });
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.t1, { value: 12, source: 'inherited' });
     controller.commit({ key: 'u1', field: 'vacations', value: '1' }, buildShown);
     const shown = model.applyChangesToDocument(controller.getState().document, controller.getState().changes);
     assert.deepEqual(model.effectivePlanned(shown), { value: '12', source: 'inherited' }, 'a pending row commit keeps the gray number');
-    assert.equal(controller.getPlannedSnapshot().value, 12);
+    assert.equal(numberOf(controller, 't1'), 12);
     controller.commitPlanned('12', 'user');
     assert.equal(controller.getState().changes.length, 1, 'typing the gray number creates nothing');
     controller.commitPlanned('20', 'user');
@@ -515,7 +516,7 @@ test('a planned commit rides with row changes in one PATCH; the gray number stay
     assert.deepEqual(calls.patches[0].payload, { teamId: 't1', planned: { value: '20', source: 'user' }, changes: [{ assigneeKey: 'u1', vacations: '1' }] });
     save.resolve({ revision: 1, rows: [], planned: { value: '20', source: 'user' } });
     await settle();
-    assert.deepEqual(controller.getPlannedSnapshot(), { sprintId: '100', teamId: 't1', value: 20, source: 'user' });
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.t1, { value: 20, source: 'user' });
 });
 
 test('a failed planned commit is retained as failed and resent by Retry; an unconfirmed one is recovered', async () => {
@@ -526,12 +527,13 @@ test('a failed planned commit is retained as failed and resent by Retry; an unco
         fetch: async () => doc({ planned: null }),
     });
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1'], active: true });
     await settle();
     controller.commitPlanned('8');
     await fire();
     assert.equal(controller.getState().save, 'failed');
     assert.equal(controller.getState().plannedSave, 'failed');
-    assert.equal(controller.getPlannedSnapshot().value, 8, 'the failed draft stays shown');
+    assert.equal(numberOf(controller, 't1'), 8, 'the failed draft stays shown');
     controller.retry();
     await settle();
     assert.deepEqual(calls.patches.map(call => call.payload.planned), [{ value: '8', source: 'user' }, { value: '8', source: 'user' }, { value: '8', source: 'user' }], 'unconfirmed: re-read, then resent once');
@@ -580,17 +582,18 @@ test('mirror never creates a document, never runs read-only, never overwrites a 
     assert.deepEqual(calls.patches.map(call => Boolean(call.payload.planned)), [true, false], 'the commit made during the mirror follows it; the mirror is not replayed');
 });
 
-test('the planned snapshot keeps its identity until the number changes, and is null without a scope or after dispose', async () => {
+test('the numbers map keeps its identity across a strip row edit, and is null without a projection or after dispose', async () => {
     const { controller, buildShown } = await fixture({ document: doc({ planned: { value: '7', source: 'user' } }) });
-    assert.equal(controller.getPlannedSnapshot(), null);
     controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(controller.getPlannedNumbers(), null);
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['t1'], active: true });
     await settle();
-    const first = controller.getPlannedSnapshot();
-    assert.deepEqual(first, { sprintId: '100', teamId: 't1', value: 7, source: 'user' });
+    const first = controller.getPlannedNumbers();
+    assert.deepEqual(first, { sprintId: '100', byTeam: { t1: { value: 7, source: 'user' } } });
     controller.commit({ key: 'u1', field: 'notes', value: 'x' }, buildShown);
-    assert.equal(controller.getPlannedSnapshot(), first, 'a row edit does not change the snapshot');
+    assert.equal(controller.getPlannedNumbers(), first, 'a row edit does not change the numbers map');
     controller.dispose();
-    assert.equal(controller.getPlannedSnapshot(), null);
+    assert.equal(controller.getPlannedNumbers(), null);
     assert.equal(controller.getState().scopeKey, '');
 });
 
@@ -1174,7 +1177,7 @@ test('the strip and card for one Team share one owner (one PATCH)', async () => 
     await fire();
     assert.deepEqual(calls.patches, [{ teamId: 't1', planned: { value: '12', source: 'user' }, changes: [{ assigneeKey: 'u1', capacity: '6' }] }]);
     assert.equal(numberOf(controller, 't1'), 12);
-    assert.deepEqual(controller.getPlannedSnapshot(), { sprintId: '100', teamId: 't1', value: 12, source: 'user' });
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.t1, { value: 12, source: 'user' });
 });
 
 test('a card edit loads the full document once; selecting that Team for the strip reuses it (no second GET)', async () => {

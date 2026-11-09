@@ -101,14 +101,6 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     const canSaveOwner = queue => queue.document?.capabilities?.canSave === true && !halted(queue);
     const overlay = queue => (queue ? [...queue.rejected.values(), ...queue.failed.values(), ...queue.inFlight, ...queue.pending.values()] : []);
     const holdsPlanned = changes => [...changes].some(isPlannedChange);
-    // The stored team number as shown (own, inherited or pending) for App's capacity maths; a new object only when it changes.
-    let plannedSnapshot = null;
-    const updatePlannedSnapshot = () => {
-        const shown = current && state.document ? effectivePlanned(applyChangesToDocument(state.document, state.changes)) : null;
-        const value = plannedNumber(shown);
-        const next = value == null ? null : { sprintId: state.sprintId, teamId: state.teamId, value, source: shown.source ?? null };
-        if (JSON.stringify(next) !== JSON.stringify(plannedSnapshot)) plannedSnapshot = next;
-    };
     // The projection's batch record for an owner's Team, if the owner is in the projected Sprint.
     const recordFor = queue => (projection && queue && queue.sprintId === projection.sprintId ? projection.byTeam[queue.teamId] : undefined);
     // Of the batch record and the owner's document, the newer one: by revision, then by read order.
@@ -147,7 +139,6 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     };
     // `teamId` limits the Team listeners to that Team's (one owner changed); without it every Team is told.
     const emit = (teamId = null) => {
-        updatePlannedSnapshot();
         updateNumbers();
         listeners.forEach(listener => listener());
         if (teamId != null) teamListeners.get(teamId)?.forEach(listener => listener());
@@ -622,8 +613,6 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         },
         // The strip Team's mirror (see mirrorTo).
         mirrorPlanned(ticketValue) { return active && Boolean(current) && state.capabilities.canSave && mirrorTo(current, ticketValue); },
-        // The strip Team's stored number, derived from its owner until App reads `getPlannedNumbers` (#323 Task 4).
-        getPlannedSnapshot: () => plannedSnapshot,
         retry() { retryOwner(current); },
         // Drops every failed and refused change; the cells show the saved values again.
         discard() {

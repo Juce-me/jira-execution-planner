@@ -98,7 +98,7 @@ import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkSt
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers } from './eng/planningSelectionActions.js';
 import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
-import { getTeamCapacityMeta } from './eng/planningCapacityUtils.js';
+import { buildPlanningCardTeamIds, getTeamCapacityMeta, isCapacityTotalAvailable } from './eng/planningCapacityUtils.js';
 import { buildPlanningSelectionSummary, buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
 import { PRIORITY_AXIS } from './stats/statsConstants.js';
@@ -4071,6 +4071,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
+            // #323 D3: the Teams with capacity cards, which also get stored numbers (the provider's projection).
+            const planningCardTeamIds = React.useMemo(() => buildPlanningCardTeamIds({ teamOptions, tasks: capacityTasks, getTeamInfo, readinessEpics: storyReadiness.snapshot?.epics || [], workKnown: teamWorkKnown, selectedTeamIds: selectedTeams, isAllTeamsSelected }), [teamOptions, capacityTasks, storyReadiness.snapshot, teamWorkKnown, selectedTeams, isAllTeamsSelected]);
             const isTechTask = React.useCallback(
                 (task) => techProjectKeys.has(String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase()),
                 [techProjectKeys]
@@ -5040,7 +5042,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return submitStatusTransition(targetStatus, issue.key, options);
             }, [submitStatusTransition]);
 
-            const plannedCapacity = React.useSyncExternalStore(getAssigneeCapacityController(BACKEND_URL).subscribe, getAssigneeCapacityController(BACKEND_URL).getPlannedSnapshot); // #323 design A: App re-renders only when the stored team number changes
+            const plannedCapacity = React.useSyncExternalStore(getAssigneeCapacityController(BACKEND_URL).subscribe, getAssigneeCapacityController(BACKEND_URL).getPlannedNumbers); // #323: App re-renders only when a displayed Team's stored number changes
             const {
                 selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
                 displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
@@ -5048,7 +5050,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
                 selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
             } = useEngCapacity({
-                scope, workModel,
+                scope: { ...scope, cardTeamIds: planningCardTeamIds }, workModel,
                 showPlanning, capacityEnabled, showProduct, showTech,
                 selectedTasksList, selectedPlanningTasksList, selectedSP, getTeamInfo,
                 normalizeStatus, normalizeEpicKey, BACKEND_URL, loadEpochRef,
@@ -6121,12 +6123,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
-                <PlanningAssigneeCapacity enabled={!shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
+                <PlanningAssigneeCapacity enabled={!shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} teamIds={planningCardTeamIds} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
                     <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
                         summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <PlanningOverviewSummary childPlural={entityNames.childPlural.toLowerCase()} planned={Boolean(planningReview.plan?.exists || planningReview.dirty)} count={selectedCount} sp={selectedSP}
-                                capacity={capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? totalCapacityAdjusted : null}
+                                capacity={capacityEnabled && !capacityDataStale && !capacityReadError && isCapacityTotalAvailable(selectedTeamEntries) ? totalCapacityAdjusted : null}
                                 unestimated={planningSelectionSummary.missingEstimateCount} hidden={planningSelectionSummary.hiddenCount} />}
                         notice={<span className="planning-review-state-note" role="status">
                             {pendingPlanningAuthResumeRef.current ? 'Restoring plan…' : !planningSourceReady || !planningReview.planReady ? planningReview.error || error ? <>Plan could not be loaded. <button type="button" className="planning-action-button" onClick={() => { if (!planningSourceReady) void retryEngLoad(); else void planningReview.refresh(); }}>Retry</button></> : 'Loading plan…'

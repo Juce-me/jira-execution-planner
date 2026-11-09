@@ -92,7 +92,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
-        calls.push({ method: request.method(), pathname: url.pathname, body: request.method() === 'GET' ? null : requestBody(request) });
+        calls.push({ method: request.method(), pathname: url.pathname, teams: url.searchParams.get('teams'), body: request.method() === 'GET' ? null : requestBody(request) });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
         if (url.pathname === '/api/epm/access') return json(route, { state: 'disabled', epmHomeReadAvailable: false });
@@ -133,6 +133,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
             const product = url.searchParams.get('project') === 'product' && !url.searchParams.get('purpose');
             return json(route, { issues: product ? issues : [], epics: { [epic.key]: epic }, epicsInScope: product ? [epic] : [], names: {} });
         }
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return server.batch ? server.batch(route) : json(route, { sprintId: url.pathname.split('/')[4], capabilities: caps, teams: [] });
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return server.handler(route);
         if (url.pathname === '/api/eng/assignee-capacity/user-options' && request.method() === 'POST') return json(route, people(requestBody(request)?.query));
         if (/^\/api\/eng\/sprints\/[^/]+\/review$/.test(url.pathname)) return json(route, { schemaVersion: 1, sprintId: String(futureSprintId), schemaRevision: 0, columns: [], capabilities: { canRead: true, canSave: true } });
@@ -208,15 +209,19 @@ test('the strip starts expanded from the renamed preference key and ignores the 
     await expect(stripToggle(page)).toHaveAttribute('aria-expanded', 'true');
 });
 
-test('two Teams and All Teams keep the old cards and show no strip', async ({ page }) => {
-    for (const selectedTeams of [['team-alpha', 'team-beta'], ['all']]) {
+// One page per selection: a second install on the same page keeps the first selection.
+for (const selectedTeams of [['team-alpha', 'team-beta'], ['all']]) test(`${selectedTeams.length === 2 ? 'two Teams' : 'All Teams'} show a card for every displayed Team, read the stored numbers once in one batch and show no strip`, async ({ page }) => {
+    {
         const server = capacityServer();
-        await install(page, { server, selectedTeams });
+        const { calls } = await install(page, { server, selectedTeams });
         await openPlanning(page);
         await expect(page.locator('.planning-panel-team-details')).toHaveCount(1);
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(2);
         await expect(strip(page)).toHaveCount(0);
-        expect(server.state.gets).toBe(0);
-        await page.unrouteAll({ behavior: 'ignoreErrors' });
+        await expect.poll(() => calls.filter(call => call.pathname.endsWith('/planned/read')).length, String(selectedTeams)).toBe(1);
+        await page.waitForTimeout(300);
+        expect(server.state.gets, 'no per-Team document read').toBe(0);
+        expect(calls.filter(call => call.pathname.endsWith('/planned/read')).map(call => [...call.body.teamIds].sort())).toEqual([['team-alpha', 'team-beta']]);
     }
 });
 
@@ -3077,4 +3082,163 @@ test('the Totals over trigger draws its hover and keyboard-focus rings inside th
     await page.waitForTimeout(200);
     await page.screenshot({ path: 'tmp/slice13-shots/totals-trigger-focus.png', clip, animations: 'disabled' });
     await context.close();
+});
+
+// ---- #323 Task 4: stored numbers and cards for every displayed Team ----------------------------------------------
+
+const namedStory = (key, team, teamName, sp) => {
+    const base = story(key, 'acc-ann', 'Ann Synthetic', sp, { team });
+    return { ...base, fields: { ...base.fields, teamName } };
+};
+const gammaStories = [...stories, namedStory('PLAN-6', 'team-gamma', 'Gamma Team', 0)];
+const teamCard = (page, teamId) => page.locator(`.planning-team-capacity-cards .team-stat-card[data-capacity-team="${teamId}"]`);
+const storedOn = async (page, teamId, value) => {
+    await expect(teamCard(page, teamId)).toHaveAttribute('data-capacity-source', 'planned');
+    await expect(teamCard(page, teamId).locator('.microbar')).toHaveAttribute('aria-label', new RegExp(`against ${value.replace('.', '\\.')} team capacity \\(not in Jira\\)`));
+};
+const batchReads = (calls, since = 0) => calls.slice(since).filter(call => call.pathname.endsWith('/planned/read'));
+const jiraReads = (calls, since = 0) => calls.slice(since).filter(call => call.method === 'GET' && call.pathname === '/api/capacity');
+const taskReads = (calls, since = 0) => calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name');
+
+// Stored numbers by Team: the full GET answers its `teamId`, the batch read answers every requested Team.
+function numbersServer(planned = {}) {
+    const state = { gets: 0, reads: [], patches: [] };
+    const docOf = (sprintId, teamId) => (planned[teamId] == null
+        ? { teamId, sprintId, revision: 0, rows: [], planned: null, inherited: null, capabilities: caps }
+        : { teamId, sprintId, revision: 1, rows: [], planned: { value: planned[teamId], source: 'user' }, inherited: null, capabilities: caps });
+    const handler = async route => {
+        const request = route.request();
+        const url = new URL(request.url());
+        const sprintId = decodeURIComponent(url.pathname.split('/')[4]);
+        if (request.method() === 'GET') { state.gets += 1; return json(route, docOf(sprintId, url.searchParams.get('teamId'))); }
+        state.patches.push(requestBody(request));
+        return json(route, { error: 'unexpected_write' }, 500);
+    };
+    const batch = async route => {
+        const request = route.request();
+        const sprintId = decodeURIComponent(new URL(request.url()).pathname.split('/')[4]);
+        const teamIds = requestBody(request)?.teamIds || [];
+        state.reads.push(teamIds);
+        return json(route, { sprintId, capabilities: caps, teams: teamIds.map(teamId => { const { revision, planned: value, inherited } = docOf(sprintId, teamId); return { teamId, revision, planned: value, inherited }; }) });
+    };
+    return { state, handler, batch };
+}
+
+for (const selectedTeams of [['team-alpha', 'team-beta'], ['all']]) test(`${selectedTeams.length === 2 ? 'two Teams' : 'All Teams'}: each Team's stored number shows on its card, display only, writing nothing`, async ({ page }) => {
+    {
+        const server = numbersServer({ 'team-alpha': '14', 'team-beta': '6' });
+        const { calls } = await install(page, { server, selectedTeams, capacityProject: 'CAP', capacity: noTicket });
+        await openPlanning(page);
+        await showCards(page);
+        await storedOn(page, 'team-alpha', '14.0');
+        await storedOn(page, 'team-beta', '6.0');
+        for (const teamId of ['team-alpha', 'team-beta']) {
+            await teamCard(page, teamId).hover();
+            await expect(teamCard(page, teamId).getByRole('button', { name: /team capacity$/ }), 'pencils are Task 5').toHaveCount(0);
+        }
+        expect(server.state.patches, String(selectedTeams)).toEqual([]);
+        expect(jiraWrites(calls)).toEqual([]);
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(2);
+    }
+});
+
+for (const selectedTeams of [['team-alpha', 'team-gamma'], ['all']]) test(`zero-effort Teams get cards (${selectedTeams.length === 2 ? 'selected' : 'All Teams, with Sprint work'}) and show their stored number`, async ({ page }) => {
+    {
+        const server = numbersServer({ 'team-alpha': '14', 'team-gamma': '5' });
+        await install(page, { server, selectedTeams, scopeTeamIds: ['team-alpha', 'team-beta', 'team-gamma'], capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
+        await openPlanning(page);
+        await showCards(page);
+        await expect(teamCard(page, 'team-gamma'), String(selectedTeams)).toHaveCount(1);
+        await storedOn(page, 'team-gamma', '5.0');
+        await expect(teamCard(page, 'team-gamma').locator('.microbar-label')).toHaveText('0.0 SP');
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(selectedTeams.length === 2 ? 2 : 3);
+    }
+});
+
+test('an unresolved Team name gets a card with no stored number and is not sent to the Jira capacity read', async ({ page }) => {
+    const server = numbersServer({ 'team-alpha': '14', 'team-raw': '9' });
+    const { calls } = await install(page, { server, selectedTeams: ['team-alpha', 'team-raw'], scopeTeamIds: ['team-alpha', 'team-beta', 'team-raw'], capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-alpha', '14.0');
+    await expect(teamCard(page, 'team-raw')).toHaveCount(1);
+    await expect(teamCard(page, 'team-raw')).not.toHaveAttribute('data-capacity-source', /./);
+    await expect(teamCard(page, 'team-raw').locator('.microbar')).not.toHaveAttribute('aria-label', /against/);
+    await expect.poll(() => jiraReads(calls).length).toBeGreaterThan(0);
+    for (const read of jiraReads(calls)) expect(read.teams.split(',')).not.toContain('team-raw');
+});
+
+test('request ledger: an All Teams startup has no per-Team fan-out: one batch read, no document GET, one Jira capacity read', async ({ page }) => {
+    const startup = numbersServer({ 'team-alpha': '14' });
+    const first = await install(page, { server: startup, selectedTeams: ['all'], scopeTeamIds: ['team-alpha', 'team-beta', 'team-gamma'], capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-alpha', '14.0');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(startup.state.gets, 'no per-Team document read').toBe(0);
+    expect(startup.state.reads.map(ids => [...ids].sort()), 'the zero-effort Gamma joins the one batch read').toEqual([['team-alpha', 'team-beta', 'team-gamma']]);
+    expect(jiraReads(first.calls).map(call => call.teams), 'one Jira capacity read').toEqual(['Alpha Team,Beta Team,Gamma Team']);
+});
+
+test('request ledger: one Jira capacity read per settled scope and page-session data reused from one to two to All Teams', async ({ page }) => {
+    // One Team, then two, then All Teams (which adds the zero-effort Gamma): one read of each kind per scope, no reload.
+    const server = numbersServer({ 'team-alpha': '14', 'team-beta': '6', 'team-gamma': '5' });
+    const { calls } = await install(page, { server, selectedTeams: ['team-alpha'], scopeTeamIds: ['team-alpha', 'team-beta', 'team-gamma'], capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-alpha', '14.0');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(server.state.gets, 'one Team: the full document GET').toBe(1);
+    expect(server.state.reads, 'one Team derives from the full GET').toEqual([]);
+    expect(jiraReads(calls).map(call => call.teams)).toEqual(['Alpha Team']);
+    const tasksAtStart = taskReads(calls).length;
+    let since = calls.length;
+    await pickTeam(page, 'Beta Team');
+    await storedOn(page, 'team-beta', '6.0');
+    await storedOn(page, 'team-alpha', '14.0');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(batchReads(calls, since).map(call => [...call.body.teamIds].sort()), 'two Teams: one batch read').toEqual([['team-alpha', 'team-beta']]);
+    expect(jiraReads(calls, since).map(call => call.teams), 'two Teams: one Jira read').toEqual(['Alpha Team,Beta Team']);
+    since = calls.length;
+    await pickTeam(page, 'All Teams');
+    await storedOn(page, 'team-gamma', '5.0');
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(400);
+    expect(batchReads(calls, since).map(call => [...call.body.teamIds].sort()), 'All Teams: one batch read').toEqual([['team-alpha', 'team-beta', 'team-gamma']]);
+    expect(jiraReads(calls, since).map(call => call.teams), 'All Teams: one Jira read').toEqual(['Alpha Team,Beta Team,Gamma Team']);
+    expect(server.state.gets, 'no further document GET while widening').toBe(1);
+    expect(taskReads(calls).length, 'widening re-reads no Stories').toBe(tasksAtStart);
+    expect(server.state.patches).toEqual([]);
+    expect(jiraWrites(calls)).toEqual([]);
+});
+
+// G1: twelve Teams (nine pointed, three with zero-point Sprint work). Settled card screenshots and the pinned stack.
+const twelveTeamIds = Array.from({ length: 12 }, (_, index) => `team-${String(index + 1).padStart(2, '0')}`);
+const twelveStories = twelveTeamIds.map((teamId, index) => namedStory(`PLAN-${index + 1}`, teamId, `Synthetic Team ${String(index + 1).padStart(2, '0')}`, index < 9 ? index + 1 : 0));
+const twelveCapacity = sprint => ({ enabled: true, mutationEnabled: false, sprint,
+    capacities: Object.fromEntries(twelveTeamIds.slice(0, 6).map((teamId, index) => [`Synthetic Team ${String(index + 1).padStart(2, '0')}`, 10 + index])),
+    entries: twelveTeamIds.slice(0, 6).map((teamId, index) => ({ teamName: `Synthetic Team ${String(index + 1).padStart(2, '0')}`, issueKey: `CAP-${200 + index}`, capacity: 10 + index })) });
+
+test('twelve Teams: cards for every Team with work, settled screenshots, and the pinned stack inside DoD 14 at 1440x900 and 1280x720', async ({ page }) => {
+    const stored = Object.fromEntries(twelveTeamIds.slice(6).map((teamId, index) => [teamId, String(4 + index)]));
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) {
+        await page.setViewportSize(viewport);
+        const server = numbersServer(stored);
+        await install(page, { server, selectedTeams: ['all'], scopeTeamIds: twelveTeamIds, capacityProject: 'CAP', capacity: twelveCapacity, issues: twelveStories });
+        await openPlanning(page);
+        await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(12);
+        await storedOn(page, 'team-12', '9.0');
+        const compact = await pinnedHeights(page);
+        expect(compact.panel, `compact ${viewport.width}`).toBeLessThan(64);
+        expect(compact.stack, `compact ${viewport.width}`).toBeLessThanOrEqual(175);
+        await showCards(page);
+        await page.mouse.move(5, viewport.height - 5);
+        await page.waitForTimeout(200);
+        await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task4/current/cards-12-teams-${viewport.width}x${viewport.height}.png`, animations: 'disabled' });
+        await page.locator('.planning-panel').screenshot({ path: `tmp/planning-323-every-team/task4/current/panel-12-teams-${viewport.width}x${viewport.height}.png`, animations: 'disabled' });
+        await showCards(page);
+        await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+        await expect(page.locator('#planning-panel-details')).toBeHidden();
+        expect(await pinnedHeights(page), `compact again ${viewport.width}`).toEqual(compact);
+        await page.unrouteAll({ behavior: 'ignoreErrors' });
+    }
 });

@@ -444,7 +444,14 @@ for the page session. The Planning automatic follow-up and the header Refresh re
 unsaved changes; an unchanged document is not republished, a failure keeps the held document, and an automatic height
 change of the strip above the viewport keeps the reading position. A new auth session clears the cache and re-reads.
 
-**Limitations.** The stored team number is used only with one Team: several Teams show
-Jira values only. A Team with no pointed Stories has no card, so its stored number can be typed only once it has Stories.
+**Every displayed Team.** The cards are the Teams the Teams selector shows for the current selection (explicitly
+selected Teams always; with All Teams, configured Teams with Sprint work or awaited Stories), or the pointed and selected
+Teams until the Sprint's work is known. Every card shows its Team's stored number where Jira has none, read once per scope
+(one Team from its document, more Teams through one batch read); a zero-effort Team with capacity counts in the totals and
+the project split, and the compact "Capacity:" total judges only Teams with effort or a capacity value. A Team whose name
+is unresolved (its id) or contains a comma keeps its card but shows no stored number and is not sent to the Jira read, and
+a Team never borrows another configured Team's ticket or stored number by name containment.
+
+**Limitations.** The stored team number is typed only with one Team selected; several Teams show it read-only.
 Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
 against Jira. Undo is not built yet.

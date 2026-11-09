@@ -71,7 +71,8 @@ function CapacityInput({ field, label, value, disabled, maxLength, onCommit, edi
             onKeyDown={event => {
                 // A cell mid-edit keeps Cmd/Ctrl+Z for the input's own native undo; the table's Undo never sees it.
                 if (isUndoShortcut(event) && (latest.current.draft !== latest.current.shown || latest.current.error)) { event.stopPropagation(); return; }
-                if (event.key === 'Enter') { if (commit()) ref.current.blur(); }
+                // Enter leaves focus on the cell's own container (a `tabIndex={-1}` td), still inside the table, so Cmd/Ctrl+Z undoes it.
+                if (event.key === 'Enter') { if (commit()) ref.current.closest('td').focus({ preventScroll: true }); }
                 else if (event.key === 'Escape') { cancelled.current = true; setDraft(shown); setError(''); ref.current.blur(); }
             }} />
         {error && <span className="planning-review-validation" role="alert">{error}</span>}
@@ -151,10 +152,10 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
             </IconButton>}
         </div></td>
-        <td className={`planning-review-storyPoints${row.inherited ? ' planning-assignee-inherited' : ''}`}>{input('capacity', 'Capacity', 8)}</td>
+        <td tabIndex={-1} className={`planning-review-storyPoints${row.inherited ? ' planning-assignee-inherited' : ''}`}>{input('capacity', 'Capacity', 8)}</td>
         <EffortCell hundredths={row.selectedHundredths} cue={row.cue} />
-        <td className="planning-review-storyPoints">{input('vacations', 'Vacations', 8)}</td>
-        <td className="planning-assignee-note">
+        <td tabIndex={-1} className="planning-review-storyPoints">{input('vacations', 'Vacations', 8)}</td>
+        <td tabIndex={-1} className="planning-assignee-note">
             <EpicHeaderValueReadout value={row.notes || ''} suppressed={!row.notes} measureSelector="input" nativeSelector="input">
                 {({ discoveryProps }) => <span {...discoveryProps} tabIndex={undefined} className="planning-review-truncated-value">{input('notes', 'Notes', 500)}</span>}
             </EpicHeaderValueReadout>

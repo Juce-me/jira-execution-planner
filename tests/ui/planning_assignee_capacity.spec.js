@@ -1832,6 +1832,50 @@ test('Cmd/Ctrl+Z in the table reverses the last edit with one PATCH and no extra
     await strip(page).screenshot({ path: 'tmp/slice7-shots/strip-with-undo.png', animations: 'disabled' });
 });
 
+// #323 Task 8 Step 4 (operator request 2026-11-06): Enter keeps focus in the table, on the committed cell, so Cmd/Ctrl+Z works.
+test('after Enter commits a cell, Cmd/Ctrl+Z undoes it', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('11'); await capacity.press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-ann', capacity: '11' }]);
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    // Focus sits on the committed cell's container: inside the table, not on the input and not on the page.
+    const focus = await page.evaluate(() => { const node = document.activeElement; return { tag: node.tagName, inTable: Boolean(node.closest('table.planning-assignee-table')), holdsInput: node.querySelector('input')?.getAttribute('aria-label') || '' }; });
+    expect(focus).toEqual({ tag: 'TD', inTable: true, holdsInput: 'Capacity for Ann Synthetic' });
+    await page.mouse.move(5, 600);
+    await rowOf(page, 'acc-ann').screenshot({ path: 'tmp/planning-323-every-team/task8/focus-after-enter.png', animations: 'disabled' });
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(capacity).toHaveValue('8');
+    await expect.poll(() => server.state.patches.length).toBe(2);
+    expect(server.state.patches[1].body.changes).toEqual([{ assigneeKey: 'acc-ann', capacity: '8' }]);
+    await expect(undoButton(page)).toBeDisabled();
+});
+
+test('while a cell is being edited, Cmd/Ctrl+Z is the input\'s native undo', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    const capacity = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Capacity for Ann Synthetic' });
+    await capacity.fill('11'); await capacity.press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await expect(undoButton(page)).toBeEnabled();
+    const notes = rowOf(page, 'acc-ann').getByRole('textbox', { name: 'Notes for Ann Synthetic' });
+    await notes.click();
+    await page.keyboard.type('draft');
+    await page.keyboard.press('ControlOrMeta+z');
+    await expect(notes, 'the input undid its own typing').not.toHaveValue('draft');
+    await expect(notes).toBeFocused();
+    await page.waitForTimeout(400);
+    expect(server.state.patches, 'the table Undo did not run').toHaveLength(1);
+    await expect(capacity).toHaveValue('11');
+    await expect(undoButton(page)).toBeEnabled();
+});
+
 test('the shortcut is ignored while a cell is mid-edit, when focus is outside the table, and on key auto-repeat', async ({ page }) => {
     const server = capacityServer({ rows: annRows() });
     await install(page, { server });

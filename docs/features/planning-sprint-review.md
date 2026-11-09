@@ -399,7 +399,8 @@ hidden.
 **Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
 stored team number, which shares the queue) can be undone with the Undo button at the right end of the expanded strip header
 (beside the save status, a sibling of the header toggle; the collapsed strip shows no Undo), or with Cmd/Ctrl+Z while focus
-is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
+is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored).
+Enter leaves focus on the committed cell, so Cmd/Ctrl+Z right after Enter undoes that commit. An
 undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
 sends nothing. Undoing an Add assignee removes the person again: it sends `removed: true`, because there is no delete
 route. Undoing the first edit of an inherited Sprint keeps the Sprint's own copy with the inherited values, and the muted

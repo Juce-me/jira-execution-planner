@@ -152,38 +152,28 @@ class CatalogBase(WorkStructureRouteBase):
 
 
 class SourceCatalogTests(CatalogBase):
-    def test_board_and_issue_sources_merge_in_range_with_original_ids(self):
+    def test_inherited_board_splits_by_range_with_original_ids(self):
         self.seed_sources()
         fake = self.jira(FakeJira(
             board_values=[
                 {**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001},
-                # Physical Board row of the other era: never admitted through Legacy.
                 {**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001},
             ],
-            scan_pages=[{'issues': [
-                issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1'),
-                                                 sprint_value(150, '2027Q1', 'closed'),
-                                                 sprint_value(7, 'Not a quarter')]}),
-                issue(**{DELIVERY_SPRINT_FIELD: None}),
-            ], 'isLast': True}],
         ))
         response = self.sprints()
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
-        # DELIVERY inherits Legacy's Board, so its 2027Q1 is the retained scanned id, never Board 102.
         self.assertEqual(
             [(row['id'], row['name'], row['configurationId']) for row in body['sprints']],
-            [(201, '2027Q1', 'delivery'), (101, '2026Q4', 'legacy')])
+            [(102, '2027Q1', 'delivery'), (101, '2026Q4', 'legacy')])
         self.assertEqual({row['sourceIdentity'] for row in body['sprints']} - {item['cache']['identity'] for item in body['sources']}, set())
         self.assertEqual([item['sourceMode'] for item in body['sources']], ['board', 'board'])
         self.assertEqual(body['cache']['state'], 'fresh')
         self.assertIsNone(body['cache']['refreshAttemptId'])
-        self.assertEqual(len(fake.search_jql), 1, 'Legacy keeps Board-only discovery')
-        self.assertIn('"PLAN"', fake.search_jql[0])
-        self.assertIn('cf[26] is not EMPTY', fake.search_jql[0])
+        self.assertEqual(fake.search_jql, [], 'a Board-mode configuration never scans issues')
         with self.factory() as session:
             boards = [row.board_id for row in session.query(models.WorkspaceSprintCatalog)]
-        self.assertEqual(boards, ['7001'], 'no fake Board row for the issue source')
+        self.assertEqual(boards, ['7001'], 'one Board row set for the shared Board')
 
     def test_same_name_retained_id_is_unchanged_active_closed_future_then_lowest_id(self):
         pages = [{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [
@@ -269,26 +259,18 @@ class SourceCatalogTests(CatalogBase):
         self.assertEqual(calls, [None, 'tok1'])
         self.assertEqual([row['name'] for row in rows], ['2027Q2', '2027Q1'])
 
-    def test_failed_observed_scan_keeps_the_shared_board_sprints(self):
-        self.seed_sources()
-        self.jira(FakeJira(
-            board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001}],
-            scan_pages=[500]))
-        response = self.sprints()
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual([row['id'] for row in response.get_json()['sprints']], [101])
-
-    def test_blank_source_is_setup_required_and_does_not_lock_the_other_era(self):
+    def test_blank_delivery_with_inherited_board_is_ready_with_board_rows(self):
         self.seed_sources(delivery_ready=False)
-        self.jira(FakeJira(board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001}]))
+        self.jira(FakeJira(board_values=[
+            {**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001},
+            {**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001}]))
         body = self.sprints().get_json()
         delivery = next(item for item in body['sources'] if item['configurationId'] == 'delivery')
-        # An inherited Board lends DELIVERY no Sprint ids: without its own scan it needs setup,
-        # and Legacy still answers.
-        self.assertEqual(delivery['state'], 'setup_required')
-        self.assertIn('scope.projects', delivery['missingFields'])
+        # The inherited Board is DELIVERY's only Sprint source: it needs no projects or Sprint field.
+        self.assertEqual(delivery['state'], 'ready')
         self.assertEqual(delivery['sourceMode'], 'board')
-        self.assertEqual([row['id'] for row in body['sprints']], [101])
+        self.assertEqual([(row['id'], row['configurationId']) for row in body['sprints']],
+                         [(102, 'delivery'), (101, 'legacy')])
         self.seed_blank_row()
         response = self.sprints()
         self.assertEqual(response.status_code, 409)
@@ -310,7 +292,8 @@ class SourceCatalogTests(CatalogBase):
                                     'project = OVERRIDE')):
             with self.subTest(override=override):
                 SCOPED_SPRINT_CATALOGS.clear()
-                fake = self.jira(FakeJira(scan_pages=[{'issues': [], 'isLast': True}]))
+                fake = self.jira(FakeJira(board_values=[
+                    {**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001}]))
                 with patch.object(jira_server, 'JQL_QUERY', override):
                     sources = self.sources()
                     self.assertIn(expected, sources[1].base_jql)
@@ -318,6 +301,8 @@ class SourceCatalogTests(CatalogBase):
                     self.assertEqual(sources[0].projects, ('OLD',))
                     self.assertNotIn('ORDER BY', sources[1].base_jql.upper())
                     self.sprints('?configurationId=delivery&refresh=true')
+                    teams = self.client.get('/api/teams?sprint=102&configurationId=delivery')
+                    self.assertEqual(teams.status_code, 200, teams.get_data(as_text=True))
                 self.assertIn(expected, fake.search_jql[-1])
 
     def test_override_with_only_team_or_sprint_clauses_is_unsupported_not_unscoped(self):
@@ -401,9 +386,8 @@ class SelectorTests(CatalogBase):
         super().setUp()
         self.seed_sources()
         self.fake = self.jira(FakeJira(
-            board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001}],
-            scan_pages=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1')]})],
-                         'isLast': True}],
+            board_values=[{**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001},
+                          {**sprint_value(201, '2027Q1'), 'originBoardId': 7001}],
             team_pages=[{'issues': [issue(**{DELIVERY_TEAM_FIELD: {'id': 't-1', 'name': 'Alpha'}})],
                          'isLast': True}]))
         self.assertEqual(self.sprints().status_code, 200)
@@ -496,8 +480,8 @@ class SelectorTests(CatalogBase):
 DELIVERY_BOARD_PATH = '/rest/agile/1.0/board/19095/sprint'
 
 
-class ObservedOnBoardConfigurationTests(CatalogBase):
-    """A Board-mode quarterly configuration also admits Sprints its scoped Epics carry."""
+class BoardModeConfigurationTests(CatalogBase):
+    """A Board-mode configuration has exactly one Sprint source: the Board, split by quarter range."""
 
     def setUp(self):
         super().setUp()
@@ -510,41 +494,17 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
             delivery['scope']['boardId'] = '19095'
             row.payload = payload
             session.commit()
-        self.epic_scan = [{'issues': [
-            {'key': 'PLAN-7', 'fields': {DELIVERY_SPRINT_FIELD: [sprint_value(45459, '2027Q1', 'future')]}},
-        ], 'isLast': True}]
 
     def inherit_legacy_board(self):
         with self.factory() as session:
             row = session.query(models.WorkspaceDashboardConfig).one()
             payload = deepcopy(row.payload)
-            payload['workConfigurations']['configurations'][1]['scope']['boardId'] = ''
+            configurations = payload['workConfigurations']['configurations']
+            configurations[1]['scope']['boardId'] = ''
+            configurations[0]['throughQuarter'] = '2026Q4'
+            configurations[1]['fromQuarter'] = '2027Q1'
             row.payload = payload
             session.commit()
-
-    def test_board_inherited_is_set_only_for_a_blank_stored_board(self):
-        legacy, delivery = self.sources()
-        self.assertFalse(legacy.board_inherited)
-        self.assertFalse(delivery.board_inherited, 'DELIVERY has its own Board')
-        self.inherit_legacy_board()
-        legacy, delivery = self.sources()
-        self.assertFalse(legacy.board_inherited)
-        self.assertTrue(delivery.board_inherited)
-        self.assertEqual(delivery.source_mode, 'board')
-        self.assertEqual(delivery.board_id, '7001')
-        self.assertTrue(delivery.observed_source.board_inherited)
-
-    def test_legacy_borrowing_the_delivery_board_keeps_its_board_rows(self):
-        with self.factory() as session:
-            row = session.query(models.WorkspaceDashboardConfig).one()
-            payload = deepcopy(row.payload)
-            payload['workConfigurations']['configurations'][0]['scope']['boardId'] = ''
-            row.payload = payload
-            session.commit()
-        legacy, delivery = self.sources()
-        self.assertEqual(legacy.board_id, '19095')
-        self.assertFalse(legacy.board_inherited, 'only DELIVERY narrows an inherited Board to its scan')
-        self.assertFalse(delivery.board_inherited)
 
     def jira_with_delivery_board(self, delivery_values, **kwargs):
         fake = FakeJira(board_values=[{**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001}], **kwargs)
@@ -558,9 +518,10 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
         fake.get = get
         return self.jira(fake)
 
-    def test_sprint_on_epics_but_not_on_the_board_is_admitted(self):
+    def test_board_mode_never_scans_issues(self):
         fake = self.jira_with_delivery_board(
-            [{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095}], scan_pages=self.epic_scan)
+            [{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095},
+             {**sprint_value(45459, '2027Q1', 'future'), 'originBoardId': 19095}])
         response = self.sprints('?configurationId=delivery')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
@@ -568,136 +529,62 @@ class ObservedOnBoardConfigurationTests(CatalogBase):
                          [(45459, '2027Q1'), (99, '2026Q4')])
         self.assertEqual(body['sources'][0]['sourceMode'], 'board')
         self.assertEqual({row['sourceIdentity'] for row in body['sprints']}, {body['cache']['identity']})
-        self.assertEqual(len([jql for jql in fake.search_jql if 'cf[26] is not EMPTY' in jql]), 1)
+        self.assertFalse([jql for jql in fake.search_jql if 'is not EMPTY' in jql])
+        self.assertEqual(fake.search_jql, [])
         teams = self.client.get('/api/teams?sprint=45459&quarter=2027Q1&configurationId=delivery')
         self.assertEqual(teams.status_code, 200, teams.get_data(as_text=True))
-        self.assertEqual(teams.get_json()['quarter'], '2027Q1')
-        self.assertEqual(self.sprints().status_code, 200)
+        self.assertEqual(self.sprints('?configurationId=legacy').status_code, 200)
         self.assertEqual(self.client.get('/api/teams?sprint=45459&configurationId=legacy').status_code, 409)
+
+    def test_legacy_borrowing_the_delivery_board_keeps_its_board_rows(self):
         with self.factory() as session:
-            boards = sorted(row.board_id for row in session.query(models.WorkspaceSprintCatalog))
-        self.assertEqual(boards, ['19095', '7001'], 'the scan never becomes a Board row')
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            payload = deepcopy(row.payload)
+            payload['workConfigurations']['configurations'][0]['scope']['boardId'] = ''
+            row.payload = payload
+            session.commit()
+        legacy, delivery = self.sources()
+        self.assertEqual(legacy.board_id, '19095')
+        self.assertEqual(legacy.sprint_identity, delivery.sprint_identity)
+        self.jira_with_delivery_board([
+            {**sprint_value(99, '2026Q3', 'closed'), 'originBoardId': 19095},
+            {**sprint_value(45459, '2027Q1', 'future'), 'originBoardId': 19095}])
+        body = self.sprints().get_json()
+        self.assertEqual([(row['id'], row['configurationId']) for row in body['sprints']],
+                         [(45459, 'delivery'), (99, 'legacy')])
 
-    def test_board_row_wins_a_same_name_tie_and_ids_are_never_invented(self):
-        self.jira_with_delivery_board(
-            [{**sprint_value(7, '2027Q1', 'future'), 'originBoardId': 19095}], scan_pages=self.epic_scan)
-        rows = self.sprints('?configurationId=delivery').get_json()['sprints']
-        self.assertEqual([(row['id'], row['name']) for row in rows], [(7, '2027Q1')])
-        self.assertEqual(self.client.get('/api/teams?sprint=45459&configurationId=delivery').status_code, 409)
-        self.assertEqual(self.client.get('/api/teams?sprint=2027&configurationId=delivery').status_code, 409)
-
-    def test_inherited_board_lists_and_admits_only_the_delivery_scan(self):
+    def test_shared_board_splits_by_range_in_lists_admission_and_scope_picker(self):
         self.inherit_legacy_board()
-        self.jira(FakeJira(
-            board_values=[{**sprint_value(100, '2026Q3', 'closed'), 'originBoardId': 7001},
-                          {**sprint_value(101, '2027Q1', 'future'), 'originBoardId': 7001},
-                          {**sprint_value(103, '2027Q2', 'future'), 'originBoardId': 7001}],
-            scan_pages=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(202, '2027Q1', 'future')]})],
-                         'isLast': True}]))
-        response = self.sprints('?configurationId=delivery')
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        body = response.get_json()
-        self.assertEqual([(row['id'], row['name']) for row in body['sprints']], [(202, '2027Q1')],
-                         'the Board-only 2027Q2 is absent and the Board id 101 is never listed')
-        self.assertEqual(body['sources'][0]['sourceMode'], 'board')
-        self.assertEqual({row['sourceIdentity'] for row in body['sprints']}, {body['cache']['identity']})
-        teams = self.client.get('/api/teams?sprint=101&configurationId=delivery')
-        self.assertEqual(teams.status_code, 409, teams.get_data(as_text=True))
-        self.assertEqual(teams.get_json()['error'], 'sprint_catalog_mismatch')
-        self.assertEqual(self.client.get('/api/teams?sprint=103&quarter=2027Q2').status_code, 409)
-        admitted = self.client.get('/api/teams?sprint=202&quarter=2027Q1&configurationId=delivery')
+        fake = self.jira(FakeJira(board_values=[
+            {**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001},
+            {**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001}]))
+        delivery = self.sprints('?configurationId=delivery').get_json()
+        self.assertEqual([(row['id'], row['name']) for row in delivery['sprints']], [(102, '2027Q1')])
+        legacy = self.sprints('?configurationId=legacy').get_json()
+        self.assertEqual([(row['id'], row['name']) for row in legacy['sprints']], [(101, '2026Q4')])
+        mismatch = self.client.get('/api/teams?sprint=101&configurationId=delivery')
+        self.assertEqual(mismatch.status_code, 409, mismatch.get_data(as_text=True))
+        self.assertEqual(mismatch.get_json()['error'], 'sprint_catalog_mismatch')
+        admitted = self.client.get('/api/teams?sprint=102&quarter=2027Q1&configurationId=delivery')
         self.assertEqual(admitted.status_code, 200, admitted.get_data(as_text=True))
-        merged = self.sprints().get_json()
-        self.assertEqual([(row['id'], row['configurationId']) for row in merged['sprints']],
-                         [(202, 'delivery'), (100, 'legacy')])
+        picker = self.client.get('/api/work-structure/sprint-values')
+        self.assertEqual(picker.status_code, 200, picker.get_data(as_text=True))
+        rows = picker.get_json()['sprintValues']
+        self.assertEqual([(row['value'], row['label'], row['configurationIds']) for row in rows],
+                         [('2027Q1', '2027Q1', ['delivery']), ('2026Q4', '2026Q4', ['legacy'])])
+        self.assertFalse([jql for jql in fake.search_jql if 'is not EMPTY' in jql])
+
+    def test_inherited_board_completion_reads_board_rows(self):
+        self.inherit_legacy_board()
+        self.jira(FakeJira(board_values=[
+            {**sprint_value(101, '2026Q4', 'closed'), 'originBoardId': 7001},
+            {**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001}]))
         refreshed = self.sprints('?configurationId=delivery&refresh=true').get_json()['cache']
         completion = self.sprints(
             f"?configurationId=delivery&completionAttemptId={refreshed['refreshAttemptId']}"
             f"&catalogIdentity={refreshed['identity']}")
         self.assertEqual(completion.status_code, 200, completion.get_data(as_text=True))
-        self.assertEqual([row['id'] for row in completion.get_json()['sprints']], [202],
-                         'completion of the scan attempt reads the scan, not the inherited Board')
-
-    def test_inherited_board_without_a_scan_never_completes_from_board_rows(self):
-        self.inherit_legacy_board()
-        delivery = replace(self.sources()[1], observed_source=None)
-        from backend.routes import settings_routes
-        with jira_server.app.test_request_context(), \
-                patch.object(settings_routes, 'read_catalog_completion',
-                             side_effect=AssertionError('inherited Board completion read')), \
-                patch.object(settings_routes, 'read_scoped_sprint_completion',
-                             side_effect=AssertionError('missing scan completion read')):
-            response = settings_routes._configuration_completion_response(
-                self.worker_context(), (delivery,), 'delivery', str(uuid.uuid4()), 'identity',
-                time.perf_counter())
-        self.assertEqual(response.status_code, 409, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['error'], 'catalog_identity_changed',
-                         'the client re-lists and sees setup_required, as the listing reports')
-
-    def test_inherited_board_pending_or_failed_scan_never_falls_back_to_board_rows(self):
-        self.inherit_legacy_board()
-        board = [{**sprint_value(101, '2027Q1', 'future'), 'originBoardId': 7001}]
-        self.jira(FakeJira(board_values=board, scan_pages=[500]))
-        response = self.sprints('?configurationId=delivery&refresh=true')
-        self.assertEqual(response.status_code, 502, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()['sources'][0]['state'], 'failed')
-        self.assertNotIn('sprints', response.get_json())
-        SCOPED_SPRINT_CATALOGS.clear()
-        delivery = self.sources()[1]
-        with jira_server.app.test_request_context():
-            from backend.routes import settings_routes
-            with patch.object(settings_routes, '_load_and_refresh_scoped_snapshot',
-                              return_value=(load_scoped_sprint_catalog(
-                                  self.worker_context(), config=delivery.observed_source), True)), \
-                    patch.object(settings_routes, '_load_and_refresh_board_snapshot',
-                                 side_effect=AssertionError('inherited Board snapshot read')):
-                result, _snapshot, rows = settings_routes._configuration_source_result(
-                    self.worker_context(), delivery, force_refresh=False)
-        self.assertEqual(result['state'], 'refreshing')
-        self.assertIsNone(rows)
-        self.assertEqual(result['sprints'], [])
-
-    def test_failed_or_empty_scan_keeps_the_board_rows(self):
-        for scan in ([500], [{'issues': [], 'isLast': True}]):
-            with self.subTest(scan=scan):
-                SCOPED_SPRINT_CATALOGS.clear()
-                self.jira_with_delivery_board(
-                    [{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095}], scan_pages=scan)
-                response = self.sprints('?configurationId=delivery&refresh=true')
-                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-                self.assertEqual([row['id'] for row in response.get_json()['sprints']], [99])
-
-    def test_incomplete_refresh_keeps_previously_observed_sprints(self):
-        scan = [{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'future')]})], 'isLast': True}]
-        fake = self.jira_with_delivery_board([], scan_pages=scan)
-        self.assertEqual([row['id'] for row in self.sprints('?configurationId=delivery').get_json()['sprints']], [201])
-        fake.scan_pages = [{'issues': [], 'isLast': False, 'nextPageToken': 'next'},
-                           {'issues': [], 'isLast': False}]
-        response = self.sprints('?configurationId=delivery&refresh=true')
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual([row['id'] for row in response.get_json()['sprints']], [201])
-        observed = self.sources()[1].observed_source
-        snapshot = load_scoped_sprint_catalog(self.worker_context(), config=observed)
-        self.assertEqual(snapshot.failure_code, 'catalog_incomplete')
-
-    def test_board_failure_is_covered_by_a_complete_scan(self):
-        self.jira_with_delivery_board([], scan_pages=self.epic_scan)
-        fake = self.jira(FakeJira(board_values=500, scan_pages=self.epic_scan))
-        plain = fake.get
-        fake.get = lambda path, **options: jira_response(500, {}) if path == DELIVERY_BOARD_PATH else plain(path, **options)
-        response = self.sprints('?configurationId=delivery&refresh=true')
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual([row['id'] for row in response.get_json()['sprints']], [45459])
-
-    def test_range_still_bounds_scanned_rows_and_legacy_never_scans(self):
-        scan = [{'issues': [{'key': 'PLAN-8', 'fields': {DELIVERY_SPRINT_FIELD: [
-            sprint_value(5, '2026Q3', 'closed'), sprint_value(45459, '2027Q1', 'future')]}}], 'isLast': True}]
-        fake = self.jira_with_delivery_board([], scan_pages=scan)
-        body = self.sprints().get_json()
-        self.assertEqual([(row['id'], row['configurationId']) for row in body['sprints']],
-                         [(45459, 'delivery'), (101, 'legacy')], 'scanned 2026Q3 is outside DELIVERY')
-        self.assertTrue(all('"OLD"' not in jql for jql in fake.search_jql))
-
+        self.assertEqual([row['id'] for row in completion.get_json()['sprints']], [102])
 
 
 class TeamPublicationTests(CatalogBase):

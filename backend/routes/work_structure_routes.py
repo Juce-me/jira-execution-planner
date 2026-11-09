@@ -266,36 +266,14 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
     for config in candidates:
         if not config.sprint_identity:
             continue
-        observed = config.observed_source
-        if config.board_inherited:
-            # An inherited Board's ids are another configuration's: admit through the own scan only.
-            if observed is None:
-                continue
-            scanned = sprint_source_snapshot(auth_context, observed)
-            rows = [] if scanned.payload is None else [
-                (observed, item) for item in in_range_sprints(observed, scanned.payload)]
-            incomplete = scanned.payload is None
-            observed = None
-        else:
-            snapshot = sprint_source_snapshot(auth_context, config)
-            rows = [] if snapshot.payload is None else [
-                (config, item) for item in in_range_sprints(config, snapshot.payload)]
-            incomplete = snapshot.payload is None
-        if observed is not None:
-            # With its own Board, Board rows win a same-name tie; the issue scan only adds
-            # quarters the Board lacks.
-            scanned = sprint_source_snapshot(auth_context, observed)
-            if scanned.payload is not None:
-                names = {item.get('name') for _source, item in rows}
-                rows += [(observed, item) for item in in_range_sprints(observed, scanned.payload)
-                         if item.get('name') not in names]
-                incomplete = snapshot.payload is None and not rows
-        for source, item in rows:
+        snapshot = sprint_source_snapshot(auth_context, config)
+        rows = [] if snapshot.payload is None else in_range_sprints(config, snapshot.payload)
+        for item in rows:
             if str(item.get('id')) == str(sprint_id):
                 if quarter is not None and item.get('name') != quarter:
                     raise WorkConfigError('sprint_catalog_mismatch')
-                return source, item
-        pending = pending or incomplete
+                return config, item
+        pending = pending or snapshot.payload is None
     if pending:
         raise SprintCatalogPending()
     raise WorkConfigError('sprint_catalog_mismatch')
@@ -425,32 +403,35 @@ def source_diagnostics(state, code, *snapshots):
 def collect_sprint_values(auth_context, sources):
     """Range-agnostic Sprint values observed by every saved source, one row per name and configuration.
 
-    Reads the stored snapshots only (never Jira) and merges Board rows with the issue-scan
-    supplement; an inherited Board lends its configuration no row.  A name observed by more than one
-    configuration is one row per configuration whose display-only ``label`` is ``<name> - <configuration
-    id>``; ``value`` stays the bare name.  Names are the catalogs' quarter-shaped values; ``canonical``
-    says whether the value is a valid range boundary.  Output carries no site, project, board or token data.
+    Reads the stored snapshots only (never Jira); a configuration has exactly one source.  Two Board
+    sources that share one Board (equal ``sprint_identity``) each list only the rows inside their own
+    quarter range; a configuration with its own Board or a Sprint-field source stays range-agnostic.
+    A name observed by more than one configuration is one row per configuration whose display-only
+    ``label`` is ``<name> - <configuration id>``; ``value`` stays the bare name.  Names are the catalogs'
+    quarter-shaped values; ``canonical`` says whether the value is a valid range boundary.  Output
+    carries no site, project, board or token data.
     """
     values, summaries, order = {}, [], {}
+    board_identities = [
+        item.sprint_identity for item in sources
+        if item.source_mode == work_structure_service.SOURCE_MODE_BOARD and item.sprint_identity
+    ]
     for config in sources:
         configuration_id = config.configuration_id
         order.setdefault(configuration_id, len(order))
         summary = {'configurationId': configuration_id, 'sourceMode': config.source_mode or 'board',
                    'state': 'setup_required'}
         snapshots = []
-        own = (config.observed_source,) if config.board_inherited else (config, config.observed_source)
-        usable = config.sprint_identity and any(source is not None for source in own)
-        if usable:
+        if config.sprint_identity:
             summary['state'] = 'pending'
-            for source in own:
-                if source is None or not source.sprint_identity:
-                    continue
-                snapshot = sprint_source_snapshot(auth_context, source)
-                snapshots.append(snapshot)
-                if snapshot.payload is None:
-                    continue
+            shared_board = (config.source_mode == work_structure_service.SOURCE_MODE_BOARD
+                            and board_identities.count(config.sprint_identity) > 1)
+            snapshot = sprint_source_snapshot(auth_context, config)
+            snapshots.append(snapshot)
+            if snapshot.payload is not None:
                 summary['state'] = 'ready'
-                for item in snapshot.payload:
+                payload = in_range_sprints(config, snapshot.payload) if shared_board else snapshot.payload
+                for item in payload:
                     name = str(item.get('name') or '') if isinstance(item, dict) else ''
                     sprint_id = item.get('id') if isinstance(item, dict) else None
                     if not name or isinstance(sprint_id, bool) or not isinstance(sprint_id, int):
@@ -458,7 +439,7 @@ def collect_sprint_values(auth_context, sources):
                     row = values.setdefault(name, {}).setdefault(configuration_id, {'states': set(), 'ids': set()})
                     row['states'].add(str(item.get('state') or '').lower())
                     row['ids'].add(sprint_id)
-        code = None if usable else (config.scope_error or 'configuration_incomplete')
+        code = None if config.sprint_identity else (config.scope_error or 'configuration_incomplete')
         summary['diagnostics'] = source_diagnostics(summary['state'], code, *snapshots)
         summaries.append(summary)
     rows = []

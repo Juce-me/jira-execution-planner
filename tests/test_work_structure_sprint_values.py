@@ -16,7 +16,7 @@ ROW_KEYS = {'value', 'label', 'canonical', 'state', 'sprintIds', 'configurationI
 
 
 class SprintValueReadTests(CatalogBase):
-    def warm(self, *, delivery_board=True, board_values=None, delivery_board_values=None, scan=None):
+    def warm(self, *, delivery_board=True, board_values=None, delivery_board_values=None):
         self.seed_sources()
         if delivery_board:
             from backend.db import models
@@ -32,13 +32,12 @@ class SprintValueReadTests(CatalogBase):
             board_values=board_values if board_values is not None else [
                 {**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001},
                 {**sprint_value(90, '2019Q1', 'closed'), 'originBoardId': 7001},
-                {**sprint_value(91, '0000Q1', 'closed'), 'originBoardId': 7001}],
-            scan_pages=scan if scan is not None else [{'issues': [
-                issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(45459, '2027Q1', 'future'),
-                                                 sprint_value(777, '2030Q4', 'future')]})], 'isLast': True}])
+                {**sprint_value(91, '0000Q1', 'closed'), 'originBoardId': 7001}])
         plain = fake.get
         values = delivery_board_values if delivery_board_values is not None else [
-            {**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095}]
+            {**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095},
+            {**sprint_value(45459, '2027Q1', 'future'), 'originBoardId': 19095},
+            {**sprint_value(777, '2030Q4', 'future'), 'originBoardId': 19095}]
 
         def get(path, **options):
             if path == DELIVERY_BOARD_PATH:
@@ -81,22 +80,20 @@ class SprintValueReadTests(CatalogBase):
             self.assertNotIn(forbidden, text)
 
     def test_setup_required_and_pending_sources_are_reported_not_errors(self):
-        # Delivery inherits Legacy's Board, which lends it no Sprint values: without its own scan it needs setup.
-        self.seed_sources(delivery_ready=False, legacy_ready=True)
+        self.seed_sources(delivery_ready=False, legacy_ready=True)  # Delivery shares Legacy's Board
         response = self.read()
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['sprintValues'], [])
         self.assertEqual([(item['configurationId'], item['state']) for item in body['sources']],
-                         [('legacy', 'pending'), ('delivery', 'setup_required')])
+                         [('legacy', 'pending'), ('delivery', 'pending')])
 
     def test_a_name_in_both_configurations_is_one_labelled_row_per_configuration(self):
         self.warm(
             board_values=[{**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001},
                           {**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001}],
-            delivery_board_values=[{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095}],
-            scan=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'active')]})],
-                   'isLast': True}])
+            delivery_board_values=[{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095},
+                                   {**sprint_value(201, '2027Q1', 'active'), 'originBoardId': 19095}])
         rows = self.read().get_json()['sprintValues']
         self.assertEqual(
             [(row['value'], row['label'], row['configurationIds'], row['sprintIds'], row['state']) for row in rows],
@@ -109,21 +106,6 @@ class SprintValueReadTests(CatalogBase):
         names = [row['name'] for row in self.sprints().get_json()['sprints']]
         self.assertEqual(len(names), len(set(names)), names)
         self.assertNotIn(' - ', ' '.join(names))
-
-    def test_inherited_board_contributes_only_the_delivery_scan(self):
-        self.warm(
-            delivery_board=False,
-            board_values=[{**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001},
-                          {**sprint_value(103, '2028Q1', 'future'), 'originBoardId': 7001}],
-            scan=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'active')]})],
-                   'isLast': True}])
-        rows = self.read().get_json()['sprintValues']
-        self.assertEqual(
-            [(row['label'], row['configurationIds'], row['sprintIds']) for row in rows],
-            [('2028Q1', ['legacy'], [103]),
-             ('2027Q1 - legacy', ['legacy'], [102]),
-             ('2027Q1 - delivery', ['delivery'], [201])],
-            'the inherited Board lends DELIVERY no row')
 
     def test_policy_errors_and_flag_states(self):
         self.warm()
@@ -175,27 +157,28 @@ class SourceDiagnosticsTests(SprintValueReadTests):
         text = self.read().get_data(as_text=True)
         by_id = {item['configurationId']: item['diagnostics'] for item in self.read().get_json()['sources']}
         self.assertEqual(set(by_id['delivery']), self.KEYS)
-        # Delivery: the Board names one Sprint, the issue scan one issue carrying two more.
-        self.assertEqual(by_id['delivery'], {
-            'state': 'ready', 'code': None, 'scannedIssueCount': 1,
-            'issuesWithSprintValueCount': 1, 'observedSprintCount': 3})
-        # Legacy has no issue scan: its counts are unknown, never zero.
-        self.assertEqual(by_id['legacy'], {
-            'state': 'ready', 'code': None, 'scannedIssueCount': None,
-            'issuesWithSprintValueCount': None, 'observedSprintCount': 3})
+        # Board sources run no issue scan: their scan counts are unknown, never zero.
+        for configuration_id in ('legacy', 'delivery'):
+            self.assertEqual(by_id[configuration_id], {
+                'state': 'ready', 'code': None, 'scannedIssueCount': None,
+                'issuesWithSprintValueCount': None, 'observedSprintCount': 3})
         for forbidden in ('PLAN-1', 'customfield', '19095', '7001'):
             self.assertNotIn(forbidden, text)
         catalog = self.sprints().get_json()['sources']
         self.assertEqual({item['configurationId']: item['diagnostics'] for item in catalog}, by_id)
 
-    def test_a_failed_scan_names_its_code_and_a_complete_empty_scan_counts_zero(self):
-        self.seed_sources()
-        fake = FakeJira(board_values=[], scan_pages=[{'issues': [issue()], 'isLast': True}])
-        self.jira(fake)
-        sources = {item['configurationId']: item['diagnostics'] for item in self.sprints().get_json()['sources']}
-        self.assertEqual(sources['delivery']['observedSprintCount'], 0)
-        self.assertEqual(sources['delivery']['scannedIssueCount'], 1)
-        self.assertEqual(sources['delivery']['issuesWithSprintValueCount'], 0)
+    def test_a_sprint_field_scan_counts_its_issues_and_a_failed_scan_names_its_code(self):
+        self.seed_sources(legacy_ready=False)  # no Board anywhere: DELIVERY reads its Sprint field
+        fake = self.jira(FakeJira(scan_pages=[{'issues': [issue()], 'isLast': True}]))
+        source = self.sprints('?configurationId=delivery').get_json()['sources'][0]
+        self.assertEqual(source['sourceMode'], 'scoped_issues')
+        self.assertEqual(source['diagnostics'], {
+            'state': 'ready', 'code': None, 'scannedIssueCount': 1,
+            'issuesWithSprintValueCount': 0, 'observedSprintCount': 0})
+        fake.scan_pages = [500]
+        failed = self.sprints('?configurationId=delivery&refresh=true').get_json()['sources'][0]['diagnostics']
+        self.assertEqual(failed['state'], 'ready', 'the held complete scan survives a failed refresh')
+        self.assertEqual(failed['code'], 'jira_unavailable')
 
     def test_setup_required_source_names_its_code(self):
         self.seed_sources(delivery_ready=False, legacy_ready=False)  # no Board to share

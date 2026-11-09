@@ -197,3 +197,7 @@
 - [ ] Facet empty selection persists (reload, per-group snapshot, share link `alloc=none`).
 - [ ] Legacy output unchanged (fixtures, Board frames, share `lanes`, Ad Hoc → Product).
 - [ ] Docs, analytics, budgets updated; full gates recorded; plan renamed `DONE-`.
+
+## Execution status
+
+- **Task 1: done.** "Read Board-mode Sprints from the Board only, split by range". Divergences: the brief's `tests.test_work_structure_scope_selection` and `tests.test_eng_routes` modules do not exist; `tests.test_work_reader_routes`, `tests.test_oauth_eng_routes`, `tests.test_catalog_app_adapter`, `tests.test_workspace_catalog_config`, `tests.test_work_structure_routes` and the catalog/cache modules ran instead. `SelectorTests` now serves Sprint 201 from the Board, and the JQL-override test reads the Team query instead of the scan. Evidence: `tests.test_work_structure_catalogs` and `tests.test_work_structure_sprint_values` 45 OK (9 failed first); 435 related tests OK.

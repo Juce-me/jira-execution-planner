@@ -215,7 +215,7 @@
 - **Produces:** `readPlannedNumbers(backendUrl, sprintId, teamIds, { signal }) -> Promise<{ sprintId, capabilities, byTeam: Record<teamId, { revision, planned, inherited }>, failedTeamIds: string[] }>`.
 - The batch path is passed to `request()` as the suffix `'/planned/read'`.
 
-- [ ] **Step 1: Write failing tests:**
+- [x] **Step 1: Write failing tests:**
   - 2 ids give one POST; 1,001 ids give 3 sequential POSTs with no overlap;
   - multi-byte ids split by UTF-8 bytes under 128 KiB;
   - a 413 on a 500-id chunk halves to 250+250;
@@ -225,10 +225,10 @@
   - a 401 rejects with the existing auth-required error and sends no further chunk;
   - abort stops the sequence;
   - `capabilities` are returned.
-- [ ] **Step 2:** Run `node --test tests/test_assignee_capacity_api.js` (Node 20). Expected: FAIL.
-- [ ] **Step 3:** Implement with `request()` and its 20 s timeout.
-- [ ] **Step 4:** Run. Expected: PASS.
-- [ ] **Step 5:** Commit `Read stored Team numbers in bounded sequential chunks (#323)`.
+- [x] **Step 2:** Run `node --test tests/test_assignee_capacity_api.js` (Node 20). Expected: FAIL.
+- [x] **Step 3:** Implement with `request()` and its 20 s timeout.
+- [x] **Step 4:** Run. Expected: PASS.
+- [x] **Step 5:** Commit `Read stored Team numbers in bounded sequential chunks (#323)`.
 
 ### Task 3: Keyed per-Team owners in the capacity controller
 
@@ -613,6 +613,9 @@ Each item is done only with its named evidence recorded in Execution evidence (c
 - **Task 1: Batch Team-number projection (2026-11-09).** `read_planned_numbers`, `validate_batch`, `MAX_BATCH_TEAM_IDS`, `MAX_BATCH_REQUEST_BYTES` in `backend/services/assignee_capacity.py`; route `POST .../assignee-capacity/planned/read` (policy `eng-assignee-capacity-planned-read`, `user_write`); no migration.
   - RED: `.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)" tests.test_assignee_capacity_service` gave `FAILED (errors=7)` (`read_planned_numbers` undefined). With the route and policy reverted, `tests.test_assignee_capacity_routes tests.test_endpoint_security_matrix` gave `Ran 35 tests`, `FAILED (failures=4, errors=1)` (501 `route_not_oauth_ready`).
   - GREEN: `tests.test_assignee_capacity_service` `Ran 54 tests ... OK`; `tests.test_assignee_capacity_routes tests.test_endpoint_security_matrix` `Ran 35 tests ... OK`. Final set (service, routes, `test_endpoint_policy_inventory`, `test_endpoint_security_matrix`, `test_backend_route_source_guards`, `test_work_structure_consumer_inventory`, `test_codebase_structure_budgets`): `Ran 152 tests in 268.478s`, `OK`.
+- **Task 2: Batch read client (2026-11-09).** `readPlannedNumbers` in `frontend/src/api/assigneeCapacityApi.js` (planned chunks of at most 500 ids and 128 KiB UTF-8, one in flight, 413 halves, single-id 413 goes to `failedTeamIds`, one csrf_required retry, 401 and abort stop the sequence).
+  - RED: `node --test tests/test_assignee_capacity_api.js` (Node 20) `# tests 11`, `# pass 3`, `# fail 8`.
+  - GREEN: the same command `# tests 11`, `# pass 11`, `# fail 0`; `npm run build` completed; `node --test tests/test_*.js` `# tests 3601`, `# pass 3601`, `# fail 0`, `# skipped 0`; isolated runner `tests.test_codebase_structure_budgets` `Ran 9 tests`, `OK`.
 
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.

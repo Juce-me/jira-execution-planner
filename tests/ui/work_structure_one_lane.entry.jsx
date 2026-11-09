@@ -62,7 +62,7 @@ function FiltersHarness({ workModel }) {
 
 // `stamp` marks the Epic as the server stamps it in DELIVERY; Legacy tasks carry none.
 function SplitHarness({ pair, compact, stamp }) {
-    const tasks = [task('PLAN-E1', 8, 'PLAN-I1', stamp)];
+    const tasks = [task('PLAN-E1', 8, 'PLAN-I1', stamp), ...(pair === 'mixed' ? [task('PLAN-E2', 5, 'PLAN-I2', 'tech')] : [])];
     const excluded = new Set(pair === 'excluded' ? ['PLAN-I1'] : []);
     const adHoc = new Set(pair === 'ad_hoc' ? ['PLAN-I1'] : []);
     const planning = buildSelectedPlanningTasksList(tasks, excluded, normalize);

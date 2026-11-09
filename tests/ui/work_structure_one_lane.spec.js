@@ -120,6 +120,19 @@ for (const compact of [false, true]) {
     });
 }
 
+test('new-model split bar: a mixed selection shows both sides (screenshot)', async ({ page }) => {
+    await openHarness(page);
+    await page.setViewportSize({ width: 720, height: 240 });
+    // The harness bundle carries no CSS; the built stylesheet styles the real component for the screenshot.
+    await page.addStyleTag({ path: path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.css') });
+    await page.addStyleTag({ content: '#split { padding: 16px; background: #fff; }' });
+    await page.evaluate(() => window.__oneLane.mount('split', { pair: 'mixed' }));
+    const text = (await page.locator('#split').innerText()).replace(/\s+/g, ' ');
+    expect(text).toContain('Product 62% · 8.0 SP');
+    expect(text).toContain('Tech 38% · 5.0 SP');
+    await page.locator('#split').screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-split-bar.png') });
+});
+
 test('Legacy split bar still reports Product and Tech', async ({ page }) => {
     await openHarness(page);
     await page.evaluate(() => window.__oneLane.mount('split', { pair: 'ordinary' }));

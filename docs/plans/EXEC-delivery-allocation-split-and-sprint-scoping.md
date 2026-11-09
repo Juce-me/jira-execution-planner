@@ -88,6 +88,8 @@ Track C is the integration owner (the lead). It owns every shared doc, the budge
 2. Implement in `_normalize_entry` (`work_structure.py:357-419`). Add `allocationTypes` to `allowed` for rnd only, keep it optional, and add a `_allocation_types` validator modelled on `_projects` (297-317). Carry it through `_blank_delivery` (465-472), `_context_for` (667-673) and the dataclass (`:587-607`). Do the absent-key preservation in the save path (`_save_later`, 1024-1058) by checking the raw incoming entry before normalization.
 3. Verify: `.venv/bin/python -m unittest tests.test_work_structure` and `.venv/bin/python -m unittest tests.test_planning_work_profiles`.
 
+Status: done in fd041782; divergences: the absent-key preservation is decided in `save_work_configurations` from the raw incoming bundle and applied in `_save_later` (first save has no stored mapping); save tests patch `update_workspace_config_keys` instead of using Postgres.
+
 ### Task A2: Allocation option values (Settings source)
 
 Source choice (C5): the **primary** source is `GET /rest/api/3/issue/createmeta/{projectKey}/issuetypes/{planningIssueTypeId}`, reading the Allocation field's `allowedValues[].value`. It returns the complete list under user OAuth `read:jira-work`, but needs the user's Create permission in the DELIVERY project. The **fallback**, used on a non-200 response or a field missing from createmeta, is `GET /rest/api/3/jql/autocompletedata/suggestions?fieldName=cf[<n>]&fieldValue=<query>`, the same user-level call as labels (`settings_routes.py:1906-1919`). It is prefix-only and capped at about 15, so the response reports `complete:false`. When both fail, the UI accepts a typed value, following the `typedSprintOption` precedent (`workConfigurationModel.js:55-59`). Field-context options are rejected (C5).
@@ -101,6 +103,8 @@ Source choice (C5): the **primary** source is `GET /rest/api/3/issue/createmeta/
    - The policy inventory test (`tests/test_endpoint_policy_inventory.py`) passes with the new row.
 2. Implement the route at the end of `backend/routes/work_structure_routes.py`. It is `GET /api/work-structure/allocation-options?fieldId&projectKey&issueTypeId&query`. The params come from the **draft**, so an unsaved field choice is listable; the read uses the user's own Jira under OAuth, with no workspace data and no write. Add the policy row in `backend/security/policy.py`.
 3. Verify: `.venv/bin/python -m unittest tests.test_work_structure_allocation_options tests.test_endpoint_policy_inventory`.
+
+Status: done in e4ea6194; divergences: `projectKey` and `issueTypeId` are optional (without both, only autocomplete runs); createmeta is read as one page of `maxResults=200`, and a field missing from that page falls back to autocomplete; the `query` filters createmeta values by case-insensitive substring; a 400 uses `invalid_allocation_options_request`.
 
 ### Task A3: Server stamp
 
@@ -120,6 +124,8 @@ Source choice (C5): the **primary** source is `GET /rest/api/3/issue/createmeta/
 2. Implement. The pure module carries no Flask and no I/O. Wire it in `fetch_epic_details_bulk` (add `roles.allocation_field_id` to `fields` only when `not roles.is_legacy`, and store the raw value as `epic_details[key]['allocation']`). The stamp goes in the slim payload (`jira_server.py:3984-4000`). The Objective batch follows C1. The Board passes `allocation_types` and the field id through the snapshot.
 3. Verify: `.venv/bin/python -m unittest tests.test_allocation_classification tests.test_eng_board_service tests.test_eng_board_stream tests.test_planning_work_profiles tests.test_work_reader_routes`.
 
+Status: done in 5c7cddec; divergences: `epic_details[key]['allocation']` holds the normalized value string, not the raw option; the Objective is the Initiative's typed ancestor (`epic_details[...]['initiative']`), so an Initiative parent of another type counts as no Objective; the excluded-capacity source also reads each Initiative's Allocation and typed parent in its existing summary batch and is stamped (`tests/test_work_structure_stats.py`); the stats stamp test lives there, not in `test_work_reader_routes.py`. **Gap:** the Board reads no Objective, so a blank Epic under a blank Initiative that has a parent is `unavailable` (Product) on the Board even when the Objective is Tech; Catch Up, Planning and Stats do read it. No Board cache/scope change was needed: the cohort already carries the configuration digest, which covers `allocationTypes` (pinned in `tests/test_eng_board_stream.py`).
+
 ### Task A4: Frontend split
 
 1. Failing tests first (rewrite the list above):
@@ -131,6 +137,8 @@ Source choice (C5): the **primary** source is `GET /rest/api/3/issue/createmeta/
    - Fixture pairs updated (`work_structure_reference.py:116-128`).
 2. Implement. In `capacityClassification.mjs`, delete the combined branch. After Ad Hoc, a stamp `fields.projectClassification` or `issue.projectClassification` of `product|tech` decides, otherwise project keys decide. Export `isTechIssue(task, techProjectKeys)` and have `dashboard.jsx` `isTechTask` call it. Remove the `combinedLane` Product/Tech branches listed in A5, keeping every other guard. Delete `CombinedWorkBar`, and keep the `workModel` props only where another guard still reads them.
 3. Verify: `npm run build && node --test tests/test_work_structure_classification.js tests/test_eng_board_filters.js tests/test_eng_board_card_model.js tests/test_eng_board_view_model.js`.
+
+Status: done in fa9fdc5c; divergences: the combined-lane `workModel` parameters of `buildSelectedProjectStats`, `buildSelectedTeamProjectStats`, `buildExcludedProjectStats`, `buildProjectCapacity`, `buildTeamCapacityStats`, `classifyCapacityIssue` and `useEngCapacity` were removed (no remaining reader), with the orphaned `other`/`OTHER` handling in `buildTeamCapacityEntries` and `buildSelectedProjectEntries`; `buildExcludedProjectStats` now uses `isTechIssue`. Also rewritten on purpose (not in the list above): `tests/test_capacity_classification.js` (combined other/other), `tests/test_planning_selection_stats.js` (one OTHER lane), `tests/test_catch_up_entity_names.js` (hidden DELIVERY facet), `tests/test_excluded_capacity_stats_source_guards.js` (call signatures). The Board fixtures in `eng_group_board_view.spec.js`, `test_eng_board_view_model.js` and `test_eng_epic_story_points.js` are Legacy-shaped (Bug children, unmapped project) and stay. `work_structure_one_lane.spec.js` 75/87/106 rewritten (facet shown, Product/Tech split with the 70/30 marker).
 
 ### Task A5: Settings mapping UI and label
 
@@ -144,6 +152,8 @@ Source choice (C5): the **primary** source is `GET /rest/api/3/issue/createmeta/
    - Element-level checks: each chip and button carries its shared class, and there is no new class.
 2. Implement in `JiraFieldSettings.jsx`. Reuse the scope-pane markup (306-395) for an "Allocation" subsection under the DELIVERY project chip, with the same `team-search-*`, `project-type-btn`, `selected-team-chip` and `group-projects-subsection` classes. Lift the existing Product/Tech chip-column JSX (356-391) into one local render function that both projects and Allocation call, so the markup is not duplicated. The props come from `workConfigurationFormProps.js` (`allocationTypesDraft`, `addAllocationType`, `removeAllocationType`, search state) and patch `allocationTypes` through the existing `patch(id, …)`. Rename the label at line 229. The mockup (`assets/mockups/quarterly-work-structure-fields.jsx`) and its spec are a frozen design asset and stay as they are.
 3. Verify: `npm run build && npx playwright test tests/ui/work_structure_settings.spec.js tests/ui/work_structure_one_lane.spec.js --browser=chromium`, plus a before/after screenshot of the DELIVERY Scope tab.
+
+Status: done in 12f4b606; divergences: the Allocation search is disabled with a helper line until the Allocation field is mapped; Enter does not add a value (Escape closes the list); the Product/Tech chip columns carry `data-allocation-type` and the search block `data-allocation-types` (attributes only, no class). `tests/test_epm_settings_source_guards.js` lists the new optional props.
 
 ## Track B — Sprint scoping and suffix labels
 

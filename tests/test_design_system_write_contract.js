@@ -275,7 +275,7 @@ const sources = new Map(productionFiles.map(file => [file, read(file)]));
 
 test('registry paths, symbols and all Jira issue/capacity API exports resolve by effect', () => {
     assert.equal(registry.hooks.length, 4);
-    for (const entry of [...registry.hooks, ...registry.components, ...registry.apiEffects, registry.boardDrop, registry.capacity, registry.statusPill, ...registry.exemptions]) {
+    for (const entry of [...registry.hooks, ...registry.components, ...registry.apiEffects, registry.boardDrop, registry.capacity, registry.capacityReconcilePush, registry.statusPill, ...registry.exemptions]) {
         assert.ok(fs.existsSync(path.join(root, entry.path)), entry.path);
         if (entry.symbol) assert.match(normalize(read(entry.path)), new RegExp(`\\b${entry.symbol}\\b`), `${entry.path}: ${entry.symbol}`);
     }
@@ -349,6 +349,11 @@ test('mutation payloads and editor/capacity adapters retain singleton own-key ta
     assert.ok(editor.includes('enqueueMutation([editor.issueKey],'));
     assert.ok(editor.includes('updateField(frozen.backendUrl,editor.issueKey,'));
     assert.ok(compact(normalize(read(registry.capacity.path))).includes('updateCapacityRequest(candidate.issueKey,'));
+    // The card push is a second, distinct pin: that Team's own matched ticket, never another row's or a batch.
+    const pushCode = compact(normalize(read(registry.capacityReconcilePush.path)));
+    assert.equal(registry.capacityReconcilePush.pin, 'updateCapacityRequest(row.candidate.issueKey,');
+    assert.equal(pushCode.split(registry.capacityReconcilePush.pin).length - 1, 1, 'capacityReconcilePush: exactly one push call site');
+    assert.equal(pushCode.split('updateCapacityRequest(').length - 1, 2, 'The card keeps exactly the editor and push writes');
     assert.ok(compact(normalize(read(registry.capacity.host))).includes('updateCapacity(BACKEND_URL,issueKey,payload,options)'));
 });
 

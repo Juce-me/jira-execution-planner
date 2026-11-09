@@ -83,7 +83,7 @@ The own-issue write registry, API effects and host/call-site bindings below rema
 
 All four mutation hooks are called once in `App` in `frontend/src/dashboard.jsx`. Presentational menus and editors receive handlers and never import Jira writers or write hooks. The queue, captured auth context, per-issue optimistic state and confirmed/rejected/unconfirmed settlement stay inside those existing owners. The API can accept arrays for status and priority, but UI writers construct singleton arrays; this document grants no bulk-write authority.
 
-The six status JSX sites are Story and subtask in IssueCard, Epic in EpicBlock, Story and Epic in EngBoardEpicPanel, and the Planning table cell in App. Shared IssueCard/EpicBlock sites serve Catch Up and Planning list. The menu forwards its exact `issue` prop; App forwards `issue.key`. Board drop uses the same handler with the dragged Epic key. Priority derives its key from its own issue; Project Track receives the displayed Epic’s `epicKey`. Four editor components use `openEditor` descriptors at the recorded sites and submit through the controller's frozen `activeEditor.issueKey`. The capacity card submits its capacity issue (`candidate.issueKey`), through App's `updateCapacity` adapter.
+The six status JSX sites are Story and subtask in IssueCard, Epic in EpicBlock, Story and Epic in EngBoardEpicPanel, and the Planning table cell in App. Shared IssueCard/EpicBlock sites serve Catch Up and Planning list. The menu forwards its exact `issue` prop; App forwards `issue.key`. Board drop uses the same handler with the dragged Epic key. Priority derives its key from its own issue; Project Track receives the displayed Epic’s `epicKey`. Four editor components use `openEditor` descriptors at the recorded sites and submit through the controller's frozen `activeEditor.issueKey`. The capacity card submits its capacity issue (`candidate.issueKey`), through App's `updateCapacity` adapter. The card's one-click push (`capacityReconcilePush`) writes a mismatched Team's stored number to that Team's own matched ticket (`row.candidate.issueKey`) through the same adapter, on an explicit click on the card's → rail icon only: never automatic, never batched, never another Team's ticket.
 
 `fetchIssueTransitionOptions` and `searchIssueFieldUsers` use POST for option reads. HTTP method alone does not classify a mutation. Every export of `jiraIssueApi.js` and `capacityApi.js` is listed by effect below. Application-storage writes have reasoned exemptions and retain their separate backend ownership, CSRF and permissions. Scenario Jira publication stays blocked; storage exemptions cannot authorize it. The controller's `updateField` dependency is a test seam, not a production option or a writer override.
 
@@ -476,6 +476,15 @@ The single JSON block is the machine-readable source for paths, symbols, imports
         "key": "candidate.issueKey"
       }
     ]
+  },
+  "capacityReconcilePush": {
+    "path": "frontend/src/eng/PlanningTeamCapacityCards.jsx",
+    "symbol": "PlanningTeamCapacityCards",
+    "host": "frontend/src/dashboard.jsx",
+    "handler": "updateCapacityRequest",
+    "api": "updateCapacity",
+    "keyBinding": "row.candidate.issueKey",
+    "pin": "updateCapacityRequest(row.candidate.issueKey,"
   },
   "statusPill": {
     "path": "frontend/src/ui/StatusPill.jsx",

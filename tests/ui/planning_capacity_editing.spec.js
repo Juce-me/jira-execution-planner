@@ -1873,7 +1873,8 @@ for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status
     expect(capacityCalls(calls.slice(since), 'PATCH')).toHaveLength(0);
 });
 
-// ---- #323 Task 5: the mismatch push icon (→) joins the card's hover rail only with a push handler (Task 6 wires it) ----
+// ---- #323 Task 6: the mismatch push icon (→) in the card's hover rail writes that Team's stored number to its own matched
+// ticket in one click (operator design 2026-11-09: no reconcile rows; pending, conflict and error states live on the →) ----
 
 let pushHarness;
 function buildPushHarness() {
@@ -1885,23 +1886,38 @@ function buildPushHarness() {
                 import { createRoot } from 'react-dom/client';
                 import PlanningTeamCapacityCards from './frontend/src/eng/PlanningTeamCapacityCards.jsx';
                 import { PlanningAssigneeCapacityContext } from './frontend/src/eng/PlanningAssigneeCapacity.jsx';
-                const numbers = Object.freeze({ sprintId: '3001', byTeam: Object.freeze({ 'team-a': Object.freeze({ value: 14, source: 'user' }), 'team-b': Object.freeze({ value: 30, source: 'jira' }) }) });
+                const numbers = Object.freeze({ sprintId: '3001', byTeam: Object.freeze({ 'team-a': Object.freeze({ value: '14', source: 'user' }), 'team-b': Object.freeze({ value: '30', source: 'jira' }), 'team-c': Object.freeze({ value: '5', source: 'user' }) }) });
                 const status = Object.freeze({ load: 'ready', readError: '', save: 'idle', error: '', canSave: true });
                 const noop = () => {};
+                window.__commits = []; window.__requests = []; window.__events = []; window.__holds = []; window.__saved = [];
                 const controller = { subscribe: () => noop, getPlannedNumbers: () => numbers, subscribeTeam: () => noop, getTeamStatus: () => status,
-                    ensureTeamDocument: noop, mirrorTeamPlanned: () => false, commitTeamPlanned: () => false, retryTeam: noop, discardTeamPlanned: noop };
+                    ensureTeamDocument: noop, mirrorTeamPlanned: () => false, commitTeamPlanned: (...args) => { window.__commits.push(args); return true; }, retryTeam: noop, discardTeamPlanned: noop };
                 const context = { oneTeam: false, teamId: '', state: { plannedSave: '' }, controller, getTeamStatus: controller.getTeamStatus, subscribeTeam: controller.subscribeTeam };
                 const entry = (id, name, key, ticket, sp) => ({ id, name, storyPoints: sp, capacityTargetState: 'matched', capacityIssueKey: key, capacityTargetTeamName: name,
                     capacityTargetCapacity: ticket, hasCapacityValue: true, teamCapacity: ticket, rawCapacity: ticket, capacitySource: 'jira', plannedEditable: false });
-                const entries = [entry('team-a', 'Alpha Team', 'CAP-1', 20, 12), entry('team-b', 'Beta Team', 'CAP-2', 30, 8)];
-                window.__pushes = [];
-                createRoot(document.getElementById('root')).render(
-                    <PlanningAssigneeCapacityContext.Provider value={context}>
-                        <PlanningTeamCapacityCards entries={entries} capacityEnabled canOpenCapacityJira canEditCapacity jiraUrl="https://jira.example"
-                            sprintName="2026Q3" scopeSignature="scope" resolveTeamColor={() => '#7a8bc4'} getTeamCapacityMeta={() => ({ status: '' })}
-                            updateCapacityRequest={() => new Promise(noop)} onPushTeam={window.__withPushHandler ? push => window.__pushes.push(push) : undefined} />
-                    </PlanningAssigneeCapacityContext.Provider>
-                );
+                // Each request waits until the test settles it: window.__requests[i].resolve(body) or .reject({ status, code, currentCapacity, name }).
+                const request = (issueKey, payload, options) => new Promise((resolve, reject) => {
+                    const call = { issueKey, payload, get aborted() { return options.signal.aborted; }, resolve,
+                        reject: fields => reject(Object.assign(new Error(fields.code || 'error'), fields)) };
+                    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+                    window.__requests.push(call);
+                });
+                function Harness() {
+                    const [props, setProps] = React.useState(() => ({ canEditCapacity: true, scopeSignature: 'scope', withRequest: window.__withRequest !== false }));
+                    const [entries, setEntries] = React.useState(() => [entry('team-a', 'Alpha Team', 'CAP-1', 20, 12), entry('team-b', 'Beta Team', 'CAP-2', 30, 8), entry('team-c', 'Gamma Team', 'CAP-3', 7, 4)]);
+                    window.__setProps = patch => setProps(previous => ({ ...previous, ...patch }));
+                    return (
+                        <PlanningAssigneeCapacityContext.Provider value={context}>
+                            <PlanningTeamCapacityCards entries={entries} capacityEnabled canOpenCapacityJira canEditCapacity={props.canEditCapacity} jiraUrl="https://jira.example"
+                                sprintName="2026Q3" scopeSignature={props.scopeSignature} resolveTeamColor={() => '#7a8bc4'} getTeamCapacityMeta={() => ({ status: '' })}
+                                updateCapacityRequest={props.withRequest ? request : undefined}
+                                onAnalyticsAction={(action, params) => window.__events.push([action, params?.result])}
+                                onInteractionChange={value => window.__holds.push(value)}
+                                onCapacitySaved={result => { window.__saved.push(result); setEntries(list => list.map(item => (item.capacityIssueKey === result.issueKey ? { ...item, capacityTargetCapacity: result.capacity, teamCapacity: result.capacity } : item))); }} />
+                        </PlanningAssigneeCapacityContext.Provider>
+                    );
+                }
+                createRoot(document.getElementById('root')).render(<Harness />);
             `,
             resolveDir: repoRoot,
             loader: 'jsx',
@@ -1915,19 +1931,56 @@ function buildPushHarness() {
     return pushHarness;
 }
 
-async function mountPushHarness(page, withHandler) {
+async function mountPushHarness(page, withRequest = true) {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="width: 760px; margin: 40px;"></div></body></html>');
     await page.addStyleTag({ content: `${fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8')}\n*,*::before,*::after{animation:none!important;transition:none!important}` });
-    await page.evaluate(value => { window.__withPushHandler = value; }, withHandler);
+    await page.evaluate(value => { window.__withRequest = value; }, withRequest);
     await page.addScriptTag({ content: buildPushHarness() });
-    await expect(page.locator('.team-stat-card')).toHaveCount(2);
+    await expect(page.locator('.team-stat-card')).toHaveCount(3);
 }
 
 const pushCard = (page, teamId) => page.locator(`.team-stat-card[data-capacity-team="${teamId}"]`);
-const pushButton = page => pushCard(page, 'team-a').getByRole('button', { name: 'Apply Alpha Team team capacity to Jira' });
+const pushButton = (page, teamId = 'team-a', name = 'Alpha Team') => pushCard(page, teamId).getByRole('button', { name: `Apply ${name} team capacity to Jira` });
+const pushReadout = page => page.locator('.epic-full-value-readout');
+const pushRequests = page => page.evaluate(() => window.__requests.map(call => ({ issueKey: call.issueKey, payload: call.payload, aborted: call.aborted })));
+const settlePush = (page, index, how, value) => page.evaluate(([i, kind, body]) => window.__requests[i][kind](body), [index, how, value]);
+async function hoverPush(page, teamId = 'team-a', name = 'Alpha Team') {
+    await page.mouse.move(5, 700);
+    await pushCard(page, teamId).hover();
+    const button = pushButton(page, teamId, name);
+    await expect(button).toBeVisible();
+    await button.hover();
+    return button;
+}
+// Settled hover (box unchanged, painted only when available) and the card controls' solid keyboard focus outline.
+async function expectSettledPush(page, button, { ring }) {
+    const box = await button.boundingBox();
+    expect(box.width).toBeCloseTo(24, 0); expect(box.height).toBeCloseTo(24, 0);
+    await button.hover();
+    await page.waitForTimeout(150);
+    expect(await button.boundingBox()).toEqual(box);
+    expect(await button.evaluate(node => getComputedStyle(node).boxShadow) !== 'none', 'hover paint').toBe(ring);
+    await button.focus();
+    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    await expect(button).toBeFocused();
+    expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
+    await page.evaluate(() => document.activeElement?.blur());
+}
+// A real pointer click at the control's centre (Playwright's click() waits on aria-disabled controls).
+async function pointerClick(page, locator) {
+    const box = await locator.boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+const knownCopy = {
+    capacity_issue_mismatch: 'This card no longer matches its Jira capacity ticket. Refresh Planning.',
+    capacity_forbidden: 'Jira did not allow this capacity change.',
+    capacity_issue_not_found: 'This capacity ticket is no longer available. Refresh Planning.',
+    jira_capacity_update_conflict: 'Jira could not apply the capacity change yet. Review and try again.',
+    jira_capacity_update_failed: 'Capacity could not be updated in Jira. Try again.',
+};
 
-test('the mismatch → is absent without a push handler: the rail keeps only Jira and the pencil', async ({ page }) => {
+test('the mismatch → is absent without a Jira capacity writer: the rail keeps only Jira and the pencil', async ({ page }) => {
     await mountPushHarness(page, false);
     await expect(pushCard(page, 'team-a')).toHaveAttribute('data-capacity-attention', 'mismatch');
     await pushCard(page, 'team-a').hover();
@@ -1935,8 +1988,8 @@ test('the mismatch → is absent without a push handler: the rail keeps only Jir
     await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / })).toHaveCount(0);
 });
 
-test('with a push handler the mismatch → sits left of the pencil in the hover rail, with the pencil\'s geometry, hover, focus and readout, and calls the handler for its own Team only', async ({ page }) => {
-    await mountPushHarness(page, true);
+test('the mismatch → sits left of the pencil in the hover rail, with the pencil\'s geometry, hover, focus and readout; one click sends one PATCH to that Team\'s own ticket', async ({ page }) => {
+    await mountPushHarness(page);
     const card = pushCard(page, 'team-a');
     await page.mouse.move(5, 700);
     const idle = await card.boundingBox();
@@ -1956,21 +2009,150 @@ test('with a push handler the mismatch → sits left of the pencil in the hover 
     expect(cardBox.height, 'the rail never grows the card').toBeCloseTo(idle.height, 2);
     expect(await card.evaluate(node => node.querySelector('.team-stat-label').getBoundingClientRect().right <= node.querySelector('.team-capacity-action-rail').getBoundingClientRect().left + 0.5), 'three icons stay clear of the title').toBe(true);
     await button.hover();
-    await page.waitForTimeout(150);
-    expect(await button.boundingBox()).toEqual(box);
-    expect(await button.evaluate(node => getComputedStyle(node).boxShadow)).not.toBe('none');
-    const readout = page.locator('.epic-full-value-readout');
-    await expect(readout).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
-    const [c, r] = [await card.boundingBox(), await readout.boundingBox()];
-    const clip = { x: Math.min(c.x, r.x) - 8, y: Math.min(c.y, r.y) - 8 };
-    clip.width = Math.max(c.x + c.width, r.x + r.width) + 8 - clip.x; clip.height = Math.max(c.y + c.height, r.y + r.height) + 8 - clip.y;
-    await page.screenshot({ path: path.join(repoRoot, 'tmp', 'planning-323-every-team', 'task5', 'spec-captures', 'card-push-hover-1280x720.png'), clip, scale: 'device' });
-    await button.focus();
-    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
-    await expect(button).toBeFocused();
-    expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
+    await expect(pushReadout(page)).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    await expectSettledPush(page, button, { ring: true });
+    expect(await pushRequests(page), 'hover and focus write nothing').toEqual([]);
     await button.click();
-    expect(await page.evaluate(() => window.__pushes)).toEqual([{ teamId: 'team-a', issueKey: 'CAP-1', stored: 14, ticket: 20 }]);
+    expect(await pushRequests(page)).toEqual([{ issueKey: 'CAP-1', payload: { sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 20, capacity: 14 }, aborted: false }]);
+    expect(typeof (await pushRequests(page))[0].payload.capacity, 'capacity is a JSON number').toBe('number');
     await pushCard(page, 'team-b').hover();
     await expect(pushCard(page, 'team-b').getByRole('button', { name: /^Apply / }), 'equal numbers: no push').toHaveCount(0);
+});
+
+test('a push in flight: the → is unavailable with "Applying…", a second click and that Team\'s pencil send nothing, and the card keeps its idle height', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    const button = await hoverPush(page);
+    await button.click();
+    await expect(button).toHaveAttribute('aria-disabled', 'true');
+    await expect(button).toHaveAttribute('data-push-state', 'pending');
+    await button.hover();
+    await expect(pushReadout(page)).toHaveText('Applying…');
+    await expectSettledPush(page, button, { ring: false });
+    await pointerClick(page, button);
+    await expect(card.getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeDisabled();
+    await card.getByRole('button', { name: 'Edit Alpha Team capacity' }).click({ force: true });
+    await expect(card.locator('.team-capacity-editor')).toHaveCount(0);
+    expect((await pushRequests(page)).length, 'one PATCH').toBe(1);
+    await page.mouse.move(5, 700);
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+    await card.hover();
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+});
+
+test('success and already_current update the ticket value, settle the stored number to jira and remove the →; analytics says success', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(pushCard(page, 'team-a')).not.toHaveAttribute('data-capacity-attention', 'mismatch');
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__commits)).toEqual([['team-a', '14', 'jira']]);
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    await settlePush(page, 1, 'resolve', { issueKey: 'CAP-3', capacity: 5, result: 'already_current' });
+    await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__saved.map(result => [result.issueKey, result.capacity, result.result]))).toEqual([['CAP-1', 14, 'success'], ['CAP-3', 5, 'already_current']]);
+    expect(await page.evaluate(() => window.__events)).toEqual([['capacity_reconcile_push', 'success'], ['capacity_reconcile_push', 'success']]);
+});
+
+test('a 409 capacity_conflict shows Jira\'s current value without saying nothing was written; the next click expects that value', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 22 });
+    const button = await hoverPush(page);
+    await expect(button).toHaveAttribute('data-push-state', 'conflict');
+    await expect(button).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(pushReadout(page)).toHaveText('Capacity changed in Jira to 22.0. Apply 14 SP again to replace it.');
+    await expect(pushReadout(page)).not.toHaveText(/nothing|not written|prevented/i);
+    await expectSettledPush(page, button, { ring: true });
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+    await button.click();
+    expect((await pushRequests(page))[1].payload).toEqual({ sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 22, capacity: 14 });
+    expect(await page.evaluate(() => window.__events)).toEqual([['capacity_reconcile_push', 'conflict']]);
+    await settlePush(page, 1, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: null });
+    await hoverPush(page);
+    await expect(pushReadout(page)).toHaveText('Capacity is now blank in Jira. Apply 14 SP again to replace it.');
+    // Jira already holds the stored number: nothing is left to push.
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    await settlePush(page, 2, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 5 });
+    await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+});
+
+test('other errors show the existing editor copy on the → readout; a target error leaves the → unavailable, and analytics says failure', async ({ page }) => {
+    let index = 0;
+    for (const [code, status] of [['capacity_forbidden', 403], ['jira_capacity_update_conflict', 502], ['jira_capacity_update_failed', 502], ['capacity_issue_mismatch', 409], ['capacity_issue_not_found', 404]]) {
+        await mountPushHarness(page);
+        index = 0;
+        await (await hoverPush(page)).click();
+        await settlePush(page, index, 'reject', { status, code });
+        const button = await hoverPush(page);
+        await expect(button, code).toHaveAttribute('data-push-state', 'failed');
+        await expect(pushReadout(page), code).toHaveText(knownCopy[code]);
+        const target = code === 'capacity_issue_mismatch' || code === 'capacity_issue_not_found';
+        if (target) await expect(button, `${code}: no push to a blocked target`).toHaveAttribute('aria-disabled', 'true');
+        else await expect(button, code).not.toHaveAttribute('aria-disabled', 'true');
+        await pointerClick(page, button);
+        expect((await pushRequests(page)).length, `${code}: retry only when the target is still writable`).toBe(target ? 1 : 2);
+        expect(await page.evaluate(() => window.__events), code).toEqual([['capacity_reconcile_push', 'failure']]);
+    }
+});
+
+test('a 401 sends no further request, keeps no failed state and emits no push event', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'reject', { status: 401, code: 'auth_required', name: 'AuthenticationRequiredError' });
+    const button = await hoverPush(page);
+    await expect(button).not.toHaveAttribute('data-push-state', /.+/);
+    await expect(pushReadout(page)).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    await page.waitForTimeout(200);
+    expect((await pushRequests(page)).length, 'no replay').toBe(1);
+    expect(await page.evaluate(() => window.__events)).toEqual([]);
+});
+
+test('editor invalid targets, config suppression and a missing mutation right offer no push; an open editor hides it', async ({ page }) => {
+    for (const code of ['capacity_issue_mismatch', 'capacity_config_missing']) {
+        await mountPushHarness(page);
+        const card = pushCard(page, 'team-a');
+        await card.hover();
+        await card.getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+        await expect(card.getByRole('button', { name: /^Apply / }), 'an open editor hides the push').toHaveCount(0);
+        await card.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).fill('21');
+        await card.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).press('Enter');
+        await settlePush(page, 0, 'reject', { status: 409, code });
+        await card.getByRole('button', { name: 'Cancel Alpha Team capacity edit' }).click();
+        await page.mouse.move(5, 700);
+        await card.hover();
+        await expect(card.getByRole('button', { name: /^Apply / }), code).toHaveCount(0);
+        if (code === 'capacity_config_missing') await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / }), `${code} suppresses every Team`).toHaveCount(0);
+    }
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__setProps({ canEditCapacity: false }));
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / }), 'no mutation right').toHaveCount(0);
+    expect(await pushRequests(page)).toEqual([]);
+});
+
+test('one abort controller per Team: two pushes overlap, closing another editor keeps the freshness hold, and a scope change aborts both without retargeting', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1', 'CAP-3']);
+    expect(await page.evaluate(() => window.__holds.at(-1))).toBe(true);
+    // Beta's editor opens and closes while both pushes are in flight: the hold stays.
+    await pushCard(page, 'team-b').hover();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Cancel Beta Team capacity edit' }).click();
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'closing an editor mid-push keeps the hold').toBe(true);
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(pushCard(page, 'team-a')).not.toHaveAttribute('data-capacity-attention', 'mismatch');
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'one push still open').toBe(true);
+    await page.evaluate(() => window.__setProps({ scopeSignature: 'scope-2' }));
+    await expect.poll(async () => (await pushRequests(page))[1].aborted).toBe(true);
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'released once nothing is open').toBe(false);
+    expect((await pushRequests(page)).length, 'never retargeted').toBe(2);
 });

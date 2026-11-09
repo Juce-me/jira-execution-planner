@@ -6,6 +6,7 @@ const CAPACITY_WORKFLOW_ACTIONS = new Set([
     'capacity_edit_open',
     'capacity_change_submit',
     'capacity_change_result',
+    'capacity_reconcile_push',
 ]);
 const ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS = new Set(['open', 'submit', 'result']);
 const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team']);
@@ -353,7 +354,7 @@ export function useDashboardAnalytics(React, {
             workflow_action: workflowAction,
             source_surface: 'planning',
         };
-        if (workflowAction === 'capacity_change_result' && ['success', 'failure', 'conflict'].includes(result)) {
+        if ((workflowAction === 'capacity_change_result' || workflowAction === 'capacity_reconcile_push') && ['success', 'failure', 'conflict'].includes(result)) {
             payload.result = result;
         }
         trackProductEvent('planning_action', payload);

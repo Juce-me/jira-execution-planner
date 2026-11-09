@@ -611,7 +611,10 @@ test('stored-number paths never import or reach the Jira capacity write', () => 
         assert.doesNotMatch(source, /capacityApi|updateCapacity|updateCapacityRequest/, file);
     }
     const cards = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/PlanningTeamCapacityCards.jsx'), 'utf8');
-    assert.equal((cards.match(/updateCapacityRequest\(/g) || []).length, 1, 'one Jira call site, the existing editor Save');
+    // Two Jira call sites: the existing editor Save and the card's registered one-click push (#323 Task 6).
+    assert.equal((cards.match(/updateCapacityRequest\(/g) || []).length, 2, 'two Jira call sites, the editor Save and the card push');
+    assert.equal(cards.split('updateCapacityRequest(candidate.issueKey,').length - 1, 1, 'the editor Save');
+    assert.equal(cards.split('updateCapacityRequest(row.candidate.issueKey,').length - 1, 1, 'the card push (capacityReconcilePush)');
     const planned = cards.slice(cards.indexOf('const openPlannedEditor'), cards.indexOf('const cancelEditor'))
         + cards.slice(cards.indexOf('const submitPlannedEditor'), cards.indexOf('const submitEditor'));
     assert.doesNotMatch(planned, /onAnalyticsAction|updateCapacityRequest/, 'the stored-number editor emits no capacity_* event and never writes Jira');

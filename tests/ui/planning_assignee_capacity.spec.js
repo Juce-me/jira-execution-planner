@@ -83,7 +83,7 @@ const searchPeople = [
 ];
 const defaultPeople = query => ({ users: searchPeople.filter(person => person.displayName.toLowerCase().includes(String(query || '').toLowerCase())), reason: null });
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople, capacityPatch = null } = {}) {
     const calls = [];
     await installDashboardShell(page);
     // Planning counts only Stories included in the shared plan (#331); the previous default selection becomes a saved plan of every Story.
@@ -106,6 +106,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         if (url.pathname === '/api/capacity') return json(route, capacity(url.searchParams.get('sprint')));
         if (url.pathname.startsWith('/api/capacity/') && request.method() === 'PATCH') {
             const body = requestBody(request);
+            if (capacityPatch) return capacityPatch(route, body, decodeURIComponent(url.pathname.split('/').pop()));
             return json(route, { issueKey: decodeURIComponent(url.pathname.split('/').pop()), teamName: body.teamName, previousCapacity: body.expectedCapacity, capacity: body.capacity, result: 'success' });
         }
         if (url.pathname === '/api/version') return json(route, { enabled: false });
@@ -1352,7 +1353,7 @@ test('with a ticket Jira wins on screen: no stored-number pencil, the Jira numbe
     expect(jiraWrites(calls)).toEqual([]);
 });
 
-test('a typed number that differs from the ticket marks the card with no banner or extra action; the Jira pencil save settles it to jira', async ({ page }) => {
+test('a typed number that differs from the ticket marks the card and offers → with no banner; the Jira pencil save also settles it to jira', async ({ page }) => {
     const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
     const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: ticket(20), authMode: 'atlassian_oauth', analytics: true });
     await openPlanning(page);
@@ -1363,7 +1364,8 @@ test('a typed number that differs from the ticket marks the card with no banner 
     await expect(page.locator('.planning-team-capacity-cards').getByRole('button', { name: /Use ticket value|Not now|Write to ticket/ })).toHaveCount(0);
     await expect(teamCap(page), 'Jira wins on screen').toHaveText(/Capacity\s*20\.0/);
     await hover(page, alphaCard(page));
-    await expect(alphaCard(page).getByRole('button', { name: /^Apply / }), 'the push icon waits for its handler (Task 6)').toHaveCount(0);
+    await expect(alphaCard(page).getByRole('button', { name: 'Apply Alpha Team team capacity to Jira', exact: true }), 'the push is offered (Task 6)').toBeVisible();
+    expect(jiraWrites(calls), 'offering the push writes nothing').toEqual([]);
     expect(await capacityEvents(page)).toEqual([]);
     await alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
     const jiraInput = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
@@ -3495,7 +3497,7 @@ test('D4: the document-limit 400 reads as that Team\'s visible rejection in the 
     expect(server.storedOf('team-alpha')).toBeNull();
 });
 
-test('two Teams: each card whose typed number differs from its ticket is marked; no banner, no Use ticket value or Not now, and no → without a push handler', async ({ page }) => {
+test('two Teams: each card whose typed number differs from its ticket is marked and offers → in its rail; no banner, no Use ticket value or Not now, and nothing is written before a click', async ({ page }) => {
     const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '9' } });
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), analytics: true });
     await openPlanning(page);
@@ -3506,7 +3508,7 @@ test('two Teams: each card whose typed number differs from its ticket is marked;
     for (const [teamId, name] of [['team-alpha', 'Alpha Team'], ['team-beta', 'Beta Team']]) {
         await teamCard(page, teamId).hover();
         await expect(teamCard(page, teamId).getByRole('button', { name: `Edit ${name} capacity` })).toBeVisible();
-        await expect(teamCard(page, teamId).getByRole('button', { name: /^Apply / }), 'Task 6 wires the push').toHaveCount(0);
+        await expect(teamCard(page, teamId).getByRole('button', { name: `Apply ${name} team capacity to Jira`, exact: true }), 'the push is offered').toBeVisible();
     }
     await page.waitForTimeout(300);
     expect(server.state.patches).toEqual([]);
@@ -3573,7 +3575,7 @@ test('the rail never shows more than three icons: a failed settle on a ticketed 
     await showCards(page);
     await alphaCard(page).hover();
     expect(await alphaCard(page).locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
-        .toEqual(['Open Alpha Team capacity ticket in Jira', 'Edit Alpha Team capacity']);
+        .toEqual(['Open Alpha Team capacity ticket in Jira', 'Apply Alpha Team team capacity to Jira', 'Edit Alpha Team capacity']);
     await alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
     await alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).fill('15');
     await alphaCard(page).getByRole('button', { name: 'Save Alpha Team capacity' }).click();
@@ -3857,5 +3859,186 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     expect(compactFailed, 'compact stack with the note').toEqual(base.compact);
     expect(compactFailed.panel).toBe(46.875);
     await expectNoteBesideSummary(page, `failed, compact ${size}`);
+    await page.unrouteAll({ behavior: 'ignoreErrors' });
+});
+
+// ---- #323 Task 6: the card's → pushes its Team's stored number to that Team's own matched ticket in one click ----
+const pushOf = (page, teamId, name) => teamCard(page, teamId).getByRole('button', { name: `Apply ${name} team capacity to Jira`, exact: true });
+const pushStatus = page => page.locator('.planning-panel .planning-actions > .planning-review-state-note', { hasText: /Jira push(es)? failed|Applying \d+ Teams? to Jira…/ });
+const pushEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry?.workflow_action === 'capacity_reconcile_push').map(entry => entry.result));
+// A held PATCH /api/capacity answer: the test releases it with a status and body.
+function heldJira() {
+    const held = [];
+    const handler = (route, body, issueKey) => new Promise(resolve => { held.push({ body, issueKey, answer: (status, response) => resolve(json(route, response, status)) }); });
+    return { held, handler };
+}
+async function hoverPushOf(page, teamId, name) {
+    await teamCard(page, teamId).hover();
+    const button = pushOf(page, teamId, name);
+    await expect(button).toBeVisible();
+    await button.hover();
+    await expect(valueReadout(page)).toHaveCount(1);
+    return button;
+}
+
+for (const result of ['success', 'already_current']) test(`one click on → sends one PATCH to that Team's own ticket; ${result} updates the ticket, settles the stored number to jira and removes the →`, async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '9' } });
+    const jira = heldJira();
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), analytics: true, capacityPatch: jira.handler });
+    await openPlanning(page);
+    await showCards(page);
+    await expect(mismatchCards(page)).toHaveCount(2);
+    const button = await hoverPushOf(page, 'team-alpha', 'Alpha Team');
+    await expect(valueReadout(page)).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    await page.waitForTimeout(200);
+    expect(jiraWrites(calls), 'hover writes nothing').toEqual([]);
+    await button.click();
+    await expect.poll(() => jiraWrites(calls).length).toBe(1);
+    expect(jiraWrites(calls)[0].pathname).toBe('/api/capacity/CAP-101');
+    expect(jiraWrites(calls)[0].body).toEqual({ sprintName: futureSprintName, teamName: 'Alpha Team', expectedCapacity: 20, capacity: 14 });
+    await expect(button).toHaveAttribute('aria-disabled', 'true');
+    await expect(pushStatus(page)).toHaveText('Applying 1 Team to Jira…');
+    jira.held[0].answer(200, { issueKey: 'CAP-101', teamName: 'Alpha Team', previousCapacity: result === 'success' ? 20 : 14, capacity: 14, result });
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'jira' }, changes: [] });
+    await expect(mismatchCards(page)).toHaveCount(1);
+    await expect(teamCard(page, 'team-alpha')).not.toHaveAttribute('data-capacity-attention', /./);
+    await teamCard(page, 'team-alpha').hover();
+    await expect(pushOf(page, 'team-alpha', 'Alpha Team')).toHaveCount(0);
+    await expect(teamCard(page, 'team-alpha').locator('.microbar-meta')).toContainText('Cap 14.0');
+    await expect(pushStatus(page)).toHaveCount(0);
+    expect(jiraWrites(calls), 'Beta is never written').toHaveLength(1);
+    expect(await capacityEvents(page)).toEqual(['capacity_reconcile_push']);
+    expect(await pushEvents(page)).toEqual(['success']);
+});
+
+test('a 409 capacity_conflict shows the current ticket value on the → readout and in the overview, never claims nothing was written, and the next click expects it', async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    const jira = heldJira();
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), analytics: true, capacityPatch: jira.handler });
+    await openPlanning(page);
+    await showCards(page);
+    await (await hoverPushOf(page, 'team-alpha', 'Alpha Team')).click();
+    await expect.poll(() => jira.held.length).toBe(1);
+    jira.held[0].answer(409, { error: 'capacity_conflict', currentCapacity: 22 });
+    await expect(pushOf(page, 'team-alpha', 'Alpha Team')).toHaveAttribute('data-push-state', 'conflict');
+    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    await page.mouse.move(5, 600);
+    const button = await hoverPushOf(page, 'team-alpha', 'Alpha Team');
+    await expect(valueReadout(page)).toHaveText('Capacity changed in Jira to 22.0. Apply 14 SP again to replace it.');
+    await expect(valueReadout(page)).not.toHaveText(/nothing|not written|prevented/i);
+    expect(server.state.patches, 'a conflict settles nothing').toEqual([]);
+    await button.click();
+    await expect.poll(() => jira.held.length).toBe(2);
+    expect(jira.held[1].body).toEqual({ sprintName: futureSprintName, teamName: 'Alpha Team', expectedCapacity: 22, capacity: 14 });
+    expect(jiraWrites(calls)).toHaveLength(2);
+    expect(await pushEvents(page)).toEqual(['conflict']);
+});
+
+test('a 401 from the push enters the terminal sign-in recovery and is never replayed', async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), analytics: true,
+        capacityPatch: route => json(route, { error: 'auth_required', loginUrl: '/login?reason=session_expired' }, 401) });
+    await openPlanning(page);
+    await showCards(page);
+    await (await hoverPushOf(page, 'team-alpha', 'Alpha Team')).click();
+    const gate = page.getByRole('alertdialog');
+    await expect(gate).toBeVisible();
+    await expect(gate.getByRole('link', { name: 'Sign in again' })).toHaveAttribute('href', '/login?reason=session_expired');
+    await page.waitForTimeout(400);
+    expect(jiraWrites(calls), 'no replay').toHaveLength(1);
+    expect(server.state.patches).toEqual([]);
+    expect(await pushEvents(page)).toEqual([]);
+});
+
+test('a user without the capacity mutation right gets no → on a mismatched card', async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: sprint => ({ ...tickets({ 'Alpha Team': 20, 'Beta Team': 30 })(sprint), mutationEnabled: false }) });
+    await openPlanning(page);
+    await showCards(page);
+    await teamCard(page, 'team-alpha').hover();
+    await expect(teamCard(page, 'team-alpha').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+});
+
+// G1: twelve Teams with eleven mismatches; the → idle, pending and conflict never change a card or the pinned stack.
+for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720 }]) test(`twelve Teams at ${viewport.width}x${viewport.height}: the → idle, pending and in conflict keeps every card and the pinned stack at the idle height`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    const size = `${viewport.width}x${viewport.height}`;
+    const rest = async () => { await page.evaluate(() => document.activeElement?.blur()); await page.mouse.move(5, viewport.height - 5); await page.waitForTimeout(200); };
+    const jira = heldJira();
+    const server = teamsServer({ planned: g1Differ });
+    await install(page, { server, selectedTeams: ['all'], scopeTeamIds: twelveTeamIds, capacityProject: 'CAP', capacity: g1Tickets, issues: twelveStories, capacityPatch: jira.handler });
+    await openPlanning(page);
+    await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(12);
+    await page.waitForLoadState('networkidle');
+    const compact = await pinnedHeights(page);
+    await showCards(page);
+    await rest();
+    const expanded = await pinnedHeights(page);
+    const baseline = await cardHeights(page);
+    await expect(mismatchCards(page)).toHaveCount(11);
+    const shot = async name => {
+        const [card, readout] = [await teamCard(page, 'team-02').boundingBox(), await valueReadout(page).boundingBox()];
+        expect(readout.x).toBeGreaterThanOrEqual(0); expect(readout.x + readout.width).toBeLessThanOrEqual(viewport.width);
+        if (viewport.width === 1440) await page.screenshot({ path: `tmp/planning-323-every-team/task6/after/${name}.png`, fullPage: false });
+        else await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task6/spec-captures/${name}-${size}.png`, animations: 'disabled' });
+        return card;
+    };
+    // Idle → on hover: Jira · → · pencil, the pencil's frame, a hover ring and a solid focus outline.
+    const settled = async (button, ring) => {
+        const box = await button.boundingBox();
+        expect(box.width).toBeCloseTo(24, 0); expect(box.height).toBeCloseTo(24, 0);
+        await button.hover();
+        await page.waitForTimeout(150);
+        expect(await button.boundingBox()).toEqual(box);
+        expect(await button.evaluate(node => getComputedStyle(node).boxShadow) !== 'none', 'hover paint').toBe(ring);
+        await button.focus();
+        await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+        await expect(button).toBeFocused();
+        expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
+    };
+    let button = await hoverPushOf(page, 'team-02', g1Name(1));
+    expect(await teamCard(page, 'team-02').locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
+        .toEqual([`Open ${g1Name(1)} capacity ticket in Jira`, `Apply ${g1Name(1)} team capacity to Jira`, `Edit ${g1Name(1)} capacity`]);
+    expect(await cardHeights(page), 'hovered →').toEqual(baseline);
+    await expect(valueReadout(page)).toHaveText('Apply 2 SP to Jira (ticket 11 SP)');
+    await shot('card-hover-push');
+    await settled(button, true);
+    await rest();
+    // Pending: unavailable, "Applying…", the card and stack unchanged, the note in the existing slot.
+    button = await hoverPushOf(page, 'team-02', g1Name(1));
+    await button.click();
+    await expect.poll(() => jira.held.length).toBe(1);
+    expect(jira.held[0].issueKey).toBe('CAP-201');
+    await expect(button).toHaveAttribute('aria-disabled', 'true');
+    await button.hover();
+    await expect(valueReadout(page)).toHaveText('Applying…');
+    expect(await cardHeights(page), 'pending').toEqual(baseline);
+    await expect(pushStatus(page)).toHaveText('Applying 1 Team to Jira…');
+    expect(await singleLine(pushStatus(page)), 'the pending note is whole').toBe(true);
+    await shot('card-push-pending');
+    await settled(button, false);
+    await rest();
+    expect(await pinnedHeights(page), 'expanded stack while pending').toEqual(expanded);
+    await expectNoteBesideSummary(page, `pending, expanded ${size}`);
+    // Conflict: the current ticket value on the readout; the card and stack unchanged.
+    jira.held[0].answer(409, { error: 'capacity_conflict', currentCapacity: 12 });
+    await expect(pushOf(page, 'team-02', g1Name(1))).toHaveAttribute('data-push-state', 'conflict');
+    button = await hoverPushOf(page, 'team-02', g1Name(1));
+    await expect(valueReadout(page)).toHaveText('Capacity changed in Jira to 12.0. Apply 2 SP again to replace it.');
+    expect(await cardHeights(page), 'conflict').toEqual(baseline);
+    await shot('card-push-conflict');
+    await settled(button, true);
+    await rest();
+    expect(await cardHeights(page), 'conflict at rest').toEqual(baseline);
+    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    expect(await singleLine(pushStatus(page)), 'the conflict note is whole').toBe(true);
+    expect(await pinnedHeights(page), 'expanded stack with the conflict note').toEqual(expanded);
+    await expectNoteBesideSummary(page, `conflict, expanded ${size}`);
+    await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    expect(await pinnedHeights(page), 'compact stack with the conflict note').toEqual(compact);
+    await expectNoteBesideSummary(page, `conflict, compact ${size}`);
+    expect(await page.locator('.planning-team-capacity-cards .team-capacity-action-rail').evaluateAll(rails => Math.max(...rails.map(rail => rail.children.length)))).toBeLessThanOrEqual(3);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 });

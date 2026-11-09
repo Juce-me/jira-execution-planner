@@ -1433,6 +1433,10 @@ test('planning capacity workflow helper emits only fixed allowlisted payloads', 
     trackPlanningCapacityAction('capacity_change_result', { result: 'failure', jiraUrl: 'https://example.invalid/browse/CAP-1' });
     trackPlanningCapacityAction('capacity_change_result', { result: 'conflict', expectedCapacity: 8 });
     trackPlanningCapacityAction('capacity_change_result', { result: 'invalid' });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'success', issueKey: 'CAP-1', capacity: 14 });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'failure', teamName: 'Team Alpha' });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'conflict', currentCapacity: 20 });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'already_current' });
     trackPlanningCapacityAction('unknown_action', { result: 'failure' });
 
     assert.deepEqual(events, [
@@ -1442,6 +1446,10 @@ test('planning capacity workflow helper emits only fixed allowlisted payloads', 
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'failure' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'conflict' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'success' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'failure' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'conflict' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning' } },
     ]);
 });
 

@@ -778,7 +778,7 @@ test('group review columns add no analytics event and document their no-event ro
 test('assignee capacity strip adds no analytics event and documents its no-event row (#323)', () => {
     const analyticsDoc = read('docs/README_ANALYTICS.md');
     const analyticsSource = read('frontend/src/analytics/dashboardAnalytics.js');
-    const row = 'Planning assignee capacity table, Team capacity (not in Jira) editor, reconcile banner and Add assignee';
+    const row = 'Planning assignee capacity table, Team capacity (not in Jira) editor, card Retry and Discard, and Add assignee';
     const line = analyticsDoc.split('\n').find(candidate => candidate.startsWith(`| ${row} |`));
     assert.ok(line, `Expected no-event allowlist row for ${row}`);
     assert.ok(line.includes('trigger none'), `${row}: trigger`);
@@ -790,10 +790,15 @@ test('assignee capacity strip adds no analytics event and documents its no-event
     assert.ok(line.endsWith('| 2026-10-30 |'), `${row}: reviewed on`);
     assert.ok(analyticsDoc.includes('`api_surface=planning_assignee_capacity` (the Planning assignee capacity document read and write and the Add assignee people search) sends only `feature_name=planning_review`'));
     assert.ok(jsSetValues(read('frontend/src/analytics/analytics.js'), 'API_SURFACES').has('planning_assignee_capacity'));
-    // No new event or action name for the strip, the stored team number, the banner or Add assignee.
-    for (const name of ['assignee_capacity', 'planned_capacity', 'reconcile', 'add_assignee']) {
+    // No new event or action name for the strip, the stored team number or Add assignee. The card's one-click push
+    // to Jira is the only reconcile action, on the existing capacity workflow (Task 6).
+    for (const name of ['assignee_capacity', 'planned_capacity', 'add_assignee']) {
         assert.doesNotMatch(analyticsSource, new RegExp(`'[a-z_]*${name}[a-z_]*'`));
     }
+    assert.deepEqual([...new Set([...analyticsSource.matchAll(/'([a-z_]*reconcile[a-z_]*)'/g)].map(match => match[1]))], ['capacity_reconcile_push']);
+    assert.ok(jsSetValues(analyticsSource, 'CAPACITY_WORKFLOW_ACTIONS').has('capacity_reconcile_push'));
+    assert.ok(analyticsDoc.includes('`capacity_reconcile_push` with `result` (`success`\\|`failure`\\|`conflict`)'), 'Push action documented in the event table');
+    assert.doesNotMatch(analyticsDoc, /reconcile banner/, 'The removed reconcile banner is no longer documented');
 });
 
 test('assignee capacity modules import no analytics emitter; the API module reports only its api_result surface (#323)', () => {

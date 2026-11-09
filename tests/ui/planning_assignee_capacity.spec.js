@@ -1047,7 +1047,7 @@ test('planned Stories hidden by filters stay counted in Estimated effort and the
     await expand(page);
     await expect(footerSelected(page)).toHaveText(/^14/);
     await page.locator('.search-input:visible').fill('PLAN-3');
-    await expect(page.locator('.planning-actions > .planning-stats')).toContainText('3 planned stories hidden by filters');
+    await expect(page.locator('.planning-actions > .planning-stats')).toContainText('3 hidden');
     await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveCount(0);
     await expect(footerSelected(page)).toHaveText(/^14/);
 });

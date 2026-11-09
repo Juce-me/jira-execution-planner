@@ -196,7 +196,7 @@ test('shared plan totals retain hidden included work, deduplicate IDs and follow
     const other = { id: '3', ...task('SYN-3', { teamId: 'b', customfield_10004: 8 }) };
     const result = buildPlanningSelectionSummary({ tasks: [a, b, other, a], shownTasks: [a], selectedTasks: { 'SYN-1': true, 'SYN-2': true, 'SYN-3': true }, selectedTeamIds: new Set(['a']), allTeams: false, getTeamInfo });
     assert.deepEqual(result.selectedTasks, [a, b]);
-    assert.deepEqual([result.count, result.sp, result.shownCount, result.shownSP, result.hiddenCount, result.hiddenSP], [2, 8, 1, 3, 1, 5]);
+    assert.deepEqual([result.count, result.sp, result.hiddenCount], [2, 8, 1]);
 });
 
 test('planned effort distinguishes missing estimates from an explicit zero', async () => {

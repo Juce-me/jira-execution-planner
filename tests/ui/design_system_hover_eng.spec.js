@@ -141,6 +141,21 @@ test('mounted Catch Up passive alert row retains its resting border and surface'
 });
 
 
+// Review I4: Planning List (saved preference) keeps its read-only overview controls free of hover deltas.
+test('read-only Planning List overview controls and status toggles have no hover delta',async({page},testInfo)=>{
+    testInfo.setTimeout(60000);
+    await openSurface(page,'planning-list',{canEdit:false,canSave:false});
+    const panel=page.locator('.planning-panel');
+    for(const name of ['Clear Selection','Undo']){
+        const action=panel.getByRole('button',{name,exact:true});await expect(action).toBeDisabled();
+        await hoverEvidence(page,action,testInfo,`planning-list-disabled-${name}`,{disabled:true});
+    }
+    await panel.getByRole('button',{name:'Include by status',exact:true}).click();
+    const toggles=page.getByRole('dialog',{name:'Include by status',exact:true}).locator('button.planning-action-button');
+    await expect(toggles).toHaveCount(4);
+    for(const [index,toggle] of (await toggles.all()).entries()){await expect(toggle).toBeDisabled();await hoverEvidence(page,toggle,testInfo,`planning-list-disabled-status-${index}`,{disabled:true});}
+});
+
 // A saved synthetic layout exposes the existing optional Capacity column without
 // granting settings rights or changing the mounted control's disabled attribute.
 test('read-only Planning Table capacity, overview row and status toggles have no hover delta',async({page},testInfo)=>{

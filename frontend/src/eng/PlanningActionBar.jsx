@@ -43,7 +43,7 @@ export default function PlanningActionBar({
         <button type="button" className="planning-action-button" aria-describedby={undoId} title="Undo the last inclusion change."
             disabled={!enabled || !canUndoPlanningSelection} onClick={onUndoPlanningSelection}>Undo</button>
         <PlanningPopover open={statusOpen} onClose={() => setStatusOpen(false)} label="Include by status"
-            trigger={<button type="button" className="planning-action-button" onClick={() => setStatusOpen(open => !open)}>Include by status <span aria-hidden="true">▾</span></button>}>
+            trigger={<button type="button" className="planning-action-button" aria-label="Include by status" onClick={() => setStatusOpen(open => !open)}>Status <span aria-hidden="true">▾</span></button>}>
             <div className="planning-actions">
                 {statusGroups.map(group => {
                     const full = group.total > 0 && group.included === group.total;

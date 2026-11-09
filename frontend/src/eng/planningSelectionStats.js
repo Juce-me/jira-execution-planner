@@ -45,11 +45,9 @@ export function buildPlanningSelectionSummary({ tasks, shownTasks, selectedTasks
         seen.add(id);
         return true;
     });
-    const shown = selected.filter(task => shownIds.has(String(task.id)));
     const hidden = selected.filter(task => !shownIds.has(String(task.id)));
     const missingEstimateCount = selected.filter(task => task.fields.customfield_10004 == null || task.fields.customfield_10004 === '' || !Number.isFinite(parseFloat(task.fields.customfield_10004))).length;
-    return { selectedTasks: selected, count: selected.length, sp: sumPlanningStoryPoints(selected), missingEstimateCount,
-        shownCount: shown.length, shownSP: sumPlanningStoryPoints(shown), hiddenCount: hidden.length, hiddenSP: sumPlanningStoryPoints(hidden) };
+    return { selectedTasks: selected, count: selected.length, sp: sumPlanningStoryPoints(selected), missingEstimateCount, hiddenCount: hidden.length };
 }
 
 export function buildSelectedTeamStats(tasks, getTeamInfo) {

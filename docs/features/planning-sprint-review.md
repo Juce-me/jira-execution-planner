@@ -6,22 +6,27 @@ opens List until List is retired, but nothing in Planning switches to it.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview compact: one
-desktop row with Select All, Clear Selection, Undo, Include by status ▾, an icon-only
-Open in Jira button (accessible name "Open planned stories in Jira"), the plain
-summary in the flexible gap (Planned stories, Planned SP, missing estimates when any,
-Capacity: X SP or unavailable, and planned stories hidden by filters when any) and
-Show capacity details right-aligned. The summary and any state note stay on that one
-line and ellipsize inside their own boxes when the gap is too narrow, so the compact
-height never changes; at narrow widths the row wraps. The summary has no hover or
-focus readout; the breakdown lives in the capacity details. Open in Jira opens the
-planned stories matching the current Team and filters and is disabled when none match. Include by status opens a popover with one line of status
+desktop row with Select All, Clear Selection, Undo, Status ▾ (accessible name "Include
+by status"), an icon-only Open in Jira (accessible name "Open planned stories in Jira"),
+the short summary in the flexible gap and Details (accessible name "Show capacity
+details"; "Hide details" when expanded) right-aligned. The Table summary reads
+`209 stories · 220.0 SP · Cap 183.4 SP`, followed by `· N unestimated` and `· N hidden`
+(planned stories the filters hide) only when they are above zero, and `Cap unavailable`
+when capacity is unavailable; it uses the configured child word. Its values never
+ellipsize: the worst case fits whole at 1280x720 and 1440x900, and only the whole line
+would ellipsize as a last resort. The compact row stays 46.9px; a capacity error adds
+one line under it. At narrow widths the row wraps and the summary may wrap inside its
+box. The summary has no hover or focus readout; the breakdown lives in the capacity
+details. Planning List, still reachable from a saved preference, keeps its longer
+summary below the action row. Open in Jira opens the planned stories matching the
+current Team and filters and is disabled when none match. Status ▾ opens the Include by status popover with one line of status
 toggles (Accepted + In Progress, To Do / Pending, Postponed, Awaiting validation),
 each labelled `<group> · <included>/<total>` over the stories matching the current
 Team and filters. A toggle is pressed when every matching story of its group is in
 the plan; clicking a pressed toggle removes them all, clicking any other includes the
 rest. A group with no matching story is disabled. The popover stays open so several
-groups can be toggled, and closes on an outside click or Escape. Hiding capacity
-details keeps the controls and counts visible; Show capacity details reveals the
+groups can be toggled, and closes on an outside click or Escape. The popover stays inside the viewport and wraps whole toggles onto further lines; each toggle stays one line tall and never wraps, ellipsizes or clips its label. Hiding capacity
+details keeps the controls and counts visible; Details reveals the
 existing graphs and Team capacity content without changing inclusion or fetching
 another dataset. Capacity errors ("Capacity unavailable — show capacity details to
 retry") remain visible while details are hidden. Only the spreadsheet region widens;

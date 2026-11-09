@@ -55,7 +55,7 @@ import { createDashboardFreshnessOwners, readFreshnessScopeGuards } from './dash
 import { mergeEpicStories } from './eng/epicRefreshPatch.js';
 import { createDependencySkip } from './eng/epicRefreshDependencySkip.js';
 import PlanningActionBar from './eng/PlanningActionBar.jsx';
-import PlanningOverviewPanel from './eng/PlanningOverviewPanel.jsx';
+import PlanningOverviewPanel, { PlanningOverviewSummary } from './eng/PlanningOverviewPanel.jsx';
 import PlanningAssigneeCapacity, { getAssigneeCapacityController } from './eng/PlanningAssigneeCapacity.jsx';
 import PlanningReviewTable, { PlanningReviewScopeDialog } from './eng/PlanningReviewTable.jsx';
 import { buildPlanningReviewRows, planningReviewScopeCounts } from './eng/planningReviewTableModel.js';
@@ -6126,13 +6126,17 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''} table={planningLayout === 'table'}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
-                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <span className="planning-stats compact">
-                            {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
-                            <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
-                            {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
-                            <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
-                            {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
-                        </span>}
+                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && (planningLayout === 'table'
+                            ? <PlanningOverviewSummary childPlural={entityNames.childPlural.toLowerCase()} planned={Boolean(planningReview.plan?.exists || planningReview.dirty)} count={selectedCount} sp={selectedSP}
+                                capacity={capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? totalCapacityAdjusted : null}
+                                unestimated={planningSelectionSummary.missingEstimateCount} hidden={planningSelectionSummary.hiddenCount} />
+                            : <span className="planning-stats compact">
+                                {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
+                                <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
+                                {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
+                                <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
+                                {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
+                            </span>)}
                         notice={<span className="planning-review-state-note" role="status">
                             {pendingPlanningAuthResumeRef.current ? 'Restoring plan…' : !planningSourceReady || !planningReview.planReady ? planningReview.error || error ? <>Plan could not be loaded. <button type="button" className="planning-action-button" onClick={() => { if (!planningSourceReady) void retryEngLoad(); else void planningReview.refresh(); }}>Retry</button></> : 'Loading plan…'
                                 : planningReview.dirty ? ''

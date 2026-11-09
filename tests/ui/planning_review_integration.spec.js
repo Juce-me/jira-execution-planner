@@ -358,7 +358,7 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`shared Planning 
     await expect(undo).toBeDisabled();
     await expect(checkboxes).toHaveCount(60);
     await expect(panel).toContainText('No saved plan yet. Include stories to preview capacity, then save your plan.');
-    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Capacity: unavailable');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Cap unavailable');
     await clear.evaluate(node => node.click());
     await expect(undo).toBeDisabled();
     await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
@@ -373,7 +373,7 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`shared Planning 
     await select.evaluate(node => node.click());
     await expect(clear).toBeEnabled();
     await expect(undo).toBeEnabled();
-    await expect(panel).toContainText('Planned stories: 60');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toContainText('60 stories');
     await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeVisible();
     await page.mouse.move(0, 0);
     await page.keyboard.press('Tab');
@@ -405,19 +405,19 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`shared Planning 
     await page.screenshot({ path: `tmp/217-ui/shared-planning-controls-${width}x${height}.png`, fullPage: false });
 });
 
-// Operator-approved overview row (2026-11-06, one row): direct buttons, an icon-only Open in Jira, the plain summary in the
-// flexible gap and the right-aligned details button; no Planning options menu, no List toggle, no summary readout.
+// Operator-approved overview row (2026-11-06, one row; short labels 2026-11-09): Select All, Clear Selection, Undo,
+// "Status ▾", an icon-only Open in Jira, the short summary in the flexible gap and a right-aligned "Details"; accessible
+// names keep the full meaning. No Planning options menu, no List toggle, no summary readout.
 const overviewRowNames = ['Select All', 'Clear Selection', 'Undo', 'Include by status', 'Open planned stories in Jira', 'Show capacity details'];
-// The summary slot: between the Jira button and the details button, on the row, each part ellipsized inside the slot.
+// The summary slot: between the Jira button and the details button, on the row, every part shown whole (no ellipsis).
 async function overviewSummaryGeometry(panel) {
     return panel.locator('.planning-actions > .planning-stats').evaluate(summary => {
         const r = summary.getBoundingClientRect(), row = summary.parentElement.getBoundingClientRect();
         const jira = summary.parentElement.querySelector('.planning-icon-button').getBoundingClientRect();
         const details = summary.parentElement.querySelector('.planning-panel-collapse')?.getBoundingClientRect();
         return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, rowTop: row.top, rowBottom: row.bottom, jiraRight: jira.right, detailsLeft: details?.left ?? null,
-            overflow: summary.scrollWidth > summary.clientWidth + 1,
-            parts: [...summary.children].map(span => { const b = span.getBoundingClientRect(), style = getComputedStyle(span);
-                return { left: b.left, right: b.right, ellipsis: style.textOverflow === 'ellipsis' && style.whiteSpace === 'nowrap' && style.overflow === 'hidden', lines: Math.round(b.height / parseFloat(style.lineHeight || b.height)) }; }) };
+            scrollWidth: summary.scrollWidth, clientWidth: summary.clientWidth, text: summary.textContent,
+            parts: [...summary.children].map(span => { const b = span.getBoundingClientRect(); return { text: span.textContent, left: b.left, right: b.right, top: b.top, bottom: b.bottom }; }) };
     });
 }
 function expectSummaryInSlot(geometry, label) {
@@ -425,11 +425,20 @@ function expectSummaryInSlot(geometry, label) {
     if (geometry.detailsLeft !== null) expect(geometry.right, `${label}: clear of the details button`).toBeLessThanOrEqual(geometry.detailsLeft);
     expect(geometry.top, `${label}: on the row`).toBeGreaterThanOrEqual(geometry.rowTop - 0.5);
     expect(geometry.bottom, `${label}: on the row`).toBeLessThanOrEqual(geometry.rowBottom + 0.5);
-    expect(geometry.overflow, `${label}: nothing overflows the slot`).toBe(false);
+    expect(geometry.scrollWidth, `${label}: the summary is unclipped (${geometry.text})`).toBeLessThanOrEqual(geometry.clientWidth);
     for (const part of geometry.parts) {
-        expect(part.left, label).toBeGreaterThanOrEqual(geometry.left - 0.5); expect(part.right, label).toBeLessThanOrEqual(geometry.right + 0.5);
-        expect(part.ellipsis, `${label}: a part that cannot fit ellipsizes in its own box`).toBe(true);
+        expect(part.left, `${label}: ${part.text} inside the slot`).toBeGreaterThanOrEqual(geometry.left - 0.5);
+        expect(part.right, `${label}: ${part.text} inside the slot`).toBeLessThanOrEqual(geometry.right + 0.5);
     }
+}
+// Compact panel with a capacity error line under the row, measured 2026-11-09 at 1280x720.
+const COMPACT_ERROR_HEIGHT = 72.8;
+// Worst case (operator, 2026-11-09): the real summary element carries the longest copy; it must still fit unclipped.
+const worstCaseSummary = ['209 stories', '220.0 SP', 'Cap 183.4 SP', '32 unestimated', '12 hidden'];
+async function fillWorstCaseSummary(panel) {
+    await panel.locator('.planning-actions > .planning-stats').evaluate((node, parts) => {
+        node.replaceChildren(...parts.flatMap((part, index) => { const span = document.createElement('span'); span.textContent = part; return index ? [document.createTextNode(' · '), span] : [span]; }));
+    }, worstCaseSummary);
 }
 async function overviewRowGeometry(panel) {
     return panel.locator('.planning-actions').first().evaluate(row => {
@@ -445,13 +454,13 @@ async function overviewRowGeometry(panel) {
     });
 }
 
-for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overview row: direct controls in order, right-aligned details, no options menu, List toggle or summary readout at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overview row: direct controls in order, right-aligned details, no options menu, List toggle or summary readout at ${width}x${height}`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height });
     await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
     await openPlanning(page, { expectStories: false });
     const panel = page.locator('.planning-panel');
     await expect(panel).toHaveClass(/planning-panel-compact/);
-    await expect(panel.locator('.planning-actions > .planning-stats')).toContainText('Planned stories: 3');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText(/^3 stories · \d+\.\d SP · Cap (unavailable|\d+\.\d SP)$/);
     await page.mouse.move(5, height - 5);
     const rest = await overviewRowGeometry(panel);
     expect(rest.map(entry => entry.name)).toEqual(overviewRowNames);
@@ -462,6 +471,9 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overvie
     await expect(jira).toHaveClass(/planning-icon-button/);
     await expect(jira.locator('svg.jira-export-icon')).toHaveCount(1);
     await expect(jira).toBeEnabled();
+    // Review I3: settled hover of the enabled framed icon button.
+    await hoverEvidence(page, jira, testInfo, `open-in-jira-icon-${width}`, { foundation: true });
+    await page.mouse.move(5, height - 5);
     const details = panel.getByRole('button', { name: 'Show capacity details', exact: true });
     await expect(details).toHaveAttribute('aria-expanded', 'false');
     await expect(details).toHaveAttribute('aria-controls', 'planning-panel-details');
@@ -495,6 +507,7 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overvie
     await page.mouse.move(5, height - 5);
     await details.click();
     await expect(panel.getByRole('button', { name: 'Hide capacity details', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(panel.getByRole('button', { name: 'Hide capacity details', exact: true })).toHaveText('Hide details');
     await expect(panel.locator('#planning-panel-details')).toBeVisible();
     const expanded = await overviewRowGeometry(panel);
     expect(expanded.map(entry => entry.name)).toEqual([...overviewRowNames.slice(0, -1), 'Hide capacity details']);
@@ -507,6 +520,14 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Planning overvie
     // Open in Jira keeps its disabled rule: nothing planned matches the current filters.
     await page.locator('.search-input:visible').fill('no-matching-story');
     await expect(jira).toBeDisabled();
+    // Short visible labels; the worst-case summary fits whole in the compact row at this viewport.
+    await page.locator('.search-input:visible').fill('');
+    await expect(panel.getByRole('button', { name: 'Include by status', exact: true })).toHaveText('Status ▾');
+    await expect(details).toHaveText('Details');
+    await fillWorstCaseSummary(panel);
+    expectSummaryInSlot(await overviewSummaryGeometry(panel), 'worst case');
+    for (const entry of await overviewRowGeometry(panel)) { expect(entry.clipped, entry.name).toBe(false); expect(entry.textInside, entry.name).toBe(true); }
+    expect((await panel.boundingBox()).height).toBeLessThanOrEqual(46.9);
 });
 
 test('Catch Up List keeps its own controls and gains no Planning overview row', async ({ page }) => {
@@ -518,7 +539,37 @@ test('Catch Up List keeps its own controls and gains no Planning overview row', 
     await expect(page.getByRole('button', { name: 'Show capacity details' })).toHaveCount(0);
 });
 
-test('Include by status: one line of status toggles with included/total counts that include the rest or remove all and stay open', async ({ page }) => {
+// Operator (2026-11-09): the popover may wrap whole toggles onto several lines, but each toggle is one line tall, never
+// wraps, ellipsizes or overflows its label, sits inside the popover, and the popover sits inside the viewport.
+for (const [width, height] of [[1280, 720], [1440, 900], [390, 844]]) test(`Include by status toggles stay one line tall inside the popover and the viewport at ${width}x${height}`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
+    await openPlanning(page, { expectStories: false });
+    const panel = page.locator('.planning-panel');
+    const lineHeight = (await panel.getByRole('button', { name: 'Undo', exact: true }).boundingBox()).height;
+    await panel.getByRole('button', { name: 'Include by status', exact: true }).click();
+    const popover = page.getByRole('dialog', { name: 'Include by status', exact: true });
+    await expect(popover.locator('button.planning-action-button')).toHaveCount(4);
+    const geometry = await popover.evaluate(node => {
+        const p = node.getBoundingClientRect();
+        return { popover: { left: p.left, right: p.right, top: p.top, bottom: p.bottom }, viewport: { width: innerWidth, height: innerHeight },
+            toggles: [...node.querySelectorAll('button.planning-action-button')].map(button => { const r = button.getBoundingClientRect(), style = getComputedStyle(button);
+                return { text: button.textContent, height: r.height, left: r.left, right: r.right, top: r.top, bottom: r.bottom, scrollWidth: button.scrollWidth, clientWidth: button.clientWidth, textOverflow: style.textOverflow, whiteSpace: style.whiteSpace }; }) };
+    });
+    expect(geometry.popover.left).toBeGreaterThanOrEqual(0); expect(geometry.popover.top).toBeGreaterThanOrEqual(0);
+    expect(geometry.popover.right).toBeLessThanOrEqual(geometry.viewport.width); expect(geometry.popover.bottom).toBeLessThanOrEqual(geometry.viewport.height);
+    for (const toggle of geometry.toggles) {
+        expect(toggle.height, `${toggle.text} is one line tall`).toBeCloseTo(lineHeight, 0);
+        expect(toggle.scrollWidth, `${toggle.text} label is not clipped`).toBeLessThanOrEqual(toggle.clientWidth);
+        expect(toggle.textOverflow, toggle.text).not.toBe('ellipsis');
+        expect(toggle.whiteSpace, toggle.text).toBe('nowrap');
+        expect(toggle.left).toBeGreaterThanOrEqual(geometry.popover.left); expect(toggle.right).toBeLessThanOrEqual(geometry.popover.right);
+        expect(toggle.top).toBeGreaterThanOrEqual(geometry.popover.top); expect(toggle.bottom).toBeLessThanOrEqual(geometry.popover.bottom);
+    }
+    await page.screenshot({ path: `tmp/217-ui/include-by-status-${width}x${height}.png`, fullPage: false });
+});
+
+test('Include by status: one line of status toggles with included/total counts that include the rest or remove all and stay open', async ({ page }, testInfo) => {
     const fixture = await installPlanningFixture(page, { planningLayout: 'table', initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
     await openPlanning(page, { expectStories: false });
     await page.getByRole('radio', { name: 'Stories', exact: true }).check();
@@ -547,6 +598,9 @@ test('Include by status: one line of status toggles with included/total counts t
     expect(Math.max(...geometry.map(entry => entry.top)) - Math.min(...geometry.map(entry => entry.top))).toBeLessThan(1);
     for (const entry of geometry) { expect(entry.clipped).toBe(false); expect(entry.inside).toBe(true); }
     expect(await popover.evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && node.scrollWidth <= node.clientWidth + 1; })).toBe(true);
+    // Review I3: settled hover of the pressed and the unpressed toggle (the pressed one keeps its green fill and ink).
+    await hoverEvidence(page, accepted, testInfo, 'include-by-status-pressed', { pill: true, selected: true, semanticHover: { color: 'rgb(56, 158, 13)', background: 'rgb(246, 255, 237)' } });
+    await hoverEvidence(page, todo, testInfo, 'include-by-status-unpressed', { foundation: true });
     for (const control of [accepted, todo]) {
         const before = await control.boundingBox();
         await control.hover(); await page.waitForTimeout(150);
@@ -582,6 +636,8 @@ test('a capacity read error stays visible while the overview is compact', async 
     await expect(status).toHaveText('Capacity unavailable — show capacity details to retry');
     await expect(status).toBeVisible();
     expect(await status.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    // The error adds one line under the row: the compact panel is pinned at that height, not the 46.9px row alone.
+    expect((await panel.boundingBox()).height).toBeLessThanOrEqual(COMPACT_ERROR_HEIGHT);
     await panel.getByRole('button', { name: 'Show capacity details', exact: true }).click();
     await expect(status).toBeVisible();
 });
@@ -944,6 +1000,27 @@ test('table keeps uncreated Stories through Story filters',async({page})=>{
     await expect(table.locator('tbody .planning-review-key').filter({hasText:'PLAN-2'})).toHaveCount(0);
 });
 
+// List stays reachable from a saved preference or link until List retirement: keep its behaviour covered (review I4, M3).
+test('Planning List from a saved preference keeps its filtering, its own summary placement, Sort and no compact panel',async({page})=>{
+    await installPlanningFixture(page,{planningLayout:'list',authMode:'atlassian_oauth',scopeTeamIds:['team-alpha','team-beta']});await installUncreatedReadiness(page);await openPlanning(page);
+    const panel=page.locator('.planning-panel');
+    await expect(panel).not.toHaveClass(/planning-panel-compact/);
+    await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
+    await expect(page.locator('.planning-review-sticky-stack')).toHaveCount(0);
+    await expect(page.getByRole('radiogroup',{name:'Planning review rows'})).toHaveCount(0);
+    await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
+    await expect(page.getByRole('button',{name:/Show Planning (list|table)/})).toHaveCount(0);
+    await expect(panel.getByRole('button',{name:'Show capacity details'})).toHaveCount(0);
+    // List keeps its long summary below the action row (Table moves the short one into the row).
+    await expect(panel.locator(':scope > .planning-stats')).toContainText('Capacity:');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveCount(0);
+    // List keeps filtering uncreated Stories out.
+    await page.locator('.filterbar .fb-trigger').click();
+    await page.locator('.popover [data-facet="status"] [data-option="Pending"]').click();
+    await page.locator('.filterbar .fb-trigger').click();
+    await expect(page.locator('.task-list a[href$="/browse/PLAN-EMPTY"]')).toHaveCount(0);
+});
+
 for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
     const fixture=await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds,selectedTeams,capacityProject:'CAP',initialPlans:{[futureSprintId]:{includedIssueIds:futureStories.map(story=>story.id)}}});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
@@ -955,8 +1032,8 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
     await expect(page.locator('[data-assignee-capacity]')).toHaveCount(selectedTeams?1:0);
     const row=await panel.boundingBox();expect(row.height).toBeLessThan(64);
     await expect(panel.locator('#planning-panel-details')).toBeHidden();
-    await expect(panel.locator('.planning-stats').first()).toContainText(`Planned stories: ${selected}`);
-    await expect(panel.locator('.planning-stats').first()).toContainText('Planned SP:');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toContainText(`${selected} stories`);
+    await expect(panel.locator('.planning-actions > .planning-stats')).toContainText(' SP · Cap ');
     expectSummaryInSlot(await overviewSummaryGeometry(panel),'sticky summary');
     const beforeCalls=fixture.calls.filter(call=>['/api/tasks-with-team-name','/api/eng/story-readiness','/api/dependencies'].includes(call.pathname)).length;
     await clickPlanningOption(page, 'Show capacity details');
@@ -1003,7 +1080,7 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
 test('compact Table panel fits narrow screens and restores normal Planning in Scenario',async({page})=>{
     await page.setViewportSize({width:390,height:900});await installPlanningFixture(page,{planningLayout:'table'});await openPlanning(page,{expectStories:false});
     const panel=page.locator('.planning-panel');await expect(panel).toHaveClass(/planning-panel-compact/);
-    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Capacity: unavailable');
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Cap unavailable');
     const primary=panel.locator('.planning-actions button');
     // Six direct controls (2026-11-06); at 390px the row wraps inside the panel instead of overflowing it.
     await expect(primary).toHaveCount(6);

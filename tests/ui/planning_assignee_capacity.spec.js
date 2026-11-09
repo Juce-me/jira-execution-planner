@@ -3634,6 +3634,33 @@ test('a typed number is kept when its Team\'s document read fails: it is saved, 
     await expect(overviewStatus(page)).toHaveCount(0);
 });
 
+test('a plan load error and its Retry outrank Team save status in the state note; the Team status returns once the plan loads', async ({ page }) => {
+    let reviewFails = true;
+    const server = teamsServer({ patchStatus: teamId => (teamId === 'team-alpha' ? 503 : 0) });
+    await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
+    // The shared plan cannot be read (a later route wins over the install's), until the user retries.
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => (reviewFails && route.request().method() === 'GET'
+        ? route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'review_unavailable' }) }) : route.fallback()));
+    await openPlanning(page);
+    const note = page.locator('.planning-panel .planning-actions > .planning-review-state-note');
+    await expect(note).toContainText('Plan could not be loaded.');
+    await showCards(page);
+    await typeTeamNumber(page, 'team-alpha', 'Alpha Team', '14');
+    await expect(teamCard(page, 'team-alpha')).toHaveAttribute('data-capacity-attention', 'failed');
+    await page.evaluate(() => document.activeElement?.blur());
+    await page.mouse.move(5, 600);
+    // The error and its Retry stay; the Team status does not displace them.
+    await expect(note).toContainText('Plan could not be loaded.');
+    await expect(overviewStatus(page)).toHaveCount(0);
+    const retry = note.getByRole('button', { name: 'Retry', exact: true });
+    await expect(retry).toBeVisible();
+    expect(await retry.evaluate(node => { const r = node.getBoundingClientRect(); return document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2) === node; }), 'Retry is topmost').toBe(true);
+    reviewFails = false;
+    await retry.click();
+    await expect(note).not.toContainText('Plan could not be loaded.');
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+});
+
 test('request ledger: the per-Team mirror writes only an idle loaded owner after a user-initiated read, never after an automatic one, and never creates a document', async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
     const lifecycle = await installLifecycleControl(page);

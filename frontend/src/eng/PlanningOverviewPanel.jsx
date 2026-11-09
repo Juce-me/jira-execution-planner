@@ -13,10 +13,12 @@ export function PlanningOverviewSummary({ childPlural = 'stories', planned = fal
 }
 
 export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
-    // Stored-number saves in flight or failed (#323) take the action row's state note, compact and expanded, ahead of the
-    // plan note: the row keeps its height (the cards never grow; a failed card's Retry and Discard are in its hover rail).
+    // Stored-number saves in flight or failed (#323) take the action row's state note, compact and expanded, so the row
+    // keeps its height (the cards never grow; a failed card's Retry and Discard are in its hover rail). They displace only
+    // a ready plan's notes ("Plan saved" and the like): while the plan is not ready its notice (loading, restoring, or the
+    // load error with its Retry) always wins.
     const teamSaveStatus = usePlanningTeamCapacitySaveStatus();
-    const note = teamSaveStatus ? <span className="planning-review-state-note" role="status">{teamSaveStatus}</span> : notice;
+    const note = teamSaveStatus && planReady ? <span className="planning-review-state-note" role="status">{teamSaveStatus}</span> : notice;
     const panelControl = <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
         aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>;
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>

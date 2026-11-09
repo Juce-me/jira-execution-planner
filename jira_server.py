@@ -6312,11 +6312,12 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
                 parent_type = ((parent.get('fields') or {}).get('issuetype') or {}).get('id')
                 if ancestor_term and parent.get('key') and str(parent_type or '') == ancestor_term[1]:
                     fetched[key]['initiative'] = {'key': parent['key']}
+        unread = {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None,
+                  **({'allocation': None} if allocation_field else {})}
         with _cache_lock:
             if get_jira_issue_cache_generation() == cache_generation:
                 for normalized in batch:
-                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None,
-                                                    **({'allocation': None} if allocation_field else {})})
+                    meta = fetched.get(normalized) or dict(unread)
                     EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context, configuration=configuration)] = {**meta, 'timestamp': time.time()}
                     summaries_by_normalized[normalized] = meta
             else:

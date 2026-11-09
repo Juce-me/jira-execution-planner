@@ -18,6 +18,7 @@ const normalizeEpicKey = value => String(value || '').trim().toUpperCase();
 const PAIRS = {
     ordinary: { excluded: [], adHoc: [], combined: 8, product: 8, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
     tech: { stamp: 'tech', excluded: [], adHoc: [], combined: 8, product: 0, tech: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    unmapped: { stamp: 'none', excluded: [], adHoc: [], combined: 8, product: 0, tech: 0, none: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
     ad_hoc: { excluded: [], adHoc: ['PLAN-I1'], combined: 8, product: 8, tech: 0, adHocSp: 8, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
     excluded: { excluded: ['PLAN-I1'], adHoc: [], combined: 0, product: 0, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 0, excludedReport: 8 },
 };
@@ -33,7 +34,7 @@ async function load() {
     return { ...classification, ...stats, ...capacity };
 }
 
-test('classifyCapacityIssue: the Allocation stamp decides Product/Tech, Ad Hoc wins; Legacy output unchanged', async () => {
+test('classifyCapacityIssue: the Allocation stamp decides Product/Tech/No Allocation, Ad Hoc follows it; Legacy output unchanged', async () => {
     const { classifyCapacityIssue, isTechIssue } = await load();
     const adHocEpicSet = new Set(['PLAN-I1']);
     const issue = sp('PLAN-E1', 8);
@@ -42,7 +43,8 @@ test('classifyCapacityIssue: the Allocation stamp decides Product/Tech, Ad Hoc w
     assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet: new Set() }), { projectType: 'tech', capacityType: 'tech', productSubtype: null });
     assert.deepEqual(classifyCapacityIssue(product, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
     assert.deepEqual(classifyCapacityIssue(issue, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
-    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet }), { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' });
+    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet }), { projectType: 'tech', capacityType: 'ad_hoc', productSubtype: null });
+    assert.deepEqual(classifyCapacityIssue(sp('PLAN-E5', 8, { stamp: 'none' }), {}), { projectType: 'none', capacityType: 'none', productSubtype: null });
     // The stamp beats the project key both ways; a Board child carries it at the top level.
     assert.equal(classifyCapacityIssue(product, { techProjectKeys: new Set(['PLAN']) }).projectType, 'product');
     assert.equal(classifyCapacityIssue({ key: 'PLAN-E4', projectClassification: 'tech' }, {}).projectType, 'tech');
@@ -70,17 +72,19 @@ for (const [name, pair] of Object.entries(PAIRS)) {
         const allocation = u.buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
         assert.equal(allocation.PRODUCT || 0, pair.product);
         assert.equal(allocation.TECH || 0, pair.tech);
+        assert.equal(allocation.NONE || 0, pair.none || 0);
         assert.equal(allocation.OTHER, undefined);
         const excludedReport = u.buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
-        assert.equal((excludedReport.PRODUCT || 0) + (excludedReport.TECH || 0), pair.excludedReport);
+        assert.equal((excludedReport.PRODUCT || 0) + (excludedReport.TECH || 0) + (excludedReport.NONE || 0), pair.excludedReport);
         assert.equal(excludedReport.OTHER, undefined);
         const teamProject = u.buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
         assert.equal(teamProject['team-a']?.product || 0, pair.product);
         assert.equal(teamProject['team-a']?.tech || 0, pair.tech);
+        assert.equal(teamProject['team-a']?.none || 0, pair.none || 0);
         assert.equal(teamProject['team-a']?.other, undefined);
         const adHocSp = selectedPlanningTasksList.reduce((sum, task) => sum + (u.classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType === 'ad_hoc' ? 8 : 0), 0);
         assert.equal(adHocSp, pair.adHocSp);
-        assert.equal(pair.combined, pair.product + pair.tech);
+        assert.equal(pair.combined, pair.product + pair.tech + (pair.none || 0));
     });
 }
 
@@ -121,12 +125,33 @@ test('new-model capacity: team stats and project capacity use the Product/Tech b
         capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true,
     });
     assert.deepEqual(capacity, { PRODUCT: 14, TECH: 6 });
+    // DELIVERY No Allocation work is its own bucket: counted in the Team total, never in Product; the split stays Product/Tech.
+    const delivery = u.buildTeamCapacityStats({
+        showPlanning: true, capacityEnabled: true, capacityTasks: [task, sp('PLAN-E2', 5, { stamp: 'tech' }), sp('PLAN-E3', 3, { stamp: 'none' })],
+        normalizeStatus: value => String(value).toLowerCase(), getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(),
+    });
+    assert.deepEqual(delivery['team-a'].product, { todoPending: 8, accepted: 0, postponed: 0 });
+    assert.deepEqual(delivery['team-a'].none, { todoPending: 3, accepted: 0, postponed: 0 });
+    const [deliveryEntry] = u.buildTeamCapacityEntries(delivery);
+    assert.deepEqual(deliveryEntry.none, { todoPending: 3, accepted: 0, postponed: 0 });
+    assert.equal(deliveryEntry.total.todoPending, 16);
+    const deliveryTotals = u.buildCapacityTotals({ showPlanning: true, capacityEnabled: true, displayedTeamCapacityEntries: [deliveryEntry] });
+    assert.deepEqual(deliveryTotals.none, { todoPending: 3, accepted: 0, postponed: 0 });
+    assert.equal(deliveryTotals.total.todoPending, 16);
+    assert.deepEqual(u.buildProjectCapacity({
+        showPlanning: true, capacityEnabled: true, displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
+        selectedTeamProjectStats: { 'team-a': { product: 8, tech: 0, none: 30 } }, getTeamNetCapacity: () => 20,
+        capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true,
+    }), { PRODUCT: 14, TECH: 6 });
     const legacy = u.buildTeamCapacityStats({
         showPlanning: true, capacityEnabled: true, capacityTasks: [task], normalizeStatus: value => String(value).toLowerCase(),
         getTeamInfo, techProjectKeys: new Set(),
     });
     assert.equal('other' in legacy['team-a'], false);
     assert.equal('other' in u.buildTeamCapacityEntries(legacy)[0], false);
+    assert.deepEqual(Object.keys(legacy['team-a']).sort(), ['name', 'product', 'tech']);
+    assert.deepEqual(Object.keys(u.buildTeamCapacityEntries(legacy)[0]).sort(), ['id', 'name', 'product', 'tech', 'total']);
+    assert.deepEqual(Object.keys(u.buildCapacityTotals({ showPlanning: true, capacityEnabled: true, displayedTeamCapacityEntries: u.buildTeamCapacityEntries(legacy) })).sort(), ['product', 'tech', 'total']);
 });
 
 test('new-model Catch Up and Board filter models show and count the Projects facet from the stamp', async () => {

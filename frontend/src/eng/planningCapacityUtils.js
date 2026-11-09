@@ -441,8 +441,8 @@ export function buildTeamCapacityStats({
             };
         }
 
-        const projectType = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType;
-        const bucket = projectType === 'tech' ? 'tech' : 'product';
+        const bucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType;
+        if (!acc[teamInfo.id][bucket]) acc[teamInfo.id][bucket] = emptyCapacityBreakdown(); // 'none' (No Allocation) only in DELIVERY
         if (status === 'to do' || status === 'pending') {
             acc[teamInfo.id][bucket].todoPending += sp;
         }
@@ -459,17 +459,21 @@ export function buildTeamCapacityStats({
 
 export function buildTeamCapacityEntries(teamCapacityStats) {
     return Object.entries(teamCapacityStats)
-        .map(([id, info]) => ({
-            id,
-            name: info.name,
-            product: info.product,
-            tech: info.tech,
-            total: {
-                todoPending: info.product.todoPending + info.tech.todoPending,
-                accepted: info.product.accepted + info.tech.accepted,
-                postponed: info.product.postponed + info.tech.postponed
-            }
-        }))
+        .map(([id, info]) => {
+            const none = info.none || emptyCapacityBreakdown();
+            return {
+                id,
+                name: info.name,
+                product: info.product,
+                tech: info.tech,
+                ...(info.none ? { none: info.none } : {}),
+                total: {
+                    todoPending: info.product.todoPending + info.tech.todoPending + none.todoPending,
+                    accepted: info.product.accepted + info.tech.accepted + none.accepted,
+                    postponed: info.product.postponed + info.tech.postponed + none.postponed
+                }
+            };
+        })
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -589,6 +593,12 @@ export function buildCapacityTotals({
         acc.tech.todoPending += info.tech.todoPending;
         acc.tech.accepted += info.tech.accepted;
         acc.tech.postponed += info.tech.postponed;
+        if (info.none) {
+            if (!acc.none) acc.none = emptyCapacityBreakdown();
+            acc.none.todoPending += info.none.todoPending;
+            acc.none.accepted += info.none.accepted;
+            acc.none.postponed += info.none.postponed;
+        }
         acc.total.todoPending += info.total.todoPending;
         acc.total.accepted += info.total.accepted;
         acc.total.postponed += info.total.postponed;

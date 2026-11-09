@@ -23,8 +23,7 @@ import {
     resolvePlannedCapacity,
     resolveUniqueCapacityValue,
 } from './planningCapacityUtils.js';
-import { buildExcludedProjectStats, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats } from './planningSelectionStats.js';
-import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { buildExcludedProjectStats, buildSelectedAdHocStats, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats } from './planningSelectionStats.js';
 import { fetchCapacity as requestCapacity } from '../api/capacityApi.js';
 
 export function useEngCapacityState() {
@@ -82,18 +81,13 @@ export function useEngCapacity({
         return buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
     }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
 
-    // Ad Hoc story points already counted inside the PRODUCT bucket, surfaced
-    // separately so the split bar can report the Product Ad Hoc portion.
-    const selectedAdHocProductSP = React.useMemo(() => {
-        if (!showPlanning || adHocEpicSet.size === 0) return 0;
-        return selectedPlanningTasksList.reduce((sum, task) => {
-            if (classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType !== 'ad_hoc') {
-                return sum;
-            }
-            const sp = parseFloat(task.fields?.customfield_10004 || 0);
-            return Number.isNaN(sp) ? sum : sum + sp;
-        }, 0);
+    // Ad Hoc story points already counted inside their side's bucket (always PRODUCT in Legacy; the
+    // Allocation side in DELIVERY), surfaced separately so the split bar can draw each Ad Hoc portion.
+    const selectedAdHocStats = React.useMemo(() => {
+        if (!showPlanning || adHocEpicSet.size === 0) return {};
+        return buildSelectedAdHocStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
     }, [showPlanning, selectedPlanningTasksList, techProjectKeys, adHocEpicSet, adHocEpicSignature]);
+    const selectedAdHocProductSP = selectedAdHocStats.PRODUCT || 0;
 
     const excludedProjectStats = React.useMemo(() => {
         if (!showPlanning) return {};
@@ -443,7 +437,7 @@ export function useEngCapacity({
     };
 
     return {
-        selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
+        selectedAdHocProductSP, selectedAdHocStats, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
         displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
         handleCapacitySaved, retryCapacity, refreshCapacity, capacityTeamIds, totalCapacityAdjusted,
         estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,

@@ -189,6 +189,25 @@ test('new model buckets selected, team-project and excluded stats by the Allocat
     assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set()), { TECH: 8, PRODUCT: 3 });
     assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, new Set()), { 'team-a': { product: 3, tech: 8 } });
     assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I1']), techProjectKeys, normalizeEpicKey), { TECH: 8, PRODUCT: 3 });
-    // Ad Hoc wins over the Tech stamp.
-    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(['PLAN-I1'])), { PRODUCT: 11 });
+    // Ad Hoc follows the Allocation stamp; only the unstamped (Legacy-path) task falls to Product.
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(['PLAN-I1'])), { TECH: 8, PRODUCT: 3 });
+});
+
+test('new model buckets include No Allocation', async () => {
+    const { buildSelectedProjectStats, buildSelectedTeamProjectStats, buildExcludedProjectStats } = await loadUtils();
+    const tasks = [
+        task('PLAN-E1', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I1', customfield_10004: 8, projectClassification: 'tech' }),
+        task('PLAN-E2', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I2', customfield_10004: 3, projectClassification: 'product' }),
+        task('TECH-E3', { teamId: 'team-a', teamName: 'Team A', epicKey: 'PLAN-I3', customfield_10004: 5, projectClassification: 'none' }),
+    ];
+
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set()), { TECH: 8, PRODUCT: 3, NONE: 5 });
+    assert.deepEqual(buildSelectedTeamProjectStats(tasks, getTeamInfo, techProjectKeys, new Set()), { 'team-a': { product: 3, tech: 8, none: 5 } });
+    assert.deepEqual(buildExcludedProjectStats(tasks, new Set(['PLAN-I3']), techProjectKeys, normalizeEpicKey), { NONE: 5 });
+    // Ad Hoc No Allocation work stays No Allocation.
+    assert.deepEqual(buildSelectedProjectStats(tasks, techProjectKeys, new Set(['PLAN-I3'])), { TECH: 8, PRODUCT: 3, NONE: 5 });
+    // Legacy (no stamp): exactly the current keys, never NONE.
+    const legacy = [task('TECH-1', { teamId: 'team-a', epicKey: 'EP-1', customfield_10004: 2 }), task('PROD-1', { teamId: 'team-a', epicKey: 'EP-2', customfield_10004: 1 })];
+    assert.deepEqual(buildSelectedProjectStats(legacy, techProjectKeys, new Set()), { TECH: 2, PRODUCT: 1 });
+    assert.deepEqual(buildSelectedTeamProjectStats(legacy, getTeamInfo, techProjectKeys, new Set()), { 'team-a': { product: 1, tech: 2 } });
 });

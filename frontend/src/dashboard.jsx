@@ -5103,7 +5103,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const plannedCapacity = React.useSyncExternalStore(getAssigneeCapacityController(BACKEND_URL).subscribe, getAssigneeCapacityController(BACKEND_URL).getPlannedSnapshot); // #323 design A: App re-renders only when the stored team number changes
             const {
-                selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
+                selectedAdHocProductSP, selectedAdHocStats, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
                 displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
                 handleCapacitySaved, retryCapacity, refreshCapacity, capacityTeamIds, totalCapacityAdjusted,
                 estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
@@ -6233,7 +6233,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         projects={<PlanningProjectSplitBar compact={compactPlanningPanel}
                             selectedProjectEntries={selectedProjectEntries}
                             excludedProjectStats={excludedProjectStats}
-                            adHocProductSP={selectedAdHocProductSP}
+                            adHocProductSP={selectedAdHocProductSP} adHocStats={selectedAdHocStats}
                         />}
                     />
                 </PlanningAssigneeCapacity>

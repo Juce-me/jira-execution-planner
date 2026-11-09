@@ -83,12 +83,15 @@ test('Projects (Product/Tech) facet is shown for the new model, as for Legacy', 
     }
 });
 
-// The new model splits by the server's Allocation stamp; an unstamped Epic is Product (plan A2), Ad Hoc beats Tech (A3).
+// The new model splits by the server's Allocation stamp; an unstamped Epic is Product (plan A2), Ad Hoc follows the stamp,
+// and an unmapped ('none') stamp is No Allocation, never Product.
 for (const [pair, stamp, label, adHoc, excluded] of [
     ['ordinary', undefined, 'Product 100% · 8.0 SP', null, null],
     ['ordinary', 'tech', 'Tech 100% · 8.0 SP', null, null],
-    ['ad_hoc', 'tech', 'Product 100% · 8.0 SP', '8.0', null],
+    ['ordinary', 'none', 'No Allocation 100% · 8.0 SP', null, null],
+    ['ad_hoc', 'tech', 'Tech 100% · 8.0 SP', null, null],
     ['excluded', undefined, null, null, 'Product'],
+    ['excluded', 'none', null, null, 'None'],
 ]) {
     test(`new-model split bar: ${pair} 8-SP ${stamp || 'unstamped'} Epic splits Product/Tech and never doubles to 16 SP`, async ({ page }) => {
         await openHarness(page);
@@ -133,11 +136,72 @@ test('new-model split bar: a mixed selection shows both sides (screenshot)', asy
     await page.locator('#split').screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-split-bar.png') });
 });
 
+test('new-model split bar shows Product, Tech and No Allocation (screenshot)', async ({ page }) => {
+    await openHarness(page);
+    await page.setViewportSize({ width: 720, height: 240 });
+    await page.addStyleTag({ path: path.join(__dirname, '..', '..', 'frontend', 'dist', 'dashboard.css') });
+    await page.addStyleTag({ content: '#split { padding: 16px; background: #fff; }' });
+    await page.evaluate(() => window.__oneLane.mount('split', { pair: 'allocation' }));
+    const text = (await page.locator('#split').innerText()).replace(/\s+/g, ' ');
+    expect(text).toContain('Product 35% · 8.0 SP');
+    expect(text).toContain('Tech 35% · 8.0 SP');
+    expect(text).toContain('No Allocation 30% · 7.0 SP');
+    const none = page.locator('#split .project-bar-fill.none');
+    await expect(none).toHaveAttribute('data-tooltip', 'No Allocation: 7.0 SP (30% of selected).');
+    await expect(page.locator('#split .project-bar-fill.tech')).toHaveAttribute('data-tooltip', /Incl\. Ad Hoc: 3\.0 SP\./);
+    await expect(page.locator('#split .project-bar-fill.product-adhoc')).toHaveCount(0);
+    // Let the fill transition settle before measuring and capturing.
+    await page.waitForTimeout(300);
+    const geometry = await page.evaluate(() => {
+        const box = selector => document.querySelector(`#split ${selector}`).getBoundingClientRect();
+        const track = box('.capacity-bar-track');
+        const label = document.querySelector('#split .project-bar-fill.none .capacity-bar-fill-label');
+        const techLabel = document.querySelector('#split .project-bar-fill.tech .capacity-bar-fill-label');
+        const marker = box('.capacity-bar-marker');
+        return {
+            track: { left: track.left, right: track.right, width: track.width },
+            product: box('.project-bar-fill.product'), tech: box('.project-bar-fill.tech'), none: box('.project-bar-fill.none'),
+            adHoc: box('.project-bar-fill.tech-adhoc'), markerCenter: marker.left + marker.width / 2,
+            label: label.getBoundingClientRect(), labelClipped: label.scrollWidth > label.clientWidth,
+            techLabel: techLabel.getBoundingClientRect(),
+        };
+    });
+    const { track, product, tech, none: noneBox, adHoc, markerCenter, label } = geometry;
+    // The three segments tile the bar in order Product, Tech, No Allocation and their widths sum to the bar.
+    expect(Math.abs(product.width + tech.width + noneBox.width - track.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(product.left - track.left)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(tech.left - product.right)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(noneBox.left - tech.right)).toBeLessThanOrEqual(0.5);
+    expect(Math.abs(noneBox.right - track.right)).toBeLessThanOrEqual(0.5);
+    // The 70% target is 70% of the whole bar, not of Product + Tech.
+    expect(Math.abs(markerCenter - (track.left + track.width * 0.7))).toBeLessThanOrEqual(1);
+    // The Tech Ad Hoc subsegment starts the Tech side, covers exactly its Ad Hoc share (3 of 8 SP)
+    // and stays clear of the right-aligned Tech label.
+    expect(Math.abs(adHoc.left - tech.left)).toBeLessThanOrEqual(0.5);
+    expect(adHoc.right).toBeLessThanOrEqual(tech.right + 0.5);
+    expect(Math.abs(adHoc.width - tech.width * 3 / 8)).toBeLessThanOrEqual(1);
+    expect(geometry.techLabel.left).toBeGreaterThanOrEqual(adHoc.right);
+    expect(geometry.techLabel.right).toBeLessThanOrEqual(tech.right);
+    // The No Allocation label fits inside its segment.
+    expect(geometry.labelClipped).toBe(false);
+    expect(label.left).toBeGreaterThanOrEqual(noneBox.left);
+    expect(label.right).toBeLessThanOrEqual(noneBox.right);
+    await page.locator('#split').screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-split-bar-no-allocation.png'), animations: 'disabled' });
+});
+
+test('new-model compact split bar names No Allocation in its readout', async ({ page }) => {
+    await openHarness(page);
+    await page.evaluate(() => window.__oneLane.mount('split', { pair: 'allocation', compact: true }));
+    await expect(page.locator('#split .planning-compact-readout')).toHaveText('Product 8.0 · Tech 8.0 · No Allocation 7.0 SP');
+});
+
 test('Legacy split bar still reports Product and Tech', async ({ page }) => {
     await openHarness(page);
     await page.evaluate(() => window.__oneLane.mount('split', { pair: 'ordinary' }));
     const text = (await page.locator('#split').innerText()).replace(/\s+/g, ' ');
     expect(text).toContain('Product');
+    expect(text).not.toContain('No Allocation');
+    await expect(page.locator('#split .project-bar-fill.none')).toHaveCount(0);
     await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(0);
     await expect(page.locator('#split .capacity-bar-marker')).toHaveCount(1);
 });

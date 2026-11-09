@@ -31,15 +31,13 @@ const READ_ERROR = 'Stored Team capacity could not be read.';
 // `failed` holds changes whose request failed (they ride along with the next commit); `rejected` holds changes the
 // server refused, which wait for Retry or Discard so one bad change cannot fail later batches.
 const newQueue = (sprintId, teamId, document) => ({ sprintId, teamId, document, pending: new Map(), inFlight: [], failed: new Map(), rejected: new Map(), error: '', timer: null, running: false, stopped: false, writeEpoch: 0, undo: [], undoKept: false,
-    key: scopeKeyOf(sprintId, teamId), load: 'idle', readError: '', loadAbort: null, silent: false });
+    key: scopeKeyOf(sprintId, teamId), load: 'idle', readError: '', loadAbort: null, silent: false, docSeq: 0 });
 const hasFailures = queue => Boolean(queue.failed.size || queue.rejected.size);
 const hasDrafts = queue => Boolean(queue.pending.size || hasFailures(queue));
 const ownerBusy = queue => Boolean(queue && (queue.running || hasDrafts(queue)));
 // A stale snapshot must never overwrite newer state: scope changes, failures, Retry, Discard and new reads empty the stack.
 const clearUndo = queue => { if (queue) { queue.undo = []; queue.undoKept = false; } };
 const recordOf = document => ({ revision: document.revision, planned: document.planned ?? null, inherited: document.inherited ?? null });
-// Of a batch record and an owner's document, the newer one (by revision; the owner's on a tie).
-const newerOf = (record, document) => (!document ? record : !record || (document.revision || 0) >= (record.revision || 0) ? document : record);
 
 // Later commits override earlier values per field; a displayName only ever refreshes.
 function mergeInto(target, change) {
@@ -79,7 +77,8 @@ const ticketWireOf = value => (typeof value === 'string' ? (value.trim() ? plann
 
 // Framework-free controller (as the sprint review controller): the React hook below only subscribes to it. The strip
 // shows one owner (`setScope`); the projection (`setProjectionScope`) holds the stored number of every displayed Team.
-export function createAssigneeCapacityController({ backendUrl = '', fetchCapacity = fetchAssigneeCapacity, saveCapacity = saveAssigneeCapacity, readPlanned = readPlannedNumbers, saveDelay = SAVE_DELAY_MS, settleDelay = SETTLE_MS, setTimer = setTimeout, clearTimer = clearTimeout } = {}) {
+export function createAssigneeCapacityController({ backendUrl = '', fetchCapacity = fetchAssigneeCapacity, saveCapacity = saveAssigneeCapacity, readPlanned = readPlannedNumbers, saveDelay = SAVE_DELAY_MS, settleDelay = SETTLE_MS, setTimer = setTimeout, clearTimer = clearTimeout,
+    sessionEvents = typeof window !== 'undefined' ? window : null } = {}) {
     let state = EMPTY;
     let current = null, active = false, generation = 0, disposed = false, loadTimer = null, refreshing = false;
     // A 401 locks the app (no in-place unlock): every owner stops, keeps its drafts in memory and sends nothing more.
@@ -93,6 +92,10 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     const statuses = new Map();
     let saving = 0;
     const slots = [];
+    // Read order: every owner document and batch record gets the next number, so a revision tie (an inherited revision 0)
+    // goes to the later read.
+    let readSeq = 0;
+    const setDocument = (queue, document) => { queue.document = document; queue.docSeq = ++readSeq; };
 
     const halted = queue => Boolean(queue.stopped || authStopped);
     const canSaveOwner = queue => queue.document?.capabilities?.canSave === true && !halted(queue);
@@ -106,27 +109,49 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         const next = value == null ? null : { sprintId: state.sprintId, teamId: state.teamId, value, source: shown.source ?? null };
         if (JSON.stringify(next) !== JSON.stringify(plannedSnapshot)) plannedSnapshot = next;
     };
-    // The numbers map: each projected Team's newer record or owner document, overlaid with the owner's unsaved number. It
-    // holds no save or load state, so it keeps its identity until a value or source changes.
+    // The projection's batch record for an owner's Team, if the owner is in the projected Sprint.
+    const recordFor = queue => (projection && queue && queue.sprintId === projection.sprintId ? projection.byTeam[queue.teamId] : undefined);
+    // Of the batch record and the owner's document, the newer one: by revision, then by read order.
+    const baseOf = (record, queue) => {
+        const document = queue?.document;
+        if (!document || !record) return document || record;
+        const recordRevision = record.revision || 0, documentRevision = document.revision || 0;
+        return recordRevision > documentRevision || (recordRevision === documentRevision && (record.seq || 0) > (queue.docSeq || 0)) ? record : document;
+    };
+    // An owner whose document a newer, different batch record supersedes (another writer); a clean one is re-read.
+    const isStale = queue => {
+        const record = recordFor(queue);
+        if (!queue?.document || !record || baseOf(record, queue) !== record) return false;
+        return (record.revision || 0) > (queue.document.revision || 0) || !sameValue(effectivePlanned(record), effectivePlanned(queue.document));
+    };
+    const reReadIfStale = queue => { if (isStale(queue) && !queue.running && !queue.pending.size && queue.timer == null) void load(queue); };
+    // The stored number as the Team shows it: the newer of record and document, overlaid with the owner's unsaved number.
+    const shownPlannedOf = (record, queue) => {
+        let shown = effectivePlanned(baseOf(record, queue));
+        overlay(queue).forEach(change => { if (isPlannedChange(change)) shown = change.planned?.value == null ? null : change.planned; });
+        return shown;
+    };
+    // The numbers map: every projected Team's shown number. It holds no save or load state, so it keeps its identity until
+    // a value or source changes.
     const updateNumbers = () => {
         const p = projection;
         if (!p || !p.active || !p.sprintId) { numbers = null; return; }
         const byTeam = {};
         for (const teamId of p.teamIds) {
-            const queue = owners.get(scopeKeyOf(p.sprintId, teamId));
-            let shown = effectivePlanned(newerOf(p.byTeam[teamId], queue?.document));
-            overlay(queue).forEach(change => { if (isPlannedChange(change)) shown = change.planned?.value == null ? null : change.planned; });
+            const shown = shownPlannedOf(p.byTeam[teamId], owners.get(scopeKeyOf(p.sprintId, teamId)));
             const value = plannedNumber(shown);
             byTeam[teamId] = Object.freeze({ value, source: value == null ? null : shown.source ?? null });
         }
         const next = { sprintId: p.sprintId, byTeam };
         if (!numbers || JSON.stringify(next) !== JSON.stringify(numbers)) numbers = Object.freeze({ sprintId: p.sprintId, byTeam: Object.freeze(byTeam) });
     };
-    const emit = () => {
+    // `teamId` limits the Team listeners to that Team's (one owner changed); without it every Team is told.
+    const emit = (teamId = null) => {
         updatePlannedSnapshot();
         updateNumbers();
         listeners.forEach(listener => listener());
-        teamListeners.forEach(set => set.forEach(listener => listener()));
+        if (teamId != null) teamListeners.get(teamId)?.forEach(listener => listener());
+        else teamListeners.forEach(set => set.forEach(listener => listener()));
     };
     // `origin: 'automatic'` marks only the publish of an automatic refresh (the provider keeps the reading position for it).
     const publish = patch => {
@@ -141,7 +166,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     };
     const isCurrent = queue => !disposed && queue === current;
     // The strip publishes its own state; any other owner's change only reaches the numbers map and the Team listeners.
-    const report = (queue, patch) => { if (isCurrent(queue)) publish(typeof patch === 'function' ? patch() : patch); else emit(); };
+    const report = (queue, patch) => { if (isCurrent(queue)) publish(typeof patch === 'function' ? patch() : patch); else emit(queue.teamId); };
     const isLive = queue => owners.get(queue.key) === queue;
     const evictable = queue => queue !== current && !ownerBusy(queue) && !queue.stopped && !queue.loadAbort && queue.timer == null;
     // Keeps the evicted document's number as the batch record, so the numbers map is unaffected.
@@ -149,16 +174,19 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         const p = projection;
         if (p && queue.document && queue.sprintId === p.sprintId && p.teamIds.includes(queue.teamId)) {
             const record = p.byTeam[queue.teamId];
-            if (newerOf(record, queue.document) === queue.document) p.byTeam[queue.teamId] = recordOf(queue.document);
+            if (baseOf(record, queue) === queue.document) p.byTeam[queue.teamId] = { ...recordOf(queue.document), seq: queue.docSeq };
         }
         queue.loadAbort?.abort();
         owners.delete(queue.key);
     }
+    // Returns whether an owner was dropped (its Team's status may then come from the projection).
     function evict(keep = null) {
+        let dropped = false;
         for (const queue of [...owners.values()]) {
             if (owners.size <= MAX_PARKED_SCOPES) break;
-            if (queue !== keep && evictable(queue)) drop(queue);
+            if (queue !== keep && evictable(queue)) { drop(queue); dropped = true; }
         }
+        return dropped;
     }
     // The owner of one scope, most recently used last; `create` adds a missing one.
     function ownerOf(sprintId, teamId, create) {
@@ -186,7 +214,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             // A write started or finished meanwhile makes this read stale; the queue's own response wins.
             if (!isLive(queue) || queue.writeEpoch !== epoch || controller.signal.aborted) return;
             if (!sameDocument(queue.document, data)) clearUndo(queue);
-            queue.document = data;
+            setDocument(queue, data);
             queue.load = 'ready'; queue.readError = '';
             report(queue, () => ({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, error: state.save === 'failed' ? state.error : '' }));
         } catch (error) {
@@ -221,11 +249,11 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     // An unconfirmed PATCH: read the document back and resend only the fields that differ.
     async function recover(queue, chunk, planned) {
         const fresh = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, {});
-        queue.document = { ...fresh };
+        setDocument(queue, { ...fresh });
         const remaining = chunk.map(change => pruneChange(change, fresh)).filter(Boolean);
         const plannedLeft = planned && !isPlannedNoop(effectivePlanned(fresh), planned) ? planned : undefined;
         if (!remaining.length && !plannedLeft) return;
-        queue.document = asDocument(queue, await send(queue, remaining, plannedLeft));
+        setDocument(queue, asDocument(queue, await send(queue, remaining, plannedLeft)));
     }
 
     async function pump(queue) {
@@ -237,7 +265,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                 revive(queue);
                 queue.inFlight = [...queue.pending.values()].map(withValidName);
                 queue.pending = new Map();
-                const changes = queue.inFlight.map(change => pruneChange(change, queue.document)).filter(Boolean);
+                // The stored number is compared with what the Team shows: a newer batch record beats a stale document.
+                const changes = queue.inFlight.map(change => pruneChange(change, isPlannedChange(change) ? baseOf(recordFor(queue), queue) : queue.document)).filter(Boolean);
                 if (!changes.length) { queue.inFlight = []; report(queue, () => (queue.pending.size ? {} : { save: hasFailures(queue) ? 'failed' : state.save === 'saving' ? 'saved' : state.save })); continue; }
                 queue.writeEpoch += 1;
                 report(queue, { save: 'saving', error: '' });
@@ -249,7 +278,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                 try {
                     for (const [index, chunk] of batches.entries()) {
                         const plannedPart = index === 0 ? planned : undefined;
-                        try { queue.document = asDocument(queue, await send(queue, chunk, plannedPart)); }
+                        try { setDocument(queue, asDocument(queue, await send(queue, chunk, plannedPart))); }
                         catch (error) {
                             if (!error.unconfirmed || isAuthError(error)) throw error;
                             await recover(queue, chunk, plannedPart);
@@ -280,7 +309,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         } finally {
             queue.running = false;
             // A left scope's save finished: its owner stays (a failure shows on return); clean idle ones may now be evicted.
-            if (!isCurrent(queue)) { evict(); emit(); }
+            if (!isCurrent(queue)) emit(evict() ? null : queue.teamId);
         }
     }
 
@@ -308,7 +337,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     function commitPlannedTo(queue, value, source) {
         if (!queue?.document || !canSaveOwner(queue)) return false;
         const planned = value == null ? { value: null } : { value, source };
-        const previous = effectivePlanned(applyChangesToDocument(queue.document, overlay(queue)));
+        const previous = shownPlannedOf(recordFor(queue), queue);
         if (isPlannedNoop(previous, planned)) return true;
         enqueue(queue, [{ assigneeKey: PLANNED_SLOT, planned }], { type: 'planned', planned: previous, inheriting: !(queue.document.revision > 0) && !overlay(queue).length });
         return true;
@@ -328,7 +357,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         queue.writeEpoch += 1;
         void (async () => {
             try {
-                queue.document = asDocument(queue, await send(queue, [], { value, source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] }));
+                setDocument(queue, asDocument(queue, await send(queue, [], { value, source: 'jira', onlyIfSource: [null, 'jira', 'inherited'] })));
                 report(queue, {});
             } catch { clearUndo(queue); report(queue, {}); /* otherwise dropped silently */ }
             finally {
@@ -336,7 +365,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
                 queue.running = false;
                 queue.silent = false;
                 if (queue.pending.size && !halted(queue)) schedule(queue);
-                if (!isCurrent(queue)) { evict(); emit(); }
+                if (!isCurrent(queue)) emit(evict() ? null : queue.teamId);
             }
         })();
         return true;
@@ -403,13 +432,15 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         }
         if (stale()) return { status: 'ignored' };
         Object.entries(data.byTeam || {}).forEach(([teamId, record]) => {
-            // A record never replaces a newer one this page already holds (an owner's own save, say).
-            if (p.teamIds.includes(teamId) && newerOf(p.byTeam[teamId], record) === record) p.byTeam[teamId] = record;
+            // A record never replaces a newer one this page already holds (an owner's own save, say); a tie goes to this read.
+            if (p.teamIds.includes(teamId) && (record.revision || 0) >= (p.byTeam[teamId]?.revision || 0)) p.byTeam[teamId] = { ...record, seq: ++readSeq };
         });
         p.failed = new Set((data.failedTeamIds || []).map(String));
         if (data.capabilities) p.capabilities = data.capabilities;
         p.load = 'ready'; p.error = '';
         emit();
+        // Owners a newer record supersedes are re-read when clean (a dirty one keeps its drafts over the record).
+        owners.forEach(queue => { if (queue.sprintId === p.sprintId && p.teamIds.includes(queue.teamId)) reReadIfStale(queue); });
         return { status: 'ok' };
     }
     function startProjection() {
@@ -449,8 +480,9 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             state = { ...EMPTY, scopeKey: key, sprintId: String(sprintId || ''), teamId: String(teamId || ''), load: cached ? 'ready' : 'idle', document: cached, capabilities: cached?.capabilities || EMPTY.capabilities,
                 save: current?.running && !current.silent ? 'saving' : failures ? 'failed' : 'idle', error: failures ? current.error : '' };
             publish({});
-            // An owner that already holds its full document (a card edit loaded it, say) is reused without a second GET.
-            if (current && active && !current.document) {
+            // A held document shows at once and is re-read silently after the settle delay, unless a batch record vouches
+            // for it (not older and not different): then it is reused without a second GET (a card edit loaded it, say).
+            if (current && active && (!current.document || !recordFor(current) || isStale(current))) {
                 const queue = current;
                 if (previous) loadTimer = setTimer(() => { loadTimer = null; void load(queue); }, settleDelay);
                 else void load(queue);
@@ -515,6 +547,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (disposed || authStopped) return;
             const queue = teamOwner(teamId, true);
             if (queue && !queue.document) void load(queue);
+            else reReadIfStale(queue);
         },
         flushTeam(teamId) { flush(teamOwner(teamId)); },
         // Records one validated commit; returns false when it cannot be saved here. `buildShown(document)` gives
@@ -609,7 +642,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (stale()) return { status: 'ignored' };
             if (sameDocument(queue.document, data)) return { status: 'ok' };
             clearUndo(queue);
-            queue.document = data;
+            setDocument(queue, data);
             publish({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, ...(automatic ? { origin: 'automatic' } : {}) });
             return { status: 'ok' };
         },
@@ -627,6 +660,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         // The provider unmounted: send what is unsaved, keep busy owners, and show nothing (App's stored numbers too).
         dispose() {
             owners.forEach(flush);
+            owners.forEach(queue => { queue.loadAbort?.abort(); queue.loadAbort = null; if (!queue.document && queue.load === 'loading') queue.load = 'idle'; });
             current = null;
             generation += 1;
             if (loadTimer != null) { clearTimer(loadTimer); loadTimer = null; }
@@ -638,6 +672,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             disposed = true;
         },
     };
+    // A new auth session (AUTH_SESSION_REFRESH_EVENT), for the page's whole life: the controller outlives the provider.
+    sessionEvents?.addEventListener(AUTH_SESSION_REFRESH_EVENT, () => controller.resetSession());
     return controller;
 }
 
@@ -654,10 +690,5 @@ export default function usePlanningAssigneeCapacity({ backendUrl = '', sprintId,
     const state = React.useSyncExternalStore(controller.subscribe, controller.getState, controller.getState);
     React.useEffect(() => { controller.setScope({ sprintId, teamId, active }); }, [controller, sprintId, teamId, active]);
     React.useEffect(() => () => controller.dispose(), [controller]);
-    React.useEffect(() => {
-        const reset = () => controller.resetSession();
-        window.addEventListener(AUTH_SESSION_REFRESH_EVENT, reset);
-        return () => window.removeEventListener(AUTH_SESSION_REFRESH_EVENT, reset);
-    }, [controller]);
     return { state, controller };
 }

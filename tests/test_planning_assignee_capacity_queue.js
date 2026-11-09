@@ -10,7 +10,7 @@ const deferred = () => { let resolve, reject; const promise = new Promise((yes, 
 const caps = { canRead: true, canSave: true };
 const doc = (overrides = {}) => ({ teamId: 't1', sprintId: '100', revision: 1, rows: [{ assigneeKey: 'u1', displayName: 'Ann', capacity: '5', vacations: null, notes: null, removed: false }], inherited: null, capabilities: caps, ...overrides });
 
-async function fixture({ document = doc(), save, fetch, read } = {}) {
+async function fixture({ document = doc(), save, fetch, read, sessionEvents } = {}) {
     const { createAssigneeCapacityController } = await loadController();
     const model = await loadModel();
     const calls = { gets: [], patches: [], reads: [] };
@@ -19,6 +19,7 @@ async function fixture({ document = doc(), save, fetch, read } = {}) {
         fetchCapacity: fetch || (async (...args) => { calls.gets.push(args); return document; }),
         saveCapacity: save || (async (_url, _sprint, payload, options) => { calls.patches.push({ payload, options }); return { revision: 2, rows: [] }; }),
         readPlanned: read || (async (_url, sprintId, teamIds) => { calls.reads.push({ sprintId, teamIds }); return { sprintId, capabilities: caps, byTeam: {}, failedTeamIds: [] }; }),
+        sessionEvents,
         setTimer: (fn, ms) => { timers.push({ fn, ms }); return timers.length; },
         clearTimer: id => { if (timers[id - 1]) timers[id - 1].fn = null; },
     });
@@ -920,8 +921,8 @@ const plannedOf = value => (value == null ? null : { value, source: 'user' });
 const savedDoc = (payload, revision = 2) => ({ revision, rows: doc().rows, ...(payload.planned ? { planned: payload.planned.value == null ? null : { value: payload.planned.value, source: payload.planned.source } } : {}) });
 // Every Team's full document stores 5 unless told otherwise.
 const teamDocs = (stored = {}) => async (_url, sprintId, teamId) => doc({ teamId, sprintId, planned: plannedOf(teamId in stored ? stored[teamId] : '5') });
-const batch = (stored = {}) => async (_url, sprintId, teamIds) => ({ sprintId, capabilities: caps, failedTeamIds: [],
-    byTeam: Object.fromEntries(teamIds.map(id => [id, { revision: 1, planned: plannedOf(id in stored ? stored[id] : '5'), inherited: null }])) });
+const batch = (stored = {}, revision = 1) => async (_url, sprintId, teamIds) => ({ sprintId, capabilities: caps, failedTeamIds: [],
+    byTeam: Object.fromEntries(teamIds.map(id => [id, { revision, planned: plannedOf(id in stored ? stored[id] : '5'), inherited: null }])) });
 const numberOf = (controller, teamId) => controller.getPlannedNumbers()?.byTeam[teamId]?.value;
 const unavailable = () => Object.assign(new Error('Server unavailable'), { status: 503 });
 
@@ -1048,7 +1049,7 @@ test('a header Sprint/Team change mid-save sends the captured Sprint and Team', 
 
 test('a late projection refresh does not overwrite A\'s in-flight or failed value', async () => {
     let gate = deferred();
-    const { controller, fire, calls } = await fixture({ fetch: teamDocs(), read: async (...args) => { calls.reads.push(args); return batch()(...args); }, save: () => gate.promise });
+    const { controller, fire, calls } = await fixture({ fetch: teamDocs(), read: async (...args) => { calls.reads.push(args); return batch({}, calls.reads.length === 1 ? 1 : 5)(...args); }, save: () => gate.promise });
     controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
     controller.ensureTeamDocument('A');
     await settle();
@@ -1057,7 +1058,7 @@ test('a late projection refresh does not overwrite A\'s in-flight or failed valu
     assert.equal(controller.getTeamStatus('A').save, 'saving');
     assert.deepEqual(await controller.refreshProjection({ automatic: false }), { status: 'ok' });
     assert.equal(calls.reads.length, 2);
-    assert.equal(numberOf(controller, 'A'), 10, 'in flight: the stale 5 does not replace it');
+    assert.equal(numberOf(controller, 'A'), 10, 'in flight: the newer record (revision 5) does not replace it');
     gate.reject(unavailable());
     await settle();
     assert.equal(controller.getTeamStatus('A').save, 'failed');
@@ -1122,8 +1123,10 @@ test('a 401 stops owners, keeps drafts and never replays', async () => {
 });
 
 test('`AUTH_SESSION_REFRESH_EVENT` clears cache and undo but keeps dirty owners', async () => {
+    const { AUTH_SESSION_REFRESH_EVENT } = await import('../frontend/src/api/authRefreshContract.js');
+    const sessionEvents = new EventTarget();
     const reread = deferred();
-    const { controller, buildShown, fire, calls } = await fixture({
+    const { controller, buildShown, fire, calls } = await fixture({ sessionEvents,
         fetch: async (_u, sprintId, teamId) => { calls.gets.push(teamId); return doc({ teamId, sprintId, planned: plannedOf('5') }); },
         read: async (...args) => { calls.reads.push(args); if (calls.reads.length === 2) await reread.promise; return batch()(...args); },
         save: async (_u, _s, payload) => { if (payload.teamId === 'A') throw unavailable(); return savedDoc(payload); },
@@ -1140,7 +1143,7 @@ test('`AUTH_SESSION_REFRESH_EVENT` clears cache and undo but keeps dirty owners'
     assert.equal(controller.getTeamStatus('A').save, 'failed');
     const numbers = controller.getPlannedNumbers();
     const gets = calls.gets.length;
-    controller.resetSession();
+    sessionEvents.dispatchEvent(new Event(AUTH_SESSION_REFRESH_EVENT));
     assert.equal(controller.getState().undoCount, 0, 'undo history is cleared');
     assert.equal(controller.getTeamStatus('A').save, 'failed', 'the dirty owner is kept');
     assert.equal(numberOf(controller, 'A'), 10);
@@ -1175,7 +1178,7 @@ test('the strip and card for one Team share one owner (one PATCH)', async () => 
 });
 
 test('a card edit loads the full document once; selecting that Team for the strip reuses it (no second GET)', async () => {
-    const { controller, calls } = await fixture();
+    const { controller, calls } = await fixture({ read: async (...args) => { calls.reads.push(args); return batch()(...args); } });
     controller.setProjectionScope({ sprintId: '100', teamIds: ['t1', 't2'], active: true });
     await settle();
     assert.equal(calls.reads.length, 1);
@@ -1290,4 +1293,146 @@ test('nine token fetches before the first PATCH dispatches: the evicted token\'s
     assert.deepEqual(sent.filter(entry => entry.team === 'A').map(entry => entry.token), [1, 10], 'refused once, resent once with a fresh token');
     assert.equal(sent.length, 5);
     teams.forEach((team, index) => { assert.equal(controller.getTeamStatus(team).save, 'idle', team); assert.equal(numberOf(controller, team), 10 + index); });
+});
+
+// ---- Fix round 1: owners older than the projection ----
+
+test('a card commit against an owner older than the batch record re-reads it and is sent', async () => {
+    let server = doc({ teamId: 'A', planned: plannedOf('5') });
+    const { controller, fire, calls } = await fixture({
+        fetch: async () => { calls.gets.push('A'); return server; },
+        read: async (...args) => { calls.reads.push(args); return batch({ A: calls.reads.length === 1 ? '5' : '7' }, calls.reads.length === 1 ? 1 : 2)(...args); },
+        save: async (_u, _s, payload) => { calls.patches.push(payload); return savedDoc(payload, 3); },
+    });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.ensureTeamDocument('A');
+    await settle();
+    assert.equal(calls.gets.length, 1);
+    server = doc({ teamId: 'A', revision: 2, planned: plannedOf('7') }); // another user stored 7
+    await controller.refreshProjection({ automatic: false });
+    await settle();
+    assert.equal(calls.gets.length, 2, 'the clean owner superseded by a newer record is re-read');
+    assert.equal(numberOf(controller, 'A'), 7);
+    controller.setScope({ sprintId: '100', teamId: 'A', active: true });
+    assert.deepEqual(controller.getState().document.planned, { value: '7', source: 'user' }, 'the strip shows what the card shows');
+    assert.equal(controller.commitTeamPlanned('A', '5'), true);
+    await fire();
+    assert.deepEqual(calls.patches.map(payload => payload.planned), [{ value: '5', source: 'user' }], 'typing the old number back is a real edit');
+});
+
+test('a commit on a busy owner older than the batch record is checked against the record, not the stale document', async () => {
+    const gate = deferred();
+    const sent = [];
+    const { controller, buildShown, fire, calls } = await fixture({
+        fetch: async () => { calls.gets.push('A'); return doc({ teamId: 'A', planned: plannedOf('5') }); },
+        read: async (...args) => { calls.reads.push(args); return batch({ A: calls.reads.length === 1 ? '5' : '7' }, calls.reads.length === 1 ? 1 : 5)(...args); },
+        save: async (_u, _s, payload) => { sent.push(payload); if (sent.length === 1) await gate.promise; return { revision: 5 + sent.length, rows: doc().rows, planned: payload.planned || plannedOf('7') }; },
+    });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.setScope({ sprintId: '100', teamId: 'A', active: true });
+    await settle();
+    controller.commit({ key: 'u1', field: 'capacity', value: '6' }, buildShown);
+    await fire();
+    await controller.refreshProjection({ automatic: false });
+    await settle();
+    assert.equal(calls.gets.length, 1, 'a saving owner is not re-read');
+    assert.equal(numberOf(controller, 'A'), 7);
+    assert.equal(controller.commitTeamPlanned('A', '5'), true);
+    assert.equal(numberOf(controller, 'A'), 5);
+    gate.resolve();
+    await settle();
+    assert.deepEqual(sent.map(payload => payload.planned?.value), [undefined, '5'], 'the 5 is sent, not pruned against the stale document');
+});
+
+test('a strip revisit re-reads silently after the settle delay when no batch record vouches for the held document', async () => {
+    const { controller, calls, fire } = await fixture();
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    await settle();
+    controller.setScope({ sprintId: '100', teamId: 't2', active: true });
+    await fire();
+    assert.equal(calls.gets.length, 2);
+    controller.setScope({ sprintId: '100', teamId: 't1', active: true });
+    assert.equal(controller.getState().load, 'ready', 'the held document shows at once');
+    assert.equal(calls.gets.length, 2, 'not before the settle delay');
+    await fire();
+    assert.equal(calls.gets.length, 3);
+});
+
+test('a strip revisit with a document older than the batch record re-reads it', async () => {
+    const first = deferred();
+    const { controller, calls, fire } = await fixture({
+        fetch: async (_u, sprintId, teamId) => { calls.gets.push(teamId); if (calls.gets.length === 1) await first.promise; return doc({ teamId, sprintId, planned: plannedOf('5') }); },
+        read: async (...args) => { calls.reads.push(args); return batch({ A: '9' }, 3)(...args); },
+    });
+    controller.setScope({ sprintId: '100', teamId: 'A', active: true });
+    controller.setScope({ sprintId: '100', teamId: 'B', active: true });
+    await fire();
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    await settle();
+    first.resolve(); // A's first read lands after the record: revision 1 under the record's 3
+    await settle();
+    assert.equal(numberOf(controller, 'A'), 9, 'the newer record shows');
+    const before = calls.gets.length;
+    controller.setScope({ sprintId: '100', teamId: 'A', active: true });
+    await fire();
+    assert.deepEqual(calls.gets.slice(before), ['A']);
+});
+
+test('a newer inherited (revision 0) record replaces a clean owner\'s stale inherited document', async () => {
+    let served = doc({ teamId: 'A', revision: 0, rows: [], planned: null, inherited: { fromSprintId: '90', rows: [], planned: { value: '5', source: 'inherited' } } });
+    const { controller, calls } = await fixture({
+        fetch: async () => { calls.gets.push('A'); return served; },
+        read: async (_u, sprintId) => { calls.reads.push(sprintId); return { sprintId, capabilities: caps, failedTeamIds: [], byTeam: { A: { revision: 0, planned: null, inherited: { fromSprintId: '90', planned: { value: calls.reads.length === 1 ? '5' : '8', source: 'inherited' } } } } }; },
+    });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.ensureTeamDocument('A');
+    await settle();
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.A, { value: 5, source: 'inherited' });
+    assert.equal(calls.gets.length, 1);
+    served = doc({ teamId: 'A', revision: 0, rows: [], planned: null, inherited: { fromSprintId: '90', rows: [], planned: { value: '8', source: 'inherited' } } });
+    await controller.refreshProjection({ automatic: false });
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.A, { value: 8, source: 'inherited' }, 'on a revision tie the later read wins');
+    await settle();
+    assert.equal(calls.gets.length, 2, 'the clean owner is re-read');
+    controller.setScope({ sprintId: '100', teamId: 'A', active: true });
+    assert.deepEqual(controller.getState().document.inherited.planned, { value: '8', source: 'inherited' });
+});
+
+test('"0" comes through the numbers map as 0', async () => {
+    const { controller, fire } = await fixture({ fetch: teamDocs({ A: '0' }), read: batch({ A: '0', B: '0' }), save: async (_u, _s, payload) => savedDoc(payload) });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    await settle();
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.B, { value: 0, source: 'user' });
+    controller.ensureTeamDocument('A');
+    await settle();
+    controller.commitTeamPlanned('A', '3');
+    controller.commitTeamPlanned('A', '0');
+    await fire();
+    assert.deepEqual(controller.getPlannedNumbers().byTeam.A, { value: 0, source: 'user' });
+});
+
+test('dispose aborts owners\' reads in flight', async () => {
+    const signals = [];
+    const { controller } = await fixture({ read: batch(), fetch: (_u, _s, teamId, { signal }) => { signals.push(signal); return new Promise(() => {}); } });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.ensureTeamDocument('A');
+    controller.setScope({ sprintId: '100', teamId: 'B', active: true });
+    await settle();
+    assert.equal(signals.length, 2);
+    controller.dispose();
+    assert.deepEqual(signals.map(signal => signal.aborted), [true, true]);
+});
+
+test('a non-strip owner\'s change notifies only that Team\'s listeners', async () => {
+    const { controller, fire } = await fixture({ fetch: teamDocs(), read: batch(), save: async (_u, _s, payload) => savedDoc(payload) });
+    controller.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    controller.ensureTeamDocument('A');
+    await settle();
+    const heard = { A: 0, B: 0 };
+    controller.subscribeTeam('A', () => { heard.A += 1; });
+    controller.subscribeTeam('B', () => { heard.B += 1; });
+    controller.commitTeamPlanned('A', '10');
+    await fire();
+    assert.ok(heard.A > 0);
+    assert.equal(heard.B, 0);
 });

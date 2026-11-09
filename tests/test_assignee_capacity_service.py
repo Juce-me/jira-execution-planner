@@ -634,5 +634,102 @@ class AssigneeCapacityPostgresqlRaceTests(unittest.TestCase):
             self.assertEqual(session.query(models.PlanningTeamSprintCapacity).count(), 1)
 
 
+class BatchPlannedProjectionTests(CapacityFixture):
+    def planned(self, ids, sprint='20', context=None):
+        return capacity.read_planned_numbers(context or self.context, sprint, ids, self.url)
+
+    def put(self, planned, sprint, team=TEAM, context=None, rows=()):
+        return self.patch_rows(list(rows), sprint, team, context, planned=planned)
+
+    def test_batch_projection_matches_full_documents(self):
+        self.put({'value': '3', 'source': 'user'}, '9', 'inh2')
+        self.put({'value': '4', 'source': 'jira'}, '99', 'inh2')
+        self.put({'value': '7', 'source': 'user'}, '99', 'own')
+        self.put({'value': '8', 'source': 'user'}, '100', 'own')
+        self.put({'value': '2', 'source': 'user'}, '10', 'own-null')
+        self.put({'value': None, 'source': None}, '100', 'own-null')
+        self.put({'value': '6', 'source': 'user'}, '10', 'later')
+        self.put({'value': None, 'source': None}, '9', 'inh-null', rows=[{'assigneeKey': 'a', 'capacity': '1'}])
+        self.put({'value': '5', 'source': 'user'}, '120', 'later')
+        ids = ['absent', 'inh2', 'own', 'own-null', 'inh-null', 'later']
+        result = self.planned(ids, '100')
+        self.assertEqual(result['sprintId'], '100')
+        self.assertEqual([team['teamId'] for team in result['teams']], ids)
+        for team in result['teams']:
+            full = self.get('100', team['teamId'])
+            self.assertEqual(team['revision'], full['revision'], team['teamId'])
+            self.assertEqual(team['planned'], full['planned'], team['teamId'])
+            self.assertEqual((team['inherited'] or {}).get('fromSprintId'), (full['inherited'] or {}).get('fromSprintId'))
+            self.assertEqual((team['inherited'] or {}).get('planned'), (full['inherited'] or {}).get('planned'))
+        by_id = {team['teamId']: team for team in result['teams']}
+        self.assertEqual(by_id['absent'], {'teamId': 'absent', 'revision': 0, 'planned': None, 'inherited': None})
+        self.assertEqual(by_id['inh2']['inherited'], {'fromSprintId': '99', 'planned': {'value': '4', 'source': 'inherited'}})
+        self.assertEqual((by_id['own']['inherited'], by_id['own']['planned']), (None, {'value': '8', 'source': 'user'}))
+        self.assertEqual(by_id['own-null']['planned'], None)
+        self.assertEqual(by_id['own-null']['inherited'], None)
+        self.assertEqual(by_id['own-null']['revision'], 1)
+        self.assertEqual(by_id['inh-null']['inherited'], {'fromSprintId': '9', 'planned': None})
+        self.assertEqual(by_id['later']['inherited']['fromSprintId'], '10')
+        self.assertIn('capabilities', result)
+
+    def test_batch_projection_is_one_column_limited_statement(self):
+        self.put({'value': '3', 'source': 'user'}, '10', rows=[{'assigneeKey': 'a', 'capacity': '1'}])
+        statements = []
+        engine = db_engine.get_engine(self.url)
+        listener = lambda conn, cursor, statement, *args: statements.append(statement)
+        event.listen(engine, 'before_cursor_execute', listener)
+        try:
+            self.planned([TEAM, 'other', 'third'], '11')
+        finally:
+            event.remove(engine, 'before_cursor_execute', listener)
+        capacity_statements = [s for s in statements if 'planning_team_sprint_capacity' in s]
+        self.assertEqual(len(capacity_statements), 1)
+        selected = capacity_statements[0].split(' FROM ')[0]
+        self.assertNotIn('rows', selected)
+
+    def test_batch_projection_never_returns_rows_or_notes(self):
+        self.put({'value': '3', 'source': 'user'}, '10', rows=[{'assigneeKey': 'a', 'displayName': 'Ada', 'capacity': '1', 'notes': 'secret-note'}])
+        for sprint in ('10', '11'):
+            encoded = json.dumps(self.planned([TEAM], sprint))
+            for word in ('rows', 'notes', 'Ada', 'secret-note', 'assigneeKey'):
+                self.assertNotIn(word, encoded)
+
+    def test_batch_projection_preserves_request_order_and_workspace_isolation(self):
+        foreign = context_for(self.other_workspace)
+        self.put({'value': '1', 'source': 'user'}, '10', 'b')
+        self.put({'value': '2', 'source': 'user'}, '10', 'a')
+        self.put({'value': '9', 'source': 'user'}, '10', 'a', context=foreign)
+        result = self.planned(['b', 'z', 'a'], '10')
+        self.assertEqual([t['teamId'] for t in result['teams']], ['b', 'z', 'a'])
+        self.assertEqual([(t['planned'] or {}).get('value') for t in result['teams']], ['1', None, '2'])
+        self.assertEqual(self.planned(['a'], '10', foreign)['teams'][0]['planned']['value'], '9')
+
+    def test_batch_projection_zero_is_a_value(self):
+        self.put({'value': '0', 'source': 'user'}, '10')
+        own = self.planned([TEAM], '10')['teams'][0]
+        self.assertEqual(own['planned'], {'value': '0', 'source': 'user'})
+        inherited = self.planned([TEAM], '11')['teams'][0]
+        self.assertEqual(inherited['inherited']['planned'], {'value': '0', 'source': 'inherited'})
+
+    def test_batch_projection_writes_nothing(self):
+        self.put({'value': '3', 'source': 'user'}, '10')
+        before = self.count()
+        self.planned([TEAM, 'x'], '11')
+        self.planned([TEAM, 'x'], '10')
+        self.assertEqual(self.count(), before)
+        with db_engine.session_scope(self.url) as session:
+            self.assertEqual(session.query(models.PlanningTeamSprintCapacity).one().revision, 1)
+
+    def test_batch_projection_validation_and_limits(self):
+        for ids in ([], [TEAM, TEAM], [''], [1], 'team-a', ['x' * 129], [f't{i}' for i in range(501)]):
+            self.assert_error('invalid_review_request', 400, self.planned, ids)
+        self.assert_error('invalid_review_request', 400, self.planned, [TEAM], 'abc')
+        self.assertEqual(len(self.planned([f't{i}' for i in range(500)])['teams']), 500)
+        self.assertEqual(capacity.MAX_BATCH_TEAM_IDS, 500)
+        self.assertEqual(capacity.MAX_BATCH_REQUEST_BYTES, 128 * 1024)
+        with self.assertRaises(AuthError):
+            capacity.read_planned_numbers(None, '20', [TEAM], self.url)
+
+
 if __name__ == '__main__':
     unittest.main()

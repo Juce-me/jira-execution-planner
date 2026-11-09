@@ -199,6 +199,17 @@ def _capacity_patch(context, sprint_id):
     return {**document, 'capabilities': sprint_review.capabilities(context)}
 
 
+def _capacity_planned_read(context, sprint_id):
+    payload = _payload(assignee_capacity.MAX_BATCH_REQUEST_BYTES)
+    if set(payload) != {'teamIds'}:
+        raise sprint_review.ReviewError()
+    assignee_capacity.validate_batch(sprint_id, payload['teamIds'])
+    caps = sprint_review.capabilities(context)
+    if not caps['canRead']:
+        return {'sprintId': sprint_id, 'teams': [], 'capabilities': caps}
+    return assignee_capacity.read_planned_numbers(context, sprint_id, payload['teamIds'])
+
+
 @bp.route(CAPACITY_PATH, methods=['GET'])
 def get_assignee_capacity(sprint_id):
     return _run(lambda context: _capacity_get(context, sprint_id), allowed_args=('teamId',),
@@ -209,6 +220,12 @@ def get_assignee_capacity(sprint_id):
 def patch_assignee_capacity(sprint_id):
     return _run(lambda context: _capacity_patch(context, sprint_id), require_capability=True,
                 response_limit=assignee_capacity.MAX_RESPONSE_BYTES, timing='assignee-capacity-write')
+
+
+@bp.route(CAPACITY_PATH + '/planned/read', methods=['POST'])
+def read_assignee_capacity_planned(sprint_id):
+    return _run(lambda context: _capacity_planned_read(context, sprint_id),
+                response_limit=assignee_capacity.MAX_RESPONSE_BYTES, timing='assignee-capacity-planned-read')
 
 
 def _planning_admission(context, sprint_id, payload, *, digest_required=True, deadline=None):

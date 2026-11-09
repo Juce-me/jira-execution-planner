@@ -237,5 +237,79 @@ class AssigneeCapacityRouteTests(ReviewFixture, unittest.TestCase):
             self.assertFalse({'user_id', 'created_by'} & set(models.PlanningTeamSprintCapacity.__table__.columns.keys()))
 
 
+    def read_planned(self, team_ids, sprint='17', headers=None, **kwargs):
+        path = f'/api/eng/sprints/{sprint}/assignee-capacity/planned/read'
+        return self.client.post(path, json={'teamIds': team_ids}, headers=self.headers() if headers is None else headers, **kwargs)
+
+    def test_batch_read_contract_and_errors(self):
+        with self.auth():
+            self.patch_doc([], planned={'value': '5', 'source': 'user'})
+            response = self.read_planned(['team-a', 'team-b'], '18')
+            self.assertEqual(response.status_code, 200)
+            body = response.get_json()
+            self.assertEqual(set(body), {'sprintId', 'teams', 'capabilities'})
+            self.assertEqual(body['teams'], [
+                {'teamId': 'team-a', 'revision': 0, 'planned': None,
+                 'inherited': {'fromSprintId': '17', 'planned': {'value': '5', 'source': 'inherited'}}},
+                {'teamId': 'team-b', 'revision': 0, 'planned': None, 'inherited': None}])
+            self.assertIn('reason', body['capabilities'])
+            self.assertEqual(response.headers['Cache-Control'], 'no-store')
+            for payload in ({'teamIds': ['a'], 'extra': 1}, {}, {'teamIds': []}, {'teamIds': ['a', 'a']},
+                            {'teamIds': [' a']}, {'teamIds': [1]}, {'teamIds': 'a'},
+                            {'teamIds': [f't{i}' for i in range(501)]}):
+                response = self.client.post(self.path + '/planned/read', json=payload, headers=self.headers())
+                self.assertEqual((response.status_code, response.get_json()['error']), (400, 'invalid_review_request'), payload)
+            for sprint in ('abc', '0'):
+                self.assertEqual(self.read_planned(['a'], sprint).status_code, 400)
+            self.assertEqual(self.client.post(self.path + '/planned/read', json=[], headers=self.headers()).status_code, 400)
+            oversized = self.client.post(self.path + '/planned/read', data=' ' * (capacity.MAX_BATCH_REQUEST_BYTES + 1),
+                                         content_type='application/json', headers=self.headers())
+            self.assertEqual((oversized.status_code, oversized.get_json()), (413, {'error': 'review_request_limit'}))
+            padded = '{"teamIds":["a"]}' + ' ' * 100000
+            self.assertEqual(self.client.post(self.path + '/planned/read', data=padded, content_type='application/json',
+                                              headers=self.headers()).status_code, 200)
+            with patch.object(capacity, 'read_planned_numbers', return_value={'teams': ['a' * capacity.MAX_RESPONSE_BYTES]}):
+                response = self.read_planned(['a'])
+                self.assertEqual((response.status_code, response.get_json()['error']), (413, 'review_response_limit'))
+            with patch.object(capacity.db_engine, 'session_scope', side_effect=capacity.DBAPIError('s', {}, Exception('x'))):
+                response = self.read_planned(['a'])
+                self.assertEqual((response.status_code, response.get_json()), (503, {'error': 'review_storage_unavailable'}))
+            self.assertEqual(self.read_planned(['a'], headers={}).status_code, 403)
+            self.assertEqual(self.read_planned(['a'], headers={'X-Requested-With': 'jira-execution-planner'}).status_code, 403)
+            missing = self.read_planned(['a'], headers={'X-Requested-With': 'jira-execution-planner'})
+            self.assertEqual(missing.get_json()['error'], 'csrf_required')
+            headers = self.headers()
+            self.assertEqual(self.read_planned(['a'], headers=headers).status_code, 200)
+            consumed = self.read_planned(['a'], headers=headers)
+            self.assertEqual((consumed.status_code, consumed.get_json()['error']), (403, 'csrf_required'))
+
+    def test_batch_read_anonymous_fails_with_401_before_storage(self):
+        with patch.object(capacity.db_engine, 'session_scope', side_effect=AssertionError('forbidden database')):
+            response = self.client.post(self.path + '/planned/read', json={'teamIds': ['a']},
+                                        headers={'X-Requested-With': 'jira-execution-planner'})
+            self.assertEqual((response.status_code, response.get_json()['error']), (401, 'auth_required'))
+
+    def test_batch_read_is_workspace_isolated_and_non_admin_readable(self):
+        foreign = replace(self.context, workspace_id=self.other_workspace)
+        self.assertFalse(self.context.is_admin)
+        with self.auth():
+            self.patch_doc([], planned={'value': '5', 'source': 'user'})
+            self.assertEqual(self.read_planned(['team-a']).get_json()['teams'][0]['planned'], {'value': '5', 'source': 'user'})
+        with self.auth(foreign):
+            self.assertEqual(self.read_planned(['team-a']).get_json()['teams'][0],
+                             {'teamId': 'team-a', 'revision': 0, 'planned': None, 'inherited': None})
+
+    def test_batch_read_without_read_capability_returns_no_teams_and_no_query(self):
+        denied = {'canRead': False, 'canSave': False, 'reason': 'Shared review saving requires database-backed OAuth.'}
+        with self.auth(), patch('backend.routes.sprint_review_routes.sprint_review.capabilities', return_value=denied), \
+                patch.object(capacity, 'read_planned_numbers', side_effect=AssertionError('query')):
+            response = self.read_planned(['team-a'])
+            self.assertEqual((response.status_code, response.get_json()), (
+                200, {'sprintId': '17', 'teams': [], 'capabilities': denied}))
+            self.assertTrue(response.headers['Server-Timing'].startswith('assignee-capacity-planned-read;dur='))
+        with self.auth():
+            self.assertTrue(self.read_planned(['team-a']).headers['Server-Timing'].startswith('assignee-capacity-planned-read;dur='))
+
+
 if __name__ == '__main__':
     unittest.main()

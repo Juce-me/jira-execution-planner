@@ -179,18 +179,18 @@
   - capabilities are checked in the route as `_capacity_get` does.
 - **Constants:** `MAX_BATCH_TEAM_IDS = 500`, `MAX_BATCH_REQUEST_BYTES = 128 * 1024`; responses reuse `MAX_RESPONSE_BYTES`.
 
-- [ ] **Step 1: Write failing service tests:**
+- [x] **Step 1: Write failing service tests:**
   - `test_batch_projection_matches_full_documents`: own-with-value, own-null, inherited (with two earlier documents, the nearest wins), inherited-null, absent, and a Team with a document for a later Sprint, which is ignored. Use Sprint ids 9/10 and 99/100 against padded order. Each record equals `get_document`'s `revision`, `planned`, `inherited.fromSprintId` and `inherited.planned`.
   - `test_batch_projection_is_one_column_limited_statement`: exactly one statement on `planning_team_sprint_capacity`, and its SQL does not select `rows`.
   - `test_batch_projection_never_returns_rows_or_notes`.
   - `test_batch_projection_preserves_request_order_and_workspace_isolation`.
   - `test_batch_projection_zero_is_a_value`.
   - `test_batch_projection_writes_nothing`.
-- [ ] **Step 2:** Run `.venv/bin/python tests/run_isolated_runtime_tests.py <includes> tests.test_assignee_capacity_service`. Expected: FAIL (undefined).
-- [ ] **Step 3: Implement.**
+- [x] **Step 2:** Run `.venv/bin/python tests/run_isolated_runtime_tests.py <includes> tests.test_assignee_capacity_service`. Expected: FAIL (undefined).
+- [x] **Step 3: Implement.**
   - Query: `SELECT DISTINCT ON (team_id) team_id, sprint_id, revision, planned_capacity, planned_source … WHERE workspace_id = :w AND team_id = ANY(:ids) AND sprint_order <= :order ORDER BY team_id, sprint_order DESC`.
   - Project with `_stored_planned` and `_inherit_planned`, and validate ids with `team_identity`.
-- [ ] **Step 4: Write failing route tests:**
+- [x] **Step 4: Write failing route tests:**
   - `test_batch_read_contract_and_errors`:
     - 200 shape, including `capabilities.reason`;
     - 400 `invalid_review_request` for unknown fields, duplicates, an empty list, an invalid id or Sprint, and 501 ids;
@@ -203,9 +203,9 @@
   - `test_batch_read_is_workspace_isolated_and_non_admin_readable`;
   - `test_batch_read_without_read_capability_returns_no_teams_and_no_query`, and the `Server-Timing: assignee-capacity-planned-read` header;
   - a security-matrix sample.
-- [ ] **Step 5:** Implement the route and register the policy and samples.
-- [ ] **Step 6:** Run both modules plus `tests.test_endpoint_policy_inventory`, `tests.test_endpoint_security_matrix`, `tests.test_backend_route_source_guards` and `tests.test_work_structure_consumer_inventory`. Expected: PASS.
-- [ ] **Step 7:** Commit `Add a bounded batch read of stored Team capacity numbers (#323)`.
+- [x] **Step 5:** Implement the route and register the policy and samples.
+- [x] **Step 6:** Run both modules plus `tests.test_endpoint_policy_inventory`, `tests.test_endpoint_security_matrix`, `tests.test_backend_route_source_guards` and `tests.test_work_structure_consumer_inventory`. Expected: PASS.
+- [x] **Step 7:** Commit `Add a bounded batch read of stored Team capacity numbers (#323)`.
 
 ### Task 2: Batch read client
 
@@ -610,6 +610,9 @@ Each item is done only with its named evidence recorded in Execution evidence (c
   - GREEN: the same unit files `# tests 677`, `# fail 0`; `node --test tests/test_*.js` `# tests 3593`, `# fail 0`; the same UI selections `3 passed` and `1 passed`.
   - Affected specs (40 files, Chromium, `--workers=4`): after the code change and before migration `145 unexpected` (73 not in the 11e3b564 triage baseline); after migration `52 unexpected`, every one in the triage baseline except a pre-existing focus race in `scenario_draft_history` (it also fails at HEAD) and five fixed and rerun green. Sticky checks for Catch Up, Planning Table and Scenario pass.
   - Budgets: dashboard.jsx 7490 to 7479 lines (ceiling 7502), `useEffect(` 74 unchanged, `useState(` 111 to 110; `tests.test_codebase_structure_budgets tests.test_agents_md_learnings` `Ran 21 tests`, `OK`.
+- **Task 1: Batch Team-number projection (2026-11-09).** `read_planned_numbers`, `validate_batch`, `MAX_BATCH_TEAM_IDS`, `MAX_BATCH_REQUEST_BYTES` in `backend/services/assignee_capacity.py`; route `POST .../assignee-capacity/planned/read` (policy `eng-assignee-capacity-planned-read`, `user_write`); no migration.
+  - RED: `.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)" tests.test_assignee_capacity_service` gave `FAILED (errors=7)` (`read_planned_numbers` undefined). With the route and policy reverted, `tests.test_assignee_capacity_routes tests.test_endpoint_security_matrix` gave `Ran 35 tests`, `FAILED (failures=4, errors=1)` (501 `route_not_oauth_ready`).
+  - GREEN: `tests.test_assignee_capacity_service` `Ran 54 tests ... OK`; `tests.test_assignee_capacity_routes tests.test_endpoint_security_matrix` `Ran 35 tests ... OK`. Final set (service, routes, `test_endpoint_policy_inventory`, `test_endpoint_security_matrix`, `test_backend_route_source_guards`, `test_work_structure_consumer_inventory`, `test_codebase_structure_budgets`): `Ran 152 tests in 268.478s`, `OK`.
 
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.

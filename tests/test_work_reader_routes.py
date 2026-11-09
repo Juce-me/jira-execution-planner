@@ -571,6 +571,61 @@ class ComponentBoardStreamTests(unittest.TestCase):
         self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E2': 'product'}, classes)
         self.assertEqual([False, True, True], [field in fields for fields in fields_seen])  # leaf discovery, Initiatives, children
 
+    def test_delivery_board_reads_the_objective_only_for_blank_initiatives_in_batches_of_40(self):
+        field = 'customfield_40001'
+
+        def mapped(bundle):
+            bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
+        objective_type = {'id': '10010', 'name': 'Objective'}
+
+        def initiative(key, objective=None, allocation=None, parent_type=objective_type):
+            row = parent_shell(key)
+            if objective:
+                row['fields']['parent'] = {'key': objective, 'fields': {'issuetype': parent_type}}
+            row['fields'][field] = {'value': allocation} if allocation else None
+            return row
+        objective_reads = []
+
+        def run(initiatives, objectives):
+            leaves = {key: json.loads(json.dumps(row)) for key, row in self.LEAVES.items()}
+            for index, key in enumerate(sorted(initiatives)):
+                leaves[f'PLAN-E{index + 10}'] = leaf(f'PLAN-E{index + 10}', key, 1, ('Component A',))
+            original = eng_board_routes._search_page
+            objective_reads.clear()
+
+            def spy(server, snapshot, transport, payload, timeout):
+                if payload.get('fields') == [field]:
+                    keys = re.findall(r'PLAN-O\d+', payload['jql'])
+                    objective_reads.append(keys)
+                    return {'issues': [{'key': key, 'fields': {field: objectives.get(key)}} for key in keys],
+                            'isLast': True}
+                return original(server, snapshot, transport, payload, timeout)
+            with patch.object(self, 'LEAVES', leaves), \
+                    patch.object(eng_board_routes, '_search_page', side_effect=spy):
+                frames, _calls = self.stream(self.snapshot(('Component A',), mutate=mapped),
+                                             initiatives=initiatives)
+            self.assertEqual('success', frames[-1].get('outcome'), frames)
+            return {child['key']: child['projectClassification'] for frame in frames if frame['type'] == 'column'
+                    for child in frame['children']}
+
+        # Every Initiative carries a value: no Objective read at all.
+        valued = {'PLAN-I1': initiative('PLAN-I1', 'PLAN-O1', 'Growth')}
+        self.assertEqual({'PLAN-E1': 'product', 'PLAN-E10': 'product'}, run(valued, {}))
+        self.assertEqual([], objective_reads)
+        # A blank Initiative under a Tech Objective: its blank Epics are Tech, the valued Epic keeps its own.
+        blank = {'PLAN-I1': initiative('PLAN-I1', 'PLAN-O1')}
+        classes = run(blank, {'PLAN-O1': {'value': 'Platform'}})
+        self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E10': 'tech'}, classes)
+        self.assertEqual([['PLAN-O1']], objective_reads)
+        # 41 distinct Objectives cost exactly two reads; an untyped parent is not an Objective and is never read.
+        many = {f'PLAN-I{n}': initiative(f'PLAN-I{n}', f'PLAN-O{n}') for n in range(1, 42)}
+        many['PLAN-I99'] = initiative('PLAN-I99', 'PLAN-O99', parent_type={'id': '10001', 'name': 'Initiative'})
+        classes = run(many, {f'PLAN-O{n}': {'value': 'Platform'} for n in range(1, 42)})
+        self.assertEqual([40, 1], [len(keys) for keys in objective_reads])
+        self.assertNotIn('PLAN-O99', [key for keys in objective_reads for key in keys])
+        self.assertEqual('product', classes[f'PLAN-E{len(many) + 9}'], 'PLAN-I99 sorts last: untyped parent')
+        self.assertEqual({'tech'}, {classes[f'PLAN-E{n}'] for n in range(10, 51)})
+
     def test_a_plus_b_shows_both_epics_under_one_initiative(self):
         frames, _calls = self.stream(self.snapshot(('Component A', 'Component B')))
         self.assertEqual(1, frames[-1]['epicCount'])

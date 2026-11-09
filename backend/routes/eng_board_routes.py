@@ -19,7 +19,7 @@ from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
-from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
+from backend.services import allocation_classification, eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
 from backend.services.eng_board_stream import (
     ENG_BOARD_PROTOCOL_VERSION, EngBoardChildScheduler, EngBoardRequestDeadline,
     EngBoardFrameError, EngBoardRequestTransport, EngBoardStreamWriter,
@@ -702,6 +702,36 @@ def _allocation_options(snapshot):
     return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': roles.allocation_types}
 
 
+def _objective_allocations(server, snapshot, transport, initiatives, field_id):
+    """``{Objective key: raw Allocation}`` for the typed Objectives of blank Initiatives, as ``fetch_tasks`` reads
+    them: distinct keys in batches of 40, nothing when every Initiative has a value.  A failed batch leaves its
+    Objectives unread, which counts as Product."""
+    term = snapshot.work_request.roles.ancestor_term()
+    if not field_id or term is None or term[0] != 'id':
+        return {}
+    details = {}
+    for row in initiatives:
+        fields = row.get('fields') or {}
+        parent = fields.get('parent') or {}
+        parent_type = ((parent.get('fields') or {}).get('issuetype') or {}).get('id')
+        details[row['key']] = {'allocation': allocation_classification.allocation_value(fields.get(field_id))}
+        if parent.get('key') and str(parent_type or '') == term[1]:
+            details[row['key']]['initiative'] = {'key': parent['key']}
+    keys = allocation_classification.objective_keys_to_read(
+        [{'fields': {'epicKey': key}} for key in details], details, field_id)
+    objectives = {}
+    for start in range(0, len(keys), 40):
+        batch = keys[start:start + 40]
+        payload = {'jql': f'issueKey in ({",".join(batch)})', 'maxResults': len(batch), 'fields': [field_id]}
+        try:
+            page = _search_page(server, snapshot, transport, payload, transport.budget.jira_retry_timeout())
+        except BoardJiraUnavailable:
+            continue
+        for issue in page.get('issues') or []:
+            objectives[issue.get('key')] = (issue.get('fields') or {}).get(field_id)
+    return objectives
+
+
 def _search_page(server, snapshot, transport, payload, timeout):
     if snapshot.adapter == 'basic_json':
         _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
@@ -910,6 +940,9 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                    if snapshot.query.scope in {'all_work', 'component'} else 'candidate')
         discovery_complete = True
         raw_by_key = {str(row['key']).strip().upper(): row for row in epics}
+        if allocation:
+            allocation['allocation_objectives'] = _objective_allocations(
+                server, snapshot, transport, epics, allocation['allocation_field_id'])
         column_keys = {
             column['id']: [row['key'] for row in index_shells if row['columnId'] == column['id']]
             for column in snapshot.board['columns']

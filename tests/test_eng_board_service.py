@@ -819,6 +819,15 @@ class EngBoardProjectionTests(unittest.TestCase):
         classes = {child['key']: child['projectClassification']
                    for epic in projection['epics'] for child in epic['children']}
         self.assertEqual({'P-10': 'tech', 'P-11': 'product', 'P-20': 'product', 'P-21': 'tech'}, classes)
+        # The read Objective decides a blank Epic under a blank Initiative, as in Catch Up and Planning.
+        with_objective = eng_board.project_board(
+            initiatives, children, project_map=(('PLAN', 'other'),), columns=self.columns,
+            allocation_field_id=field, allocation_types=types,
+            allocation_objectives={'P-O1': {'value': 'Platform'}},
+        )
+        classes = {child['key']: child['projectClassification']
+                   for epic in with_objective['epics'] for child in epic['children']}
+        self.assertEqual({'P-10': 'tech', 'P-11': 'product', 'P-20': 'tech', 'P-21': 'tech'}, classes)
         unmapped = eng_board.project_board(
             initiatives, children[:1], project_map=(('PLAN', 'other'),), columns=self.columns,
             allocation_field_id='', allocation_types=[],

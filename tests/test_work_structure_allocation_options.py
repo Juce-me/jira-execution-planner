@@ -90,3 +90,14 @@ class AllocationOptionsTests(WorkStructureRouteBase):
         response = jira_server.app.test_client().get(PATH + VALID)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.get_json()['error'], 'auth_required')
+
+
+class AllocationOptionsFlagTests(WorkStructureRouteBase):
+    flag = 'false'
+
+    def test_flag_off_unpromoted_workspace_reads_nothing(self):
+        with patch.object(jira_server, 'current_jira_get') as jira_get:
+            response = self.client.get(PATH + VALID)
+        self.assertEqual((response.status_code, response.get_json()['error']),
+                         (409, 'configuration_feature_disabled'))
+        jira_get.assert_not_called()

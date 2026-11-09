@@ -3787,7 +3787,8 @@ def fetch_tasks(include_team_name=False):
             fields_list.append(epic_link_field_id)
         if team_field_id:
             fields_list.append(team_field_id)
-        stamps_allocation = roles is not None and not roles.is_legacy and not lightweight_ready_to_close
+        stamps_allocation = (roles is not None and not roles.is_legacy and not lightweight_ready_to_close
+                             and request_purpose != 'alerts')  # alerts keep only outcomes
         if stamps_allocation and roles.allocation_field_id:
             fields_list.append(roles.allocation_field_id)
 
@@ -6314,7 +6315,8 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
         with _cache_lock:
             if get_jira_issue_cache_generation() == cache_generation:
                 for normalized in batch:
-                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
+                    meta = fetched.get(normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None,
+                                                    **({'allocation': None} if allocation_field else {})})
                     EXCLUDED_CAPACITY_EPIC_SUMMARY_CACHE[excluded_capacity_epic_summary_cache_key(normalized, context=context, configuration=configuration)] = {**meta, 'timestamp': time.time()}
                     summaries_by_normalized[normalized] = meta
             else:

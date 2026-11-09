@@ -9,6 +9,8 @@ Implemented with changes. DELIVERY splits Product/Tech by its mapped Allocation 
 - An inherited-Board DELIVERY entry with no scan source (no projects or no Sprint field) is `setup_required` instead of `ready` (Task B2, B3).
 - A DELIVERY quarter that no Epic carries yet shows no Sprint until the scan sees one: an inherited Board contributes no DELIVERY Sprint row (Q1, literal reading, Task B2).
 
+Final review (2026-11-09) fixes: the `purpose=alerts` tasks request no longer requests Allocation or reads Objectives (it keeps only outcomes, so it doubled the fan-out); the excluded-capacity summary cache default carries `allocation: None` so an unreadable Initiative is a cache hit; unpromoted Sprint-value rows keep `configurationIds: []`; `GET /api/work-structure/allocation-options` answers `409 configuration_feature_disabled` with the flag off on an unpromoted workspace. Left open (in `docs/TODO.md`): in DELIVERY the Product/Tech facet does not filter story-readiness requirement rows (`engWorkHierarchy.js` `requirementVisible` keeps its combined guard), and the Stats Teams Product/Tech cells still link to project-based Jira searches.
+
 ## Current Accuracy
 
 Partially accurate: the goal, owner decisions, assumptions and acceptance checklist describe what shipped; the task bodies are the pre-execution contract, and where a task's Status line records a divergence the implementation is the source of truth. The extraction lint is still red with the same 70 enforced problems as the merge base (none added here); see Track C step 1.

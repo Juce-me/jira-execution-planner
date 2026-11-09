@@ -350,6 +350,18 @@ class AllocationStampTests(WorkStructureRouteBase):
         self.assertEqual(body['issues'][0]['fields']['projectClassification'], 'tech')
         self.assertEqual([p for p in payloads if 'PLAN-O' in p['jql']], [])
 
+    def test_alerts_request_reads_no_allocation(self):
+        """The alerts load keeps only outcomes, so it must not repeat the Allocation read or Objective batch."""
+        epics = [epic_row('PLAN-1', parent='PLAN-I1', sprint=5)]
+        initiatives = [self.with_allocation(initiative_row('PLAN-I1'), None, 'PLAN-O1')]
+        objectives = [self.with_allocation({'key': 'PLAN-O1', 'fields': {}}, 'Platform')]
+        _body, payloads = self.tasks({'quarter': '2027Q1', 'sprint': '5', 'purpose': 'alerts'},
+                                     epics, initiatives, objectives)
+        self.assertEqual([p for p in payloads if 'PLAN-O' in p['jql']], [])
+        main = [p for p in payloads if 'issuetype = 10002' in p['jql']]
+        self.assertTrue(main)
+        self.assertTrue(all(ALLOCATION_FIELD not in (p.get('fields') or []) for p in main))
+
     def test_failed_objective_batch_is_product(self):
         epics = [epic_row('PLAN-1', parent='PLAN-I1', sprint=5)]
         initiatives = [self.with_allocation(initiative_row('PLAN-I1'), None, 'PLAN-O1')]

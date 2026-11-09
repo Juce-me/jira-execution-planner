@@ -475,9 +475,10 @@ def collect_sprint_values(auth_context, sources):
                 'canonical': canonical,
                 'state': min(row['states'], key=lambda value: _STATE_RANK.get(value, 9)),
                 'sprintIds': sorted(row['ids']),
-                'configurationIds': [configuration_id],
+                'configurationIds': [configuration_id] if configuration_id else [],
+                '_order': order[configuration_id],
             })
-    rows.sort(key=lambda row: order[row['configurationIds'][0]])
+    rows.sort(key=lambda row: row.pop('_order'))
     rows.sort(key=lambda row: row['value'], reverse=True)
     return rows, summaries
 
@@ -701,6 +702,12 @@ def get_work_structure_allocation_options():
         auth_context, failure = _feature_context()
         if failure is not None:
             return failure
+        state = work_structure_service.work_configuration_state(
+            workspace_snapshot(auth_context).payload,
+            flag_enabled=work_structure_service.work_configurations_enabled(),
+        )
+        if not state.promoted and not state.flag_enabled:
+            return work_error_response(WorkConfigError('configuration_feature_disabled'))
         field_id = request.args.get('fieldId', '').strip()
         project_key = request.args.get('projectKey', '').strip()
         issue_type_id = request.args.get('issueTypeId', '').strip()

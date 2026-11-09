@@ -1,4 +1,4 @@
-"""DELIVERY Product/Tech from Allocation (pure module); precedence oracle is ``resolve_allocation``."""
+"""DELIVERY Allocation classes (pure module): Catch Up, Planning and Stats read the Initiative only."""
 import unittest
 
 from backend.services import allocation_classification as ac
@@ -35,8 +35,36 @@ class PureValueTests(unittest.TestCase):
         self.assertEqual(ac.classify_allocation('unavailable', None, TYPES), 'product')
 
 
-class StampTests(unittest.TestCase):
-    """Each scenario runs through ``resolve_allocation`` too, so the precedence cannot drift."""
+class InitiativeClassTests(unittest.TestCase):
+    """Each Initiative is classified once; its issues take that class and nothing else."""
+
+    def test_initiative_value_decides(self):
+        self.assertEqual(ac.classify_initiative({'value': 'Platform', 'id': '7'}, TYPES), 'tech')
+        self.assertEqual(ac.classify_initiative('Growth', TYPES), 'product')
+        details = {'P-I1': {'allocation': 'Platform'}, 'p-i2': {'allocation': 'Growth'}}
+        self.assertEqual(ac.initiative_classes(details, FIELD, TYPES), {'P-I1': 'tech', 'P-I2': 'product'})
+
+    def test_blank_or_unmapped_is_none(self):
+        for raw in (None, '', '  ', [], {'value': ''}, 'Unmapped', 'platform'):
+            self.assertEqual(ac.classify_initiative(raw, TYPES), 'none', raw)
+        self.assertEqual(ac.classify_initiative('Platform', []), 'none')
+        details = {'P-I1': {'allocation': None}, 'P-I2': {'allocation': 'Unmapped'}, 'P-I3': {}}
+        self.assertEqual(ac.initiative_classes(details, FIELD, TYPES), {'P-I1': 'none', 'P-I2': 'none', 'P-I3': 'none'})
+        # No Allocation field configured: every Initiative is No Allocation.
+        self.assertEqual(ac.initiative_classes({'P-I1': {'allocation': 'Platform'}}, '', TYPES), {'P-I1': 'none'})
+
+    def test_epic_and_objective_values_are_ignored(self):
+        details = {'P-I1': {'allocation': 'Growth', 'initiative': {'key': 'P-O1'}},
+                   'P-I2': {'allocation': None, 'initiative': {'key': 'P-O1'}}}
+        classes = ac.initiative_classes(details, FIELD, TYPES)
+        stamps = ac.stamp_issues([epic('P-1', 'P-I1', {'value': 'Platform'}), epic('P-2', 'P-I2', 'Platform'),
+                                  epic('P-3', 'P-I9', 'Platform'), epic('P-4', None, 'Platform')], classes)
+        self.assertEqual(stamps, {'P-1': 'product', 'P-2': 'none', 'P-3': 'none', 'P-4': 'none'})
+
+
+class BoardPrecedenceTests(unittest.TestCase):
+    """The Board's own Epic, Initiative, Objective precedence (``stamp_epics``), kept until the Board task
+    replaces it; each scenario also runs through ``resolve_allocation``."""
 
     def scenario(self, leaf, initiatives, objectives):
         details = {key: {'allocation': ac.allocation_value(value), **({'initiative': {'key': obj}} if obj else {})}

@@ -115,15 +115,18 @@ LEGACY_PAIRS = {
 
 # New-model outcomes (NOT pinned to code): the Epic is the leaf, the Initiative key carries
 # exclusion/Ad Hoc, one unfiltered request lane split on the client by the server's Allocation
-# stamp (`projectClassification`); an unstamped Epic is Product.
+# stamp (`projectClassification`), which is the Initiative's own Allocation class: an Epic under a blank or
+# unmapped Initiative is No Allocation (`none`).
 NEW_MODEL_EXPECTED_PAIRS = {
-    'ordinary': {'combined': 8, 'ad_hoc': 0, 'product': 8, 'tech': 0,
+    'ordinary': {'combined': 8, 'ad_hoc': 0, 'product': 8, 'tech': 0, 'none': 0,
                  'selected_team_total': 8, 'included_allocation': 8, 'excluded_report': 0, 'requests': 1},
-    'tech': {'combined': 8, 'ad_hoc': 0, 'product': 0, 'tech': 8,
+    'tech': {'combined': 8, 'ad_hoc': 0, 'product': 0, 'tech': 8, 'none': 0,
              'selected_team_total': 8, 'included_allocation': 8, 'excluded_report': 0, 'requests': 1},
-    'ad_hoc': {'combined': 8, 'ad_hoc': 8, 'product': 8, 'tech': 0,
+    'unmapped': {'combined': 8, 'ad_hoc': 0, 'product': 0, 'tech': 0, 'none': 8,
+                 'selected_team_total': 8, 'included_allocation': 8, 'excluded_report': 0, 'requests': 1},
+    'ad_hoc': {'combined': 8, 'ad_hoc': 8, 'product': 8, 'tech': 0, 'none': 0,
                'selected_team_total': 8, 'included_allocation': 8, 'excluded_report': 0, 'requests': 1},
-    'excluded': {'combined': 0, 'ad_hoc': 0, 'product': 0, 'tech': 0,
+    'excluded': {'combined': 0, 'ad_hoc': 0, 'product': 0, 'tech': 0, 'none': 0,
                  'selected_team_total': 8, 'included_allocation': 0, 'excluded_report': 8, 'requests': 1},
 }
 NEW_MODEL_CLASSIFICATION_EXPECTED = {

@@ -1,8 +1,9 @@
-"""DELIVERY Product/Tech classification from the Allocation field; pure, no Flask and no I/O.
+"""DELIVERY classification from the Allocation field; pure, no Flask and no I/O.
 
-Precedence matches ``planning_work.resolve_allocation``: the Epic's own value, else its
-Initiative's, else the Objective's.  An unreadable Initiative or Objective is ``unavailable``.
-Only a value the configuration maps to Tech is Tech; unmapped, blank and unavailable are Product.
+Catch Up, Planning and Stats classify each Initiative once from its own Allocation
+(``classify_initiative``: ``'product'`` | ``'tech'`` | ``'none'``) and stamp that class on its issues;
+Epic and Objective values are ignored.  ``classify_allocation``/``stamp_epics``/``objective_keys_to_read``
+remain only for the Board's Epic, Initiative, Objective precedence until the Board reads the Initiative too.
 """
 
 
@@ -25,6 +26,28 @@ def classify_allocation(state, value, allocation_types):
         if item['value'] == text:
             return 'tech' if item['type'] == 'tech' else 'product'
     return 'product'
+
+
+def classify_initiative(raw_value, allocation_types):
+    """An Initiative's class: its value mapped to ``'product'`` or ``'tech'``; blank or unmapped is ``'none'``."""
+    text = allocation_value(raw_value)
+    for item in allocation_types or ():
+        if text and item['value'] == text and item['type'] in ('product', 'tech'):
+            return item['type']
+    return 'none'
+
+
+def initiative_classes(epic_details, field_id, allocation_types):
+    """``{Initiative key: class}`` for the ``fetch_epic_details_bulk``-shaped records (``'allocation'`` value);
+    with no Allocation field configured every Initiative is ``'none'``."""
+    return {str(key).strip().upper(): classify_initiative((details or {}).get('allocation') if field_id else None,
+                                                          allocation_types)
+            for key, details in (epic_details or {}).items()}
+
+
+def stamp_issues(issues, classes):
+    """``{issue key: its Initiative's class}``; ``'none'`` without an Initiative or for one ``classes`` lacks."""
+    return {issue.get('key'): classes.get(_initiative_key(issue) or None, 'none') for issue in issues or ()}
 
 
 def _initiative_key(issue):

@@ -413,9 +413,8 @@ async function openPlanning(page, options = {}) {
     return fixture;
 }
 
-// The details toggle lives in the Planning options popover (#331); the overview starts compact.
+// The overview starts compact; Show capacity details is a direct overview button (2026-11-06).
 async function showCapacityDetails(page) {
-    await page.getByRole('button', { name: 'Planning options', exact: true }).click();
     await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
 }
 

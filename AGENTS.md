@@ -420,7 +420,7 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning Table, retain readiness-only Epics and show one awaiting-creation placeholder per uncovered Team; Story status/priority filters must not hide these placeholders, and placeholders must never be selectable or editable.
 
-- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Collapse panel for details; collapsed mode retains graph bars and capacity warnings, keeps graph labels and target markers above hovered fills, and expansion must preserve selection and mounted editors.
+- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Hide capacity details as a direct overview button; collapsed mode keeps controls, counts and capacity warnings, and graphs show only on Show capacity details, with graph labels and target markers above hovered fills; expansion must preserve selection and mounted editors.
 
 - In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep custom and Story Points inputs compact and vertically centered within the existing Epic row height, with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
 
@@ -480,3 +480,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For the 2027 structure, preserve existing calculations and shift Jira entities one level up: Story to Epic, Epic to Initiative, and Initiative to Objective; roll up each Initiative from its Epics’ Story Points instead of introducing new effort formulas; Department team-label matching moves to Initiatives, but alerts require explicit per-category dispositions: only Stories Required shifts directly, and absent Initiative Sprint or optional Team must not become a hygiene error.
 - Create every new worktree and task branch from freshly fetched `origin/main`, never local `main` or the current `HEAD`; verify the starting SHA matches `origin/main` before editing, and name feature branches for the requested capability even when the first commit contains only its spec or plan.
 - For UI mockups, render the branch's existing components and styles with synthetic data and capture browser screenshots; preserve the existing table layout and do not substitute generated images or a redesign. In Planning, retain Select All and Clear Selection, explain scope through tooltips/accessibility descriptions, and show counts separately.
+- Do not add hover readouts that repeat what an expandable panel already shows; keep the compact Planning summary as plain text.

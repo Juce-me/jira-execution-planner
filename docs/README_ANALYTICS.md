@@ -395,7 +395,11 @@ canonical `planning_action`, `sort_changed`, `issue_field_edit_action`,
 
 Review actions use `feature_name=planning_review` and `source_surface=planning`.
 `workflow_action` is an allowlisted string for layout/mode changes, column
-creation/management, save, discard and conflict recovery.
+creation/management, save, discard and conflict recovery. Planning has no List
+toggle (2026-11-06), so `layout_table`/`layout_list` are currently not emitted; they
+stay allowlisted until List retirement. The direct overview buttons and the Include
+by status toggles reuse the existing handlers and events (`include_status`,
+`exclude_status`, `panel_expanded`/`panel_collapsed`); no event is added.
 Explicit Show/Hide Planning panel clicks emit `planning_action` with fixed
 `workflow_action=panel_expanded|panel_collapsed`, `feature_name=planning_review`,
 and `source_surface=planning`. No Team names, graph values or capacity values

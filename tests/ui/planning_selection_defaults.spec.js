@@ -618,15 +618,17 @@ test('Planning Jira export follows Team, search, priority and Sprint scope witho
 
 test('Planning Jira export uses filtered Story keys in Table layout', async ({ page }, testInfo) => {
     await installPlanningFixture(page);
+    // Planning has no List toggle (2026-11-06): the Table layout comes from the saved preference.
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: 'table'})));
     await page.goto(appBaseUrl);
-    await openFuturePlanning(page);
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
-    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await selectSprint(page, futureSprintName);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-review-table')).toBeVisible();
     await page.evaluate(() => {
         window.openedPlanningJiraUrls = [];
         window.open = url => window.openedPlanningJiraUrls.push(String(url));
     });
-    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    const exportButton = page.locator('.planning-panel').getByRole('button', { name: 'Open planned stories in Jira', exact: true });
     await searchInput(page).fill('PLAN-2');
     await expect(page.locator('.filterbar-wrap')).toContainText('1');
     await exportButton.click();

@@ -609,7 +609,6 @@ function unexpectedCallsSince(calls, index) {
 async function openPlanningTable(page) {
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
 }
@@ -644,7 +643,7 @@ test('Planning List priority change shows at once, sends one key and makes no ot
 });
 
 test('Planning Table priority change shows at once, sends one key and makes no other read', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs());
+    await setPrefs(page, catchUpPrefs({ planningLayout: 'table' }));
     const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 800 });
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
@@ -688,7 +687,7 @@ test('Planning List rolls back a rejected priority change without any other read
 });
 
 test('Planning Table rolls back a rejected priority change without any other read', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs());
+    await setPrefs(page, catchUpPrefs({ planningLayout: 'table' }));
     const { calls, priorityState } = await installEngPriorityFixture(page, {
         priorityDelayMs: 500,
         priorityWrite: failedPriorityWrite,
@@ -745,7 +744,7 @@ const planningStoryOrder = page => page.locator('[data-priority-transition-trigg
 for (const layout of ['List', 'Table']) {
     for (const outcome of ['confirmed', 'rejected']) {
         test(`Planning ${layout} keeps a Story in place while its priority is pending and ${outcome === 'confirmed' ? 'moves it to its sorted place once Jira confirms' : 'never moves it when Jira rejects'}`, async ({ page }) => {
-            await setPrefs(page, catchUpPrefs(layout === 'List' ? { showPlanning: true } : {}));
+            await setPrefs(page, catchUpPrefs(layout === 'List' ? { showPlanning: true } : { planningLayout: 'table' }));
             const { calls, priorityState } = await installEngPriorityFixture(page, {
                 priorityDelayMs: 900,
                 priorityWrite: outcome === 'rejected' ? failedPriorityWrite : priorityWriteResponse,
@@ -873,7 +872,7 @@ test.describe('touch', () => {
     test.use({ hasTouch: true });
     test('a Planning Table priority edit works by tap alone and the confirmed row blinks and moves into place', async ({ page, browserName }) => {
         test.skip(browserName === 'firefox', 'Firefox does not support touch emulation');
-        await setPrefs(page, catchUpPrefs());
+        await setPrefs(page, catchUpPrefs({ planningLayout: 'table' }));
         const { priorityState } = await installEngPriorityFixture(page, {
             priorityDelayMs: 600,
             stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),

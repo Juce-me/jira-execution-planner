@@ -449,6 +449,8 @@ test('the underbar arrives with the document without expanding the strip, and it
     const server = capacityServer({ rows: underbarRows, holdGet: true });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details to see the bar.
+    await showCapacityDetails(page);
     await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-track')).toBeVisible();
     await expect.poll(() => server.state.gets).toBe(1);
     // Loading: no strip yet, and the expanded body says so.
@@ -463,9 +465,12 @@ test('the underbar arrives with the document without expanding the strip, and it
     await expect(segments(page)).toHaveCount(3);
     const after = { panel: (await page.locator('.planning-panel').boundingBox()).height, stack: (await page.locator('.planning-review-sticky-stack').boundingBox()).height };
     expect(after.panel).toBeCloseTo(before.panel, 0);
-    expect(after.panel).toBeLessThan(64);
     expect(after.stack).toBeCloseTo(before.stack, 0);
-    expect(after.stack).toBeLessThanOrEqual(175);
+    // With the strip arrived, the compact overview keeps the DoD 14 bounds.
+    await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+    const compact = { panel: (await page.locator('.planning-panel').boundingBox()).height, stack: (await page.locator('.planning-review-sticky-stack').boundingBox()).height };
+    expect(compact.panel).toBeLessThan(64);
+    expect(compact.stack).toBeLessThanOrEqual(175);
     expect(server.state.gets).toBe(1);
 });
 
@@ -473,18 +478,21 @@ test('DoD 3 and 9: the table\'s Selected total equals the bar\'s Selected for th
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details with the visible button first.
+    await showCapacityDetails(page);
     await expand(page);
     await expect(segments(page)).toHaveCount(3);
     const footer = await table(page).locator('tfoot td').evaluateAll(tds => tds.map(td => td.textContent.trim()));
-    const compact = await page.locator('.planning-panel-capacity-graph .planning-compact-readout').textContent();
-    const [, barSelected, teamNumber] = /planned stories · ([\d.]+) SP \/ ([\d.]+) SP capacity/.exec(compact);
+    const fillLabel = await page.locator('.planning-panel-capacity-graph .capacity-bar-fill .capacity-bar-fill-label').textContent();
+    const [, barSelected] = /planned stories · ([\d.]+) SP/.exec(fillLabel);
+    const [, teamNumber] = /Capacity\s*([\d.]+)/.exec(await page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label').textContent());
     expect(Number(footer[2])).toBe(Number(barSelected));
     expect(Number(barSelected)).toBe(14);
     // A segment's readout is about the person; the bar's Selected number is in the header-only readout past the last segment.
     await segments(page).nth(0).hover();
     await expect(readout(page)).toContainText('Ann Synthetic');
     await expect(readout(page)).not.toContainText('Selected');
-    // The team number lives on the pinned bar (compact readout, Team Cap marker); in the table only the Totals row's
+    // The team number lives on the pinned bar (Team Cap marker); in the table only the Totals row's
     // Planned capacity carries it, after the people's sum (operator review, #323).
     expect(Number(teamNumber)).toBe(20);
     await page.mouse.move(5, 400);
@@ -600,6 +608,8 @@ test('whole-track hover: any height resolves the segment under the pointer, past
     const server = capacityServer({ rows: underbarRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details with the visible button first.
+    await showCapacityDetails(page);
     await expand(page);
     await expect(segments(page)).toHaveCount(3);
     const fill = page.locator('.planning-panel .capacity-bar-fill');
@@ -648,7 +658,7 @@ test('whole-track hover: any height resolves the segment under the pointer, past
     expect(zIndex).toEqual({ marker: '42', strip: '41' });
     await page.mouse.move(5, 400);
     await page.mouse.move(markerX, geometry.track.top + 3);
-    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Team capacity');
+    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Estimated total team capacity');
     await expect(readout(page)).toHaveCount(0);
     // A segment's own pixels stay topmost under the strip (no fill above them).
     const topmost = await page.evaluate(() => [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => {
@@ -659,23 +669,27 @@ test('whole-track hover: any height resolves the segment under the pointer, past
 });
 
 const overflowMark = page => underbar(page).locator('[data-assignee-overflow], .planning-assignee-overflow');
-// The details toggle lives in the Planning options popover (#331); the overview starts compact.
+// The overview starts compact and hides the graphs; Show capacity details is a direct overview button (2026-11-06).
 async function showCapacityDetails(page) {
     const show = page.getByRole('button', { name: 'Show capacity details', exact: true });
-    if (!await show.isVisible()) await page.getByRole('button', { name: 'Planning options', exact: true }).click();
-    if (await show.count()) await show.click(); else await page.keyboard.press('Escape');
+    // Planning List has no details toggle: its details are always shown.
+    if (await show.count()) { await show.click(); await expect(page.getByRole('button', { name: 'Hide capacity details', exact: true })).toBeVisible(); }
 }
 
 test('people Capacity above Team Cap widens the shared axis: the strip is not clipped, no overflow mark, and the Team Cap marker stays on the axis, expanded and compact', async ({ page }) => {
     const server = capacityServer({ rows: bigCapacityRows });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    // Compact hides the graphs (2026-11-06); the details show them.
+    await expect(page.locator('#planning-panel-details')).toBeHidden();
+    await showCapacityDetails(page);
     await expand(page);
     // Capacity 12 + 10 + Unassigned 4 = 26 against Team Cap 20, Selected 14: the axis is 26 x 1.15 = 29.9 (slice 9: 23,
     // the strip ending with the fill at 14/23), so the strip ends at 26/29.9, past the Team Cap at 20/29.9.
     await expect(segments(page)).toHaveCount(3);
     await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(0);
-    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 planned stories · 14.0 SP / 20.0 SP capacity');
+    await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-fill .capacity-bar-fill-label')).toHaveText('4 planned stories · 14.0 SP');
+    await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Capacity\s*20\.0 SP/);
     const measure = () => page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
         const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
@@ -686,8 +700,8 @@ test('people Capacity above Team Cap widens the shared axis: the strip is not cl
             ratio: (list[list.length - 1].right - track.left) / track.width, capRatio: (cap.left + cap.width / 2 - track.left) / track.width,
             widths: list.map(rect => rect.width / track.width), track: { top: track.top } };
     });
-    for (const mode of ['compact', 'expanded']) {
-        if (mode === 'expanded') { await showCapacityDetails(page); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
+    for (const mode of ['expanded']) {
+        await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible();
         await expect(page.locator('.planning-panel [data-assignee-overflow], .planning-panel .planning-assignee-overflow'), mode).toHaveCount(0);
         await expect(page.locator('.planning-panel').getByText(/SP over/), mode).toHaveCount(0);
         const m = await measure();
@@ -715,11 +729,14 @@ test('over capacity: the strip spans the clipped fill and the bar\'s own over-ca
     // axis 18 x 1.15 = 20.7 (slice 9: it ended with the zone at 14), so it runs past the zone's end (14/20.7) to 18/20.7.
     await page.route('**/api/capacity?*', route => json(route, { enabled: true, mutationEnabled: false, sprint: new URL(route.request().url()).searchParams.get('sprint'), capacities: { 'Alpha Team': 10 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-101', capacity: 10 }] }));
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details with the visible button first.
+    await showCapacityDetails(page);
     await expand(page);
     await expect(segments(page)).toHaveCount(3);
     await expect(page.locator('.planning-panel .capacity-bar-variance-zone.visible')).toHaveCount(1);
     await expect(overflowMark(page)).toHaveCount(0);
-    await expect(page.locator('.planning-panel-capacity-graph .planning-compact-readout')).toHaveText('4 planned stories · 14.0 SP / 10.0 SP capacity');
+    await expect(page.locator('.planning-panel-capacity-graph .capacity-bar-fill .capacity-bar-fill-label')).toHaveText('4 planned stories · 14.0 SP');
+    await expect(page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-label')).toHaveText(/Capacity\s*10\.0 SP/);
     const ends = await page.evaluate(() => {
         const list = [...document.querySelectorAll('[data-assignee-underbar] .stacked-bar-segment')].map(node => node.getBoundingClientRect());
         const track = document.querySelector('.planning-panel-capacity-graph .capacity-bar-track').getBoundingClientRect();
@@ -753,7 +770,9 @@ for (const mode of ['compact', 'expanded']) test(`readouts stay inside the viewp
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
     await expand(page);
-    if (mode === 'expanded') await showCapacityDetails(page);
+    // The overview starts compact with the graphs hidden; both modes open the details with the visible button.
+    if (mode === 'compact') await expect(page.locator('#planning-panel-details')).toBeHidden();
+    await showCapacityDetails(page);
     await expect(segments(page)).toHaveCount(3);
     for (const scrolled of [false, true]) {
         if (scrolled) {
@@ -867,6 +886,8 @@ test('where the strip has no segment the team-cap marker stays hoverable down to
     const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '2', vacations: null, notes: null, removed: false }] });
     await install(page, { server, capacityProject: 'CAP' });
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details with the visible button first.
+    await showCapacityDetails(page);
     await expand(page);
     await expect(underbar(page)).toHaveCount(1);
     const gap = await page.evaluate(() => {
@@ -883,7 +904,7 @@ test('where the strip has no segment the team-cap marker stays hoverable down to
     const marker = page.locator('.planning-panel .capacity-bar-marker.teamcap');
     const box = await marker.boundingBox();
     await page.mouse.move(gap.x, box.y + box.height - 2);
-    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Team capacity');
+    await expect.poll(() => marker.evaluate(shownTooltip)).toContain('Estimated total team capacity');
     expect(box.height).toBeGreaterThan(5);
 });
 
@@ -1016,16 +1037,19 @@ test('a failed background save is retained: returning to the Sprint shows Not sa
     expect(server.state.rows[0].capacity).toBe('9');
 });
 
-test('a muted line says when selected Stories of the Team are hidden by filters', async ({ page }) => {
+// Shared plan (#331): Team totals count every planned Story of the complete projection; filters only partition shown and
+// hidden work. The overview summary says how many planned Stories the filters hide; Estimated effort still counts them,
+// so the strip shows no "not counted" line.
+test('planned Stories hidden by filters stay counted in Estimated effort and the overview summary says how many are hidden', async ({ page }) => {
     const server = capacityServer();
     await install(page, { server });
     await openPlanning(page);
     await expand(page);
-    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveCount(0);
+    await expect(footerSelected(page)).toHaveText(/^14/);
     await page.locator('.search-input:visible').fill('PLAN-3');
-    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveText('3 selected Stories of this Team are hidden by filters and not counted in Estimated effort.');
-    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveClass(/planning-review-guidance/);
-    await expect(footerSelected(page)).toHaveText(/^5/);
+    await expect(page.locator('.planning-actions > .planning-stats')).toContainText('3 planned stories hidden by filters');
+    await expect(strip(page).locator('[data-assignee-filter-hidden]')).toHaveCount(0);
+    await expect(footerSelected(page)).toHaveText(/^14/);
 });
 
 test('settled screenshots: gray inherited values, the Unassigned row and the Removed strip', async ({ page }) => {
@@ -1285,6 +1309,8 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     // The next Sprint has no document of its own: the number is inherited (gray) and still drives the bar.
     await page.mouse.move(5, 600);
     await switchSprint(page, futureSprintName);
+    // Select All made this Sprint's plan dirty: the shared plan (#331) asks before leaving the scope; discard the inclusion change.
+    await page.getByRole('dialog').getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'inherited');
     await expect(teamCap(page)).toHaveText(/Capacity\s*14\.0/);
     await expect(page.locator('.team-capacity-read-status').filter({ hasText: 'have not been created yet for this future sprint' })).toContainText('Showing Team capacity (not in Jira) meanwhile.');
@@ -1488,8 +1514,11 @@ test('the late arrival of the amber bar from the stored number keeps the pinned 
         await expect(capacityTrack(page)).toHaveCount(0);
         const before = await pinnedHeights(page);
         release();
-        await expect(capacityTrack(page)).toBeVisible();
+        // The compact overview hides the graphs: the bar arrives in the details without changing the compact heights.
+        await expect(capacityTrack(page)).toHaveCount(1);
         const after = await pinnedHeights(page);
+        await showCapacityDetails(page);
+        await expect(capacityTrack(page)).toBeVisible();
         for (const [label, heights] of [['before', before], ['after', after]]) {
             expect(heights.panel, `${label} ${viewport.width}`).toBeLessThan(64);
             expect(heights.stack, `${label} ${viewport.width}`).toBeLessThanOrEqual(175);
@@ -2344,7 +2373,9 @@ for (const mode of ['compact', 'expanded']) test(`person segments draw solid eff
     await install(page, { server, capacityProject: 'CAP', issues: layerStories });
     await openPlanning(page);
     await expand(page);
-    if (mode === 'expanded') { await showCapacityDetails(page); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible(); }
+    // The overview starts compact with the graphs hidden; both modes open the details with the visible button.
+    if (mode === 'compact') await expect(page.locator('#planning-panel-details')).toBeHidden();
+    await showCapacityDetails(page); await page.evaluate(() => document.activeElement?.blur()); await expect(page.locator('.planning-panel .capacity-bar-marker-label').first()).toBeVisible();
     await expect(segments(page)).toHaveCount(6);
     const g = await layerGeometry(page);
     const by = Object.fromEntries(g.segments.map(segment => [segment.name, segment]));
@@ -2425,6 +2456,9 @@ for (const [width, height] of [[1440, 900], [1280, 720]]) test(`two-level segmen
     expect(panel.height).toBeLessThan(64);
     expect(panel.height).toBeCloseTo(withoutBar, 0);
     expect((await page.locator('.planning-review-sticky-stack').boundingBox()).height).toBeLessThanOrEqual(175);
+    // The compact overview hides the graphs (2026-11-06): the strip and the marker are checked in the details.
+    await showCapacityDetails(page);
+    await page.evaluate(() => document.activeElement?.blur());
     expect((await underbar(page).locator('.stacked-bar-track').boundingBox()).height).toBe(5);
     // The marker still wins over the strip at its x, and the longest readout (6 lines, first segment at the left edge) fits.
     const markerLine = await page.locator('.planning-panel .capacity-bar-marker.teamcap .capacity-bar-marker-line').boundingBox();
@@ -2448,6 +2482,8 @@ test('zoomed settled screenshots of the two-level segments: over, effort only, u
     const server = capacityServer({ rows: layerRows });
     await install(page, { server, capacityProject: 'CAP', issues: layerStories });
     await openPlanning(page);
+    // The compact overview hides the graphs (2026-11-06): open the details with the visible button first.
+    await showCapacityDetails(page);
     await expect(segments(page)).toHaveCount(6);
     await page.mouse.move(5, 400);
     const track = await page.locator('.planning-panel-capacity-graph .capacity-bar-track').boundingBox();

@@ -594,6 +594,12 @@ Each item is done only with its named evidence recorded in Execution evidence (c
 
   The D3 set is the Team-selector set and never exceeds today's displayed set (at most 12 under G1), so before and after are identical for the G1 counts: 272 bytes, one search, below the 6,000-byte limit. The 500-Team figure exceeds 6,000 bytes and costs 25 searches; informational only.
 
+- **Task U: Planning overview controls (2026-11-09, operator decision: one row, inline summary).** The Planning options popover, the List toggle and the summary readout are gone. The compact row is Select All, Clear Selection, Undo, Include by status ▾, an icon-only Open in Jira, the plain summary in the flexible gap (per-part ellipsis) and Show/Hide capacity details right-aligned. Include by status shows one line of `<group> · included/total` toggles. Capacity errors show while collapsed. Compact height stays 46.875 px at 1440x900 and 1280x720 (the same as before), the docked header stays within 175 px, and the 390 px panel stays under 130 px. Commands (Node 20, after `npm run build`):
+  - `npx playwright test tests/ui/planning_review_integration.spec.js -g "Planning overview row|Catch Up List keeps|Include by status: one line|capacity read error stays" --browser=chromium --workers=4`: RED `4 failed, 1 passed`, GREEN `5 passed`.
+  - Broad Chromium (`tests/ui/planning_*.spec.js`, the touched specs and `codebase_structure_smoke`, `--workers=4`): before `92 failed, 6 skipped, 4 did not run, 461 passed`; after `64 failed, 6 skipped, 4 did not run, 493 passed`, with no new failure by title (the 3 project-split-bar failures it found were fixed and pass on rerun). The 14 capacity-spec baseline failures were stale tests and are fixed.
+  - `node --test tests/test_*.js`: `# pass 3592`, `# fail 0`. Isolated runner `tests.test_codebase_structure_budgets tests.test_agents_md_learnings`: `Ran 21 tests`, `OK`. `scripts/extraction_lint/run.sh`: one violation in `frontend/src/settings/WorkConfigurationsEditor.jsx`, which this task did not touch (pre-existing).
+  - Captures: `tmp/planning-323-every-team/overview-fix/{before,after}/`.
+
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.
 - **D2:** zero-effort Teams count in totals and the project split; "Capacity:" availability is judged only over Teams with effort or a capacity value.

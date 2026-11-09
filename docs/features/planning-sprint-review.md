@@ -1,19 +1,31 @@
 # Planning Sprint review
 
-Planning defaults to Table when no valid layout preference is saved. An explicit
-List choice remains remembered while Table detail acceptance is pending. The layout
-toggle remains available in Planning options during this transition.
+Planning defaults to Table when no valid layout preference is saved. Planning has
+no List toggle: an explicit List choice saved earlier (or carried by a link) still
+opens List until List is retired, but nothing in Planning switches to it.
 The layout is a private browser presentation preference. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
-including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row with Select All, Clear Selection, Undo, Planning options and the
-plan/capacity summary. Hiding capacity details keeps these controls and counts
-visible. Planning options contains Show/Hide capacity details, Open planned stories
-in Jira and Include by status. Each status group has explicit Include and Remove
-actions. Expanding capacity details reveals the existing graphs and Team capacity
-content without changing inclusion or fetching another dataset. Capacity errors
-remain visible when details are hidden. Only the spreadsheet region widens; extra
-columns scroll inside it.
+including multiple Teams, starts with the sticky Planning overview compact: one
+desktop row with Select All, Clear Selection, Undo, Include by status ▾, an icon-only
+Open in Jira button (accessible name "Open planned stories in Jira"), the plain
+summary in the flexible gap (Planned stories, Planned SP, missing estimates when any,
+Capacity: X SP or unavailable, and planned stories hidden by filters when any) and
+Show capacity details right-aligned. The summary and any state note stay on that one
+line and ellipsize inside their own boxes when the gap is too narrow, so the compact
+height never changes; at narrow widths the row wraps. The summary has no hover or
+focus readout; the breakdown lives in the capacity details. Open in Jira opens the
+planned stories matching the current Team and filters and is disabled when none match. Include by status opens a popover with one line of status
+toggles (Accepted + In Progress, To Do / Pending, Postponed, Awaiting validation),
+each labelled `<group> · <included>/<total>` over the stories matching the current
+Team and filters. A toggle is pressed when every matching story of its group is in
+the plan; clicking a pressed toggle removes them all, clicking any other includes the
+rest. A group with no matching story is disabled. The popover stays open so several
+groups can be toggled, and closes on an outside click or Escape. Hiding capacity
+details keeps the controls and counts visible; Show capacity details reveals the
+existing graphs and Team capacity content without changing inclusion or fetching
+another dataset. Capacity errors ("Capacity unavailable — show capacity details to
+retry") remain visible while details are hidden. Only the spreadsheet region widens;
+extra columns scroll inside it.
 Summary titles and Teams in scope use bounded single lines with ellipsis in both
 read-only and editable profiles. Hover or keyboard focus reveals full text using
 the shared in-app readout above table/sticky layers. Clicking an editable title opens a wrapping editor inside its
@@ -123,7 +135,7 @@ view-controls slot, followed at the right end by Discard changes and Save plan, 
 the review has local changes (Discard changes asks for an inline confirmation, using the Filters
 button style; Save plan is the row's single filled button); a muted Loading… note shows there
 while the review loads. There is
-no separate table toolbar: Planning options stays with the primary inclusion controls.
+no separate table toolbar: Include by status and Open in Jira stay with the primary inclusion controls.
 Save plan commits pending inclusion across Teams together with app-owned review
 changes; Jira edits and capacity saves remain independent. Discard changes reads
 the latest confirmed document. The app-header Refresh also reloads the shared

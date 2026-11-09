@@ -6123,18 +6123,16 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
                 <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
-                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — open panel to retry' : capacityReadError ? 'Capacity unavailable — open panel to retry' : ''} table={planningLayout === 'table'}
+                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''} table={planningLayout === 'table'}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
-                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <EpicHeaderValueReadout alwaysOn value={`Planned stories: ${selectedCount}. Planned SP: ${selectedSP.toFixed(1)}. Shown: ${planningSelectionSummary.shownCount} stories, ${planningSelectionSummary.shownSP.toFixed(1)} SP. Hidden: ${planningSelectionSummary.hiddenCount} stories, ${planningSelectionSummary.hiddenSP.toFixed(1)} SP. Capacity-counted effort: ${sumPlanningStoryPoints(selectedPlanningTasksList).toFixed(1)} SP, excluding configured activities. ${capacityDataStale ? 'Capacity is stale.' : capacityReadError ? 'Capacity is unavailable.' : ''} ${selectedTeamEntries.map(entry => `${entry.name}: ${entry.hasCapacityValue ? entry.capacitySource === 'planned' ? 'stored team capacity' : 'Jira capacity' : 'capacity missing'}`).join('; ')}. Including a story changes this plan's capacity estimate. It does not change its Jira Sprint or status.`}>
-                            {({ discoveryProps }) => <span {...discoveryProps} tabIndex={0} className="planning-stats compact">
-                                {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
-                                <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
-                                {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
-                                <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
-                                {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
-                            </span>}
-                        </EpicHeaderValueReadout>}
+                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <span className="planning-stats compact">
+                            {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
+                            <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
+                            {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
+                            <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
+                            {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
+                        </span>}
                         notice={<span className="planning-review-state-note" role="status">
                             {pendingPlanningAuthResumeRef.current ? 'Restoring plan…' : !planningSourceReady || !planningReview.planReady ? planningReview.error || error ? <>Plan could not be loaded. <button type="button" className="planning-action-button" onClick={() => { if (!planningSourceReady) void retryEngLoad(); else void planningReview.refresh(); }}>Retry</button></> : 'Loading plan…'
                                 : planningReview.dirty ? ''
@@ -6155,7 +6153,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             ].map(([label, statuses]) => {
                                 const allowed = new Set(statuses.map(normalizeStatus));
                                 const matching = matchingPlanningTasks.filter(task => allowed.has(normalizeStatus(task.fields?.status?.name)));
-                                return { label, statuses, canInclude: matching.some(task => !selectedTasks[task.key]), canRemove: matching.some(task => selectedTasks[task.key]) };
+                                return { label, statuses, included: matching.filter(task => selectedTasks[task.key]).length, total: matching.length };
                             })}
                             onIncludeStatus={includePlanningTasksByStatus} onRemoveStatus={removePlanningTasksByStatus}
                             onSelectAllVisible={selectAllVisiblePlanningTasks}
@@ -6163,8 +6161,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             onUndoPlanningSelection={undoPlanningSelectionChange}
                             onClearSelected={clearSelectedTasks}
                             onOpenSelectedInJira={openSelectedInJira}
-                            planningLayout={planningLayout}
-                            onTogglePlanningLayout={() => { const next = planningLayout === 'table' ? 'list' : 'table'; setPlanningLayout(next); trackPlanningReviewAction(`layout_${next}`); }}
                             statusTransitionError={statusTransitions.transitionError}
                             statusTransitionErrorCode={statusTransitions.transitionErrorCode}
                             statusTransitionResult={statusTransitions.transitionResult}

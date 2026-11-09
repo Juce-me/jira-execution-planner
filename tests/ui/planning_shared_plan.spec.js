@@ -51,8 +51,6 @@ test.describe('real shared Planning persistence', () => {
         await page.goto(server.baseUrl);
         await selectSprint(page, sprint);
         await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning', exact: true }).check();
-        const tableToggle = page.getByRole('button', { name: 'Show Planning table', exact: true });
-        if (await tableToggle.count()) await tableToggle.click();
         await expect(page.locator('.planning-review-table')).toBeVisible();
         await page.getByRole('radio', { name: 'Stories', exact: true }).check();
         await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });

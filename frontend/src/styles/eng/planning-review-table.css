@@ -71,6 +71,9 @@
 .planning-review-popover:focus { outline: none; }
 /* A menu without a toggle row has no checkbox gutter, so its actions start at the popover's left edge. */
 .planning-review-popover .pop-opt-plain { grid-template-columns: minmax(0, 1fr); }
+/* Include by status: one line of planning-action-button toggles, wrapping only when the viewport is narrower than the line. */
+.planning-review-popover:has(> .planning-actions) { width: max-content; }
+.planning-review-popover > .planning-actions { flex-wrap: wrap; margin: 0; }
 .planning-review-column-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.25rem; }
 .planning-review-column-action { color: var(--text-secondary); background: transparent; border: 1px solid transparent; border-radius: 6px; letter-spacing: normal; cursor: pointer; transition: none; }
 .planning-review-column-action svg { width: 14px; height: 14px; }
@@ -142,11 +145,13 @@
 .planning-panel-visibility { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 6px; }
 .planning-panel [hidden] { display: none !important; }
 .planning-panel.open.planning-panel-compact { display: flex; align-items: center; gap: 8px; padding: 8px; }
-.planning-panel-compact > .planning-actions { flex: 0 0 auto; margin: 0; }
-.planning-panel-compact > .planning-stats { flex: 1 1 auto; min-width: 0; }
-.planning-panel-compact > .planning-stats > span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.planning-panel-compact > .planning-review-state-note { flex: 0 1 auto; min-width: 0; }
-.planning-panel-compact > .planning-review-state-note:empty { display: none; }
+.planning-panel-compact > .planning-actions { flex: 1 1 auto; min-width: 0; margin: 0; }
+/* The plain summary and the state note sit in the action row's flexible gap, before the right-aligned details button:
+   the summary takes the free width (basis 0, so it never forces a wrap) and ellipsizes each part inside its own box. */
+.planning-actions > .planning-stats { flex: 1 1 0; min-width: 0; flex-wrap: nowrap; overflow: hidden; }
+.planning-actions > .planning-stats > span,
+.planning-actions > .planning-review-state-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.planning-actions > .planning-review-state-note:empty { display: none; }
 .planning-panel-compact .planning-panel-visibility { order: 2; flex: 0 0 auto; margin: 0; }
 .planning-panel-compact .planning-panel-graphs { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: 12px; flex: 1; min-width: 0; }
 .planning-panel-compact .planning-panel-capacity-graph, .planning-panel-compact .planning-panel-project-graph { min-width: 0; }
@@ -162,6 +167,8 @@
     .planning-panel-compact > .planning-actions { column-gap: 0.25rem; }
     .planning-panel-compact > .planning-actions > .planning-action-button:not(.planning-icon-button),
     .planning-panel-compact > .planning-actions > .uncheck-button { padding-inline: 0.55rem; }
+    /* Narrow: the state note shares the summary's line instead of taking a line of its own. */
+    .planning-panel-compact > .planning-actions > .planning-review-state-note { flex: 1 1 0; }
     .planning-panel-compact .planning-panel-graphs { flex-basis: 100%; grid-template-columns: minmax(0, 1fr); gap: 8px; }
     .planning-panel-compact .planning-panel-visibility { margin-left: auto; }
 }

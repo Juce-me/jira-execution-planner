@@ -143,7 +143,7 @@ test('mounted Catch Up passive alert row retains its resting border and surface'
 
 // A saved synthetic layout exposes the existing optional Capacity column without
 // granting settings rights or changing the mounted control's disabled attribute.
-test('read-only Planning Table capacity and empty Planning List Clear Selected have no hover delta',async({page},testInfo)=>{
+test('read-only Planning Table capacity, overview row and status toggles have no hover delta',async({page},testInfo)=>{
     testInfo.setTimeout(60000);
     await openSurface(page,'planning-table',{canEdit:false,canSave:false,reviewLayouts:{epic:{hidden:[]}}});
     const capacity=page.locator('.planning-review-capacity .epic-stat-toggle').first();
@@ -158,13 +158,18 @@ test('read-only Planning Table capacity and empty Planning List Clear Selected h
     const columnMenu=page.getByRole('button',{name:'Key column options',exact:true});
     await expect(columnMenu).toBeDisabled();
     await hoverEvidence(page,columnMenu,testInfo,'planning-table-disabled-column-menu',{disabled:true,restTarget:page.getByRole('button',{name:'Key',exact:true})});
-    await page.getByRole('button',{name:'Show Planning list',exact:true}).click();
-    const clear=page.getByRole('button',{name:'Clear Selected',exact:true});
-    await expect(clear).toBeVisible(); await expect(clear).toBeDisabled();
-    await hoverEvidence(page,clear,testInfo,'planning-list-disabled-clear',{disabled:true});
-    for(const name of ['Undo','Postponed','Awaiting Val.']){
-        const action=page.getByRole('button',{name,exact:true});await expect(action).toBeDisabled();
-        await hoverEvidence(page,action,testInfo,`planning-list-disabled-${name}`,{disabled:true});
+    // The overview row (2026-11-06): without a saving profile the inclusion controls and status toggles are disabled.
+    const panel=page.locator('.planning-panel');
+    for(const name of ['Clear Selection','Undo']){
+        const action=panel.getByRole('button',{name,exact:true});await expect(action).toBeDisabled();
+        await hoverEvidence(page,action,testInfo,`planning-table-disabled-${name}`,{disabled:true});
+    }
+    await panel.getByRole('button',{name:'Include by status',exact:true}).click();
+    const toggles=page.getByRole('dialog',{name:'Include by status',exact:true}).locator('button.planning-action-button');
+    await expect(toggles).toHaveCount(4);
+    for(const [index,toggle] of (await toggles.all()).entries()){
+        await expect(toggle).toBeDisabled();
+        await hoverEvidence(page,toggle,testInfo,`planning-table-disabled-status-${index}`,{disabled:true});
     }
 });
 
@@ -479,9 +484,14 @@ test.describe('touch issue actions',()=>{
 for(const mode of ['planning-list','planning-table']) test(`${mode} Planning ownership controls retain their kinds and geometry`,async({page},testInfo)=>{
     testInfo.setTimeout(120000);
     await openSurface(page,mode,{reviewLayouts:{epic:{hidden:[]}},excludedCapacityEpics:['EPIC-3']});
-    const layout=page.locator('.planning-layout-toggle:visible').first();
-    await hoverEvidence(page,layout,testInfo,`${mode}-layout`,mode==='planning-table'?{pill:true,selected:true,iconOnly:true}:{foundation:true});
-    expect(await layout.evaluate(node=>getComputedStyle(node).backgroundImage)).toBe('none');
+    // The overview row replaces the Planning options menu and the List toggle (2026-11-06): framed direct buttons.
+    const rowControls=['Include by status',...(mode==='planning-table'?['Show capacity details']:[])];
+    for(const name of rowControls){
+        const control=page.locator('.planning-panel').getByRole('button',{name,exact:true});
+        await hoverEvidence(page,control,testInfo,`${mode}-${name}`,{foundation:true});
+        expect(await control.evaluate(node=>getComputedStyle(node).backgroundImage)).toBe('none');
+    }
+    await expect(page.locator('.planning-layout-toggle')).toHaveCount(0);
     if(mode==='planning-list') {
         const jira=page.getByRole('button',{name:'Open selected stories in Jira',exact:true});
         await hoverEvidence(page,jira,testInfo,'planning-list-disabled-jira',{disabled:true});
@@ -541,10 +551,12 @@ for(const mode of ['planning-list','planning-table']) test(`${mode} Planning own
 
 test('Planning capacity rail icons and inline fields retain reveal and edit geometry',async({page},testInfo)=>{
     testInfo.setTimeout(90000);
-    await openSurface(page,'planning-list',{beforeNavigate:ctx=>{
+    // Planning has no List toggle (2026-11-06): open Table and its capacity details directly.
+    await openSurface(page,'planning-table',{beforeNavigate:ctx=>{
         ctx.respond('/api/config',({json})=>json({jiraUrl:'https://jira.example',capacityProject:'CAP',authMode:'atlassian_oauth',projectsConfigured:true,userCanEditSettings:true,environmentConfigExists:true}));
         ctx.respond('/api/capacity',({json})=>json({enabled:true,mutationEnabled:true,sprint:'2026Q2 Sprint 42',capacities:{'Alpha Team':5.5,'Beta Team':3},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:5.5},{teamName:'Beta Team',issueKey:'CAP-102',capacity:3}]}));
     }});
+    await page.locator('.planning-panel').getByRole('button',{name:'Show capacity details',exact:true}).click();
     const card=page.locator('.planning-team-capacity-cards .team-stat-card').filter({has:page.locator('.team-stat-label',{hasText:'Alpha Team'})});
     await expect(card).toBeVisible();await card.hover();
     const pencil=page.getByRole('button',{name:'Edit Alpha Team capacity',exact:true});
@@ -560,7 +572,6 @@ test('Planning capacity rail icons and inline fields retain reveal and edit geom
     await hoverEvidence(page,page.getByRole('button',{name:'Cancel Alpha Team capacity edit',exact:true}),testInfo,'planning-capacity-cancel',{foundation:true});
     await page.getByRole('button',{name:'Cancel Alpha Team capacity edit',exact:true}).click();
     await page.screenshot({path:path.join(evidenceDir(testInfo),'planning-capacity-rail.png'),animations:'disabled'});
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const person=page.locator('input.issue-person-editor-trigger').first();
     await page.addStyleTag({content:'html {scroll-behavior:auto!important;} * {transition:none!important;}'});

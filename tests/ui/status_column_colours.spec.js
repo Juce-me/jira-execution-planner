@@ -28,9 +28,14 @@ async function openPlanningList(page, options = {}) {
     return fixture;
 }
 
+// Planning has no List toggle (2026-11-06): the Table layout comes from the saved preference.
 async function openPlanningTable(page, options = {}) {
-    const fixture = await openPlanningList(page, options);
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
+    const fixture = await installStatusColourFixture(page, {
+        ...options, prefs: { selectedSprint: futureSprintId, sprintName: futureSprintName, planningLayout: 'table' },
+    });
+    await page.goto(appBaseUrl);
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await expect(page.locator('table.planning-review-table tbody tr').first()).toBeVisible();
     await waitForVisualSettled(page);

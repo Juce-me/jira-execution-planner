@@ -324,14 +324,12 @@ test('logical navigation emits one page_view occurrence for each accepted view c
     }
     await page.getByRole('radio', { name: 'Planning', exact: true }).first().click();
     await expect.poll(async () => (await views()).at(-1).page_name).toBe('eng/planning/table');
-    const count = (await views()).length;
-    await page.getByRole('button', { name: 'Show Planning list', exact: true }).click();
-    await expect.poll(async () => (await views()).at(-1).page_name).toBe('eng/planning/list');
-    expect((await views()).length).toBe(count + 1);
+    // Planning has no List toggle (2026-11-06), so no layout change can emit another page view.
+    await expect(page.getByRole('button', { name: /Show Planning (list|table)/ })).toHaveCount(0);
     for (const entry of await views()) {
         expect(entry.page_path).toBe(`/${entry.page_name}`);
         expect(entry.page_location).toBe(`${new URL(appBaseUrl).origin}/${entry.page_name}`);
         expect(entry.page_title).toBeTruthy();
     }
-    expect((await views()).at(-1).page_title).toBe('ENG / Planning / List');
+    expect((await views()).at(-1).page_title).toBe('ENG / Planning / Table');
 });

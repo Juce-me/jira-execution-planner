@@ -2,6 +2,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -136,7 +137,6 @@ async function installPlanningFixture(page, {
     };
 
     await installDashboardShell(page);
-    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({planningLayout: 'list'})));
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({
         status: 200,
         contentType: 'application/javascript',
@@ -188,7 +188,6 @@ async function installPlanningFixture(page, {
                         sprintName: activeSprintName,
                         activeGroupId: 'group-alpha',
                         showPlanning: false,
-                planningLayout: 'list',
                         showScenario: false,
                     },
                 },
@@ -354,7 +353,6 @@ async function seedPlanningAuthResume(page, {
                 activeGroupId: 'group-alpha',
                 selectedSprint: sprintId,
                 showPlanning: false,
-                planningLayout: 'list',
             }));
         }
         installPlanningPersistenceProbe();
@@ -365,7 +363,8 @@ async function openFuturePlanning(page) {
     await selectSprint(page, futureSprintName);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC' })).toBeVisible();
+    // Planning is the Table only (#323).
+    await expect(page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'PLAN-EPIC', exact: true }) })).toBeVisible();
 }
 
 async function selectSprint(page, sprintName) {
@@ -1015,26 +1014,6 @@ test('planning story checkbox toggles state without changing card treatment', as
     expect(selected.borderLeftColor).toBe(unselected.borderLeftColor);
 });
 
-test('planning header metadata stays within narrow cards', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 820 });
-    await installPlanningFixture(page);
-    await page.goto(appBaseUrl);
-    await openFuturePlanning(page);
-
-    const layout = await planningCardLayout(page, 'PLAN-1');
-    expect(layout.headerRightInlineMeta).toBe(true);
-    expect(layout.headerMetaChildClasses).toEqual(['task-key-link', 'task-inline-sp', 'task-checkbox']);
-    expect(layout.planningMetaInTaskMeta).toBe(false);
-    expect(layout.taskMetaHasCheckbox).toBe(false);
-    expect(layout.taskMetaHasStoryPoints).toBe(false);
-    expect(layout.checkbox).toBeTruthy();
-    expect(layout.storyPoints).toBeTruthy();
-    expect(layout.keyLink).toBeTruthy();
-    expect(layout.headerMetaWidth).toBeLessThanOrEqual(layout.cardClientWidth);
-    expect(layout.cardScrollWidth - layout.cardClientWidth).toBeLessThanOrEqual(1);
-    expect(layout.documentScrollWidth - layout.documentClientWidth).toBeLessThanOrEqual(1);
-});
-
 test('manual future planning checkbox edits persist until Select All is clicked', async ({ page }) => {
     await installPlanningFixture(page);
     await page.goto(appBaseUrl);
@@ -1108,20 +1087,31 @@ test('select all remains scoped when switching future planning sprints', async (
     });
 });
 
+// Planning is the Table only (#323): the Epic capacity control is the optional Capacity column (hidden by default); its hover
+// treatment is pinned in design_system_hover_eng.spec.js.
 test('planning epic excluded-capacity toggle updates shared group config', async ({ page }, testInfo) => {
     const fixture = await installPlanningFixture(page);
+    // Showing an optional column is a review-editing control: serve a saving-capable shared review.
+    const review = createPlanningReviewMock();
+    const reply = (route, body) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(review.response(route.request(), body)) });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => reply(route, { schemaVersion: 1, schemaRevision: 0, columns: [], layouts: {}, capabilities: { canRead: true, canSave: true } }));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => reply(route, { cells: [], unavailableIssueIds: [] }));
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    const showCapacityColumn = async () => {
+        await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+        await page.getByRole('dialog', { name: 'Add review column', exact: true }).getByRole('button', { name: 'Capacity', exact: true }).click();
+        await page.keyboard.press('Escape');
+    };
+    await showCapacityColumn();
 
-    const epicBlock = page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC' }).first();
-    const included = epicBlock.getByRole('button', { name: /Included/ });
+    const epicRow = page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'PLAN-EPIC', exact: true }) }).first();
+    const included = epicRow.getByRole('button', { name: /Included/ });
     await included.hover();
     await expect(included).toHaveCSS('transform', 'none');
-    await expect(included).toHaveCSS('box-shadow', 'rgb(47, 128, 237) 0px 0px 0px 1px, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px');
-    await expect(included).toHaveCSS('font-size', '10px');
-    await epicBlock.locator('.epic-header').screenshot({ path: testInfo.outputPath('included-hover.png') });
+    await epicRow.screenshot({ path: testInfo.outputPath('included-hover.png') });
     await included.click();
-    await expect(epicBlock.getByRole('button', { name: /Excluded/ })).toBeVisible();
+    await expect(epicRow.getByRole('button', { name: /Excluded/ })).toBeVisible();
 
     const saveCalls = fixture.calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config');
     expect(saveCalls).toHaveLength(1);
@@ -1131,12 +1121,13 @@ test('planning epic excluded-capacity toggle updates shared group config', async
 
     await page.reload();
     await openFuturePlanning(page);
-    await expect(epicBlock.getByRole('button', { name: /Excluded/ })).toBeVisible();
+    await showCapacityColumn();
+    await expect(epicRow.getByRole('button', { name: /Excluded/ })).toBeVisible();
 });
 
 async function seedSearchPrefs(page, searchQuery) {
     await page.addInitScript((value) => {
-        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ planningLayout: 'list', searchQuery: value }));
+        window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ searchQuery: value }));
     }, searchQuery);
 }
 

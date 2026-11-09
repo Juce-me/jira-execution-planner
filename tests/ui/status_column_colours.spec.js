@@ -16,22 +16,10 @@ async function openCatchUp(page, options = {}) {
     return fixture;
 }
 
-async function openPlanningList(page, options = {}) {
-    const fixture = await installStatusColourFixture(page, {
-        ...options, prefs: { selectedSprint: futureSprintId, sprintName: futureSprintName },
-    });
-    await page.goto(appBaseUrl);
-    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
-    await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-list .task-item').first()).toBeVisible();
-    await waitForVisualSettled(page);
-    return fixture;
-}
-
-// Planning has no List toggle (2026-11-06): the Table layout comes from the saved preference.
+// Planning is the Table only (#323).
 async function openPlanningTable(page, options = {}) {
     const fixture = await installStatusColourFixture(page, {
-        ...options, prefs: { selectedSprint: futureSprintId, sprintName: futureSprintName, planningLayout: 'table' },
+        ...options, prefs: { selectedSprint: futureSprintId, sprintName: futureSprintName },
     });
     await page.goto(appBaseUrl);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
@@ -85,12 +73,6 @@ for (const flag of [true, false]) {
         await openCatchUp(page, { flag, authMode: 'atlassian_oauth', userCanEditSettings: false, settingsAdminOnly: true });
         const pills = await collectPills(page, '.task-list');
         expect(pills.length).toBeGreaterThan(0);
-        expectPillColours(pills, { flag });
-    });
-
-    test(`Planning list pills (flag ${label})`, async ({ page }) => {
-        await openPlanningList(page, { flag });
-        const pills = await collectPills(page, '.task-list');
         expectPillColours(pills, { flag });
     });
 

@@ -9,8 +9,6 @@ const cases = [
     ['Catch Up Story', 'catch_up', 'story', 'SYNTH-1'],
     ['Catch Up subtask', 'catch_up', 'subtask', 'SYNTH-1-A'],
     ['Catch Up Epic', 'catch_up', 'epic', 'SYNTH-EPIC'],
-    ['Planning list Story', 'list', 'story', 'SYNTH-1'],
-    ['Planning list Epic', 'list', 'epic', 'SYNTH-EPIC'],
     ['Planning table Story', 'table', 'story', 'SYNTH-1'],
     ['Planning table Epic', 'table', 'epic', 'SYNTH-EPIC'],
     ['Board panel Story', 'board', 'story', 'SYNTH-1'],
@@ -21,7 +19,7 @@ async function fixture(page, surface) {
     const calls = [];
     const statuses = { 'SYNTH-EPIC': 'In Progress', 'SYNTH-1': 'To Do', 'SYNTH-2': 'To Do', 'SYNTH-1-A': 'To Do' };
     await installDashboardShell(page);
-    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), { selectedView: 'eng', selectedSprint: sprint.id, sprintName: sprint.name, activeGroupId: 'synthetic', planningLayout: surface === 'table' ? 'table' : 'list', showBoard: ['board', 'drop'].includes(surface), showPlanning: ['list', 'table'].includes(surface), showAlertsPanel: false });
+    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), { selectedView: 'eng', selectedSprint: sprint.id, sprintName: sprint.name, activeGroupId: 'synthetic', showBoard: ['board', 'drop'].includes(surface), showPlanning: surface === 'table', showAlertsPanel: false });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -62,14 +60,11 @@ for (const [label, surface, kind, key] of cases) {
         await page.emulateMedia({ reducedMotion: 'reduce' });
         const { calls, statuses } = await fixture(page, surface);
         await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
-        if (['list', 'table'].includes(surface)) {
+        if (surface === 'table') {
             await expect(page.locator('.planning-panel.open')).toBeVisible();
-            if (surface === 'list') await page.getByRole('button', { name: 'Select All', exact: true }).click();
-            if (surface === 'table') {
-                await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-                for (const storyKey of ['SYNTH-1', 'SYNTH-2']) await page.getByRole('checkbox', { name: `Select ${storyKey}`, exact: true }).check();
-                if (kind === 'epic') await page.getByRole('radio', { name: 'Epics', exact: true }).click();
-            }
+            await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+            for (const storyKey of ['SYNTH-1', 'SYNTH-2']) await page.getByRole('checkbox', { name: `Select ${storyKey}`, exact: true }).check();
+            if (kind === 'epic') await page.getByRole('radio', { name: 'Epics', exact: true }).click();
         }
         if (surface === 'board') await page.locator('.ecard[data-epic-key="SYNTH-EPIC"]').click();
         if (kind === 'subtask') await page.locator('.task-item[data-task-key="SYNTH-1"] .story-subtasks-toggle').click();

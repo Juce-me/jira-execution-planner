@@ -326,7 +326,6 @@ async function openBoard(page, {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
         selectedView: 'eng',
-        planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -917,59 +916,8 @@ test('initiative-grouped epic keeps the screenshot header on one desktop row', a
     await header.screenshot({ path: path.join(screenshotDir, 'initiative-grouped-epic-header-1080x600.png') });
 });
 
-test('Planning includes its capacity control in the same fitted epic headline', async ({ page }) => {
-    await openBoard(page, {
-        width: 988,
-        height: 600,
-        epicAssigneeName: 'Alexanderson Maximilian Petrovsky-Smith',
-        firstEpicKey: 'SYNTHETIC-123456',
-        firstEpicStatus: 'Ready for Deployment',
-        firstEpicStoryPoints: 9999.9,
-        firstEpicTrack: 'Committed',
-    });
-    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
-    const header = page.locator('.epic-block').first().locator('.epic-header');
-    const toggle = header.locator('.epic-stat-toggle');
-    await expect(toggle).toBeVisible();
-    await expect(toggle).toContainText('Included');
-    await expect(toggle).toBeEnabled();
-    await expect(header.locator('.epic-key')).toHaveText('SYNTHETIC-123456');
-    await expect(header.locator('.epic-story-points')).toHaveText('SP: 9999.9');
-    await expect(header.getByRole('combobox', { name: 'Assignee: Alexanderson Maximilian Petrovsky-Smith' }))
-        .toHaveValue('Alexanderson Maximilian Petrovsky-Smith');
-    const metrics = await header.evaluate(element => {
-        const row = [...element.querySelectorAll('.epic-title-row > *, .epic-meta > *')]
-            .filter(node => getComputedStyle(node).display !== 'none')
-            .map(node => {
-                const box = node.getBoundingClientRect();
-                return { className: node.className, left: box.left, right: box.right, top: box.top, bottom: box.bottom };
-            });
-        return {
-            overflow: element.scrollWidth - element.clientWidth,
-            topSpread: Math.max(...row.map(item => item.top)) - Math.min(...row.map(item => item.top)),
-        };
-    });
-    expect(metrics.overflow).toBeLessThanOrEqual(1);
-    expect(metrics.topSpread).toBeLessThanOrEqual(8);
-    const togglePaint = await paintedBounds(toggle);
-    expect(togglePaint.count).toBeGreaterThan(10);
-    await expect(toggle).toHaveCSS('font-size', '10px');
-    expect(await toggle.evaluate(node => node.getBoundingClientRect().height)).toBeLessThan(24);
-});
-
-test('Planning renders an excluded capacity control disabled by the shared-settings gate', async ({ page }) => {
-    await openBoard(page, {
-        width: 988,
-        height: 600,
-        excludedCapacityEpics: ['PLAT-1'],
-        settingsAdminOnly: true,
-        userCanEditSettings: false,
-    });
-    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
-    const toggle = page.locator('.epic-block').first().locator('.epic-stat-toggle');
-    await expect(toggle).toContainText('Excluded');
-    await expect(toggle).toBeDisabled();
-});
+// Planning List's Epic-header capacity control was retired with List (#323); the Planning Table Capacity column's enabled and
+// settings-gated states are pinned in design_system_hover_eng.spec.js.
 
 test('epic headline keeps missing status absent and missing person current value explicit', async ({ page }) => {
     await openBoard(page, {

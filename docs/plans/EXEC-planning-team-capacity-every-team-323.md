@@ -435,17 +435,17 @@
 - `docs/README_ANALYTICS.md`;
 - tests: share codec/resolver tests, `share-view-query-corpus-example-sanitized.json`, and the specs seeding `planningLayout: 'list'`.
 
-- [ ] **Step 1:** Confirm that #331 Task 7 and E3 are recorded as accepted; otherwise stop.
-- [ ] **Step 2: Write failing tests:**
+- [x] **Step 1:** Confirm that #331 Task 7 and E3 are recorded as accepted; otherwise stop. (G2 opened by operator statement 2026-11-06.)
+- [x] **Step 2: Write failing tests:**
   - a saved `planningLayout: 'list'` opens Table;
   - `'list'` still parses in links;
   - an old List link with Sprint, Team, Story focus and reading anchor opens Table with `rows` derived from the focus kind and keeps the focus;
   - the toggle is gone;
   - Catch Up List and its stored choices are unchanged;
   - sticky heights are unchanged in Catch Up, Planning and Scenario.
-- [ ] **Step 3:** Implement. Migrate the seeding specs to Table, or to the Catch Up List where they test Catch Up.
-- [ ] **Step 4:** Run the share suites and the full Chromium `tests/ui`. Expected: PASS.
-- [ ] **Step 5:** Commit `Retire Planning List in favour of Table (#323, #331)`.
+- [x] **Step 3:** Implement. Migrate the seeding specs to Table, or to the Catch Up List where they test Catch Up.
+- [ ] **Step 4:** Run the share suites and the full Chromium `tests/ui`. Expected: PASS. (Share suites and the affected specs run; the full Chromium run is deferred by the operator to the final gate.)
+- [x] **Step 5:** Commit `Retire Planning List in favour of Table (#323, #331)`.
 
 ### Task 10: Real-server acceptance, documentation and full gates
 
@@ -605,6 +605,11 @@ Each item is done only with its named evidence recorded in Execution evidence (c
   - `tests/ui/eng_*.spec.js` with `design_system_hover_{eng,surfaces}.spec.js` (`--workers=4`): `35 failed, 2 skipped, 849 passed`; every failure is a disabled Select All, an unchecked plan checkbox, renamed Save review / removed Open in Jira copy, or the Synthetic DB/OAuth fixture's PostgreSQL cluster error, none touches a priority readout. `planning_review_integration`, `onboarding_tour`, `dashboard_data_freshness`: `3 failed, 260 passed` (plan checkbox does not toggle).
   - Captures: `tmp/hover-clip-diagnosis/fix/{before,after,after-firefox,after-webkit}/`; Planning probe `tmp/hover-clip-diagnosis/planning-probe/before/`.
   - Review fix round 1: the spec adds a Board card (painted, click opens the panel), a touch tap on it (label pins, panel opens, no prevented pointer/touch/mouse default, drag unchanged, outside tap closes), the editable Planning Table cell (painted, also scrolled), the read-only Table cell (no duplicate readout), and a negative control (a readout forced under `.filterbar-wrap` is reported covered). Menu markers and the read-only Table cell now use `withoutReadout`. `alwaysOn` readouts mount no truncation ResizeObserver or font listener: RED with the gate removed `Expected 0, Received 18` (Catch Up icons) and `3` (Board), GREEN 0. Chromium, headed Firefox and headed WebKit `12 passed` each; with `eng_priority_transitions` and the Board card/panel/drag specs `145 passed, 2 failed` (the two baseline Select All failures); `node --test` `# pass 3592`, `# fail 0`; `tests.test_codebase_structure_budgets` `OK`.
+- **Task 9: Retire Planning List (2026-11-09).** G2 opened by operator statement 2026-11-06 ("planning should not have a list view at all"; List stays in Catch Up), in place of #331 Task 7/E3 acceptance. Planning keeps no layout state: a saved or linked `list` opens Table and no `planningLayout` preference is stored; `usePlanningListConfirmedEdit`, the List summary branch, the overview panel's `table` prop, the freshness List path, the `eng/planning/list` page and the `layout_*` review actions are gone. Links still parse `layout=list`; the resolver opens an old List link on the rows of its focus kind (`story` or `epic`) and keeps the focus. Catch Up List and its stored Sort and Initiative choices are unchanged.
+  - RED: `node --test tests/test_share_view_resolver.js` `# fail 2`; `tests/test_share_view_codec.js` `# fail 1`; `tests/test_analytics_events.js` `# fail 3`; `tests/test_share_view_apply_controller.js` `# fail 2`; `tests/test_dashboard_freshness.js` `# fail 1`; `npx playwright test tests/ui/planning_review_integration.spec.js -g "Planning opens Table|Catch Up List keeps its own controls and stored" --browser=chromium` `2 failed, 1 passed`; `tests/ui/shareable_view_links.spec.js -g "old Planning List link"` `1 failed`.
+  - GREEN: the same unit files `# tests 677`, `# fail 0`; `node --test tests/test_*.js` `# tests 3593`, `# fail 0`; the same UI selections `3 passed` and `1 passed`.
+  - Affected specs (40 files, Chromium, `--workers=4`): after the code change and before migration `145 unexpected` (73 not in the 11e3b564 triage baseline); after migration `52 unexpected`, every one in the triage baseline except a pre-existing focus race in `scenario_draft_history` (it also fails at HEAD) and five fixed and rerun green. Sticky checks for Catch Up, Planning Table and Scenario pass.
+  - Budgets: dashboard.jsx 7490 to 7479 lines (ceiling 7502), `useEffect(` 74 unchanged, `useState(` 111 to 110; `tests.test_codebase_structure_budgets tests.test_agents_md_learnings` `Ran 21 tests`, `OK`.
 
 Operator decisions (2026-11-06): the recommended options were accepted.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.

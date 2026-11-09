@@ -78,7 +78,7 @@ async function installFixture(page, { productIssues, productEpics, readinessEpic
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: sprintId,
         sprintName,
         activeGroupId: 'grp-default',

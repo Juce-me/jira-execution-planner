@@ -24,6 +24,7 @@ export const SHARE_VIEW_BOARD_SCOPES = Object.freeze(['component', 'all_work']);
 export const SHARE_VIEW_BOARD_PROJECT_IDS = Object.freeze(['tech', 'product', 'other']);
 export const SHARE_VIEW_BOARD_ASSIGNEE_IDS = Object.freeze(['unassigned']);
 
+// Planning is the table only (#323): `list` still parses so an old Planning List link opens, as the table (resolver.js).
 export const SHARE_VIEW_PLANNING_LAYOUTS = Object.freeze(['list', 'table']);
 
 // The Planning table's own row modes; the link spells them `epics` and `stories`.
@@ -114,7 +115,7 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
 // Optional ShareViewState keys that apply to each mode. `version`, `mode`, `group` and `sprint`
 // apply to every mode and are always written, so they are not listed. Two narrowings follow the
 // design's per-view columns: Planning `rows` applies to the table and `initiatives` and `sort` to
-// the list; Statistics keys follow SHARE_VIEW_STATS_KEYS_BY_VIEW.
+// the retired list, which the app no longer writes; Statistics keys follow SHARE_VIEW_STATS_KEYS_BY_VIEW.
 export const SHARE_VIEW_KEYS_BY_MODE = Object.freeze({
     'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
     planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus']),

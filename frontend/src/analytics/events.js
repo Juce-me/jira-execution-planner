@@ -130,7 +130,6 @@ const PAGE_TITLES = new Map([
     ['eng/board', 'ENG / Board'],
     ['eng/scenario', 'ENG / Scenario'],
     ['eng/planning/table', 'ENG / Planning / Table'],
-    ['eng/planning/list', 'ENG / Planning / List'],
     ['eng/statistics/teams', 'ENG / Statistics / Teams'],
     ['eng/statistics/priority', 'ENG / Statistics / Priority'],
     ['eng/statistics/burndown', 'ENG / Statistics / Burndown'],

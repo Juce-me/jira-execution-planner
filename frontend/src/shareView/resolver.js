@@ -202,10 +202,14 @@ function focusApplies(candidate, state, mode) {
     if (mode === 'board') return candidate.kind === 'epic';
     if (!FOCUS_KINDS.has(candidate.kind) || (mode !== 'catch-up' && mode !== 'planning')) return false;
     // The Planning table never switches its Epics/Stories rows: the target must be in the link's rows.
-    if (mode === 'planning' && linkValue(state, 'layout') === 'table') {
-        return candidate.kind === (linkValue(state, 'rows') === 'story' ? 'story' : 'epic');
-    }
+    if (mode === 'planning') return candidate.kind === planningRows(state);
     return true;
+}
+
+// Planning is the table only (#323): an old List link (`layout=list`) carries no rows, so it opens the rows of its Epic or Story focus.
+function planningRows(state) {
+    if (linkValue(state, 'layout') === 'list' && FOCUS_KINDS.has(state.focus?.kind)) return state.focus.kind;
+    return linkValue(state, 'rows') === 'story' ? 'story' : 'epic';
 }
 
 // At most one target; alertTeam outranks epic and story. `dropped` is true when the link carried
@@ -246,9 +250,7 @@ export function buildShareViewFieldPlan(state, scope, ctx = {}) {
     } else {
         take('find', 'lanes');
         if (scope.mode === 'planning') {
-            take('layout');
-            if (apply.layout === 'table') take('rows');
-            else take('initiatives', 'sort');
+            apply.rows = planningRows(state);
         } else {
             take('initiatives', 'sort');
             apply.alerts = resolveAlerts(state.alerts);

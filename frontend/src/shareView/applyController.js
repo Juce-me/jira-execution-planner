@@ -115,7 +115,6 @@ function runStageB(o, state, scope) {
     if (has(apply, 'lanes')) { o.setShowProduct(apply.lanes.product); o.setShowTech(apply.lanes.tech); }
     if (has(apply, 'initiatives')) o.setGroupByInitiativeChoice(apply.initiatives);
     if (has(apply, 'sort')) o.setEngEpicSort(apply.sort);
-    if (has(apply, 'layout')) o.setPlanningLayout(apply.layout);
     if (has(apply, 'stats')) o.setStatsView(apply.stats);
     if (apply.range) writeRange(o, apply);
     if (has(apply, 'alerts')) {

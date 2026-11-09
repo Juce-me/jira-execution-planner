@@ -47,7 +47,7 @@ function makeOptions(overrides = {}) {
             selectedTeams: ['all'], engStatusFilter: { hidden: ['Killed'] }, engPriorityFilter: null, engProjectTrackFilter: undefined,
             showProduct: true, showTech: true, groupByInitiativeChoice: null, statsView: 'teams', cohortStartQuarter: '2026Q3', cohortEndQuarter: '2026Q3', showAlertsPanel: true,
         }),
-        searchQuery: 'login', engEpicSort: 'priority', planningLayout: 'table', boardStrictScope: '',
+        searchQuery: 'login', engEpicSort: 'priority', boardStrictScope: '',
         excludedCapacityStartSprintId: '', excludedCapacityEndSprintId: '', alertCounts: {},
         alertFlags: Object.fromEntries(ALERT_KEYS.map(key => [key, [true, () => {}]])),
         trackShareViewAction: () => {}, analyticsReady: false,

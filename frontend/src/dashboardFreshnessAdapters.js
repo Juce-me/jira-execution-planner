@@ -119,12 +119,12 @@ export function createCatchUpFreshnessAdapter(readCurrent, { now = Date.now, boa
             const input = readCurrent();
             const options = { forceRefresh: true, automatic: true, signal: job.signal, shouldApplyResult: () => guard(job, attempt) };
             // These owners hold failed replacement lanes; no nonce re-arms an unrelated effect.
-            if (planning && input.planningLayout === 'table') {
+            if (planning) {
                 await input.planningReview.refresh({ automatic: true, signal: job.signal, shouldApply: () => guard(job, attempt) });
                 if (guard(job, attempt)) await readCurrent().refreshCapacity({ signal: job.signal, shouldApply: () => guard(job, attempt) });
                 return [];
             }
-            if (!planning) await Promise.all([input.loadAlertEpics(options), input.fetchMissingPlanningInfo(input.selectedSprint, options),
+            await Promise.all([input.loadAlertEpics(options), input.fetchMissingPlanningInfo(input.selectedSprint, options),
                 input.loadReadyToCloseProductTasks(options), input.loadReadyToCloseTechTasks(options)]);
             if (!guard(job, attempt)) return;
             if (attempt.anchor && !attempt.deniedEpicKeys?.has(attempt.anchor.epicKey) && /^[A-Z][A-Z0-9_]*-\d+$/i.test(attempt.anchor.epicKey)) {

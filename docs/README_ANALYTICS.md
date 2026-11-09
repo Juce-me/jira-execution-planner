@@ -131,7 +131,7 @@ Since 2026-10-26, dashboard pageviews use the existing `page_name` parameter as 
 | Visible view | `page_name` |
 | --- | --- |
 | Catch Up | `eng/catch_up` |
-| Planning Table / List | `eng/planning/table` / `eng/planning/list` |
+| Planning (Table only since #323) | `eng/planning/table` |
 | Board | `eng/board` |
 | Scenario | `eng/scenario` |
 | Statistics Teams / Priority | `eng/statistics/teams` / `eng/statistics/priority` |
@@ -394,10 +394,12 @@ canonical `planning_action`, `sort_changed`, `issue_field_edit_action`,
 `GA4_ENABLED`; no GTM triggers or GA4 custom dimensions are added.
 
 Review actions use `feature_name=planning_review` and `source_surface=planning`.
-`workflow_action` is an allowlisted string for layout/mode changes, column
-creation/management, save, discard and conflict recovery. Planning has no List
-toggle (2026-11-06), so `layout_table`/`layout_list` are currently not emitted; they
-stay allowlisted until List retirement. The direct overview buttons and the Include
+`workflow_action` is an allowlisted string for row-mode changes, column
+creation/management, save, discard and conflict recovery. Planning List is retired
+(#323): `layout_table`/`layout_list` and the `eng/planning/list` page name are removed
+from the allowlists. Opening a saved or linked List as Table is a silent normalization
+with no event (no user action; the pageview and any `share_view_action` apply result
+already record the visit). The direct overview buttons and the Include
 by status toggles reuse the existing handlers and events (`include_status`,
 `exclude_status`, `panel_expanded`/`panel_collapsed`); no event is added.
 Explicit Show/Hide Planning panel clicks emit `planning_action` with fixed

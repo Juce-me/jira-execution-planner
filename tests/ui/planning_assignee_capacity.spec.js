@@ -672,7 +672,7 @@ const overflowMark = page => underbar(page).locator('[data-assignee-overflow], .
 // The overview starts compact and hides the graphs; Show capacity details is a direct overview button (2026-11-06).
 async function showCapacityDetails(page) {
     const show = page.getByRole('button', { name: 'Show capacity details', exact: true });
-    // Planning List has no details toggle: its details are always shown.
+    // Already expanded (an earlier step showed the details): nothing to do.
     if (await show.count()) { await show.click(); await expect(page.getByRole('button', { name: 'Hide capacity details', exact: true })).toBeVisible(); }
 }
 
@@ -1446,7 +1446,8 @@ test('read-only user: no stored-number pencil, no banner and no mirror', async (
     await expect(plannedPencil(page)).toHaveCount(0);
 });
 
-for (const [label, options] of [['List layout', { prefs: { planningLayout: 'list' } }], ['two Teams', { selectedTeams: ['team-alpha', 'team-beta'] }]]) test(`${label}: the stored number is not available, a stated limitation`, async ({ page }) => {
+// Planning List was retired (#323): a saved List opens the Table, where one Team has the stored number, so only two Teams remain a limitation.
+for (const [label, options] of [['two Teams', { selectedTeams: ['team-alpha', 'team-beta'] }]]) test(`${label}: the stored number is not available, a stated limitation`, async ({ page }) => {
     {
         const server = plannedServer({ docs: { [String(futureSprintId)]: ownDoc({ value: '14', source: 'user' }) } });
         await install(page, { server, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth', ...options });

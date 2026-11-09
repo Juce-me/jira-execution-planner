@@ -78,7 +78,6 @@ import { useEngIssueFieldEdits } from './eng/useEngIssueFieldEdits.js';
 import { applyLocalEpicDetailsFieldUpdate } from './eng/engIssueLocalUpdates.js';
 import { buildMutationScopeKey, createEngIssueEditState, overlaySnapshot, patchEngIssueList, patchEngLoadedState, projectPlanningOriginals, reorderSettledSnapshot, restorePlanningDisplay, sortLaneForSettledKey, stripPendingOverlays } from './eng/engIssueEditState.js';
 import { usePlanningIssueEdits } from './eng/usePlanningIssueEdits.js';
-import { usePlanningListConfirmedEdit } from './eng/usePlanningRowMotion.js';
 import { navigateToAlertStory } from './eng/alertStoryNavigation.js';
 import { STICKY_STACK_SELECTORS, measureStickyBottom, navigateToStoryRequirement } from './eng/alertEpicNavigation.js';
 import { PIN_HEIGHT, alertLandingTop, clearCenteredTarget, pinScopeKey } from './eng/alertPin.js';
@@ -879,7 +878,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const planningSelectionMode = PLANNING_SELECTION_MODE_MANUAL;
             const canUndoPlanningSelection = Boolean(planningReviewState.canUndoInclusion);
             const [showPlanning, setShowPlanning] = useState(savedPrefsRef.current.showPlanning ?? false);
-            const [planningLayout, setPlanningLayout] = useState(savedPrefsRef.current.planningLayout === 'list' ? 'list' : 'table');
             const [planningToolbarHost, setPlanningToolbarHost] = useState(null);
             const [planningPanelExpanded, setPlanningPanelExpanded] = useState(null);
             // Planned Teams Effort is a one-line strip in Planning Table view until the user expands it (List always shows the full panel).
@@ -1075,7 +1073,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 currentDashboardView, trackAppError, trackApiResult, trackEpmAction, trackFilterChanged,
                 trackIssueStatusAction, trackIssuePriorityAction, trackIssueProjectTrackAction, trackIssueFieldEditAction, trackEpicRefreshAction, trackPlanningCapacityAction, trackPlanningSelection, trackScenarioAction, trackSearch, trackSelectContent,
                 trackSettingsAction, trackSortChanged, trackStatsAction, trackProductEvent, trackShareViewAction, analyticsReady,
-            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, serverConnectionError });
+            } = useDashboardAnalytics(React, { authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, serverConnectionError });
             const epmViewPreference = useEpmViewPreference({ BACKEND_URL, savedViewEnabled: epmCapabilities?.viewEnabled, trackSettingsAction });
             const epmViewPreferenceDirty = epmViewPreference.isDirty;
             const {
@@ -3276,7 +3274,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     epmTab,
                     epmSelectedProjectId,
                     epmProjectSort,
-                    engEpicSort, planningLayout, planningTeamsEffortExpanded: teamsEffortExpanded, planningInheritedHintDismissals: inheritedHintDismissals,
+                    engEpicSort, planningTeamsEffortExpanded: teamsEffortExpanded, planningInheritedHintDismissals: inheritedHintDismissals,
                     selectedSprint, sprintName, sprintCatalog: sprintCatalogCacheRef.current,
                     selectedQuarter: quarterIntent.quarter,
                     selectedTeams,
@@ -3336,7 +3334,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 epmTab,
                 epmSelectedProjectId,
                 epmProjectSort,
-                engEpicSort, planningLayout, teamsEffortExpanded, inheritedHintDismissals,
+                engEpicSort, teamsEffortExpanded, inheritedHintDismissals,
                 selectedSprint, sprintName, quarterIntent.quarter,
                 selectedTeams,
                 activeGroupId,
@@ -4435,10 +4433,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 selectedSprintName: selectedSprintInfo?.name || '',
                 selectedSprintState, activeGroupId, selectedTeams, isAllTeamsSelected,
                 showTech, showProduct, searchQuery,
-                statusNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
-                priorityNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
+                statusNeutral: showPlanning ? true : engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
+                priorityNeutral: showPlanning ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
                 admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
-                engEpicSort, groupByInitiativeChoice, readingScopeKey: JSON.stringify([selectedView, showBoard, showStats, showScenario, planningLayout, authResumeStagedRevision, loadEpochRef.current, authResumePrincipalRef.current, connectionRecoveryPrincipalRef.current, sharedConfigRevision, groupsConfig?.configRevision, jiraUrl, engStatusFilter, engPriorityFilter, engProjectTrackFilter]),
+                engEpicSort, groupByInitiativeChoice, readingScopeKey: JSON.stringify([selectedView, showBoard, showStats, showScenario, authResumeStagedRevision, loadEpochRef.current, authResumePrincipalRef.current, connectionRecoveryPrincipalRef.current, sharedConfigRevision, groupsConfig?.configRevision, jiraUrl, engStatusFilter, engPriorityFilter, engProjectTrackFilter]),
                 planningOriginals: showPlanning ? planningOriginals : null,
             });
             const planningReviewRows = React.useMemo(() => [
@@ -4506,8 +4504,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 () => collectJiraExportKeysFromTasks(boardEpicGroupsFiltered.flatMap(group => group.tasks || []), 'stories'),
                 [boardEpicGroupsFiltered]
             );
-            const compactPlanningPanel = showPlanning && planningLayout === 'table' && !planningPanelExpanded;
-            usePlanningListConfirmedEdit({ enabled: showPlanning && planningLayout === 'list', confirmedEdit, ackConfirmed, isHeld });
+            const compactPlanningPanel = showPlanning && !planningPanelExpanded;
             React.useEffect(() => { if (!showPlanning && confirmedEdit) ackConfirmed(confirmedEdit.keys); }, [showPlanning, confirmedEdit, ackConfirmed]); // an edit confirmed after leaving Planning must not blink on the next visit
             const compactStickyTop = compactStickyVisible ? compactHeaderOffset : 0;
             const planningStickyHeight = showPlanning ? planningOffset : 0;
@@ -5496,7 +5493,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     window.removeEventListener('resize', updateOffset);
                     if (ro) ro.disconnect();
                 };
-            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length, planningLayout]);
+            }, [showPlanning, selectedCount, selectedSP, teamCapacityEntries.length, capacityEnabled, totalCapacityAdjusted, selectedTeamEntries.length]);
 
             // Detect when planning panel is sticky (stuck to viewport top)
             useEffect(() => {
@@ -5511,7 +5508,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 check();
                 window.addEventListener('scroll', check, { passive: true });
                 return () => window.removeEventListener('scroll', check);
-            }, [compactHeaderOffset, compactStickyVisible, showPlanning, planningLayout, filterBarHeight]);
+            }, [compactHeaderOffset, compactStickyVisible, showPlanning, filterBarHeight]);
 
             const selectedVisiblePlanningJiraKeys = React.useMemo(() => visibleTasksForList
                 .filter(task => selectedTasks[task.key])
@@ -5619,7 +5616,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 catchUpAlertLoadRef, catchUpAlertScopeKey, alertCohortRef, engSprintSelectorState, engCatchUpFacetModel,
                 restoredInitialEpmViewRef, setSelectedView, setActiveGroupId, commitSprintSelection, persistTeamSelection,
                 setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
-                setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
+                setGroupByInitiativeChoice, setEngEpicSort, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
                 setCohortMode, setCohortClosedStartQuarter, setCohortClosedEndQuarter, setCohortLastN, setCohortProjectFilter, setCohortExcludeAdHoc, setCohortExcludeCapacity, setCohortGroupBy, setCohortStatusToggles, setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
                 setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngBoardFilterSelection, setBoardView,
                 alertFlags: {
@@ -5627,7 +5624,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     backlog: [showBacklogAlert, setShowBacklogAlert], missingTeam: [showMissingTeamAlert, setShowMissingTeamAlert], missingLabels: [showMissingLabelsAlert, setShowMissingLabelsAlert],
                     needsStories: [showNeedsStoriesAlert, setShowNeedsStoriesAlert], waiting: [showWaitingAlert, setShowWaitingAlert], empty: [showEmptyEpicAlert, setShowEmptyEpicAlert], done: [showDoneEpicAlert, setShowDoneEpicAlert],
                 },
-                activeEngMode, buildGroupStateSnapshot, searchQuery, engEpicSort, planningLayout, boardStrictScope,
+                activeEngMode, buildGroupStateSnapshot, searchQuery, engEpicSort, boardStrictScope,
                 excludedCapacityStartSprintId, excludedCapacityEndSprintId, alertCounts, trackShareViewAction, analyticsReady,
             };
             const shareView = useShareViewApply(shareViewOptions);
@@ -5649,7 +5646,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 />
             );
 
-            const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint, planningLayout]);
+            const shareScopeKey = JSON.stringify([selectedView, activeEngMode, activeGroupId, selectedSprint]);
             const renderEpicShareControl = (epicKey, issueKind = 'epic') => selectedView === 'eng' && ['catch-up', 'planning'].includes(activeEngMode) && (
                 <ShareViewButton surface="epic" entityNames={entityNames} epicKey={epicKey} issueKind={issueKind} scopeKey={shareScopeKey} share={shareView} sourceSurface={analyticsToken(activeEngMode)} activeControlSurface="epic" />
             );
@@ -5950,7 +5947,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (selectedView === 'eng' && showPlanning) {
                     void recordExplicitRefresh({ capacity: refreshCapacity({ automatic: false }), assignee: freshness.automaticRefreshRef.assigneeCapacity?.refresh({ automatic: false }) });
                     // A review that is loading or saving is already current (the old Refresh review button was disabled then too).
-                    if (planningLayout === 'table' && !planningReview.loading && !planningReview.saving) void recordExplicitRefresh({ review: planningReview.refresh() });
+                    if (!planningReview.loading && !planningReview.saving) void recordExplicitRefresh({ review: planningReview.refresh() });
                 }
                 resetStatsTransientRefs({ burnoutCacheRef, cohortCacheRef, excludedCapacityCacheRef });
                 loadSprints(true, { queueIfBusy: true });
@@ -6026,7 +6023,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             boardFreshnessRef.current.getViewport = epicRefresh.getViewport;
             boardFreshnessRef.current.pendingKeys = () => new Set([...statusTransitions.pendingIssueKeys, ...priorityTransitions.pendingIssueKeys, ...projectTrackTransitions.pendingProjectTrackIssueKeys, ...issueFieldEdits.pendingIssueKeys]);
-            freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningLayout, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
+            freshness.ownersRef.current = createDashboardFreshnessOwners(freshness, { selectedView, showPlanning, showStats, showScenario, showBoard, strictBoardActive: strictBoardOwnerActive, strictBoard, boardFreshnessRef, planningReview, planningInteractionRef, capacityInteractionRef, capacityScopeHoldRef, planningAutomaticReadRef, refreshCapacity, capacityLoading, sourceScope: boardStrictScope, surfaceBusy: strictBoardData.status === 'loading' || (selectedView === 'eng' && !sprintCatalogReady),
                 scenarioHasUnsavedChanges, scenarioEditMode, scenarioDraftMeta, scenarioDragState: scenarioState.scenarioDragState, scenarioDragStateRef: scenarioState.scenarioDragStateRef, scenarioLoading: scenarioState.scenarioLoading,
                 showGroupManage, isGroupDraftDirty, groupSaving, epmConfigSaving, groupVisibilitySaving, workspaceConfigConflict, groupsConfigConflict, onboardingActive: onboarding.run || onboarding.pending,
                 sharedConfigReady, acceptedBoardConfigRef, engWorkspaceConfigured, connectionRecoveryBlocksRefresh, connectionUnavailableRef, terminalAuth: readPendingAuthenticationRequired(),
@@ -6124,21 +6121,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
-                <PlanningAssigneeCapacity enabled={planningLayout === 'table' && !shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
-                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''} table={planningLayout === 'table'}
+                <PlanningAssigneeCapacity enabled={!shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
+                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
-                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && (planningLayout === 'table'
-                            ? <PlanningOverviewSummary childPlural={entityNames.childPlural.toLowerCase()} planned={Boolean(planningReview.plan?.exists || planningReview.dirty)} count={selectedCount} sp={selectedSP}
+                        summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <PlanningOverviewSummary childPlural={entityNames.childPlural.toLowerCase()} planned={Boolean(planningReview.plan?.exists || planningReview.dirty)} count={selectedCount} sp={selectedSP}
                                 capacity={capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? totalCapacityAdjusted : null}
-                                unestimated={planningSelectionSummary.missingEstimateCount} hidden={planningSelectionSummary.hiddenCount} />
-                            : <span className="planning-stats compact">
-                                {(planningReview.plan?.exists || planningReview.dirty) && <><span>Planned {entityNames.childPlural.toLowerCase()}: {selectedCount}</span>
-                                <span>Planned SP: {selectedSP.toFixed(1)}</span></>}
-                                {planningSelectionSummary.missingEstimateCount > 0 && <span>{planningSelectionSummary.missingEstimateCount} missing estimates</span>}
-                                <span>Capacity: {capacityEnabled && !capacityDataStale && !capacityReadError && selectedTeamEntries.length > 0 && selectedTeamEntries.every(entry => entry.hasCapacityValue) ? `${totalCapacityAdjusted.toFixed(1)} SP` : 'unavailable'}</span>
-                                {planningSelectionSummary.hiddenCount > 0 && <span>{planningSelectionSummary.hiddenCount} planned {entityNames.childPlural.toLowerCase()} hidden by filters</span>}
-                            </span>)}
+                                unestimated={planningSelectionSummary.missingEstimateCount} hidden={planningSelectionSummary.hiddenCount} />}
                         notice={<span className="planning-review-state-note" role="status">
                             {pendingPlanningAuthResumeRef.current ? 'Restoring plan…' : !planningSourceReady || !planningReview.planReady ? planningReview.error || error ? <>Plan could not be loaded. <button type="button" className="planning-action-button" onClick={() => { if (!planningSourceReady) void retryEngLoad(); else void planningReview.refresh(); }}>Retry</button></> : 'Loading plan…'
                                 : planningReview.dirty ? ''
@@ -6389,7 +6378,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         engFilters={engCatchUpFilters} boardColumns={activeGroup?.board?.columns || []} renderPriorityIcon={renderPriorityIcon} onFacetChange={handleEngFacetChange} onClearFacets={clearEngFacetFilters} onFilterBarHeightChange={handleFilterBarHeightChange}
                         hasInitiativeData={hasInitiativeData} groupByInitiative={groupByInitiative} setGroupByInitiative={setGroupByInitiativeChoice} InitiativeIcon={InitiativeIcon} entityNames={entityNames}
                         engEpicSort={engEpicSort} setEngEpicSort={handleEngEpicSortChange} hierarchyCounts={engWorkHierarchy.counts} visibleTasksForList={visibleTasksForList}
-                        planningTable={showPlanning && planningLayout === 'table'} planningOverview={planningOverview} compactHeaderRef={compactHeaderRef} onActivatePlanningSticky={() => setCompactStickyVisible(true)} />}
+                        planningTable={showPlanning} planningOverview={planningOverview} compactHeaderRef={compactHeaderRef} onActivatePlanningSticky={() => setCompactStickyVisible(true)} />}
 
                     <ServerUnavailableBanner
                         message={serverConnectionError}
@@ -6436,8 +6425,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                     <div id="planning-assignee-capacity-host" />
                     {selectedView === 'eng' && !showBoard && !isCompletedSprintSelected && engWorkspaceConfigured && (
-                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}${showPlanning && planningLayout === 'table' && !teamsEffortExpanded ? ' capacity-panel-collapsed' : ''}`}>
-                            {showPlanning && planningLayout === 'table' ? (
+                        <div className={`capacity-panel ${showPlanning ? 'open' : ''}${showPlanning && !teamsEffortExpanded ? ' capacity-panel-collapsed' : ''}`}>
+                            {showPlanning ? (
                                 <button type="button" className="capacity-header capacity-header-toggle" aria-expanded={teamsEffortExpanded} onClick={() => setTeamsEffortExpanded(expanded => !expanded)}>
                                     <span className="capacity-title">Planned Teams Effort (Story Points)<span className="capacity-panel-caret" aria-hidden="true">▸</span></span>
                                     <span className="capacity-subtitle">1 SP ≈ 2 days of work</span>
@@ -6914,7 +6903,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             {shouldRenderEngTaskList && (
                                 <EngView
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
-                                    planningTable={showPlanning && planningLayout === 'table' ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} workModel={workModel} entityNames={entityNames} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
+                                    planningTable={showPlanning ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} workModel={workModel} entityNames={entityNames} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}
                                         selectedStoryKeys={new Set(Object.keys(selectedTasks).filter(key => selectedTasks[key]))}
                                         onToggleStory={task => toggleTaskSelection(task.key)} onSelectStories={selectPlanningReviewStories}

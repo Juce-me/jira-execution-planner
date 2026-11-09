@@ -201,7 +201,6 @@ async function installPinFixture(page, {
         window.open = (url) => { window.__opened.push(String(url)); return null; };
     }, {
         selectedView: 'eng',
-        planningLayout: 'list',
         selectedSprint: sprintId,
         sprintName,
         activeGroupId: 'grp-default',

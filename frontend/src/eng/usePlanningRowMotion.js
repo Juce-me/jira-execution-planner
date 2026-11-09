@@ -64,28 +64,3 @@ export function usePlanningRowMotion({ tbodyRef, orderSignature, pendingCount, c
     }, [orderSignature, pendingCount, confirmedEdit]);
     React.useEffect(() => () => tbodyRef.current?.getAnimations({ subtree: true }).forEach(animation => animation.cancel()), []);
 }
-
-// List: blinks the edited Story card (or Epic block) with the existing epicFlash tint and reveals the latest when it would be off-screen.
-const listCards = () => Array.from(document.querySelectorAll('.task-item[data-task-key]'));
-const cardId = card => card.dataset.taskKey;
-
-export function usePlanningListConfirmedEdit({ enabled, confirmedEdit, ackConfirmed, isHeld }) {
-    const anchorRef = React.useRef(null);
-    // Read in the render that carries the event, while the old DOM is still in place.
-    if (enabled && confirmedEdit?.keys.length && !anchorRef.current) anchorRef.current = viewportAnchor(listCards(), cardId);
-    React.useLayoutEffect(() => {
-        const keys = confirmedEdit?.keys || [];
-        if (!enabled || !keys.length) return;
-        restoreViewportAnchor(listCards(), anchorRef.current, cardId);
-        anchorRef.current = null;
-        if (!isHeld()) {
-            const reducedMotion = prefersReducedMotion();
-            const find = key => document.querySelector(`.task-item[data-task-key="${CSS.escape(key)}"]`) || document.querySelector(`[data-epic-key="${CSS.escape(key)}"]`);
-            const targets = keys.map(find).filter(Boolean);
-            targets.forEach(element => blinkElement(element, 'epic-flash'));
-            const latest = find(confirmedEdit.latest);
-            if (latest && !confirmedEdit.scrolled.has(confirmedEdit.latest)) revealIfHidden(latest, { reducedMotion });
-        }
-        ackConfirmed(keys);
-    }, [enabled, confirmedEdit]);
-}

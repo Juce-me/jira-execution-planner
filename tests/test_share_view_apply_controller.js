@@ -83,7 +83,7 @@ function createRig({ link, search, options = {} } = {}) {
         commitSprintSelection: spy('commitSprintSelection'), persistTeamSelection: spy('persistTeamSelection'),
         setShowPlanning: spy('setShowPlanning'), setShowStats: spy('setShowStats'), setShowScenario: spy('setShowScenario'), setShowBoard: spy('setShowBoard'),
         setSearchInput: spy('setSearchInput'), setSearchQuery: spy('setSearchQuery'), setShowProduct: spy('setShowProduct'), setShowTech: spy('setShowTech'),
-        setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'), setPlanningLayout: spy('setPlanningLayout'),
+        setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'),
         setStatsView: spy('setStatsView'), setCohortStartQuarter: spy('setCohortStartQuarter'), setCohortEndQuarter: spy('setCohortEndQuarter'),
         setCohortMode: spy('setCohortMode'), setCohortClosedStartQuarter: spy('setCohortClosedStartQuarter'), setCohortClosedEndQuarter: spy('setCohortClosedEndQuarter'), setCohortLastN: spy('setCohortLastN'),
         setCohortProjectFilter: spy('setCohortProjectFilter'), setCohortExcludeAdHoc: spy('setCohortExcludeAdHoc'), setCohortExcludeCapacity: spy('setCohortExcludeCapacity'),
@@ -260,9 +260,12 @@ test('the Planning rows are seeded once, when Stage C begins after the scope has
     rig.tick();
     assert.equal(store.takeInitialPlanningRowMode(), null, 'later Stage C parts and Stage D do not seed again');
 
-    const list = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'list' } });
-    for (let step = 0; step < 4; step += 1) { finishLoad(list, { group: 'grp-a', sprint: 41 }); list.tick(); }
-    assert.equal(list.store.module.takeInitialPlanningRowMode(), null, 'the List layout has no rows to seed');
+    // Planning List is retired (#323): an old List link seeds the table rows of its focus kind and sets no layout.
+    const list = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'list', focus: { kind: 'story', key: 'PROJ-34' } } });
+    let seeded = null;
+    for (let step = 0; step < 4 && seeded === null; step += 1) { finishLoad(list, { group: 'grp-a', sprint: 41 }); list.tick(); seeded = list.store.module.takeInitialPlanningRowMode(); }
+    assert.equal(seeded, 'story', 'an old List link opens the table on the rows of its focus');
+    assert.equal(list.log.some(([name]) => /layout/i.test(name)), false, 'no layout setter is reached');
 
     const cancelled = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'table', rows: 'story' } });
     cancelled.tick();

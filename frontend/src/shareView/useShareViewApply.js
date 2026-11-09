@@ -90,7 +90,7 @@ export function useShareViewApply(options) {
         const rowsMode = readPlanningRowsMode(document);
         const state = buildShareViewState({
             mode: o.activeEngMode, groupId: o.activeGroupId, sprintId: o.selectedSprint, snapshot: o.buildGroupStateSnapshot(),
-            searchQuery: o.searchQuery, sort: o.engEpicSort, layout: o.planningLayout, rowsMode, boardStrictScope: o.boardStrictScope,
+            searchQuery: o.searchQuery, sort: o.engEpicSort, rowsMode, boardStrictScope: o.boardStrictScope,
             sprintRange: { start: o.excludedCapacityStartSprintId, end: o.excludedCapacityEndSprintId },
             alertFlags: o.alertFlags, alertCounts: o.alertCounts,
             focus,

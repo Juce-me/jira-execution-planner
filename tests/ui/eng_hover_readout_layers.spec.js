@@ -147,18 +147,7 @@ test('Catch Up Story under a stuck Epic header keeps its priority readout painte
     expectPaintedAndOnScreen(await hoverAndProbe(page, storyTrigger(page, key), 'catch-up-story-under-stuck-header'));
 });
 
-test('Planning List readouts paint above the stuck Planning panel and Epic header', async ({ page }) => {
-    await open(page, { showPlanning: true, planningLayout: 'list' });
-    await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await stickEpicHeader(page, 'EPIC-1', 700);
-    await expect(page.locator('.planning-panel.open')).toHaveClass(/\bstuck\b/);
-    expectPaintedAndOnScreen(await hoverAndProbe(page, epicTrigger(page, 'EPIC-1'), 'planning-list-stuck-epic-header'));
-    const key = await page.locator('.epic-block[data-epic-key="EPIC-1"]').evaluate((block) => {
-        const bottom = block.querySelector(':scope > .epic-header').getBoundingClientRect().bottom;
-        return [...block.querySelectorAll('.task-item')].find(item => item.querySelector('button.task-priority-icon').getBoundingClientRect().top > bottom + 1).dataset.taskKey;
-    });
-    expectPaintedAndOnScreen(await hoverAndProbe(page, storyTrigger(page, key), 'planning-list-story-under-stuck-header'));
-});
+// Planning is the Table only (#323): its readouts are pinned by the Planning Table tests below.
 
 test('the priority readout never intercepts the pointer and closes when the menu opens', async ({ page }) => {
     await open(page);

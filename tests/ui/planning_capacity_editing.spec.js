@@ -393,7 +393,7 @@ async function installCapacityFixture(page, options = {}) {
         }));
     }, {
         prefs: {
-            selectedView: 'eng', planningLayout: 'list', selectedSprint: sprintId, sprintName,
+            selectedView: 'eng', selectedSprint: sprintId, sprintName,
             activeGroupId: 'group-capacity', showPlanning: true, showScenario: false,
             showStats: false, showBoard: false, selectedTeams: ['all'],
             ...(options.prefs || {}),
@@ -409,6 +409,8 @@ async function openPlanning(page, options = {}) {
     const fixture = await installCapacityFixture(page, options);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.planning-panel.open')).toBeVisible();
+    // Planning is the Table only (#323): its overview starts compact, so the capacity cards are behind Show capacity details.
+    if (options.details !== false) await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(options.teamCount || 3);
     return fixture;
 }
@@ -488,12 +490,18 @@ async function captureCapacityScreenshot(page, testInfo, name, options = {}) {
 
 test('planning team capacity cards stay alphabetical when selected story points change', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openPlanning(page, { teamCount: 7 });
+    // Changing the plan needs a saving-capable shared review; its routes must win over the fixture's catch-all.
+    await installCapacityFixture(page, { teamCount: 7 });
+    await stubGroupReview(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await showCapacityDetails(page);
     const teamLabels = page.locator('.planning-team-capacity-cards .team-stat-label');
     const alphabeticalOrder = ['Alpha', 'Beta', 'Delta', 'Epsilon', 'Eta', 'Gamma', 'Zeta'];
 
     await expect(teamLabels).toHaveText(alphabeticalOrder);
-    await page.locator('.task-item', { hasText: 'PLAN-ALPHA' }).locator('input.task-checkbox').uncheck();
+    // Planning is the Table only (#323): change the planned Story Points through the Story row's checkbox.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Select PLAN-ALPHA', exact: true }).click();
     await expect(teamLabels).toHaveText(alphabeticalOrder);
     await captureCapacityScreenshot(page, testInfo, 'capacity-cards-alphabetical');
 });
@@ -560,7 +568,7 @@ test('capacity hover reveals safe Jira and edit controls without changing the id
 
     for (const invalidBase of ['', 'jira.example', '//jira.example', 'ftp://jira.example']) {
         fixture.state.jiraUrl = invalidBase;
-        await page.reload({ waitUntil: 'networkidle' });
+        await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
         await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(3);
         const invalidCard = page.locator('.team-stat-card', { hasText: 'Alpha' });
         await expect(invalidCard.getByRole('link', { name: 'Open Alpha capacity ticket in Jira' })).toHaveCount(0);
@@ -585,7 +593,7 @@ test('capacity Jira links discard configured query and fragment and reject crede
     expect(sanitizedParts).toEqual({ pathname: '/browse/CAP-101', search: '', hash: '' });
 
     fixture.state.jiraUrl = 'https://jira.example?source=config#capacity';
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
     await expect(alphaCard().getByRole('link', { name: linkName }))
         .toHaveAttribute('href', 'https://jira.example/browse/CAP-101');
 
@@ -594,7 +602,7 @@ test('capacity Jira links discard configured query and fragment and reject crede
         'https://user:password@jira.example/path?source=config#capacity',
     ]) {
         fixture.state.jiraUrl = credentialBase;
-        await page.reload({ waitUntil: 'networkidle' });
+        await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
         await expect(alphaCard().getByRole('link', { name: linkName })).toHaveCount(0);
     }
 });
@@ -1317,7 +1325,7 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
             sprintName: name,
         }));
     }, { id: sprintId, name: sprintName });
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(3);
     await expect(page.locator('form.team-capacity-editor')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Edit .+ capacity$/ })).toHaveCount(0);
@@ -1480,7 +1488,7 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     expect(conflictGeometry.status.right).toBeLessThanOrEqual(conflictGeometry.card.right);
     await captureCapacityScreenshot(page, testInfo, 'capacity-conflict');
 
-    await page.locator('.epic-header').first().evaluate(element => {
+    await page.locator('.planning-review-table tbody tr').first().evaluate(element => {
         window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top + 120);
     });
     await captureCapacityScreenshot(page, testInfo, 'capacity-planning-stuck-error');
@@ -1552,6 +1560,8 @@ test('a long team name in the Planned Teams Effort table is ellipsized and revea
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await openPlanning(page, { teamCount: 6, longTeamLabel: true });
     const fullName = fixture.state.teamNames.at(-1);
+    // In the Table the Planned Teams Effort panel is a collapsed strip until its header is clicked.
+    await page.locator('.capacity-panel.open .capacity-header-toggle').click();
     const table = page.locator('.capacity-panel.open .capacity-grid');
     const longCell = table.locator('.capacity-team', { hasText: fullName });
     const shortCell = table.locator('.capacity-team', { hasText: 'Alpha' });
@@ -1831,7 +1841,7 @@ for (const teamCount of [1, 6, 7]) {
 
 test('automatic Planning capacity editor defers primary work and cancels a late guarded capacity read', async ({ page }) => {
     const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
-    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    const { calls, state } = await openPlanning(page, { details: false });
     await stubGroupReview(page);
     await page.waitForLoadState('networkidle');
     await showCapacityDetails(page);
@@ -1852,7 +1862,7 @@ test('automatic Planning capacity editor defers primary work and cancels a late 
 
 for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status} holds clean values and never replays`, async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
-    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    const { calls, state } = await openPlanning(page, { details: false });
     await stubGroupReview(page);
     await showCapacityDetails(page);
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();

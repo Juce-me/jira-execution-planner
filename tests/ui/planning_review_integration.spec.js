@@ -123,7 +123,7 @@ async function installPlanningFixture(page, {
     summary = '',
     scopeTeamIds = groupTeamIds,
     capacityProject = '',
-    planningLayout = 'list',
+    planningLayout = 'table',
     longTable = false,
     groups = 1,
     selectedTeams = null,
@@ -332,7 +332,7 @@ async function openPlanning(page, { expectStories = true } = {}) {
     await page.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning', exact: true }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    if (expectStories) await expect(page.locator('.task-list .task-item').first()).toBeVisible();
+    if (expectStories) await expect(page.locator('.planning-review-table tbody tr').first()).toBeVisible();
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
 }
 async function bounds(page) {
@@ -584,10 +584,14 @@ for (const [width, height] of [[1280, 720], [1440, 900]]) test(`state notes shri
     await expect(panel.getByRole('button', { name: 'Retry', exact: true })).toBeVisible();
 });
 
-test('Catch Up List keeps its own controls and gains no Planning overview row', async ({ page }) => {
-    await installPlanningFixture(page, { planningLayout: 'table' });
+test('Catch Up List keeps its own controls and stored choices and gains no Planning overview row', async ({ page }) => {
+    // A stale saved List layout beside Catch Up's own stored Sort and Initiative choices: Catch Up List is unchanged (#323).
+    await installPlanningFixture(page, { planningLayout: 'list' });
+    await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({ ...JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'), engEpicSort: 'status', groupByInitiativeChoice: false })));
     await page.goto(appBaseUrl);
     await expect(page.locator('.task-list .task-item').first()).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Sort epics' })).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => { const prefs = JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}'); return [prefs.engEpicSort, prefs.groupByInitiativeChoice]; })).toEqual(['status', false]);
     await expect(page.locator('.planning-panel')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Include by status' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Show capacity details' })).toHaveCount(0);
@@ -1054,27 +1058,6 @@ test('table keeps uncreated Stories through Story filters',async({page})=>{
     await expect(table.locator('tbody .planning-review-key').filter({hasText:'PLAN-2'})).toHaveCount(0);
 });
 
-// List stays reachable from a saved preference or link until List retirement: keep its behaviour covered (review I4, M3).
-test('Planning List from a saved preference keeps its filtering, its own summary placement, Sort and no compact panel',async({page})=>{
-    await installPlanningFixture(page,{planningLayout:'list',authMode:'atlassian_oauth',scopeTeamIds:['team-alpha','team-beta']});await installUncreatedReadiness(page);await openPlanning(page);
-    const panel=page.locator('.planning-panel');
-    await expect(panel).not.toHaveClass(/planning-panel-compact/);
-    await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
-    await expect(page.locator('.planning-review-sticky-stack')).toHaveCount(0);
-    await expect(page.getByRole('radiogroup',{name:'Planning review rows'})).toHaveCount(0);
-    await expect(page.getByRole('button',{name:'Sort epics'})).toHaveCount(1);
-    await expect(page.getByRole('button',{name:/Show Planning (list|table)/})).toHaveCount(0);
-    await expect(panel.getByRole('button',{name:'Show capacity details'})).toHaveCount(0);
-    // List keeps its long summary below the action row (Table moves the short one into the row).
-    await expect(panel.locator(':scope > .planning-stats')).toContainText('Capacity:');
-    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveCount(0);
-    // List keeps filtering uncreated Stories out.
-    await page.locator('.filterbar .fb-trigger').click();
-    await page.locator('.popover [data-facet="status"] [data-option="Pending"]').click();
-    await page.locator('.filterbar .fb-trigger').click();
-    await expect(page.locator('.task-list a[href$="/browse/PLAN-EMPTY"]')).toHaveCount(0);
-});
-
 for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha','team-beta'],null],[['team-alpha','team-beta'],['team-alpha']]]) test(`Table sticky summary compacts ${scopeTeamIds.length} Team scope${selectedTeams?' with one Team selected':''} and expands without losing selection`,async({page})=>{
     const fixture=await installPlanningFixture(page,{planningLayout:'table',scopeTeamIds,selectedTeams,capacityProject:'CAP',initialPlans:{[futureSprintId]:{includedIssueIds:futureStories.map(story=>story.id)}}});
     await page.route('**/api/capacity?*',route=>json(route,{enabled:true,mutationEnabled:false,sprint:new URL(route.request().url()).searchParams.get('sprint'),capacities:{'Alpha Team':10,'Beta Team':8},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:10},{teamName:'Beta Team',issueKey:'CAP-102',capacity:8}]}));
@@ -1162,14 +1145,21 @@ test('compact Table panel fits narrow screens and restores normal Planning in Sc
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Scenario',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
- test('Planning defaults to Table without a layout preference, offers no List toggle and still honours a saved List choice', async ({page}) => {
-    await installPlanningFixture(page,{planningLayout:null});await openPlanning(page,{expectStories:false});
+// Planning List is retired (#323, G2 2026-11-06): no preference and a saved List preference both open Table, and no layout is stored.
+for (const planningLayout of [null, 'list']) test(`Planning opens Table ${planningLayout ? 'from a saved List preference' : 'without a layout preference'}, offers no List toggle and stores no layout`, async ({page}) => {
+    await installPlanningFixture(page,{planningLayout});await openPlanning(page);
     await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
+    await expect(page.locator('.planning-panel')).toHaveClass(/planning-panel-compact/);
+    await expect(page.locator('.task-list')).toHaveCount(0);
     await expect(page.getByRole('button',{name:/Show Planning (list|table)/})).toHaveCount(0);
-    // Planning has no List toggle (2026-11-06); an explicit saved List preference still opens List until List retirement.
-    await page.evaluate(()=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify({...JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}'),planningLayout:'list'})));
-    await page.reload();await expect(page.locator('.task-list .task-item').first()).toBeVisible();
-    await expect(page.getByRole('button',{name:/Show Planning (list|table)/})).toHaveCount(0);
+    await expect.poll(()=>page.evaluate(()=>JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}').showPlanning)).toBe(true);
+    expect(await page.evaluate(()=>Object.hasOwn(JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}'),'planningLayout'))).toBe(false);
+    // A saved Planning view whose preferences still carry List reopens straight into Table.
+    const saved=await page.evaluate(()=>JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')||'{}'));
+    await page.addInitScript(value=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify(value)),{...saved,planningLayout:'list'});
+    await page.reload();await expect(page.getByRole('region',{name:'Planning Sprint review'})).toBeVisible();
+    await expect(page.locator('.planning-panel')).toHaveClass(/planning-panel-compact/);
+    await expect(page.locator('.task-list')).toHaveCount(0);
 });
 
 // Column menus and the Add popover are editing controls: give the review a saving-capable profile.
@@ -1255,7 +1245,7 @@ for (const [width,height] of [[1440,900],[1280,720]]) for (const selectedTeams o
     expect(bottom.y+bottom.height,JSON.stringify(parts)).toBeLessThanOrEqual(175);
 });
 
-// Planned Teams Effort: a 28px strip in Table view (collapsed by default), unchanged in List.
+// Planned Teams Effort: a 28px strip in Table view (collapsed by default).
 const effortPanel = page => page.locator('.capacity-panel');
 const effortToggle = page => effortPanel(page).locator('.capacity-header');
 const firstRowTop = page => page.locator('.planning-review-table tbody tr').first().evaluate(node => node.getBoundingClientRect().top + scrollY);
@@ -1289,16 +1279,6 @@ test('Planned Teams Effort is a collapsed strip in Table view, expands without r
     await page.reload();await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(effortPanel(page)).toHaveClass(/capacity-panel-collapsed/);
     await page.screenshot({path:'tmp/217-ui/c3-effort-collapsed.png',fullPage:false});
-});
-
-test('Planning List shows the Planned Teams Effort panel exactly as before',async({page})=>{
-    await page.setViewportSize({width:1440,height:900});
-    await installPlanningFixture(page,{planningLayout:'list',scopeTeamIds:['team-alpha','team-beta']});await openPlanning(page);
-    const panel=effortPanel(page);
-    await expect(panel).toHaveClass(/open/);await expect(panel).not.toHaveClass(/capacity-panel-collapsed/);
-    await expect(panel.locator('.capacity-grid-wrapper')).toBeVisible();
-    await expect(effortToggle(page)).toHaveJSProperty('tagName','DIV');
-    expect((await panel.boundingBox()).height).toBeGreaterThan(100);
 });
 
 test('the Planned Teams Effort toggle keeps a readable, stationary hover',async({page},testInfo)=>{

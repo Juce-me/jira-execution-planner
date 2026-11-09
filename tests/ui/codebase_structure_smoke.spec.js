@@ -1276,7 +1276,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1390,7 +1390,7 @@ function seedEngPrefs(page, extraPrefs = {}) {
     return page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1688,7 +1688,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1844,7 +1844,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2198,7 +2198,7 @@ test('stats sprint range End panels keep long options inside the narrow viewport
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'excludedCapacity', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -2260,7 +2260,7 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'cohort',
         cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1', cohortCapacityFilter: 'ad_hoc',
     });
@@ -2307,7 +2307,7 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
 });
 
 const LEAD_TIMES_PREFS = {
-    selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+    selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
     activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
     showStats: true, statsView: 'cohort', cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1',
     cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1',
@@ -2681,7 +2681,7 @@ test('Statistics sprint range lists Sprints newest first, in the header Sprint s
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2721,7 +2721,7 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2990,7 +2990,7 @@ test('Project Track excludes closed epics and links No track assignee segments t
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'projectTrack', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -3060,7 +3060,7 @@ async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams, showStats: true, statsView: 'projectTrack',
         projectTrackMode: 'team',
         excludedCapacityStartSprintId: String(selectedSprintId), excludedCapacityEndSprintId: String(selectedSprintId),
@@ -3301,7 +3301,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -3371,7 +3371,7 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -3897,7 +3897,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
         window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify(teamSelection));
     }, {
         prefs: {
-            selectedView: 'eng', planningLayout: 'list',
+            selectedView: 'eng',
             selectedSprint: selectedSprintId,
             activeGroupId: 'grp-default',
             selectedTeams: ['all'],
@@ -4175,7 +4175,7 @@ test('Stats chart hover does not re-render App', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1100 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
-    }, { selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+    }, { selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
          activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
          showStats: true, statsView: 'priority' });
     await page.addInitScript(() => window.history.replaceState(null, '', '/?perf=1'));

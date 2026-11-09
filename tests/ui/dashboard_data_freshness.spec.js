@@ -697,25 +697,7 @@ test('automatic ordinary Board preserves non-neutral facets and current scope wh
     expect(ctx.calls.slice(since).filter(call=>call.params.purpose==='epic-refresh')).toHaveLength(0);
 });
 
-test('automatic Planning List owns return and keeps its primary/readiness/dependency ceilings without alerts', async ({ page }, testInfo) => {
-    const { lifecycle, resources, ctx } = await setup(page, { prefs: { planningLayout: 'list' } });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
-    await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).uncheck(); await settle(page);
-    const selection = await page.locator('.task-list .task-item[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input.task-checkbox')).map(row => [row.dataset.issueKey, row.querySelector('input.task-checkbox').checked])));
-    expect(Object.values(selection)).toContain(true); expect(Object.values(selection)).toContain(false);
-    expect(selection['E3-S01']).toBe(true); expect(selection['E2-S01']).toBe(false);
-    const since = ctx.calls.length, resourceSince = resources.length;
-    ctx.scenario.stories.find(story => story.key === 'E3-S01').fields.summary = 'Synthetic Planning List accepted return';
-    await lifecycle.returnAfter(13 * 60000); await expect(taskCard(page, 'E3-S01')).toContainText('Synthetic Planning List accepted return'); await settle(page);
-    const calls = ctx.calls.slice(since), observed = counts(calls, resources.slice(resourceSince));
-    expect(observed).toMatchObject({ primary: 4, scope: 2, readiness: 1, dependencies: 1, alerts: 0, catalog: 0, documents: 0, assets: 0 });
-    expect(calls.filter(call => ['/api/capacity', '/api/missing-info'].includes(call.pathname) || call.pathname.includes('/review'))).toHaveLength(0);
-    const retainedSelection = await page.locator('.task-list .task-item[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input.task-checkbox')).map(row => [row.dataset.issueKey, row.querySelector('input.task-checkbox').checked])));
-    for (const [key, checked] of Object.entries(selection)) expect(retainedSelection[key], `surviving List row ${key}`).toBe(checked);
-    expect(calls.filter(call => !['GET', 'POST'].includes(call.method) || call.method === 'POST' && !['/api/auth/refresh', '/api/dependencies'].includes(call.pathname))).toHaveLength(0);
-    await evidence(testInfo, 'planning-list-request-ceilings', observed);
-});
+// The automatic Planning List return was retired with List (#323); Planning Table refreshes are covered below.
 
 const { installDashboardFixture: installEpmFreshnessFixture, enabledEpmOptions } = require('./epm_view_fixture');
 function epmFreshnessRollup(project, remote = false) {
@@ -1066,7 +1048,7 @@ async function planningSelectionStorage(page) {
 }
 
 test('automatic Planning keeps a selected Story that left the Sprint until a manual Refresh reconciles it', async ({ page }, testInfo) => {
-    const { ctx, lifecycle } = await setup(page, { prefs: { planningLayout: 'list' } });
+    const { ctx, lifecycle } = await setup(page, { prefs: {} });
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
     await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
     await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).check(); await settle(page);
@@ -1097,7 +1079,7 @@ test('automatic Planning preserves a selected Team after its last Story leaves a
     const { groupsConfigPayload } = require('./eng_epic_refresh_fixture');
     const scenario = buildScenario();
     Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
-    const { ctx, lifecycle } = await setup(page, { scenario, prefs: { planningLayout: 'list' }, configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
+    const { ctx, lifecycle } = await setup(page, { scenario, prefs: {}, configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
         ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
     })) });
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);

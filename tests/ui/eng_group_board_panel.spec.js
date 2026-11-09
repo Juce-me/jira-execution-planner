@@ -264,7 +264,7 @@ async function loadDashboard(page, calls, options = {}) {
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',

@@ -1,9 +1,9 @@
 # Planning Sprint review
 
-Planning defaults to Table when no valid layout preference is saved. Planning has
-no List toggle: an explicit List choice saved earlier (or carried by a link) still
-opens List until List is retired, but nothing in Planning switches to it.
-The layout is a private browser presentation preference. The shared header,
+Planning is the Table only; List stays in Catch Up. Planning List was retired
+(#323, operator decision 2026-11-06): a List choice saved earlier or carried by an old
+link opens Table, and the link keeps its focus by opening the Epics or Stories rows of
+its focus kind. No layout preference is stored. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
 including multiple Teams, starts with the sticky Planning overview compact: one
 desktop row with Select All, Clear Selection, Undo, Status ▾ (accessible name "Include
@@ -17,8 +17,7 @@ ellipsize: the worst case fits whole at 1280x720 and 1440x900, and only the whol
 would ellipsize as a last resort. The compact row stays 46.9px; a capacity error adds
 one line under it. At narrow widths the row wraps and the summary may wrap inside its
 box. The summary has no hover or focus readout; the breakdown lives in the capacity
-details. Planning List, still reachable from a saved preference, keeps its longer
-summary below the action row. Open in Jira opens the planned stories matching the
+details. Open in Jira opens the planned stories matching the
 current Team and filters and is disabled when none match. Status ▾ opens the Include by status popover with one line of status
 toggles (Accepted + In Progress, To Do / Pending, Postponed, Awaiting validation),
 each labelled `<group> · <included>/<total>` over the stories matching the current
@@ -57,8 +56,7 @@ column in both modes, including that no input pokes past its heading span.
 In Table view, Filters precedes the capacity graphs in a shared sticky stack below
 the compact header. The first document scroll brings that stack into its sticky
 position. The shared `EngFilterControls` module occupies the second dashboard controls row,
-before Catch Up alerts and Planning capacity content; List also uses Filters-first
-ordering.
+before Catch Up alerts and Planning capacity content.
 Numeric headings, cells, editors and totals align right; text aligns left.
 A real Epic or Story row with 0 SP (a missing Jira value counts as 0) is tinted red
 across the whole row, with the same `#fff1f0` the alerts and board use. Awaiting-creation
@@ -90,7 +88,7 @@ the user expands it, which keeps the table near the top of the page; its header 
 native button, so it works by tap), the grid stays mounted but hidden while collapsed, and
 expanding neither refetches nor changes selection. The choice is a private browser preference
 (`planningTeamsEffortExpanded` in the saved UI preferences) that survives reloads; collapsed is
-the default. Planning List shows the full panel exactly as before. The accepted numbers it
+the default. The accepted numbers it
 shows are also available in the table through the Planned SP column.
 
 The table's surfaces, borders and secondary text use the shared design tokens (`--bg-primary`,
@@ -115,7 +113,7 @@ Epics remain in the Epic table, marked with a "N Story awaited" chip beside the 
 placeholder shows its Team and links its parent Epic; it has no Jira key or
 Story Points and cannot be selected or edited. Table placeholders remain visible
 through Story status/priority filters, while Department, Team, project, Project
-Track and search scope still apply. List filtering retains its existing behavior.
+Track and search scope still apply.
 The shared inclusion document belongs to a Department group, Sprint and review
 namespace. Team and ordinary filters project it without replacing other Teams'
 inclusion. Select All adds every matching real child Story, including rows below
@@ -125,7 +123,7 @@ gesture, up to 20 gestures. Legacy browser selections remain untouched and are
 not imported. A missing plan and a saved empty plan have distinct messages.
 Synthetic rows cannot edit Jira or store custom values. Team and Project columns
 appear for multiple admitted Teams/projects. Sort epics and Group by Initiative are not
-rendered in Table view (they never changed table ordering); List and Catch Up keep them and
+rendered in Table view (they never changed table ordering); Catch Up keeps them and
 their stored choices.
 
 Priority and status edits made in the Table settle locally (see Planning edits in
@@ -330,8 +328,8 @@ After promotion, review data is isolated per work configuration. Existing rows k
 ## Assignee capacity strip (#323)
 
 With exactly one Team selected in the Table layout, Planning shows a collapsible in-flow strip, "Assignee Capacity (Story
-Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams,
-All Teams and the List layout keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
+Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams
+and All Teams keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
 (`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points. The strip and the table's Epics/Stories
 control follow each other: expanding the strip from its header selects Stories, and choosing Epics (a click or a link's rows)
 while it is expanded collapses it; the Epics a table mount starts with (reload, Sprint switch) yields to an expanded strip by
@@ -446,7 +444,7 @@ for the page session. The Planning automatic follow-up and the header Refresh re
 unsaved changes; an unchanged document is not republished, a failure keeps the held document, and an automatic height
 change of the strip above the viewport keeps the reading position. A new auth session clears the cache and re-reads.
 
-**Limitations.** The stored team number is used only in the Table layout with one Team: List layout and several Teams show
+**Limitations.** The stored team number is used only with one Team: several Teams show
 Jira values only. A Team with no pointed Stories has no card, so its stored number can be typed only once it has Stories.
 Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
 against Jira. Undo is not built yet.

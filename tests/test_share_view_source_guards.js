@@ -127,7 +127,7 @@ test('the ENG task-load effect holds for a pending link, with the Planning recov
 test('the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint', () => {
     const call = between(dashboard, 'const planningReviewOwner = usePlanningSprintReview({', '\n            });');
     assert.ok(call.includes('(!shareViewHold || Boolean(pendingPlanningAuthResumeRef.current)) && reviewGroupReady'));
-    assert.ok(!call.includes("planningLayout === 'table'"), 'one inclusion owner serves the transitional Planning layouts');
+    assert.ok(!call.includes("planningLayout === 'table'"), 'one inclusion owner serves the Planning table');
     assert.ok(dashboard.indexOf('const shareViewHold = useShareViewHold();') < dashboard.indexOf('const planningReviewOwner = usePlanningSprintReview({'));
     // The review scope comes from the resolved group (#267), derived before the review hook runs.
     const scope = dashboard.indexOf('} = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading,');

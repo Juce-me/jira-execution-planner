@@ -189,6 +189,8 @@ const DECODE_VECTORS = [
     // layout and rows
     ['?v=1&layout=table&rows=stories', ok({ layout: 'table', rows: 'story' })],
     ['?v=1&layout=list&rows=epics', ok({ layout: 'list', rows: 'epic' })],
+    // An old Planning List link still parses (#323): the resolver opens it as the table.
+    ['?v=1&mode=planning&group=g&sprint=41&teams=t1&initiatives=0&sort=status&layout=list&story=PROJ-102', ok({ mode: 'planning', group: 'g', sprint: '41', teams: ['t1'], initiatives: false, sort: 'status', layout: 'list', focus: { kind: 'story', key: 'PROJ-102' } })],
     ...drops('mode', ['?v=1&layout=grid', '?v=1&rows=story']),
     // stats and ranges
     ['?v=1&stats=burnout', ok({ stats: 'burnout' })],
@@ -965,10 +967,9 @@ test('owner pins: dashboard.jsx literals that have no exported constant (Stats v
     assert.deepEqual([...stats[1].matchAll(/value === '([^']+)'/g)].map((match) => match[1]), plain(defaults.SHARE_VIEW_STATS_VIEWS));
     assert.equal(stats[2], defaults.SHARE_VIEW_DEFAULTS.stats);
 
-    const layout = /useState\(savedPrefsRef\.current\.planningLayout === '([^']+)' \? '\1' : '([^']+)'\)/.exec(dashboard);
-    assert.ok(layout, 'dashboard.jsx planningLayout changed: update SHARE_VIEW_PLANNING_LAYOUTS and the layout default');
-    assert.deepEqual([layout[1], layout[2]].sort(), [...plain(defaults.SHARE_VIEW_PLANNING_LAYOUTS)].sort());
-    assert.equal(layout[2], defaults.SHARE_VIEW_DEFAULTS.layout);
+    // Planning List is retired (#323): Planning is the table only, so no saved preference or link can choose a layout.
+    assert.ok(!/planningLayout|setPlanningLayout/.test(dashboard), 'dashboard.jsx keeps no Planning layout state');
+    assert.equal(defaults.SHARE_VIEW_DEFAULTS.layout, 'table');
 
     const scopes = /const boardScopeRequested = [^\n]*\[((?:'[a-z_]+'(?:, )?)+)\]\.includes\(boardStrictScope\)/.exec(dashboard);
     assert.ok(scopes, 'dashboard.jsx boardScopeRequested changed: update SHARE_VIEW_BOARD_SCOPES');

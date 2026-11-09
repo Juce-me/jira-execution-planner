@@ -202,7 +202,7 @@ async function installStatusColourFixture(page, {
     }, {
         key: UI_PREFS_KEY,
         value: {
-            selectedView: 'eng', planningLayout: 'list', selectedSprint: activeSprintId, sprintName: activeSprintName,
+            selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName,
             activeGroupId: GROUP_ID, showPlanning: false, showStats: false, showScenario: false, showBoard: false,
             showAlertsPanel: false, ...prefs,
         },

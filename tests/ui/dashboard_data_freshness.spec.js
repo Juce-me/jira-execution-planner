@@ -1222,3 +1222,59 @@ for (const dismissed of [false, true]) for (const native of ['auto', 'none']) te
     expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
     await evidence(testInfo, 'assignee-strip-reading-metrics', { dismissed, native, before, after });
 });
+
+// #323 Task 8 Step 1, the EPM residual of a312bae3: an ENG read aborted by the switch to EPM settles while EPM is active, so its
+// result guard retires it and useEngSprintData leaves its loading flags set. Back on ENG the long-absence return must still read.
+function enableEpmOnEngFixture(ctx) {
+    const { epmProject } = require('./epm_view_fixture');
+    const epm = { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] },
+        issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
+        projects: { 'home-1': { id: 'home-1', homeProjectId: 'home-1', name: 'Connected Home Project', label: 'rnd_project_connected' } } };
+    ctx.respond('/api/config', ({ json }) => json({ jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', projectsConfigured: true,
+        userCanEditSettings: true, userCanEditEpmConfig: true, environmentConfigExists: true, epm, epmViewEnabled: true, epmHomeReadAvailable: true,
+        viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm } } }));
+    ctx.respond(call => call.pathname.startsWith('/api/epm/'), ({ call, json }) => {
+        const project = epmProject('active');
+        if (call.pathname === '/api/epm/config') return json(epm);
+        if (call.pathname === '/api/epm/scope') return json({ cloudId: 'synthetic-cloud', error: '' });
+        if (call.pathname === '/api/epm/access') return json({ epmHomeReadAvailable: true, state: 'available' });
+        if (call.pathname === '/api/epm/goals') return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Connected Root Goal' }], error: '' });
+        if (call.pathname === '/api/epm/projects' || call.pathname === '/api/epm/projects/configuration') return json({ projects: [project], cacheHit: false });
+        if (call.pathname === '/api/epm/projects/rollup/all') return json(epmFreshnessRollup(project));
+        return json({});
+    });
+}
+test('ENG return refresh starts after an aborted ENG read retired while EPM was active', async ({ page }, testInfo) => {
+    const { catchUpPrefs, appBaseUrl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const ctx = await mockDashboard(page);
+    enableEpmOnEngFixture(ctx);
+    const gate = deferred(), held = [];
+    const scopeRead = call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose;
+    const release = ctx.respond(call => scopeRead(call) && held.length < 2, async ({ call, json }) => {
+        held.push(call.params.project);
+        await gate.promise;
+        await json(taskPayload(call.params, ctx.scenario)).catch(() => {}); // The read was aborted; its late answer has no taker.
+        return null;
+    });
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardBundle }));
+    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ groupByInitiativeChoice: false }));
+    await page.goto(appBaseUrl);
+    await expect.poll(() => held.length).toBe(2);
+    await page.getByRole('radio', { name: 'EPM', exact: true }).click();
+    await expect(page.locator('.epm-project-board-name')).toBeVisible();
+    gate.resolve(); release();
+    await settle(page);
+    await page.getByRole('radio', { name: 'ENG', exact: true }).click();
+    await expect(page.locator('.epic-block[data-epic-key="EPIC-1"]')).toBeVisible();
+    await settle(page);
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    const since = ctx.calls.length;
+    await lifecycle.returnAfter(13 * 60 * 1000);
+    await expect.poll(() => ctx.calls.slice(since).filter(scopeRead).length, 'the return refresh reads both ENG lanes').toBeGreaterThanOrEqual(2);
+    await settle(page);
+    const calls = ctx.calls.slice(since);
+    await evidence(testInfo, 'eng-return-after-epm-retired-read', { held, reads: calls.map(call => ({ method: call.method, pathname: call.pathname, purpose: call.params.purpose, project: call.params.project })) });
+    expect(calls.filter(scopeRead).every(call => call.params.refresh === 'true')).toBe(true);
+    expect(calls.filter(call => call.method !== 'GET' && !['/api/auth/refresh', '/api/dependencies'].includes(call.pathname))).toEqual([]);
+});

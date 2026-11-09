@@ -8,9 +8,10 @@ const adapter = 'if (perfEnabled) window.__JEP_EXTRACTION_PERF__ = () => ({ ...p
 
 // Builds a copy of the bundle with the in-memory render-counter adapter. The source file is never written.
 // esbuild's synchronous API rejects plugins, so the adapter is applied to the entry text and fed through
-// stdin, the same way tests/ui/scenario_draft_history.spec.js does it.
-function buildRuntimeProbeBundle() {
-    const entry = path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx');
+// stdin, the same way tests/ui/scenario_draft_history.spec.js does it. `root` is the checkout to bundle (default this one);
+// tests/ui/planning_toggle_paint.spec.js passes an extracted base tree with its own node_modules.
+function buildRuntimeProbeBundle(root = repoRoot) {
+    const entry = path.join(root, 'frontend', 'src', 'dashboard.jsx');
     const contents = fs.readFileSync(entry, 'utf8');
     if (contents.split(anchor).length - 1 !== 1) {
         throw new Error('runtime adapter anchor must occur exactly once');
@@ -24,7 +25,7 @@ function buildRuntimeProbeBundle() {
         },
         bundle: true,
         write: false,
-        nodePaths: [path.join(repoRoot, 'node_modules')],
+        nodePaths: [path.join(root, 'node_modules')],
         format: 'iife',
         loader: { '.css': 'empty' },
         define: { 'process.env.NODE_ENV': '"test"' },

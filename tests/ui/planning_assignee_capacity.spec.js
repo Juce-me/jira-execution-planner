@@ -1642,11 +1642,24 @@ test.describe('render counts (#323 DoD 13)', () => {
             : story(`PLAN-${index + 10}`, `acc-p${person}`, `Person ${person} Synthetic`, 1 + (index % 5), { team: index % 10 === 9 ? 'team-beta' : 'team-alpha' });
     });
     const read = page => page.evaluate(() => ({ renders: window.__JEP_EXTRACTION_PERF__().renders, ...(window.__JEP_323_COUNTS__ || {}) }));
+    // Waits until App has not rendered for 750 ms (three equal reads 250 ms apart), so a measurement never counts the
+    // renders of a load that is still settling (#323 Task 8: a fixed 500 ms after expanding the strip was not enough).
+    async function quiesce(page) {
+        let last = -1, stable = 0;
+        for (let attempt = 0; attempt < 80; attempt += 1) {
+            const { renders } = await read(page);
+            if (renders === last) { stable += 1; if (stable >= 3) return; } else { stable = 0; last = renders; }
+            await page.waitForTimeout(250);
+        }
+        throw new Error('App did not settle within 20 s');
+    }
     async function measure(page, action) {
         await page.waitForTimeout(500);
+        await quiesce(page);
         const before = await read(page);
         await action();
         await page.waitForTimeout(500);
+        await quiesce(page);
         const after = await read(page);
         return { ...Object.fromEntries(['renders', 'teamTasks', 'buildAssigneeRows'].map(key => [key, (after[key] || 0) - (before[key] || 0)])), absolute: after };
     }
@@ -1713,6 +1726,72 @@ test.describe('render counts (#323 DoD 13)', () => {
         testInfo.annotations.push({ type: 'dod13', description: `stored-number refresh ${JSON.stringify({ unchanged, changed })}` });
         expect(unchanged.renders, 'App renders on an unchanged projection').toBe(0);
         expect(changed.renders, 'the probe sees a changed number').toBeGreaterThan(0);
+    });
+
+    // #323 Task 8 Step 2 (DoD 9): App subscribes to the stored Team numbers, so one changed number is one App render.
+    test('a stored Team number change re-renders App exactly once', async ({ page }, testInfo) => {
+        test.setTimeout(180000);
+        const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+        await openProbe(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket, issues: stories });
+        await showCards(page);
+        await storedOn(page, 'team-beta', '6.0');
+        storeOn(server, 'team-beta', '9');
+        const refreshed = await measure(page, async () => {
+            expect(await page.evaluate(() => [...window.__JEP_323_CONTROLLERS__.values()][0].refreshProjection({ automatic: true }))).toEqual({ status: 'ok' });
+            await storedOn(page, 'team-beta', '9.0');
+        });
+        // A card pencil commit: the editor is opened first, so only the commit and its save are measured.
+        await teamCard(page, 'team-alpha').hover();
+        await teamPencil(page, 'team-alpha', 'Alpha Team').click();
+        const input = teamInput(page, 'team-alpha', 'Alpha Team');
+        await expect(input).toBeFocused();
+        await input.fill('15');
+        const committed = await measure(page, async () => {
+            await input.press('Enter');
+            await expect.poll(() => teamPatches(server, 'team-alpha').length).toBe(1);
+            await storedOn(page, 'team-alpha', '15.0');
+        });
+        console.log('DOD9_MEASURE', 'stored Team number change', JSON.stringify({ refreshed, committed }));
+        testInfo.annotations.push({ type: 'dod9', description: `stored Team number change ${JSON.stringify({ refreshed, committed })}` });
+        expect(refreshed.renders, 'App renders when a read changes one stored Team number').toBe(1);
+        expect(committed.renders, 'App renders when a card commit changes one stored Team number').toBe(1);
+    });
+
+    test('a person\'s Capacity, Vacations or Notes edit and any save-state change render App zero times', async ({ page }, testInfo) => {
+        test.setTimeout(180000);
+        let fail = false;
+        const server = capacityServer({ rows: [{ assigneeKey: 'acc-p0', displayName: 'Person 0 Synthetic', capacity: '8', vacations: null, notes: null, removed: false }], patchStatus: () => (fail ? 503 : 0) });
+        await openProbe(page, { server });
+        await expand(page);
+        const row = rowOf(page, 'acc-p0');
+        const results = {};
+        for (const [field, value] of [['Capacity', '9'], ['Vacations', '1'], ['Notes', 'synthetic note']]) {
+            const box = row.getByRole('textbox', { name: `${field} for Person 0 Synthetic` });
+            const patches = server.state.patches.length;
+            results[field] = await measure(page, async () => {
+                await box.fill(value); await box.press('Enter');
+                await expect.poll(() => server.state.patches.length).toBe(patches + 1);
+                await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+            });
+        }
+        // Save-state changes: a failed save (Not saved), then Retry (saving, then Saved).
+        fail = true;
+        const capacity = row.getByRole('textbox', { name: 'Capacity for Person 0 Synthetic' });
+        results.failed = await measure(page, async () => {
+            await capacity.fill('10'); await capacity.press('Enter');
+            await expect(strip(page).locator('[data-assignee-save-failed]')).toContainText('Not saved');
+        });
+        fail = false;
+        results.retried = await measure(page, async () => {
+            await strip(page).locator('[data-assignee-save-failed]').getByRole('button', { name: 'Retry' }).click();
+            await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+        });
+        console.log('DOD9_MEASURE', 'person-row edits and save states', JSON.stringify(results));
+        testInfo.annotations.push({ type: 'dod9', description: `person-row edits and save states ${JSON.stringify(results)}` });
+        for (const [name, result] of Object.entries(results)) {
+            expect(result.renders, `App renders on ${name}`).toBe(0);
+            expect(result.teamTasks, `team list rebuilds on ${name}`).toBe(0);
+        }
     });
 });
 
@@ -1806,6 +1885,49 @@ test('the Undo control works by tap', async ({ browser }) => {
     expect(server.state.patches[1].body.changes).toEqual([{ assigneeKey: 'acc-cy', removed: false }]);
     await expect(undoButton(page)).toBeDisabled();
     await context.close();
+});
+
+// #323 Task 8 Step 5: the documented Undo semantics (docs/features/planning-sprint-review.md).
+test('Undo of Add assignee sends removed: true, because there is no delete route', async ({ page }) => {
+    const server = capacityServer({ rows: annRows() });
+    const { calls } = await install(page, { server });
+    await openPlanning(page);
+    await expand(page);
+    await addTrigger(page).click();
+    await page.getByRole('combobox', { name: 'Search Assignee to add' }).pressSequentially('nor', { delay: 30 });
+    await peopleMenu(page).getByRole('option', { name: 'Nora Newcomer' }).click();
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0].body.changes).toEqual([{ assigneeKey: 'acc-new', displayName: 'Nora Newcomer' }]);
+    await expect(strip(page).locator('.capacity-subtitle')).toHaveText('Saved');
+    await undoButton(page).click();
+    await expect(rowOf(page, 'acc-new')).toHaveCount(0);
+    await expect.poll(() => server.state.patches.length).toBe(2);
+    expect(server.state.patches[1].body.changes).toEqual([{ assigneeKey: 'acc-new', removed: true }]);
+    expect(server.state.rows.find(row => row.assigneeKey === 'acc-new')).toMatchObject({ removed: true });
+    expect(calls.filter(call => call.method === 'DELETE'), 'no delete request').toEqual([]);
+});
+
+test('Undo restoring an inherited stored number sends it as source user and says the Sprint kept its own copy', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(activeSprintId)]: { revision: 1, rows: [], planned: { value: '12', source: 'user' } } } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanningIn(page, futureSprintName);
+    await showCards(page);
+    await expect(alphaCard(page)).toContainText('12.0');
+    await expand(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await input.fill('14');
+    await input.press('Enter');
+    await expect.poll(() => assigneeWrites(calls).length).toBe(1);
+    expect(assigneeWrites(calls)[0].body).toEqual({ teamId: 'team-alpha', planned: { value: '14', source: 'user' }, changes: [] });
+    await expect(undoButton(page)).toBeEnabled();
+    await undoButton(page).click();
+    await expect.poll(() => assigneeWrites(calls).length).toBe(2);
+    expect(assigneeWrites(calls)[1].body, 'the inherited number is saved as this Sprint\'s own').toEqual({ teamId: 'team-alpha', planned: { value: '12', source: 'user' }, changes: [] });
+    await expect(strip(page).locator('[data-assignee-undo-kept]')).toHaveText('Undo kept this Sprint\'s own copy with the inherited values.');
+    await expect(alphaCard(page)).toContainText('12.0');
+    expect(server.state.docs[String(futureSprintId)].revision, 'the Sprint keeps its own document').toBeGreaterThan(0);
 });
 
 test('read-only shows no Undo control', async ({ page }) => {

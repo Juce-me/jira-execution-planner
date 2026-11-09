@@ -385,12 +385,14 @@ Story's current name, so a person with no Stories (including one deactivated in 
 "Removed from this Sprint and later ones:", where each underlined name restores the person with one tap; values are kept.
 
 **Saving.** Enter or blur commits, Escape cancels; an invalid draft stays in its cell with its error. One serial queue per
-Sprint and Team coalesces commits within about 200 ms into one PATCH, keeps one request in flight and reuses the CSRF token.
+Sprint and Team coalesces commits within about 200 ms into one PATCH, keeps one request in flight and reuses the CSRF token;
+across Teams at most 4 assignee-capacity PATCHes run at once.
 An unconfirmed write is read back and only the differing fields are resent (last write wins per field, so retries are
 idempotent). A failed save shows "Not saved" with Retry and Discard changes, in the table and in the collapsed header; a
 change the server refuses waits for Retry or Discard so it cannot fail later batches. Changing Team or Sprint sends the old
-scope's commits in the background; a scope left with a failed save keeps its drafts for the page session (the last five
-scopes) and shows Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. Without database
+scope's commits in the background; a scope left with drafts, a save in flight or a failed save is never evicted and keeps
+its drafts for the page session (only clean, idle scopes beyond the last five are dropped, keeping their number), and shows
+Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. Without database
 storage or save rights the read reports `capabilities` and the strip is read-only (no Remove, Restore or Add assignee) or
 hidden.
 
@@ -399,8 +401,12 @@ stored team number, which shares the queue) can be undone with the Undo button a
 (beside the save status, a sibling of the header toggle; the collapsed strip shows no Undo), or with Cmd/Ctrl+Z while focus
 is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
 undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
-sends nothing. Undoing an Add assignee removes the person again (there is no delete). Undoing the first edit of an inherited
-Sprint keeps the Sprint's own copy with the inherited values, and a muted line says so. The stack is cleared on a Team or
+sends nothing. Undoing an Add assignee removes the person again: it sends `removed: true`, because there is no delete
+route. Undoing the first edit of an inherited Sprint keeps the Sprint's own copy with the inherited values, and the muted
+line "Undo kept this Sprint's own copy with the inherited values." says so; a restored inherited stored team number is
+saved as this Sprint's own number with `source: 'user'` (inheritance itself is unchanged: the next Sprint inherits that
+own copy). Between users the last write wins per field: Undo re-sends the earlier values without checking whether someone
+else changed them meanwhile, except that a re-read bringing a different document clears the stack. The stack is cleared on a Team or
 Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
 auth session. Read-only strips show no Undo.
 
@@ -454,4 +460,4 @@ a Team never borrows another configured Team's ticket or stored number by name c
 
 **Limitations.** The stored team number is typed only with one Team selected; several Teams show it read-only.
 Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
-against Jira. Undo is not built yet.
+against Jira. Undo covers the strip's Team only (see Undo above).

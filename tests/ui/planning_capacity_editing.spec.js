@@ -1917,7 +1917,9 @@ function buildPushHarness() {
                         </PlanningAssigneeCapacityContext.Provider>
                     );
                 }
-                createRoot(document.getElementById('root')).render(<Harness />);
+                const root = createRoot(document.getElementById('root'));
+                window.__unmount = () => root.unmount();
+                root.render(<Harness />);
             `,
             resolveDir: repoRoot,
             loader: 'jsx',
@@ -2156,3 +2158,32 @@ test('one abort controller per Team: two pushes overlap, closing another editor 
     expect(await page.evaluate(() => window.__holds.at(-1)), 'released once nothing is open').toBe(false);
     expect((await pushRequests(page)).length, 'never retargeted').toBe(2);
 });
+
+test('unmounting with a push in flight and another Team\'s editor open leaves the freshness hold released', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await pushCard(page, 'team-b').hover();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
+    await expect(pushCard(page, 'team-b').locator('.team-capacity-editor')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__holds.at(-1))).toBe(true);
+    await page.evaluate(() => window.__unmount());
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'the last hold after unmount').toBe(false);
+});
+
+test('with → hovered only its readout shows: the card\'s own value tooltip is suppressed for every rail control', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    const cardTooltip = () => card.evaluate(node => getComputedStyle(node, '::after').content);
+    await page.mouse.move(5, 700);
+    await card.locator('.microbar').hover();
+    expect(await cardTooltip(), 'the card tooltip still shows on the card itself').not.toBe('none');
+    await hoverPush(page);
+    await expect(pushReadout(page)).toHaveCount(1);
+    expect(await cardTooltip()).toBe('none');
+    for (const name of ['Edit Alpha Team capacity', 'Open Alpha Team capacity ticket in Jira']) {
+        await card.getByRole(name.startsWith('Open') ? 'link' : 'button', { name }).hover();
+        expect(await cardTooltip(), name).toBe('none');
+    }
+});
+

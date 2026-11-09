@@ -787,7 +787,7 @@ test('assignee capacity strip adds no analytics event and documents its no-event
     assert.ok(line.includes('`feature_name=planning_review`'), `${row}: feature_name`);
     assert.ok(line.includes('typed params none'), `${row}: typed params`);
     assert.ok(line.includes('`api_surface=planning_assignee_capacity`'), `${row}: api surface`);
-    assert.ok(line.endsWith('| 2026-10-30 |'), `${row}: reviewed on`);
+    assert.ok(line.endsWith('| 2026-11-09 |'), `${row}: reviewed on`);
     assert.ok(analyticsDoc.includes('`api_surface=planning_assignee_capacity` (the Planning assignee capacity document read and write and the Add assignee people search) sends only `feature_name=planning_review`'));
     assert.ok(jsSetValues(read('frontend/src/analytics/analytics.js'), 'API_SURFACES').has('planning_assignee_capacity'));
     // No new event or action name for the strip, the stored team number or Add assignee. The card's one-click push

@@ -416,6 +416,11 @@
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
         }
 
+        /* A hovered or focused rail control shows its own readout instead (#323 Task 6): one readout at a time. */
+        .team-stat-card[data-tooltip]:hover:has(.team-capacity-action-rail :is(:hover, :focus-visible))::after {
+            content: none;
+        }
+
         /* SplitBar (project) */
         /* Project split bar */
         .project-bar-graph {

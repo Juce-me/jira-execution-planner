@@ -3864,7 +3864,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
 
 // ---- #323 Task 6: the card's → pushes its Team's stored number to that Team's own matched ticket in one click ----
 const pushOf = (page, teamId, name) => teamCard(page, teamId).getByRole('button', { name: `Apply ${name} team capacity to Jira`, exact: true });
-const pushStatus = page => page.locator('.planning-panel .planning-actions > .planning-review-state-note', { hasText: /Jira push(es)? failed|Applying \d+ Teams? to Jira…/ });
+const pushStatus = page => page.locator('.planning-panel .planning-actions > .planning-review-state-note', { hasText: /Jira push(es)? (failed|needs? review)|Applying \d+ Teams? to Jira…/ });
 const pushEvents = page => page.evaluate(() => (window.dataLayer || []).filter(entry => entry?.workflow_action === 'capacity_reconcile_push').map(entry => entry.result));
 // A held PATCH /api/capacity answer: the test releases it with a status and body.
 function heldJira() {
@@ -3872,6 +3872,11 @@ function heldJira() {
     const handler = (route, body, issueKey) => new Promise(resolve => { held.push({ body, issueKey, answer: (status, response) => resolve(json(route, response, status)) }); });
     return { held, handler };
 }
+// Visible in-app readouts and the card's own value tooltip (its ::after) while a rail control is hovered.
+const oneReadout = (page, teamId) => page.evaluate(id => ({
+    readouts: [...document.querySelectorAll('.epic-full-value-readout')].filter(node => { const rect = node.getBoundingClientRect(); return rect.width > 0 && getComputedStyle(node).visibility !== 'hidden'; }).length,
+    cardTooltip: getComputedStyle(document.querySelector(`.planning-team-capacity-cards .team-stat-card[data-capacity-team="${id}"]`), '::after').content,
+}), teamId);
 async function hoverPushOf(page, teamId, name) {
     await teamCard(page, teamId).hover();
     const button = pushOf(page, teamId, name);
@@ -3922,7 +3927,7 @@ test('a 409 capacity_conflict shows the current ticket value on the → readout 
     await expect.poll(() => jira.held.length).toBe(1);
     jira.held[0].answer(409, { error: 'capacity_conflict', currentCapacity: 22 });
     await expect(pushOf(page, 'team-alpha', 'Alpha Team')).toHaveAttribute('data-push-state', 'conflict');
-    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    await expect(pushStatus(page)).toHaveText('1 Jira push needs review');
     await page.mouse.move(5, 600);
     const button = await hoverPushOf(page, 'team-alpha', 'Alpha Team');
     await expect(valueReadout(page)).toHaveText('Capacity changed in Jira to 22.0. Apply 14 SP again to replace it.');
@@ -4002,6 +4007,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
         .toEqual([`Open ${g1Name(1)} capacity ticket in Jira`, `Apply ${g1Name(1)} team capacity to Jira`, `Edit ${g1Name(1)} capacity`]);
     expect(await cardHeights(page), 'hovered →').toEqual(baseline);
     await expect(valueReadout(page)).toHaveText('Apply 2 SP to Jira (ticket 11 SP)');
+    expect(await oneReadout(page, 'team-02'), 'with → hovered only its readout shows').toEqual({ readouts: 1, cardTooltip: 'none' });
     await shot('card-hover-push');
     await settled(button, true);
     await rest();
@@ -4021,24 +4027,87 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await rest();
     expect(await pinnedHeights(page), 'expanded stack while pending').toEqual(expanded);
     await expectNoteBesideSummary(page, `pending, expanded ${size}`);
+    await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+    await expect(pushStatus(page)).toHaveText('Applying 1 Team to Jira…');
+    expect(await pinnedHeights(page), 'compact stack while pending').toEqual(compact);
+    await expectNoteBesideSummary(page, `pending, compact ${size}`);
+    await showCapacityDetails(page);
+    await rest();
     // Conflict: the current ticket value on the readout; the card and stack unchanged.
     jira.held[0].answer(409, { error: 'capacity_conflict', currentCapacity: 12 });
     await expect(pushOf(page, 'team-02', g1Name(1))).toHaveAttribute('data-push-state', 'conflict');
     button = await hoverPushOf(page, 'team-02', g1Name(1));
     await expect(valueReadout(page)).toHaveText('Capacity changed in Jira to 12.0. Apply 2 SP again to replace it.');
+    await expect(teamCard(page, 'team-02').locator('.microbar-meta'), 'the card shows Jira\'s current value').toContainText('Cap 12.0');
+    expect(await oneReadout(page, 'team-02'), 'with → hovered only its readout shows').toEqual({ readouts: 1, cardTooltip: 'none' });
     expect(await cardHeights(page), 'conflict').toEqual(baseline);
     await shot('card-push-conflict');
     await settled(button, true);
     await rest();
     expect(await cardHeights(page), 'conflict at rest').toEqual(baseline);
-    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    await expect(pushStatus(page)).toHaveText('1 Jira push needs review');
     expect(await singleLine(pushStatus(page)), 'the conflict note is whole').toBe(true);
     expect(await pinnedHeights(page), 'expanded stack with the conflict note').toEqual(expanded);
     await expectNoteBesideSummary(page, `conflict, expanded ${size}`);
     await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
-    await expect(pushStatus(page)).toHaveText('1 Jira push failed');
+    await expect(pushStatus(page)).toHaveText('1 Jira push needs review');
     expect(await pinnedHeights(page), 'compact stack with the conflict note').toEqual(compact);
     await expectNoteBesideSummary(page, `conflict, compact ${size}`);
     expect(await page.locator('.planning-team-capacity-cards .team-capacity-action-rail').evaluateAll(rails => Math.max(...rails.map(rail => rail.children.length)))).toBeLessThanOrEqual(3);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
+
+test('after a push conflict the card\'s Cap line shows Jira\'s current value, nothing is stored, and the Jira pencil expects that value', async ({ page }) => {
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    const jira = heldJira();
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), capacityPatch: jira.handler });
+    await openPlanning(page);
+    await showCards(page);
+    await expect(teamCard(page, 'team-alpha').locator('.microbar-meta')).toContainText('Cap 20.0');
+    await (await hoverPushOf(page, 'team-alpha', 'Alpha Team')).click();
+    await expect.poll(() => jira.held.length).toBe(1);
+    jira.held[0].answer(409, { error: 'capacity_conflict', currentCapacity: 22 });
+    await expect(pushOf(page, 'team-alpha', 'Alpha Team')).toHaveAttribute('data-push-state', 'conflict');
+    await expect(teamCard(page, 'team-alpha').locator('.microbar-meta')).toContainText('Cap 22.0');
+    await page.waitForTimeout(200);
+    expect(server.state.patches, 'display only: the stored number is not written').toEqual([]);
+    await teamCard(page, 'team-alpha').hover();
+    await teamCard(page, 'team-alpha').getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+    const input = teamCard(page, 'team-alpha').getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
+    await expect(input).toHaveValue('22');
+    await input.fill('15');
+    await teamCard(page, 'team-alpha').getByRole('button', { name: 'Save Alpha Team capacity' }).click();
+    await expect.poll(() => jira.held.length).toBe(2);
+    expect(jira.held[1].body).toMatchObject({ capacity: 15, expectedCapacity: 22, teamName: 'Alpha Team' });
+    expect(jiraWrites(calls)).toHaveLength(2);
+});
+
+test('leaving Planning while a push is in flight and another Team\'s editor is open does not block the automatic Planning refresh afterwards', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    const jira = heldJira();
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: tickets({ 'Alpha Team': 20, 'Beta Team': 30 }), capacityPatch: jira.handler });
+    await openPlanning(page);
+    await showCards(page);
+    await page.waitForLoadState('networkidle');
+    await (await hoverPushOf(page, 'team-alpha', 'Alpha Team')).click();
+    await expect.poll(() => jira.held.length).toBe(1);
+    await teamCard(page, 'team-beta').hover();
+    await teamCard(page, 'team-beta').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
+    await expect(teamCard(page, 'team-beta').locator('.team-capacity-editor')).toHaveCount(1);
+    // Leave by keyboard, so no outside pointer-down closes Beta's editor first.
+    const modes = page.locator('.view-selector .eng-mode-control');
+    await modes.getByRole('radio', { name: 'Catch Up', exact: true }).focus();
+    await page.keyboard.press('Space');
+    await expect(page.locator('.planning-team-capacity-cards')).toHaveCount(0);
+    jira.held[0].answer(200, { issueKey: 'CAP-101', teamName: 'Alpha Team', capacity: 14, result: 'success' });
+    await page.waitForTimeout(200);
+    await modes.getByRole('radio', { name: 'Planning', exact: true }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const since = calls.length;
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name').length, 'the automatic Planning refresh runs').toBeGreaterThan(0);
+});
+

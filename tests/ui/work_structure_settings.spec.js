@@ -88,7 +88,7 @@ function promotedBundle({ delivery = {}, legacy = {}, promotionRevision = 6 } = 
 async function mockApp(page, {
     featureEnabled = true, promoted = false, revision = 3, bundle = virtualBundle(), typesDelay = 0, typesStatus = 200,
     types = TYPES, failPriorityOnce = false, summaries = [], analyticsEnabled = false,
-    allocationOptions = { options: [], source: null, complete: false },
+    allocationOptions = { options: [], source: null, complete: false }, sprintValues = null,
 } = {}) {
     const state = { summaries: clone(summaries), afterWorkPost: null, promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
     await installDashboardShell(page);
@@ -174,6 +174,7 @@ async function mockApp(page, {
         }
         if (p === '/api/work-structure/allocation-options') return json(allocationOptions);
         if (p === '/api/work-structure/sprint-values') {
+            if (sprintValues) return json({ sprintValues, sources: [], promoted: state.promoted });
             return json({ sprintValues: ['2027Q2', '2027Q1', '2026Q4', '2026Q3', '0000Q1'].map(value => ({ value, canonical: value !== '0000Q1', state: 'closed', sprintIds: [Number(value.slice(0, 4)) * 10 + Number(value.slice(-1))], configurationIds: ['legacy'] })), sources: [], promoted: state.promoted });
         }
         if (p === '/api/stats/priority-weights-config' && method === 'POST') {
@@ -701,6 +702,41 @@ const allocationBundle = (allocationTypes = []) => promotedBundle({ delivery: {
 } });
 const allocationPane = dialog => dialog.locator('[data-allocation-types]');
 const allocationColumn = (dialog, label) => dialog.locator('.group-projects-subsection[data-allocation-type]').filter({ has: dialog.page().locator('.team-selector-label', { hasText: new RegExp(`^${label}$`) }) });
+
+test('a Sprint value seen by both configurations is two labelled rows, and either stores the bare value', async ({ page }) => {
+    const both = (value, ids) => ['legacy', 'delivery'].map((id, index) => ({ value, label: `${value} - ${id}`, canonical: true, state: 'future', sprintIds: [ids[index]], configurationIds: [id] }));
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle(), sprintValues: [
+        ...both('2027Q2', [1102, 2202]), ...both('2027Q1', [1101, 2201]),
+        { value: '2026Q4', label: '2026Q4', canonical: true, state: 'closed', sprintIds: [1004], configurationIds: ['legacy'] },
+    ] });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    const through = dialog.locator('[data-range-row="throughQuarter"]');
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    await through.getByLabel('Search Through Sprint').fill('2027Q1');
+    const rows = through.locator('.team-search-result-item');
+    await expect(rows.locator('strong')).toHaveText(['2027Q1 - legacy', '2027Q1 - delivery']);
+    await expect(rows.nth(1)).toContainText('Jira id 2201');
+    const shots = path.join(__dirname, '..', '..', 'tmp', 'screenshots');
+    fs.mkdirSync(shots, { recursive: true });
+    await dialog.screenshot({ path: path.join(shots, 'scope-picker-suffix.png'), animations: 'disabled' });
+    await rows.filter({ hasText: '2027Q1 - delivery' }).click();
+    await expect(through.locator('.selected-team-chip .team-name')).toHaveText('2027Q1');
+
+    await selectConfiguration(dialog, 'delivery');
+    const from = dialog.locator('[data-range-row="fromQuarter"]');
+    await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
+    await from.getByLabel('Search From Sprint').fill('2027Q2');
+    await from.locator('.team-search-result-item', { hasText: '2027Q2 - legacy' }).click();
+    await expect(from.locator('.selected-team-chip .team-name')).toHaveText('2027Q2');
+    await saveButton(dialog).click();
+    await expect.poll(() => state.workPosts.length).toBe(1);
+    const [legacy, delivery] = state.workPosts[0].workConfigurations.configurations;
+    expect([legacy.throughQuarter, delivery.fromQuarter]).toEqual(['2027Q1', '2027Q2']);
+    expect(JSON.stringify(state.workPosts[0])).not.toContain(' - legacy');
+    expect(JSON.stringify(state.workPosts[0])).not.toContain(' - delivery');
+});
 
 test('DELIVERY Field mapping labels the Allocation field "Allocation"', async ({ page }) => {
     await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle() });

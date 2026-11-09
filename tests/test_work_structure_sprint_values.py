@@ -12,7 +12,7 @@ from tests.test_work_structure_catalogs import (
 from tests.test_work_structure_routes import jira_response
 
 PATH = '/api/work-structure/sprint-values'
-ROW_KEYS = {'value', 'canonical', 'state', 'sprintIds', 'configurationIds'}
+ROW_KEYS = {'value', 'label', 'canonical', 'state', 'sprintIds', 'configurationIds'}
 
 
 class SprintValueReadTests(CatalogBase):
@@ -69,6 +69,8 @@ class SprintValueReadTests(CatalogBase):
         self.assertTrue(all(set(row) == ROW_KEYS for row in body['sprintValues']))
         self.assertEqual(by_value['2027Q1']['sprintIds'], [45459])
         self.assertEqual(by_value['2027Q1']['configurationIds'], ['delivery'])
+        self.assertTrue(all(row['label'] == row['value'] for row in body['sprintValues']),
+                        'a name seen by one configuration carries no suffix')
         self.assertEqual(by_value['2027Q1']['state'], 'future')
         self.assertTrue(by_value['2026Q4']['canonical'])
         self.assertFalse(by_value['0000Q1']['canonical'])
@@ -79,13 +81,49 @@ class SprintValueReadTests(CatalogBase):
             self.assertNotIn(forbidden, text)
 
     def test_setup_required_and_pending_sources_are_reported_not_errors(self):
-        self.seed_sources(delivery_ready=False, legacy_ready=True)  # Delivery shares Legacy's Board
+        # Delivery inherits Legacy's Board, which lends it no Sprint values: without its own scan it needs setup.
+        self.seed_sources(delivery_ready=False, legacy_ready=True)
         response = self.read()
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['sprintValues'], [])
         self.assertEqual([(item['configurationId'], item['state']) for item in body['sources']],
-                         [('legacy', 'pending'), ('delivery', 'pending')])
+                         [('legacy', 'pending'), ('delivery', 'setup_required')])
+
+    def test_a_name_in_both_configurations_is_one_labelled_row_per_configuration(self):
+        self.warm(
+            board_values=[{**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001},
+                          {**sprint_value(101, '2026Q3', 'closed'), 'originBoardId': 7001}],
+            delivery_board_values=[{**sprint_value(99, '2026Q4', 'closed'), 'originBoardId': 19095}],
+            scan=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'active')]})],
+                   'isLast': True}])
+        rows = self.read().get_json()['sprintValues']
+        self.assertEqual(
+            [(row['value'], row['label'], row['configurationIds'], row['sprintIds'], row['state']) for row in rows],
+            [('2027Q1', '2027Q1 - legacy', ['legacy'], [102], 'future'),
+             ('2027Q1', '2027Q1 - delivery', ['delivery'], [201], 'active'),
+             ('2026Q4', '2026Q4', ['delivery'], [99], 'closed'),
+             ('2026Q3', '2026Q3', ['legacy'], [101], 'closed')],
+            'value descending, then Legacy first')
+        # C3: the header catalog is range-filtered per configuration, so one name never repeats there.
+        names = [row['name'] for row in self.sprints().get_json()['sprints']]
+        self.assertEqual(len(names), len(set(names)), names)
+        self.assertNotIn(' - ', ' '.join(names))
+
+    def test_inherited_board_contributes_only_the_delivery_scan(self):
+        self.warm(
+            delivery_board=False,
+            board_values=[{**sprint_value(102, '2027Q1', 'future'), 'originBoardId': 7001},
+                          {**sprint_value(103, '2028Q1', 'future'), 'originBoardId': 7001}],
+            scan=[{'issues': [issue(**{DELIVERY_SPRINT_FIELD: [sprint_value(201, '2027Q1', 'active')]})],
+                   'isLast': True}])
+        rows = self.read().get_json()['sprintValues']
+        self.assertEqual(
+            [(row['label'], row['configurationIds'], row['sprintIds']) for row in rows],
+            [('2028Q1', ['legacy'], [103]),
+             ('2027Q1 - legacy', ['legacy'], [102]),
+             ('2027Q1 - delivery', ['delivery'], [201])],
+            'the inherited Board lends DELIVERY no row')
 
     def test_policy_errors_and_flag_states(self):
         self.warm()

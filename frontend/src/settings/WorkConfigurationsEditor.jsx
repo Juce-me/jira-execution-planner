@@ -108,7 +108,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, 
                                             options,
                                             emptyMessage: 'No matching Sprint value.',
                                             typedOption: typedSprintOption,
-                                            onSelect: option => onPatch({ [key]: option.id }),
+                                            onSelect: option => onPatch({ [key]: option.value }),
                                             onRemove: () => onPatch({ [key]: null }),
                                         }}
                                         kind="sprint"

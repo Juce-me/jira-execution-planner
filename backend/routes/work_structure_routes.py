@@ -423,21 +423,26 @@ def source_diagnostics(state, code, *snapshots):
 
 
 def collect_sprint_values(auth_context, sources):
-    """Range-agnostic Sprint values observed by every saved source, one row per name.
+    """Range-agnostic Sprint values observed by every saved source, one row per name and configuration.
 
     Reads the stored snapshots only (never Jira) and merges Board rows with the issue-scan
-    supplement.  Names are the catalogs' quarter-shaped values; ``canonical`` says whether the
-    value is a valid range boundary.  Output carries no site, project, board or token data.
+    supplement; an inherited Board lends its configuration no row.  A name observed by more than one
+    configuration is one row per configuration whose display-only ``label`` is ``<name> - <configuration
+    id>``; ``value`` stays the bare name.  Names are the catalogs' quarter-shaped values; ``canonical``
+    says whether the value is a valid range boundary.  Output carries no site, project, board or token data.
     """
-    values, summaries = {}, []
+    values, summaries, order = {}, [], {}
     for config in sources:
         configuration_id = config.configuration_id
+        order.setdefault(configuration_id, len(order))
         summary = {'configurationId': configuration_id, 'sourceMode': config.source_mode or 'board',
                    'state': 'setup_required'}
         snapshots = []
-        if config.sprint_identity:
+        own = (config.observed_source,) if config.board_inherited else (config, config.observed_source)
+        usable = config.sprint_identity and any(source is not None for source in own)
+        if usable:
             summary['state'] = 'pending'
-            for source in (config, config.observed_source):
+            for source in own:
                 if source is None or not source.sprint_identity:
                     continue
                 snapshot = sprint_source_snapshot(auth_context, source)
@@ -450,26 +455,29 @@ def collect_sprint_values(auth_context, sources):
                     sprint_id = item.get('id') if isinstance(item, dict) else None
                     if not name or isinstance(sprint_id, bool) or not isinstance(sprint_id, int):
                         continue
-                    row = values.setdefault(name, {'states': set(), 'ids': set(), 'configs': set()})
+                    row = values.setdefault(name, {}).setdefault(configuration_id, {'states': set(), 'ids': set()})
                     row['states'].add(str(item.get('state') or '').lower())
                     row['ids'].add(sprint_id)
-                    row['configs'].add(configuration_id)
-        code = None if config.sprint_identity else (config.scope_error or 'configuration_incomplete')
+        code = None if usable else (config.scope_error or 'configuration_incomplete')
         summary['diagnostics'] = source_diagnostics(summary['state'], code, *snapshots)
         summaries.append(summary)
     rows = []
-    for name, row in values.items():
+    for name, by_configuration in values.items():
         try:
             work_structure_service.parse_quarter(name)
             canonical = True
         except WorkConfigError:
             canonical = False
-        state = min(row['states'], key=lambda value: _STATE_RANK.get(value, 9))
-        rows.append({
-            'value': name, 'canonical': canonical, 'state': state,
-            'sprintIds': sorted(row['ids']),
-            'configurationIds': sorted(item for item in row['configs'] if item),
-        })
+        shared = len(by_configuration) > 1
+        for configuration_id, row in by_configuration.items():
+            rows.append({
+                'value': name, 'label': f'{name} - {configuration_id}' if shared else name,
+                'canonical': canonical,
+                'state': min(row['states'], key=lambda value: _STATE_RANK.get(value, 9)),
+                'sprintIds': sorted(row['ids']),
+                'configurationIds': [configuration_id],
+            })
+    rows.sort(key=lambda row: order[row['configurationIds'][0]])
     rows.sort(key=lambda row: row['value'], reverse=True)
     return rows, summaries
 

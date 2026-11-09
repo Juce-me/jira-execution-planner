@@ -34,12 +34,15 @@ export const isValidQuarter = value => value === null
 export const quarterIndex = value => Number(value.slice(0, 4)) * 4 + Number(value.slice(-1)) - 1;
 const SPRINT_STATE_LABEL = { active: 'active', closed: 'closed', future: 'future' };
 
-// Picker options for the Scope boundaries: one per observed Sprint value (the stored value string is the
-// option id). A value that is not canonical `YYYYQn` stays listed but disabled, so it can never become a boundary.
+// Picker options for the Scope boundaries: one per observed Sprint value and configuration. A value seen by both
+// configurations is two options labelled `<value> - legacy` / `- delivery`; the display label is the unique option
+// id and `value` is the bare string a selection stores. A value that is not canonical `YYYYQn` stays listed but
+// disabled, so it can never become a boundary.
 export function sprintValueOptions(sprintValues) {
     return ((sprintValues && sprintValues.values) || []).map(item => ({
-        id: item.value,
-        name: item.value,
+        id: item.label || item.value,
+        name: item.label || item.value,
+        value: item.value,
         disabled: !item.canonical,
         detail: [
             item.canonical ? null : 'not a valid boundary',
@@ -54,8 +57,8 @@ export function sprintValueOptions(sprintValues) {
 // one extra option. Anything else offers nothing.
 export function typedSprintOption(query, options = []) {
     const value = typeof query === 'string' ? query.trim() : '';
-    if (!canonicalQuarter(value) || options.some(option => option.id === value)) return null;
-    return { id: value, name: `Use ${value}`, detail: 'not in the Sprint list' };
+    if (!canonicalQuarter(value) || options.some(option => option.value === value)) return null;
+    return { id: value, value, name: `Use ${value}`, detail: 'not in the Sprint list' };
 }
 
 export const rangeLabel = entry => {

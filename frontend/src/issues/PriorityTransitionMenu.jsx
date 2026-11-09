@@ -1,5 +1,6 @@
 import * as React from 'react';
 import IssueFieldOptionMenu from './IssueFieldOptionMenu.jsx';
+import EpicHeaderValueReadout from '../eng/EpicHeaderValueReadout.jsx';
 import { normalizeIssueStatus } from './issueViewUtils.js';
 import { isRecognizedPriorityIconName, sortPriorityOptionsByRank } from '../eng/engPriorityTransitionUtils.js';
 
@@ -11,6 +12,10 @@ import { isRecognizedPriorityIconName, sortPriorityOptionsByRank } from '../eng/
 // tooltip while gaining a menu affordance (button reset lives in styles/eng/issues.css).
 // Passive surfaces (EPM, Stats, Scenario, Settings open) keep rendering the plain icon at
 // the call site instead, so no data-priority-transition-trigger is emitted there.
+// The priority label is the shared portaled readout (EpicHeaderValueReadout) on both, never a
+// ::after pseudo-element: portaled to body it paints above the sticky Epic header, filter bar
+// and Planning panel, and it is pointer-transparent so it never covers a control. The passive
+// icon is PriorityIcon.jsx.
 
 function priorityResultMessage(result) {
     if (!result) return '';
@@ -57,7 +62,7 @@ export default function PriorityTransitionMenu({
 
     // Reuse the dashboard priority-icon element as the button's contents/attributes so the
     // interactive trigger keeps its .task-priority-icon classes, tooltip data-attrs, and
-    // 16x16 geometry. renderPriorityIcon always returns a <span> (never null) in practice.
+    // 16x16 geometry. renderPriorityIcon always returns a <PriorityIcon> (never null) in practice.
     const icon = renderPriorityIcon ? renderPriorityIcon(priorityLabel, issueKey) : null;
     const iconProps = icon?.props || {};
 
@@ -91,24 +96,32 @@ export default function PriorityTransitionMenu({
 
     return (
         <span className="priority-transition" ref={fieldRef}>
-            <button
-                type="button"
-                className={iconProps.className || 'task-priority-icon none'}
-                data-priority={iconProps['data-priority']}
-                data-priority-short={iconProps['data-priority-short']}
-                aria-label={iconProps['aria-label'] || priorityLabel || 'None'}
-                aria-haspopup="menu"
-                aria-expanded={isOpen}
-                data-priority-transition-trigger="true"
-                data-onboarding-target="editing-priority"
-                data-issue-key={issueKey}
-                data-issue-kind={kind}
-                data-onboarding-target-identity={targetIdentity}
-                onClick={handleTriggerClick}
-                disabled={submitting && !isOpen}
-            >
-                {iconProps.children}
-            </button>
+            {/* The label shows on mouse hover or keyboard focus and closes while the menu is open; a tap opens the menu. */}
+            <EpicHeaderValueReadout value={iconProps['data-priority'] || 'None'} alwaysOn transient pointerTransparent suppressed={isOpen}>
+                {({ triggerRef, pointerProps, focusProps }) => (
+                    <button
+                        ref={triggerRef}
+                        {...pointerProps}
+                        {...focusProps}
+                        type="button"
+                        className={iconProps.className || 'task-priority-icon none'}
+                        data-priority={iconProps['data-priority']}
+                        data-priority-short={iconProps['data-priority-short']}
+                        aria-label={iconProps['aria-label'] || priorityLabel || 'None'}
+                        aria-haspopup="menu"
+                        aria-expanded={isOpen}
+                        data-priority-transition-trigger="true"
+                        data-onboarding-target="editing-priority"
+                        data-issue-key={issueKey}
+                        data-issue-kind={kind}
+                        data-onboarding-target-identity={targetIdentity}
+                        onClick={handleTriggerClick}
+                        disabled={submitting && !isOpen}
+                    >
+                        {iconProps.children}
+                    </button>
+                )}
+            </EpicHeaderValueReadout>
             {isOpen && (
                 <IssueFieldOptionMenu
                     blockClass="priority-transition"

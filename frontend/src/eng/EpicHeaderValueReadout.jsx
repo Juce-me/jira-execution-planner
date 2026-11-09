@@ -5,7 +5,8 @@ import { createPortal } from 'react-dom';
 // focus-visible, or pinned by a click or tap; a second click or tap, an outside pointer-down or Escape closes it.
 // `transient` (default off, with `alwaysOn`) makes the readout follow a mouse or pen by hover only: their click neither
 // pins it nor focuses the trigger; a touch tap still pins it, and a pinned readout also closes on scroll.
-export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, transient = false, children }) {
+// `pointerTransparent` (default off) lets the pointer pass through the readout, so it never covers a control beneath it.
+export default function EpicHeaderValueReadout({ value, suppressed = false, measureSelector = '', nativeSelector = '', alwaysOn = false, transient = false, pointerTransparent = false, children }) {
     const triggerRef = React.useRef(null);
     const readoutRef = React.useRef(null);
     const closeTimerRef = React.useRef(null);
@@ -231,6 +232,7 @@ export default function EpicHeaderValueReadout({ value, suppressed = false, meas
                 left: `${position.left}px`,
                 top: `${position.top}px`,
                 visibility: position.placed ? 'visible' : 'hidden',
+                ...(pointerTransparent ? { pointerEvents: 'none' } : {}),
             }}
             onPointerEnter={() => {
                 readoutHoveredRef.current = true;

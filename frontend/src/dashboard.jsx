@@ -89,6 +89,7 @@ import { deriveActiveEngMode, useEngModeState } from './eng/engModeState.js';
 import StatusTransitionMenu from './issues/StatusTransitionMenu.jsx';
 import { StatusColourProvider } from './issues/StatusColourContext.jsx';
 import PriorityTransitionMenu from './issues/PriorityTransitionMenu.jsx';
+import PriorityIcon from './issues/PriorityIcon.jsx';
 import ProjectTrackTransitionMenu from './issues/ProjectTrackTransitionMenu.jsx';
 import IssuePersonEditor from './issues/IssuePersonEditor.jsx';
 import IssueSummaryEditor from './issues/IssueSummaryEditor.jsx';
@@ -5071,25 +5072,25 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const gradientId = `priority-grad-${safeId}`;
                 if (!name) {
                     return (
-                        <span className="task-priority-icon none" {...priorityAttrs}>
+                        <PriorityIcon className="task-priority-icon none" {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('blocker')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8 15c-3.9 0-7-3.1-7-7s3.1-7 7-7 7 3.1 7 7-3.1 7-7 7zM4 7c-.6 0-1 .4-1 1s.4 1 1 1h8c.6 0 1-.4 1-1s-.4-1-1-1H4z" fill="#ff5630"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('critical')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <defs>
                                     <linearGradient id={gradientId} gradientUnits="userSpaceOnUse" x1="-46.25" y1="65.1105" x2="-46.25" y2="64.1105" gradientTransform="matrix(12 0 0 -13.1121 563 854.7415)">
@@ -5099,55 +5100,55 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 </defs>
                                 <path d="M2.5 4l5-2.9c.3-.2.7-.2 1 0l5 2.9c.3.2.5.5.5.9v8.2c0 .6-.4 1-1 1-.2 0-.4 0-.5-.1L8 11.4 3.5 14c-.5.3-1.1.1-1.4-.4-.1-.1-.1-.3-.1-.5V4.9c0-.4.2-.7.5-.9z" fill={`url(#${gradientId})`}/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('highest') || name.includes('high') || name.includes('major')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M7.984436 3.200867l-4.5 2.7c-.5.3-1.1.1-1.3-.4s-.2-1.1.3-1.3l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7z" fill="#ff5630"/>
                                 <path d="M3.484436 10.200867c-.5.3-1.1.1-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff7452"/>
                                 <path d="M3.484436 14.500867c-.5.3-1.1.2-1.3-.3s-.2-1.1.3-1.4l5-3c.3-.2.7-.2 1 0l5 3c.5.3.6.9.3 1.4-.3.5-.9.6-1.4.3l-4.4-2.7-4.5 2.7z" fill="#ff8f73"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('medium')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('minor') || name.includes('lowest')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M8.045319 12.806152l4.5-2.7c.5-.3 1.1-.1 1.3.4s.2 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7z" fill="#0065ff"/>
                                 <path d="M12.545319 5.806152c.5-.3 1.1-.1 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#2684ff"/>
                                 <path d="M12.545319 1.506152c.5-.3 1.1-.2 1.3.3s.2 1.1-.3 1.4l-5 3c-.3.2-.7.2-1 0l-5-3c-.5-.3-.6-.9-.3-1.4.3-.5.9-.6 1.4-.3l4.4 2.7 4.5-2.7z" fill="#4c9aff"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 if (name.includes('low')) {
                     return (
-                        <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                        <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                             <svg viewBox="0 0 16 16">
                                 <path d="M12.5 6.1c.5-.3 1.1-.1 1.4.4.3.5.1 1.1-.3 1.3l-5 3c-.3.2-.7.2-1 0l-5-3c-.6-.2-.7-.9-.4-1.3.2-.5.9-.7 1.3-.4L8 8.8l4.5-2.7z" fill="#0065ff"/>
                             </svg>
-                        </span>
+                        </PriorityIcon>
                     );
                 }
                 return (
-                    <span className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
+                    <PriorityIcon className={`task-priority-icon ${iconClass}`} {...priorityAttrs}>
                         <svg viewBox="0 0 16 16">
                             <circle cx="8" cy="8" r="5" fill="none" stroke="#7a8699" strokeWidth="2"/>
                         </svg>
-                    </span>
+                    </PriorityIcon>
                 );
             };
 

@@ -424,7 +424,8 @@
 
         /* The interactive priority icon (ENG Catch Up / Planning) is a native <button> that
            carries the same .task-priority-icon classes and data-attrs as the passive <span>,
-           so the tooltip and icon geometry are preserved. Neutralize the aggressive global
+           so the icon geometry is preserved; both show their label through the portaled
+           .epic-full-value-readout (PriorityTransitionMenu.jsx), which paints above sticky tiers. Neutralize the aggressive global
            button rule (and its hover lift) from eng/controls.css. The hover/focus frame is a
            fixed-size ::before rather than the button's own box: the icon is 16px on Story cards
            and 24px in Epic headers, and a radius on the button itself clamps to a circle on the
@@ -478,35 +479,6 @@
             button.task-priority-icon:hover:where(:not(:disabled)):where(:not([aria-disabled="true"]))::before {
                 background-image: radial-gradient(circle closest-side, var(--bg-primary) 100%, transparent 100%);
             }
-        }
-
-        /* Anchor the priority label to the top of the shared frame (12px above centre, plus its
-           2px ring and the usual 0.225rem gap) so it clears the frame on the 16px Story icon as
-           it does on the 24px Epic icon. */
-        button.task-priority-icon[data-priority]:hover::after {
-            top: calc(50% - 1.1rem);
-        }
-
-        .task-priority-icon[data-priority] {
-            position: relative;
-        }
-
-        .task-priority-icon[data-priority]:hover::after {
-            content: attr(data-priority);
-            position: absolute;
-            left: 50%;
-            top: -0.35rem;
-            transform: translate(-50%, -100%);
-            background: #1f1f1f;
-            color: #fff;
-            font-size: 0.6rem;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            padding: 0.15rem 0.35rem;
-            border-radius: 6px;
-            white-space: nowrap;
-            pointer-events: none;
-            opacity: 1;
         }
 
         /* Standard Jira priorities */

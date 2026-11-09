@@ -93,7 +93,6 @@
   },
   "offenders": {
     "[\"frontend/src/styles/eng/board.css\",[],\".eng-board .ecard:hover\",1,\"box-shadow\",1]": "0 4px 12px var(--shadow)",
-    "[\"frontend/src/styles/eng/issues.css\",[],\".task-priority-icon[data-priority]:hover::after\",1,\"transform\",1]": "translate(-50%, -100%)",
     "[\"frontend/src/styles/epm/project-board.css\",[\"@media (max-width: 640px)\"],\".epm-project-progress:hover .epm-project-progress-tooltip\",1,\"transform\",1]": "translateY(0)",
     "[\"frontend/src/styles/epm/project-board.css\",[],\".epm-project-progress:hover .epm-project-progress-tooltip\",1,\"transform\",1]": "translateX(-50%) translateY(0)",
     "[\"frontend/src/styles/planning/capacity.css\",[],\".capacity-bar-excluded-note[data-tooltip]:hover::after\",1,\"box-shadow\",1]": "0 8px 20px rgba(0, 0, 0, 0.2)",

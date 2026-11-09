@@ -5,7 +5,7 @@ import IconButton from '../ui/IconButton.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
 import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
 import { resolveEntityNames } from './engWorkModel.js';
-import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
+import usePlanningAssigneeCapacity, { createAssigneeRefreshEntry } from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { createStripRowModeSync } from './planningRowModeChannel.js';
@@ -288,13 +288,15 @@ export default function PlanningAssigneeCapacity({
     };
     const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
     const loaded = Boolean(state.document);
-    // The Planning freshness follow-up and the header Refresh re-read the shown document through this entry (#251).
+    // The Planning freshness follow-up and the header Refresh re-read the displayed Teams' stored numbers through this entry
+    // (#251): one Team its shown document, more Teams the batch read.
+    const registered = oneTeam ? loaded : Boolean(enabled && teamIdsKey !== '[]');
     React.useEffect(() => {
-        if (!automaticRefreshRef || !oneTeam || !loaded) return undefined;
-        const entry = { refresh: options => controller.refresh(options), blocked: () => controller.isBusy() };
+        if (!automaticRefreshRef || !registered) return undefined;
+        const entry = createAssigneeRefreshEntry(controller);
         automaticRefreshRef.assigneeCapacity = entry;
         return () => { if (automaticRefreshRef.assigneeCapacity === entry) automaticRefreshRef.assigneeCapacity = null; };
-    }, [automaticRefreshRef, oneTeam, loaded, controller]);
+    }, [automaticRefreshRef, registered, controller]);
     // The strip sits above the sheet, outside its reading anchor: when an automatic re-read changes its height while it is
     // scrolled away above the sticky stack, scroll by what the content below it actually moved (native scroll anchoring
     // may already have moved it back). The strip's bottom is read when the controller publishes, before React commits.

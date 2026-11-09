@@ -201,8 +201,9 @@ export function createPlanningFreshnessAdapter(readCurrent, stableOwner = {}) {
             finally { entry.release(); }
         },
         async followUp(job) {
-            // The assignee capacity strip re-reads its own document beside the review and capacity follow-ups; it skips itself while busy.
-            const assignee = stableOwner.assigneeCapacity, read = assignee && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
+            // The displayed Teams' stored numbers are re-read beside the review and capacity follow-ups (#323): never once the job
+            // no longer applies (an editor or push opened), and not while the strip's own owner is busy.
+            const assignee = stableOwner.assigneeCapacity, read = assignee && job.shouldApply() && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
             try { return await primary.followUp(job); } finally { await read?.catch(() => {}); holds.get(job)?.finish(); }
         },
     };

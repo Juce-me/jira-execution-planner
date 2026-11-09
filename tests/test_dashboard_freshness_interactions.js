@@ -306,3 +306,84 @@ for (const [surfaceFlags, busy] of [
     const { readFreshnessEnvironment } = await import('../frontend/src/dashboardFreshnessAdapters.js');
     assert.equal(readFreshnessEnvironment(freshnessInput(surfaceFlags)).ownerBusy, busy);
 });
+
+// #323 Task 7: the Planning follow-up re-reads every displayed Team's stored numbers through the assignee capacity slot.
+async function planningFreshness({ read, fetch } = {}) {
+    const { readFreshnessEnvironment, createPlanningFreshnessAdapter } = await import('../frontend/src/dashboardFreshnessAdapters.js');
+    const { createDashboardFreshnessController } = await import('../frontend/src/dashboardFreshnessController.js');
+    const { createAssigneeCapacityController, createAssigneeRefreshEntry } = await import('../frontend/src/eng/usePlanningAssigneeCapacity.js');
+    const ledger = { reads: [], gets: [], patches: [] };
+    const caps = { canRead: true, canSave: true };
+    const capacity = createAssigneeCapacityController({ sessionEvents: null, setTimer: () => 0, clearTimer: () => {},
+        readPlanned: read || (async (_u, sprintId, teamIds) => { ledger.reads.push([...teamIds]); return { sprintId, capabilities: caps, failedTeamIds: [], byTeam: Object.fromEntries(teamIds.map(id => [id, { revision: 1, planned: { value: '5', source: 'user' }, inherited: null }])) }; }),
+        fetchCapacity: fetch || (async (_u, sprintId, teamId) => { ledger.gets.push(teamId); return { teamId, sprintId, revision: 1, rows: [], planned: { value: '5', source: 'user' }, inherited: null, capabilities: caps }; }),
+        saveCapacity: async (_u, _s, payload) => { ledger.patches.push(payload); throw Object.assign(new Error('Server unavailable'), { status: 503 }); } });
+    const owner = { assigneeCapacity: createAssigneeRefreshEntry(capacity) };
+    const lane = { status: 'ok', items: [], meta: {} };
+    const input = { ...freshnessInput({ selectedView: 'eng', showPlanning: true }), activeGroupId: 'synthetic', selectedSprint: 1,
+        planningAutomaticReadRef: { current: 0 }, capacityInteractionRef: { current: false }, planningInteractionRef: { current: false },
+        planningReview: { getState: () => ({}), refresh: async () => {} }, refreshCapacity: async () => {},
+        epicRefresh: { readState: () => ({ loadedProductTasks: [], loadedTechTasks: [], epicDetails: {} }),
+            applyScopeSnapshot: () => ({ settled: Promise.resolve(), changedKeys: [], addedKeys: [], silentKeys: [], fetchedStories: [] }) },
+        collectGroupRefresh: async () => ({ product: lane, tech: lane, release() {} }) };
+    const adapter = createPlanningFreshnessAdapter(() => input, owner);
+    const controller = createDashboardFreshnessController({
+        readEnvironment: () => ({ ...readFreshnessEnvironment(input), focused: true, authReady: true, sessionEpoch: 0 }), readAdapter: () => adapter });
+    return { capacity, controller, input, ledger, adapter, owner };
+}
+const settleAll = async () => { for (let i = 0; i < 8; i++) await new Promise(resolve => setImmediate(resolve)); };
+
+test('Planning follow-up reads the stored numbers with the batch read in multi-Team scope and the full GET in one-Team scope', async () => {
+    const multi = await planningFreshness();
+    multi.capacity.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    await settleAll();
+    await multi.controller.request({ reason: 'bfcache' }); await settleAll();
+    assert.deepEqual(multi.ledger.reads, [['A', 'B'], ['A', 'B']], 'the follow-up runs one batch read');
+    assert.deepEqual(multi.ledger.gets, []);
+    multi.controller.dispose();
+
+    const one = await planningFreshness();
+    one.capacity.setScope({ sprintId: '100', teamId: 'A', active: true });
+    one.capacity.setProjectionScope({ sprintId: '100', teamIds: ['A'], active: true });
+    await settleAll();
+    await one.controller.request({ reason: 'bfcache' }); await settleAll();
+    assert.deepEqual(one.ledger.gets, ['A', 'A'], 'one Team: the full GET');
+    assert.deepEqual(one.ledger.reads, []);
+    one.controller.dispose();
+});
+
+test('a failed draft on another Team that is not open does not block the clean Teams\' automatic projection refresh', async () => {
+    const h = await planningFreshness();
+    h.capacity.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    h.capacity.ensureTeamDocument('A');
+    await settleAll();
+    h.capacity.commitTeamPlanned('A', '10');
+    h.capacity.flushTeam('A');
+    await settleAll();
+    assert.equal(h.capacity.getTeamStatus('A').plannedSave, 'failed');
+    const reads = h.ledger.reads.length;
+    await h.controller.request({ reason: 'bfcache' }); await settleAll();
+    assert.equal(h.ledger.reads.length, reads + 1, 'the clean Teams are refreshed');
+    assert.equal(h.capacity.getPlannedNumbers().byTeam.A.value, 10, 'the failed draft is kept');
+    assert.equal(h.ledger.patches.length, 1, 'nothing is resent');
+    h.controller.dispose();
+});
+
+test('an automatic follow-up while an editor is open does not run, and runs after it closes', async () => {
+    const h = await planningFreshness();
+    h.capacity.setProjectionScope({ sprintId: '100', teamIds: ['A', 'B'], active: true });
+    await settleAll();
+    const reads = h.ledger.reads.length;
+    h.input.capacityInteractionRef.current = true;
+    await h.controller.request({ reason: 'bfcache' }); await settleAll();
+    assert.equal(h.ledger.reads.length, reads, 'an open card editor blocks the follow-up');
+    h.input.capacityInteractionRef.current = false;
+    await h.controller.update(); await settleAll();
+    assert.equal(h.ledger.reads.length, reads + 1, 'it runs once the editor closes');
+    // An editor that opens after the job started: the follow-up sends no read either.
+    h.input.capacityInteractionRef.current = true;
+    const job = { signal: new AbortController().signal, shouldApply: () => !h.input.capacityInteractionRef.current, pendingSources: ['eng_product', 'eng_tech'] };
+    await h.adapter.followUp(job); await settleAll();
+    assert.equal(h.ledger.reads.length, reads + 1, 'no read while the editor is open');
+    h.controller.dispose();
+});

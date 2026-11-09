@@ -121,7 +121,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         if (!queue?.document || !record || baseOf(record, queue) !== record) return false;
         return (record.revision || 0) > (queue.document.revision || 0) || !sameValue(effectivePlanned(record), effectivePlanned(queue.document));
     };
-    const reReadIfStale = queue => { if (isStale(queue) && !queue.running && !queue.pending.size && queue.timer == null) void load(queue); };
+    // `automatic` marks the strip's publish of that re-read as automatic (an automatic refresh keeps the reading position).
+    const reReadIfStale = (queue, { automatic = false } = {}) => { if (isStale(queue) && !queue.running && !queue.pending.size && queue.timer == null) void load(queue, { automatic }); };
     // The stored number as the Team shows it: the newer of record and document, overlaid with the owner's unsaved number.
     const shownPlannedOf = (record, queue) => {
         let shown = effectivePlanned(baseOf(record, queue));
@@ -199,7 +200,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
     // Team commands act on the projection's Sprint (else the strip's); an editor's owner keeps that Sprint and Team.
     const teamOwner = (teamId, create = false) => ownerOf(projection?.sprintId || state.sprintId, teamId == null ? '' : String(teamId), create);
 
-    async function load(queue) {
+    async function load(queue, { automatic = false } = {}) {
         if (!isLive(queue) || queue.running || queue.pending.size || queue.loadAbort || authStopped) return;
         const controller = new AbortController();
         queue.loadAbort = controller;
@@ -212,7 +213,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             if (!sameDocument(queue.document, data)) clearUndo(queue);
             setDocument(queue, data);
             queue.load = 'ready'; queue.readError = '';
-            report(queue, () => ({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, error: state.save === 'failed' ? state.error : '' }));
+            report(queue, () => ({ load: 'ready', capabilities: data.capabilities || { canRead: false, canSave: false }, error: state.save === 'failed' ? state.error : '', ...(automatic ? { origin: 'automatic' } : {}) }));
         } catch (error) {
             if (isAbort(error) || isAuthError(error) || !isLive(queue)) return;
             if (!queue.document) { queue.load = 'error'; queue.readError = error.message || READ_ERROR; report(queue, { load: 'error' }); }
@@ -403,6 +404,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         }
         if (queue?.document) canSave = canSaveOwner(queue);
         else if (queue && halted(queue)) canSave = false;
+        // Over a failed read of the Team the right is unknown: no stored-number pencil is enabled.
+        else if (p && p.active && p.teamIds.includes(teamId) && (p.failed.has(teamId) || p.load === 'error')) canSave = null;
         else if (p?.capabilities) canSave = p.capabilities.canSave === true && !authStopped;
         let save = 'idle';
         if (queue) {
@@ -431,7 +434,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         p.abort = abort;
         const onAbort = () => abort.abort();
         signal?.addEventListener('abort', onAbort, { once: true });
-        const stale = () => projection !== p || projectionGeneration !== thisGeneration || abort.signal.aborted || !shouldApply();
+        const stale = () => projection !== p || projectionGeneration !== thisGeneration || abort.signal.aborted || authStopped || !shouldApply();
         if (!Object.keys(p.byTeam).length && p.load !== 'error') { p.load = 'loading'; emit(); }
         let data;
         try { data = await readPlanned(backendUrl, p.sprintId, p.teamIds, { signal: abort.signal }); }
@@ -453,7 +456,30 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         p.load = 'ready'; p.error = '';
         emit();
         // Owners a newer record supersedes are re-read when clean (a dirty one keeps its drafts over the record).
-        owners.forEach(queue => { if (queue.sprintId === p.sprintId && p.teamIds.includes(queue.teamId)) reReadIfStale(queue); });
+        owners.forEach(queue => { if (queue.sprintId === p.sprintId && p.teamIds.includes(queue.teamId)) reReadIfStale(queue, { automatic }); });
+        return { status: 'ok' };
+    }
+    // Freshness re-read of one projected Team's own document (one Team derives from its full GET) when the strip does not
+    // show it: never while the owner is busy, and a response that arrives stale or busy is dropped. A failure keeps the
+    // held document and raises no loading or error state.
+    async function refreshOwner(queue, { automatic, signal, shouldApply }) {
+        if (!queue.document) { if (!automatic && !queue.loadAbort && !authStopped) await load(queue); return { status: queue.document ? 'ok' : 'ignored' }; }
+        if (queue.loadAbort || ownerBusy(queue) || queue.timer != null || authStopped || signal?.aborted) return { status: 'ignored' };
+        const abort = new AbortController();
+        queue.loadAbort = abort;
+        const onAbort = () => abort.abort();
+        signal?.addEventListener('abort', onAbort, { once: true });
+        const epoch = queue.writeEpoch, thisGeneration = projectionGeneration;
+        const stale = () => !isLive(queue) || queue.writeEpoch !== epoch || projectionGeneration !== thisGeneration || abort.signal.aborted || authStopped || !shouldApply() || ownerBusy(queue);
+        let data;
+        try { data = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, { signal: abort.signal }); }
+        catch (error) { return { status: isAbort(error) || isAuthError(error) || stale() ? 'ignored' : 'failed' }; }
+        finally {
+            if (queue.loadAbort === abort) queue.loadAbort = null;
+            signal?.removeEventListener('abort', onAbort);
+        }
+        if (stale()) return { status: 'ignored' };
+        if (!sameDocument(queue.document, data)) { clearUndo(queue); setDocument(queue, data); report(queue, {}); }
         return { status: 'ok' };
     }
     function startProjection() {
@@ -525,8 +551,16 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             startProjection();
             emit();
         },
-        // Re-reads the projected Teams' stored numbers (the header Refresh or the automatic follow-up, #251).
-        refreshProjection: ({ automatic = true, signal, shouldApply = () => true } = {}) => readProjection({ automatic, signal, shouldApply }),
+        // Re-reads the projected Teams' stored numbers (the header Refresh or the automatic follow-up, #251): more than one
+        // Team through the batch read, one Team through its full GET (the strip's own refresh when it shows that Team).
+        // Each Team is fenced: a dirty, saving or failed owner keeps its value and clean Teams take the new one.
+        async refreshProjection({ automatic = true, signal, shouldApply = () => true } = {}) {
+            const p = projection, options = { automatic, signal, shouldApply };
+            if (p?.active && p.teamIds.length > 1) return readProjection(options);
+            const only = p?.active ? ownerOf(p.sprintId, p.teamIds[0], true) : null;
+            const results = await Promise.all([current && active ? controller.refresh(options) : null, only && only !== current ? refreshOwner(only, options) : null].filter(Boolean));
+            return { status: ['ok', 'failed'].find(status => results.some(result => result.status === status)) || 'ignored' };
+        },
         getPlannedNumbers: () => numbers,
         getTeamStatus(teamId) {
             const id = String(teamId);
@@ -644,7 +678,7 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
             const queue = current;
             if (!queue || !active || !queue.document || state.load === 'loading' || queue.loadAbort || refreshing || ownerBusy(queue) || signal?.aborted) return { status: 'ignored' };
             const epoch = queue.writeEpoch, thisGeneration = generation;
-            const stale = () => !isCurrent(queue) || generation !== thisGeneration || queue.writeEpoch !== epoch || signal?.aborted || !shouldApply() || ownerBusy(queue);
+            const stale = () => !isCurrent(queue) || generation !== thisGeneration || queue.writeEpoch !== epoch || signal?.aborted || authStopped || !shouldApply() || ownerBusy(queue);
             refreshing = true;
             let data;
             try { data = await fetchCapacity(backendUrl, queue.sprintId, queue.teamId, { signal }); }
@@ -660,6 +694,8 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
         // A new auth session: nothing read under the old one is reused (clean owners are dropped; dirty ones keep their
         // drafts), undo history is cleared, and the shown document and the numbers are held while they are re-read.
         resetSession() {
+            // A strip refresh still out belongs to the old session.
+            generation += 1;
             owners.forEach(clearUndo);
             [...owners.values()].forEach(queue => { if (queue !== current && !ownerBusy(queue) && !queue.stopped) drop(queue); });
             if (current) { current.loadAbort?.abort(); current.loadAbort = null; publish({}); }
@@ -691,6 +727,13 @@ export function createAssigneeCapacityController({ backendUrl = '', fetchCapacit
 // One controller per backend, held above the provider (#323 B1 design A): the provider drives it and App reads only its
 // stored team number through one useSyncExternalStore, so App re-renders only when that number changes.
 const controllers = new Map();
+// The Planning freshness slot (#251): the header Refresh and the automatic follow-up re-read the displayed Teams' stored
+// numbers. Only the strip's own busy owner blocks the automatic re-read (today's rule); another Team's draft or failure
+// does not, since its owner fences its own value. An open editor or push already blocks the whole Planning refresh.
+export const createAssigneeRefreshEntry = controller => ({
+    refresh: options => controller.refreshProjection(options),
+    blocked: () => { const strip = controller.getState(); return Boolean(strip.scopeKey) && (strip.changes.length > 0 || strip.save === 'saving'); },
+});
 export function getAssigneeCapacityController(backendUrl = '') {
     if (!controllers.has(backendUrl)) controllers.set(backendUrl, createAssigneeCapacityController({ backendUrl }));
     return controllers.get(backendUrl);

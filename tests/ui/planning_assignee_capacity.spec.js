@@ -83,7 +83,7 @@ const searchPeople = [
 ];
 const defaultPeople = query => ({ users: searchPeople.filter(person => person.displayName.toLowerCase().includes(String(query || '').toLowerCase())), reason: null });
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople, capacityPatch = null } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople, capacityPatch = null, epics = [epic] } = {}) {
     const calls = [];
     await installDashboardShell(page);
     // Planning counts only Stories included in the shared plan (#331); the previous default selection becomes a saved plan of every Story.
@@ -132,7 +132,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const product = url.searchParams.get('project') === 'product' && !url.searchParams.get('purpose');
-            return json(route, { issues: product ? issues : [], epics: { [epic.key]: epic }, epicsInScope: product ? [epic] : [], names: {} });
+            return json(route, { issues: product ? issues : [], epics: Object.fromEntries(epics.map(item => [item.key, item])), epicsInScope: product ? epics : [], names: {} });
         }
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return server.batch ? server.batch(route) : json(route, { sprintId: url.pathname.split('/')[4], capabilities: caps, teams: [] });
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) return server.handler(route);
@@ -1631,7 +1631,10 @@ test.describe('render counts (#323 DoD 13)', () => {
             if (next === text) throw new Error(`${name} counter was not injected`);
             text = next;
         }
-        probeBundle = text;
+        // The assignee capacity controllers, so a test can run the stored-number refresh alone (#323 Task 7).
+        const map = 'var controllers = /* @__PURE__ */ new Map();';
+        if (text.split(map).length !== 2) throw new Error(`${map} must occur exactly once`);
+        probeBundle = text.replace(map, `${map}\nwindow.__JEP_323_CONTROLLERS__ = controllers;`);
     });
     const many = Array.from({ length: 3000 }, (_, index) => {
         const person = index % 9;
@@ -1692,6 +1695,24 @@ test.describe('render counts (#323 DoD 13)', () => {
         testInfo.annotations.push({ type: 'dod13', description: `strip edit ${JSON.stringify(result)}` });
         expect(result.renders, 'App renders on a strip edit').toBe(0);
         expect(result.teamTasks).toBe(0);
+    });
+
+    test('render counts: an unchanged stored-number refresh in two Teams renders App zero times; a changed number renders it', async ({ page }, testInfo) => {
+        test.setTimeout(180000);
+        const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+        await openProbe(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket, issues: stories });
+        await showCards(page);
+        await storedOn(page, 'team-beta', '6.0');
+        const refresh = () => page.evaluate(() => [...window.__JEP_323_CONTROLLERS__.values()][0].refreshProjection({ automatic: true }));
+        const reads = server.state.reads.length;
+        const unchanged = await measure(page, async () => { expect(await refresh()).toEqual({ status: 'ok' }); });
+        expect(server.state.reads.length, 'one batch read').toBe(reads + 1);
+        storeOn(server, 'team-beta', '9');
+        const changed = await measure(page, async () => { expect(await refresh()).toEqual({ status: 'ok' }); await storedOn(page, 'team-beta', '9.0'); });
+        console.log('DOD13_MEASURE', 'stored-number refresh', JSON.stringify({ unchanged, changed }));
+        testInfo.annotations.push({ type: 'dod13', description: `stored-number refresh ${JSON.stringify({ unchanged, changed })}` });
+        expect(unchanged.renders, 'App renders on an unchanged projection').toBe(0);
+        expect(changed.renders, 'the probe sees a changed number').toBeGreaterThan(0);
     });
 });
 
@@ -4123,3 +4144,201 @@ test('leaving Planning while a push is in flight and another Team\'s editor is o
     await expect.poll(() => calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name').length, 'the automatic Planning refresh runs').toBeGreaterThan(0);
 });
 
+
+// ---- #323 Task 7: refresh and scope changes that preserve working state ----------------------------------------
+
+// Another writer stores `value` for a Team in the selected Sprint (the next full GET and batch read see it).
+function storeOn(server, teamId, value) {
+    const key = `${futureSprintId}|${teamId}`;
+    const own = server.state.docs[key] || { revision: 0, rows: [], planned: null };
+    own.planned = { value, source: 'user' }; own.revision += 1;
+    server.state.docs[key] = own;
+}
+const headerRefresh = page => page.locator('[aria-label="Refresh tasks and sprints from Jira"]');
+const settled = async page => { await page.waitForLoadState('networkidle'); await page.waitForTimeout(300); };
+const threeTeams = ['team-alpha', 'team-beta', 'team-gamma'];
+
+test('request ledger: two Teams\' automatic follow-up and header Refresh each read the stored numbers with one batch read and no document GET', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-beta', '6.0');
+    await settled(page);
+    // The automatic window first: in this fixture a return right after a header Refresh starts no Planning refresh.
+    let since = calls.length;
+    storeOn(server, 'team-alpha', '15');
+    await lifecycle.returnAfter(13 * 60000);
+    await storedOn(page, 'team-alpha', '15.0');
+    await settled(page);
+    expect(batchReads(calls, since).map(call => [...call.body.teamIds].sort()), 'automatic follow-up: one batch read').toEqual([twoTeams]);
+    expect(assigneeCalls(calls, since), 'automatic follow-up: no document GET').toEqual([]);
+    since = calls.length;
+    storeOn(server, 'team-beta', '9');
+    await headerRefresh(page).click();
+    await storedOn(page, 'team-beta', '9.0');
+    await settled(page);
+    expect(batchReads(calls, since).map(call => [...call.body.teamIds].sort()), 'header Refresh: one batch read').toEqual([twoTeams]);
+    expect(assigneeCalls(calls, since), 'header Refresh: no document GET').toEqual([]);
+    expect(calls.filter(call => call.method === 'PATCH'), 'nothing is written').toEqual([]);
+});
+
+test('request ledger: one Team\'s automatic follow-up and header Refresh each use its full GET and no batch read', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = teamsServer({ planned: { 'team-alpha': '14' } });
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-alpha', '14.0');
+    await settled(page);
+    let since = calls.length;
+    storeOn(server, 'team-alpha', '17');
+    await lifecycle.returnAfter(13 * 60000);
+    await storedOn(page, 'team-alpha', '17.0');
+    await settled(page);
+    expect(assigneeCalls(calls, since).map(call => call.method), 'automatic follow-up: one full GET').toEqual(['GET']);
+    expect(batchReads(calls, since)).toEqual([]);
+    since = calls.length;
+    storeOn(server, 'team-alpha', '16');
+    await headerRefresh(page).click();
+    await storedOn(page, 'team-alpha', '16.0');
+    await settled(page);
+    expect(assigneeCalls(calls, since).map(call => call.method), 'header Refresh: one full GET').toEqual(['GET']);
+    expect(batchReads(calls, since)).toEqual([]);
+});
+
+test('header Refresh with one editor open, another Team failed and the rest clean: the clean Team refreshes, the editor keeps its text, focus and scroll, and the failed draft stays', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6', 'team-gamma': '5' }, patchStatus: teamId => (teamId === 'team-beta' ? 503 : 0) });
+    const { calls } = await install(page, { server, selectedTeams: threeTeams, scopeTeamIds: threeTeams, capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
+    await openPlanning(page);
+    await showCards(page);
+    await typeTeamNumber(page, 'team-beta', 'Beta Team', '7');
+    await expect(teamCard(page, 'team-beta')).toHaveAttribute('data-capacity-attention', 'failed');
+    await teamCard(page, 'team-alpha').hover();
+    await teamPencil(page, 'team-alpha', 'Alpha Team').click();
+    const input = teamInput(page, 'team-alpha', 'Alpha Team');
+    await input.fill('12');
+    await expect(input).toBeFocused();
+    await page.evaluate(() => window.scrollTo(0, 120));
+    const scrollY = await page.evaluate(() => window.scrollY);
+    await settled(page);
+    const patches = server.state.patches.length;
+    const since = calls.length;
+    storeOn(server, 'team-alpha', '20'); storeOn(server, 'team-beta', '30'); storeOn(server, 'team-gamma', '8');
+    // No pointer: the Refresh is clicked without moving focus out of the open editor.
+    await headerRefresh(page).dispatchEvent('click');
+    await storedOn(page, 'team-gamma', '8.0');
+    await settled(page);
+    expect(batchReads(calls, since), 'the header Refresh is not blocked by a busy Team').toHaveLength(1);
+    await expect(input, 'the editor stays open with its text').toHaveValue('12');
+    await expect(input).toBeFocused();
+    expect(await page.evaluate(() => window.scrollY), 'the scroll position is kept').toBe(scrollY);
+    // The open editor hides every card's rail state; the overview note still tells the failure, and the card shows the draft.
+    await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
+    await storedOn(page, 'team-beta', '7.0');
+    await input.press('Escape');
+    await expect(teamCard(page, 'team-beta')).toHaveAttribute('data-capacity-attention', 'failed');
+    await storedOn(page, 'team-alpha', '20.0');
+    expect(server.state.patches.length, 'the refresh writes nothing').toBe(patches);
+    expect(jiraWrites(calls)).toEqual([]);
+});
+
+test('an automatic follow-up while a card editor is open does not run, and runs once the editor closes', async ({ page }) => {
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-beta', '6.0');
+    await settled(page);
+    await teamCard(page, 'team-alpha').hover();
+    await teamPencil(page, 'team-alpha', 'Alpha Team').click();
+    const input = teamInput(page, 'team-alpha', 'Alpha Team');
+    await input.fill('12');
+    const since = calls.length;
+    storeOn(server, 'team-beta', '9');
+    await lifecycle.returnAfter(13 * 60000);
+    await page.waitForTimeout(800);
+    expect(taskReads(calls, since), 'the open editor blocks the automatic Planning refresh').toEqual([]);
+    expect(batchReads(calls, since)).toEqual([]);
+    await expect(input).toHaveValue('12');
+    await input.press('Escape');
+    await expect(teamCard(page, 'team-alpha').locator('.team-capacity-editor')).toHaveCount(0);
+    await storedOn(page, 'team-beta', '9.0');
+    await settled(page);
+    expect(batchReads(calls, since), 'it runs after the editor closes').toHaveLength(1);
+    expect(server.state.patches).toEqual([]);
+});
+
+test('a failed stored-number read keeps the numbers and enables no pencil; the next Refresh recovers with no PATCH', async ({ page }) => {
+    let failRead = false;
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+    const batch = server.batch;
+    server.batch = route => (failRead ? json(route, { error: 'review_unavailable' }, 503) : batch(route));
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-alpha', '14.0');
+    await teamCard(page, 'team-alpha').hover();
+    await expect(teamPencil(page, 'team-alpha', 'Alpha Team')).toBeEnabled();
+    await settled(page);
+    failRead = true;
+    const since = calls.length;
+    await headerRefresh(page).click();
+    await expect.poll(() => batchReads(calls, since).length).toBe(1);
+    await settled(page);
+    for (const [teamId, name, value] of [['team-alpha', 'Alpha Team', '14.0'], ['team-beta', 'Beta Team', '6.0']]) {
+        await storedOn(page, teamId, value);
+        await teamCard(page, teamId).hover();
+        await expect(teamPencil(page, teamId, name), `${teamId}: no pencil is enabled over a failed read`).toBeDisabled();
+    }
+    failRead = false;
+    storeOn(server, 'team-beta', '9');
+    await headerRefresh(page).click();
+    await storedOn(page, 'team-beta', '9.0');
+    await teamCard(page, 'team-alpha').hover();
+    await expect(teamPencil(page, 'team-alpha', 'Alpha Team')).toBeEnabled();
+    await settled(page);
+    expect(server.state.patches, 'recovery writes nothing').toEqual([]);
+    expect(calls.filter(call => call.method === 'PATCH')).toEqual([]);
+});
+
+// MRT009: an automatic refresh that changes a Team's stored number keeps the pinned stack, the docked header and the
+// reading position, for Epic and for Story rows.
+const manyEpics = Array.from({ length: 30 }, (_, index) => ({ ...epic, id: String(7100 + index), key: `PLAN-E${index + 1}`, summary: `Synthetic epic ${index + 1}` }));
+const manyEpicStories = manyEpics.flatMap((item, index) => [0, 1].map(offset => {
+    const base = story(`PLAN-${100 + index * 2 + offset}`, 'acc-ann', 'Ann Synthetic', 1 + offset, { team: offset ? 'team-beta' : 'team-alpha' });
+    return { ...base, fields: { ...base.fields, epicKey: item.key, parentSummary: item.summary } };
+}));
+for (const rows of ['Epics', 'Stories']) test(`an automatic stored-number refresh keeps the sticky offsets and the reading position (${rows} rows, 1280x720)`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    const { installLifecycleControl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-beta': '6' } });
+    const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket, issues: manyEpicStories, epics: manyEpics });
+    await openPlanning(page);
+    await page.getByRole('radio', { name: rows, exact: true }).click();
+    await expect(page.locator('.planning-review-table tbody tr[data-issue-key]').nth(20)).toBeAttached();
+    await settled(page);
+    await page.evaluate(() => window.scrollTo(0, 900));
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible();
+    const read = () => page.evaluate(() => {
+        const stack = document.querySelector('.planning-review-sticky-stack').getBoundingClientRect();
+        const docked = document.querySelector('.planning-review-docked-header').getBoundingClientRect();
+        const row = [...document.querySelectorAll('table.planning-review-table:not(.planning-review-docked-table) tbody tr[data-issue-key]')].find(node => node.getBoundingClientRect().top >= docked.bottom);
+        return { stackTop: Math.round(stack.top), stackBottom: Math.round(stack.bottom), dockedTop: Math.round(docked.top), scrollY: Math.round(window.scrollY), key: row.dataset.issueKey, rowTop: Math.round(row.getBoundingClientRect().top) };
+    });
+    const before = await read();
+    const since = calls.length;
+    storeOn(server, 'team-beta', '9');
+    await lifecycle.returnAfter(13 * 60000);
+    await expect.poll(() => batchReads(calls, since).length, 'the automatic follow-up read the stored numbers').toBe(1);
+    await settled(page);
+    expect(await read(), `${rows}: pinned stack, docked header and reading position`).toEqual(before);
+    await page.screenshot({ path: `tmp/planning-323-every-team/task7/reading-position-${rows.toLowerCase()}-1280x720.png`, animations: 'disabled' });
+});

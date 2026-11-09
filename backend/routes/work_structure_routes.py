@@ -617,3 +617,101 @@ def save_work_structure_config():
             'error': 'work_configuration_save_failed', 'status': 'error',
             'message': 'The work configuration could not be saved.',
         }), 500
+
+
+# --- Allocation option values ----------------------------------------------------
+
+_ALLOCATION_FIELD_PATTERN = re.compile(r'customfield_([0-9]{1,32})')
+_ALLOCATION_PROJECT_PATTERN = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,63}')
+_ALLOCATION_TYPE_PATTERN = re.compile(r'[0-9]{1,32}')
+_ALLOCATION_QUERY_MAX = 255
+_ALLOCATION_TIMEOUT_SECONDS = 15
+
+
+def _allocation_request_error(message):
+    return jsonify({'error': 'invalid_allocation_options_request', 'status': 'error', 'message': message}), 400
+
+
+def _unique_values(values):
+    return [{'value': value} for value in dict.fromkeys(value for value in values if value)]
+
+
+def _createmeta_allocation_values(auth_context, field_id, project_key, issue_type_id):
+    """Complete option list from the user's create metadata, or None when unreadable or absent."""
+    response = get_jira_server().current_jira_get(
+        f'/rest/api/3/issue/createmeta/{project_key}/issuetypes/{issue_type_id}',
+        params={'maxResults': 200}, timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
+    )
+    if response.status_code != 200:
+        return None
+    body = response.json() or {}
+    fields = body.get('fields') or body.get('values') or []
+    field = next((item for item in fields if isinstance(item, dict) and item.get('fieldId') == field_id), None)
+    if field is None:
+        return None
+    return [str((item or {}).get('value') or '').strip() for item in field.get('allowedValues') or []
+            if isinstance(item, dict)]
+
+
+def _autocomplete_allocation_values(auth_context, field_number, query):
+    """Prefix-only, capped JQL suggestions (the labels precedent), or None on a non-200."""
+    response = get_jira_server().current_jira_get(
+        '/rest/api/3/jql/autocompletedata/suggestions',
+        params={'fieldName': f'cf[{field_number}]', 'fieldValue': query},
+        timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
+    )
+    if response.status_code != 200:
+        return None
+    values = []
+    for item in (response.json() or {}).get('results') or []:
+        value = str((item or {}).get('value') or '').strip()
+        if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        values.append(value)
+    return values
+
+
+@bp.route('/api/work-structure/allocation-options', methods=['GET'])
+def get_work_structure_allocation_options():
+    """Allocation values for the DELIVERY Product/Tech mapping, read with the user's own Jira (no write).
+
+    The parameters come from the editor draft, so an unsaved field choice is listable.  createmeta
+    gives the complete list; autocomplete is the fallback; when both fail the editor takes typed values.
+    """
+    try:
+        auth_context, failure = _feature_context()
+        if failure is not None:
+            return failure
+        field_id = request.args.get('fieldId', '').strip()
+        project_key = request.args.get('projectKey', '').strip()
+        issue_type_id = request.args.get('issueTypeId', '').strip()
+        query = request.args.get('query', '').strip()
+        field_match = _ALLOCATION_FIELD_PATTERN.fullmatch(field_id)
+        if field_match is None:
+            return _allocation_request_error('fieldId must be a custom field id.')
+        if project_key and _ALLOCATION_PROJECT_PATTERN.fullmatch(project_key) is None:
+            return _allocation_request_error('Invalid project key.')
+        if issue_type_id and _ALLOCATION_TYPE_PATTERN.fullmatch(issue_type_id) is None:
+            return _allocation_request_error('Invalid issue type id.')
+        if len(query) > _ALLOCATION_QUERY_MAX:
+            return _allocation_request_error('Query is too long.')
+        body = {'options': [], 'source': None, 'complete': False}
+        values = None
+        if project_key and issue_type_id:
+            values = _createmeta_allocation_values(auth_context, field_id, project_key, issue_type_id)
+        if values is not None:
+            needle = query.casefold()
+            body = {'options': _unique_values(v for v in values if needle in v.casefold()),
+                    'source': 'createmeta', 'complete': True}
+        else:
+            values = _autocomplete_allocation_values(auth_context, field_match.group(1), query)
+            if values is not None:
+                body = {'options': _unique_values(values), 'source': 'autocomplete', 'complete': False}
+        response = jsonify(body)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except AuthError:
+        return _auth_required_response()
+    except Exception:
+        _wsr_log.exception('Allocation option read failed')
+        return jsonify({'options': [], 'source': None, 'complete': False})

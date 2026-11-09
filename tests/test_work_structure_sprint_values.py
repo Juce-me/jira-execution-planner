@@ -7,7 +7,7 @@ from unittest.mock import patch
 import jira_server
 from backend.config.repository import ConfigStorageError
 from tests.test_work_structure_catalogs import (
-    DELIVERY_BOARD_PATH, DELIVERY_SPRINT_FIELD, CatalogBase, FakeJira, board_page, issue, sprint_value,
+    DELIVERY_BOARD_PATH, CatalogBase, FakeJira, board_page, issue, sprint_value,
 )
 from tests.test_work_structure_routes import jira_response
 

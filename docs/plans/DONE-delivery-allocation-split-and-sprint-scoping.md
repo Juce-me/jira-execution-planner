@@ -17,6 +17,8 @@ External review fixes (2026-11-09, PR 334): only a DELIVERY entry with a blank s
 
 Partially accurate: the goal, owner decisions, assumptions and acceptance checklist describe what shipped; the task bodies are the pre-execution contract, and where a task's Status line records a divergence the implementation is the source of truth. The extraction lint is still red with the same 70 enforced problems as the merge base (none added here); see Track C step 1.
 
+Superseded in part by [EXEC-delivery-initiative-allocation-and-board-sprints.md](EXEC-delivery-initiative-allocation-and-board-sprints.md): DELIVERY Product/Tech now comes from the Initiative's own Allocation only, with a third class No Allocation (no Epic/Objective precedence, no Objective batch, Ad Hoc follows its Initiative), and Board-mode Sprints come only from the Board, split by quarter range (the issue-scan supplement is deleted); where they differ, that plan and the implementation are the source of truth.
+
 **Goal:** In the DELIVERY (`rnd_2027`) configuration, the Allocation field decides Product vs Tech (instead of one combined lane), mapped in Settings with the Legacy project picker's controls. Each configuration takes its Sprint ids only from its own sources, and same-named Sprints from both configurations show as two labelled rows wherever they share a list.
 
 **Supersedes:** decisions D-D, D-E and the open D-C clarification in [DONE-quarterly-work-structure-migration.md](DONE-quarterly-work-structure-migration.md) (lines 424-426, 441-443, 453-454, 470). The work stays behind `WORK_CONFIGURATIONS_ENABLED`, and only DB/OAuth is supported, as in that plan.

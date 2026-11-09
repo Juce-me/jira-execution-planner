@@ -1,10 +1,8 @@
 """Task 3A/3B: configuration Sprint sources, Team publication without a Board row, selectors."""
 
 import unittest
-import time
 import uuid
 from copy import deepcopy
-from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
@@ -27,7 +25,6 @@ from backend.services.workspace_catalog_cache import (
     ScopedSprintCatalogStore,
     capture_sprint_proof,
     claim_catalog_refresh,
-    load_scoped_sprint_catalog,
     publish_catalog,
 )
 from backend.services.workspace_catalog_config import (

@@ -1487,7 +1487,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return `sprint-${surface}-option-${suffix}`;
             };
 
-            const componentScopeLabel = combinedWorkModel ? 'Allocation' : 'Component';
             const getSprintSelectorOptions = (boardScopeControl) => {
                 const normalizedSearch = sprintSearch.trim().toLowerCase();
                 const options = [];
@@ -1497,12 +1496,13 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         readiness: engSprintSelectorState.allWorkReadiness,
                     });
                 }
-                if (boardScopeControl && (!normalizedSearch || componentScopeLabel.toLowerCase().includes(normalizedSearch))) {
-                    options.push({
-                        kind: 'scope', scope: combinedWorkModel ? 'allocation' : 'component', label: componentScopeLabel,
-                        readiness: combinedWorkModel ? engSprintSelectorState.allocationReadiness : engSprintSelectorState.componentReadiness,
+                // Both era scopes are always listed; the one that does not fit the viewed quarter reads as unavailable.
+                [['component', 'Component', engSprintSelectorState.componentReadiness], ['allocation', 'Allocation', engSprintSelectorState.allocationReadiness]]
+                    .forEach(([scope, label, readiness]) => {
+                        if (boardScopeControl && (!normalizedSearch || label.toLowerCase().includes(normalizedSearch))) {
+                            options.push({ kind: 'scope', scope, label, readiness });
+                        }
                     });
-                }
                 filteredSprints.forEach(sprint => options.push({
                     kind: 'sprint', sprint, label: String(sprint.name || 'Sprint'),
                 }));
@@ -1612,6 +1612,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     return;
                 }
                 if (option.kind === 'scope') {
+                    if (option.readiness === 'scope_model_mismatch') return;
                     selectBoardScope(option.scope);
                     return;
                 }

@@ -271,6 +271,12 @@ test('Legacy Board scope keeps Component and its Component search label', async 
     await selector.getByRole('combobox').fill('comp');
     await expect(selector.getByRole('option', { name: 'Component', exact: true })).toBeVisible();
     await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toHaveCount(0);
+    await selector.getByRole('combobox').fill('');
+    const other = selector.getByRole('option', { name: 'Allocation', exact: true });
+    await expect(other).toBeVisible();
+    await expect(other).toHaveAttribute('aria-disabled', 'true');
+    await expect(other).toContainText('Other quarters');
+    await expect(selector.getByRole('option', { name: 'Component', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
 });
 
 test('DELIVERY All work without Department membership shows Allocation guidance without a stream request', async ({ page }) => {

@@ -228,6 +228,7 @@ export function SprintControl({
                                 const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
                                 const readinessText = option.kind === 'scope'
                                     ? (option.readiness === 'ready' ? 'Ready'
+                                        : option.readiness === 'scope_model_mismatch' ? 'Other quarters'
                                         : ['loading', 'catalog_pending'].includes(option.readiness)
                                             ? 'Loading configuration'
                                             : 'Setup needed')
@@ -244,6 +245,7 @@ export function SprintControl({
                                         tabIndex={-1}
                                         aria-label={option.label}
                                         aria-selected={selected}
+                                        aria-disabled={option.readiness === 'scope_model_mismatch' || undefined}
                                         aria-describedby={descriptionId}
                                         className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
                                         data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}

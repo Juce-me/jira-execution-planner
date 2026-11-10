@@ -143,6 +143,8 @@ def matches_jql(issue, expression):
         'team[team]': [fields[TEAM_FIELD]['id']], 'team': [fields[TEAM_FIELD]['id']],
         TEAM_FIELD.casefold(): [fields[TEAM_FIELD]['id']], 'cf[10021]': [fields[TEAM_FIELD]['id']],
         'labels': fields['labels'], 'component': [row['name'] for row in fields['components']],
+        # The future-Sprint Backlog alert read (`/api/backlog-epics`) filters on `assignee is not EMPTY`.
+        'assignee': [(fields.get('assignee') or {}).get('accountId', '')],
         'parent': [fields.get('parent', {}).get('key', ''), fields.get('parent', {}).get('id', '')],
         'epic link': [fields.get(EPIC_FIELD, '')], EPIC_FIELD.casefold(): [fields.get(EPIC_FIELD, '')],
         'status': [fields['status']['name'], fields['status']['id']],

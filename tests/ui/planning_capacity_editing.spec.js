@@ -412,6 +412,9 @@ async function openPlanning(page, options = {}) {
     // Planning is the Table only (#323): its overview starts compact, so the capacity cards are behind Show capacity details.
     if (options.details !== false) await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(options.teamCount || 3);
+    // The opened panel's padding transitions for 0.6s; idle geometry is read only after it settles (headed Firefox and
+    // WebKit are still mid-transition here, which read as a hover width change).
+    await page.evaluate(() => Promise.all(document.getAnimations().filter(item => item instanceof CSSTransition).map(item => item.finished)));
     return fixture;
 }
 
@@ -2123,6 +2126,9 @@ function buildPushHarness() {
 
 async function mountPushHarness(page, withRequest = true) {
     await page.setViewportSize({ width: 1280, height: 720 });
+    // setContent keeps the window, so a previous mount's React root would keep rendering its portalled readout into the
+    // new body (two readouts in Firefox); unmount it first.
+    await page.evaluate(() => window.__unmount?.());
     await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="width: 760px; margin: 40px;"></div></body></html>');
     await page.addStyleTag({ content: `${fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8')}\n*,*::before,*::after{animation:none!important;transition:none!important}` });
     await page.evaluate(value => { window.__withRequest = value; }, withRequest);
@@ -2151,8 +2157,10 @@ async function expectSettledPush(page, button, { ring }) {
     await page.waitForTimeout(150);
     expect(await button.boundingBox()).toEqual(box);
     expect(await button.evaluate(node => getComputedStyle(node).boxShadow) !== 'none', 'hover paint').toBe(ring);
+    // macOS WebKit reaches buttons with Option+Tab only.
+    const tab = page.context().browser().browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
     await button.focus();
-    await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+    await page.keyboard.press(`Shift+${tab}`); await page.keyboard.press(tab);
     await expect(button).toBeFocused();
     expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
     await page.evaluate(() => document.activeElement?.blur());

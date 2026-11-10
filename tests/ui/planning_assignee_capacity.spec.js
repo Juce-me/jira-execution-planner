@@ -3954,8 +3954,10 @@ test('settled hover, focus and geometry: card pencils, editor controls, ↻ Retr
         await page.waitForTimeout(150);
         expect(await locator.boundingBox()).toEqual(box);
         expect(await locator.evaluate(node => getComputedStyle(node).boxShadow)).not.toBe('none');
+        // macOS WebKit reaches buttons with Option+Tab only.
+        const tab = page.context().browser().browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
         await locator.focus();
-        await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+        await page.keyboard.press(`Shift+${tab}`); await page.keyboard.press(tab);
         await expect(locator).toBeFocused();
         expect(await locator.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
     };
@@ -4215,8 +4217,10 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
         await page.waitForTimeout(150);
         expect(await button.boundingBox()).toEqual(box);
         expect(await button.evaluate(node => getComputedStyle(node).boxShadow) !== 'none', 'hover paint').toBe(ring);
+        // macOS WebKit reaches buttons with Option+Tab only.
+        const tab = page.context().browser().browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
         await button.focus();
-        await page.keyboard.press('Shift+Tab'); await page.keyboard.press('Tab');
+        await page.keyboard.press(`Shift+${tab}`); await page.keyboard.press(tab);
         await expect(button).toBeFocused();
         expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
     };
@@ -4541,6 +4545,8 @@ for (const rows of ['Epics', 'Stories']) test(`an automatic stored-number refres
         const row = [...document.querySelectorAll('table.planning-review-table:not(.planning-review-docked-table) tbody tr[data-issue-key]')].find(node => node.getBoundingClientRect().top >= docked.bottom);
         return { stackTop: Math.round(stack.top), stackBottom: Math.round(stack.bottom), dockedTop: Math.round(docked.top), scrollY: Math.round(window.scrollY), key: row.dataset.issueKey, rowTop: Math.round(row.getBoundingClientRect().top) };
     });
+    // The docked header re-measures on the next frame after the scroll moves the stack (WebKit reads it a frame later).
+    await expect.poll(async () => { const { dockedTop, stackBottom } = await read(); return dockedTop === stackBottom; }, 'the docked header sits under the stack').toBe(true);
     const before = await read();
     await expect(page.locator('.planning-panel .planning-actions > .planning-stats')).toContainText('Cap 20.0 SP');
     const since = calls.length;

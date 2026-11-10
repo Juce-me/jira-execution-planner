@@ -4085,9 +4085,11 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await teamCard(page, 'team-01').hover();
     await teamCard(page, 'team-01').getByRole('button', { name: 'Edit Synthetic Team 01 capacity' }).click();
     await expect(teamCard(page, 'team-01').locator('.team-capacity-editor')).toHaveCount(1);
+    await expect(teamCard(page, 'team-01').getByRole('spinbutton', { name: 'Synthetic Team 01 Jira total planned capacity', exact: true })).toBeFocused();
     // Team cards never grow (#323 Task 8 R3): an open editor keeps every card, its own included, at the idle height.
     expect(await cardHeights(page), 'editing').toEqual(baseline);
     await page.keyboard.press('Escape');
+    await expect(teamCard(page, 'team-01').locator('.team-capacity-editor')).toHaveCount(0);
     await typeTeamNumber(page, 'team-12', 'Synthetic Team 12', '7');
     await expect(teamCard(page, 'team-12')).toHaveAttribute('data-capacity-attention', 'failed');
     await rest();

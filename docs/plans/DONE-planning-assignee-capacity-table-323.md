@@ -182,6 +182,8 @@ Evidence for each item (command output, test name or screenshot) is recorded in 
 17. Docs listed in Task 10 are updated; the plan has Outcome, Current Accuracy, an execution log and is renamed `DONE-` with README entry and links in the completing commit.
 18. Publication follows `AGENTS.md` section 10; push and PR only on the operator's explicit confirmation.
 
+The push and the open verification items moved to [EXEC-planning-team-capacity-every-team-323.md](EXEC-planning-team-capacity-every-team-323.md).
+
 ## Deferred scope
 
 Moved to [FUTURE-planning-assignee-capacity-deferred-323.md](FUTURE-planning-assignee-capacity-deferred-323.md): the one-click push of the stored team number to Jira, plus the open items from the verification gate.

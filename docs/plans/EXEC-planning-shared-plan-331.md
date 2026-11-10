@@ -450,7 +450,7 @@ A consumed token whose route later fails stays consumed; there is no automatic r
 
 **Still open:** the full isolated backend suite after those fixes, the full Chromium `tests/ui` gate and CI.
 
-**Deliverable:** a PostgreSQL-only application and test stack, with race-safe single-use CSRF under the already required DB-backed OAuth profile. Until approved and verified, Task 0.1 remains a browser-integration prerequisite for #331 Tasks 4–8 and for the multi-Team capacity work in [FUTURE-planning-assignee-capacity-deferred-323.md](FUTURE-planning-assignee-capacity-deferred-323.md). Earlier isolated runtime, storage and HTTP results remain evidence for their narrower boundaries.
+**Deliverable:** a PostgreSQL-only application and test stack, with race-safe single-use CSRF under the already required DB-backed OAuth profile. Until approved and verified, Task 0.1 remains a browser-integration prerequisite for #331 Tasks 4–8 and for the multi-Team capacity work in [EXEC-planning-team-capacity-every-team-323.md](EXEC-planning-team-capacity-every-team-323.md). Earlier isolated runtime, storage and HTTP results remain evidence for their narrower boundaries.
 
 ### Task 1 — Real persistence journey fixture
 

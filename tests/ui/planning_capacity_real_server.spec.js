@@ -88,6 +88,13 @@ test.describe('real Planning Team capacity', () => {
         });
         return held;
     }
+    // Stores a Team's number through the real API, so a test never depends on what an earlier test saved.
+    async function seedTeamNumber(context, sprint, teamId, value) {
+        const response = await context.request.patch(server.baseUrl + capacityPath(sprint), {
+            data: { teamId, planned: { value, source: 'user' }, changes: [] }, headers: await csrfHeaders(server, context) });
+        expect(response.status(), await response.text()).toBe(200);
+        return (await response.json()).revision;
+    }
     const isCapacityPatch = (response, sprint) => response.request().method() === 'PATCH'
         && new URL(response.url()).pathname === capacityPath(sprint);
 
@@ -128,6 +135,8 @@ test.describe('real Planning Team capacity', () => {
     test('A and B editing the same Team resolve last-write-wins', async ({ browser }) => {
         const { a, b, pageA, pageB } = await contexts(browser);
         try {
+            const base = await seedTeamNumber(a, 102, TEAM_A, '14');
+            await seedTeamNumber(a, 102, TEAM_B, '6');
             // Both members load 14 before either saves.
             await openCards(pageA, '2027Q2');
             await openCards(pageB, '2027Q2');
@@ -145,7 +154,7 @@ test.describe('real Planning Team capacity', () => {
             expect((await answer.json()).planned).toEqual({ value: '12', source: 'user' });
             for (const context of [a, b]) {
                 const own = await storedDocument(context, 102, TEAM_A);
-                expect(own).toMatchObject({ revision: 3, planned: { value: '12', source: 'user' } });
+                expect(own).toMatchObject({ revision: base + 2, planned: { value: '12', source: 'user' } });
             }
             // B's write did not touch Team B.
             expect((await storedDocument(a, 102, TEAM_B)).planned).toEqual({ value: '6', source: 'user' });
@@ -238,6 +247,7 @@ test.describe('real Planning Team capacity', () => {
     test('sign-in expiry mid-save gives terminal recovery and never replays the save', async ({ browser }) => {
         const { a, b, pageA } = await contexts(browser);
         try {
+            await seedTeamNumber(a, 102, TEAM_B, '6');
             await openCards(pageA, '2027Q2');
             const sent = [];
             pageA.on('request', request => {

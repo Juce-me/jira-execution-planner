@@ -1,10 +1,10 @@
 import * as React from 'react';
 
-import { searchBoards as requestBoardSearch, searchProjects as requestProjectSearch } from '../api/jiraCatalogApi.js';
+import { searchAllocationOptions as requestAllocationOptions, searchBoards as requestBoardSearch, searchProjects as requestProjectSearch } from '../api/jiraCatalogApi.js';
 import JiraFieldSettings from './JiraFieldSettings.jsx';
 import MappingPickerRow from './MappingPickerRow.jsx';
 import { buildFieldSettingsProps, FIELD_SLOTS } from './workConfigurationFormProps.js';
-import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, inheritedBoard, rangeLabel, savedSourceReady, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
+import { DELIVERY_PROJECT_LIMIT_MESSAGE, MODEL_LEGACY, MODEL_RND, incompleteTabs, inheritedBoard, rangeLabel, refreshableSources, sourceCause, sprintValueOptions, typedSprintOption } from './workConfigurationModel.js';
 
 const TABS = [['scope', 'Scope'], ['source', 'Source'], ['mapping', 'Field mapping']];
 const FIXED_BOUNDS = { [MODEL_LEGACY]: { fromQuarter: 'No start (all earlier Sprints)' }, [MODEL_RND]: { throughQuarter: 'No end' } };
@@ -25,11 +25,13 @@ export function WorkConfigurationUnavailable() {
     );
 }
 
-function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery, boardSelected }) {
+function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery, boardSelected, allocationQuery = '', allocationSource = null }) {
     const [projects, setProjects] = React.useState([]);
     const [projectLoading, setProjectLoading] = React.useState(false);
     const [boards, setBoards] = React.useState([]);
     const [boardLoading, setBoardLoading] = React.useState(false);
+    const [allocation, setAllocation] = React.useState({ options: [], complete: false });
+    const [allocationLoading, setAllocationLoading] = React.useState(false);
     const run = (query, request, apply, setLoading, key) => {
         const trimmed = query.trim();
         if (!enabled || !trimmed) { apply([]); setLoading(false); return undefined; }
@@ -40,7 +42,7 @@ function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery
                 const response = await request(BACKEND_URL, { query: trimmed, signal: controller.signal });
                 if (!response.ok) throw new Error(`Search error ${response.status}`);
                 const data = await response.json();
-                if (!controller.signal.aborted) apply(data[key] || []);
+                if (!controller.signal.aborted) apply(key ? data[key] || [] : data);
             } catch (error) {
                 if (error.name !== 'AbortError') apply([]);
             } finally {
@@ -51,7 +53,12 @@ function useRemoteCatalogSearch({ BACKEND_URL, enabled, projectQuery, boardQuery
     };
     React.useEffect(() => run(projectQuery, requestProjectSearch, setProjects, setProjectLoading, 'projects'), [enabled, projectQuery]);
     React.useEffect(() => run(boardSelected ? '' : boardQuery, requestBoardSearch, setBoards, setBoardLoading, 'boards'), [enabled, boardQuery, boardSelected]);
-    return { projects, projectLoading, boards, boardLoading };
+    // Allocation values: an empty or failed answer is an incomplete list, so the editor offers the typed value.
+    const allocationKey = allocationSource ? JSON.stringify(allocationSource) : '';
+    React.useEffect(() => run(allocationSource ? allocationQuery : '', (url, options) => requestAllocationOptions(url, { ...options, ...allocationSource }),
+        data => setAllocation(Array.isArray(data) ? { options: data, complete: false } : { options: data.options || [], complete: data.complete === true }),
+        setAllocationLoading, null), [enabled, allocationQuery, allocationKey]);
+    return { projects, projectLoading, boards, boardLoading, allocation, allocationLoading };
 }
 
 // Scope boundaries are Jira Sprint values chosen from what the saved sources observed; a canonical value that is not listed (list failed, loading or incomplete) can be typed and chosen.
@@ -61,7 +68,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, 
     const options = React.useMemo(() => sprintValueOptions(sprintValues), [sprintValues]);
     const sprintRefresh = workConfig.sprintRefresh;
     // Nothing is readable from Jira until the first Save promotes the bundle: before that no configuration exists server-side.
-    const savedSources = workConfig.promoted ? (workConfig.baseline?.configurations || []).filter(savedSourceReady) : [];
+    const savedSources = workConfig.promoted ? refreshableSources(workConfig.baseline?.configurations || []) : [];
     return (
         <div className="work-config-ranges">
             <div className="work-config-ranges-head" data-sprint-refresh>
@@ -101,7 +108,7 @@ function SprintRanges({ entry, errors, onPatch, sprintValues, onRetry, canEdit, 
                                             options,
                                             emptyMessage: 'No matching Sprint value.',
                                             typedOption: typedSprintOption,
-                                            onSelect: option => onPatch({ [key]: option.id }),
+                                            onSelect: option => onPatch({ [key]: option.value }),
                                             onRemove: () => onPatch({ [key]: null }),
                                         }}
                                         kind="sprint"
@@ -163,12 +170,19 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
     const refs = React.useRef(Object.fromEntries([...FIELD_SLOTS.map(([prefix]) => prefix), 'board', 'project'].map(name => [name, React.createRef()])));
     const search = workConfig.uiFor(entry.id).search || {};
     const typeCatalog = workConfig.typeCatalogFor(entry.id);
+    // DELIVERY's Allocation values are read from the draft's own field, project and planning type, so an unsaved choice is listable.
+    const allocationFieldId = entry.model === MODEL_RND ? entry.fields.allocation?.fieldId || '' : '';
+    const allocationSource = allocationFieldId ? {
+        fieldId: allocationFieldId, projectKey: entry.scope.projects[0]?.key || '', issueTypeId: entry.hierarchy.planningIssueTypeId || '',
+    } : null;
     const remote = useRemoteCatalogSearch({
         BACKEND_URL,
         enabled: true,
         projectQuery: tab === 'scope' ? (search.projectQuery || '') : '',
         boardQuery: tab === 'source' ? (search.boardQuery || '') : '',
         boardSelected: Boolean(entry.scope.boardId),
+        allocationQuery: tab === 'scope' ? (search.allocationQuery || '') : '',
+        allocationSource,
     });
     // Only the board id is saved; its name is read back once so the chip never shows "Board 7001" after a reload. A blank
     // Board shows the Board it inherits, named under the configuration that owns it.
@@ -195,6 +209,13 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
         ? projectPool.filter(project => !selectedKeys.has(project.key)
             && `${project.key} ${project.name}`.toLowerCase().includes(projectQuery)).slice(0, 10)
         : [];
+    const allocationQuery = String(search.allocationQuery || '').trim();
+    const mappedValues = new Set((entry.allocationTypes || []).map(item => item.value));
+    const allocationResults = allocationQuery ? remote.allocation.options.filter(option => !mappedValues.has(option.value)
+        && option.value.toLowerCase().includes(allocationQuery.toLowerCase())).slice(0, 20) : [];
+    // An incomplete list (autocomplete fallback or no answer) takes the typed value, like a typed Sprint value.
+    if (allocationQuery && !remote.allocation.complete && !remote.allocationLoading && !mappedValues.has(allocationQuery)
+        && !allocationResults.some(option => option.value === allocationQuery)) allocationResults.push({ value: allocationQuery });
     const boardQuery = String(search.boardQuery || '').toLowerCase().trim();
     const boardResults = boardQuery
         ? remote.boards.filter(board => String(board.id).includes(boardQuery) || String(board.name || '').toLowerCase().includes(boardQuery)).slice(0, 20)
@@ -204,6 +225,7 @@ function EntryForm({ workConfig, entry, tab, BACKEND_URL, jiraProjects, loadingP
         technicalIds: workConfig.technicalIds, setTechnicalIds: workConfig.setTechnicalIds,
         jiraFields, loadingFields, jiraProjects, loadingProjects, projectResults, projectLoading: remote.projectLoading,
         boardResults, boardLoading: remote.boardLoading, resolveProjectName,
+        allocationResults, allocationLoading: remote.allocationLoading, allocationComplete: remote.allocation.complete,
         addProject: workConfig.addProject, removeProject: workConfig.removeProject,
         typeCatalog, hoverKey: hover, setHoverKey: setHover, requestRetire: setRetire,
         inheritedBoard: inherited ? { ...inherited, name: savedBoardName || '' } : null,

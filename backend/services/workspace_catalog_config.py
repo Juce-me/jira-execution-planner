@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 import hashlib
 import json
 import re
@@ -35,10 +35,6 @@ class EffectiveCatalogConfig:
     from_quarter: str | None = None
     through_quarter: str | None = None
     scope_error: str | None = None
-    # Board-mode entries also scan their scoped issues for Sprints the Board does not list; that
-    # supplement is an issue-scanned source of the same configuration (never a Board row).
-    observed_source: 'EffectiveCatalogConfig | None' = None
-    is_observed_supplement: bool = False
 
 
 def _digest(value):
@@ -431,22 +427,6 @@ def _entry_catalog_config(context, snapshot, entry, runtime_inputs):
         source_mode=mode, source_digest=digest, from_quarter=entry['fromQuarter'],
         through_quarter=entry['throughQuarter'], scope_error=scope_error,
     )
-    if (mode == work_structure.SOURCE_MODE_BOARD and entry['model'] == work_structure.MODEL_RND_2027
-            and scope_error is None and projects and sprint_field_id):
-        # A Board lists only its own Sprints, but quarterly Epics may carry another one. The
-        # quarterly model scans the same scoped issues as a second source; Legacy keeps Board-only
-        # discovery (its Board-origin rules and scan cost are unchanged).
-        observed = replace(
-            primary, source_mode=work_structure.SOURCE_MODE_SCOPED_ISSUES,
-            config_digest=_digest([2, entry['id'], digest, base_jql, scope_error, team_scope_error,
-                                   work_structure.SOURCE_MODE_SCOPED_ISSUES, 'observed']),
-            sprint_identity=build_scoped_sprint_catalog_identity(
-                context.workspace_id, site_partition=_site_partition(context),
-                effective_scope=base_jql, sprint_field_id=sprint_field_id, source_digest=digest,
-            ),
-            is_observed_supplement=True,
-        )
-        primary = replace(primary, observed_source=observed)
     return primary
 
 
@@ -467,12 +447,11 @@ def resolve_catalog_sources(session, context, *, runtime_inputs, flag_enabled=No
 
 
 def resolve_configuration_catalog_config(
-    session, context, *, runtime_inputs, configuration_id, flag_enabled=None, observed=False,
+    session, context, *, runtime_inputs, configuration_id, flag_enabled=None,
 ):
     """One saved configuration as a catalog source; ``None`` when unpromoted.
 
-    Unknown id raises ``invalid_configuration_id``.  ``observed=True`` returns the
-    issue-scanned supplement of a Board-mode configuration (same id otherwise).
+    Unknown id raises ``invalid_configuration_id``.
     """
     sources = resolve_catalog_sources(
         session, context, runtime_inputs=runtime_inputs, flag_enabled=flag_enabled,
@@ -481,9 +460,5 @@ def resolve_configuration_catalog_config(
         return None
     for source in sources:
         if source.configuration_id == configuration_id:
-            if observed:
-                if source.observed_source is None:
-                    raise work_structure.WorkConfigError('invalid_configuration_id')
-                return source.observed_source
             return source
     raise work_structure.WorkConfigError('invalid_configuration_id')

@@ -157,6 +157,7 @@ export function resetEngFacetFilters({
     setEngStatusFilter,
     setEngPriorityFilter,
     setEngProjectTrackFilter,
+    setEngAllocationFilter,
     defaultEngStatusFilter,
     setShowTech,
     setShowProduct,
@@ -164,6 +165,7 @@ export function resetEngFacetFilters({
     setEngStatusFilter(defaultEngStatusFilter);
     setEngPriorityFilter(null);
     setEngProjectTrackFilter?.(undefined);
+    setEngAllocationFilter?.(undefined);
     setShowTech(true);
     setShowProduct(true);
 }
@@ -175,6 +177,7 @@ export function resetEngFilters({
     setEngStatusFilter,
     setEngPriorityFilter,
     setEngProjectTrackFilter,
+    setEngAllocationFilter,
     defaultEngStatusFilter,
     setShowTech,
     setShowProduct,
@@ -190,6 +193,7 @@ export function resetEngFilters({
         setEngStatusFilter,
         setEngPriorityFilter,
         setEngProjectTrackFilter,
+        setEngAllocationFilter,
         defaultEngStatusFilter,
         setShowTech,
         setShowProduct,

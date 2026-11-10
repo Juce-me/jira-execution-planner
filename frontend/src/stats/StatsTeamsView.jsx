@@ -13,9 +13,16 @@ function StatsTeamsView({
     computeRate,
     formatPercent,
     getRateClass,
-    words = roleLabels(null)
+    words = roleLabels(null),
+    // DELIVERY: Product/Tech come from the Initiative's Allocation, so a No Allocation column follows Tech and no
+    // Product/Tech/No Allocation cell links to a project-based Jira search (it would not match the counts).
+    noAllocation = false
 }) {
     const childWords = lowerEntityWord(words.children);
+    const sideLink = noAllocation ? () => '' : buildStatLink;
+    const emptyMetrics = { done: 0, incomplete: 0, killed: 0 };
+    // Four column groups exceed a desktop panel; the DELIVERY table scrolls horizontally (tap/swipe) inside its own frame.
+    const frame = table => (noAllocation ? <div data-allocation="delivery">{table}</div> : table);
     const renderStatsLink = (href, count, title, ariaLabel) => (
         <TrackedExternalLink
             className="stats-link"
@@ -53,13 +60,14 @@ function StatsTeamsView({
                     );
                 })}
             </div>
-            <table className="stats-table">
+            {frame(<table className="stats-table">
                 <thead>
                     <tr className="stats-group-row">
                         <th className="dimension"></th>
                         <th className="stats-col total" colSpan="4">Total</th>
                         <th className="stats-col product" colSpan="4">Product</th>
                         <th className="stats-col tech" colSpan="4">Tech</th>
+                        {noAllocation && <th className="stats-col none" colSpan="4">No Allocation</th>}
                     </tr>
                     <tr>
                         <th className="dimension">Team</th>
@@ -75,6 +83,14 @@ function StatsTeamsView({
                         <th className="metric stats-col tech">Incomplete</th>
                         <th className="metric stats-col tech">Absolute</th>
                         <th className="metric stats-col tech">Weighted</th>
+                        {noAllocation && (
+                            <>
+                                <th className="metric stats-col none">Done</th>
+                                <th className="metric stats-col none">Incomplete</th>
+                                <th className="metric stats-col none">Absolute</th>
+                                <th className="metric stats-col none">Weighted</th>
+                            </>
+                        )}
                     </tr>
                 </thead>
                 <tbody>
@@ -91,28 +107,28 @@ function StatsTeamsView({
                             excludeStatuses: ['Done', 'Killed'],
                             issueType: 'Story'
                         });
-                        const productDoneLink = buildStatLink(team.product.done, {
+                        const productDoneLink = sideLink(team.product.done, {
                             teamId: team.id,
                             projectName: 'PRODUCT ROADMAPS',
                             statuses: ['Done'],
                             issueType: 'Story',
                             capacityType: 'product'
                         });
-                        const productIncompleteLink = buildStatLink(team.product.incomplete, {
+                        const productIncompleteLink = sideLink(team.product.incomplete, {
                             teamId: team.id,
                             projectName: 'PRODUCT ROADMAPS',
                             excludeStatuses: ['Done', 'Killed'],
                             issueType: 'Story',
                             capacityType: 'product'
                         });
-                        const techDoneLink = buildStatLink(team.tech.done, {
+                        const techDoneLink = sideLink(team.tech.done, {
                             teamId: team.id,
                             projectName: 'TECHNICAL ROADMAP',
                             statuses: ['Done'],
                             issueType: 'Story',
                             capacityType: 'tech'
                         });
-                        const techIncompleteLink = buildStatLink(team.tech.incomplete, {
+                        const techIncompleteLink = sideLink(team.tech.incomplete, {
                             teamId: team.id,
                             projectName: 'TECHNICAL ROADMAP',
                             excludeStatuses: ['Done', 'Killed'],
@@ -177,11 +193,19 @@ function StatsTeamsView({
                             </td>
                             <td className="metric stats-col tech">{formatPercent(computeRate(team.tech))}</td>
                             <td className="metric stats-col tech">{formatPercent(computeRate(team.weightedTech))}</td>
+                            {noAllocation && (
+                                <>
+                                    <td className="metric stats-col none"><div className="postponed-cell"><span>{(team.none || emptyMetrics).done}</span></div></td>
+                                    <td className="metric stats-col none"><div className="postponed-cell"><span>{(team.none || emptyMetrics).incomplete}</span></div></td>
+                                    <td className="metric stats-col none">{formatPercent(computeRate(team.none))}</td>
+                                    <td className="metric stats-col none">{formatPercent(computeRate(team.weightedNone))}</td>
+                                </>
+                            )}
                         </tr>
                         );
                     })}
                 </tbody>
-            </table>
+            </table>)}
         </div>
     );
 }

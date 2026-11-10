@@ -15,6 +15,7 @@ test('resetEngFacetFilters resets all Catch Up facet setters and emits no analyt
         setEngStatusFilter: setter('status'),
         setEngPriorityFilter: setter('priority'),
         setEngProjectTrackFilter: setter('track'),
+        setEngAllocationFilter: setter('allocation'),
         defaultEngStatusFilter: { hidden: ['Killed'] },
         setShowTech: setter('tech'),
         setShowProduct: setter('product'),
@@ -25,6 +26,7 @@ test('resetEngFacetFilters resets all Catch Up facet setters and emits no analyt
         ['status', { hidden: ['Killed'] }],
         ['priority', null],
         ['track', undefined],
+        ['allocation', undefined],
         ['tech', true],
         ['product', true],
     ]);

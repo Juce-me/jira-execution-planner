@@ -625,6 +625,7 @@ class _CandidateIndexPolicy:
             columns=self.snapshot.board['columns'],
             project_track_field_id=self.snapshot.project_track_field_id,
             delivery_owner_field_id=self.snapshot.delivery_owner_field_id,
+            **_allocation_options(self.snapshot),
         )
         delta_shells = _shells(projection)
         if frozenset(row['key'] for row in delta_shells) != delta_keys:
@@ -694,6 +695,15 @@ def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, compl
     }
 
 
+def _allocation_options(snapshot):
+    """DELIVERY classifies each Initiative by its own Allocation (field id + mapping from the admitted context);
+    Legacy classifies children by project."""
+    roles = snapshot.work_request.roles if snapshot.work_request is not None else None
+    if roles is None or roles.is_legacy:
+        return {}
+    return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': roles.allocation_types}
+
+
 def _search_page(server, snapshot, transport, payload, timeout):
     if snapshot.adapter == 'basic_json':
         _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
@@ -718,7 +728,8 @@ def _search_page(server, snapshot, transport, payload, timeout):
 
 def _frame_stream(server, snapshot, transport, *, generation_id=None,
                   _candidate_updates=None):
-    writer = EngBoardStreamWriter()
+    allocation = _allocation_options(snapshot)
+    writer = EngBoardStreamWriter(delivery=bool(allocation))
     generation_id = secrets.token_urlsafe(24) if generation_id is None else generation_id
     sequence = 0
     started = time.monotonic()
@@ -800,7 +811,8 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         index_started = time.monotonic()
         terminal_statuses = snapshot.board['columns'][-1]['statuses']
         epic_fields = tuple(dict.fromkeys(eng_board.EPIC_FIELDS + tuple(
-            value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id) if value
+            value for value in (snapshot.project_track_field_id, snapshot.delivery_owner_field_id,
+                                allocation.get('allocation_field_id')) if value
         )))
         search_page = lambda payload: _search_page(
             server, snapshot, transport, payload, transport.budget.jira_retry_timeout(),
@@ -892,7 +904,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         index_projection = eng_board.project_board(
             epics, [], project_map=snapshot.projects, columns=snapshot.board['columns'],
             project_track_field_id=snapshot.project_track_field_id,
-            delivery_owner_field_id=snapshot.delivery_owner_field_id,
+            delivery_owner_field_id=snapshot.delivery_owner_field_id, **allocation,
         )
         index_shells = _shells(index_projection)
         yield emit('index', epics=index_shells,
@@ -940,7 +952,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                         story_points_field_id=snapshot.story_points_field_id,
                         team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
                         project_track_field_id=snapshot.project_track_field_id,
-                        delivery_owner_field_id=snapshot.delivery_owner_field_id,
+                        delivery_owner_field_id=snapshot.delivery_owner_field_id, **allocation,
                     )
                     for row in projection['epics']:
                         progress = progress_by_epic[row['key']]
@@ -1010,7 +1022,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                 team_field_id=snapshot.team_field_id, sprint_field_id=snapshot.sprint_field_id,
                 project_track_field_id=snapshot.project_track_field_id,
                 delivery_owner_field_id=snapshot.delivery_owner_field_id,
-                require_children=snapshot.query.scope == 'sprint',
+                require_children=snapshot.query.scope == 'sprint', **allocation,
             )
             shells = _shells(projection)
             children_wire = [child for epic in projection['epics'] for child in epic['children']]

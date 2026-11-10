@@ -4,6 +4,7 @@
 // splits on raw `&`, `,` and `:` itself and percent-decodes each atom on its own.
 import {
     SHARE_VIEW_ALERT_ANCHORS,
+    SHARE_VIEW_ALLOCATION_IDS,
     SHARE_VIEW_ALERT_KEYS,
     SHARE_VIEW_BOARD_ASSIGNEE_IDS,
     SHARE_VIEW_BOARD_PROJECT_IDS,
@@ -35,7 +36,7 @@ export const SHARE_VIEW_MAX_QUERY = 1536;
 // Every key a link can carry, in the order the encoder writes them.
 export const SHARE_VIEW_QUERY_KEYS = Object.freeze([
     'v', 'mode', 'group', 'sprint', 'scope', 'layout', 'rows', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby', 'teams', 'find',
-    'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn',
+    'status', 'priority', 'track', 'lanes', 'alloc', 'initiatives', 'sort', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn',
     'alerts', 'alertTeam', 'epic', 'story',
 ]);
 
@@ -129,16 +130,19 @@ function parseFacet(raw) {
     return form === 'only' ? { only: atoms } : { hidden: atoms };
 }
 
-// `all` is the default (key absent), `none` is "No Project Track only" (an empty list).
-function parseTrack(raw) {
+// `all` is the default (key absent), `none` is the empty list: "No Project Track only" for `track`,
+// "No Allocation only" for `alloc`.
+const parseEmptiable = (vocabulary) => (raw) => {
     if (raw === 'all') return OMIT;
     if (raw === 'none') return [];
     const ids = [...new Set(raw.split(','))];
-    return ids.every((id) => SHARE_VIEW_TRACK_IDS.includes(id)) ? ids : INVALID;
-}
+    return ids.every((id) => vocabulary.includes(id)) ? ids : INVALID;
+};
+const parseTrack = parseEmptiable(SHARE_VIEW_TRACK_IDS);
 
-// A Board facet list: only ids from the Board's own vocabulary.
-const parseVocabList = (vocabulary) => (raw) => {
+// A Board facet list: only ids from the Board's own vocabulary. `emptiable` lists also take `none`, the empty list.
+const parseVocabList = (vocabulary, { emptiable = false } = {}) => (raw) => {
+    if (emptiable && raw === 'none') return [];
     const ids = decodeList(raw, MAX_FACET_ATOM, MAX_FACET_ATOMS);
     return ids && ids.every((id) => vocabulary.includes(id)) ? ids : INVALID;
 };
@@ -199,10 +203,11 @@ const SPEC = Object.freeze({
     priority: { key: 'priority', parse: parseFacet },
     track: { key: 'track', parse: parseTrack },
     lanes: { key: 'lanes', parse: parseLanes },
+    alloc: { key: 'alloc', parse: parseEmptiable(SHARE_VIEW_ALLOCATION_IDS) },
     initiatives: { key: 'initiatives', parse: (raw) => (raw === '1' ? true : raw === '0' ? false : INVALID) },
     sort: { key: 'sort', parse: parseToken(SHARE_VIEW_SORTS) },
     bpriority: { key: 'bpriority', parse: parseVocabList(SHARE_VIEW_PRIORITY_IDS) },
-    bprojects: { key: 'bprojects', parse: parseVocabList(SHARE_VIEW_BOARD_PROJECT_IDS) },
+    bprojects: { key: 'bprojects', parse: parseVocabList(SHARE_VIEW_BOARD_PROJECT_IDS, { emptiable: true }) },
     bassignee: { key: 'bassignee', parse: parseVocabList(SHARE_VIEW_BOARD_ASSIGNEE_IDS) },
     btrack: { key: 'btrack', parse: parseTrack },
     bcolumn: { key: 'bcolumn', parse: parseAtom(MAX_ID) },
@@ -350,14 +355,16 @@ function encodeFind(value) {
     return text === SHARE_VIEW_DEFAULTS.find ? undefined : encodeAtom(text, MAX_FIND);
 }
 
-function encodeTrack(value) {
+const encodeEmptiable = (vocabulary) => (value) => {
     if (!Array.isArray(value)) return null;
     const ids = [...new Set(value)];
-    if (!ids.every((id) => SHARE_VIEW_TRACK_IDS.includes(id))) return null;
+    if (!ids.every((id) => vocabulary.includes(id))) return null;
     return ids.length ? ids.join(',') : 'none';
-}
+};
+const encodeTrack = encodeEmptiable(SHARE_VIEW_TRACK_IDS);
 
-const encodeVocabList = (vocabulary) => (value) => {
+const encodeVocabList = (vocabulary, { emptiable = false } = {}) => (value) => {
+    if (emptiable && Array.isArray(value) && !value.length) return 'none';
     if (!Array.isArray(value) || !value.length || !value.every((id) => vocabulary.includes(id))) return null;
     return encodeAtoms(value, MAX_FACET_ATOM, MAX_FACET_ATOMS);
 };
@@ -435,10 +442,11 @@ const ENCODERS = Object.freeze({
     priority: (state) => one('priority', encodeFacet(state.priority, SHARE_VIEW_DEFAULTS.priority)),
     track: (state) => one('track', encodeTrack(state.track)),
     lanes: (state) => one('lanes', encodeLanes(state.lanes)),
+    alloc: (state) => one('alloc', encodeEmptiable(SHARE_VIEW_ALLOCATION_IDS)(state.alloc)),
     initiatives: (state) => one('initiatives', encodeInitiatives(state.initiatives)),
     sort: (state) => one('sort', encodeSort(state.sort)),
     bpriority: (state) => one('bpriority', encodeVocabList(SHARE_VIEW_PRIORITY_IDS)(state.bpriority)),
-    bprojects: (state) => one('bprojects', encodeVocabList(SHARE_VIEW_BOARD_PROJECT_IDS)(state.bprojects)),
+    bprojects: (state) => one('bprojects', encodeVocabList(SHARE_VIEW_BOARD_PROJECT_IDS, { emptiable: true })(state.bprojects)),
     bassignee: (state) => one('bassignee', encodeVocabList(SHARE_VIEW_BOARD_ASSIGNEE_IDS)(state.bassignee)),
     btrack: (state) => one('btrack', encodeTrack(state.btrack)),
     bcolumn: (state) => one('bcolumn', encodeAtom(state.bcolumn, MAX_ID)),

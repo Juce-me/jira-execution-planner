@@ -46,6 +46,7 @@ export function useEngWorkHierarchy({
     statusNeutral = true,
     priorityNeutral = true,
     admitsEpicProjectTrack,
+    admitsAllocation,
     engEpicSort = 'priority',
     groupByInitiativeChoice = null,
     planningOriginals = null,
@@ -90,6 +91,7 @@ export function useEngWorkHierarchy({
             statusNeutral,
             priorityNeutral,
             admitsEpicProjectTrack,
+            admitsAllocation,
         },
         sort: engEpicSort,
         groupByInitiative,
@@ -97,7 +99,7 @@ export function useEngWorkHierarchy({
     }), [
         showPlanning, selectedSprint, selectedSprintName, selectedSprintState, storyEpicGroups,
         readinessSnapshot, readinessStatus, activeGroupId, selectedTeams, isAllTeamsSelected,
-        showTech, showProduct, searchQuery, statusNeutral, priorityNeutral, admitsEpicProjectTrack,
+        showTech, showProduct, searchQuery, statusNeutral, priorityNeutral, admitsEpicProjectTrack, admitsAllocation,
         engEpicSort, groupByInitiative, planningOriginals, readingPresentation, workModel,
     ]);
     React.useLayoutEffect(() => { markEngReadingDeparture(new Set(visibleTasksForList.map(task => task.key)), [], new Set(hierarchy.canonicalEpicGroups.map(group => group.key))); }, [visibleTasksForList, hierarchy.canonicalEpicGroups]);

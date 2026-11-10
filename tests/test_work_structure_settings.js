@@ -375,6 +375,24 @@ test('Scope boundaries: an exact canonical typed value is offered when it is not
     assert.ok(!validateBundle(draft).errors.legacy.throughQuarter?.includes('Both inner'));
 });
 
+test('Scope boundaries: a Sprint value in both configurations is two labelled options of one bare value', async () => {
+    const { typedSprintOption, sprintValueOptions } = await loadModel();
+    const options = sprintValueOptions({ values: [
+        { value: '2027Q1', label: '2027Q1 - legacy', canonical: true, state: 'future', sprintIds: [102], configurationIds: ['legacy'] },
+        { value: '2027Q1', label: '2027Q1 - delivery', canonical: true, state: 'active', sprintIds: [201], configurationIds: ['delivery'] },
+        { value: '2026Q4', label: '2026Q4', canonical: true, state: 'closed', sprintIds: [99], configurationIds: ['delivery'] },
+    ] });
+    assert.deepEqual(options.map(option => [option.id, option.name, option.value]), [
+        ['2027Q1 - legacy', '2027Q1 - legacy', '2027Q1'],
+        ['2027Q1 - delivery', '2027Q1 - delivery', '2027Q1'],
+        ['2026Q4', '2026Q4', '2026Q4'],
+    ]);
+    assert.equal(new Set(options.map(option => option.id)).size, options.length, 'option ids are unique');
+    assert.equal(options[1].detail, 'active · Jira id 201');
+    assert.equal(typedSprintOption('2027Q1', options), null, 'the duplicate check compares the bare value');
+    assert.equal(typedSprintOption('2027Q2', options).value, '2027Q2', 'a typed option carries its bare value');
+});
+
 test('Scope boundaries: removing one required boundary never blanks the other configuration', async () => {
     const { patchBundleEntry } = await loadModel();
     const before = bundle();
@@ -455,6 +473,18 @@ test('a blank Board shows the nearest configuration\'s Board as inherited; an ex
     entries[1].scope.boardId = '19095';
     assert.equal(inheritedBoard(entries, 'delivery'), null, 'an override wins');
     assert.equal(inheritedBoard([{ id: 'legacy', scope: { boardId: '' } }, { id: 'delivery', scope: { boardId: '' } }], 'delivery'), null);
+});
+
+test('refreshableSources: an inherited Board and shared Sprint field make DELIVERY refreshable', async () => {
+    const { refreshableSources } = await loadModel();
+    const entries = [legacy(), delivery()];
+    assert.deepEqual(refreshableSources(entries).map(entry => entry.id), ['legacy', 'delivery']);
+});
+
+test('a configuration with no Board, no projects and no inherited Board is not refreshable', async () => {
+    const { refreshableSources } = await loadModel();
+    const entries = [legacy({ scope: { projects: [], boardId: '' } }), delivery()];
+    assert.deepEqual(refreshableSources(entries), []);
 });
 
 test('DELIVERY Sprint and Story Points share Legacy\'s mapping until overridden; an own blank is a deliberate clear; Team is always shared', async () => {

@@ -52,3 +52,14 @@
         .stats-col.total {
             background: #f6ffed;
         }
+
+        /* DELIVERY Stats Teams: four column groups scroll horizontally inside the view. */
+        .stats-view [data-allocation="delivery"] {
+            overflow-x: auto;
+            max-width: 100%;
+        }
+
+        /* DELIVERY No Allocation work: the neutral tone No Project Track uses. */
+        .stats-col.none {
+            background: #f1f5f9;
+        }

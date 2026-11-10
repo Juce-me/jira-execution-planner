@@ -88,6 +88,7 @@ function promotedBundle({ delivery = {}, legacy = {}, promotionRevision = 6 } = 
 async function mockApp(page, {
     featureEnabled = true, promoted = false, revision = 3, bundle = virtualBundle(), typesDelay = 0, typesStatus = 200,
     types = TYPES, failPriorityOnce = false, summaries = [], analyticsEnabled = false,
+    allocationOptions = { options: [], source: null, complete: false }, sprintValues = null,
 } = {}) {
     const state = { summaries: clone(summaries), afterWorkPost: null, promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
     await installDashboardShell(page);
@@ -171,7 +172,9 @@ async function mockApp(page, {
             if (state.typesStatus !== 200) return json({ error: 'upstream_unavailable', message: 'Unavailable.' }, state.typesStatus);
             return json({ issueTypes: types, configurationId: url.searchParams.get('configurationId'), configurationRevision: Number(url.searchParams.get('configurationRevision')) });
         }
+        if (p === '/api/work-structure/allocation-options') return json(allocationOptions);
         if (p === '/api/work-structure/sprint-values') {
+            if (sprintValues) return json({ sprintValues, sources: [], promoted: state.promoted });
             return json({ sprintValues: ['2027Q2', '2027Q1', '2026Q4', '2026Q3', '0000Q1'].map(value => ({ value, canonical: value !== '0000Q1', state: 'closed', sprintIds: [Number(value.slice(0, 4)) * 10 + Number(value.slice(-1))], configurationIds: ['legacy'] })), sources: [], promoted: state.promoted });
         }
         if (p === '/api/stats/priority-weights-config' && method === 'POST') {
@@ -689,6 +692,147 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 
         expect(outline).not.toBe('none');
     });
 }
+
+// DELIVERY classifies Product/Tech by Allocation (plan Task A5): the Scope tab maps Allocation values with the
+// Legacy project picker's controls. Synthetic values only.
+const ALLOCATION_OPTIONS = { options: [{ value: 'Growth' }, { value: 'Platform' }], source: 'createmeta', complete: true };
+const allocationBundle = (allocationTypes = []) => promotedBundle({ delivery: {
+    fields: { sprint: field('Sprint'), storyPoints: field('Story Points'), parentName: blank(), team: field('Team'), projectTrack: blank(), deliveryOwner: blank(), allocation: field('RnD_allocation_category') },
+    allocationTypes,
+} });
+const allocationPane = dialog => dialog.locator('[data-allocation-types]');
+const allocationColumn = (dialog, label) => dialog.locator('.group-projects-subsection[data-allocation-type]').filter({ has: dialog.page().locator('.team-selector-label', { hasText: new RegExp(`^${label}$`) }) });
+
+test('a Sprint value seen by both configurations is two labelled rows, and either stores the bare value', async ({ page }) => {
+    const both = (value, ids) => ['legacy', 'delivery'].map((id, index) => ({ value, label: `${value} - ${id}`, canonical: true, state: 'future', sprintIds: [ids[index]], configurationIds: [id] }));
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle(), sprintValues: [
+        ...both('2027Q2', [1102, 2202]), ...both('2027Q1', [1101, 2201]),
+        { value: '2026Q4', label: '2026Q4', canonical: true, state: 'closed', sprintIds: [1004], configurationIds: ['legacy'] },
+    ] });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    const through = dialog.locator('[data-range-row="throughQuarter"]');
+    await dialog.getByRole('button', { name: 'Remove Through Sprint' }).click();
+    await through.getByLabel('Search Through Sprint').fill('2027Q1');
+    const rows = through.locator('.team-search-result-item');
+    await expect(rows.locator('strong')).toHaveText(['2027Q1 - legacy', '2027Q1 - delivery']);
+    await expect(rows.nth(1)).toContainText('Jira id 2201');
+    const shots = path.join(__dirname, '..', '..', 'tmp', 'screenshots');
+    fs.mkdirSync(shots, { recursive: true });
+    await dialog.screenshot({ path: path.join(shots, 'scope-picker-suffix.png'), animations: 'disabled' });
+    await rows.filter({ hasText: '2027Q1 - delivery' }).click();
+    await expect(through.locator('.selected-team-chip .team-name')).toHaveText('2027Q1');
+
+    await selectConfiguration(dialog, 'delivery');
+    const from = dialog.locator('[data-range-row="fromQuarter"]');
+    await dialog.getByRole('button', { name: 'Remove From Sprint' }).click();
+    await from.getByLabel('Search From Sprint').fill('2027Q2');
+    await from.locator('.team-search-result-item', { hasText: '2027Q2 - legacy' }).click();
+    await expect(from.locator('.selected-team-chip .team-name')).toHaveText('2027Q2');
+    await saveButton(dialog).click();
+    await expect.poll(() => state.workPosts.length).toBe(1);
+    const [legacy, delivery] = state.workPosts[0].workConfigurations.configurations;
+    expect([legacy.throughQuarter, delivery.fromQuarter]).toEqual(['2027Q1', '2027Q2']);
+    expect(JSON.stringify(state.workPosts[0])).not.toContain(' - legacy');
+    expect(JSON.stringify(state.workPosts[0])).not.toContain(' - delivery');
+});
+
+test('DELIVERY Field mapping labels the Allocation field "Allocation"', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle() });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await nested(dialog, 'Field mapping').click();
+    await expect(dialog.locator('.team-selector-label', { hasText: /^Allocation$/ })).toHaveCount(1);
+    await expect(dialog.locator('.team-selector-label', { hasText: 'RnD_allocation_category' })).toHaveCount(0);
+});
+
+test('DELIVERY Scope maps Allocation values to Product and Tech with the project picker controls; Save posts allocationTypes only', async ({ page }) => {
+    await page.setViewportSize({ width: 1180, height: 760 });
+    const bundle = allocationBundle();
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle, allocationOptions: ALLOCATION_OPTIONS });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await quiet(page);
+    await selectConfiguration(dialog, 'delivery');
+    const pane = allocationPane(dialog);
+    await expect(pane.locator('.team-selector-label').first()).toHaveText('Allocation');
+    await expect(allocationColumn(dialog, 'Product').locator('.team-selector-empty')).toHaveCount(1);
+    await expect(allocationColumn(dialog, 'Tech').locator('.team-selector-empty')).toHaveCount(1);
+
+    const input = pane.locator('.team-search-input');
+    await input.fill('Gro');
+    const growth = pane.locator('.team-search-results .team-search-result-item', { hasText: 'Growth' });
+    await expect(growth).toHaveCount(1);
+    await expect(pane.locator('.team-search-results .team-search-result-item', { hasText: 'Platform' })).toHaveCount(0);
+    const request = state.calls.filter(call => call.pathname === '/api/work-structure/allocation-options').pop();
+    const params = new URLSearchParams(request.search);
+    expect([params.get('fieldId'), params.get('projectKey'), params.get('issueTypeId'), params.get('query')]).toEqual(['customfield_19907', 'PLAN', '19002', 'Gro']);
+    await expect(growth.locator('button.project-type-btn.product')).toHaveText('Product');
+    await growth.locator('button.project-type-btn.tech').click();
+    await expect(input).toHaveValue('');
+    const techChip = allocationColumn(dialog, 'Tech').locator('.selected-team-chip.tech-chip', { hasText: 'Growth' });
+    await expect(techChip).toHaveCount(1);
+
+    await input.fill('Plat');
+    await pane.locator('.team-search-result-item', { hasText: 'Platform' }).locator('button.project-type-btn.product').click();
+    const productChip = allocationColumn(dialog, 'Product').locator('.selected-team-chip.product-chip', { hasText: 'Platform' });
+    await expect(productChip).toHaveCount(1);
+    // Already-mapped values are not offered again.
+    await input.fill('Gro');
+    await expect(pane.locator('.team-search-results .team-search-result-item', { hasText: 'Growth' })).toHaveCount(0);
+    await input.fill('');
+
+    // Element-level: every control carries its shared class, and no new class is introduced.
+    for (const chip of [techChip, productChip]) {
+        await expect(chip.locator('.team-name strong')).toHaveCount(1);
+        await expect(chip.locator('button.remove-btn')).toHaveCount(1);
+    }
+    const classes = await dialog.locator('[data-allocation-types], [data-allocation-type]').evaluateAll(nodes => [...new Set(nodes.flatMap(node => [node, ...node.querySelectorAll('*')]).flatMap(node => [...node.classList]))].sort());
+    expect(classes.filter(name => !['group-field-helper', 'group-projects-subsection', 'remove-btn', 'selected-team-chip', 'selected-teams-list', 'team-name', 'team-search-input', 'team-search-wrapper', 'team-selector-empty', 'team-selector-label', 'product-chip', 'tech-chip'].includes(name))).toEqual([]);
+    await page.mouse.move(0, 0);
+    await input.blur();
+    const shots = path.join(__dirname, '..', '..', 'tmp', 'screenshots');
+    fs.mkdirSync(shots, { recursive: true });
+    await dialog.screenshot({ path: path.join(shots, 'delivery-scope-allocation-after.png'), animations: 'disabled' });
+    await dialog.locator('.work-config-panel').evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await dialog.screenshot({ path: path.join(shots, 'delivery-scope-allocation-after-scrolled.png'), animations: 'disabled' });
+
+    await productChip.locator('button.remove-btn').click();
+    await expect(productChip).toHaveCount(0);
+    await saveButton(dialog).click();
+    await expect.poll(() => state.workPosts.length).toBe(1);
+    const posted = state.workPosts[0].workConfigurations.configurations;
+    expect(posted[1].allocationTypes).toEqual([{ value: 'Growth', type: 'tech' }]);
+    const { allocationTypes: _drop, ...restPosted } = posted[1];
+    const { allocationTypes: _base, revision: _rev, ...restBase } = clone(bundle.configurations[1]);
+    expect({ ...restPosted, revision: undefined }).toEqual({ ...restBase, revision: undefined });
+    expect(posted[0]).toEqual(clone(bundle.configurations[0]));
+});
+
+test('Legacy Scope shows no Allocation picker', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle(), allocationOptions: ALLOCATION_OPTIONS });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'legacy');
+    await expect(nested(dialog, 'Scope')).toHaveAttribute('aria-selected', 'true');
+    await expect(dialog.locator('.selected-team-chip', { hasText: 'OLD' })).toHaveCount(1);
+    await expect(allocationPane(dialog)).toHaveCount(0);
+});
+
+test('an incomplete Allocation option list says typed values are allowed and offers the typed value', async ({ page }) => {
+    await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle([{ value: 'Growth', type: 'product' }]), allocationOptions: { options: [{ value: 'Growth' }], source: 'autocomplete', complete: false } });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    const pane = allocationPane(dialog);
+    await expect(allocationColumn(dialog, 'Product').locator('.selected-team-chip.product-chip', { hasText: 'Growth' })).toHaveCount(1);
+    await pane.locator('.team-search-input').fill('Research');
+    await expect(pane.locator('.group-field-helper', { hasText: 'type a value' })).toHaveCount(1);
+    await pane.locator('.team-search-result-item', { hasText: 'Research' }).locator('button.project-type-btn.tech').click();
+    await expect(allocationColumn(dialog, 'Tech').locator('.selected-team-chip.tech-chip', { hasText: 'Research' })).toHaveCount(1);
+});
 
 test('production screenshots: Scope, Source, Field mapping and the mobile drawer', async ({ page }) => {
     await page.setViewportSize({ width: 1180, height: 760 });

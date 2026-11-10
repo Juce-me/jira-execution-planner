@@ -19,9 +19,9 @@
   },
   "dashboard": {
     "path": "frontend/src/dashboard.jsx",
-    "lineCeiling": 7502,
+    "lineCeiling": 7508,
     "hookCeilings": {
-      "useState": 121,
+      "useState": 122,
       "useEffect": 74,
       "useRef": 86,
       "useMemo": 72,
@@ -4339,15 +4339,23 @@
       "exports": [
         "default"
       ],
-      "lineCeiling": 930,
+      "lineCeiling": 1060,
       "interfaces": [
         {
           "exportName": "default",
           "inputNames": [],
           "returnNames": [],
           "propNames": [
+            "addAllocationType",
             "addIssueType",
             "addProjectSelection",
+            "allocationFieldReady",
+            "allocationOptionsIncomplete",
+            "allocationSearchLoading",
+            "allocationSearchOpen",
+            "allocationSearchQuery",
+            "allocationSearchResults",
+            "allocationTypesDraft",
             "boardIdDraft",
             "boardNameDraft",
             "boardSearchIndex",
@@ -4382,6 +4390,7 @@
             "deliveryOwnerFieldSearchResults",
             "extraFieldMappings",
             "groupManageTab",
+            "handleAllocationSearchKeyDown",
             "handleBoardSearchKeyDown",
             "handleCapacityFieldSearchKeyDown",
             "handleCapacityProjectSearchKeyDown",
@@ -4424,12 +4433,15 @@
             "projectSearchQuery",
             "projectSearchRemoteLoading",
             "projectSearchResults",
+            "removeAllocationType",
             "removeIssueType",
             "removeProjectSelection",
             "resetPriorityWeightsDraft",
             "resolveCapacityProjectName",
             "resolveProjectName",
             "selectedProjectsDraft",
+            "setAllocationSearchOpen",
+            "setAllocationSearchQuery",
             "setBoardIdDraft",
             "setBoardNameDraft",
             "setBoardSearchIndex",
@@ -4506,8 +4518,19 @@
             "updatePriorityWeightDraft"
           ],
           "expandedInputNames": [
+            "addAllocationType",
             "addIssueType",
             "addProjectSelection",
+            "allocationFieldReady",
+            "allocationOptionsIncomplete",
+            "allocationSearchLoading",
+            "allocationSearchOpen",
+            "allocationSearchQuery",
+            "allocationSearchQuery.trim",
+            "allocationSearchResults",
+            "allocationSearchResults.length",
+            "allocationSearchResults.map",
+            "allocationTypesDraft",
             "boardIdDraft",
             "boardNameDraft",
             "boardSearchIndex",
@@ -4553,6 +4576,7 @@
             "extraFieldMappings",
             "extraFieldMappings.map",
             "groupManageTab",
+            "handleAllocationSearchKeyDown",
             "handleBoardSearchKeyDown",
             "handleCapacityFieldSearchKeyDown",
             "handleCapacityProjectSearchKeyDown",
@@ -4625,15 +4649,17 @@
             "projectSearchResults",
             "projectSearchResults.length",
             "projectSearchResults.map",
+            "removeAllocationType",
             "removeIssueType",
             "removeProjectSelection",
             "resetPriorityWeightsDraft",
             "resolveCapacityProjectName",
             "resolveProjectName",
             "selectedProjectsDraft",
-            "selectedProjectsDraft.filter",
             "selectedProjectsDraft.length",
             "selectedProjectsDraft.map",
+            "setAllocationSearchOpen",
+            "setAllocationSearchQuery",
             "setBoardIdDraft",
             "setBoardNameDraft",
             "setBoardSearchIndex",
@@ -4719,13 +4745,13 @@
             "updatePriorityWeightDraft"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 211,
+          "expandedInputCount": 225,
           "returnCount": 0,
-          "propCount": 158,
+          "propCount": 170,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 211,
+          "expandedInputCeiling": 225,
           "returnCeiling": 0,
-          "propCeiling": 158,
+          "propCeiling": 170,
           "unresolved": [
             "forwarded input sprintFieldIdDraft",
             "forwarded input boardIdDraft",
@@ -15818,7 +15844,7 @@
             "bag priorityOrder dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "7716b7729cc59691b6809384fb963cc8bf1f6275416dc7b371ab5c7f09007d37",
+            "sourceDigest": "b4284378811f34dc24b41a53616dc4b31dbf097d6a3ad3a2859ec0b2592875ef",
             "reviewed": true,
             "memberNames": [
               "burndownMetric",
@@ -16058,7 +16084,7 @@
           "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "0337065405ca80121e1952edeab456eb47a2d45c4ff759bdd25c333c61d1c496",
+            "sourceDigest": "9e5583eabd5c326c6e0b512099f1fa9690e15ad5ddc1c04328e1e3a34bafea9e",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
@@ -16390,7 +16416,7 @@
           "propCeiling": 12,
           "unresolved": [],
           "inventory": {
-            "sourceDigest": "0337065405ca80121e1952edeab456eb47a2d45c4ff759bdd25c333c61d1c496",
+            "sourceDigest": "9e5583eabd5c326c6e0b512099f1fa9690e15ad5ddc1c04328e1e3a34bafea9e",
             "reviewed": true,
             "memberNames": [
               "activeGroupMissingComponents",
@@ -16869,8 +16895,7 @@
             "setCapacityState",
             "showPlanning",
             "showProduct",
-            "showTech",
-            "workModel"
+            "showTech"
           ],
           "returnNames": [
             "capacityMutationEnabled",
@@ -16889,6 +16914,7 @@
             "refreshCapacity",
             "retryCapacity",
             "selectedAdHocProductSP",
+            "selectedAdHocStats",
             "selectedProjectEntries",
             "selectedTeamEntries",
             "showTotalsRow",
@@ -16962,7 +16988,6 @@
             "scope.teamOptions",
             "scope.techProjectKeys",
             "selectedPlanningTasksList",
-            "selectedPlanningTasksList.reduce",
             "selectedSP",
             "selectedTasksList",
             "setCapacityDataStale",
@@ -16973,19 +16998,17 @@
             "setCapacityState",
             "showPlanning",
             "showProduct",
-            "showTech",
-            "workModel"
+            "showTech"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 67,
-          "returnCount": 21,
+          "expandedInputCount": 76,
+          "returnCount": 22,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 67,
-          "returnCeiling": 21,
+          "expandedInputCeiling": 76,
+          "returnCeiling": 22,
           "propCeiling": 0,
           "unresolved": [
-            "forwarded input workModel",
             "forwarded input selectedTasksList",
             "forwarded input selectedPlanningTasksList",
             "forwarded input selectedSP",
@@ -16995,9 +17018,9 @@
             "bag capacityReadGuardRef member alias guard"
           ],
           "inventory": {
-            "sourceDigest": "6bc634e4a342daa36ea7db67e12dfcccf7e95dc5dae735e64d7b005a0d4ecd6e",
+            "sourceDigest": "19b21a64404b6ab23170d499bbc743c21c9a4262ce9b7ceacd66999ae983c444",
             "reviewed": true,
-            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. #323 Task 8 (design A) reviewed change: plannedCapacity is the stored team number snapshot ({sprintId, teamId, value} or null) read in render from App's single useSyncExternalStore; capacityLoading, capacityReadError and capacityDataStale are the existing App read-lifecycle state values, read only to gate the stored-number fallback. The fallback is merged into capacityByTeam inside the effectiveCapacityState memo (explicit capacityState members, no spread); capacityTargetsByTeam, capacityIssueCount and mutationEnabled are copied unchanged. No mutation transport, getter or new effect dependency. Re-reviewed for the quarterly work-structure merge: workModel is the added forwarded work-model input, read only to derive labels; no mutation transport or new getter.",
+            "rationale": "Reviewed accepted Task 4 closure ledger: selectedTasksList and selectedPlanningTasksList are the existing selected Story arrays passed unchanged to planningSelectionStats helpers. selectedSP is the selected numeric Story Point total passed to getCapacityStatus. getTeamInfo and normalizeEpicKey are existing synchronous task/identity helpers, forwarded unchanged; BACKEND_URL is passed only to the existing Capacity GET API wrapper. Scope aliases, render-time state/read refs, held signature pin and unused scroll closure retain the exact prior reads. No deferred getter, mutation transport or dependency change. Task 10 (#251) reviewed change: capacityReadGuardRef and activeCapacityTeamsRef are existing-pattern render-time refs created by useEngCapacityState; the guard holds { signal, shouldApply, onSettled, automatic, scopeSignature } read only at effect/fetch time (never a dependency) and settled exactly once; refreshCapacity is the additive explicit/automatic read trigger. No mutation transport, dependency array entry or new getter. #323 Task 8 (design A) reviewed change: plannedCapacity is the stored team number snapshot ({sprintId, teamId, value} or null) read in render from App's single useSyncExternalStore; capacityLoading, capacityReadError and capacityDataStale are the existing App read-lifecycle state values, read only to gate the stored-number fallback. The fallback is merged into capacityByTeam inside the effectiveCapacityState memo (explicit capacityState members, no spread); capacityTargetsByTeam, capacityIssueCount and mutationEnabled are copied unchanged. No mutation transport, getter or new effect dependency. Re-reviewed for the quarterly work-structure merge: workModel is the added forwarded work-model input, read only to derive labels; no mutation transport or new getter. DELIVERY Initiative Allocation re-sync (2026-11-09): returns selectedAdHocStats (per-side Ad Hoc SP from buildSelectedAdHocStats; selectedAdHocProductSP is its PRODUCT value) instead of reducing selectedPlanningTasksList inline; the stale workModel and selectedPlanningTasksList.reduce members are dropped (the hook reads neither) and the expanded count is re-measured from the reviewed members. Unresolved forwarded inputs unchanged.",
             "memberNames": [
               "BACKEND_URL",
               "activeCapacityScopeRef",
@@ -17064,7 +17087,6 @@
               "scope.teamOptions",
               "scope.techProjectKeys",
               "selectedPlanningTasksList",
-              "selectedPlanningTasksList.reduce",
               "selectedSP",
               "selectedTasksList",
               "setCapacityDataStale",
@@ -17075,8 +17097,7 @@
               "setCapacityState",
               "showPlanning",
               "showProduct",
-              "showTech",
-              "workModel"
+              "showTech"
             ]
           },
           "callers": [
@@ -17092,6 +17113,12 @@
               "name": "selectedAdHocProductSP",
               "lines": [
                 6218
+              ]
+            },
+            {
+              "name": "selectedAdHocStats",
+              "lines": [
+                6237
               ]
             },
             {
@@ -18961,7 +18988,7 @@
         "WorkConfigurationUnavailable",
         "default"
       ],
-      "lineCeiling": 370,
+      "lineCeiling": 420,
       "interfaces": [
         {
           "exportName": "WorkConfigurationUnavailable",
@@ -19194,7 +19221,7 @@
             "forwarded input onBootstrap"
           ],
           "inventory": {
-            "sourceDigest": "020139739fd3f2c712e2608092fa1c80e9c2ef3de20d9c6d6aec224482636b56",
+            "sourceDigest": "ac90551ecd852c729131a787b4493dd66329ad7bdca5dad229cd0deedee9a6d6",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",

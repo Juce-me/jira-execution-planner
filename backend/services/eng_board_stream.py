@@ -348,12 +348,19 @@ def _parent(value):
     _named(value['issueType'])
 
 
-def _epic(value):
+# DELIVERY Initiatives carry their own Allocation class; Legacy epics carry none and children keep the project map.
+_DELIVERY_CLASSES = ('product', 'tech', 'none')
+_LEGACY_CHILD_CLASSES = ('product', 'tech', 'other')
+
+
+def _epic(value, delivery=False):
     keys = (
         'key', 'summary', 'status', 'priority', 'assignee', 'deliveryOwner', 'projectTrack',
         'updated', 'parent', 'columnId',
     )
-    _exact(value, keys)
+    _exact(value, keys, ('projectClassification',) if delivery else ())
+    if 'projectClassification' in value:
+        _one_of(value['projectClassification'], _DELIVERY_CLASSES)
     _string(value['key'], _MAX['identity'])
     _string(value['summary'], _MAX['summary'])
     _named(value['status'])
@@ -366,7 +373,7 @@ def _epic(value):
     _string(value['columnId'], _MAX['identity'])
 
 
-def _child(value):
+def _child(value, delivery=False):
     keys = (
         'key', 'epicKey', 'summary', 'status', 'priority', 'issueType', 'assignee', 'updated',
         'storyPoints', 'team', 'project', 'projectClassification', 'sprintIds',
@@ -383,7 +390,7 @@ def _child(value):
     _number(value['storyPoints'], nullable=True)
     _nullable_named(value['team'])
     _named(value['project'])
-    _one_of(value['projectClassification'], ('product', 'tech', 'other'))
+    _one_of(value['projectClassification'], _DELIVERY_CLASSES if delivery else _LEGACY_CHILD_CLASSES)
     _array(value['sprintIds'], _MAX['sprint_ids'], lambda item: _number(item, integer=True))
 
 
@@ -416,7 +423,8 @@ def _progress(value):
         _number(count, integer=True)
 
 
-def _validate_body(frame):
+def _validate_body(frame, delivery=False):
+    epic = lambda item: _epic(item, delivery)
     base = ('protocolVersion', 'generationId', 'sequence', 'type')
     frame_type = frame['type']
     if frame_type == 'start':
@@ -429,7 +437,7 @@ def _validate_body(frame):
         return False
     if frame_type == 'index':
         _exact(frame, base + ('epics', 'membership'))
-        _array(frame['epics'], _MAX['epics'], _epic)
+        _array(frame['epics'], _MAX['epics'], epic)
         _one_of(frame['membership'], ('candidate', 'authoritative'))
         return False
     if frame_type == 'progress':
@@ -441,8 +449,8 @@ def _validate_body(frame):
     if frame_type == 'column':
         _exact(frame, base + ('columnId', 'epics', 'children', 'authoritative'))
         _string(frame['columnId'], _MAX['identity'])
-        _array(frame['epics'], _MAX['epics'], _epic)
-        _array(frame['children'], _MAX['children'], _child)
+        _array(frame['epics'], _MAX['epics'], epic)
+        _array(frame['children'], _MAX['children'], lambda item: _child(item, delivery))
         if frame['authoritative'] is not True:
             _fail()
         return False
@@ -489,13 +497,14 @@ class EngBoardStreamWriter:
     """Validate and encode one generation while enforcing byte and order bounds."""
 
     def __init__(self, max_frame_bytes=ENG_BOARD_MAX_FRAME_BYTES,
-                 max_generation_bytes=ENG_BOARD_MAX_GENERATION_BYTES):
+                 max_generation_bytes=ENG_BOARD_MAX_GENERATION_BYTES, *, delivery=False):
         if not isinstance(max_frame_bytes, int) or max_frame_bytes <= 0:
             raise ValueError('max_frame_bytes must be a positive integer')
         if not isinstance(max_generation_bytes, int) or max_generation_bytes <= 0:
             raise ValueError('max_generation_bytes must be a positive integer')
         self.max_frame_bytes = max_frame_bytes
         self.max_generation_bytes = max_generation_bytes
+        self.delivery = delivery
         self.generation_id = None
         self.sequence = None
         self.total_bytes = 0
@@ -521,7 +530,7 @@ class EngBoardStreamWriter:
             pending_generation_id = self.generation_id
         if frame['generationId'] != pending_generation_id:
             _fail('invalid_generation')
-        terminal = _validate_body(frame)
+        terminal = _validate_body(frame, self.delivery)
         try:
             encoded_frame = json.dumps(
                 frame, ensure_ascii=False, allow_nan=False, separators=(',', ':'),

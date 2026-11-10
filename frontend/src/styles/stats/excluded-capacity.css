@@ -453,6 +453,17 @@
             background: var(--effort-color);
         }
 
+        /* DELIVERY No Allocation work: the neutral grey of "No track" (resolveProjectTrackColor). */
+        .effort-type-split-legend-item.none {
+            --effort-color: #94a3b8;
+            --effort-label-color: #475569;
+        }
+
+        .effort-type-split-segment.none {
+            --effort-color: #94a3b8;
+            background: var(--effort-color);
+        }
+
         /* Ad Hoc is included Product capacity: a Product-toned bucket with a
            repeating pattern so it reads as Product but stays distinct from
            Product other. Never excluded-zone styling. */

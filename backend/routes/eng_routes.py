@@ -17,7 +17,7 @@ from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.auth.project_access import project_access_denied_response, project_access_status
 from backend.epm.home import adf_to_html
-from backend.services import eng_board, epic_refresh, planning_work, shared_group_config
+from backend.services import allocation_classification, eng_board, epic_refresh, planning_work, shared_group_config
 from backend.services import work_structure as work_structure_service
 from backend.services import work_write_scope
 from backend.services.eng_board_stream import (
@@ -522,6 +522,10 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
 
     enrichment_fields = ['summary', 'status', 'priority', 'assignee', 'labels', 'components', 'parent',
                          'project', track_field, team_field]
+    # DELIVERY: a readiness Initiative's class is its own Allocation (`none` when blank or unmapped).
+    allocation_field = roles.allocation_field_id if new_model else ''
+    if allocation_field:
+        enrichment_fields.append(allocation_field)
     enrichment_batches = eng_board.split_epic_batches(
         epic_keys,
         lambda keys: 'key in (' + ','.join(_story_readiness_quote(k) for k in keys) + ')',
@@ -571,7 +575,9 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 'components': [item['name'] for item in (fields.get('components') or []) if isinstance(item, dict) and item.get('name')],
                 'projectTrack': _story_readiness_project_track(fields.get(track_field)),
                 'projectKey': project_key,
-                'projectClass': project_map.get(project_key, ''),
+                'projectClass': allocation_classification.classify_initiative(
+                    fields.get(allocation_field) if allocation_field else None, roles.allocation_types,
+                ) if new_model else project_map.get(project_key, ''),
                 'initiative': initiative,
             })
         return epics
@@ -2162,8 +2168,7 @@ def _get_configuration_teams(context, sources, *, sprint_id, team_ids, force_ref
     if config.team_scope_error:
         return _team_catalog_response({'error': config.team_scope_error}, 409, started_at)
     return _serve_db_teams(
-        context, config, catalog_configuration_resolver(
-            config.configuration_id, observed=config.is_observed_supplement),
+        context, config, catalog_configuration_resolver(config.configuration_id),
         sprint_id=sprint_id, team_ids=team_ids, force_refresh=force_refresh,
         completion_attempt_id=completion_attempt_id, expected_identity=expected_identity,
         started_at=started_at,

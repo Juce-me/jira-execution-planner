@@ -802,6 +802,63 @@ class EngBoardProjectionTests(unittest.TestCase):
             'authoritative': True,
         })
 
+    DELIVERY_FIELD = 'customfield_40001'
+    DELIVERY_TYPES = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
+
+    def delivery_board(self, initiatives, children, **kwargs):
+        return eng_board.project_board(
+            initiatives, children, project_map=(('PLAN', 'other'),), columns=self.columns,
+            allocation_field_id=self.DELIVERY_FIELD, allocation_types=self.DELIVERY_TYPES, **kwargs,
+        )
+
+    def test_delivery_epic_frame_carries_its_own_class_without_children(self):
+        initiatives = [issue('P-1', project_key='PLAN'), issue('P-2', project_key='PLAN'),
+                       issue('P-3', project_key='PLAN')]
+        initiatives[0]['fields'][self.DELIVERY_FIELD] = {'value': 'Platform'}
+        initiatives[1]['fields'][self.DELIVERY_FIELD] = [{'value': 'Growth'}]
+        initiatives[2]['fields'][self.DELIVERY_FIELD] = {'value': 'Unmapped'}
+        projection = self.delivery_board(initiatives, [])
+        self.assertEqual({'P-1': 'tech', 'P-2': 'product', 'P-3': 'none'},
+                         {epic['key']: epic['projectClassification'] for epic in projection['epics']})
+        self.assertEqual([[], [], []], [epic['children'] for epic in projection['epics']])
+        # No Allocation field configured: every Initiative is No Allocation.
+        blank = eng_board.project_board(
+            initiatives[:1], [], project_map=(('PLAN', 'other'),), columns=self.columns,
+            allocation_field_id='', allocation_types=self.DELIVERY_TYPES,
+        )
+        self.assertEqual('none', blank['epics'][0]['projectClassification'])
+        shells = [{key: value for key, value in epic.items() if key != 'children'} for epic in projection['epics']]
+        frame = {'protocolVersion': 1, 'generationId': 'synthetic-delivery', 'sequence': 1,
+                 'type': 'index', 'epics': shells, 'membership': 'authoritative'}
+        writer = EngBoardStreamWriter(delivery=True)
+        writer.write({'protocolVersion': 1, 'generationId': 'synthetic-delivery', 'sequence': 0, 'type': 'start',
+                      'scope': 'component', 'scopeVersion': 'scope-v1', 'scopeCohortDigest': 'a' * 64,
+                      'columns': []})
+        writer.write(frame)
+
+    def test_delivery_children_inherit_the_initiative_class(self):
+        initiatives = [issue('P-1', project_key='PLAN'), issue('P-2', project_key='PLAN')]
+        initiatives[0]['fields'][self.DELIVERY_FIELD] = {'value': 'Platform'}
+        initiatives[1]['fields']['parent'] = {'key': 'P-O1'}  # an Objective is never read
+        children = [issue('P-10', parent='P-1', project_key='PLAN'), issue('P-11', parent='P-1', project_key='PLAN'),
+                    issue('P-20', parent='P-2', project_key='PLAN'), issue('P-21', parent='P-2', project_key='PLAN')]
+        children[1]['fields'][self.DELIVERY_FIELD] = {'value': 'Growth'}     # own value ignored
+        children[3]['fields'][self.DELIVERY_FIELD] = {'value': 'Platform'}   # own Tech under an unmapped Initiative
+        projection = self.delivery_board(initiatives, children)
+        classes = {child['key']: child['projectClassification']
+                   for epic in projection['epics'] for child in epic['children']}
+        self.assertEqual({'P-10': 'tech', 'P-11': 'tech', 'P-20': 'none', 'P-21': 'none'}, classes)
+        self.assertEqual({'P-1': 'tech', 'P-2': 'none'},
+                         {epic['key']: epic['projectClassification'] for epic in projection['epics']})
+
+    def test_legacy_frames_keep_the_project_map_and_no_epic_class(self):
+        legacy = eng_board.project_board(
+            [issue('P-1')], [issue('P-10', parent='P-1', project_key='OPS')],
+            project_map=(('PROD', 'product'), ('OPS', 'other')), columns=self.columns,
+        )
+        self.assertNotIn('projectClassification', legacy['epics'][0])
+        self.assertEqual('other', legacy['epics'][0]['children'][0]['projectClassification'])
+
     def test_unknown_status_falls_back_to_first_column_and_epic_link_precedes_parent(self):
         children = [issue('P-10', parent='P-2', epic_link='P-1')]
         result = eng_board.project_board(

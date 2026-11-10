@@ -1,26 +1,29 @@
 import * as React from 'react';
-import { isCombinedWorkModel } from './engWorkModel.js';
 
 export default function PlanningProjectSplitBar({
     selectedProjectEntries,
     excludedProjectStats,
     adHocProductSP = 0,
+    // Ad Hoc SP per side ({ PRODUCT, TECH, NONE }); DELIVERY Ad Hoc follows its Allocation side.
+    adHocStats = {},
     compact = false,
-    workModel,
 }) {
-    if (isCombinedWorkModel(workModel)) {
-        return <CombinedWorkBar selectedProjectEntries={selectedProjectEntries} excludedProjectStats={excludedProjectStats} adHocSP={adHocProductSP} compact={compact} />;
-    }
     const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
     const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
     const techEntry = selectedProjectEntries.find(e => e.id === 'TECH');
     const productSP = productEntry ? productEntry.storyPoints : 0;
     const techSP = techEntry ? techEntry.storyPoints : 0;
+    // DELIVERY only: No Allocation work, drawn last (after Tech); the 70% target stays 70% of the whole bar.
+    const noneEntry = selectedProjectEntries.find(e => e.id === 'NONE');
+    const noneSP = noneEntry ? noneEntry.storyPoints : 0;
     const productPct = projectTotal > 0 ? (productSP / projectTotal) * 100 : 0;
     const techPct = projectTotal > 0 ? (techSP / projectTotal) * 100 : 0;
+    const nonePct = projectTotal > 0 ? (noneSP / projectTotal) * 100 : 0;
     const excludedProduct = excludedProjectStats['PRODUCT'] || 0;
     const excludedTech = excludedProjectStats['TECH'] || 0;
-    const excludedTotal = excludedProduct + excludedTech;
+    const excludedNone = excludedProjectStats['NONE'] || 0;
+    const excludedTotal = excludedProduct + excludedTech + excludedNone;
+    const showNone = nonePct > 0 || excludedNone > 0;
     const targetPct = 70;
     // Ad Hoc is INCLUDED Product capacity, reported as a Product subsegment — never
     // styled as excluded. It is already counted inside productSP.
@@ -28,6 +31,10 @@ export default function PlanningProjectSplitBar({
     const hasAdHoc = adHocSP > 0;
     // Width of the Ad Hoc subsegment relative to the whole bar (sits inside Product).
     const adHocPct = productSP > 0 ? (adHocSP / productSP) * productPct : 0;
+    // DELIVERY Ad Hoc on the Tech or No Allocation side: a subsegment drawn inside that side's fill, from its start and
+    // beneath its label; the side's tooltip reports it ("Incl. Ad Hoc").
+    const techAdHocSP = Math.min(adHocStats.TECH || 0, techSP);
+    const noneAdHocSP = Math.min(adHocStats.NONE || 0, noneSP);
 
     return (
         <>
@@ -46,7 +53,7 @@ export default function PlanningProjectSplitBar({
                         {/* Product fill */}
                         <div
                             className="project-bar-fill product"
-                            style={{ width: `${productPct}%`, borderRadius: techPct > 0 ? '6px 0 0 6px' : '6px' }}
+                            style={{ width: `${productPct}%`, borderRadius: techPct > 0 || nonePct > 0 ? '6px 0 0 6px' : '6px' }}
                             data-tooltip={`Product: ${productSP.toFixed(1)} SP (${productPct.toFixed(0)}% of selected).${hasAdHoc ? ` Incl. Ad Hoc: ${adHocSP.toFixed(1)} SP.` : ''}${excludedProduct > 0 ? ` Excluded: ${excludedProduct.toFixed(1)} SP.` : ''}`}
                         >
                             {!compact && productPct > 15 && (
@@ -57,7 +64,7 @@ export default function PlanningProjectSplitBar({
                         {hasAdHoc && (
                             <div
                                 className="project-bar-fill product-adhoc"
-                                style={{ left: `${Math.max(0, productPct - adHocPct)}%`, width: `${adHocPct}%`, borderRadius: techPct > 0 ? 0 : '0 6px 6px 0' }}
+                                style={{ left: `${Math.max(0, productPct - adHocPct)}%`, width: `${adHocPct}%`, borderRadius: techPct > 0 || nonePct > 0 ? 0 : '0 6px 6px 0' }}
                                 data-tooltip={`Ad Hoc (included Product): ${adHocSP.toFixed(1)} SP of ${productSP.toFixed(1)} Product SP.`}
                             />
                         )}
@@ -65,15 +72,39 @@ export default function PlanningProjectSplitBar({
                         {techPct > 0 && (
                         <div
                             className="project-bar-fill tech"
-                            style={{ left: `${productPct}%`, width: `${techPct}%` }}
-                            data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
+                            style={{ left: `${productPct}%`, width: `${techPct}%`, ...(nonePct > 0 ? { borderRadius: 0 } : {}) }}
+                            data-tooltip={`Tech: ${techSP.toFixed(1)} SP (${techPct.toFixed(0)}% of selected).${techAdHocSP > 0 ? ` Incl. Ad Hoc: ${techAdHocSP.toFixed(1)} SP.` : ''}${excludedTech > 0 ? ` Excluded: ${excludedTech.toFixed(1)} SP.` : ''}`}
                         >
+                            {techAdHocSP > 0 && (
+                                <div
+                                    className="project-bar-fill tech-adhoc"
+                                    style={{ left: 0, width: `${(techAdHocSP / techSP) * 100}%`, borderRadius: techAdHocSP >= techSP && nonePct === 0 ? '0 6px 6px 0' : 0 }}
+                                />
+                            )}
                             {!compact && techPct > 15 && (
                                 <span className="capacity-bar-fill-label">Tech {techPct.toFixed(0)}% · {techSP.toFixed(1)} SP</span>
                             )}
                         </div>
                         )}
-                        {compact && <span className="capacity-bar-fill-label planning-compact-readout">Product {productSP.toFixed(1)} · Tech {techSP.toFixed(1)} SP</span>}
+                        {/* No Allocation fill (DELIVERY only), after Tech */}
+                        {showNone && (
+                        <div
+                            className="project-bar-fill none"
+                            style={{ left: `${productPct + techPct}%`, width: `${nonePct}%` }}
+                            data-tooltip={`No Allocation: ${noneSP.toFixed(1)} SP (${nonePct.toFixed(0)}% of selected).${noneAdHocSP > 0 ? ` Incl. Ad Hoc: ${noneAdHocSP.toFixed(1)} SP.` : ''}${excludedNone > 0 ? ` Excluded: ${excludedNone.toFixed(1)} SP.` : ''}`}
+                        >
+                            {noneAdHocSP > 0 && (
+                                <div
+                                    className="project-bar-fill none-adhoc"
+                                    style={{ left: 0, width: `${(noneAdHocSP / noneSP) * 100}%`, borderRadius: noneAdHocSP >= noneSP ? '0 6px 6px 0' : 0 }}
+                                />
+                            )}
+                            {!compact && nonePct > 25 && (
+                                <span className="capacity-bar-fill-label">No Allocation {nonePct.toFixed(0)}% · {noneSP.toFixed(1)} SP</span>
+                            )}
+                        </div>
+                        )}
+                        {compact && <span className="capacity-bar-fill-label planning-compact-readout">Product {productSP.toFixed(1)} · Tech {techSP.toFixed(1)}{showNone ? ` · No Allocation ${noneSP.toFixed(1)}` : ''} SP</span>}
                         {/* 70% target marker */}
                         <div className="capacity-bar-marker" style={{ left: `${targetPct}%` }} data-tooltip="Product / Tech target: 70% / 30%">
                             <div className="capacity-bar-marker-line dashed" />
@@ -83,41 +114,5 @@ export default function PlanningProjectSplitBar({
                 </div>
             )}
         </>
-    );
-}
-
-// One combined lane (rnd_2027): a single selected-SP fill with an Ad Hoc subsegment; no Product/Tech labels or 70/30 target.
-function CombinedWorkBar({ selectedProjectEntries, excludedProjectStats, adHocSP: adHocInput, compact }) {
-    const selectedSP = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
-    const excludedSP = excludedProjectStats['OTHER'] || 0;
-    const adHocSP = Math.min(adHocInput, selectedSP);
-    const adHocPct = selectedSP > 0 ? (adHocSP / selectedSP) * 100 : 0;
-    if (selectedSP === 0 && excludedSP === 0) {
-        return (
-            <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
-                <span className="planning-stat-value">No tasks selected</span>
-            </div>
-        );
-    }
-    return (
-        <div className="project-bar-graph" data-work-lane="combined">
-            <div className="capacity-bar-track">
-                <div
-                    className="project-bar-fill product"
-                    style={{ width: selectedSP > 0 ? '100%' : '0%', borderRadius: '6px' }}
-                    data-tooltip={`Selected: ${selectedSP.toFixed(1)} SP.${adHocSP > 0 ? ` Incl. Ad Hoc: ${adHocSP.toFixed(1)} SP.` : ''}${excludedSP > 0 ? ` Excluded: ${excludedSP.toFixed(1)} SP.` : ''}`}
-                >
-                    {!compact && <span className="capacity-bar-fill-label">Selected · {selectedSP.toFixed(1)} SP{adHocSP > 0 ? ` · Ad Hoc ${adHocSP.toFixed(1)}` : ''}</span>}
-                </div>
-                {adHocSP > 0 && (
-                    <div
-                        className="project-bar-fill product-adhoc"
-                        style={{ left: `${100 - adHocPct}%`, width: `${adHocPct}%`, borderRadius: '0 6px 6px 0' }}
-                        data-tooltip={`Ad Hoc (included): ${adHocSP.toFixed(1)} SP of ${selectedSP.toFixed(1)} SP.`}
-                    />
-                )}
-                {compact && <span className="capacity-bar-fill-label planning-compact-readout">Selected {selectedSP.toFixed(1)} SP</span>}
-            </div>
-        </div>
     );
 }

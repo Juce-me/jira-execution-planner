@@ -1,4 +1,4 @@
-import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { classifyCapacityIssue, projectStamp } from '../capacityClassification.mjs';
 
 function normalizeKey(value) {
     return String(value || '').trim().toUpperCase();
@@ -97,14 +97,17 @@ function emptyEffortSegments() {
     };
 }
 
+// DELIVERY rows (they carry `nonePoints`) add the No Allocation bucket last; Legacy rows keep the four buckets.
 function summarizeEffortSplitRow(row) {
-    const totalPoints = row.excludedCapacityPoints + row.adHocPoints + row.techPoints + row.productPoints;
+    const delivery = 'nonePoints' in row;
+    const totalPoints = row.excludedCapacityPoints + row.adHocPoints + row.techPoints + row.productPoints + (delivery ? row.nonePoints : 0);
     const segments = emptyEffortSegments();
+    if (delivery) segments.none = { key: 'none', label: 'No Allocation', points: roundMetric(row.nonePoints), percent: 0 };
     segments.excludedCapacity.points = roundMetric(row.excludedCapacityPoints);
     segments.adHoc.points = roundMetric(row.adHocPoints);
     segments.product.points = roundMetric(row.productPoints);
     segments.tech.points = roundMetric(row.techPoints);
-    EFFORT_TYPE_BUCKETS.forEach((bucket) => {
+    (delivery ? [...EFFORT_TYPE_BUCKETS, 'none'] : EFFORT_TYPE_BUCKETS).forEach((bucket) => {
         segments[bucket].percent = totalPoints > 0 ? roundMetric(segments[bucket].points / totalPoints) : 0;
     });
     return {
@@ -113,6 +116,7 @@ function summarizeEffortSplitRow(row) {
         adHocPoints: segments.adHoc.points,
         techPoints: segments.tech.points,
         productPoints: segments.product.points,
+        ...(delivery ? { nonePoints: segments.none.points } : {}),
         totalPoints: roundMetric(totalPoints),
         segments
     };
@@ -444,13 +448,15 @@ export function buildEffortTypeSplitRows(tasks, selectedSprints, options = {}) {
             name: String(team?.name || team?.id || 'Unknown Team').trim() || 'Unknown Team'
         }))
         .filter(team => team.id);
+    const delivery = (tasks || []).some(task => projectStamp(task));
     const emptyRow = (team) => ({
         teamId: team.id,
         teamName: team.name,
         excludedCapacityPoints: 0,
         adHocPoints: 0,
         techPoints: 0,
-        productPoints: 0
+        productPoints: 0,
+        ...(delivery ? { nonePoints: 0 } : {})
     });
     const rowsByTeam = new Map(explicitTeams.map(team => [team.id, emptyRow(team)]));
 
@@ -471,6 +477,8 @@ export function buildEffortTypeSplitRows(tasks, selectedSprints, options = {}) {
                 row.adHocPoints += points;
             } else if (capacityType === 'tech') {
                 row.techPoints += points;
+            } else if (capacityType === 'none') {
+                row.nonePoints += points;
             } else {
                 row.productPoints += points;
             }

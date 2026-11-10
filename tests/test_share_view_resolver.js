@@ -251,7 +251,7 @@ test('teams follow the resolved mode, not the requested one, after a fall-back t
 
 test('facets: an omitted key is the default constant, not matched against the options', () => {
     const { apply, reported } = resolveShareViewFacets(link(), OPTIONS);
-    assert.deepEqual(apply, { status: SHARE_VIEW_DEFAULTS.status, priority: null, track: undefined });
+    assert.deepEqual(apply, { status: SHARE_VIEW_DEFAULTS.status, priority: null, track: undefined, alloc: undefined });
     assert.equal(apply.status, SHARE_VIEW_DEFAULTS.status, 'Killed is absent from OPTIONS.status and must survive');
     assert.equal(Object.hasOwn(apply, 'track'), true, 'neutral track is an own property holding undefined');
     assert.deepEqual(reported, []);
@@ -259,7 +259,7 @@ test('facets: an omitted key is the default constant, not matched against the op
 
 test('facets: all is the neutral null', () => {
     const { apply, reported } = resolveShareViewFacets(link({ status: null, priority: null }), OPTIONS);
-    assert.deepEqual(apply, { status: null, priority: null, track: undefined });
+    assert.deepEqual(apply, { status: null, priority: null, track: undefined, alloc: undefined });
     assert.deepEqual(reported, []);
 });
 
@@ -269,7 +269,7 @@ test('facets: atoms match case-insensitively and are stored as the option ids', 
         priority: { only: ['blocker', 'MAJOR'] },
         track: ['COMMITTED'],
     }), OPTIONS);
-    assert.deepEqual(apply, { status: { only: ['In Progress', 'To Do'] }, priority: { only: ['Blocker', 'Major'] }, track: ['committed'] });
+    assert.deepEqual(apply, { status: { only: ['In Progress', 'To Do'] }, priority: { only: ['Blocker', 'Major'] }, track: ['committed'], alloc: undefined });
     assert.deepEqual(reported, []);
     assert.deepEqual(resolveShareViewFacets(link({ status: { hidden: ['done'] } }), OPTIONS).apply.status, { hidden: ['Done'] });
 });
@@ -294,7 +294,7 @@ test('facets: unmatched atoms are dropped and reported; a key left empty is skip
     const none = resolveShareViewFacets(link({ status: { only: ['Nonexistent'] }, track: ['nope'] }), OPTIONS);
     assert.equal(Object.hasOwn(none.apply, 'status'), false);
     assert.equal(Object.hasOwn(none.apply, 'track'), false);
-    assert.deepEqual(none.apply, { priority: null });
+    assert.deepEqual(none.apply, { priority: null, alloc: undefined });
     assert.deepEqual(none.reported, ['filters']);
 });
 
@@ -310,7 +310,16 @@ test('facets: priority is limited to the six canonical labels', () => {
 test('facets: track none is the empty list and a list is matched against the track options', () => {
     assert.deepEqual(resolveShareViewFacets(link({ track: [] }), OPTIONS).apply.track, []);
     assert.deepEqual(resolveShareViewFacets(link({ track: ['flexible', 'committed'] }), OPTIONS).apply.track, ['flexible', 'committed']);
-    assert.deepEqual(resolveShareViewFacets(link({ track: ['flexible', 'nope'] }), OPTIONS), { apply: { status: SHARE_VIEW_DEFAULTS.status, priority: null, track: ['flexible'] }, reported: ['filters'] });
+    assert.deepEqual(resolveShareViewFacets(link({ track: ['flexible', 'nope'] }), OPTIONS), { apply: { status: SHARE_VIEW_DEFAULTS.status, priority: null, track: ['flexible'], alloc: undefined }, reported: ['filters'] });
+});
+
+test('facets: alloc none is the explicit empty list, a list applies as is, and an omitted alloc is neutral', () => {
+    assert.deepEqual(resolveShareViewFacets(link({ alloc: [] }), OPTIONS).apply.alloc, []);
+    assert.deepEqual(resolveShareViewFacets(link({ alloc: ['tech'] }), OPTIONS).apply.alloc, ['tech']);
+    const omitted = resolveShareViewFacets(link(), OPTIONS);
+    assert.equal(Object.hasOwn(omitted.apply, 'alloc'), true, 'neutral alloc is an own property holding undefined');
+    assert.equal(omitted.apply.alloc, undefined);
+    assert.deepEqual(omitted.reported, []);
 });
 
 test('facets: no option ids at all skips every listed key', () => {

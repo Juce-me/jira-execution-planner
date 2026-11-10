@@ -1,5 +1,5 @@
 import { PRIORITY_ALIASES, PRIORITY_LABEL_BY_KEY, RADAR_PALETTE } from './statsConstants.js';
-import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { classifyCapacityIssue, projectStamp } from '../capacityClassification.mjs';
 
 export function formatPercent(value) {
     return `${(value * 100).toFixed(2)}%`;
@@ -121,10 +121,14 @@ export function buildLocalStatsFromTasks(taskList, {
     sprintName = ''
 } = {}) {
     const teams = {};
-    const projectsSummary = {
+    // DELIVERY work is stamped with its Initiative's Allocation and gains a No Allocation ('none') bucket; Legacy keeps Product/Tech.
+    const delivery = (taskList || []).some(task => projectStamp(task));
+    const emptyProjects = () => ({
         product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-        tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-    };
+        tech: { done: 0, incomplete: 0, killed: 0, priorities: {} },
+        ...(delivery ? { none: { done: 0, incomplete: 0, killed: 0, priorities: {} } } : {})
+    });
+    const projectsSummary = emptyProjects();
     const totals = { done: 0, incomplete: 0, killed: 0 };
     const storyPointsTotals = { total: 0, done: 0, incomplete: 0, killed: 0 };
 
@@ -159,7 +163,8 @@ export function buildLocalStatsFromTasks(taskList, {
         storyPointsTotals.total += storyPoints;
         const teamInfo = getTeamInfo(task);
         const teamKey = teamInfo.id || teamInfo.name || 'unknown';
-        const projectBucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType === 'tech' ? 'tech' : 'product';
+        const { projectType } = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet });
+        const projectBucket = projectType === 'tech' || projectType === 'none' ? projectType : 'product';
 
         if (!teams[teamKey]) {
             teams[teamKey] = {
@@ -170,10 +175,7 @@ export function buildLocalStatsFromTasks(taskList, {
                 killed: 0,
                 priorities: {},
                 priorityPoints: {},
-                projects: {
-                    product: { done: 0, incomplete: 0, killed: 0, priorities: {} },
-                    tech: { done: 0, incomplete: 0, killed: 0, priorities: {} }
-                }
+                projects: emptyProjects()
             };
         }
 

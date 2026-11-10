@@ -128,3 +128,58 @@ test('blank search preserves all ENG alert collections by reference', async () =
 
     assert.equal(filterEngAlertCollections(collections, '   '), collections);
 });
+
+// The project half of useEngAlertFilters' matchesEpicFilters, as the pure `admitsAlertEpicProject`.
+test('DELIVERY Initiative alerts follow the Initiative class; Tech-only keeps Tech alerts', async () => {
+    const { admitsAlertEpicProject } = await loadModule();
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const deliveryModel = buildEngCatchUpFacetModel({ tasks: [], workModel: 'rnd_2027' });
+    const techKeys = new Set(['TECH']);
+    const initiatives = [
+        epic('PLAN-1', 'Tech Initiative', { projectClass: 'tech' }),
+        epic('PLAN-2', 'Product Initiative', { projectClass: 'product' }),
+        epic('PLAN-3', 'No Allocation Initiative', { projectClass: 'none' }),
+        // The Initiative's class decides even when its Jira project is a Tech project.
+        epic('TECH-4', 'Product Initiative in a Tech project', { projectClass: 'product' }),
+        epic('PLAN-5', 'Unreadable Initiative'),
+    ];
+    const admitted = (filters) => initiatives.filter((item) => admitsAlertEpicProject(item, filters, techKeys)).map((item) => item.key);
+    assert.deepEqual(admitted(resolveEngCatchUpFilters({ model: deliveryModel })), ['PLAN-1', 'PLAN-2', 'PLAN-3', 'TECH-4', 'PLAN-5']);
+    assert.deepEqual(admitted(resolveEngCatchUpFilters({ model: deliveryModel, allocation: ['tech'] })), ['PLAN-1']);
+    assert.deepEqual(admitted(resolveEngCatchUpFilters({ model: deliveryModel, allocation: ['product'] })), ['PLAN-2', 'TECH-4']);
+    assert.deepEqual(admitted(resolveEngCatchUpFilters({ model: deliveryModel, allocation: [] })), ['PLAN-3', 'PLAN-5']);
+
+    // Legacy: Tech-only keeps the Tech alerts, by class or by Tech project key.
+    const legacyModel = buildEngCatchUpFacetModel({ tasks: [{ key: 'TECH-9', fields: { projectKey: 'TECH' } }, { key: 'PROD-9', fields: { projectKey: 'PROD' } }],
+        isTechTask: (item) => item.fields.projectKey === 'TECH' });
+    const legacyEpics = [epic('TECH-1', 'Tech by key'), epic('PROD-2', 'Tech by class', { projectClass: 'tech' }), epic('PROD-3', 'Product')];
+    const legacyTechOnly = resolveEngCatchUpFilters({ model: legacyModel, showProduct: false });
+    assert.deepEqual(legacyEpics.filter((item) => admitsAlertEpicProject(item, legacyTechOnly, techKeys)).map((item) => item.key), ['TECH-1', 'PROD-2']);
+});
+
+// Production shape: empty, future-routed and ready-to-close Initiative alerts come from epicsInScope and carry neither
+// projectClass nor allocationClass; their class is the Initiative record's `allocationClass` in epicDetails.
+test('DELIVERY alerts without a class read the Initiative class from epicDetails', async () => {
+    const { admitsAlertEpicProject, filterEngAlertCollections } = await loadModule();
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const epicDetails = {
+        'PLAN-10': { key: 'PLAN-10', allocationClass: 'product' },
+        'PLAN-11': { key: 'PLAN-11', allocationClass: 'tech' },
+        'PLAN-12': { key: 'PLAN-12', allocationClass: 'none' },
+    };
+    const model = buildEngCatchUpFacetModel({ tasks: [], epicDetails, workModel: 'rnd_2027' });
+    const alertEpics = ['PLAN-10', 'PLAN-11', 'PLAN-12', 'PLAN-13'].map((key) => ({ key, summary: key, status: { name: 'To Do' } }));
+    const admitted = (allocation) => alertEpics
+        .filter((item) => admitsAlertEpicProject(item, resolveEngCatchUpFilters({ model, allocation }), new Set()))
+        .map((item) => item.key);
+    assert.deepEqual(admitted(['product']), ['PLAN-10']);
+    assert.deepEqual(admitted(['tech']), ['PLAN-11']);
+    // Not in epicDetails (its Initiative not loaded): No Allocation.
+    assert.deepEqual(admitted([]), ['PLAN-12', 'PLAN-13']);
+    assert.deepEqual(admitted(undefined), ['PLAN-10', 'PLAN-11', 'PLAN-12', 'PLAN-13']);
+    const filters = resolveEngCatchUpFilters({ model, allocation: ['tech'] });
+    const filtered = filterEngAlertCollections({ emptyEpicsForAlert: alertEpics, futureRoutedEpics: alertEpics, doneStoryEpics: alertEpics }, '', epicDetails, {
+        matchesEpicFilters: (item) => admitsAlertEpicProject(item, filters, new Set()),
+    });
+    for (const key of ['emptyEpicsForAlert', 'futureRoutedEpics', 'doneStoryEpics']) assert.deepEqual(filtered[key].map((item) => item.key), ['PLAN-11'], key);
+});

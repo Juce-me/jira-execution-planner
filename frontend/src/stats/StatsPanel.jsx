@@ -305,6 +305,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                         formatPercent={formatPercent}
                         getRateClass={getRateClass}
                         words={statWords}
+                        noAllocation={combinedScope}
                     />
 
                     <StatsPriorityView
@@ -513,7 +514,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                 <div className="cohort-section cohort-section-fullbleed">
                                     <div className="cohort-section-title">Effort Split</div>
                                     <div className="cohort-section-subtitle">
-                                        Selected sprint-range story points by Excluded Capacity, Ad Hoc, Product, and Tech.
+                                        Selected sprint-range story points by Excluded Capacity, Ad Hoc, Product, {combinedScope ? 'Tech, and No Allocation' : 'and Tech'}.
                                     </div>
                                     <div className="cohort-section-subtitle">
                                         Sprint range: {effortSplitSprintLabel}
@@ -526,6 +527,7 @@ export function StatsPanel({ stats, links, analytics, onSelectBurnoutTask,
                                         onAnalyticsAction={trackStatsAnalyticsAction}
                                         formatExcludedPoints={formatExcludedPoints}
                                         formatPercent={formatPercent}
+                                        noAllocation={combinedScope}
                                     />
                                 </div>
                                 <div className="cohort-section cohort-section-fullbleed">

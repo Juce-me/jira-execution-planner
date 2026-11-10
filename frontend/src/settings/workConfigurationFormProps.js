@@ -37,6 +37,7 @@ export function buildFieldSettingsProps({
     jiraFields, loadingFields, jiraProjects, loadingProjects, projectResults, projectLoading,
     boardResults, boardLoading, resolveProjectName, addProject, removeProject,
     typeCatalog, hoverKey, setHoverKey, requestRetire, boardName, inheritedBoard = null, entries = [],
+    allocationResults = [], allocationLoading = false, allocationComplete = false,
 }) {
     const id = entry.id;
     const model = entry.model;
@@ -170,6 +171,35 @@ export function buildFieldSettingsProps({
         removeProjectSelection: key => removeProject(id, key),
     });
 
+    // DELIVERY's Allocation -> Product/Tech mapping, edited with the project picker's controls; patches `allocationTypes` only.
+    if (rnd) {
+        const allocationQuery = get('allocationQuery', '');
+        const resetAllocationSearch = () => { set('allocationQuery', '')(''); set('allocationOpen', false)(false); };
+        const addAllocationType = (value, type) => {
+            patch(id, current => ({ allocationTypes: [...(current.allocationTypes || []).filter(item => item.value !== value), { value, type }] }));
+            resetAllocationSearch();
+        };
+        Object.assign(props, {
+            allocationTypesDraft: entry.allocationTypes || [],
+            allocationFieldReady: Boolean(entry.fields.allocation?.fieldId),
+            allocationSearchQuery: allocationQuery,
+            allocationSearchOpen: get('allocationOpen', false),
+            allocationSearchLoading: allocationLoading,
+            allocationOptionsIncomplete: Boolean(allocationQuery.trim()) && !allocationLoading && !allocationComplete,
+            allocationSearchResults: allocationResults,
+            setAllocationSearchQuery: set('allocationQuery', ''),
+            setAllocationSearchOpen: set('allocationOpen', false),
+            handleAllocationSearchKeyDown: event => {
+                if (event.key !== 'Escape') return;
+                event.preventDefault();
+                event.stopPropagation();
+                set('allocationOpen', false)(false);
+            },
+            addAllocationType,
+            removeAllocationType: value => patch(id, current => ({ allocationTypes: (current.allocationTypes || []).filter(item => item.value !== value) })),
+        });
+    }
+
     // Hierarchy rows: loading / error / resolved / unresolved states come from describeHierarchyRow.
     const catalogState = typeCatalog.state;
     const labels = hierarchyLabels(model);
@@ -226,7 +256,7 @@ export function buildFieldSettingsProps({
         issueTypesDraft: child ? [child.name] : (legacyFilter || []),
         extraFieldMappings: [
             fieldMapping('projectTrackField', 'projectTrack', 'Project Track', `Jira field on the ${parent?.name || parentLabel}.`),
-            ...(rnd ? [fieldMapping('allocationField', 'allocation', 'RnD_allocation_category', 'Explicit Epic value, then Initiative, then Objective. Components remain separate.')] : []),
+            ...(rnd ? [fieldMapping('allocationField', 'allocation', 'Allocation', 'Explicit Epic value, then Initiative, then Objective. Components remain separate.')] : []),
         ],
         mappingPreviewLabels: {
             childType: child?.name || 'Unmapped issue type',

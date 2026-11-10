@@ -96,6 +96,19 @@ export const searchProjects = (backendUrl, { query, signal }) => {
     });
 };
 
+// DELIVERY Allocation values for the Product/Tech mapping, read with the editor draft's field, project and planning type.
+export const searchAllocationOptions = (backendUrl, { query, fieldId, projectKey, issueTypeId, signal }) => {
+    const params = new URLSearchParams({ fieldId, query });
+    if (projectKey) params.set('projectKey', projectKey);
+    if (issueTypeId) params.set('issueTypeId', issueTypeId);
+    return apiFetch(`${backendUrl}/api/work-structure/allocation-options?${params.toString()}`, {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+        cache: 'no-cache',
+        signal
+    });
+};
+
 export const searchBoards = (backendUrl, { query, signal }) => {
     const params = new URLSearchParams();
     params.set('query', query);

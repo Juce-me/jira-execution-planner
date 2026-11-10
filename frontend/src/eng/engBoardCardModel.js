@@ -10,15 +10,17 @@ import { getStatusPhaseRank, isKilledStatusName } from './engTaskUtils.js';
 // strict adapter instead injects the server's closed product/tech/other child classification.
 // Keeping both forms at this seam preserves the legacy Product/Tech rule without collapsing the
 // strict `other` cohort into Product. A mixed Epic may genuinely set multiple flags; no children
-// in scope means none.
+// in scope means none. A DELIVERY `none` child is No Allocation (`isNone`), never Tech.
 export function classifyEpicProjects(epicGroup, isTechTask) {
     const tasks = (epicGroup && epicGroup.tasks) || [];
     let isTech = false;
     let isProduct = false;
     let isOther = false;
+    let isNone = false;
     tasks.forEach((task) => {
         const classification = isTechTask(task);
-        if (classification === 'other') isOther = true;
+        if (classification === 'none') isNone = true;
+        else if (classification === 'other') isOther = true;
         else if (classification === 'product') isProduct = true;
         else if (classification === 'tech') isTech = true;
         // Preserve the legacy predicate contract, including its ordinary truthy/falsy behavior.
@@ -29,6 +31,7 @@ export function classifyEpicProjects(epicGroup, isTechTask) {
         isTech,
         isProduct,
         isOther,
+        isNone,
     };
 }
 

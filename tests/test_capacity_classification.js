@@ -97,16 +97,63 @@ test('empty Ad Hoc set leaves Tech story as Tech', async () => {
     );
 });
 
-test('combined (rnd_2027) model classifies as other/other and other/ad_hoc with no Product subtype', async () => {
+test('new (rnd_2027) model: the Allocation stamp decides Product/Tech over the project key', async () => {
     const { classifyCapacityIssue } = await loadUtils();
-    const issue = { key: 'PLAN-E1', fields: { projectKey: 'TECH', epicKey: 'ADHOC-1' } };
+    const stamped = (key, epicKey, stamp) => ({ key, fields: { projectKey: 'TECH', epicKey, projectClassification: stamp } });
 
     assert.deepEqual(
-        classifyCapacityIssue({ key: 'PLAN-E2', fields: { projectKey: 'TECH', epicKey: 'EPIC-9' } }, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
-        { projectType: 'other', capacityType: 'other', productSubtype: null }
+        classifyCapacityIssue(stamped('PLAN-E2', 'EPIC-9', 'product'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'product', capacityType: 'product', productSubtype: 'standard' }
     );
     assert.deepEqual(
-        classifyCapacityIssue(issue, { techProjectKeys, adHocEpicSet, workModel: 'rnd_2027' }),
-        { projectType: 'other', capacityType: 'ad_hoc', productSubtype: null }
+        classifyCapacityIssue({ key: 'PLAN-E3', fields: { projectKey: 'PROD', epicKey: 'EPIC-9', projectClassification: 'tech' } }, { techProjectKeys, adHocEpicSet }),
+        { projectType: 'tech', capacityType: 'tech', productSubtype: null }
+    );
+});
+
+test('ad hoc follows the Initiative class in DELIVERY', async () => {
+    const { classifyCapacityIssue } = await loadUtils();
+    const stamped = (stamp) => ({ key: 'PLAN-E1', fields: { projectKey: 'PROD', epicKey: 'ADHOC-1', projectClassification: stamp } });
+
+    assert.deepEqual(
+        classifyCapacityIssue(stamped('tech'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'tech', capacityType: 'ad_hoc', productSubtype: null }
+    );
+    assert.deepEqual(
+        classifyCapacityIssue(stamped('none'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'none', capacityType: 'ad_hoc', productSubtype: null }
+    );
+    assert.deepEqual(
+        classifyCapacityIssue(stamped('product'), { techProjectKeys, adHocEpicSet }),
+        { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' }
+    );
+    // A Board child carries the stamp at the top level.
+    assert.equal(classifyCapacityIssue({ key: 'ADHOC-1', projectClassification: 'tech' }, { techProjectKeys, adHocEpicSet }).projectType, 'tech');
+});
+
+test('unmapped stamp is No Allocation, never Product', async () => {
+    const { classifyCapacityIssue, projectClassOf, isTechIssue } = await loadUtils();
+    const unmapped = { key: 'PLAN-E4', fields: { projectKey: 'TECH', epicKey: 'EPIC-9', projectClassification: 'none' } };
+
+    assert.deepEqual(
+        classifyCapacityIssue(unmapped, { techProjectKeys, adHocEpicSet }),
+        { projectType: 'none', capacityType: 'none', productSubtype: null }
+    );
+    assert.equal(projectClassOf(unmapped, techProjectKeys), 'none');
+    assert.equal(projectClassOf({ key: 'PLAN-E5', projectClassification: 'none' }, new Set()), 'none');
+    assert.equal(isTechIssue(unmapped, techProjectKeys), false);
+    // Legacy (no stamp) is never 'none'; an unknown stamp (Legacy Board 'other') falls back to the project key.
+    assert.equal(projectClassOf({ key: 'TECH-1', fields: {} }, techProjectKeys), 'tech');
+    assert.equal(projectClassOf({ key: 'PROD-1', fields: {} }, techProjectKeys), 'product');
+    assert.equal(projectClassOf({ key: 'TECH-2', projectClassification: 'other' }, techProjectKeys), 'tech');
+    assert.equal(projectClassOf(null, techProjectKeys), 'product');
+});
+
+test('Legacy Ad Hoc in a Tech project is still Product', async () => {
+    const { classifyCapacityIssue } = await loadUtils();
+
+    assert.deepEqual(
+        classifyCapacityIssue({ key: 'TECH-11', fields: { projectKey: 'TECH', epicKey: 'ADHOC-1' } }, { techProjectKeys, adHocEpicSet }),
+        { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' }
     );
 });

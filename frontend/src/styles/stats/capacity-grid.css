@@ -141,6 +141,20 @@
             padding: 0.08rem 0;
         }
 
+        /* DELIVERY adds the No Allocation group between Tech and Total. */
+        .capacity-grid[data-allocation="delivery"] .capacity-row {
+            grid-template-columns:
+                minmax(160px, 1.4fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr)
+                minmax(112px, 0.6fr) minmax(70px, 0.5fr) minmax(70px, 0.5fr);
+        }
+
+        .capacity-grid[data-allocation="delivery"] .capacity-group-cell.total {
+            grid-column: 11 / span 3;
+        }
+
         .capacity-group-row {
             border-bottom: 1px solid var(--border);
             padding-bottom: 0.25rem;

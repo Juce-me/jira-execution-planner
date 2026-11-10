@@ -127,6 +127,42 @@ test('Component scope start frames pass strict stream validation', async () => {
     assert.doesNotMatch(api.fetchCalls[0][0], /sprintId=/);
 });
 
+test('column frames accept the DELIVERY none class and an optional epic class, and reject bogus', async t => {
+    const epic = {
+        key: 'PLAN-I1', summary: 'Initiative', status: { id: '1', name: 'To Do' }, priority: null, assignee: null,
+        deliveryOwner: null, projectTrack: null, updated: null, parent: null, columnId: 'todo',
+    };
+    const child = {
+        key: 'PLAN-E1', epicKey: 'PLAN-I1', summary: 'Epic', status: { id: '1', name: 'To Do' }, priority: null,
+        issueType: { id: '10002', name: 'Epic' }, assignee: null, updated: null, storyPoints: 3, team: null,
+        project: { id: '3', name: 'Plan' }, projectClassification: 'other', sprintIds: [],
+    };
+    const run = (epicValue, childValue) => {
+        const column = frame('column', 1, { columnId: 'todo', epics: [epicValue], children: [childValue], authoritative: true });
+        const api = harness(async () => streamedResponse([encoded(start()), encoded(column), encoded(complete(2))]).response);
+        return api.exports.streamEngBoard({ departmentId: 'department-1', scope: 'all_work' });
+    };
+    const accepted = [
+        ['legacy epic without a class', epic, child],
+        ...['product', 'tech', 'none'].map(value => [
+            `DELIVERY ${value}`, { ...epic, projectClassification: value }, { ...child, projectClassification: value },
+        ]),
+    ];
+    for (const [name, epicValue, childValue] of accepted) {
+        await t.test(name, async () => { await run(epicValue, childValue); });
+    }
+    const rejected = [
+        ['bogus epic class', { ...epic, projectClassification: 'bogus' }, child],
+        ['other is not an epic class', { ...epic, projectClassification: 'other' }, child],
+        ['bogus child class', epic, { ...child, projectClassification: 'bogus' }],
+    ];
+    for (const [name, epicValue, childValue] of rejected) {
+        await t.test(name, async () => {
+            await assert.rejects(() => run(epicValue, childValue), error => error.code === 'invalid_frame');
+        });
+    }
+});
+
 test('valid UTF-8 containing an escaped lone surrogate is rejected', async () => {
     const bytes = new TextEncoder().encode(`${JSON.stringify(start()).replace('scope-v1', 'scope-\\ud800')}\n`);
     const api = harness(async () => streamedResponse([bytes]).response);

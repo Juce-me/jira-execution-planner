@@ -64,7 +64,9 @@ import { usePlanningSprintReview } from './eng/usePlanningSprintReview.js';
 import { usePlanningGroupScope } from './eng/usePlanningGroupScope.js';
 import PlanningCapacityBar from './eng/PlanningCapacityBar.jsx';
 import PlanningProjectSplitBar from './eng/PlanningProjectSplitBar.jsx';
+import CapacityNoAllocationCells from './eng/CapacityNoAllocationCells.jsx';
 import PlanningTeamCapacityCards from './eng/PlanningTeamCapacityCards.jsx';
+import { isTechIssue } from './capacityClassification.mjs';
 import { ENG_TASK_LOAD_OUTCOME, useEngSprintData } from './eng/useEngSprintData.js';
 import { useWorkEntityNames } from './eng/useWorkEntityNames.js';
 import { storyReadinessAnswersAwaited, useStoryReadiness } from './eng/useStoryReadiness.js';
@@ -343,7 +345,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     priority: savedPrefsRef.current.engPriorityFilter ?? null
                 }
                 : migrateEngCatchUpFilters(savedPrefsRef.current);
-            const [engStatusFilter, setEngStatusFilter] = useState(initialEngFilters.status); const [engPriorityFilter, setEngPriorityFilter] = useState(initialEngFilters.priority); const [engProjectTrackFilter, setEngProjectTrackFilter] = useState(undefined);
+            const [engStatusFilter, setEngStatusFilter] = useState(initialEngFilters.status); const [engPriorityFilter, setEngPriorityFilter] = useState(initialEngFilters.priority); const [engProjectTrackFilter, setEngProjectTrackFilter] = useState(undefined); const savedEngAllocationFilter = Array.isArray(savedPrefsRef.current.engAllocationFilter) ? savedPrefsRef.current.engAllocationFilter : undefined; const [engAllocationFilter, setEngAllocationFilter] = useState(savedEngAllocationFilter);
             const [showTech, setShowTech] = useState(savedPrefsRef.current.showTech ?? true);
             const [showProduct, setShowProduct] = useState(savedPrefsRef.current.showProduct ?? true);
             const savedInitialViewRef = useRef(savedPrefsRef.current.selectedView ?? 'eng');
@@ -2723,7 +2725,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     techLoaded: false,
                     error: '',
                     engStatusFilter: initialEngFilters.status,
-                    engPriorityFilter: initialEngFilters.priority, engProjectTrackFilter: undefined,
+                    engPriorityFilter: initialEngFilters.priority, engProjectTrackFilter: undefined, engAllocationFilter: savedEngAllocationFilter,
                     showTech: savedPrefsRef.current.showTech ?? true,
                     showProduct: savedPrefsRef.current.showProduct ?? true,
                     groupByInitiativeChoice: savedPrefsRef.current.groupByInitiativeChoice ?? null,
@@ -2780,7 +2782,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 techLoaded,
                 error,
                 engStatusFilter,
-                engPriorityFilter, engProjectTrackFilter,
+                engPriorityFilter, engProjectTrackFilter, engAllocationFilter,
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
@@ -2838,7 +2840,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setTechLoaded(Boolean(nextState.techLoaded));
                 setError(nextState.error || '');
                 setEngStatusFilter(nextState.engStatusFilter ?? null);
-                setEngPriorityFilter(nextState.engPriorityFilter ?? null); setEngProjectTrackFilter(Array.isArray(nextState.engProjectTrackFilter) ? nextState.engProjectTrackFilter : undefined);
+                setEngPriorityFilter(nextState.engPriorityFilter ?? null); setEngProjectTrackFilter(Array.isArray(nextState.engProjectTrackFilter) ? nextState.engProjectTrackFilter : undefined); setEngAllocationFilter(Array.isArray(nextState.engAllocationFilter) ? nextState.engAllocationFilter : undefined);
                 setShowTech(nextState.showTech ?? true);
                 setShowProduct(nextState.showProduct ?? true);
                 setGroupByInitiativeChoice(nextState.groupByInitiativeChoice ?? null);
@@ -2899,7 +2901,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 techLoaded,
                 error,
                 engStatusFilter,
-                engPriorityFilter, engProjectTrackFilter,
+                engPriorityFilter, engProjectTrackFilter, engAllocationFilter,
                 showTech,
                 showProduct,
                 groupByInitiativeChoice,
@@ -3299,7 +3301,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     showTech,
                     showProduct,
                     engStatusFilter,
-                    engPriorityFilter,
+                    engPriorityFilter, engAllocationFilter,
                     groupByInitiativeChoice,
                     searchQuery,
                     statsView,
@@ -3358,7 +3360,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showTech,
                 showProduct,
                 engStatusFilter,
-                engPriorityFilter,
+                engPriorityFilter, engAllocationFilter,
                 groupByInitiativeChoice,
                 searchQuery,
                 statsView,
@@ -4090,7 +4092,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const selectedTeamSet = React.useMemo(() => new Set(selectedTeams.filter(id => id !== 'all')), [selectedTeams]);
             const isAllTeamsSelected = selectedTeams.includes('all') || selectedTeamSet.size === 0;
             const isTechTask = React.useCallback(
-                (task) => techProjectKeys.has(String(task.fields?.projectKey || task.key.split('-')[0]).toUpperCase()),
+                (task) => isTechIssue(task, techProjectKeys),
                 [techProjectKeys]
             );
             // Search and team scope only, over the ungated product+tech merge: `tasks` already
@@ -4130,16 +4132,16 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             ]);
             // O6: counts recompute on scope change only, never on a facet tick.
             const engCatchUpFacetModel = React.useMemo(
-                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, names: entityNames }),
-                [engFilterScopeTasks, isTechTask, epicDetails, entityNames]
+                () => buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, workModel, names: entityNames }),
+                [engFilterScopeTasks, isTechTask, epicDetails, workModel, entityNames]
             );
             const engCatchUpFilters = React.useMemo(() => resolveEngCatchUpFilters({
                 model: engCatchUpFacetModel,
                 status: engStatusFilter,
-                priority: engPriorityFilter, track: engProjectTrackFilter,
+                priority: engPriorityFilter, track: engProjectTrackFilter, allocation: engAllocationFilter,
                 showTech,
                 showProduct
-            }), [engCatchUpFacetModel, engStatusFilter, engPriorityFilter, engProjectTrackFilter, showTech, showProduct]);
+            }), [engCatchUpFacetModel, engStatusFilter, engPriorityFilter, engProjectTrackFilter, engAllocationFilter, showTech, showProduct]);
             // The stored values go in as well as out: a facet edit only speaks for the options
             // the bar can show, so an exclusion for an option absent from this scope has to be
             // carried forward rather than recomputed away.
@@ -4147,16 +4149,16 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const next = readEngCatchUpFilterState(nextSelection, engCatchUpFilters.facetViews, {
                     status: engStatusFilter,
                     priority: engPriorityFilter
-                });
+                }, { allocation: combinedWorkModel });
                 setEngStatusFilter(next.status);
                 setEngPriorityFilter(next.priority);
                 setEngProjectTrackFilter(next.track);
-                setShowTech(next.showTech);
-                setShowProduct(next.showProduct);
-            }, [engCatchUpFilters, engStatusFilter, engPriorityFilter]);
-            const scopedTasks = React.useMemo(
-                () => engFilterScopeTasks.filter(task => engCatchUpFilters.admitsProject(isTechTask(task)) && engCatchUpFilters.admitsProjectTrack(task)),
-                [engFilterScopeTasks, engCatchUpFilters, isTechTask]
+                if (combinedWorkModel) setEngAllocationFilter(next.allocation);
+                else { setShowTech(next.showTech); setShowProduct(next.showProduct); }
+            }, [engCatchUpFilters, engStatusFilter, engPriorityFilter, combinedWorkModel]);
+            const scopedTasks = React.useMemo( // DELIVERY admits by the Initiative's Allocation class (`none` included); Legacy by Product/Tech project
+                () => engFilterScopeTasks.filter(task => (combinedWorkModel ? engCatchUpFilters.admitsAllocation(engCatchUpFilters.allocationClassOf(task)) : engCatchUpFilters.admitsProject(isTechTask(task))) && engCatchUpFilters.admitsProjectTrack(task)),
+                [engFilterScopeTasks, engCatchUpFilters, isTechTask, combinedWorkModel]
             );
 
             useEffect(() => {
@@ -4465,8 +4467,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 showTech, showProduct, searchQuery,
                 statusNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[0]?.isNeutral && !burnoutTaskFilter,
                 priorityNeutral: showPlanning && planningLayout === 'table' ? true : engCatchUpFilters.facetViews?.[1]?.isNeutral && !burnoutTaskFilter,
-                admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack,
-                engEpicSort, groupByInitiativeChoice, readingScopeKey: JSON.stringify([selectedView, showBoard, showStats, showScenario, planningLayout, authResumeStagedRevision, loadEpochRef.current, authResumePrincipalRef.current, connectionRecoveryPrincipalRef.current, sharedConfigRevision, groupsConfig?.configRevision, jiraUrl, engStatusFilter, engPriorityFilter, engProjectTrackFilter]),
+                admitsEpicProjectTrack: engCatchUpFilters.admitsEpicProjectTrack, admitsAllocation: engCatchUpFilters.admitsAllocation,
+                engEpicSort, groupByInitiativeChoice, readingScopeKey: JSON.stringify([selectedView, showBoard, showStats, showScenario, planningLayout, authResumeStagedRevision, loadEpochRef.current, authResumePrincipalRef.current, connectionRecoveryPrincipalRef.current, sharedConfigRevision, groupsConfig?.configRevision, jiraUrl, engStatusFilter, engPriorityFilter, engProjectTrackFilter, engAllocationFilter]),
                 planningOriginals: showPlanning ? planningOriginals : null,
             });
             const planningReviewRows = React.useMemo(() => [
@@ -5102,14 +5104,14 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const plannedCapacity = React.useSyncExternalStore(getAssigneeCapacityController(BACKEND_URL).subscribe, getAssigneeCapacityController(BACKEND_URL).getPlannedSnapshot); // #323 design A: App re-renders only when the stored team number changes
             const {
-                selectedAdHocProductSP, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
+                selectedAdHocProductSP, selectedAdHocStats, excludedProjectStats, capacityShareLabel, teamCapacityEntries,
                 displayedTeamCapacityEntries, capacityScopeSignature, effectiveCapacityState, capacityMutationEnabled,
                 handleCapacitySaved, retryCapacity, refreshCapacity, capacityTeamIds, totalCapacityAdjusted,
                 estimatedCapacityAdjusted, excludedCapacityAdjusted, capacitySummary, selectedProjectEntries,
                 selectedTeamEntries, capacityTotals, showTotalsRow, formatCapacityValue,
             } = useEngCapacity({
-                scope, workModel,
-                showPlanning, capacityEnabled, showProduct, showTech,
+                scope,
+                showPlanning, capacityEnabled, showProduct: combinedWorkModel || showProduct, showTech: combinedWorkModel || showTech, // DELIVERY's Allocation facet, like Project Track, does not scale capacity
                 selectedTasksList, selectedPlanningTasksList, selectedSP, getTeamInfo,
                 normalizeStatus, normalizeEpicKey, BACKEND_URL, loadEpochRef,
                 epicGroups, epicRefMap, capacityState, capacityStateRef,
@@ -5587,7 +5589,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 '--scenario-sticky-top': `${epicStickyTop}px`
             };
             const showGroupControl = (visibleControlGroups || []).length > 1; const searchActive = Boolean(String(searchInput || searchQuery || '').trim()); const searchPanelActive = searchActive || searchFocused;
-            const clearEngFacetFilters = React.useCallback(() => resetEngFacetFilters({ setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct }), []);
+            const clearEngFacetFilters = React.useCallback(() => resetEngFacetFilters({ setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngAllocationFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct }), []);
             const clearStoryRequirementHidingFilters = React.useCallback(() => {
                 setSearchInput('');
                 setSearchQuery('');
@@ -5595,7 +5597,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 resetEngFacetFilters({
                     setEngStatusFilter,
                     setEngPriorityFilter,
-                    setEngProjectTrackFilter,
+                    setEngProjectTrackFilter, setEngAllocationFilter,
                     defaultEngStatusFilter: null,
                     setShowTech,
                     setShowProduct,
@@ -5631,7 +5633,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 handleStoryRequirementClick, handleAlertStoryClick, dismissStoryRequirement, dismissAlertItem, triggerAlertCelebration,
                 visibleAlertCollections: alerts.visibleAlertCollections, alertCohortSettled
             });
-            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
+            const clearEngFilters = React.useCallback(() => resetEngFilters({ setSearchInput, setSearchQuery, setSelectedTeams, setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngAllocationFilter, defaultEngStatusFilter: DEFAULT_ENG_STATUS_FILTER, setShowTech, setShowProduct, setGroupByInitiativeChoice, setBurnoutTaskFilter, setShowTeamDropdown, setShowGroupDropdown, setShowSprintDropdown, trackFilterChanged, visibleCountBucket: bucketCount(visibleTasksForList.length) }), [trackFilterChanged, visibleTasksForList.length]);
             const trackStatsAnalyticsAction = (eventName, params = {}) => trackStatsAction(eventName, statsView, params);
             const renderSearchControl = (surface, extraClassName = '') => (
                 <SearchControl
@@ -5676,7 +5678,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setShowPlanning, setShowStats, setShowScenario, setShowBoard, setSearchInput, setSearchQuery, setShowProduct, setShowTech,
                 setGroupByInitiativeChoice, setEngEpicSort, setPlanningLayout, setStatsView, setCohortStartQuarter, setCohortEndQuarter,
                 setCohortMode, setCohortClosedStartQuarter, setCohortClosedEndQuarter, setCohortLastN, setCohortProjectFilter, setCohortExcludeAdHoc, setCohortExcludeCapacity, setCohortGroupBy, setCohortStatusToggles, setExcludedCapacityStartSprintId, setExcludedCapacityEndSprintId, setShowAlertsPanel, setBoardStrictScope, setSelectedTeams,
-                setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngBoardFilterSelection, setBoardView,
+                setEngStatusFilter, setEngPriorityFilter, setEngProjectTrackFilter, setEngAllocationFilter, setEngBoardFilterSelection, setBoardView, combinedWorkModel,
                 alertFlags: {
                     missing: [showMissingAlert, setShowMissingAlert], blocked: [showBlockedAlert, setShowBlockedAlert], followup: [showPostponedAlert, setShowPostponedAlert],
                     backlog: [showBacklogAlert, setShowBacklogAlert], missingTeam: [showMissingTeamAlert, setShowMissingTeamAlert], missingLabels: [showMissingLabelsAlert, setShowMissingLabelsAlert],
@@ -6041,7 +6043,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             };
             const epicRefresh = useEpicRefresh({
                 workModel, entityNames,
-                getSelectionState: () => ({ selectedTasks, selectedTeams, planningSelectionMode, engStatusFilter, engPriorityFilter, engProjectTrackFilter, showTech, showProduct, activeGroupTeamIds, isFutureSprintSelected }),
+                getSelectionState: () => ({ selectedTasks, selectedTeams, planningSelectionMode, engStatusFilter, engPriorityFilter, engProjectTrackFilter, engAllocationFilter, showTech, showProduct, activeGroupTeamIds, isFutureSprintSelected }),
                 loadEpicRefresh: loadEpicRefreshWithDependencySkip,
                 getState: () => ({ productTasks, techTasks, loadedProductTasks, loadedTechTasks, epicDetails, readyToCloseProductTasks, readyToCloseTechTasks, missingPlanningInfoTasks, missingInfoEpics, backlogProductEpics, backlogTechEpics,
                     productEpicsInScope, techEpicsInScope, readyToCloseProductEpicsInScope, readyToCloseTechEpicsInScope }),
@@ -6229,10 +6231,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             resolveTeamColor={resolveTeamColor}
                             getTeamCapacityMeta={getTeamCapacityMeta}
                         />}
-                        projects={<PlanningProjectSplitBar workModel={workModel} compact={compactPlanningPanel}
+                        projects={<PlanningProjectSplitBar compact={compactPlanningPanel}
                             selectedProjectEntries={selectedProjectEntries}
                             excludedProjectStats={excludedProjectStats}
-                            adHocProductSP={selectedAdHocProductSP}
+                            adHocProductSP={selectedAdHocProductSP} adHocStats={selectedAdHocStats}
                         />}
                     />
                 </PlanningAssigneeCapacity>
@@ -6462,11 +6464,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 </div>
                             )}
                             <div className="capacity-grid-wrapper">
-                                <div className="capacity-grid">
+                                <div className="capacity-grid" data-allocation={isCombinedWorkModel(workModel) ? 'delivery' : undefined}>
                                     <div className="capacity-row capacity-group-row">
                                         <div className="capacity-cell"></div>
                                         <div className="capacity-group-cell product">Product</div>
                                         <div className="capacity-group-cell tech">Tech</div>
+                                        {isCombinedWorkModel(workModel) && <div className="capacity-group-cell">No Allocation</div>}
                                         <div className="capacity-group-cell total">Total</div>
                                     </div>
                                     <div className="capacity-row capacity-header-row">
@@ -6477,6 +6480,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                         <div className="capacity-cell metric tech-col">To Do / Pending</div>
                                         <div className="capacity-cell metric tech-col">Postponed</div>
                                         <div className="capacity-cell metric tech-col divider-right">Accepted</div>
+                                        {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells header />}
                                         <div className="capacity-cell metric total-col">To Do / Pending</div>
                                         <div className="capacity-cell metric total-col">Postponed</div>
                                         <div className="capacity-cell metric total-col divider-right">Accepted</div>
@@ -6604,6 +6608,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                                 </div>
                                             </div>
 
+                                            {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells breakdown={info.none} formatValue={formatCapacityValue} getMetricClass={getMetricClass} />}
                                             <div className="capacity-cell metric total-col">
                                                 <div className="postponed-cell">
                                                     <span className={getMetricClass(info.total.todoPending, 'todo', info.total.accepted)}>
@@ -6782,6 +6787,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                             </div>
                                             </div>
 
+                                        {isCombinedWorkModel(workModel) && <CapacityNoAllocationCells total breakdown={capacityTotals.none} formatValue={formatCapacityValue} getMetricClass={getMetricClass} />}
                                         <div className="capacity-cell metric total-col capacity-total">
                                             <div className="postponed-cell">
                                                 <span className={getMetricClass(capacityTotals.total.todoPending, 'todo', capacityTotals.total.accepted)}>

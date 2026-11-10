@@ -3,6 +3,7 @@ const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { mockDashboard, appBaseUrl, catchUpPrefs, groupsConfigPayload } = require('./eng_epic_refresh_fixture');
 const { hoverEvidence, evidenceDir } = require('./design_system_hover_helpers');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 test.use({ viewport: { width: 1400, height: 1000 }, reducedMotion: 'reduce',
     deviceScaleFactor: async ({browserName},use)=>use(browserName==='chromium'?1:2),
@@ -285,25 +286,27 @@ test('mounted dirty Planning Table Save keeps its dark fill and disabled saving 
     testInfo.setTimeout(60000);
     const ctx=await openSurface(page,'planning-table');
     let release;const hold=new Promise(resolve=>{release=resolve;});
-    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/,async({call,json})=>{
+    // The shared Planning review answers with its plan (#331), so the layout draft saves through Save plan.
+    const review=createPlanningReviewMock();
+    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/,async({route,call,json})=>{
         if(call.method==='PATCH') await hold;
         const layouts={};
         for(const change of call.body?.schemaChanges||[]) if(change.action==='layout') layouts[change.rowKind]={order:change.order,hidden:change.hidden};
-        return json({schemaRevision:call.method==='PATCH'?2:1,columns:[],layouts,capabilities:{canRead:true,canSave:true},cells:[]});
+        return json(review.response(route.request(),{schemaRevision:call.method==='PATCH'?2:1,columns:[],layouts,capabilities:{canRead:true,canSave:true},cells:[]}));
     });
     await page.getByRole('button',{name:'Priority column options',exact:true}).click();
     const hide=page.getByRole('dialog',{name:'Priority column options',exact:true}).getByRole('button',{name:'Hide column',exact:true});
     await hoverEvidence(page,hide,testInfo,'planning-table-hide-option',{rowTint:true,unchangedFill:false});
     await hide.click();
-    const save=page.getByRole('button',{name:'Save review',exact:true});
+    const save=page.getByRole('button',{name:'Save plan',exact:true});
     await expect(save).toBeEnabled();
     await hoverEvidence(page,save,testInfo,'planning-table-primary-save',{foundation:true});
-    await hoverEvidence(page,page.getByRole('button',{name:'Discard',exact:true}),testInfo,'planning-table-discard',{foundation:true});
+    await hoverEvidence(page,page.getByRole('button',{name:'Discard changes',exact:true}),testInfo,'planning-table-discard',{foundation:true});
     await save.click();
     try {
         await expect(save).toBeDisabled();
         await hoverEvidence(page,save,testInfo,'planning-table-disabled-saving-primary',{disabled:true});
-        await hoverEvidence(page,page.getByRole('button',{name:'Discard',exact:true}),testInfo,'planning-table-disabled-saving-discard',{disabled:true});
+        await hoverEvidence(page,page.getByRole('button',{name:'Discard changes',exact:true}),testInfo,'planning-table-disabled-saving-discard',{disabled:true});
     }finally{release();}
     await expect(save).toHaveCount(0);
 });

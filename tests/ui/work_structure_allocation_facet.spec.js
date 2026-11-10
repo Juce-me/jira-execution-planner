@@ -246,7 +246,21 @@ test('Board scope uses Allocation for DELIVERY and searches its displayed label'
     const capture = path.join(__dirname, '..', '..', 'tmp', 'planning-323-every-team', 'finalize',
         `board-allocation-${process.env.JEP_BOARD_SCOPE_CAPTURE || 'after'}.png`);
     await page.screenshot({ path: capture, animations: 'disabled' });
-    await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toBeVisible();
+    await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toHaveText('Allocation');
+    await expect(selector.locator('.sprint-option-readiness')).toHaveCount(0);
+    for (const label of ['All work', 'Component', 'Allocation']) {
+        const option = selector.getByRole('option', { name: label, exact: true });
+        const geometry = await option.evaluate(node => {
+            const text = node.querySelector('span');
+            const box = node.getBoundingClientRect();
+            const range = document.createRange(); range.selectNodeContents(text);
+            const ink = range.getBoundingClientRect();
+            return { left: ink.left - box.left, right: box.right - ink.right, scroll: text.scrollWidth, client: text.clientWidth };
+        });
+        expect(geometry.left).toBeGreaterThanOrEqual(0);
+        expect(geometry.right).toBeGreaterThanOrEqual(0);
+        expect(geometry.scroll).toBeLessThanOrEqual(geometry.client + 1);
+    }
     const search = selector.getByRole('combobox');
     await search.fill('alloc');
     await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toBeVisible();
@@ -274,8 +288,9 @@ test('Legacy Board scope keeps Component and its Component search label', async 
     await selector.getByRole('combobox').fill('');
     const other = selector.getByRole('option', { name: 'Allocation', exact: true });
     await expect(other).toBeVisible();
-    await expect(other).toHaveAttribute('aria-disabled', 'true');
-    await expect(other).toContainText('Other quarters');
+    await expect(other).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(other).toHaveText('Allocation');
+    await expect(selector.locator('.sprint-option-readiness')).toHaveCount(0);
     await expect(selector.getByRole('option', { name: 'Component', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
 });
 
@@ -295,4 +310,25 @@ test('DELIVERY All work without Department membership shows Allocation guidance 
     await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     expect(boardRequests).toEqual([]);
     await page.screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-all-work-membership-guidance.png'), animations: 'disabled' });
+});
+
+for (const initial of ['legacy', 'delivery']) test(`Board switches Component and Allocation from ${initial} without changing the quarter manually`, async ({ page }) => {
+    const calls = [];
+    page.on('request', req => { if (new URL(req.url()).pathname === '/api/eng/board') calls.push(new URL(req.url())); });
+    await mockApp(page, initial, { boardScope: true });
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    const selector = page.locator('.sprint-dropdown').first();
+    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    for (const scope of (initial === 'delivery' ? ['component', 'allocation'] : ['allocation', 'component'])) {
+        await trigger.click();
+        await selector.getByRole('option', { name: scope === 'allocation' ? 'Allocation' : 'Component', exact: true }).click();
+        const id = scope === 'allocation' ? 'delivery' : 'legacy';
+        await expect(trigger).toHaveText(scope === 'allocation' ? 'Allocation' : 'Component');
+        await page.screenshot({ path: path.join(__dirname, '..', '..', 'tmp', `board-switch-${initial}-${scope}.png`), animations: 'disabled' });
+        await expect.poll(() => calls.some(url => url.searchParams.get('scope') === scope
+            && url.searchParams.get('configurationId') === id
+            && url.searchParams.get('quarter') === SPRINTS[id].name)).toBe(true);
+        await expect(page.locator('.eng-board')).toBeVisible();
+        await expect(page.getByText('This Board scope is unavailable for the viewed quarter.', { exact: false })).toHaveCount(0);
+    }
 });

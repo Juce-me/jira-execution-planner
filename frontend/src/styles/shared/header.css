@@ -170,18 +170,6 @@
             }
         }
 
-        .header-filter-dropdown--sprint .sprint-option-readiness {
-            flex: 0 1 auto;
-            min-width: 0;
-            margin-left: auto;
-            color: var(--text-secondary);
-            font-size: 0.48rem;
-            font-weight: 400;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
         .sprint-selector-control button.sprint-dropdown-option > span:first-child {
             min-width: 0;
             overflow: hidden;

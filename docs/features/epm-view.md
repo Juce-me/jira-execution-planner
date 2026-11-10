@@ -9,9 +9,7 @@ Hover feedback is limited to enabled controls on hover-capable devices. Desktop
 and narrow progress readouts retain their placement, reveal and focus behavior;
 the [design-system map](../design-system.md) records the shared control owners.
 
-In DB/OAuth mode, EPM is intentionally hidden until the signed-in user connects a Home/Townsquare token in `Settings -> Connections`. Jira REST reads use the user's Atlassian OAuth session. Home/Townsquare metadata reads use the same user's connected `atlassian_user_api_token`, stored encrypted in DB `auth_tokens`. Shared service credentials are not a DB/OAuth EPM fallback.
-
-The Home token is a credential connection, not EPM saved-view state. Token material is not stored in dashboard config, EPM config, JSON files, browser local storage, API responses, or user view payloads.
+Atlassian login requests the Jira permissions and the four Home read permissions together, independently of whether EPM is enabled. In `Settings -> Connections`, **Enable EPM view** only controls the user's private view visibility; it does not request additional permissions. Existing sessions with older grants must sign in again. Home access remains checked against the user's saved EPM scope, and disabling EPM preserves that scope and its project mappings. Jira and Home reads use the same OAuth session, with no personal API-token connection or fallback.
 
 - `Active` uses both the selected project and the selected sprint, and includes pending, on-track, at-risk, and off-track Home projects.
 - `Backlog` ignores sprint and shows paused project work.

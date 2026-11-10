@@ -4364,6 +4364,8 @@ test('leaving Planning while a push is in flight and another Team\'s editor is o
     await teamCard(page, 'team-beta').hover();
     await teamCard(page, 'team-beta').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
     await expect(teamCard(page, 'team-beta').locator('.team-capacity-editor')).toHaveCount(1);
+    // Let the editor's scheduled autofocus finish before moving focus to the mode control.
+    await expect(teamCard(page, 'team-beta').getByRole('spinbutton', { name: 'Beta Team Jira total planned capacity' })).toBeFocused();
     // Leave by keyboard, so no outside pointer-down closes Beta's editor first.
     const modes = page.locator('.view-selector .eng-mode-control');
     await modes.getByRole('radio', { name: 'Catch Up', exact: true }).focus();

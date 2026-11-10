@@ -1,4 +1,4 @@
-"""Optional EPM Home read scopes: authorize-request union, callback grant handling and profile selection.
+"""Login-inherited EPM Home read scopes: authorize-request union, callback grant handling and profile selection.
 
 Synthetic data only; the cutover helper builds real DB OAuth browser sessions on PostgreSQL. No network.
 """
@@ -92,19 +92,19 @@ class DbJourneyMixin:
 class AuthorizeRequestTests(DbJourneyMixin, unittest.TestCase):
     BASE = jira_server.ATLASSIAN_SCOPES.split()
 
-    def test_initial_login_without_a_resolvable_user_finishes_base_consent_first(self):
+    def test_initial_login_includes_home_read_scopes(self):
         self.start(signed_in=False)
         response = self.login()
         self.assertEqual(response.status_code, 302)
-        self.assertEqual(requested_scopes(response.headers['Location']), self.BASE)
+        self.assertEqual(requested_scopes(response.headers['Location']), self.BASE + list(HOME))
 
-    def test_signed_in_jira_only_user_is_never_asked_for_home_scopes(self):
+    def test_home_read_scopes_do_not_depend_on_the_epm_preference(self):
         self.start()
         for state in (None, False):
             if state is False:
                 self.enable(False)
             with self.subTest(saved=state):
-                self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE)
+                self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE + list(HOME))
 
     def test_enabled_user_gets_the_deduplicated_union_through_the_existing_pkce_state_flow(self):
         self.start()
@@ -122,7 +122,7 @@ class AuthorizeRequestTests(DbJourneyMixin, unittest.TestCase):
             self.assertEqual(flask_session['oauth_state'], query['state'][0])
             self.assertTrue(flask_session['oauth_pkce_verifier'])
 
-    def test_explicit_base_override_is_unioned_not_replaced_and_ordinary_login_keeps_it_base_only(self):
+    def test_explicit_base_override_is_unioned_for_every_login(self):
         self.start()
         override = 'read:me offline_access read:goal:goals custom:jira'
         with patch.object(jira_server, 'ATLASSIAN_SCOPES', override):
@@ -130,7 +130,7 @@ class AuthorizeRequestTests(DbJourneyMixin, unittest.TestCase):
             ordinary = requested_scopes(self.login().headers['Location'])
             self.enable(True)
             enabled = requested_scopes(self.login().headers['Location'])
-        self.assertEqual(ordinary, override.split())
+        self.assertEqual(ordinary, enabled)
         self.assertEqual(enabled, ['read:me', 'offline_access', 'read:goal:goals', 'custom:jira',
                                    'read:access:goals', 'read:project:projects', 'read:access:projects'])
 
@@ -138,24 +138,24 @@ class AuthorizeRequestTests(DbJourneyMixin, unittest.TestCase):
         self.start()
         injected = {'scope': 'write:goal:goals manage:project:projects identity:atlassian-external',
                     'scopes': 'write:jira-work', 'extraScopes': 'read:goal:goals'}
-        self.assertEqual(requested_scopes(self.login(query_string=injected).headers['Location']), self.BASE)
+        self.assertEqual(requested_scopes(self.login(query_string=injected).headers['Location']), self.BASE + list(HOME))
         self.enable(False)
-        self.assertEqual(requested_scopes(self.login(query_string=injected).headers['Location']), self.BASE)
+        self.assertEqual(requested_scopes(self.login(query_string=injected).headers['Location']), self.BASE + list(HOME))
         self.enable(True)
         self.assertEqual(requested_scopes(self.login(query_string=injected).headers['Location']),
                          self.BASE + list(HOME))
 
-    def test_another_users_preference_does_not_leak_into_an_anonymous_or_other_session(self):
+    def test_anonymous_login_inherits_the_same_home_read_scopes(self):
         self.start()
         self.enable(True)
         anonymous = jira_server.app.test_client()
-        self.assertEqual(requested_scopes(self.login(client=anonymous).headers['Location']), self.BASE)
+        self.assertEqual(requested_scopes(self.login(client=anonymous).headers['Location']), self.BASE + list(HOME))
 
-    def test_user_whose_base_scopes_are_missing_is_not_resolvable_and_gets_base_only(self):
+    def test_missing_base_grant_does_not_prevent_requesting_home_scopes(self):
         self.start()
         self.enable(True)
         self.set_grant(['read:me'])
-        self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE)
+        self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE + list(HOME))
 
     def test_no_write_manage_or_internal_identity_scope_is_ever_added(self):
         self.start()
@@ -169,13 +169,12 @@ class AuthorizeRequestTests(DbJourneyMixin, unittest.TestCase):
         for forbidden in FORBIDDEN_REQUEST_SCOPES:
             self.assertNotIn(forbidden, scopes)
 
-    def test_storage_failure_while_resolving_the_preference_falls_back_to_base_only(self):
+    def test_login_does_not_read_the_epm_preference(self):
         self.start()
         self.enable(True)
-        from backend.services.user_view_config import UserViewConfigStorageError
         with patch('backend.services.user_view_config.load_user_epm_view_enabled',
-                   side_effect=UserViewConfigStorageError('down')):
-            self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE)
+                   side_effect=AssertionError('Login must not read the preference')):
+            self.assertEqual(requested_scopes(self.login().headers['Location']), self.BASE + list(HOME))
 
     def test_existing_missing_scope_entry_still_reaches_the_consent_login(self):
         self.start()

@@ -41,6 +41,10 @@ Open the app's `Permissions` page and add/configure these APIs.
 | Jira Software API | `read:board-scope:jira-software` | `/rest/agile/1.0/board` board discovery. |
 | Jira Software API | `read:sprint:jira-software` | `/rest/agile/1.0/board/{boardId}/sprint` sprint discovery. |
 | Jira API | `read:project:jira` | Jira Software board APIs require project read scope. |
+| Goals API | `read:goal:goals` | Home goal metadata, requested at every login. |
+| Goals API | `read:access:goals` | Home goal access, requested at every login. |
+| Projects API | `read:project:projects` | Home project metadata, requested at every login. |
+| Projects API | `read:access:projects` | Home project access, requested at every login. |
 | OAuth authorize URL only | `offline_access` | Refresh tokens for encrypted DB OAuth sessions; this does not appear as a separate API row. |
 
 ### Write Scope Forces Re-Auth For Every Signed-In User
@@ -112,7 +116,7 @@ Restart the Flask server after changing `.env`.
 6. Open `http://localhost:5050/api/auth/status`; it should report authenticated state and must not include tokens.
 7. Open `http://localhost:5050/api/test`; it should use OAuth.
 
-The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes use the signed-in user's OAuth session for both Jira REST reads and Home/Townsquare metadata (the fixed `public-read-v1` query set). The user ticks **Enable EPM view** in `Settings -> Connections`; the app requests the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`) at authorize time for that user only, so the app registration must list them. The app stores no personal Atlassian API token; the earlier `atlassian_user_api_token` connections and their encrypted rows were removed by migration.
+The ENG dashboard and Jira REST catalog/statistics routes are migrated through the OAuth Jira client. In DB/OAuth mode, EPM routes use the signed-in user's OAuth session for both Jira REST reads and Home/Townsquare metadata (the fixed `public-read-v1` query set). The user ticks **Enable EPM view** in `Settings -> Connections`; the app requests the four Home read scopes (`read:goal:goals`, `read:access:goals`, `read:project:projects`, `read:access:projects`) at every login, independently of the private EPM visibility preference, so the app registration must list them. The app stores no personal Atlassian API token; the earlier `atlassian_user_api_token` connections and their encrypted rows were removed by migration.
 
 If Atlassian reports a missing scope, add the named scope to the matching API on the app's `Permissions` page, save, then start again from `/login?reason=missing_scope`. That path forces a new consent prompt so Atlassian issues a grant with the updated scopes.
 
@@ -145,7 +149,7 @@ The identity errors name the precise paths: `goals_byId.subGoals.edges.node.owne
 
 These diagnostics changed query projections only in process memory and did not change application queries or the eight-operation gate contract. The original validator still prints `FAIL home_graphql_3lo_unsupported`; that result describes the complete current query set, not universal failure of Home OAuth. On 2026-10-27 the operator accepted a bounded public-read cutover and waived single-user usage/migration staging gates. The [accepted design and DoD](plans/SUPPORT-home-oauth-public-read-design.md) explicitly omit unavailable owner/author metadata and use direct Home tags. The [implementation record](plans/DONE-home-oauth-public-reads.md) describes the shipped bounded `public-read-v1` contract. Its seven-operation acceptance profile does not convert the original legacy FAIL to PASS. Source/format verification does not attest live deployment access; record operator-owned product acceptance separately.
 
-Resolve runtime overrides before inspecting credentials: the local runner overrides the environment file's DB connection. The selected Basic Home fixture also belongs to a different site from the current dashboard and was used only as an explicitly approved diagnostic fixture. No private view or shared workspace configuration was changed. A migration must preserve the owning workspace/site and private EPM scope boundaries. The existing app's configured scope request list was not modified by this verification. The accepted plan keeps global Jira scope requirements unchanged, requests Home scopes only for the enabled user's EPM consent journey, and uses a private Enable EPM view checkbox plus scoped Home access. These boundaries are implemented in the current application; the historical probe results above remain scoped to their recorded diagnostic fixture.
+Resolve runtime overrides before inspecting credentials: the local runner overrides the environment file's DB connection. The selected Basic Home fixture also belongs to a different site from the current dashboard and was used only as an explicitly approved diagnostic fixture. No private view or shared workspace configuration was changed. A migration must preserve the owning workspace/site and private EPM scope boundaries. The existing app's configured scope request list was not modified by this verification. The accepted plan keeps global Jira scope requirements unchanged, requests Home read scopes at every login, and uses a private Enable EPM view checkbox plus scoped Home access. These boundaries are implemented in the current application; the historical probe results above remain scoped to their recorded diagnostic fixture.
 
 `GATE-05` applies only to posting Home project updates. Read-only OAuth verification requires no update text, disposable write target, or mutation probe.
 

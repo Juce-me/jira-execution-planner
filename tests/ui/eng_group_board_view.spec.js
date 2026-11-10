@@ -790,9 +790,8 @@ test('selector keyboard: All work', async ({ page }) => {
     await expect(combobox).toHaveValue('All work');
     await page.keyboard.press('ArrowDown');
     const activeOption = await expectActiveSprintOption(page, 'All work');
-    const descriptionId = await activeOption.getAttribute('aria-describedby');
-    expect(descriptionId).toBeTruthy();
-    await expect(page.locator(`#${descriptionId}`)).toContainText('Setup needed');
+    await expect(activeOption).not.toHaveAttribute('aria-describedby');
+    await expect(activeOption).toHaveText('All work');
     await page.keyboard.press('Enter');
 
     await expect(trigger).toContainText('All work');
@@ -1619,8 +1618,10 @@ for (const draftCase of [
         await page.locator('.sprint-dropdown-toggle[aria-label="Select sprint"]').first().dispatchEvent('click');
         const componentOption = page.getByRole('option', { name: 'Component', exact: true });
         const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
-        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
-        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(componentOption).not.toHaveAttribute('aria-describedby');
+        await expect(componentOption).toHaveText('Component');
+        await expect(allWorkOption).not.toHaveAttribute('aria-describedby');
+        await expect(allWorkOption).toHaveText('All work');
     });
 }
 
@@ -1659,7 +1660,7 @@ for (const draftCase of [
         const panel = page.locator('.sprint-dropdown-panel');
         const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
         await expect(componentOption).not.toHaveAttribute('aria-disabled');
-        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Setup needed');
+        await expect(componentOption).toHaveText('Component');
         await componentOption.dispatchEvent('click');
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
             'Select Jira projects or a Jira source Board before loading this scope.'
@@ -1667,7 +1668,7 @@ for (const draftCase of [
         await page.getByRole('button', { name: 'Select sprint', exact: true }).first().dispatchEvent('click');
         const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
         await expect(allWorkOption).not.toHaveAttribute('aria-disabled');
-        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Setup needed');
+        await expect(allWorkOption).toHaveText('All work');
         await allWorkOption.dispatchEvent('click');
         await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('All work');
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
@@ -2004,8 +2005,10 @@ test('catalog identity: saved label is visible but cannot authorize ENG before v
     await sprintControl.click();
     const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
     const componentOption = page.getByRole('option', { name: 'Component', exact: true });
-    await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
-    await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+    await expect(allWorkOption).not.toHaveAttribute('aria-describedby');
+    await expect(allWorkOption).toHaveText('All work');
+    await expect(componentOption).not.toHaveAttribute('aria-describedby');
+    await expect(componentOption).toHaveText('Component');
     await allWorkOption.click();
     await expect.poll(() => requests.filter(path => path.includes('scope=all_work')).length).toBe(1);
 });
@@ -2504,8 +2507,10 @@ test('saved Sprint Board authority stays guarded until a held sprint catalog is 
         const panel = page.locator('.sprint-dropdown-panel');
         const allWorkOption = panel.getByRole('option', { name: 'All work', exact: true });
         const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
-        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
-        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(allWorkOption).not.toHaveAttribute('aria-describedby');
+        await expect(allWorkOption).toHaveText('All work');
+        await expect(componentOption).not.toHaveAttribute('aria-describedby');
+        await expect(componentOption).toHaveText('Component');
         await componentOption.click();
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
     } finally {
@@ -2538,8 +2543,10 @@ test('delayed saved config holds the sprint catalog and every strict scope until
         const panel = page.locator('.sprint-dropdown-panel');
         const allWorkOption = panel.getByRole('option', { name: 'All work', exact: true });
         const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
-        await expect(page.locator(`#${await allWorkOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
-        await expect(page.locator(`#${await componentOption.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(allWorkOption).not.toHaveAttribute('aria-describedby');
+        await expect(allWorkOption).toHaveText('All work');
+        await expect(componentOption).not.toHaveAttribute('aria-describedby');
+        await expect(componentOption).toHaveText('Component');
         await componentOption.click();
         await expect(sprintControl).toContainText('Component');
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);

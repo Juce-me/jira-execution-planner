@@ -176,3 +176,14 @@ test('sibling Sprints list with their state for everyone; unobserved quarters ar
     ]);
     assert.equal(JSON.stringify(sorted.map(row => row.scope || row.quarter || row.label)), JSON.stringify(['all_work', '2027Q1', '2026Q4', '2026Q3']));
 });
+
+test('Board scope selects the nearest matching configuration without changing its range', () => {
+    const summaries = [LEGACY, DELIVERY];
+    assert.equal(ctx.boardScopeQuarter(summaries, '2027Q2', 'component'), '2026Q4');
+    assert.equal(ctx.boardScopeQuarter(summaries, '2026Q3', 'allocation'), '2027Q1');
+    assert.equal(ctx.boardScopeQuarter(summaries, '2027Q2', 'allocation'), '2027Q2');
+    assert.equal(ctx.boardScopeQuarter(summaries, '2026Q3', 'component'), '2026Q3');
+    assert.equal(ctx.boardScopeQuarter([LEGACY], '2026Q4', 'allocation'), null);
+    assert.equal(ctx.boardScopeQuarter(summaries, 'invalid', 'component'), null);
+    assert.equal(ctx.boardScopeQuarter(summaries, '2027Q1', 'all_work'), null);
+});

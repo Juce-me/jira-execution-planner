@@ -485,3 +485,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - Keep DELIVERY Allocation values and Product/Tech mappings in shared Department settings; Legacy Component scope shows Epics and DELIVERY Allocation scope shows Initiatives under distinct scope tokens.
 - Prioritize laptop and wide-screen layouts for Planning; mobile viewport acceptance is opt-in with `JEP_TEST_MOBILE=1` unless explicitly requested.
+
+- When asked to remove selector status labels, preserve all existing choices; verify requested Component/Allocation switching end to end before reporting it as working.

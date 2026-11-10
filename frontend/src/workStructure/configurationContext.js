@@ -63,6 +63,21 @@ export function configurationForQuarter(summaries, quarter) {
     return ordered.find(summary => summary?.id && quarterInRange(quarter, summary)) || null;
 }
 
+// Cross-quarter Board scopes select their own model's configuration. Clamp the viewed quarter
+// to the nearest saved range; the quarter selects a configuration, not a Jira Sprint filter.
+export function boardScopeQuarter(summaries, quarter, scope) {
+    const model = scope === 'component' ? MODEL_LEGACY : scope === 'allocation' ? 'rnd_2027' : null;
+    const index = quarterIndex(quarter);
+    if (!model || index === null) return null;
+    const candidates = (summaries || []).filter(summary => summary?.model === model).map(summary => {
+        const from = quarterIndex(summary.fromQuarter);
+        const through = quarterIndex(summary.throughQuarter);
+        return quarterFromIndex(Math.min(through ?? Infinity, Math.max(from ?? -Infinity, index)));
+    }).filter(candidate => configurationForQuarter(summaries, candidate)?.model === model);
+    candidates.sort((a, b) => Math.abs(quarterIndex(a) - index) - Math.abs(quarterIndex(b) - index));
+    return candidates[0] || null;
+}
+
 // The immutable stamp every scoped request carries and every late completion is compared against.
 export function buildConfigurationContext(summary, quarter) {
     const canonical = canonicalQuarter(quarter);

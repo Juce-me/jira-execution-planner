@@ -24,7 +24,7 @@ import ShareViewButton from './shareView/ShareViewButton.jsx';
 import ServerUnavailableBanner from './components/ServerUnavailableBanner.jsx';
 import { createSprintCatalogController, createSprintCatalogState, getCookie, getCurrentQuarter, getLocalStorage, loadCachedSprintCatalog, loadUiPrefs, saveUiPrefs, selectSprintForScope, setCookie, shouldReconcileSprintCatalogSource, sprintCatalogSourcesEqual, sprintCatalogValidationKey, sprintScopeOf } from './dashboardRuntime.js';
 import { useSiblingQuarterStates } from './workStructure/useSiblingQuarterStates.js';
-import { buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission, sortSprintOptionRows } from './workStructure/configurationContext.js';
+import { boardScopeQuarter, buildConfigurationContext, calendarQuarter, canonicalQuarter, catalogContextKey, configurationForQuarter, contextKey, quarterFromSprintName, quarterOptionRows, resolveQuarterAdmission, sortSprintOptionRows } from './workStructure/configurationContext.js';
 import { onWorkContextStale, reportWorkContextStale, setActiveWorkContext } from './workStructure/requestContext.js';
 import { WORK_MODEL_LEGACY, isCombinedWorkModel, normalizeWorkModel, resolveEntityNames } from './eng/engWorkModel.js';
 import { describeStatsScope } from './stats/statsScope.js';
@@ -1496,11 +1496,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         readiness: engSprintSelectorState.allWorkReadiness,
                     });
                 }
-                // Both era scopes are always listed; the one that does not fit the viewed quarter reads as unavailable.
+                // Each cross-quarter scope can select its own configured work model.
                 [['component', 'Component', engSprintSelectorState.componentReadiness], ['allocation', 'Allocation', engSprintSelectorState.allocationReadiness]]
                     .forEach(([scope, label, readiness]) => {
                         if (boardScopeControl && (!normalizedSearch || label.toLowerCase().includes(normalizedSearch))) {
-                            options.push({ kind: 'scope', scope, label, readiness });
+                            options.push({ kind: 'scope', scope, label, readiness,
+                                quarter: quarterMode ? boardScopeQuarter(workBootstrap.summaries, activeQuarter, scope) : null });
                         }
                     });
                 filteredSprints.forEach(sprint => options.push({
@@ -1612,7 +1613,12 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     return;
                 }
                 if (option.kind === 'scope') {
-                    if (option.readiness === 'scope_model_mismatch') return;
+                    if (option.readiness === 'scope_model_mismatch' && !option.quarter) return;
+                    if (option.quarter && option.quarter !== activeQuarter) {
+                        setSelectedQuarter(option.quarter);
+                        setSelectedSprint(null);
+                        setSprintName(option.quarter);
+                    }
                     selectBoardScope(option.scope);
                     return;
                 }

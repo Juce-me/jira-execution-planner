@@ -226,16 +226,6 @@ export function SprintControl({
                                     ? (option.sprint.state || '').toLowerCase()
                                     : option.kind === 'quarter' ? option.state : '';
                                 const marker = state === 'closed' ? '[C]' : state === 'active' ? '[A]' : '[F]';
-                                const readinessText = option.kind === 'scope'
-                                    ? (option.readiness === 'ready' ? 'Ready'
-                                        : option.readiness === 'scope_model_mismatch' ? 'Other quarters'
-                                        : ['loading', 'catalog_pending'].includes(option.readiness)
-                                            ? 'Loading configuration'
-                                            : 'Setup needed')
-                                    : '';
-                                const descriptionId = option.kind === 'scope'
-                                    ? `${sprintOptionDomId(surface, option)}-readiness`
-                                    : undefined;
                                 return (
                                     <button
                                         key={option.kind === 'scope' ? option.scope : option.kind === 'quarter' ? `quarter-${option.quarter}` : option.sprint.id}
@@ -245,8 +235,7 @@ export function SprintControl({
                                         tabIndex={-1}
                                         aria-label={option.label}
                                         aria-selected={selected}
-                                        aria-disabled={option.readiness === 'scope_model_mismatch' || undefined}
-                                        aria-describedby={descriptionId}
+                                        aria-disabled={(option.readiness === 'scope_model_mismatch' && !option.quarter) || undefined}
                                         className={`sprint-dropdown-option${selected ? ' selected' : ''}${optionIndex === activeIndex ? ' is-active' : ''}`}
                                         data-sprint-id={option.kind === 'sprint' ? option.sprint.id : undefined}
                                         data-quarter={option.kind === 'quarter' ? option.quarter : undefined}
@@ -254,9 +243,6 @@ export function SprintControl({
                                         onClick={() => commitSprintSelectorOption(option, boardScopeControl)}
                                     >
                                         <span>{option.kind === 'sprint' || (option.kind === 'quarter' && state) ? `${marker} ${option.label}` : option.label}</span>
-                                        {option.kind === 'scope' && (
-                                            <span id={descriptionId} className="sprint-option-readiness">{readinessText}</span>
-                                        )}
                                     </button>
                                 );
                             })

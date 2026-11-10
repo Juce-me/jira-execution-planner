@@ -300,7 +300,8 @@ async function openScenario(page, server, scenario, { sourceRoot = repoRoot, rev
         await expect(option).toHaveAttribute('aria-disabled', 'false');
     } else {
         await expect(option).not.toHaveAttribute('aria-disabled');
-        await expect(page.locator(`#${await option.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(option).not.toHaveAttribute('aria-describedby');
+        await expect(option).toHaveText(scopeName);
     }
     const requestPromise = page.waitForRequest(request => isCampaignBoardUrl(request.url()));
     const requestStartMs = await page.evaluate(() => performance.now());
@@ -554,7 +555,8 @@ test('diagnoses strict Component owner activation and Board request routing', as
         await sprint.click();
         const component = page.getByRole('option', { name: 'Component', exact: true });
         await expect(component).not.toHaveAttribute('aria-disabled');
-        await expect(page.locator(`#${await component.getAttribute('aria-describedby')}`)).toHaveText('Ready');
+        await expect(component).not.toHaveAttribute('aria-describedby');
+        await expect(component).toHaveText('Component');
         await component.click();
         await expect(sprint).toContainText('Component');
         await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);

@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 const { measure, contrast } = require('./design_system_hover_helpers');
 
 // The board's epic card (§6.2), its Tech/Product derivation (§4.4/D41 — unit-tested only, no
@@ -87,7 +88,8 @@ function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = nul
         const actualKey = index === 0 ? firstEpicKey : key;
         const priorityName = typeof priority === 'string' ? priority : priority.name;
         rows.push({
-            id: `${actualKey}-1`,
+            // Planning plans real Jira issues by numeric id (#331); the row order is fixed, so the ids are stable.
+            id: String(9001 + rows.length),
             key: `${actualKey}-1`,
             fields: {
                 summary: `${key} story 1`,
@@ -109,7 +111,7 @@ function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = nul
         });
         if (key === 'PLAT-1') {
             rows.push({
-                id: `${actualKey}-2`,
+                id: String(9001 + rows.length),
                 key: `${actualKey}-2`,
                 fields: {
                     summary: `${key} story 2`,
@@ -129,7 +131,7 @@ function storyPayload(firstStoryAssignee = 'Planner', firstEpicStoryPoints = nul
             });
             extraFirstEpicStatuses.forEach((statusName, extraIndex) => {
                 rows.push({
-                    id: `${actualKey}-${extraIndex + 3}`,
+                    id: String(9001 + rows.length),
                     key: `${actualKey}-${extraIndex + 3}`,
                     fields: {
                         summary: `${key} story ${extraIndex + 3}`,
@@ -185,6 +187,7 @@ async function installBoardFixture(page, fieldCalls = [], {
     extraFirstEpicStatuses = [],
 } = {}) {
     await installDashboardShell(page);
+    const review = createPlanningReviewMock();
     if(process.env.JEP_HOVER_CSS_PATH) await page.route('**/frontend/dist/dashboard.css',route=>route.fulfill({contentType:'text/css',body:fs.readFileSync(process.env.JEP_HOVER_CSS_PATH,'utf8')}));
     await page.route('**/api/**', (route) => {
         const request = route.request();
@@ -275,6 +278,9 @@ async function installBoardFixture(page, fieldCalls = [], {
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        // The shared Planning review (#331): no saved plan yet.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) return json(review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         return json({});
     });
 }
@@ -712,10 +718,12 @@ test('Catch Up confirmation reaches Planning and Story Points recalculate its se
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(page.locator('.epic-delivery-owner')).toHaveCount(0);
-    const planningStory = page.locator('.task-item[data-issue-key="PLAT-1-1"]');
-    await expect(planningStory.locator('.task-assignee').getByRole('combobox')).toHaveValue('Current Person');
+    // Planning is the Table only (#323): the Story row carries the confirmed assignee and the Story Points editor.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const planningStory = page.locator('.planning-review-table tbody tr[data-issue-key="PLAT-1-1"]');
+    await expect(planningStory.getByRole('combobox', { name: 'Assignee: Current Person' })).toBeVisible();
     await page.getByRole('button', { name: 'Select All' }).click();
-    const selected = page.locator('.planning-panel.open .planning-stat-value').first();
+    const selected = page.locator('.planning-panel.open .planning-stats.compact').first();
     const before = Number((await selected.innerText()).match(/·\s*([\d.]+)\s*SP/)?.[1]);
     const points = planningStory.getByRole('textbox', { name: 'Story Points' });
     await points.click();

@@ -1905,13 +1905,22 @@ for (const teamCount of [1, 6, 7]) {
 
         const defaultGeometry = await measureGrid();
         expectGridGeometry('default', defaultGeometry, 'hidden');
-        // Task 0's original label/microbar/meta card stack measures 58.64px at the 16px root.
-        const taskZeroIdleRowHeight = 58.64;
+        // The Task 0 idle card is the label/microbar/meta stack with a one-line label. Measure it in this engine by giving the
+        // first card a short label for one layout, so every engine compares against its own idle height, exactly.
+        const taskZeroIdleRowHeight = await cards.first().evaluate(card => {
+            const label = card.querySelector('.team-stat-label');
+            const nodes = [...label.childNodes];
+            label.replaceChildren(document.createTextNode('A'));
+            const height = card.getBoundingClientRect().height;
+            label.replaceChildren(...nodes);
+            return height;
+        });
         const rowHeights = geometry => Object.fromEntries([...new Set(geometry.map(card => card.cell.row))]
             .map(row => [row, Math.max(...geometry.filter(card => card.cell.row === row).map(card => card.rect.height))]));
         Object.values(rowHeights(defaultGeometry)).forEach((height, row) => {
-            expect(height, `default row ${row} matches the Task 0 idle-card baseline`)
-                .toBeCloseTo(taskZeroIdleRowHeight, 1);
+            // Compared in layout units (1/60 px in Firefox, 1/64 px in WebKit and Chromium; 3840 is a multiple of both): Firefox
+            // reports one layout at two offsets with float noise in the fifth decimal (see the stuck-card note above).
+            expect(Math.round(height * 3840), `default row ${row} matches the Task 0 idle-card baseline`).toBe(Math.round(taskZeroIdleRowHeight * 3840));
         });
         const compareToDefault = (stateName, geometry, { rowGrowth = 1 } = {}) => {
             const defaultByTeam = new Map(defaultGeometry.map(card => [card.label.text, card]));

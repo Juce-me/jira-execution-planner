@@ -3569,6 +3569,8 @@ test('two Teams: each card pencil saves only its own Team and Sprint, the two sa
     const server = teamsServer({ holdPatch: () => held });
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket, analytics: true });
     await openPlanning(page);
+    // The compact row before any capacity note, measured in this engine: a note never changes its height.
+    const compactRow = (await page.locator('.planning-panel').boundingBox()).height;
     await showCards(page);
     await expect.poll(() => server.state.reads.length).toBe(1);
     expect(server.state.gets, 'no per-Team document read before an editor opens').toEqual([]);
@@ -3599,7 +3601,7 @@ test('two Teams: each card pencil saves only its own Team and Sprint, the two sa
     await page.locator('.planning-panel .planning-actions').first().screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/action-row-saving-2-teams-expanded-1440x900.png', animations: 'disabled' });
     await hideDetails(page);
     await expect(overviewStatus(page)).toHaveText('Saving 2 Teams…');
-    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(compactRow);
     await expectNoteBesideSummary(page, 'saving, compact');
     await page.locator('.planning-panel .planning-actions').first().screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/action-row-saving-2-teams-compact-1440x900.png', animations: 'disabled' });
     await showCards(page);
@@ -3622,6 +3624,8 @@ test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the
     const server = teamsServer({ patchStatus: teamId => (teamId === 'team-alpha' && failAlpha ? 503 : 0) });
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
     await openPlanning(page);
+    // The compact row before any capacity note, measured in this engine: a note never changes its height.
+    const compactRow = (await page.locator('.planning-panel').boundingBox()).height;
     await showCards(page);
     await typeTeamNumber(page, 'team-alpha', 'Alpha Team', '14');
     await typeTeamNumber(page, 'team-beta', 'Beta Team', '6');
@@ -3651,7 +3655,7 @@ test('a failed save shows ↻ Retry and × Discard in that card\'s rail with the
     await page.locator('.planning-panel').screenshot({ path: 'tmp/planning-323-every-team/task5/spec-captures/panel-failed-expanded-1440x900.png', animations: 'disabled' });
     await hideDetails(page);
     await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
-    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(compactRow);
     await showCards(page);
     // Retry resends only Alpha's change.
     failAlpha = false;
@@ -4071,7 +4075,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await expect(overviewStatus(page)).toHaveText('1 Team save failed: hover a card to retry');
     const compactFailed = await pinnedHeights(page);
     expect(compactFailed, 'compact stack with the note').toEqual(base.compact);
-    expect(compactFailed.panel).toBe(46.875);
+    expect(compactFailed.panel).toBe(base.compact.panel);
     await expectNoteBesideSummary(page, `failed, compact ${size}`);
     await page.unrouteAll({ behavior: 'ignoreErrors' });
 });
@@ -4475,6 +4479,8 @@ test('a failed stored-number read keeps the numbers, says so in the overview sta
     server.batch = route => (failRead ? json(route, { error: 'review_unavailable' }, 503) : batch(route));
     const { calls } = await install(page, { server, selectedTeams: twoTeams, capacityProject: 'CAP', capacity: noTicket });
     await openPlanning(page);
+    // The compact row before any capacity note, measured in this engine: a note never changes its height.
+    const compactRow = (await page.locator('.planning-panel').boundingBox()).height;
     await showCards(page);
     await storedOn(page, 'team-alpha', '14.0');
     await teamCard(page, 'team-alpha').hover();
@@ -4496,7 +4502,7 @@ test('a failed stored-number read keeps the numbers, says so in the overview sta
     await expect(addedStatusLine(page)).toHaveCount(0);
     await hideDetails(page);
     await expect(note).toHaveText('Capacity could not be refreshed. Retry before editing.');
-    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(46.875);
+    expect((await page.locator('.planning-panel').boundingBox()).height, 'compact row with the note').toBe(compactRow);
     await showCards(page);
     failRead = false;
     storeOn(server, 'team-beta', '9');

@@ -133,7 +133,8 @@
             font-size: 0.54rem;
             color: var(--text-secondary);
             margin-top: 0.08rem;
-            line-height: 1.05;
+            /* A whole-pixel line box that holds the font: Firefox rounds a fractional box's scrollHeight up (10 > 9). */
+            line-height: round(up, 1.2em, 1px);
         }
 
         .microbar-meta.over {

@@ -82,8 +82,8 @@ test('exports match the binding interface', () => {
     // `find` is checked in its own section at the end of this file.
     const keysByMode = Object.fromEntries(Object.entries(plain(defaults.SHARE_VIEW_KEYS_BY_MODE)).map(([mode, keys]) => [mode, keys.filter((key) => key !== 'find')]));
     assert.deepEqual(keysByMode, {
-        'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
-        planning: ['teams', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
+        'catch-up': ['teams', 'status', 'priority', 'track', 'lanes', 'alloc', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus'],
+        planning: ['teams', 'status', 'priority', 'track', 'lanes', 'alloc', 'layout', 'rows', 'initiatives', 'sort', 'focus'],
         board: ['scope', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus'],
         statistics: ['teams', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby'],
     });
@@ -93,7 +93,7 @@ test('exports match the binding interface', () => {
         mode: 'mode', scope: 'mode', layout: 'mode', rows: 'mode', stats: 'mode', from: 'mode', to: 'mode', lead: 'mode', n: 'mode',
         lproject: 'filters', lexclude: 'filters', lstatus: 'filters', lgroupby: 'filters',
         teams: 'teams',
-        status: 'filters', priority: 'filters', track: 'filters', lanes: 'filters', initiatives: 'filters', sort: 'filters',
+        status: 'filters', priority: 'filters', track: 'filters', lanes: 'filters', alloc: 'filters', initiatives: 'filters', sort: 'filters',
         bpriority: 'filters', bprojects: 'filters', bassignee: 'filters', btrack: 'filters', bcolumn: 'filters',
         alerts: 'focus', alertTeam: 'focus', epic: 'focus', story: 'focus',
     });
@@ -178,6 +178,15 @@ const DECODE_VECTORS = [
     ['?v=1&lanes=product,tech', ok({ lanes: { product: true, tech: true } })],
     ['?v=1&lanes=tech,product', ok({ lanes: { product: true, tech: true } })],
     ...drops('filters', ['?v=1&lanes=', '?v=1&lanes=Tech']),
+    // alloc (DELIVERY Allocation): `none` is the explicit empty list ("No Allocation only"); omitted is neutral
+    ['?v=1&alloc=none', ok({ alloc: [] })],
+    ['?v=1&alloc=all', ok()],
+    ['?v=1&alloc=tech', ok({ alloc: ['tech'] })],
+    ['?v=1&alloc=tech,product,tech', ok({ alloc: ['tech', 'product'] })],
+    ...drops('filters', ['?v=1&alloc=', '?v=1&alloc=Tech', '?v=1&alloc=other', '?v=1&alloc=none,tech']),
+    // bprojects gains `none` (DELIVERY "No Allocation only")
+    ['?v=1&bprojects=none', ok({ bprojects: [] })],
+    ...drops('filters', ['?v=1&bprojects=none,tech']),
     // initiatives
     ['?v=1&initiatives=0', ok({ initiatives: false })],
     ['?v=1&initiatives=1', ok({ initiatives: true })],
@@ -307,6 +316,9 @@ const ENCODE_VECTORS = [
     ['lanes both on is the default', { lanes: { product: true, tech: true } }, '', []],
     ['lanes tech only', { lanes: { product: false, tech: true } }, '&lanes=tech', []],
     ['lanes product only', { lanes: { product: true, tech: false } }, '&lanes=product', []],
+    ['alloc undefined is the neutral default', { alloc: undefined }, '', []],
+    ['alloc none', { alloc: [] }, '&alloc=none', []],
+    ['alloc tech', { alloc: ['tech'] }, '&alloc=tech', []],
     ['initiatives null is the default', { initiatives: null }, '', []],
     ['initiatives off', { initiatives: false }, '&initiatives=0', []],
     ['initiatives on', { initiatives: true }, '&initiatives=1', []],
@@ -369,6 +381,10 @@ const EVERY_KEY = [
     ['catch-up track both', { track: ['committed', 'flexible'] }],
     ['catch-up lanes product', { lanes: { product: true, tech: false } }],
     ['catch-up lanes tech', { lanes: { product: false, tech: true } }],
+    ['catch-up alloc none', { alloc: [] }],
+    ['catch-up alloc product', { alloc: ['product'] }],
+    ['planning alloc tech', { mode: 'planning', alloc: ['tech'] }],
+    ['board projects none', { mode: 'board', bprojects: [] }],
     ['catch-up initiatives on', { initiatives: true }],
     ['catch-up initiatives off', { initiatives: false }],
     ...defaults.SHARE_VIEW_SORTS.filter((sort) => sort !== 'priority').map((sort) => [`catch-up sort ${sort}`, { sort }]),
@@ -1329,4 +1345,27 @@ test('Lead Times filter defaults are the ones the model starts with', () => {
         closed: ['done', 'killed', 'incomplete'],
         last_n: ['done', 'killed', 'incomplete'],
     });
+});
+
+test('alloc=none round-trips to []', () => {
+    const encoded = encode(withMode({ alloc: [] }));
+    assert.equal(encoded.ok, true);
+    assert.match(encoded.query, /&alloc=none$/);
+    assert.deepEqual(decode(`?${encoded.query}`).state.alloc, []);
+    const board = encode(withMode({ mode: 'board', bprojects: [] }));
+    assert.match(board.query, /&bprojects=none$/);
+    assert.deepEqual(decode(`?${board.query}`).state.bprojects, []);
+});
+
+test('alloc omitted is neutral', () => {
+    const decoded = decode(`?${head()}`);
+    assert.equal(Object.hasOwn(decoded.state, 'alloc'), false);
+    assert.equal(defaults.SHARE_VIEW_DEFAULTS.alloc, undefined);
+    assert.equal(encode(withMode({})).query.includes('alloc'), false);
+});
+
+test('Legacy links keep lanes', () => {
+    const encoded = encode(withMode({ lanes: { product: false, tech: true } }));
+    assert.equal(encoded.query, `${head()}&lanes=tech`);
+    assert.deepEqual(decode(`?${encoded.query}`).state.lanes, { product: false, tech: true });
 });

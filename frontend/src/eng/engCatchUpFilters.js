@@ -19,6 +19,11 @@
 // Projects stays on the existing `showTech` / `showProduct` booleans — two options, two
 // booleans that already persist and already capture per group. The two task fetches are not
 // touched by any of this (§4.4 / MRT010).
+//
+// DELIVERY (`rnd_2027`) replaces Projects with Allocation, an Initiative property built like
+// Project Track: counted per Initiative, both options always shown, and both unticked is the
+// explicit empty list that admits only No Allocation (`none`) work. It is stored as one value,
+// `undefined` (neutral) or an array, never as the Legacy booleans.
 
 import { PRIORITY_AXIS } from '../stats/statsConstants.js';
 import { getPriorityLabel } from '../stats/statsUtils.js';
@@ -117,21 +122,41 @@ function epicForTask(task, epicDetails) {
     return epicKey ? epicDetails?.[epicKey] || null : null;
 }
 
+const ALLOCATION_CLASSES = new Set(['product', 'tech', 'none']);
+const validAllocation = (value) => (ALLOCATION_CLASSES.has(value) ? value : null);
+
+// A DELIVERY item's Allocation class ('product' | 'tech' | 'none'): its Initiative's own
+// `allocationClass`, else the server's stamp on the item (`projectClassification` on an Epic,
+// `projectClass` on a readiness or alert Initiative). Anything unreadable is No Allocation.
+export function allocationClassOf(item, epicDetails = {}) {
+    const epicKey = String(item?.fields?.epicKey || '').trim();
+    return validAllocation(epicKey ? epicDetails?.[epicKey]?.allocationClass : null)
+        || validAllocation(item?.fields?.projectClassification ?? item?.projectClassification)
+        || validAllocation(String(item?.projectClass || '').trim().toLowerCase())
+        || 'none';
+}
+
 // `names` is the viewed configuration's EntityNames (Legacy defaults when absent).
-export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {}, names = LEGACY_NAMES } = {}) {
-    // The combined model has one lane: the Projects (Product/Tech) facet stays in the positional facet list
-    // but is hidden, never counted and never filtering.
-    const combinedLane = isCombinedWorkModel(names.model);
+export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false, epicDetails = {}, workModel, names = workModel ? resolveEntityNames(workModel) : LEGACY_NAMES } = {}) {
+    const allocation = isCombinedWorkModel(workModel);
     const statusCounts = countBy(tasks, (task) => task.fields?.status?.name);
     const priorityCounts = countBy(tasks, (task) => priorityAxisLabel(task.fields?.priority?.name));
     const projectCounts = { tech: 0, product: 0 };
     const trackCounts = { [PROJECT_TRACK_COMMITTED]: 0, [PROJECT_TRACK_FLEXIBLE]: 0 };
     const countedEpicKeys = new Set();
+    const allocationEpicKeys = new Set();
     let trackEpicTotal = 0;
     let unsetTrackEpicTotal = 0;
+    let noAllocationTotal = 0;
     tasks.forEach((task) => {
-        if (!combinedLane) projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
         const epicKey = String(task?.fields?.epicKey || '').trim();
+        if (!allocation) projectCounts[isTechTask(task) ? 'tech' : 'product'] += 1;
+        else if (epicKey && !allocationEpicKeys.has(epicKey)) {
+            allocationEpicKeys.add(epicKey);
+            const classId = allocationClassOf(task, epicDetails);
+            if (classId === 'none') noAllocationTotal += 1;
+            else projectCounts[classId] += 1;
+        }
         const epic = epicForTask(task, epicDetails);
         if (!epicKey || !epic || countedEpicKeys.has(epicKey)) return;
         countedEpicKeys.add(epicKey);
@@ -141,11 +166,32 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
         if (classification.kind === 'unset') unsetTrackEpicTotal += 1;
     });
     const scopeTotal = tasks.length;
+    const projectsFacet = allocation
+        ? {
+            id: 'projects',
+            label: 'Allocation',
+            kind: 'multi',
+            allowEmpty: true,
+            showZeroCountOptions: true,
+            emptyLabel: 'No Allocation',
+            emptyDescription: `No Allocation — showing ${lowerEntityWord(names.childPlural)} under ${lowerEntityWord(names.parentPlural)} without a value`,
+            emptyTotal: noAllocationTotal,
+            neutralTotal: allocationEpicKeys.size,
+            options: [{ id: 'product', label: 'Product' }, { id: 'tech', label: 'Tech' }],
+        }
+        : {
+            id: 'projects',
+            label: 'Projects',
+            kind: 'multi',
+            neutralTotal: scopeTotal,
+            options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
+        };
 
     return {
         scopeTotal,
         epicDetails,
         names,
+        allocation,
         counts: {
             status: statusCounts,
             priority: PRIORITY_AXIS.reduce((all, label) => ({ ...all, [label]: priorityCounts[label] || 0 }), {}),
@@ -167,14 +213,7 @@ export function buildEngCatchUpFacetModel({ tasks = [], isTechTask = () => false
                 neutralTotal: scopeTotal,
                 options: PRIORITY_AXIS.map((label) => ({ id: label, label })),
             },
-            {
-                id: 'projects',
-                label: 'Projects',
-                ...(combinedLane ? { hidden: true } : {}),
-                kind: 'multi',
-                neutralTotal: scopeTotal,
-                options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }],
-            },
+            projectsFacet,
             {
                 id: 'track',
                 label: 'Project Track',
@@ -212,6 +251,7 @@ export function resolveEngCatchUpFilters({
     showTech = true,
     showProduct = true,
     track,
+    allocation,
 } = {}) {
     const { facets, counts, scopeTotal } = model;
     const [statusFacet, priorityFacet] = facets;
@@ -219,7 +259,9 @@ export function resolveEngCatchUpFilters({
     const rawSelection = {
         status: tickedIdsFor(status, visibleIdsOf(statusFacet, counts)),
         priority: tickedIdsFor(priority, visibleIdsOf(priorityFacet, counts)),
-        projects: [showTech ? 'tech' : null, showProduct ? 'product' : null].filter(Boolean),
+        ...(model.allocation
+            ? (Array.isArray(allocation) ? { projects: allocation } : {})
+            : { projects: [showTech ? 'tech' : null, showProduct ? 'product' : null].filter(Boolean) }),
         ...(Array.isArray(track) ? { track } : {}),
     };
     // Scope changes recompute counts, which can hide every option a stored filter names.
@@ -229,6 +271,8 @@ export function resolveEngCatchUpFilters({
     const [statusView, priorityView, projectsView, trackView] = facetViews;
 
     const admits = (view, value) => view.isNeutral || view.activeOptionIds.some((id) => normalizeId(id) === normalizeId(value));
+    // Neutral admits every class; the explicit empty list admits only No Allocation.
+    const admitsAllocation = (classId) => (projectsView.isEmptySelection ? classId === 'none' : admits(projectsView, classId));
 
     // The planning pool stays no narrower than the Done and Killed Display toggles were, and a
     // Display toggle could only ever hide a status. An `{ only: [...] }` narrowing is a view
@@ -250,6 +294,9 @@ export function resolveEngCatchUpFilters({
         admitsStatus: (statusName) => admits(statusView, statusName),
         admitsStatusForPlanning: (statusName) => !statusExcludes || admits(statusView, statusName),
         admitsPriority: (priorityName) => admits(priorityView, priorityAxisLabel(priorityName)),
+        allocationFacet: Boolean(model.allocation),
+        allocationClassOf: (item) => allocationClassOf(item, model.epicDetails),
+        admitsAllocation,
         admitsProject: (isTech) => admits(projectsView, isTech ? 'tech' : 'product'),
         admitsProjectTrack: (task) => {
             if (trackView.isNeutral) return true;
@@ -296,21 +343,28 @@ function storedFromTicked(tickedIds, visibleIds, prior) {
         : { only: [...included, ...outOfScopeIds(prior && prior.only, visibleIds)] };
 }
 
-export function readEngCatchUpFilterState(selection, facetViews, stored = {}) {
+// An `allowEmpty` facet's stored value: undefined (neutral, every option ticked), or the ticked
+// ids in option order, the empty list included.
+function storedAllowEmpty(selection, facetViews, facetId) {
+    if (!Object.prototype.hasOwnProperty.call(selection, facetId)) return undefined;
+    const ticked = Array.isArray(selection[facetId]) ? selection[facetId] : [];
+    const view = facetViews.find((facet) => facet.id === facetId);
+    const visibleIds = (view?.visibleOptions || []).map((option) => option.id);
+    const ordered = visibleIds.filter((id) => ticked.includes(id));
+    return ticked.length === 0 || ordered.length < visibleIds.length ? ordered : undefined;
+}
+
+// `allocation: true` (DELIVERY) reads the projects facet as `allocation` instead of the Legacy booleans.
+export function readEngCatchUpFilterState(selection, facetViews, stored = {}, { allocation = false } = {}) {
     const [statusView, priorityView] = facetViews;
     const projects = selection.projects || [];
     const next = {
         status: storedFromTicked(selection.status, statusView.visibleOptions.map((option) => option.id), stored.status),
         priority: storedFromTicked(selection.priority, priorityView.visibleOptions.map((option) => option.id), stored.priority),
-        showTech: projects.includes('tech'),
-        showProduct: projects.includes('product'),
+        ...(allocation ? {} : { showTech: projects.includes('tech'), showProduct: projects.includes('product') }),
     };
-    if (Object.prototype.hasOwnProperty.call(selection, 'track')) {
-        const track = Array.isArray(selection.track) ? selection.track : [];
-        const trackView = facetViews.find((facet) => facet.id === 'track');
-        const visibleIds = (trackView?.visibleOptions || []).map((option) => option.id);
-        const ordered = visibleIds.filter((id) => track.includes(id));
-        if (track.length === 0 || ordered.length < visibleIds.length) next.track = ordered;
-    }
+    if (allocation) next.allocation = storedAllowEmpty(selection, facetViews, 'projects');
+    const track = storedAllowEmpty(selection, facetViews, 'track');
+    if (track !== undefined) next.track = track;
     return next;
 }

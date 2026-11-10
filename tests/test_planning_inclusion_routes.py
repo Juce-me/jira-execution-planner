@@ -334,7 +334,7 @@ class PlanningHttpTests(SprintReviewRouteTests):
         with db_engine.session_scope(self.url) as session:
             self.assertEqual(session.query(models.GroupSprintPlan).count(), 0)
 
-    def test_observed_admission_rechecks_the_consulted_board_publication(self):
+    def test_board_admission_rechecks_its_catalog_publication(self):
         from types import SimpleNamespace
         from backend.services import workspace_catalog_cache as cache
         self._install_actor()
@@ -342,34 +342,51 @@ class PlanningHttpTests(SprintReviewRouteTests):
             snapshot = routes.workspace_dashboard_config.load_workspace_config_in_session(session, self.context)
             version = str(uuid.uuid4())
             session.add(models.WorkspaceSprintCatalog(workspace_id=self.workspace, board_id='17',
-                sprints=[], validated_at=datetime.now(timezone.utc), catalog_version=version))
-        observed = SimpleNamespace(sprint_identity='synthetic-observed', source_digest='observed-digest',
-            source_mode=routes.work_routes.work_structure_service.SOURCE_MODE_SCOPED_ISSUES,
-            config_revision=snapshot.config_revision, configuration_id=None, from_quarter=None, through_quarter=None)
+                sprints=[{'id': '17', 'name': '2027Q1'}], validated_at=datetime.now(timezone.utc), catalog_version=version))
         board = SimpleNamespace(sprint_identity='synthetic-board-identity', board_id='17',
             source_mode=routes.work_routes.work_structure_service.SOURCE_MODE_BOARD,
-            observed_source=observed, configuration_id=None, from_quarter=None, through_quarter=None)
-        board_snapshot = SimpleNamespace(payload=[], catalog_version=version)
-        observed_snapshot = SimpleNamespace(payload=[{'id': '17', 'name': '2027Q1'}], catalog_version=str(uuid.uuid4()))
+            source_digest='board-digest', config_revision=snapshot.config_revision,
+            configuration_id=None, from_quarter=None, through_quarter=None)
+        board_snapshot = SimpleNamespace(payload=[{'id': '17', 'name': '2027Q1'}], catalog_version=version)
         with jira_server.app.test_request_context('/'), \
              patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[board]), \
              patch.object(cache, 'load_sprint_catalog', return_value=board_snapshot), \
-             patch.object(cache, 'load_scoped_sprint_catalog', return_value=observed_snapshot), \
+             patch.object(cache, 'load_scoped_sprint_catalog', side_effect=AssertionError('Board admission must not scan issues')), \
              patch.object(routes.planning_scope, 'compile_planning_inclusion_scope', return_value={
                  'candidate_jql': 'Sprint = 17', 'child_kind': 'story', 'scope_digest': 'synthetic'}):
             admission = routes._planning_admission(self.context, '17', {'groupId': 'group-x'})
-        self.assertEqual(admission.source_proof.source_identity, observed.sprint_identity)
+        self.assertIsNone(admission.source_proof)
         with db_engine.session_scope(self.url) as session:
             admission.revalidate(session)
-        # Publishing a Board Sprint of the same name shadows this observed Sprint.
+        # A new Board publication invalidates admission even if its Sprint row is unchanged.
         with db_engine.session_scope(self.url) as session:
             row = session.scalar(select(models.WorkspaceSprintCatalog).where(
                 models.WorkspaceSprintCatalog.workspace_id == self.workspace))
-            row.sprints = [{'id': '18', 'name': '2027Q1'}]
             row.catalog_version = str(uuid.uuid4())
         with db_engine.session_scope(self.url) as session, self.assertRaises(review.ReviewError) as raised:
             admission.revalidate(session)
         self.assertEqual(raised.exception.code, 'configuration_scope_changed')
+
+    def test_scoped_issue_admission_captures_its_source_proof(self):
+        from types import SimpleNamespace
+        from backend.services import workspace_catalog_cache as cache
+        self._install_actor()
+        with db_engine.session_scope(self.url) as session:
+            snapshot = routes.workspace_dashboard_config.load_workspace_config_in_session(session, self.context)
+        scoped = SimpleNamespace(sprint_identity='synthetic-scoped', source_digest='scoped-digest',
+            source_mode=routes.work_routes.work_structure_service.SOURCE_MODE_SCOPED_ISSUES,
+            config_revision=snapshot.config_revision, configuration_id=None, from_quarter=None, through_quarter=None)
+        version = str(uuid.uuid4())
+        catalog = SimpleNamespace(payload=[{'id': '17', 'name': '2027Q1'}], catalog_version=version)
+        with jira_server.app.test_request_context('/'), \
+             patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[scoped]), \
+             patch.object(cache, 'load_sprint_catalog', side_effect=AssertionError('Scoped admission must not read a Board')), \
+             patch.object(cache, 'load_scoped_sprint_catalog', return_value=catalog), \
+             patch.object(routes.planning_scope, 'compile_planning_inclusion_scope', return_value={
+                 'candidate_jql': 'Sprint = 17', 'child_kind': 'story', 'scope_digest': 'synthetic'}):
+            admission = routes._planning_admission(self.context, '17', {'groupId': 'group-x'})
+        self.assertEqual(admission.source_proof,
+            cache.SprintSourceProof(scoped.sprint_identity, scoped.source_digest, version, '17', '2027Q1'))
 
     def test_capability_rejection_never_parses_body_in_error_handler(self):
         self._install_actor()

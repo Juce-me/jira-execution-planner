@@ -555,7 +555,7 @@ class EngBoardProgressiveLoadingTests(unittest.TestCase):
         real_writer = EngBoardStreamWriter
         with patch.object(eng_board_routes, '_assert_current', return_value=db_context()), patch.object(
             eng_board_routes, 'EngBoardStreamWriter',
-            side_effect=lambda: real_writer(max_frame_bytes=1024, max_generation_bytes=8192),
+            side_effect=lambda **options: real_writer(max_frame_bytes=1024, max_generation_bytes=8192, **options),
         ):
             try:
                 lines = list(eng_board_routes._frame_stream(
@@ -585,7 +585,7 @@ class EngBoardProgressiveLoadingTests(unittest.TestCase):
 
         with patch.object(eng_board_routes, '_assert_current', return_value=db_context()), patch.object(
             eng_board_routes, 'EngBoardStreamWriter',
-            side_effect=lambda: real_writer(max_generation_bytes=generation_limit),
+            side_effect=lambda **options: real_writer(max_generation_bytes=generation_limit, **options),
         ):
             lines = list(eng_board_routes._frame_stream(
                 server, snapshot, EngBoardRequestTransport(), generation_id=generation_id,
@@ -610,7 +610,7 @@ class EngBoardProgressiveLoadingTests(unittest.TestCase):
         real_writer = EngBoardStreamWriter
         with patch.object(eng_board_routes, '_assert_current', return_value=db_context()), patch.object(
             eng_board_routes, 'EngBoardStreamWriter',
-            side_effect=lambda: real_writer(max_frame_bytes=1024, max_generation_bytes=8192),
+            side_effect=lambda **options: real_writer(max_frame_bytes=1024, max_generation_bytes=8192, **options),
         ):
             lines = list(eng_board_routes._frame_stream(
                 SimpleNamespace(current_jira_search=search), board_snapshot(),

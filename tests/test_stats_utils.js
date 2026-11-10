@@ -329,6 +329,47 @@ test('buildLocalStatsFromTasks counts Tech-project Ad Hoc stories as Product', a
     assert.equal(plain.projects.tech.done, 1);
 });
 
+test('DELIVERY team stats bucket none as No Allocation', async () => {
+    const { buildLocalStatsFromTasks } = await import('../frontend/src/stats/statsUtils.js');
+    // [key, team, status, SP, Initiative, DELIVERY stamp]
+    const row = ([key, teamId, status, sp, epicKey, stamp]) => ({
+        key, fields: { status: { name: status }, priority: { name: 'High' }, customfield_10004: sp, epicKey, projectKey: 'DLV', teamId, teamName: teamId, projectClassification: stamp },
+    });
+    const tasks = [
+        ['DLV-1', 'alpha', 'Done', 3, 'INI-P', 'product'],
+        ['DLV-2', 'alpha', 'In Progress', 5, 'INI-T', 'tech'],
+        ['DLV-3', 'alpha', 'Done', 2, 'INI-N', 'none'],
+        ['DLV-4', 'alpha', 'Killed', 1, 'INI-N', 'none'],
+        // Ad Hoc follows its Initiative's side in DELIVERY: an Ad Hoc No Allocation Initiative stays No Allocation.
+        ['DLV-5', 'beta', 'In Progress', 4, 'INI-ADHOC', 'none'],
+    ].map(row);
+    const options = {
+        normalizeStatus: status => ({ done: 'done', killed: 'killed' }[String(status || '').toLowerCase()] || 'incomplete'),
+        getTeamInfo: task => ({ id: task.fields.teamId, name: task.fields.teamName }),
+        techProjectKeys: new Set(['DLV']),
+        adHocEpicSet: new Set(['INI-ADHOC']),
+    };
+    const result = buildLocalStatsFromTasks(tasks, options);
+    const counts = bucket => ({ done: bucket.done, incomplete: bucket.incomplete, killed: bucket.killed });
+    // The stamp decides; the Tech project key never turns Product or No Allocation work into Tech.
+    assert.deepEqual(counts(result.projects.product), { done: 1, incomplete: 0, killed: 0 });
+    assert.deepEqual(counts(result.projects.tech), { done: 0, incomplete: 1, killed: 0 });
+    assert.deepEqual(counts(result.projects.none), { done: 1, incomplete: 1, killed: 1 });
+    const [alpha, beta] = result.teams;
+    assert.deepEqual(counts(alpha.projects.none), { done: 1, incomplete: 0, killed: 1 });
+    assert.deepEqual(alpha.projects.none.priorities, { High: { done: 1, incomplete: 0, killed: 1 } });
+    // Every DELIVERY team carries the bucket, even with no No Allocation work of its own.
+    assert.deepEqual(counts(beta.projects.none), { done: 0, incomplete: 1, killed: 0 });
+    assert.deepEqual(counts(beta.projects.product), { done: 0, incomplete: 0, killed: 0 });
+    const onlyProduct = buildLocalStatsFromTasks([tasks[0]], options);
+    assert.deepEqual(counts(onlyProduct.teams[0].projects.none), { done: 0, incomplete: 0, killed: 0 });
+
+    // Legacy (no stamp) keeps exactly the Product/Tech keys.
+    const legacy = buildLocalStatsFromTasks(tasks.map(task => ({ ...task, fields: { ...task.fields, projectClassification: undefined } })), options);
+    assert.deepEqual(Object.keys(legacy.projects), ['product', 'tech']);
+    assert.deepEqual(Object.keys(legacy.teams[0].projects), ['product', 'tech']);
+});
+
 // ---- buildCohortGridModel characterization (Lead Times modes Task 5): today's output, pinned before the overflow option ----
 const GRID_ISSUES = [
     { key: 'A-1', summary: 'Epic A-1', createdDate: '2025-01-10', status: 'done', terminalDate: '2025-02-15' },

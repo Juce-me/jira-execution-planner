@@ -1,5 +1,4 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
-import { isCombinedWorkModel } from './engWorkModel.js';
 import { buildTeamDropdownOptions } from '../teamSelectionUtils.mjs';
 
 export function normalizeCapacityTeamName(name) {
@@ -414,14 +413,8 @@ export function buildProjectCapacity({
     getTeamNetCapacity,
     capacitySplit,
     showProduct,
-    showTech,
-    workModel
+    showTech
 }) {
-    if (isCombinedWorkModel(workModel)) {
-        // One combined lane: the whole planning capacity belongs to it, with no Product/Tech split.
-        if (!showPlanning || !capacityEnabled) return { OTHER: 0 };
-        return { OTHER: displayedTeamOptions.reduce((sum, team) => sum + (getTeamNetCapacity(team) || 0), 0) };
-    }
     if (!showPlanning || !capacityEnabled) {
         return { PRODUCT: 0, TECH: 0 };
     }
@@ -463,11 +456,9 @@ export function buildTeamCapacityStats({
     normalizeStatus,
     getTeamInfo,
     techProjectKeys,
-    adHocEpicSet = new Set(),
-    workModel
+    adHocEpicSet = new Set()
 }) {
     if (!showPlanning || !capacityEnabled) return {};
-    const combined = isCombinedWorkModel(workModel);
     return capacityTasks.reduce((acc, task) => {
         const status = normalizeStatus(task.fields.status?.name);
         const sp = parseFloat(task.fields.customfield_10004 || 0);
@@ -480,13 +471,12 @@ export function buildTeamCapacityStats({
             acc[teamInfo.id] = {
                 name: teamInfo.name,
                 product: emptyCapacityBreakdown(),
-                tech: emptyCapacityBreakdown(),
-                ...(combined ? { other: emptyCapacityBreakdown() } : {})
+                tech: emptyCapacityBreakdown()
             };
         }
 
-        const projectType = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel }).projectType;
-        const bucket = projectType === 'tech' ? 'tech' : projectType === 'other' ? 'other' : 'product';
+        const bucket = classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).projectType;
+        if (!acc[teamInfo.id][bucket]) acc[teamInfo.id][bucket] = emptyCapacityBreakdown(); // 'none' (No Allocation) only in DELIVERY
         if (status === 'to do' || status === 'pending') {
             acc[teamInfo.id][bucket].todoPending += sp;
         }
@@ -503,18 +493,21 @@ export function buildTeamCapacityStats({
 
 export function buildTeamCapacityEntries(teamCapacityStats) {
     return Object.entries(teamCapacityStats)
-        .map(([id, info]) => ({
-            id,
-            name: info.name,
-            product: info.product,
-            tech: info.tech,
-            ...(info.other ? { other: info.other } : {}),
-            total: {
-                todoPending: info.product.todoPending + info.tech.todoPending + (info.other?.todoPending || 0),
-                accepted: info.product.accepted + info.tech.accepted + (info.other?.accepted || 0),
-                postponed: info.product.postponed + info.tech.postponed + (info.other?.postponed || 0)
-            }
-        }))
+        .map(([id, info]) => {
+            const none = info.none || emptyCapacityBreakdown();
+            return {
+                id,
+                name: info.name,
+                product: info.product,
+                tech: info.tech,
+                ...(info.none ? { none: info.none } : {}),
+                total: {
+                    todoPending: info.product.todoPending + info.tech.todoPending + none.todoPending,
+                    accepted: info.product.accepted + info.tech.accepted + none.accepted,
+                    postponed: info.product.postponed + info.tech.postponed + none.postponed
+                }
+            };
+        })
         .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -599,7 +592,6 @@ export function buildSelectedProjectEntries({
             const order = (key) => {
                 if (key === 'PRODUCT') return 0;
                 if (key === 'TECH') return 1;
-                if (key === 'OTHER') return 2;
                 return 99;
             };
             const diff = order(a.id) - order(b.id);
@@ -658,6 +650,12 @@ export function buildCapacityTotals({
         acc.tech.todoPending += info.tech.todoPending;
         acc.tech.accepted += info.tech.accepted;
         acc.tech.postponed += info.tech.postponed;
+        if (info.none) {
+            if (!acc.none) acc.none = emptyCapacityBreakdown();
+            acc.none.todoPending += info.none.todoPending;
+            acc.none.accepted += info.none.accepted;
+            acc.none.postponed += info.none.postponed;
+        }
         acc.total.todoPending += info.total.todoPending;
         acc.total.accepted += info.total.accepted;
         acc.total.postponed += info.total.postponed;

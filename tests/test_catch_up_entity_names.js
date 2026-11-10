@@ -44,7 +44,8 @@ test('Catch Up readout unit and subject follow the planning type and its count',
     assert.equal(resolve(1, RENAMED).readoutUnit, 'of 1 deliverable');
     assert.equal(resolve(2).readoutUnit, 'of 2 stories');
     assert.equal(resolve(2).subject, 'Filtering stories');
-    assert.equal(buildEngCatchUpFacetModel({ tasks: tasks(1), names: DELIVERY }).facets.find(facet => facet.id === 'projects').hidden, true);
+    // DELIVERY splits Product/Tech by Allocation, so its Projects facet is shown like Legacy's.
+    assert.equal(buildEngCatchUpFacetModel({ tasks: tasks(1), names: DELIVERY }).facets.find(facet => facet.id === 'projects').hidden, undefined);
     const trackEmpty = entityNames => buildEngCatchUpFacetModel({ tasks: tasks(1), names: entityNames }).facets.find(facet => facet.id === 'track').emptyDescription;
     assert.equal(trackEmpty(DELIVERY), 'No Project Track — showing epics under initiatives without a value');
     assert.equal(trackEmpty(RENAMED), 'No Project Track — showing deliverables under themes without a value');

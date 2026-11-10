@@ -15,7 +15,7 @@ test('classifyEpicProjects: stories all on the Tech side -> Tech only', async ()
             { key: 'TECH-2', fields: { projectKey: 'TECH' } },
         ],
     };
-    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: true, isProduct: false, isOther: false });
+    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: true, isProduct: false, isOther: false, isNone: false });
 });
 
 test('classifyEpicProjects: stories all on the Product side -> Product only', async () => {
@@ -27,7 +27,7 @@ test('classifyEpicProjects: stories all on the Product side -> Product only', as
             { key: 'PROD-2', fields: { projectKey: 'PROD' } },
         ],
     };
-    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: false, isProduct: true, isOther: false });
+    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: false, isProduct: true, isOther: false, isNone: false });
 });
 
 test('classifyEpicProjects: stories on both sides -> both (D41 — the honest answer, not a defect)', async () => {
@@ -39,14 +39,14 @@ test('classifyEpicProjects: stories on both sides -> both (D41 — the honest an
             { key: 'PROD-1', fields: { projectKey: 'PROD' } },
         ],
     };
-    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: true, isProduct: true, isOther: false });
+    assert.deepEqual(classifyEpicProjects(epicGroup, isTechTask), { isTech: true, isProduct: true, isOther: false, isNone: false });
 });
 
 test('classifyEpicProjects: an epic with no stories in scope -> neither', async () => {
     const { classifyEpicProjects } = await import('../frontend/src/eng/engBoardCardModel.js');
     const isTechTask = () => { throw new Error('isTechTask must not be called with zero tasks'); };
-    assert.deepEqual(classifyEpicProjects({ tasks: [] }, isTechTask), { isTech: false, isProduct: false, isOther: false });
-    assert.deepEqual(classifyEpicProjects({}, isTechTask), { isTech: false, isProduct: false, isOther: false });
+    assert.deepEqual(classifyEpicProjects({ tasks: [] }, isTechTask), { isTech: false, isProduct: false, isOther: false, isNone: false });
+    assert.deepEqual(classifyEpicProjects({}, isTechTask), { isTech: false, isProduct: false, isOther: false, isNone: false });
 });
 
 test('classifyEpicProjects preserves strict product, tech, and other classifications', async () => {
@@ -63,6 +63,7 @@ test('classifyEpicProjects preserves strict product, tech, and other classificat
         isTech: true,
         isProduct: true,
         isOther: true,
+        isNone: false,
     });
 });
 

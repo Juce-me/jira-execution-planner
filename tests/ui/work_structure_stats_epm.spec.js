@@ -46,7 +46,7 @@ const LEAD_PREFS = { selectedView: 'eng', showStats: true, statsView: 'cohort', 
 const clone = value => JSON.parse(JSON.stringify(value));
 
 async function mockApp(page, {
-    prefs = { selectedView: 'eng' }, deliveryMissing = [], deliverySprints = [], legacySprints = [{ id: 7, name: '2026Q4', state: 'active' }],
+    prefs = { selectedView: 'eng' }, deliveryMissing = [], deliverySprints = [], legacySprints = [{ id: 7, name: '2026Q4', state: 'active' }], statIssues = () => [], groupExtra = {},
 } = {}) {
     const state = {
         log: [], summaries: SUMMARIES(), missing: { legacy: [], delivery: deliveryMissing },
@@ -86,7 +86,7 @@ async function mockApp(page, {
         if (p === '/api/work-structure/config') return json({ workConfigurations: { version: 1, promotionRevision: 6, configurations: [] }, configRevision: 3, promoted: true, userCanEditSettings: true, featureEnabled: true });
         if (p === '/api/groups-config' && request.method() === 'GET') {
             return json({
-                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'], board: { columns: [{ id: 'todo', name: 'To Do', statuses: ['To Do'] }, { id: 'done', name: 'Done', statuses: ['Done'] }] } }],
+                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'], ...groupExtra, board: { columns: [{ id: 'todo', name: 'To Do', statuses: ['To Do'] }, { id: 'done', name: 'Done', statuses: ['Done'] }] } }],
                 defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
                 preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: ['platform'], activeGroupId: 'platform', effectiveVisibleGroupIds: ['platform'] },
             });
@@ -116,7 +116,13 @@ async function mockApp(page, {
         if (p === '/api/teams') return json({ teams: [{ id: 'team-platform', name: 'Platform Team' }] });
         if (p === '/api/tasks-with-team-name') {
             if (state.tasksDelay) await new Promise(resolve => setTimeout(resolve, state.tasksDelay));
-            return json({ issues: [], epics: {}, epicsInScope: [] });
+            // Legacy asks once per lane; only the Product lane carries the rows so nothing is counted twice.
+            const rows = url.searchParams.get('purpose') || url.searchParams.get('project') === 'tech' ? [] : statIssues(url.searchParams.get('configurationId') || '');
+            return json({ issues: rows, epics: {}, epicsInScope: [] });
+        }
+        if (p === '/api/stats/excluded-capacity-source') {
+            const sourceConfiguration = body?.configurationId || ((body?.sprintIds || []).map(String).includes('91') ? 'delivery' : 'legacy');
+            return json({ data: { issues: statIssues(sourceConfiguration), meta: { warnings: [], queryPages: 1, loadedSprintCount: 1, totalSprintCount: 1 } } });
         }
         if (p === '/api/missing-info') return json({ issues: [], epics: [] });
         if (p === '/api/projects') return json({ projects: [] });
@@ -255,4 +261,139 @@ test('EPM rollups send the selected quarter/configuration; Epic-leaf tree render
     const metadata = state.log.filter(call => call.pathname === '/api/epm/projects');
     for (const call of metadata) expect(call.params.configurationId).toBeUndefined();
     expect(state.log.filter(call => call.method !== 'GET' && call.pathname.startsWith('/api/epm/'))).toEqual([]);
+});
+
+// DELIVERY No Allocation in Stats (plan Task 7). [key, status, SP, DELIVERY stamp]; Legacy rows carry no stamp.
+const STAT_ROWS = [['STA-1', 'Done', 3, 'product'], ['STA-2', 'In Progress', 5, 'tech'], ['STA-3', 'Done', 2, 'none'], ['STA-4', 'In Progress', 1, 'none']];
+const STAT_SPRINTS = { delivery: { id: 91, name: '2027Q1', state: 'active' }, legacy: { id: 7, name: '2026Q4', state: 'active' } };
+const statIssues = configurationId => {
+    const sprint = STAT_SPRINTS[configurationId] || STAT_SPRINTS.legacy;
+    return STAT_ROWS.map(([key, status, sp, stamp]) => ({
+        id: key.replace(/\D/g, ''), key, fields: {
+            summary: `Synthetic ${key}`, status: { name: status }, priority: { name: 'Medium' }, issuetype: { name: 'Story' }, customfield_10004: sp,
+            epicKey: 'STA-100', parentSummary: 'Synthetic parent', projectKey: 'STA', teamId: 'team-platform', teamName: 'Platform Team',
+            sprint: [sprint], customfield_10101: [sprint], ...(configurationId === 'delivery' ? { projectClassification: stamp } : {}),
+        },
+    }));
+};
+const statsPrefs = (configurationId, statsView) => {
+    const sprint = STAT_SPRINTS[configurationId];
+    return { selectedView: 'eng', showStats: true, statsView, selectedSprint: sprint.id, sprintName: sprint.name, selectedQuarter: sprint.name,
+        excludedCapacityStartSprintId: String(sprint.id), excludedCapacityEndSprintId: String(sprint.id) };
+};
+async function openStats(page, configurationId, statsView) {
+    // An excluded-capacity Initiative/Epic is configured so the Effort Split loads; no row is under it.
+    const state = await start(page, { prefs: statsPrefs(configurationId, statsView), deliverySprints: [STAT_SPRINTS.delivery], statIssues, groupExtra: { excludedCapacityEpics: ['STA-900'] } });
+    await expect(page.locator('.stats-view.open')).toBeVisible();
+    return state;
+}
+// Text and box of every header and body cell of the open Stats Teams table.
+const readStatsTable = page => page.locator('.stats-view.open .stats-table').evaluate(table => {
+    const box = node => { const rect = node.getBoundingClientRect(); return { left: rect.left, right: rect.right }; };
+    const cells = row => [...row.children].map(cell => ({ text: cell.textContent.replace('\u2197', '').trim(), cls: cell.className, links: cell.querySelectorAll('a.stats-link').length, clipped: cell.scrollWidth > cell.clientWidth + 1, ...box(cell) }));
+    const rows = [...table.querySelectorAll('tr')].map(cells);
+    const view = table.closest('.stats-view').getBoundingClientRect();
+    const frame = table.parentElement.matches('[data-allocation="delivery"]') ? table.parentElement : null;
+    return { groups: rows[0], header: rows[1], body: rows.slice(2), tableRight: table.getBoundingClientRect().right, viewRight: view.right,
+        frameRight: frame ? frame.getBoundingClientRect().right : null, frameScrolls: frame ? frame.scrollWidth > frame.clientWidth : null };
+});
+
+test('DELIVERY Stats Teams shows a No Allocation column after Tech whose counts carry no project-based links', async ({ page }) => {
+    await openStats(page, 'delivery', 'teams');
+    await expect(page.locator('.stats-view.open .stats-table th.stats-col.none').first()).toBeVisible();
+    await expect(page.locator('.stats-view.open .stats-table tbody tr')).toHaveCount(1);
+    await expect(page.locator('.stats-view.open .stats-table tbody td').nth(1)).toHaveText(/2/);
+    const table = await readStatsTable(page);
+    expect(table.groups.map(cell => cell.text)).toEqual(['', 'Total', 'Product', 'Tech', 'No Allocation']);
+    expect(table.header.length).toBe(17);
+    expect(table.header.slice(13).map(cell => cell.text)).toEqual(['Done', 'Incomplete', 'Absolute', 'Weighted']);
+    const [row] = table.body;
+    expect(row.map(cell => cell.text)).toEqual([
+        'Platform Team', '2', '2', '50.00%', '50.00%', '1', '0', '100.00%', '100.00%', '0', '1', '0.00%', '0.00%', '1', '1', '50.00%', '50.00%',
+    ]);
+    // Only the two Total count cells link to Jira; Product/Tech/No Allocation counts are plain.
+    expect(row.map(cell => cell.links)).toEqual([0, 1, 1, ...Array(14).fill(0)]);
+    // Group headings tile left to right; every body cell sits under its header cell, nothing clips, and the table fits the view.
+    for (let index = 1; index < table.groups.length; index += 1) expect(table.groups[index].left).toBeGreaterThanOrEqual(table.groups[index - 1].right - 1);
+    expect(Math.abs(table.groups[4].left - table.header[13].left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(table.groups[4].right - table.header[16].right)).toBeLessThanOrEqual(1);
+    row.forEach((cell, index) => {
+        expect(Math.abs(cell.left - table.header[index].left)).toBeLessThanOrEqual(1);
+        expect(cell.clipped).toBe(false);
+        expect(table.header[index].clipped).toBe(false);
+    });
+    // Four column groups exceed the 1280px panel: the DELIVERY frame stays inside the view and scrolls horizontally to No Allocation.
+    expect(table.frameRight).toBeLessThanOrEqual(table.viewRight + 1);
+    expect(table.frameScrolls).toBe(true);
+    await page.locator('.stats-view.open').screenshot({ path: path.join(shotDir, 'stats-teams-delivery-no-allocation.png'), animations: 'disabled' });
+    await page.locator('.stats-view.open [data-allocation="delivery"]').evaluate(node => { node.scrollLeft = node.scrollWidth; });
+    const lastGroup = page.locator('.stats-view.open .stats-table th.stats-col.none').first();
+    await expect(lastGroup).toBeInViewport({ ratio: 0.99 });
+    const frameBox = await page.locator('.stats-view.open [data-allocation="delivery"]').boundingBox();
+    const groupBox = await lastGroup.boundingBox();
+    expect(groupBox.x + groupBox.width).toBeLessThanOrEqual(frameBox.x + frameBox.width + 1);
+    await page.locator('.stats-view.open').screenshot({ path: path.join(shotDir, 'stats-teams-delivery-no-allocation-scrolled.png'), animations: 'disabled' });
+});
+
+test('Legacy Stats Teams keeps Total, Product and Tech with their Jira links', async ({ page }) => {
+    await openStats(page, 'legacy', 'teams');
+    await expect(page.locator('.stats-view.open .stats-table tbody tr')).toHaveCount(1);
+    await expect(page.locator('.stats-view.open .stats-table tbody td').nth(1)).toHaveText(/2/);
+    const table = await readStatsTable(page);
+    expect(table.groups.map(cell => cell.text)).toEqual(['', 'Total', 'Product', 'Tech']);
+    expect(table.header.length).toBe(13);
+    await expect(page.locator('.stats-view.open .stats-table')).not.toContainText('No Allocation');
+    // Legacy has no stamp: every row is Product, and each non-zero Total/Product count keeps its link.
+    expect(table.body[0].map(cell => cell.links)).toEqual([0, 1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0]);
+    // Legacy markup is unchanged: no scroll frame, and the table still fits the view.
+    expect(table.frameRight).toBeNull();
+    expect(table.tableRight).toBeLessThanOrEqual(table.viewRight + 1);
+});
+
+test('DELIVERY Effort Split adds a No Allocation series last; Legacy keeps four', async ({ page }) => {
+    await openStats(page, 'delivery', 'excludedCapacity');
+    const chart = page.locator('.stats-view.open .effort-type-split-chart');
+    await expect(chart.locator('.effort-type-split-segment.none')).toBeVisible();
+    const legend = chart.locator('.effort-type-split-legend button');
+    await expect(legend).toHaveText(['Excluded Capacity', 'Ad Hoc', 'Product', 'Tech', 'No Allocation']);
+    await expect(chart.locator('.effort-type-split-legend-item.none')).toHaveAttribute('aria-pressed', 'true');
+    // 3 of 11 SP: the segment is drawn last, ends the track, and is the element hit at its centre.
+    const geometry = await chart.evaluate(node => {
+        const track = node.querySelector('.effort-type-split-track').getBoundingClientRect();
+        const segments = [...node.querySelectorAll('.effort-type-split-track > .effort-type-split-segment')];
+        const none = segments[segments.length - 1];
+        const rect = none.getBoundingClientRect();
+        const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        const label = none.querySelector('span');
+        return { last: none.className, share: rect.width / track.width, rightGap: track.right - rect.right, hit: none.contains(hit),
+            labelInside: !label || (label.getBoundingClientRect().left >= rect.left - 0.5 && label.getBoundingClientRect().right <= rect.right + 0.5),
+            background: getComputedStyle(none).backgroundColor };
+    });
+    expect(geometry.last).toContain('none');
+    expect(geometry.share).toBeCloseTo(3 / 11, 2);
+    expect(Math.abs(geometry.rightGap)).toBeLessThanOrEqual(1);
+    expect(geometry.hit).toBe(true);
+    expect(geometry.labelInside).toBe(true);
+    expect(geometry.background).toBe('rgb(148, 163, 184)');
+    await chart.screenshot({ path: path.join(shotDir, 'effort-split-delivery-no-allocation.png'), animations: 'disabled' });
+    // The hover readout is the in-app readout, inside the viewport.
+    await chart.locator('.effort-type-split-segment.none').hover();
+    const readout = page.locator('.effort-type-split-readout');
+    await expect(readout).toContainText('No Allocation: 27');
+    const box = await readout.boundingBox();
+    const viewport = page.viewportSize();
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
+    const chartBox = await chart.boundingBox();
+    await page.screenshot({ path: path.join(shotDir, 'effort-split-delivery-no-allocation-readout.png'), animations: 'disabled',
+        clip: { x: 0, y: chartBox.y, width: viewport.width, height: Math.max(chartBox.height, box.y + box.height - chartBox.y) + 8 } });
+    // Toggling the legend hides the series.
+    await chart.locator('.effort-type-split-legend-item.none').click();
+    await expect(chart.locator('.effort-type-split-legend-item.none')).toHaveAttribute('aria-pressed', 'false');
+    await expect(chart.locator('.effort-type-split-segment.none')).toHaveCount(0);
+
+    await chooseQuarter(page, '2026Q4');
+    await expect(chart.locator('.effort-type-split-segment.product')).toBeVisible();
+    await expect(chart.locator('.effort-type-split-legend button')).toHaveText(['Excluded Capacity', 'Ad Hoc', 'Product', 'Tech']);
+    await expect(chart.locator('.effort-type-split-segment.none')).toHaveCount(0);
 });

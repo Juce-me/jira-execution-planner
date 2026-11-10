@@ -162,14 +162,14 @@ test('an explicit initiative-grouping choice survives new initiative data', () =
 });
 
 test('the Catch Up filter state round-trips through local state and per-group snapshots', () => {
-    ['engStatusFilter', 'engPriorityFilter', 'engProjectTrackFilter'].forEach((key) => {
+    ['engStatusFilter', 'engPriorityFilter', 'engProjectTrackFilter', 'engAllocationFilter'].forEach((key) => {
         const occurrences = dashboardSource.split(key).length - 1;
         assert.ok(
             occurrences >= 4,
             `Expected ${key} in local state, the per-group default, the snapshot and the restore (found ${occurrences})`
         );
     });
-    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, names: entityNames })'));
+    assert.ok(dashboardSource.includes('buildEngCatchUpFacetModel({ tasks: engFilterScopeTasks, isTechTask, epicDetails, workModel, names: entityNames })'));
     assert.ok(dashboardSource.includes('engCatchUpFilters.admitsProjectTrack(task)'));
 });
 

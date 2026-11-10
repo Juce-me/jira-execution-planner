@@ -1311,12 +1311,15 @@ export function useStatsDerivedC({
         const weightedTech = computePriorityWeighted(scopedTech.priorities, effectivePriorityWeightMap);
         const straightRate = computeRate(scoped);
         const weightedRate = computeRate(weighted);
+        // DELIVERY teams carry a No Allocation bucket; Legacy rows keep their keys.
+        const scopedNone = team.projects?.none ? getTeamScopedMetrics(team, 'none') : null;
         return {
             id: team.id || team.name || 'unknown',
             name: getStatsTeamLabel(team),
             straight: scoped,
             product: scopedProduct,
             tech: scopedTech,
+            ...(scopedNone ? { none: scopedNone, weightedNone: computePriorityWeighted(scopedNone.priorities, effectivePriorityWeightMap) } : {}),
             weighted,
             weightedProduct,
             weightedTech,

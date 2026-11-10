@@ -268,24 +268,13 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
         if not config.sprint_identity:
             continue
         snapshot = load_snapshot(auth_context, config)
-        rows = [] if snapshot.payload is None else [
-            (config, item) for item in in_range_sprints(config, snapshot.payload)]
-        incomplete = snapshot.payload is None
-        observed = config.observed_source
-        if observed is not None:
-            # Board rows win a same-name tie; the issue scan only adds quarters the Board lacks.
-            scanned = load_snapshot(auth_context, observed)
-            if scanned.payload is not None:
-                names = {item.get('name') for _source, item in rows}
-                rows += [(observed, item) for item in in_range_sprints(observed, scanned.payload)
-                         if item.get('name') not in names]
-                incomplete = snapshot.payload is None and not rows
-        for source, item in rows:
+        rows = [] if snapshot.payload is None else in_range_sprints(config, snapshot.payload)
+        for item in rows:
             if str(item.get('id')) == str(sprint_id):
                 if quarter is not None and item.get('name') != quarter:
                     raise WorkConfigError('sprint_catalog_mismatch')
-                return source, item
-        pending = pending or incomplete
+                return config, item
+        pending = pending or snapshot.payload is None
     if pending:
         raise SprintCatalogPending()
     raise WorkConfigError('sprint_catalog_mismatch')
@@ -413,53 +402,65 @@ def source_diagnostics(state, code, *snapshots):
 
 
 def collect_sprint_values(auth_context, sources):
-    """Range-agnostic Sprint values observed by every saved source, one row per name.
+    """Range-agnostic Sprint values observed by every saved source, one row per name and configuration.
 
-    Reads the stored snapshots only (never Jira) and merges Board rows with the issue-scan
-    supplement.  Names are the catalogs' quarter-shaped values; ``canonical`` says whether the
-    value is a valid range boundary.  Output carries no site, project, board or token data.
+    Reads the stored snapshots only (never Jira); a configuration has exactly one source.  Two Board
+    sources that share one Board (equal ``sprint_identity``) each list only the rows inside their own
+    quarter range; a configuration with its own Board or a Sprint-field source stays range-agnostic.
+    A name observed by more than one configuration is one row per configuration whose display-only
+    ``label`` is ``<name> - <configuration id>``; ``value`` stays the bare name.  Names are the catalogs'
+    quarter-shaped values; ``canonical`` says whether the value is a valid range boundary.  Output
+    carries no site, project, board or token data.
     """
-    values, summaries = {}, []
+    values, summaries, order = {}, [], {}
+    board_identities = [
+        item.sprint_identity for item in sources
+        if item.source_mode == work_structure_service.SOURCE_MODE_BOARD and item.sprint_identity
+    ]
     for config in sources:
         configuration_id = config.configuration_id
+        order.setdefault(configuration_id, len(order))
         summary = {'configurationId': configuration_id, 'sourceMode': config.source_mode or 'board',
                    'state': 'setup_required'}
         snapshots = []
         if config.sprint_identity:
             summary['state'] = 'pending'
-            for source in (config, config.observed_source):
-                if source is None or not source.sprint_identity:
-                    continue
-                snapshot = sprint_source_snapshot(auth_context, source)
-                snapshots.append(snapshot)
-                if snapshot.payload is None:
-                    continue
+            shared_board = (config.source_mode == work_structure_service.SOURCE_MODE_BOARD
+                            and board_identities.count(config.sprint_identity) > 1)
+            snapshot = sprint_source_snapshot(auth_context, config)
+            snapshots.append(snapshot)
+            if snapshot.payload is not None:
                 summary['state'] = 'ready'
-                for item in snapshot.payload:
+                payload = in_range_sprints(config, snapshot.payload) if shared_board else snapshot.payload
+                for item in payload:
                     name = str(item.get('name') or '') if isinstance(item, dict) else ''
                     sprint_id = item.get('id') if isinstance(item, dict) else None
                     if not name or isinstance(sprint_id, bool) or not isinstance(sprint_id, int):
                         continue
-                    row = values.setdefault(name, {'states': set(), 'ids': set(), 'configs': set()})
+                    row = values.setdefault(name, {}).setdefault(configuration_id, {'states': set(), 'ids': set()})
                     row['states'].add(str(item.get('state') or '').lower())
                     row['ids'].add(sprint_id)
-                    row['configs'].add(configuration_id)
         code = None if config.sprint_identity else (config.scope_error or 'configuration_incomplete')
         summary['diagnostics'] = source_diagnostics(summary['state'], code, *snapshots)
         summaries.append(summary)
     rows = []
-    for name, row in values.items():
+    for name, by_configuration in values.items():
         try:
             work_structure_service.parse_quarter(name)
             canonical = True
         except WorkConfigError:
             canonical = False
-        state = min(row['states'], key=lambda value: _STATE_RANK.get(value, 9))
-        rows.append({
-            'value': name, 'canonical': canonical, 'state': state,
-            'sprintIds': sorted(row['ids']),
-            'configurationIds': sorted(item for item in row['configs'] if item),
-        })
+        shared = len(by_configuration) > 1
+        for configuration_id, row in by_configuration.items():
+            rows.append({
+                'value': name, 'label': f'{name} - {configuration_id}' if shared else name,
+                'canonical': canonical,
+                'state': min(row['states'], key=lambda value: _STATE_RANK.get(value, 9)),
+                'sprintIds': sorted(row['ids']),
+                'configurationIds': [configuration_id] if configuration_id else [],
+                '_order': order[configuration_id],
+            })
+    rows.sort(key=lambda row: row.pop('_order'))
     rows.sort(key=lambda row: row['value'], reverse=True)
     return rows, summaries
 
@@ -618,3 +619,116 @@ def save_work_structure_config():
             'error': 'work_configuration_save_failed', 'status': 'error',
             'message': 'The work configuration could not be saved.',
         }), 500
+
+
+# --- Allocation option values ----------------------------------------------------
+
+_ALLOCATION_FIELD_PATTERN = re.compile(r'customfield_([0-9]{1,32})')
+_ALLOCATION_PROJECT_PATTERN = re.compile(r'[A-Za-z][A-Za-z0-9_]{0,63}')
+_ALLOCATION_TYPE_PATTERN = re.compile(r'[0-9]{1,32}')
+_ALLOCATION_QUERY_MAX = 255
+_ALLOCATION_TIMEOUT_SECONDS = 15
+
+
+def _allocation_request_error(message):
+    return jsonify({'error': 'invalid_allocation_options_request', 'status': 'error', 'message': message}), 400
+
+
+def _unique_values(values):
+    return [{'value': value} for value in dict.fromkeys(value for value in values if value)]
+
+
+def _raise_on_expired_sign_in(response):
+    if response.status_code == 401:
+        raise AuthError('auth_required', 'Atlassian authentication is required.')
+
+
+def _createmeta_allocation_values(auth_context, field_id, project_key, issue_type_id):
+    """Complete option list from the user's create metadata, or None when unreadable, absent or unlisted
+    (so autocomplete runs).  Only an expired sign-in propagates."""
+    try:
+        response = get_jira_server().current_jira_get(
+            f'/rest/api/3/issue/createmeta/{project_key}/issuetypes/{issue_type_id}',
+            params={'maxResults': 200}, timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
+        )
+        _raise_on_expired_sign_in(response)
+        if response.status_code != 200:
+            return None
+        body = response.json() or {}
+        fields = body.get('fields') or body.get('values') or []
+        field = next((item for item in fields if isinstance(item, dict) and item.get('fieldId') == field_id), None)
+        allowed = field.get('allowedValues') if field is not None else None
+        if not allowed or not isinstance(allowed, list):
+            return None
+        return [str(item.get('value') or '').strip() for item in allowed if isinstance(item, dict)]
+    except AuthError:
+        raise
+    except Exception:
+        return None
+
+
+def _autocomplete_allocation_values(auth_context, field_number, query):
+    """Prefix-only, capped JQL suggestions (the labels precedent), or None on a non-200."""
+    response = get_jira_server().current_jira_get(
+        '/rest/api/3/jql/autocompletedata/suggestions',
+        params={'fieldName': f'cf[{field_number}]', 'fieldValue': query},
+        timeout=_ALLOCATION_TIMEOUT_SECONDS, context=auth_context,
+    )
+    _raise_on_expired_sign_in(response)
+    if response.status_code != 200:
+        return None
+    values = []
+    for item in (response.json() or {}).get('results') or []:
+        value = str((item or {}).get('value') or '').strip()
+        if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+            value = value[1:-1]
+        values.append(value)
+    return values
+
+
+@bp.route('/api/work-structure/allocation-options', methods=['GET'])
+def get_work_structure_allocation_options():
+    """Allocation values for the DELIVERY Product/Tech mapping, read with the user's own Jira (no write).
+
+    The parameters come from the editor draft, so an unsaved field choice is listable.  createmeta
+    gives the complete list; autocomplete is the fallback; when both fail the editor takes typed values.
+    """
+    try:
+        auth_context, failure = _feature_context()
+        if failure is not None:
+            return failure
+        if not work_structure_service.work_configurations_enabled():
+            return work_error_response(WorkConfigError('configuration_feature_disabled'))
+        field_id = request.args.get('fieldId', '').strip()
+        project_key = request.args.get('projectKey', '').strip()
+        issue_type_id = request.args.get('issueTypeId', '').strip()
+        query = request.args.get('query', '').strip()
+        field_match = _ALLOCATION_FIELD_PATTERN.fullmatch(field_id)
+        if field_match is None:
+            return _allocation_request_error('fieldId must be a custom field id.')
+        if project_key and _ALLOCATION_PROJECT_PATTERN.fullmatch(project_key) is None:
+            return _allocation_request_error('Invalid project key.')
+        if issue_type_id and _ALLOCATION_TYPE_PATTERN.fullmatch(issue_type_id) is None:
+            return _allocation_request_error('Invalid issue type id.')
+        if len(query) > _ALLOCATION_QUERY_MAX:
+            return _allocation_request_error('Query is too long.')
+        body = {'options': [], 'source': None, 'complete': False}
+        values = None
+        if project_key and issue_type_id:
+            values = _createmeta_allocation_values(auth_context, field_id, project_key, issue_type_id)
+        if values is not None:
+            needle = query.casefold()
+            body = {'options': _unique_values(v for v in values if needle in v.casefold()),
+                    'source': 'createmeta', 'complete': True}
+        else:
+            values = _autocomplete_allocation_values(auth_context, field_match.group(1), query)
+            if values is not None:
+                body = {'options': _unique_values(values), 'source': 'autocomplete', 'complete': False}
+        response = jsonify(body)
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+    except AuthError:
+        return _auth_required_response()
+    except Exception:
+        _wsr_log.exception('Allocation option read failed')
+        return jsonify({'options': [], 'source': None, 'complete': False})

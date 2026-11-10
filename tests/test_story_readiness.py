@@ -845,14 +845,17 @@ class NewModelStoryReadinessTests(unittest.TestCase):
         {'id': 'team-b', 'name': 'Beta', 'labels': ['alias_b']},
     ]}
 
-    def roles(self):
+    def roles(self, allocation_types=None):
         from tests.test_planning_work_profiles import bundle, context
         from backend.services.planning_work import WorkRoles
-        return WorkRoles(context('2027Q1', bundle()))
 
-    def compute(self, search):
+        def mutate(value):
+            value['configurations'][1]['allocationTypes'] = list(allocation_types)
+        return WorkRoles(context('2027Q1', bundle(mutate if allocation_types else None)))
+
+    def compute(self, search, roles=None):
         eng_routes.bind_server_globals(vars(eng_routes))
-        roles = self.roles()
+        roles = roles or self.roles()
         config = roles.flat_admin_settings()
         calls = []
 
@@ -935,7 +938,7 @@ class NewModelStoryReadinessTests(unittest.TestCase):
         self.assertEqual([item['key'] for item in result['epics']], ['PLAN-1'])
         self.assertEqual(result['epics'][0]['missingTeams'],
                          [{'id': 'team-b', 'name': 'Beta', 'reason': 'team_uncovered'}])
-        self.assertEqual(result['epics'][0]['projectClass'], 'other')
+        self.assertEqual(result['epics'][0]['projectClass'], 'none')  # its blank Allocation is No Allocation
         discovery = calls[0]['jql']
         self.assertIn('issuetype = 10001', discovery)
         self.assertIn('status not in (Done, Killed, Incomplete, Postponed)', discovery)
@@ -945,6 +948,33 @@ class NewModelStoryReadinessTests(unittest.TestCase):
         self.assertEqual(len(children), 1)
         self.assertNotIn('customfield_10014', children[0])  # Epic Link is Story->Epic only
         self.assertNotIn('issuetype = Story', children[0])
+
+    def test_delivery_readiness_epic_project_class_is_its_allocation_class(self):
+        from tests.test_planning_work_profiles import ALLOCATION
+        values = {'PLAN-1': {'value': 'Platform'}, 'PLAN-2': {'value': 'Growth'}, 'PLAN-3': {'value': 'Unmapped'}}
+
+        def search(payload):
+            jql = payload['jql']
+            if 'issuetype = 10001' in jql and 'labels in' in jql:
+                return _FakeResponse(200, {'issues': [{'key': key, 'fields': {'project': {'key': 'PLAN'}}}
+                                                      for key in (*values, 'PLAN-4')], 'isLast': True})
+            if 'issuetype = 10002' in jql:
+                return _FakeResponse(200, {'issues': [], 'isLast': True})
+            rows = []
+            for key in (*values, 'PLAN-4'):
+                row = self.initiative(key, ['alias_a'])
+                if key in values:
+                    row['fields'][ALLOCATION] = values[key]
+                rows.append(row)
+            return _FakeResponse(200, {'issues': rows, 'isLast': True})
+        roles = self.roles([{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}])
+        result, calls = self.compute(search, roles)
+        self.assertEqual({item['key']: item['projectClass'] for item in result['epics']},
+                         {'PLAN-1': 'tech', 'PLAN-2': 'product', 'PLAN-3': 'none', 'PLAN-4': 'none'})
+        enrichment = [call for call in calls if call['jql'].startswith('key in (')]
+        self.assertTrue(enrichment and all(ALLOCATION in call['fields'] for call in enrichment))
+        children = [call for call in calls if 'issuetype = 10002' in call['jql']]
+        self.assertTrue(all(ALLOCATION not in call['fields'] for call in children))
 
     def ancestor_search(self, ancestor_type):
         initiative = self.initiative('PLAN-1', ['alias_a', 'alias_b'])

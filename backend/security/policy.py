@@ -106,6 +106,7 @@ ENDPOINT_POLICIES = (
     EndpointPolicy("work-structure-config-read", "/api/work-structure/config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("work-structure-config-write", "/api/work-structure/config", frozenset({"POST"}), "shared_admin_write"),
     EndpointPolicy("work-structure-sprint-values-read", "/api/work-structure/sprint-values", PUBLIC_METHODS, "authenticated_read"),
+    EndpointPolicy("work-structure-allocation-options-read", "/api/work-structure/allocation-options", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-read", "/api/groups-config", PUBLIC_METHODS, "authenticated_read"),
     EndpointPolicy("settings-groups-write", "/api/groups-config", frozenset({"POST"}), "user_write"),
     EndpointPolicy("settings-group-preferences-write", "/api/groups-preferences", frozenset({"POST"}), "user_write"),

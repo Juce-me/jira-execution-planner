@@ -22,6 +22,8 @@ export const SHARE_VIEW_BOARD_SCOPES = Object.freeze(['component', 'all_work']);
 
 // Board facet option ids the link may name (the Board's own facets, eng/engBoardFilters.js); priority uses SHARE_VIEW_PRIORITY_IDS.
 export const SHARE_VIEW_BOARD_PROJECT_IDS = Object.freeze(['tech', 'product', 'other']);
+// DELIVERY Allocation option ids (`alloc`, eng/engCatchUpFilters.js). `none` in `alloc` and `bprojects` is the explicit empty list: No Allocation only.
+export const SHARE_VIEW_ALLOCATION_IDS = Object.freeze(['product', 'tech']);
 export const SHARE_VIEW_BOARD_ASSIGNEE_IDS = Object.freeze(['unassigned']);
 
 // Planning is the table only (#323): `list` still parses so an old Planning List link opens, as the table (resolver.js).
@@ -89,6 +91,7 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
     priority: null,
     track: undefined,
     lanes: Object.freeze({ product: true, tech: true }),
+    alloc: undefined,
     initiatives: null,
     sort: DEFAULT_ENG_EPIC_SORT,
     layout: 'table',
@@ -117,8 +120,8 @@ export const SHARE_VIEW_DEFAULTS = Object.freeze({
 // design's per-view columns: Planning `rows` applies to the table and `initiatives` and `sort` to
 // the retired list, which the app no longer writes; Statistics keys follow SHARE_VIEW_STATS_KEYS_BY_VIEW.
 export const SHARE_VIEW_KEYS_BY_MODE = Object.freeze({
-    'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
-    planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'layout', 'rows', 'initiatives', 'sort', 'focus']),
+    'catch-up': Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'alloc', 'initiatives', 'sort', 'alerts', 'alertTeam', 'focus']),
+    planning: Object.freeze(['teams', 'find', 'status', 'priority', 'track', 'lanes', 'alloc', 'layout', 'rows', 'initiatives', 'sort', 'focus']),
     board: Object.freeze(['scope', 'find', 'bpriority', 'bprojects', 'bassignee', 'btrack', 'bcolumn', 'focus']),
     statistics: Object.freeze(['teams', 'stats', 'from', 'to', 'lead', 'n', 'lproject', 'lexclude', 'lstatus', 'lgroupby']),
 });
@@ -150,6 +153,7 @@ export const SHARE_VIEW_CATEGORY_BY_KEY = Object.freeze({
     priority: 'filters',
     track: 'filters',
     lanes: 'filters',
+    alloc: 'filters',
     initiatives: 'filters',
     sort: 'filters',
     bpriority: 'filters',

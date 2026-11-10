@@ -9,13 +9,15 @@ import PlanningProjectSplitBar from '../../frontend/src/eng/PlanningProjectSplit
 import EngAlertsPanel from '../../frontend/src/eng/EngAlertsPanel.jsx';
 import { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } from '../../frontend/src/eng/engCatchUpFilters.js';
 import { resolveEntityNames } from '../../frontend/src/eng/engWorkModel.js';
-import { buildSelectedProjectStats, buildExcludedProjectStats, buildSelectedPlanningTasksList } from '../../frontend/src/eng/planningSelectionStats.js';
+import { buildSelectedProjectStats, buildExcludedProjectStats, buildSelectedPlanningTasksList, buildSelectedAdHocStats } from '../../frontend/src/eng/planningSelectionStats.js';
 import { buildSelectedProjectEntries } from '../../frontend/src/eng/planningCapacityUtils.js';
-import { classifyCapacityIssue } from '../../frontend/src/capacityClassification.mjs';
+import { isTechIssue } from '../../frontend/src/capacityClassification.mjs';
 import { useEngSprintData } from '../../frontend/src/eng/useEngSprintData.js';
 
-const task = (key, sp, epicKey) => ({
-    key, fields: { customfield_10004: sp, epicKey, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: 'To Do' }, priority: { name: 'Medium' } },
+// `stamp` is the server's DELIVERY Allocation classification (`fields.projectClassification`).
+const task = (key, sp, epicKey, stamp) => ({
+    key, fields: { customfield_10004: sp, epicKey, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: 'To Do' }, priority: { name: 'Medium' },
+        ...(stamp ? { projectClassification: stamp } : {}) },
 });
 const normalize = value => String(value || '').trim().toUpperCase();
 
@@ -47,8 +49,8 @@ function AlertsHarness({ workModel }) {
 }
 
 function FiltersHarness({ workModel }) {
-    const tasks = [task('PLAN-E1', 8, 'PLAN-I1')];
-    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: () => false, names: resolveEntityNames(workModel) }), [workModel]);
+    const tasks = [task('PLAN-E1', 8, 'PLAN-I1'), task('PLAN-E2', 5, 'PLAN-I1', 'tech')];
+    const model = React.useMemo(() => buildEngCatchUpFacetModel({ tasks, isTechTask: item => isTechIssue(item, new Set()), workModel, names: resolveEntityNames(workModel) }), [workModel]);
     const resolved = React.useMemo(() => resolveEngCatchUpFilters({ model }), [model]);
     return (
         <EngFilterBar
@@ -58,18 +60,22 @@ function FiltersHarness({ workModel }) {
     );
 }
 
-function SplitHarness({ workModel, pair, compact }) {
-    const tasks = [task('PLAN-E1', 8, 'PLAN-I1')];
+// `stamp` marks the Epic as the server stamps it in DELIVERY; Legacy tasks carry none.
+// `allocation`: Product 8 SP, Tech 8 SP (3 SP under an Ad Hoc Initiative) and No Allocation 7 SP, all stamped.
+function SplitHarness({ pair, compact, stamp }) {
+    const tasks = pair === 'allocation'
+        ? [task('PLAN-E1', 8, 'PLAN-I1', 'product'), task('PLAN-E2', 3, 'PLAN-I2', 'tech'), task('PLAN-E4', 5, 'PLAN-I4', 'tech'), task('PLAN-E3', 7, 'PLAN-I3', 'none')]
+        : [task('PLAN-E1', 8, 'PLAN-I1', stamp), ...(pair === 'mixed' ? [task('PLAN-E2', 5, 'PLAN-I2', 'tech')] : [])];
     const excluded = new Set(pair === 'excluded' ? ['PLAN-I1'] : []);
-    const adHoc = new Set(pair === 'ad_hoc' ? ['PLAN-I1'] : []);
+    const adHoc = new Set(pair === 'ad_hoc' ? ['PLAN-I1'] : pair === 'allocation' ? ['PLAN-I2'] : []);
     const planning = buildSelectedPlanningTasksList(tasks, excluded, normalize);
-    const stats = buildSelectedProjectStats(planning, new Set(), adHoc, workModel);
+    const stats = buildSelectedProjectStats(planning, new Set(), adHoc);
     const entries = buildSelectedProjectEntries({ showPlanning: true, selectedProjectStats: stats, capacityEnabled: false, projectCapacity: {} });
-    const adHocSp = planning.reduce((sum, item) => sum + (classifyCapacityIssue(item, { techProjectKeys: new Set(), adHocEpicSet: adHoc, workModel }).capacityType === 'ad_hoc' ? 8 : 0), 0);
+    const adHocStats = buildSelectedAdHocStats(planning, new Set(), adHoc);
     return (
         <PlanningProjectSplitBar
-            workModel={workModel} compact={compact} selectedProjectEntries={entries} adHocProductSP={adHocSp}
-            excludedProjectStats={buildExcludedProjectStats(tasks, excluded, new Set(), normalize, workModel)}
+            compact={compact} selectedProjectEntries={entries} adHocProductSP={adHocStats.PRODUCT || 0} adHocStats={adHocStats}
+            excludedProjectStats={buildExcludedProjectStats(tasks, excluded, new Set(), normalize)}
         />
     );
 }

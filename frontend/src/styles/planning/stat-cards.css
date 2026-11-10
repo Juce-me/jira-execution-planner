@@ -496,6 +496,44 @@
             justify-content: flex-end;
         }
 
+        /* DELIVERY Ad Hoc on the Tech/No Allocation side is a child of that side's fill, painted beneath its label
+           (also on hover). The Product side keeps its sibling subsegment. */
+        .project-bar-fill.tech > .capacity-bar-fill-label,
+        .project-bar-fill.none > .capacity-bar-fill-label {
+            position: relative;
+            z-index: 1;
+        }
+
+        /* DELIVERY Ad Hoc on the Tech side: the Tech-toned counterpart of product-adhoc. */
+        .project-bar-fill.tech-adhoc {
+            background: repeating-linear-gradient(
+                135deg,
+                color-mix(in srgb, #FE5000 32%, white),
+                color-mix(in srgb, #FE5000 32%, white) 5px,
+                color-mix(in srgb, #FE5000 24%, white) 5px,
+                color-mix(in srgb, #FE5000 24%, white) 10px
+            );
+            z-index: 0;
+        }
+
+        /* DELIVERY No Allocation work: drawn last, in the neutral muted tone. */
+        .project-bar-fill.none {
+            border-radius: 0 6px 6px 0;
+            background: color-mix(in srgb, var(--muted) 45%, white);
+            justify-content: flex-end;
+        }
+
+        .project-bar-fill.none-adhoc {
+            background: repeating-linear-gradient(
+                135deg,
+                color-mix(in srgb, var(--muted) 64%, white),
+                color-mix(in srgb, var(--muted) 64%, white) 5px,
+                color-mix(in srgb, var(--muted) 52%, white) 5px,
+                color-mix(in srgb, var(--muted) 52%, white) 10px
+            );
+            z-index: 0;
+        }
+
         .project-bar-fill .capacity-bar-fill-label {
             color: var(--text-primary);
         }

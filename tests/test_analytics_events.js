@@ -327,9 +327,9 @@ test('schema rejects unsafe values and keeps safe numeric, enum, and bucket valu
     );
 });
 
-test('effort split series_type accepts the ad_hoc and excluded_capacity enum values', async () => {
+test('effort split series_type accepts the ad_hoc, excluded_capacity and no_allocation enum values', async () => {
     const { sanitizeAnalyticsParams } = await loadEvents();
-    for (const seriesType of ['ad_hoc', 'excluded_capacity', 'product', 'tech']) {
+    for (const seriesType of ['ad_hoc', 'excluded_capacity', 'product', 'tech', 'no_allocation']) {
         assert.deepEqual(
             sanitizeAnalyticsParams({
                 feature_name: 'statistics',

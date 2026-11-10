@@ -1,22 +1,26 @@
-// Task 4B/4C/4D (frontend): the combined `rnd_2027` lane. Constants re-derive the Python reference fixture
-// (tests/fixtures/work_structure_reference.py: NEW_MODEL_EXPECTED_PAIRS, SP oracle) in JS; Legacy stays pinned.
+// Task 4B/4C/4D (frontend): the one `rnd_2027` request lane, split Product/Tech by the server's Allocation stamp.
+// Constants re-derive the Python reference fixture (tests/fixtures/work_structure_reference.py:
+// NEW_MODEL_EXPECTED_PAIRS, SP oracle) in JS; Legacy stays pinned.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 
 const NEW = 'rnd_2027';
-const sp = (key, value, { epic = 'PLAN-I1', status = 'To Do' } = {}) => ({
+const sp = (key, value, { epic = 'PLAN-I1', status = 'To Do', stamp } = {}) => ({
     key,
-    fields: { customfield_10004: value, epicKey: epic, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: status } },
+    fields: { customfield_10004: value, epicKey: epic, projectKey: 'PLAN', teamId: 'team-a', teamName: 'Team A', status: { name: status },
+        ...(stamp ? { projectClassification: stamp } : {}) },
 });
 const getTeamInfo = issue => ({ id: issue.fields.teamId, name: issue.fields.teamName });
 const normalizeEpicKey = value => String(value || '').trim().toUpperCase();
 
 // NEW_MODEL_EXPECTED_PAIRS (8-SP leaf under Initiative PLAN-I1)
 const PAIRS = {
-    ordinary: { excluded: [], adHoc: [], combined: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
-    ad_hoc: { excluded: [], adHoc: ['PLAN-I1'], combined: 8, adHocSp: 8, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
-    excluded: { excluded: ['PLAN-I1'], adHoc: [], combined: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 0, excludedReport: 8 },
+    ordinary: { excluded: [], adHoc: [], combined: 8, product: 8, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    tech: { stamp: 'tech', excluded: [], adHoc: [], combined: 8, product: 0, tech: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    unmapped: { stamp: 'none', excluded: [], adHoc: [], combined: 8, product: 0, tech: 0, none: 8, adHocSp: 0, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    ad_hoc: { excluded: [], adHoc: ['PLAN-I1'], combined: 8, product: 8, tech: 0, adHocSp: 8, selectedTeam: 8, includedAllocation: 8, excludedReport: 0 },
+    excluded: { excluded: ['PLAN-I1'], adHoc: [], combined: 0, product: 0, tech: 0, adHocSp: 0, selectedTeam: 8, includedAllocation: 0, excludedReport: 8 },
 };
 const SP_SOURCE_VALUES = [null, '', 8, '3.5', 'n/a'];
 const SP_EXPECTED_TOTAL = 11.5;
@@ -30,16 +34,24 @@ async function load() {
     return { ...classification, ...stats, ...capacity };
 }
 
-test('classifyCapacityIssue: combined model never says Product/Tech; Legacy output unchanged', async () => {
-    const { classifyCapacityIssue } = await load();
+test('classifyCapacityIssue: the Allocation stamp decides Product/Tech/No Allocation, Ad Hoc follows it; Legacy output unchanged', async () => {
+    const { classifyCapacityIssue, isTechIssue } = await load();
     const adHocEpicSet = new Set(['PLAN-I1']);
     const issue = sp('PLAN-E1', 8);
-    assert.deepEqual(classifyCapacityIssue(issue, { workModel: NEW, adHocEpicSet: new Set() }),
-        { projectType: 'other', capacityType: 'other', productSubtype: null });
-    assert.deepEqual(classifyCapacityIssue(issue, { workModel: NEW, adHocEpicSet }),
-        { projectType: 'other', capacityType: 'ad_hoc', productSubtype: null });
-    // A Tech project key cannot reattribute combined work.
-    assert.equal(classifyCapacityIssue(issue, { workModel: NEW, techProjectKeys: new Set(['PLAN']) }).projectType, 'other');
+    const tech = sp('PLAN-E2', 8, { stamp: 'tech' });
+    const product = sp('PLAN-E3', 8, { stamp: 'product' });
+    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet: new Set() }), { projectType: 'tech', capacityType: 'tech', productSubtype: null });
+    assert.deepEqual(classifyCapacityIssue(product, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
+    assert.deepEqual(classifyCapacityIssue(issue, {}), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
+    assert.deepEqual(classifyCapacityIssue(tech, { adHocEpicSet }), { projectType: 'tech', capacityType: 'ad_hoc', productSubtype: null });
+    assert.deepEqual(classifyCapacityIssue(sp('PLAN-E5', 8, { stamp: 'none' }), {}), { projectType: 'none', capacityType: 'none', productSubtype: null });
+    // The stamp beats the project key both ways; a Board child carries it at the top level.
+    assert.equal(classifyCapacityIssue(product, { techProjectKeys: new Set(['PLAN']) }).projectType, 'product');
+    assert.equal(classifyCapacityIssue({ key: 'PLAN-E4', projectClassification: 'tech' }, {}).projectType, 'tech');
+    assert.equal(isTechIssue(tech, new Set()), true);
+    assert.equal(isTechIssue(product, new Set(['PLAN'])), false);
+    assert.equal(isTechIssue(issue, new Set(['PLAN'])), true);
+    assert.equal(isTechIssue({ key: 'OLD-1', fields: {} }, new Set(['OLD'])), true);
     // Legacy: pinned (LEGACY_CLASSIFICATION_EXPECTED).
     assert.deepEqual(classifyCapacityIssue(issue, { adHocEpicSet: new Set() }), { projectType: 'product', capacityType: 'product', productSubtype: 'standard' });
     assert.deepEqual(classifyCapacityIssue(issue, { workModel: 'legacy', adHocEpicSet }), { projectType: 'product', capacityType: 'ad_hoc', productSubtype: 'ad_hoc' });
@@ -49,7 +61,7 @@ test('classifyCapacityIssue: combined model never says Product/Tech; Legacy outp
 for (const [name, pair] of Object.entries(PAIRS)) {
     test(`8-SP ${name} pair keeps the separate denominators and never doubles to 16 SP`, async () => {
         const u = await load();
-        const tasks = [sp('PLAN-E1', 8)];
+        const tasks = [sp('PLAN-E1', 8, { stamp: pair.stamp })];
         const excludedEpicSet = new Set(pair.excluded);
         const adHocEpicSet = new Set(pair.adHoc);
         const techProjectKeys = new Set();
@@ -57,18 +69,22 @@ for (const [name, pair] of Object.entries(PAIRS)) {
         const selectedPlanningTasksList = u.buildSelectedPlanningTasksList(tasks, excludedEpicSet, normalizeEpicKey);
 
         assert.equal(u.buildSelectedTeamStats(selectedTasksList, getTeamInfo)['team-a'].storyPoints, pair.selectedTeam);
-        const allocation = u.buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet, NEW);
-        assert.equal(allocation.OTHER || 0, pair.includedAllocation);
-        assert.equal(allocation.PRODUCT, undefined);
-        assert.equal(allocation.TECH, undefined);
-        assert.equal((u.buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey, NEW).OTHER) || 0, pair.excludedReport);
-        const teamProject = u.buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet, NEW);
-        assert.equal(teamProject['team-a']?.other || 0, pair.includedAllocation);
-        assert.equal(teamProject['team-a']?.product || 0, 0);
-        assert.equal(teamProject['team-a']?.tech || 0, 0);
-        const adHocSp = selectedPlanningTasksList.reduce((sum, task) => sum + (u.classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet, workModel: NEW }).capacityType === 'ad_hoc' ? 8 : 0), 0);
+        const allocation = u.buildSelectedProjectStats(selectedPlanningTasksList, techProjectKeys, adHocEpicSet);
+        assert.equal(allocation.PRODUCT || 0, pair.product);
+        assert.equal(allocation.TECH || 0, pair.tech);
+        assert.equal(allocation.NONE || 0, pair.none || 0);
+        assert.equal(allocation.OTHER, undefined);
+        const excludedReport = u.buildExcludedProjectStats(selectedTasksList, excludedEpicSet, techProjectKeys, normalizeEpicKey);
+        assert.equal((excludedReport.PRODUCT || 0) + (excludedReport.TECH || 0) + (excludedReport.NONE || 0), pair.excludedReport);
+        assert.equal(excludedReport.OTHER, undefined);
+        const teamProject = u.buildSelectedTeamProjectStats(selectedPlanningTasksList, getTeamInfo, techProjectKeys, adHocEpicSet);
+        assert.equal(teamProject['team-a']?.product || 0, pair.product);
+        assert.equal(teamProject['team-a']?.tech || 0, pair.tech);
+        assert.equal(teamProject['team-a']?.none || 0, pair.none || 0);
+        assert.equal(teamProject['team-a']?.other, undefined);
+        const adHocSp = selectedPlanningTasksList.reduce((sum, task) => sum + (u.classifyCapacityIssue(task, { techProjectKeys, adHocEpicSet }).capacityType === 'ad_hoc' ? 8 : 0), 0);
         assert.equal(adHocSp, pair.adHocSp);
-        assert.equal(pair.combined, pair.includedAllocation);
+        assert.equal(pair.combined, pair.product + pair.tech + (pair.none || 0));
     });
 }
 
@@ -91,55 +107,165 @@ test('SP parser oracle: null, empty, 8, 3.5 and n/a aggregate to 11.5 and stay d
     assert.deepEqual(tasks.map(formatStoryPointsLabel), ['0 SP', '0 SP', '8 SP', '3.5 SP', '0 SP']);
 });
 
-test('combined capacity: team stats use one `other` breakdown, project capacity one OTHER bucket', async () => {
+test('new-model capacity: team stats and project capacity use the Product/Tech buckets and the 70/30 split', async () => {
     const u = await load();
     const task = sp('PLAN-E1', 8);
     const stats = u.buildTeamCapacityStats({
-        showPlanning: true, capacityEnabled: true, capacityTasks: [task], normalizeStatus: value => String(value).toLowerCase(),
-        getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(), workModel: NEW,
+        showPlanning: true, capacityEnabled: true, capacityTasks: [task, sp('PLAN-E2', 5, { stamp: 'tech' })],
+        normalizeStatus: value => String(value).toLowerCase(), getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(),
     });
-    assert.deepEqual(stats['team-a'].other, { todoPending: 8, accepted: 0, postponed: 0 });
-    assert.equal(stats['team-a'].product.todoPending + stats['team-a'].tech.todoPending, 0);
+    assert.equal('other' in stats['team-a'], false);
+    assert.deepEqual(stats['team-a'].product, { todoPending: 8, accepted: 0, postponed: 0 });
+    assert.deepEqual(stats['team-a'].tech, { todoPending: 5, accepted: 0, postponed: 0 });
     const [entry] = u.buildTeamCapacityEntries(stats);
-    assert.equal(entry.total.todoPending, 8);
+    assert.equal(entry.total.todoPending, 13);
     const capacity = u.buildProjectCapacity({
         showPlanning: true, capacityEnabled: true, displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
-        selectedTeamProjectStats: {}, getTeamNetCapacity: () => 20, capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true, workModel: NEW,
+        selectedTeamProjectStats: { 'team-a': { product: 8, tech: 0 } }, getTeamNetCapacity: () => 20,
+        capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true,
     });
-    assert.deepEqual(capacity, { OTHER: 20 });
+    assert.deepEqual(capacity, { PRODUCT: 14, TECH: 6 });
+    // DELIVERY No Allocation work is its own bucket: counted in the Team total, never in Product; the split stays Product/Tech.
+    const delivery = u.buildTeamCapacityStats({
+        showPlanning: true, capacityEnabled: true, capacityTasks: [task, sp('PLAN-E2', 5, { stamp: 'tech' }), sp('PLAN-E3', 3, { stamp: 'none' })],
+        normalizeStatus: value => String(value).toLowerCase(), getTeamInfo, techProjectKeys: new Set(), adHocEpicSet: new Set(),
+    });
+    assert.deepEqual(delivery['team-a'].product, { todoPending: 8, accepted: 0, postponed: 0 });
+    assert.deepEqual(delivery['team-a'].none, { todoPending: 3, accepted: 0, postponed: 0 });
+    const [deliveryEntry] = u.buildTeamCapacityEntries(delivery);
+    assert.deepEqual(deliveryEntry.none, { todoPending: 3, accepted: 0, postponed: 0 });
+    assert.equal(deliveryEntry.total.todoPending, 16);
+    const deliveryTotals = u.buildCapacityTotals({ showPlanning: true, capacityEnabled: true, displayedTeamCapacityEntries: [deliveryEntry] });
+    assert.deepEqual(deliveryTotals.none, { todoPending: 3, accepted: 0, postponed: 0 });
+    assert.equal(deliveryTotals.total.todoPending, 16);
+    assert.deepEqual(u.buildProjectCapacity({
+        showPlanning: true, capacityEnabled: true, displayedTeamOptions: [{ id: 'team-a', name: 'Team A' }],
+        selectedTeamProjectStats: { 'team-a': { product: 8, tech: 0, none: 30 } }, getTeamNetCapacity: () => 20,
+        capacitySplit: { product: 0.7, tech: 0.3 }, showProduct: true, showTech: true,
+    }), { PRODUCT: 14, TECH: 6 });
     const legacy = u.buildTeamCapacityStats({
         showPlanning: true, capacityEnabled: true, capacityTasks: [task], normalizeStatus: value => String(value).toLowerCase(),
         getTeamInfo, techProjectKeys: new Set(),
     });
     assert.equal('other' in legacy['team-a'], false);
     assert.equal('other' in u.buildTeamCapacityEntries(legacy)[0], false);
+    assert.deepEqual(Object.keys(legacy['team-a']).sort(), ['name', 'product', 'tech']);
+    assert.deepEqual(Object.keys(u.buildTeamCapacityEntries(legacy)[0]).sort(), ['id', 'name', 'product', 'tech', 'total']);
+    assert.deepEqual(Object.keys(u.buildCapacityTotals({ showPlanning: true, capacityEnabled: true, displayedTeamCapacityEntries: u.buildTeamCapacityEntries(legacy) })).sort(), ['product', 'tech', 'total']);
 });
 
-test('combined Catch Up and Board filter models hide the Projects facet and never count Product/Tech', async () => {
+// DELIVERY Initiatives: I1 Product (two Epics), I2 Tech, I3 No Allocation, I4 unreadable (absent from the details map) = No Allocation.
+const ALLOCATION_TASKS = [sp('PLAN-E1', 8, { epic: 'PLAN-I1', stamp: 'product' }), sp('PLAN-E2', 3, { epic: 'PLAN-I1', stamp: 'product' }),
+    sp('PLAN-E3', 5, { epic: 'PLAN-I2', stamp: 'tech' }), sp('PLAN-E4', 2, { epic: 'PLAN-I3', stamp: 'none' }), sp('PLAN-E5', 1, { epic: 'PLAN-I4', stamp: 'none' })];
+const ALLOCATION_DETAILS = { 'PLAN-I1': { key: 'PLAN-I1', allocationClass: 'product' }, 'PLAN-I2': { key: 'PLAN-I2', allocationClass: 'tech' },
+    'PLAN-I3': { key: 'PLAN-I3', allocationClass: 'none' } };
+
+async function allocationFilters(allocation) {
     const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const { isTechIssue } = await load();
+    const model = buildEngCatchUpFacetModel({ tasks: ALLOCATION_TASKS, isTechTask: task => isTechIssue(task, new Set()), epicDetails: ALLOCATION_DETAILS, workModel: NEW });
+    return { model, resolved: resolveEngCatchUpFilters({ model, allocation }) };
+}
+
+test('DELIVERY Allocation facet counts Initiatives and offers No Allocation', async () => {
+    const { model, resolved } = await allocationFilters(undefined);
+    assert.deepEqual(model.facets.map(facet => facet.id), ['status', 'priority', 'projects', 'track']);
+    const facet = model.facets[2];
+    assert.equal(facet.label, 'Allocation');
+    assert.deepEqual(facet.options, [{ id: 'product', label: 'Product' }, { id: 'tech', label: 'Tech' }]);
+    assert.equal(facet.allowEmpty, true);
+    assert.equal(facet.showZeroCountOptions, true);
+    assert.equal(facet.emptyLabel, 'No Allocation');
+    assert.equal(facet.emptyDescription, 'No Allocation — showing epics under initiatives without a value');
+    // Counted per Initiative (deduped by epicKey), not per Epic; the unreadable Initiative is No Allocation.
+    assert.deepEqual(model.counts.projects, { product: 1, tech: 1 });
+    assert.equal(facet.emptyTotal, 2);
+    assert.equal(facet.neutralTotal, 4);
+    const [, , projectsView] = resolved.facetViews;
+    assert.equal(projectsView.isNeutral, true);
+    assert.equal(projectsView.admittedTotal, 4);
+    assert.deepEqual(ALLOCATION_TASKS.filter(task => resolved.admitsAllocation(resolved.allocationClassOf(task))).map(task => task.key),
+        ALLOCATION_TASKS.map(task => task.key));
+    // Zero-count options stay visible, like Project Track.
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const productOnly = buildEngCatchUpFacetModel({ tasks: ALLOCATION_TASKS.slice(0, 1), epicDetails: ALLOCATION_DETAILS, workModel: NEW });
+    assert.deepEqual(resolveEngCatchUpFilters({ model: productOnly }).facetViews[2].visibleOptions.map(option => [option.id, option.count]), [['product', 1], ['tech', 0]]);
+});
+
+test('allocation facet empty selection admits only none', async () => {
+    const { resolved } = await allocationFilters([]);
+    const projectsView = resolved.facetViews[2];
+    assert.equal(projectsView.isEmptySelection, true);
+    assert.equal(projectsView.admittedTotal, 2);
+    assert.deepEqual(ALLOCATION_TASKS.filter(task => resolved.admitsAllocation(resolved.allocationClassOf(task))).map(task => task.key), ['PLAN-E4', 'PLAN-E5']);
+    assert.equal(resolved.admitsAllocation('product'), false);
+    assert.equal(resolved.admitsAllocation('tech'), false);
+    assert.equal(resolved.admitsAllocation('none'), true);
+    const { describeFacetChip } = await import('../frontend/src/eng/engFilterFacets.js');
+    assert.deepEqual(describeFacetChip(projectsView, resolved.facets[2]).title, 'Allocation — only No Allocation');
+    const { readEngCatchUpFilterState } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    // Stored as the explicit empty list, never as the Legacy booleans.
+    const empty = readEngCatchUpFilterState({ ...resolved.selection, projects: [] }, resolved.facetViews, {}, { allocation: true });
+    assert.deepEqual(empty.allocation, []);
+    assert.equal('showTech' in empty || 'showProduct' in empty, false);
+    assert.deepEqual(readEngCatchUpFilterState({ ...resolved.selection, projects: ['tech'] }, resolved.facetViews, {}, { allocation: true }).allocation, ['tech']);
+    assert.equal(readEngCatchUpFilterState({ ...resolved.selection, projects: ['product', 'tech'] }, resolved.facetViews, {}, { allocation: true }).allocation, undefined);
+    const techOnly = (await allocationFilters(['tech'])).resolved;
+    assert.deepEqual(ALLOCATION_TASKS.filter(task => techOnly.admitsAllocation(techOnly.allocationClassOf(task))).map(task => task.key), ['PLAN-E3']);
+    // Readiness Epics carry `projectClass`; an unknown class is No Allocation.
+    assert.equal(resolved.admitsAllocation(resolved.allocationClassOf({ projectClass: 'none' })), true);
+    assert.equal(resolved.admitsAllocation(resolved.allocationClassOf({ projectClass: 'other' })), true);
+});
+
+test('Legacy Projects facet unchanged', async () => {
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters, readEngCatchUpFilterState } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    const { isTechIssue } = await load();
+    const techKeys = new Set(['TECH']);
+    const tasks = [sp('PLAN-1', 8), { key: 'TECH-1', fields: { projectKey: 'TECH', epicKey: 'PLAN-I1', status: { name: 'To Do' } } }];
+    const model = buildEngCatchUpFacetModel({ tasks, isTechTask: task => isTechIssue(task, techKeys), epicDetails: ALLOCATION_DETAILS });
+    assert.deepEqual(model.facets[2], { id: 'projects', label: 'Projects', kind: 'multi', neutralTotal: 2, options: [{ id: 'tech', label: 'Tech' }, { id: 'product', label: 'Product' }] });
+    assert.deepEqual(model.counts.projects, { tech: 1, product: 1 });
+    const resolved = resolveEngCatchUpFilters({ model, showTech: false, allocation: [] });
+    assert.equal(resolved.admitsProject(true), false);
+    assert.equal(resolved.admitsProject(false), true);
+    const next = readEngCatchUpFilterState(resolved.selection, resolved.facetViews);
+    assert.deepEqual([next.showTech, next.showProduct, 'allocation' in next], [false, true, false]);
+});
+
+test('new-model Board filter model shows the Allocation facet from the Initiative class', async () => {
     const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
     const { buildEngBoardFacetModel, resolveEngBoardFilters } = await import('../frontend/src/eng/engBoardFilters.js');
-    const tasks = [sp('PLAN-E1', 8), sp('PLAN-E2', 5)];
-    const catchUp = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true, names: resolveEntityNames(NEW) });
-    assert.equal(catchUp.facets.find(facet => facet.id === 'projects').hidden, true);
-    assert.deepEqual(catchUp.counts.projects, { tech: 0, product: 0 });
-    const resolved = resolveEngCatchUpFilters({ model: catchUp });
-    assert.equal(resolved.admitsProject(true), true);
-    assert.equal(resolved.readoutUnit, 'of 2 epics');
-    const legacy = buildEngCatchUpFacetModel({ tasks, isTechTask: () => true });
-    assert.equal(legacy.facets.find(facet => facet.id === 'projects').hidden, undefined);
-    assert.equal(resolveEngCatchUpFilters({ model: legacy }).readoutUnit, 'of 2 stories');
+    const { isTechIssue } = await load();
+    const isTechTask = task => isTechIssue(task, new Set());
+    const { buildEngCatchUpFacetModel, resolveEngCatchUpFilters } = await import('../frontend/src/eng/engCatchUpFilters.js');
+    assert.equal(resolveEngCatchUpFilters({ model: buildEngCatchUpFacetModel({ tasks: ALLOCATION_TASKS, isTechTask, names: resolveEntityNames(NEW), workModel: NEW }) }).readoutUnit, 'of 5 epics');
+    assert.equal(resolveEngCatchUpFilters({ model: buildEngCatchUpFacetModel({ tasks: ALLOCATION_TASKS, isTechTask: () => true }) }).readoutUnit, 'of 5 stories');
 
-    const groups = [{ key: 'PLAN-I1', epic: { key: 'PLAN-I1', summary: 'I' }, tasks: [sp('PLAN-E1', 8)] }];
-    const board = buildEngBoardFacetModel({ epicGroups: groups, isTechTask: () => false, workModel: NEW });
-    assert.equal(board.facets.find(facet => facet.id === 'projects').hidden, true);
-    assert.deepEqual(board.counts.projects, { tech: 0, product: 0, other: 0 });
-    const boardResolved = resolveEngBoardFilters({ model: board });
-    assert.equal(boardResolved.admitsEpic(groups[0]), true);
+    const groups = [{ key: 'PLAN-I1', epic: { key: 'PLAN-I1', summary: 'I', projectClassification: 'tech' }, tasks: [sp('PLAN-E1', 8, { stamp: 'tech' })] },
+        { key: 'PLAN-I2', epic: { key: 'PLAN-I2', summary: 'J', allocationClass: 'product' }, tasks: [] },
+        { key: 'PLAN-I3', epic: { key: 'PLAN-I3', summary: 'K' }, tasks: [sp('PLAN-E3', 2, { epic: 'PLAN-I3', stamp: 'none' })] }];
+    const board = buildEngBoardFacetModel({ epicGroups: groups, isTechTask, workModel: NEW });
+    const projects = board.facets.find(facet => facet.id === 'projects');
+    assert.equal(projects.label, 'Allocation');
+    assert.deepEqual(projects.options.map(option => option.id), ['product', 'tech']);
+    assert.equal(projects.emptyLabel, 'No Allocation');
+    assert.equal(projects.emptyDescription, 'No Allocation — showing initiatives without a value');
+    // An Initiative with no children still shows its own class (Review Focus 1).
+    assert.deepEqual(board.counts.projects, { product: 1, tech: 1 });
+    assert.equal(projects.emptyTotal, 1);
+    const keys = selection => groups.filter(resolveEngBoardFilters({ model: board, selection }).admitsEpic).map(group => group.key);
+    assert.deepEqual(keys({}), ['PLAN-I1', 'PLAN-I2', 'PLAN-I3']);
+    assert.deepEqual(keys({ projects: ['product'] }), ['PLAN-I2']);
+    assert.deepEqual(keys({ projects: [] }), ['PLAN-I3']);
+    groups.pop();
+    const single = resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups.slice(0, 1), isTechTask, workModel: NEW }) });
     // One is singular in every configuration (the count rule); the subject names the parent level.
-    assert.equal(boardResolved.readoutUnit, 'of 1 initiative');
-    assert.equal(boardResolved.subject, 'Filtering initiatives');
-    assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups }) }).readoutUnit, 'of 1 epic');
+    assert.equal(single.readoutUnit, 'of 1 initiative');
+    assert.equal(single.subject, 'Filtering initiatives');
+    assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: groups.slice(0, 1) }) }).readoutUnit, 'of 1 epic');
+    const legacyProjects = buildEngBoardFacetModel({ epicGroups: groups, isTechTask }).facets.find(facet => facet.id === 'projects');
+    assert.equal(legacyProjects.label, 'Projects');
+    assert.equal(legacyProjects.allowEmpty, undefined);
 });
 
 test('alert refresh calls: the combined model never asks for the retired Backlog request; Legacy unchanged', async () => {
@@ -151,13 +277,21 @@ test('alert refresh calls: the combined model never asks for the retired Backlog
     assert.deepEqual(alertCallsForEdit({ field: 'status', isFutureSprint: true, isCatchUp: true, workModel: NEW }), ['readyToClose', 'epicAlerts', 'readiness']);
 });
 
-test('work hierarchy admits the combined lane `other` project class and Legacy still drops it', async () => {
+test('work hierarchy admits DELIVERY readiness rows by Allocation class, incl. none; Legacy still drops none', async () => {
     const { buildEngWorkHierarchy } = await import('../frontend/src/eng/engWorkHierarchy.js');
+    const readiness = (key, projectClass) => ({ key, summary: key, projectClass, status: { name: 'To Do' }, missingTeams: [{ id: 't', name: 'T', reason: 'no_stories' }] });
     const snapshot = { schemaVersion: 1, complete: true, scope: { groupId: 'g', sprintId: '1', sprintName: 'S', sprintState: 'active' },
-        epics: [{ key: 'PLAN-I1', summary: 'I', projectClass: 'other', status: { name: 'To Do' }, missingTeams: [{ id: 't', name: 'T', reason: 'no_stories' }] }] };
+        epics: [readiness('PLAN-I1', 'none'), readiness('PLAN-I2', 'tech'), readiness('PLAN-I3', 'product')] };
     const args = { sprint: { id: '1', name: 'S', state: 'active' }, readinessSnapshot: snapshot, filters: { groupId: 'g' } };
-    assert.equal(buildEngWorkHierarchy({ ...args, workModel: NEW }).requirements.length, 1);
-    const legacy = buildEngWorkHierarchy(args);
+    const keys = filters => buildEngWorkHierarchy({ ...args, filters: { groupId: 'g', ...filters }, workModel: NEW }).requirements.map(item => item.epicKey ?? item.epic?.key);
+    assert.equal(buildEngWorkHierarchy({ ...args, workModel: NEW }).requirements.length, 3);
+    // Showing only No Allocation keeps the `none` Initiative row and drops the Product/Tech ones.
+    const { resolved } = await allocationFilters([]);
+    assert.deepEqual(keys({ admitsAllocation: resolved.admitsAllocation }), ['PLAN-I1']);
+    const tech = (await allocationFilters(['tech'])).resolved;
+    assert.deepEqual(keys({ admitsAllocation: tech.admitsAllocation }), ['PLAN-I2']);
+    const legacySnapshot = { ...snapshot, epics: [readiness('PLAN-I1', 'none')] };
+    const legacy = buildEngWorkHierarchy({ ...args, readinessSnapshot: legacySnapshot });
     assert.equal(legacy.requirements.length, 0);
     assert.ok(legacy.diagnostics.some(item => item.code === 'project_class_invalid'));
 });

@@ -317,6 +317,30 @@ def _projects(value, path, model):
     return result
 
 
+ALLOCATION_TYPES = ('product', 'tech')
+ALLOCATION_TYPES_MAX = 200
+
+
+def _allocation_types(value, path):
+    """DELIVERY's Allocation value -> Product/Tech mapping; exact after trim, the first duplicate wins."""
+    if not isinstance(value, list):
+        _invalid(path, 'Expected an array.')
+    if len(value) > ALLOCATION_TYPES_MAX:
+        _invalid(path, f'At most {ALLOCATION_TYPES_MAX} Allocation values.')
+    result, seen = [], set()
+    for index, item in enumerate(value):
+        item_path = f'{path}[{index}]'
+        _dict(item, item_path, {'value', 'type'}, {'value', 'type'})
+        text = _string(item['value'], f'{item_path}.value', max_length=255, allow_blank=False)
+        if item['type'] not in ALLOCATION_TYPES:
+            _invalid(f'{item_path}.type', 'Type must be product or tech.')
+        if text in seen:
+            continue
+        seen.add(text)
+        result.append({'value': text, 'type': item['type']})
+    return result
+
+
 def _field_mappings(value, path, names, shared_names=()):
     value = _dict(value, path, names, names)
     result = {}
@@ -363,7 +387,7 @@ def _normalize_entry(entry, index):
         _invalid(f'{path}.model', 'Unsupported model.')
     legacy = model == MODEL_LEGACY
     allowed = {'id', 'name', 'revision', 'fromQuarter', 'throughQuarter', 'model',
-               'scope', 'hierarchy', 'fields'} | (set(LEGACY_ONLY_KEYS) if legacy else set())
+               'scope', 'hierarchy', 'fields'} | (set(LEGACY_ONLY_KEYS) if legacy else {'allocationTypes'})
     required = {'id', 'name', 'fromQuarter', 'throughQuarter', 'model', 'scope', 'hierarchy', 'fields'}
     required |= set(LEGACY_ONLY_KEYS) if legacy else set()
     _dict(entry, path, allowed, required)
@@ -407,6 +431,8 @@ def _normalize_entry(entry, index):
         entry['fields'], f'{path}.fields', LEGACY_FIELD_NAMES if legacy else RND_FIELD_NAMES,
         () if legacy else SHARED_FIELD_NAMES,
     )
+    if not legacy:
+        result['allocationTypes'] = _allocation_types(entry.get('allocationTypes', []), f'{path}.allocationTypes')
     if legacy:
         for slot, key in MODE_SLOTS.items():
             if result['legacyHierarchyModes'][slot] == 'compatibility' and result['hierarchy'][key] is not None:
@@ -469,6 +495,7 @@ def _blank_delivery(revision=0):
         'scope': {'projects': [], 'boardId': ''},
         'hierarchy': {key: None for key in HIERARCHY_KEYS},
         'fields': _blank_fields(RND_FIELD_NAMES, SHARED_FIELD_NAMES),
+        'allocationTypes': [],
     }
 
 
@@ -598,6 +625,7 @@ class WorkConfigurationContext:
     hierarchy: object
     fields: object
     legacy: object          # legacy-only compatibility metadata; empty on rnd_2027
+    allocation_types: object = ()  # rnd_2027 Allocation value -> Product/Tech mapping; empty on Legacy
 
     def to_dict(self):
         return {
@@ -605,6 +633,7 @@ class WorkConfigurationContext:
             'model': self.model, 'quarter': self.quarter, 'digest': self.digest,
             'scope': _thaw(self.scope), 'hierarchy': _thaw(self.hierarchy),
             'fields': _thaw(self.fields), 'legacy': _thaw(self.legacy),
+            'allocationTypes': _thaw(self.allocation_types),
         }
 
 
@@ -671,6 +700,7 @@ def _context_for(entry, quarter, source=None):
         model=entry['model'], quarter=quarter, digest=_entry_digest(source or entry),
         scope=_freeze(entry['scope']), hierarchy=_freeze(entry['hierarchy']),
         fields=_freeze(entry['fields']), legacy=_freeze(legacy),
+        allocation_types=_freeze(entry.get('allocationTypes', [])),
     )
 
 
@@ -1021,7 +1051,7 @@ def _save_first(payload, revision, incoming, edits, display_types, env_board_id,
     return new_payload, bundle, [LEGACY_ID, DELIVERY_ID]
 
 
-def _save_later(payload, incoming, clear_ids, catalog):
+def _save_later(payload, incoming, clear_ids, catalog, kept_allocation_ids=()):
     stored = stored_bundle(payload)
     stored_entries, incoming_entries = stored['configurations'], incoming['configurations']
     known = {entry['id'] for entry in stored_entries}
@@ -1032,6 +1062,9 @@ def _save_later(payload, incoming, clear_ids, catalog):
         _invalid('configurations', 'Configuration ids are server-owned.')
     entries, changed = [], []
     for old, new in zip(stored_entries, incoming_entries):
+        if old['id'] in kept_allocation_ids:
+            # A bundle without the key (a stale browser) never erases the stored mapping; an explicit [] does.
+            new = dict(new, allocationTypes=old.get('allocationTypes', []))
         _check_transition(old, new)
         if old['scope']['projects'] and not new['scope']['projects'] and old['id'] not in clear_ids:
             _invalid('scope.projects', 'Clearing projects requires an explicit clear.', configuration_id=old['id'])
@@ -1080,6 +1113,10 @@ def save_work_configurations(
     if not (work_configurations_enabled() if flag_enabled is None else bool(flag_enabled)):
         raise WorkConfigError('configuration_feature_disabled')
     incoming = normalize_work_configurations(bundle)
+    kept_allocation_ids = {
+        entry['id'] for raw, entry in zip(bundle['configurations'], incoming['configurations'])
+        if entry['model'] == MODEL_RND_2027 and 'allocationTypes' not in raw
+    }
     edits = _normalize_edits(legacy_edits)
     clear_ids = list(clear_projects_for_configuration_ids or [])
     if not all(isinstance(cid, str) for cid in clear_ids):
@@ -1095,7 +1132,8 @@ def save_work_configurations(
         if promoted:
             if legacy_edits is not None:
                 _invalid('legacyEdits', 'legacyEdits apply to the first save only.')
-            new_payload, saved, changed = _save_later(payload, incoming, clear_ids, issue_type_catalog)
+            new_payload, saved, changed = _save_later(
+                payload, incoming, clear_ids, issue_type_catalog, kept_allocation_ids)
         else:
             if clear_ids:
                 _invalid('clearProjectsForConfigurationIds', 'Not supported on the first save.')

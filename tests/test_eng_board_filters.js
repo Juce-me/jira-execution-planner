@@ -216,6 +216,16 @@ test('strict Other project classification remains separately filterable', async 
     assert.deepEqual(admittedKeys(filters, strictGroups), ['E-OTHER']);
 });
 
+test('classifyEpicProjects treats none as No Allocation, not Tech', async () => {
+    const { classifyEpicProjects } = await import('../frontend/src/eng/engBoardCardModel.js');
+    const classify = (task) => task.projectClassification;
+    const group = { key: 'I-1', epic: { key: 'I-1' }, tasks: [{ key: 'E-1', projectClassification: 'none' }] };
+    assert.deepEqual(classifyEpicProjects(group, classify), { isTech: false, isProduct: false, isOther: false, isNone: true });
+    // Legacy predicates keep their boolean contract.
+    assert.deepEqual(classifyEpicProjects({ tasks: [{ key: 'T-1' }] }, () => true), { isTech: true, isProduct: false, isOther: false, isNone: false });
+    assert.deepEqual(classifyEpicProjects({ tasks: [{ key: 'P-1' }] }, () => false), { isTech: false, isProduct: true, isOther: false, isNone: false });
+});
+
 test('a zero-story epic remains admitted while Projects is neutral', async () => {
     const module = await loadModule();
     const zeroStory = epicGroup('E-EMPTY', { projectKeys: [] });

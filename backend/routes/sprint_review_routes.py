@@ -305,8 +305,7 @@ def _planning_admission(context, sprint_id, payload, *, digest_required=True, de
             current = workspace_dashboard_config.load_workspace_config_in_session(session, context)
             if current != snapshot:
                 raise sprint_review.ReviewError('configuration_scope_changed', 409, noCommit=True)
-            # A Board row can shadow an observed Sprint by name. Recheck every Board
-            # consulted during admission, including when the selected source is observed.
+            # Recheck the publication version of every Board consulted during admission.
             for identity, consulted in consulted_sources.items():
                 if consulted.source_mode == work_routes.work_structure_service.SOURCE_MODE_SCOPED_ISSUES:
                     continue

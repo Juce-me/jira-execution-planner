@@ -94,7 +94,7 @@ export function useShareViewApply(options) {
             mode: o.activeEngMode, groupId: o.activeGroupId, sprintId: o.selectedSprint, snapshot: o.buildGroupStateSnapshot(),
             searchQuery: o.searchQuery, sort: o.engEpicSort, rowsMode, boardStrictScope: o.boardStrictScope,
             sprintRange: { start: o.excludedCapacityStartSprintId, end: o.excludedCapacityEndSprintId },
-            alertFlags: o.alertFlags, alertCounts: o.alertCounts,
+            alertFlags: o.alertFlags, alertCounts: o.alertCounts, combinedWorkModel: Boolean(o.combinedWorkModel),
             focus,
         });
         const encoded = encodeShareView(state);

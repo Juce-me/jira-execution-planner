@@ -13,7 +13,7 @@ _NON_ACTIONABLE_STORY_STATUSES = frozenset({
 _TERMINAL_EPIC_STATUSES = frozenset({
     "done", "killed", "incomplete", "postponed",
 })
-_PROJECT_CLASSES = frozenset({"product", "tech", "other"})
+_PROJECT_CLASSES = frozenset({"product", "tech", "other", "none"})  # `none`: DELIVERY No Allocation
 
 
 def _text(value, *, required=False):

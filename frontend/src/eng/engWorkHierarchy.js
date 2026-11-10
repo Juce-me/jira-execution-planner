@@ -174,9 +174,12 @@ function selectedTeamSet(filters) {
 }
 
 function projectVisible(epic, filters) {
-    // Combined model: one lane, no Product/Tech facet; its 'other' project class is always admitted.
-    if (filters.combinedLane) return true;
+    // Combined model (DELIVERY): one lane; the Allocation facet admits by the Initiative's class, `none` included.
     const projectClass = normalized(epic?.projectClass);
+    if (filters.combinedLane) {
+        if (typeof filters.admitsAllocation !== 'function') return true;
+        return filters.admitsAllocation(projectClass === 'product' || projectClass === 'tech' ? projectClass : 'none');
+    }
     if (projectClass === 'tech') return filters.showTech !== false;
     if (projectClass === 'product') return filters.showProduct !== false;
     return false;
@@ -304,7 +307,7 @@ export function buildEngWorkHierarchy({
             }
             readinessEpicKeys.add(epicKey);
             const projectClass = normalized(readinessEpic?.projectClass);
-            if (projectClass !== 'product' && projectClass !== 'tech' && !(combinedLane && projectClass === 'other')) {
+            if (projectClass !== 'product' && projectClass !== 'tech' && !(combinedLane && (projectClass === 'none' || projectClass === 'other'))) {
                 diagnostics.push({ code: 'project_class_invalid', epicKey });
                 continue;
             }

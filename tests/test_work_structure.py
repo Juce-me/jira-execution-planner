@@ -528,5 +528,93 @@ class ErrorEnvelopeTests(unittest.TestCase):
         self.assertEqual(body['paths'], ['version'])
 
 
+class AllocationTypesTests(unittest.TestCase):
+    def bundle(self, mapping=None):
+        bundle = virtual()
+        if mapping is not None:
+            bundle['configurations'][1]['allocationTypes'] = mapping
+        return bundle
+
+    def test_delivery_mapping_round_trips(self):
+        bundle = self.bundle([{'value': 'Growth', 'type': 'tech'}])
+        saved = ws.normalize_work_configurations(deepcopy(bundle))
+        self.assertEqual(saved['configurations'][1]['allocationTypes'], [{'value': 'Growth', 'type': 'tech'}])
+        self.assertEqual(ws.normalize_work_configurations(deepcopy(saved)), saved)
+
+    def test_legacy_rejects_the_key(self):
+        bundle = virtual()
+        bundle['configurations'][0]['allocationTypes'] = []
+        invalid(self, bundle, 'configurations[0].allocationTypes')
+
+    def test_invalid_entries_rejected(self):
+        for mapping in ([{'value': 'Growth', 'type': 'other'}], [{'value': '  ', 'type': 'tech'}],
+                        [{'value': 'x' * 256, 'type': 'tech'}], 'Growth', [{'value': 'Growth'}],
+                        [{'value': 'Growth', 'type': 'tech', 'extra': 1}],
+                        [{'value': f'V{i}', 'type': 'tech'} for i in range(201)]):
+            invalid(self, self.bundle(mapping), 'allocationTypes')
+
+    def test_two_hundred_entries_and_trim_are_accepted(self):
+        mapping = [{'value': f'V{i}', 'type': 'product'} for i in range(200)]
+        self.assertEqual(len(ws.normalize_work_configurations(self.bundle(mapping))['configurations'][1]['allocationTypes']), 200)
+        saved = ws.normalize_work_configurations(self.bundle([{'value': ' Growth ', 'type': 'tech'}]))
+        self.assertEqual(saved['configurations'][1]['allocationTypes'], [{'value': 'Growth', 'type': 'tech'}])
+
+    def test_duplicates_after_trim_keep_the_first(self):
+        mapping = [{'value': 'Growth', 'type': 'tech'}, {'value': ' Growth', 'type': 'product'},
+                   {'value': 'growth', 'type': 'product'}]
+        saved = ws.normalize_work_configurations(self.bundle(mapping))['configurations'][1]['allocationTypes']
+        self.assertEqual(saved, [{'value': 'Growth', 'type': 'tech'}, {'value': 'growth', 'type': 'product'}])
+
+    def test_absent_key_normalizes_to_empty(self):
+        bundle = virtual()
+        bundle['configurations'][1].pop('allocationTypes', None)
+        self.assertEqual(ws.normalize_work_configurations(bundle)['configurations'][1]['allocationTypes'], [])
+
+    def test_mapping_flip_changes_entry_digest_not_source_digest(self):
+        tech = ws.normalize_work_configurations(self.bundle([{'value': 'Growth', 'type': 'tech'}]))
+        product = ws.normalize_work_configurations(self.bundle([{'value': 'Growth', 'type': 'product'}]))
+        self.assertNotEqual(ws._entry_digest(tech['configurations'][1]), ws._entry_digest(product['configurations'][1]))
+        self.assertEqual(ws.source_digest(tech['configurations'][1]), ws.source_digest(product['configurations'][1]))
+
+    def test_context_carries_mapping(self):
+        snapshot = promoted_snapshot(self.bundle([{'value': 'Growth', 'type': 'tech'}]))
+        context = ws.resolve_work_configuration(snapshot, quarter='2027Q1', flag_enabled=True)
+        self.assertEqual(context.to_dict()['allocationTypes'], [{'value': 'Growth', 'type': 'tech'}])
+        legacy = ws.resolve_work_configuration(snapshot, quarter='2026Q1', flag_enabled=True)
+        self.assertEqual(legacy.to_dict()['allocationTypes'], [])
+
+    def save(self, stored, incoming):
+        from unittest import mock
+        from backend.services import workspace_dashboard_config as storage
+        payload = {'workConfigurations': stored}
+        captured = {}
+
+        def update(context, base_revision, mutate, *, section, database_url=None):
+            outcome = mutate(deepcopy(payload), base_revision)
+            captured['payload'] = outcome.payload
+            return WorkspaceConfigSnapshot(outcome.payload or payload, base_revision + 1, 'workspace_db'), outcome.result
+
+        with mock.patch.object(storage, 'update_workspace_config_keys', side_effect=update):
+            result = ws.save_work_configurations(object(), incoming, 3, flag_enabled=True)
+        return result['workConfigurations']['configurations'][1]['allocationTypes']
+
+    def stored(self):
+        bundle = deepcopy(promoted_snapshot(self.bundle([{'value': 'Growth', 'type': 'tech'}])).payload['workConfigurations'])
+        return ws.normalize_work_configurations(bundle)
+
+    def test_save_omitting_the_key_keeps_the_stored_mapping(self):
+        stored = self.stored()
+        incoming = deepcopy(stored)
+        incoming['configurations'][1].pop('allocationTypes')
+        incoming['configurations'][1]['name'] = 'Renamed'
+        self.assertEqual(self.save(stored, incoming), [{'value': 'Growth', 'type': 'tech'}])
+
+    def test_save_with_explicit_empty_clears_the_mapping(self):
+        stored = self.stored()
+        incoming = deepcopy(stored)
+        incoming['configurations'][1]['allocationTypes'] = []
+        self.assertEqual(self.save(stored, incoming), [])
+
+
 if __name__ == '__main__':
     unittest.main()

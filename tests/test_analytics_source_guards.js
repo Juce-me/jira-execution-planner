@@ -213,8 +213,8 @@ test('effort split chart_action sends only the safe series_type enum token, neve
     // The bucket keys are camelCase identifiers; analytics must travel through the snake_case token map.
     assert.match(
         source,
-        /SERIES_ANALYTICS_TOKENS = \{ excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc' \}/,
-        'Expected the Ad Hoc / Excluded Capacity buckets to map to safe snake_case analytics tokens'
+        /SERIES_ANALYTICS_TOKENS = \{ excludedCapacity: 'excluded_capacity', adHoc: 'ad_hoc', none: 'no_allocation' \}/,
+        'Expected the Ad Hoc / Excluded Capacity / No Allocation buckets to map to safe snake_case analytics tokens'
     );
     assert.ok(
         source.includes('series_type: seriesAnalyticsToken(bucket.key)'),

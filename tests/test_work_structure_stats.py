@@ -406,6 +406,80 @@ class ExcludedCapacitySourceTests(StatsRouteBase):
         self.assertEqual((response.status_code, response.get_json()['error']), (400, 'invalid_quarter'))
 
 
+class ExcludedCapacityAllocationStampTests(StatsRouteBase):
+    """The stats source feeds ``classifyCapacityIssue``: DELIVERY rows carry the Allocation stamp too (C2)."""
+
+    FIELD = 'customfield_40001'
+
+    def setUp(self):
+        super().setUp()
+        import json
+        from backend.db import models
+        from backend.routes import work_structure_routes as work_routes
+        with self.factory() as session:
+            row = session.query(models.WorkspaceDashboardConfig).one()
+            payload = json.loads(json.dumps(row.payload))
+            legacy, delivery = payload['workConfigurations']['configurations']
+            delivery['hierarchy']['ancestorIssueTypeId'] = '10010'
+            delivery['fields']['allocation'] = {'fieldId': self.FIELD, 'fieldName': 'Allocation'}
+            delivery['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
+            row.payload = payload
+            session.commit()
+        self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
+        rows = {'11': ('legacy', '2026Q4'), '22': ('delivery', '2027Q1')}
+
+        def admit(auth_context, sources, sprint_id, configuration_id=None, quarter=None):
+            return Mock(configuration_id=rows[sprint_id][0]), {'id': int(sprint_id), 'name': rows[sprint_id][1]}
+        self.stack.enter_context(patch.object(work_routes, 'admit_sprint_source', side_effect=admit))
+        self.stack.enter_context(patch.object(jira_server, 'load_team_catalog', return_value={}))
+
+    def issue(self, key, parent=None, allocation=None, parent_type='10001'):
+        fields = {'summary': key, 'status': {'name': 'To Do'}, 'project': {'key': 'PLAN'}}
+        if parent:
+            fields['parent'] = {'key': parent, 'fields': {'issuetype': {'id': parent_type}}}
+        if allocation:
+            fields[self.FIELD] = {'value': allocation}
+        return {'id': key[-1], 'key': key, 'fields': fields}
+
+    def test_delivery_rows_are_stamped_and_legacy_rows_are_not(self):
+        fake = self.search(
+            (r'cf\[26\] in \(22\)', [self.issue('PLAN-1', 'PLAN-I1'), self.issue('PLAN-2', 'PLAN-I2'),
+                                     self.issue('PLAN-3', 'PLAN-I2', 'Platform'), self.issue('PLAN-4', 'PLAN-I3')]),
+            (r'Sprint in \(11\)', [self.issue('OLD-1')]),
+            (r'key in \("PLAN-I', [self.issue('PLAN-I1', 'PLAN-O1', parent_type='10010'),
+                                   self.issue('PLAN-I2', allocation='Growth'),
+                                   self.issue('PLAN-I3', allocation='Platform')]),
+            (r'issueKey in \(PLAN-O1\)', [self.issue('PLAN-O1', allocation='Platform')]),
+        )
+        payloads = []
+        record = lambda payload, *args, **kwargs: payloads.append(payload) or fake(payload, *args, **kwargs)
+        with patch.object(jira_server, 'jira_search_request', side_effect=record):
+            response = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['11', '22']})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        main = {('delivery' if 'cf[26]' in p['jql'] else 'legacy'): p['fields'] for p in payloads if ' in (' in p['jql']
+                and ('cf[26]' in p['jql'] or 'Sprint in' in p['jql'])}
+        self.assertNotIn(self.FIELD, main['delivery'])  # the Epic's own Allocation is never read
+        self.assertNotIn(self.FIELD, main['legacy'])
+        summaries = [p['fields'] for p in payloads if 'PLAN-I' in p['jql']]
+        self.assertTrue(summaries and all(self.FIELD in fields for fields in summaries))
+        stamps = {item['key']: item['fields'].get('projectClassification')
+                  for item in response.get_json()['data']['issues']}
+        # The Initiative alone decides: blank (its Objective is ignored) is No Allocation.
+        self.assertEqual(stamps, {'PLAN-1': 'none', 'PLAN-2': 'product', 'PLAN-3': 'product', 'PLAN-4': 'tech',
+                                  'OLD-1': None})
+        self.assertEqual([jql for jql in fake.calls if 'PLAN-O1' in jql], [])
+
+    def test_delivery_summaries_carry_the_initiative_class(self):
+        roles = Mock(is_legacy=False, allocation_field_id=self.FIELD, project_track_field_id='',
+                     allocation_types=[{'value': 'Platform', 'type': 'tech'}], context=None)
+        rows = [{'key': 'PLAN-I1', 'fields': {'summary': 'I1', self.FIELD: {'value': 'Platform'}}}]
+        with patch.object(jira_server, 'fetch_issues_by_keys', return_value=rows), \
+             patch.object(jira_server, 'get_jira_issue_cache_generation', side_effect=object):
+            summaries = jira_server.fetch_cached_excluded_capacity_epic_summaries(['PLAN-I1', 'PLAN-I2'], roles=roles)
+        self.assertEqual({key: value['allocationClass'] for key, value in summaries.items()},
+                         {'PLAN-I1': 'tech', 'PLAN-I2': 'none'})
+
+
 class ProjectTrackKeyOnlyTests(StatsRouteBase):
     def test_key_only_input_needs_a_selected_quarter_and_uses_the_mapped_field(self):
         seen = []

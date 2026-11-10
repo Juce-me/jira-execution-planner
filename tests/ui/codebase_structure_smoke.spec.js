@@ -5,6 +5,7 @@ const { test, expect } = require('@playwright/test');
 const { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_view_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const screenshotDir = path.join(repoRoot, 'test-results', 'codebase-structure-smoke');
@@ -766,31 +767,33 @@ async function expectWindowSticky(page, selector) {
     expect(Math.abs(result.top - result.expectedTop)).toBeLessThanOrEqual(8);
 }
 
-async function expectPlanningAboveEpic(page) {
-    await page.locator('.planning-panel.open').evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const stickyTop = Number.parseFloat(getComputedStyle(element).top) || 0;
-        const target = Math.max(0, window.scrollY + rect.top - stickyTop + 80);
+// Planning is the Table only (#323): the Filters and overview share one sticky stack, and the table's
+// column headings dock below it, so the stack stays above the docked header as the Epic header did in List.
+async function expectPlanningAboveTableHeader(page) {
+    await page.locator('.planning-review-table thead').first().evaluate((element) => {
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        const stickyTop = Number.parseFloat(getComputedStyle(stack).top) || 0;
+        const target = Math.max(0, window.scrollY + element.getBoundingClientRect().top - stickyTop - stack.offsetHeight + 80);
         window.scrollTo(0, target);
     });
     await page.waitForTimeout(180);
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible();
     const layout = await page.evaluate(() => {
-        const planning = document.querySelector('.planning-panel.open');
-        const epic = document.querySelector('.epic-header');
-        const planningRect = planning.getBoundingClientRect();
-        const epicRect = epic.getBoundingClientRect();
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        const header = document.querySelector('.planning-review-docked-header');
+        const stackRect = stack.getBoundingClientRect();
         return {
-            planningZ: Number.parseInt(getComputedStyle(planning).zIndex, 10),
-            epicZ: Number.parseInt(getComputedStyle(epic).zIndex, 10),
-            planningBottom: planningRect.bottom,
-            epicTop: epicRect.top,
-            planningTop: planningRect.top,
-            planningStickyTop: Number.parseFloat(getComputedStyle(planning).top) || 0,
+            stackZ: Number.parseInt(getComputedStyle(stack).zIndex, 10),
+            headerZ: Number.parseInt(getComputedStyle(header).zIndex, 10),
+            stackBottom: stackRect.bottom,
+            headerTop: header.getBoundingClientRect().top,
+            stackTop: stackRect.top,
+            stackStickyTop: Number.parseFloat(getComputedStyle(stack).top) || 0,
         };
     });
-    expect(layout.planningZ).toBeGreaterThan(layout.epicZ);
-    expect(Math.abs(layout.planningTop - layout.planningStickyTop)).toBeLessThanOrEqual(8);
-    expect(layout.epicTop).toBeGreaterThanOrEqual(layout.planningBottom - 1);
+    expect(layout.stackZ).toBeGreaterThan(layout.headerZ);
+    expect(Math.abs(layout.stackTop - layout.stackStickyTop)).toBeLessThanOrEqual(8);
+    expect(layout.headerTop).toBeGreaterThanOrEqual(layout.stackBottom - 1);
 }
 
 async function expectContainerSticky(page, selector, containerSelector) {
@@ -868,6 +871,7 @@ async function installApiMocks(page, calls, options = {}) {
     const capacityPatchGate = options.deferCapacityPatch ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
+    const planningReview = createPlanningReviewMock();
     const state = {
         configReleased: !configGate,
         rollupBeforeConfigRelease: false,
@@ -1234,6 +1238,13 @@ async function installApiMocks(page, calls, options = {}) {
                 fallback: true,
             });
         }
+        // Planning is the Table only and reads the shared plan (#331); no plan is saved and no Team holds a stored number.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) {
+            return json(planningReview.response(request, { capabilities: { canRead: true, canSave: true } }));
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) {
+            return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
+        }
         unexpectedCalls.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({
             status: 500,
@@ -1351,14 +1362,18 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const stickyEngModes = page.locator('.compact-sticky-header .eng-mode-control');
     await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.getByText('Selected SP by Project:')).toBeVisible();
+    // The overview starts compact (#323); the project split and Team cards are part of the capacity details.
+    await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
+    await expect(page.getByText('Planned SP by Project:')).toBeVisible();
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(2);
     const projectSplitBarVisible = await page.locator('.project-bar-graph').isVisible().catch(() => false);
-    const projectSplitEmptyVisible = await page.getByText('No tasks selected').isVisible().catch(() => false);
+    const projectSplitEmptyVisible = await page.getByText('No planned stories').isVisible().catch(() => false);
     expect(projectSplitBarVisible || projectSplitEmptyVisible).toBeTruthy();
     await captureSmokeScreenshot(page, 'planning');
-    await expectWindowSticky(page, '.planning-panel.open');
-    await expectPlanningAboveEpic(page);
+    // The Story rows give the page the scroll height the List's Epic blocks gave it.
+    await page.getByRole('radiogroup', { name: 'Planning review rows' }).getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expectWindowSticky(page, '.planning-review-sticky-stack');
+    await expectPlanningAboveTableHeader(page);
 
     const alphaCapacityCard = page.locator('.planning-team-capacity-cards .team-stat-card', { hasText: 'Alpha Team' });
     await alphaCapacityCard.hover();
@@ -1368,11 +1383,11 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await alphaCapacityCard.getByRole('button', { name: 'Save Alpha Team capacity' }).click();
     await expect(alphaCapacityCard.locator('form.team-capacity-editor')).toHaveAttribute('aria-busy', 'true');
     await captureCapacitySmokeScreenshot(page, 'planning-capacity-pending');
-    await expectPlanningAboveEpic(page);
+    await expectPlanningAboveTableHeader(page);
     apiMocks.resolveCapacityPatch();
     await expect(alphaCapacityCard.getByRole('status')).toContainText('Capacity changed in Jira to 7');
     await captureCapacitySmokeScreenshot(page, 'planning-capacity-conflict');
-    await expectPlanningAboveEpic(page);
+    await expectPlanningAboveTableHeader(page);
 
     await stickyEngModes.getByRole('radio', { name: 'Scenario' }).click();
     await expect(page.getByText('Scenario Planner')).toBeVisible();
@@ -4307,6 +4322,8 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
         // deliberately incomplete config snapshot owes eight section reads; OAuth
         // initialization also reads analytics context once, even when transport is off.
         // Keep these exact additions in every mode, alongside the cached name directory.
+        // Planning is the Table only (#323): its cold load reads the shared plan once and every displayed
+        // Team's stored number through one batch POST (with its CSRF read); Statistics modes read neither.
         const expectedRequests = [...coldModeRequestContracts[mode], ...[
             '/api/team-catalog', '/api/board-config', '/api/capacity/config',
             '/api/sprint-field/config', '/api/parent-name-field/config',
@@ -4318,7 +4335,7 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
             body: null, csrf: 'absent', method: 'GET', params: {},
             pathname: '/api/analytics/context', requestedWith: 'jira-execution-planner',
         })];
-        expect(requestMultiset(calls)).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
+        expect(requestMultiset(calls), mode).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
         const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
         if (mode === 'burnout') {
             const tabs = page.locator('.view-selector .eng-mode-control');
@@ -4864,6 +4881,30 @@ const coldModeRequestContracts = {
             "method": "POST",
             "params": {},
             "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": { "groupId": "grp-default" },
+            "pathname": "/api/eng/sprints/34625/review",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/auth/csrf",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": { "teamIds": ["team-alpha", "team-beta"] },
+            "csrf": "present",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/eng/sprints/34625/assignee-capacity/planned/read",
             "requestedWith": "jira-execution-planner"
         }
     ],

@@ -92,7 +92,7 @@ for (const [pair, selected, adHoc, excluded] of [['ordinary', '8.0', null, null]
         expect(text).not.toMatch(/Product|Tech|16\.0/);
         if (selected) {
             await expect(page.locator('#split [data-work-lane="combined"]')).toHaveCount(1);
-            expect(text).toContain(`Selected · ${selected} SP`);
+            expect(text).toContain(`Planned SP · ${selected} SP`);
             if (adHoc) expect(text).toContain(`Ad Hoc ${adHoc}`);
         } else {
             // Excluded work leaves the included allocation entirely; its 8 SP is the excluded report.

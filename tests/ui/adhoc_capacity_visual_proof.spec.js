@@ -16,14 +16,14 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const screenshotDir = '/tmp/adhoc-visual-proof';
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
-// Planning auto-selection (Select All default) only applies to a future sprint,
-// so the Planning split bar uses this future sprint to populate selected stories.
+// The Planning split bar reads the shared plan (#331); this future sprint's plan includes every story.
 const futureSprintId = 40021;
 const futureSprintName = '2026Q3 Sprint 1';
 const groupTeamIds = ['team-alpha', 'team-beta'];
@@ -63,9 +63,10 @@ function json(route, body) {
     });
 }
 
-function makeStory({ key, epicKey, projectKey, teamId, teamName, points }) {
+// Planning plans only real Jira issues, whose ids are numeric (#331).
+function makeStory({ id, key, epicKey, projectKey, teamId, teamName, points }) {
     return {
-        id: key,
+        id,
         key,
         fields: {
             summary: `${key} synthetic planning story`,
@@ -103,14 +104,14 @@ const techEpic = makeEpic({ key: 'TECH-EPIC', summary: 'Tech delivery epic', tea
 const adHocEpic = makeEpic({ key: 'PROD-ADHOC', summary: 'Business-as-usual / Ad Hoc epic', teamId: 'team-alpha', teamName: 'Alpha Team', label: 'alpha_label' });
 
 const productStories = [
-    makeStory({ key: 'PROD-1', epicKey: 'PROD-EPIC', projectKey: 'PROD', teamId: 'team-alpha', teamName: 'Alpha Team', points: 5 }),
-    makeStory({ key: 'PROD-2', epicKey: 'PROD-EPIC', projectKey: 'PROD', teamId: 'team-beta', teamName: 'Beta Team', points: 3 }),
-    makeStory({ key: 'ADHOC-1', epicKey: 'PROD-ADHOC', projectKey: 'PROD', teamId: 'team-alpha', teamName: 'Alpha Team', points: 4 }),
-    makeStory({ key: 'ADHOC-2', epicKey: 'PROD-ADHOC', projectKey: 'PROD', teamId: 'team-beta', teamName: 'Beta Team', points: 2 }),
+    makeStory({ id: '7101', key: 'PROD-1', epicKey: 'PROD-EPIC', projectKey: 'PROD', teamId: 'team-alpha', teamName: 'Alpha Team', points: 5 }),
+    makeStory({ id: '7102', key: 'PROD-2', epicKey: 'PROD-EPIC', projectKey: 'PROD', teamId: 'team-beta', teamName: 'Beta Team', points: 3 }),
+    makeStory({ id: '7103', key: 'ADHOC-1', epicKey: 'PROD-ADHOC', projectKey: 'PROD', teamId: 'team-alpha', teamName: 'Alpha Team', points: 4 }),
+    makeStory({ id: '7104', key: 'ADHOC-2', epicKey: 'PROD-ADHOC', projectKey: 'PROD', teamId: 'team-beta', teamName: 'Beta Team', points: 2 }),
 ];
 const techStories = [
-    makeStory({ key: 'TECH-1', epicKey: 'TECH-EPIC', projectKey: 'TECH', teamId: 'team-beta', teamName: 'Beta Team', points: 3 }),
-    makeStory({ key: 'TECH-2', epicKey: 'TECH-EPIC', projectKey: 'TECH', teamId: 'team-alpha', teamName: 'Alpha Team', points: 1 }),
+    makeStory({ id: '7105', key: 'TECH-1', epicKey: 'TECH-EPIC', projectKey: 'TECH', teamId: 'team-beta', teamName: 'Beta Team', points: 3 }),
+    makeStory({ id: '7106', key: 'TECH-2', epicKey: 'TECH-EPIC', projectKey: 'TECH', teamId: 'team-alpha', teamName: 'Alpha Team', points: 1 }),
 ];
 
 // Excluded-capacity source issues for the Stats effort split / Mono vs Cross
@@ -155,6 +156,8 @@ async function installApiMocks(page, calls) {
         body: dashboardJs,
     }));
     const unexpectedCalls = [];
+    const review = createPlanningReviewMock({ initialPlans: { [futureSprintId]: {
+        includedIssueIds: [...productStories, ...techStories].map(story => story.id) } } });
     await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -211,6 +214,13 @@ async function installApiMocks(page, calls) {
             const epics = {};
             epicsInScope.forEach((epic) => { epics[epic.key] = epic; });
             return json(route, { issues: stories, epics, epicsInScope, names: {} });
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) {
+            return json(route, review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        }
+        // No Team holds a stored planned number (#323).
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) {
+            return json(route, { sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         }
         if (url.pathname === '/api/eng/story-readiness') {
             return json(route, { schemaVersion: 1, complete: true, scope: {}, epics: [] });
@@ -274,8 +284,7 @@ test('Planning project split renders the Ad Hoc Product subsegment for configure
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-    // Mirror the proven planning entry flow: select the future sprint, then open
-    // Planning so the default Select-All selection populates all stories.
+    // Select the future sprint, then open Planning: its saved shared plan includes every story.
     const sprintToggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
     await expect(sprintToggle).toHaveAttribute('aria-disabled', 'false');
     await sprintToggle.click();
@@ -283,8 +292,10 @@ test('Planning project split renders the Ad Hoc Product subsegment for configure
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.getByText('Selected SP by Project:')).toBeVisible();
-    await expect(page.locator('.task-list .epic-block', { hasText: 'PROD-ADHOC' })).toBeVisible();
+    // The overview starts compact; the project split is part of the capacity details.
+    await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
+    await expect(page.getByText('Planned SP by Project:')).toBeVisible();
+    await expect(page.locator('.planning-review-table tbody tr[data-issue-key="PROD-ADHOC"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
 
     const adHocSubsegment = page.locator('.project-bar-fill.product-adhoc');

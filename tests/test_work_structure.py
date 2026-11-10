@@ -583,11 +583,11 @@ class AllocationTypesTests(unittest.TestCase):
         legacy = ws.resolve_work_configuration(snapshot, quarter='2026Q1', flag_enabled=True)
         self.assertEqual(legacy.to_dict()['allocationTypes'], [])
 
-    def save(self, stored, incoming):
+    def save(self, stored, incoming, *, captured=None):
         from unittest import mock
         from backend.services import workspace_dashboard_config as storage
         payload = {'workConfigurations': stored}
-        captured = {}
+        captured = {} if captured is None else captured
 
         def update(context, base_revision, mutate, *, section, database_url=None):
             outcome = mutate(deepcopy(payload), base_revision)
@@ -609,11 +609,27 @@ class AllocationTypesTests(unittest.TestCase):
         incoming['configurations'][1]['name'] = 'Renamed'
         self.assertEqual(self.save(stored, incoming), [{'value': 'Growth', 'type': 'tech'}])
 
-    def test_save_with_explicit_empty_clears_the_mapping(self):
+    def test_save_with_unchanged_echo_keeps_the_stored_mapping(self):
         stored = self.stored()
         incoming = deepcopy(stored)
+        incoming['configurations'][1]['name'] = 'Renamed'
+        self.assertEqual(self.save(stored, incoming), [{'value': 'Growth', 'type': 'tech'}])
+
+    def test_save_with_explicit_empty_rejects_without_losing_the_stored_mapping(self):
+        stored = self.stored()
+        before = deepcopy(stored)
+        incoming = deepcopy(stored)
         incoming['configurations'][1]['allocationTypes'] = []
-        self.assertEqual(self.save(stored, incoming), [])
+        captured = {}
+        with self.assertRaises(ws.WorkConfigError) as raised:
+            self.save(stored, incoming, captured=captured)
+        self.assertEqual(raised.exception.response(), ({
+            'error': 'allocation_mapping_department_owned',
+            'status': 'error',
+            'message': 'Configure Allocation values in Department settings.',
+        }, 400))
+        self.assertEqual(captured, {})  # No mutation payload reached persistence.
+        self.assertEqual(stored, before)
 
 
 if __name__ == '__main__':

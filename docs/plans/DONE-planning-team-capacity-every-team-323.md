@@ -6,6 +6,8 @@
 
 **Current accuracy:** The implementation and shipped feature documentation are authoritative. The design/checklists and earlier checkpoint counts below are historical. Full verification at `c920a86a` passed build, 3,617 isolated backend tests (`OK (skipped=1)`), 3,707 Node tests, six render probes and 435 repeated freshness cases. Chromium recorded 2,388 passes, 34 skips and one failure; headed Firefox 221/6/3 and WebKit 219/6/5 (pass/skip/fail). Known lint and browser failures remain explicit in the follow-up record. The later Board fixes `701ad5a1` and `542b37bc` are included by operator decision and independently reviewed; publication verification runs at the final closure commit, with exact commands/results under ignored `tmp/planning-323-every-team/publication/`. Historical `c920a86a` results must not be called final-head results.
 
+> **Publication viewport scope (operator decision, 2026-11-10):** Prioritize laptop and wide screens. Mobile layout and viewport verification are deferred in [#338](https://github.com/Juce-me/jira-execution-planner/issues/338); mobile checks below remain historical evidence, not publication prerequisites. Desktop assertions remain unchanged.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Commit steps run only after the operator authorizes commits for this work.
 
 **Goal:** Every displayed Team in Planning Table shows and edits its own stored "Team capacity (not in Jira)" for the selected Sprint, whether one, several or All Teams are selected. Other outcomes:

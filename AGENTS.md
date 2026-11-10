@@ -484,3 +484,4 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep Team-card capacity editing and reconciliation in the existing card hover rail without growing the card; show UI changes with screenshots.
 
 - Keep DELIVERY Allocation values and Product/Tech mappings in shared Department settings; Legacy Component scope shows Epics and DELIVERY Allocation scope shows Initiatives under distinct scope tokens.
+- Prioritize laptop and wide-screen layouts for Planning; mobile viewport acceptance is opt-in with `JEP_TEST_MOBILE=1` unless explicitly requested.

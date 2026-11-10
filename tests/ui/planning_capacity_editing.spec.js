@@ -8,6 +8,8 @@ const { createPlanningReviewMock } = require('./planning_review_mock');
 const repoRoot = path.join(__dirname, '..', '..');
 const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+// Laptop/wide-screen coverage is the default; opt into deferred mobile checks explicitly.
+const testMobile = process.env.JEP_TEST_MOBILE === '1';
 const sprintId = 3001;
 const sprintName = '2026Q2';
 const nextSprintId = 3002;
@@ -1270,30 +1272,32 @@ test('long actionless capacity labels never reserve the action rail footprint on
     expect(desktopGeometry.label.right).toBeLessThanOrEqual(desktopGeometry.row.right);
     expect(desktopGeometry.scrollWidth).toBeLessThanOrEqual(desktopGeometry.clientWidth);
 
-    const touchContext = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
-    const touchPage = await touchContext.newPage();
-    try {
-        await openPlanning(touchPage, { teamCount: 1, longTeamLabel: true, actionlessLongTeam: true });
-        const touchCard = touchPage.locator('.planning-team-capacity-cards .team-stat-card');
-        const touchGeometry = await touchCard.locator('.team-capacity-label-row').evaluate(row => ({
-            paddingRight: Number.parseFloat(getComputedStyle(row).paddingRight),
-            label: row.querySelector('.team-stat-label').getBoundingClientRect(),
-            row: row.getBoundingClientRect(),
-            scrollWidth: row.querySelector('.team-stat-label').scrollWidth,
-            clientWidth: row.querySelector('.team-stat-label').clientWidth,
-            textOverflow: getComputedStyle(row.querySelector('.team-stat-label')).textOverflow,
-        }));
-        await expect(touchCard.locator('.team-capacity-action-rail')).toHaveCount(0);
-        expect(touchGeometry.paddingRight, 'actionless touch label rail padding').toBe(0);
-        expect(touchGeometry.label.right).toBeLessThanOrEqual(touchGeometry.row.right);
-        expect(touchGeometry.scrollWidth).toBeGreaterThan(touchGeometry.clientWidth);
-        expect(touchGeometry.textOverflow).toBe('ellipsis');
-    } finally {
-        await touchContext.close();
+    if (testMobile) {
+        const touchContext = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
+        const touchPage = await touchContext.newPage();
+        try {
+            await openPlanning(touchPage, { teamCount: 1, longTeamLabel: true, actionlessLongTeam: true });
+            const touchCard = touchPage.locator('.planning-team-capacity-cards .team-stat-card');
+            const touchGeometry = await touchCard.locator('.team-capacity-label-row').evaluate(row => ({
+                paddingRight: Number.parseFloat(getComputedStyle(row).paddingRight),
+                label: row.querySelector('.team-stat-label').getBoundingClientRect(),
+                row: row.getBoundingClientRect(),
+                scrollWidth: row.querySelector('.team-stat-label').scrollWidth,
+                clientWidth: row.querySelector('.team-stat-label').clientWidth,
+                textOverflow: getComputedStyle(row.querySelector('.team-stat-label')).textOverflow,
+            }));
+            await expect(touchCard.locator('.team-capacity-action-rail')).toHaveCount(0);
+            expect(touchGeometry.paddingRight, 'actionless touch label rail padding').toBe(0);
+            expect(touchGeometry.label.right).toBeLessThanOrEqual(touchGeometry.row.right);
+            expect(touchGeometry.scrollWidth).toBeGreaterThan(touchGeometry.clientWidth);
+            expect(touchGeometry.textOverflow).toBe('ellipsis');
+        } finally {
+            await touchContext.close();
+        }
     }
 });
 
-test('hoverless touch keeps the capacity Jira and pencil controls visible and operable', async ({ browser }, testInfo) => {
+if (testMobile) test('hoverless touch keeps the capacity Jira and pencil controls visible and operable', async ({ browser }, testInfo) => {
     const context = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
     const touchPage = await context.newPage();
     try {
@@ -1451,7 +1455,7 @@ test('already-current saves reconcile numeric values and null conflicts keep the
 });
 
 test('capacity scope and read-only gates detach editors and keep unsafe actions unavailable', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 720 });
+    await page.setViewportSize({ width: testMobile ? 375 : 1028, height: 720 });
     const fixture = await openPlanning(page);
     const card = page.locator('.team-stat-card', { hasText: 'Beta' });
     await card.hover();
@@ -1468,7 +1472,7 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
             cardRight: row.closest('.team-stat-card').getBoundingClientRect().right,
         };
     });
-    expect(responsive.inputWidth).toBeLessThan(84);
+    if (testMobile) expect(responsive.inputWidth).toBeLessThan(84);
     expect(responsive.heights).toEqual([28, 28, 28]);
     expect(responsive.lastRight).toBeLessThanOrEqual(responsive.cardRight);
 
@@ -1521,33 +1525,35 @@ test('an empty future sprint explains missing issues and refreshes only Capacity
     await expect(refreshButton).toBeEnabled();
     await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues');
 
-    await page.setViewportSize({ width: 375, height: 720 });
-    await emptyStatus.scrollIntoViewIfNeeded();
-    const mobileGeometry = await emptyStatus.evaluate(status => {
-        const text = status.querySelector('span');
-        const button = status.querySelector('button');
-        const dimensions = node => ({
-            rect: node.getBoundingClientRect(),
-            scrollWidth: node.scrollWidth,
-            clientWidth: node.clientWidth,
-            scrollHeight: node.scrollHeight,
-            clientHeight: node.clientHeight,
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await emptyStatus.scrollIntoViewIfNeeded();
+        const mobileGeometry = await emptyStatus.evaluate(status => {
+            const text = status.querySelector('span');
+            const button = status.querySelector('button');
+            const dimensions = node => ({
+                rect: node.getBoundingClientRect(),
+                scrollWidth: node.scrollWidth,
+                clientWidth: node.clientWidth,
+                scrollHeight: node.scrollHeight,
+                clientHeight: node.clientHeight,
+            });
+            return {
+                status: dimensions(status),
+                text: dimensions(text),
+                button: dimensions(button),
+                viewportWidth: window.innerWidth,
+            };
         });
-        return {
-            status: dimensions(status),
-            text: dimensions(text),
-            button: dimensions(button),
-            viewportWidth: window.innerWidth,
-        };
-    });
-    for (const element of [mobileGeometry.status, mobileGeometry.text, mobileGeometry.button]) {
-        expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
-        expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight);
-        expect(element.rect.left).toBeGreaterThanOrEqual(0);
-        expect(element.rect.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+        for (const element of [mobileGeometry.status, mobileGeometry.text, mobileGeometry.button]) {
+            expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+            expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight);
+            expect(element.rect.left).toBeGreaterThanOrEqual(0);
+            expect(element.rect.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+        }
+        await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues-mobile', { fullPage: true });
+        await page.setViewportSize({ width: 1028, height: 720 });
     }
-    await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues-mobile', { fullPage: true });
-    await page.setViewportSize({ width: 1028, height: 720 });
 
     const capacityGetsBefore = capacityCalls(fixture.calls, 'GET').length;
     const taskGetsBefore = fixture.calls.filter(call => call.method === 'GET'
@@ -1683,11 +1689,13 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     await page.waitForTimeout(180);
     await expectReadStatusBounds('sticky Planning Retry');
 
-    await page.setViewportSize({ width: 375, height: 720 });
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectReadStatusBounds('mobile Retry');
-    await captureCapacityScreenshot(page, testInfo, 'capacity-mobile-stale-retry', { fullPage: true });
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await expectReadStatusBounds('mobile Retry');
+        await captureCapacityScreenshot(page, testInfo, 'capacity-mobile-stale-retry', { fullPage: true });
+    }
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
@@ -1706,11 +1714,13 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     });
     await page.waitForTimeout(180);
     await expectReadStatusBounds('sticky Planning Retrying');
-    await page.setViewportSize({ width: 375, height: 720 });
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectReadStatusBounds('mobile Retrying');
-    await captureCapacityScreenshot(page, testInfo, 'capacity-stale-retrying');
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await expectReadStatusBounds('mobile Retrying');
+        await captureCapacityScreenshot(page, testInfo, 'capacity-stale-retrying');
+    }
     fixture.state.capacityGetGate = null;
     resolveRetry();
 });
@@ -1992,40 +2002,42 @@ for (const teamCount of [1, 6, 7]) {
         expect(await firstCard.evaluate(node => getComputedStyle(node).height), 'conflict card height').toBe(idleHeight);
         await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-desktop-conflict`);
 
-        await page.setViewportSize({ width: 375, height: 720 });
-        await firstCard.getByRole('button', { name: `Cancel ${firstTeamName} capacity edit` }).click();
-        await firstCard.hover();
-        await firstCard.getByRole('button', { name: `Edit ${firstTeamName} capacity` }).click();
-        await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
-        await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
-        expectGridGeometry('mobile editing', await measureGrid(), 'absent');
-        const mobileGeometry = await firstCard.locator('.team-capacity-editor-row').evaluate(row => {
-            const card = row.closest('.team-stat-card');
-            const grid = card.parentElement;
-            const controls = [row.querySelector('input'), ...row.querySelectorAll('button')];
-            const rects = controls.map(control => control.getBoundingClientRect());
-            return {
-                gridScrollWidth: grid.scrollWidth,
-                gridClientWidth: grid.clientWidth,
-                documentWidth: document.documentElement.scrollWidth,
-                viewportWidth: window.innerWidth,
-                columnCount: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-                card: card.getBoundingClientRect(),
-                rects,
-            };
-        });
-        expect(mobileGeometry.gridScrollWidth).toBeLessThanOrEqual(mobileGeometry.gridClientWidth);
-        expect(mobileGeometry.documentWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
-        expect(mobileGeometry.columnCount).toBeLessThanOrEqual(2);
-        expect(mobileGeometry.rects[0].width).toBeLessThan(desktopEditor.controls[0].width);
-        expect(mobileGeometry.rects.map(rect => rect.height)).toEqual([28, 28, 28]);
-        expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.top))).size).toBe(1);
-        expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.bottom))).size).toBe(1);
-        mobileGeometry.rects.forEach(rect => {
-            expect(rect.left).toBeGreaterThanOrEqual(mobileGeometry.card.left);
-            expect(rect.right).toBeLessThanOrEqual(mobileGeometry.card.right);
-        });
-        await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-mobile-edit`);
+        if (testMobile) {
+            await page.setViewportSize({ width: 375, height: 720 });
+            await firstCard.getByRole('button', { name: `Cancel ${firstTeamName} capacity edit` }).click();
+            await firstCard.hover();
+            await firstCard.getByRole('button', { name: `Edit ${firstTeamName} capacity` }).click();
+            await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
+            await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
+            expectGridGeometry('mobile editing', await measureGrid(), 'absent');
+            const mobileGeometry = await firstCard.locator('.team-capacity-editor-row').evaluate(row => {
+                const card = row.closest('.team-stat-card');
+                const grid = card.parentElement;
+                const controls = [row.querySelector('input'), ...row.querySelectorAll('button')];
+                const rects = controls.map(control => control.getBoundingClientRect());
+                return {
+                    gridScrollWidth: grid.scrollWidth,
+                    gridClientWidth: grid.clientWidth,
+                    documentWidth: document.documentElement.scrollWidth,
+                    viewportWidth: window.innerWidth,
+                    columnCount: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+                    card: card.getBoundingClientRect(),
+                    rects,
+                };
+            });
+            expect(mobileGeometry.gridScrollWidth).toBeLessThanOrEqual(mobileGeometry.gridClientWidth);
+            expect(mobileGeometry.documentWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+            expect(mobileGeometry.columnCount).toBeLessThanOrEqual(2);
+            expect(mobileGeometry.rects[0].width).toBeLessThan(desktopEditor.controls[0].width);
+            expect(mobileGeometry.rects.map(rect => rect.height)).toEqual([28, 28, 28]);
+            expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.top))).size).toBe(1);
+            expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.bottom))).size).toBe(1);
+            mobileGeometry.rects.forEach(rect => {
+                expect(rect.left).toBeGreaterThanOrEqual(mobileGeometry.card.left);
+                expect(rect.right).toBeLessThanOrEqual(mobileGeometry.card.right);
+            });
+            await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-mobile-edit`);
+        }
     });
 }
 

@@ -120,7 +120,6 @@ async function installRingFixture(page, sprintState) {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(seed));
     }, {
         selectedView: 'eng',
-        planningLayout: 'list',
         selectedSprint: sprintId,
         sprintName,
         activeGroupId: 'grp-default',

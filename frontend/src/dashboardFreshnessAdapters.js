@@ -119,12 +119,12 @@ export function createCatchUpFreshnessAdapter(readCurrent, { now = Date.now, boa
             const input = readCurrent();
             const options = { forceRefresh: true, automatic: true, signal: job.signal, shouldApplyResult: () => guard(job, attempt) };
             // These owners hold failed replacement lanes; no nonce re-arms an unrelated effect.
-            if (planning && input.planningLayout === 'table') {
+            if (planning) {
                 await input.planningReview.refresh({ automatic: true, signal: job.signal, shouldApply: () => guard(job, attempt) });
                 if (guard(job, attempt)) await readCurrent().refreshCapacity({ signal: job.signal, shouldApply: () => guard(job, attempt) });
                 return [];
             }
-            if (!planning) await Promise.all([input.loadAlertEpics(options), input.fetchMissingPlanningInfo(input.selectedSprint, options),
+            await Promise.all([input.loadAlertEpics(options), input.fetchMissingPlanningInfo(input.selectedSprint, options),
                 input.loadReadyToCloseProductTasks(options), input.loadReadyToCloseTechTasks(options)]);
             if (!guard(job, attempt)) return;
             if (attempt.anchor && !attempt.deniedEpicKeys?.has(attempt.anchor.epicKey) && /^[A-Z][A-Z0-9_]*-\d+$/i.test(attempt.anchor.epicKey)) {
@@ -201,8 +201,9 @@ export function createPlanningFreshnessAdapter(readCurrent, stableOwner = {}) {
             finally { entry.release(); }
         },
         async followUp(job) {
-            // The assignee capacity strip re-reads its own document beside the review and capacity follow-ups; it skips itself while busy.
-            const assignee = stableOwner.assigneeCapacity, read = assignee && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
+            // The displayed Teams' stored numbers are re-read beside the review and capacity follow-ups (#323): never once the job
+            // no longer applies (an editor or push opened), and not while the strip's own owner is busy.
+            const assignee = stableOwner.assigneeCapacity, read = assignee && job.shouldApply() && !assignee.blocked() ? assignee.refresh({ signal: job.signal, shouldApply: job.shouldApply, automatic: true }) : null;
             try { return await primary.followUp(job); } finally { await read?.catch(() => {}); holds.get(job)?.finish(); }
         },
     };

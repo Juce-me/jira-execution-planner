@@ -1,6 +1,6 @@
 """Optional EPM Home read scopes: authorize-request union, callback grant handling and profile selection.
 
-Synthetic data only; the cutover helper builds real DB OAuth browser sessions on SQLite. No network.
+Synthetic data only; the cutover helper builds real DB OAuth browser sessions on PostgreSQL. No network.
 """
 
 import unittest
@@ -57,6 +57,7 @@ class DbJourneyMixin:
         from tests import test_db_oauth_cutover as cutover
         self.helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
         self.helper.setUp()
+        self.addCleanup(self.helper.doCleanups)
         self.addCleanup(self.helper.tearDown)
         self.client = self.helper.client
         self.database_url = self.helper.database_url
@@ -329,8 +330,8 @@ class EpmRouteStateTests(DbJourneyMixin, unittest.TestCase):
         self.enable(True)
         self.set_grant(self.helper_base_scopes())
         for path in self.ROUTES:
-            with self.subTest(path=path), patch.object(epm_home, '_read_metadata_credential',
-                                                        side_effect=AssertionError('API-token fallback')):
+            self.assertFalse(hasattr(epm_home, '_read_metadata_credential'))
+            with self.subTest(path=path):
                 response = self.get(path)
                 if path == '/api/epm/scope':
                     # The scope route needs no Home scope: the site id comes from the validated context.

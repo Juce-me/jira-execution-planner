@@ -4,16 +4,19 @@ import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-import threading
-import tempfile
 from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
-from backend.auth.context import RequestAuthContext
-from backend.auth.csrf import CSRF_SESSION_KEY, issue_csrf_token, validate_csrf_token
+from backend.db import engine as db_engine, models
+from backend.auth.db_context import invalidate_auth_status_cache
+from dataclasses import replace
+from backend.auth.db_context import resolve_db_request_auth_context
+from backend.auth.csrf import csrf_token_hash
+from backend.auth.csrf_store import CsrfStorageUnavailable, issue_csrf_token
 from backend.routes import auth_routes
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, forbid_jira_http
+from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, forbid_jira_http, install_oauth_session
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -23,26 +26,51 @@ class TestAuthRoutes(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        if hasattr(jira_server, 'OAUTH_TOKEN_STORE'):
-            jira_server.OAUTH_TOKEN_STORE.clear()
-        if hasattr(jira_server, 'OAUTH_REFRESH_LOCKS'):
-            jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._old_oauth_token_store_path = getattr(jira_server, 'OAUTH_TOKEN_STORE_PATH', '')
-        jira_server.OAUTH_TOKEN_STORE_PATH = ''
+        self.database_url = fresh_database_url(self.addCleanup)
+        for patcher in (
+            patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url}),
+            patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),
+            patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
+        self.addCleanup(db_engine.dispose_engines)
+        self.addCleanup(invalidate_auth_status_cache)
         self.client = jira_server.app.test_client()
 
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE_PATH = self._old_oauth_token_store_path
 
-    def test_basic_auth_status_reports_configured(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'JIRA_EMAIL', 'user@example.com'), \
-             patch.object(jira_server, 'JIRA_TOKEN', 'token-123'):
-            response = self.client.get('/api/auth/status')
+    def test_basic_headers_and_legacy_cookie_grant_no_authentication(self):
+        with self.client.session_transaction() as cookie:
+            cookie['atlassian_oauth_session_id'] = 'retired-session'
+        with patch('builtins.open', side_effect=AssertionError('No legacy file I/O')):
+            response = self.client.get('/api/auth/status', headers={'Authorization': 'Basic synthetic'})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.get_json()['authMode'], 'basic')
-        self.assertTrue(response.get_json()['authenticated'])
+        self.assertEqual(response.get_json()['authMode'], 'atlassian_oauth')
+        self.assertFalse(response.get_json()['authenticated'])
+
+    def test_fixture_session_label_is_not_identity_or_browser_authority(self):
+        other = jira_server.app.test_client()
+        first = install_oauth_session(self.client, session_id='same-label', account_id='synthetic-one')
+        second = install_oauth_session(other, session_id='same-label', account_id='synthetic-two')
+        self.assertNotEqual(first, second)
+        context_one = resolve_db_request_auth_context(first)
+        context_two = resolve_db_request_auth_context(second)
+        self.assertNotEqual(context_one.user_id, context_two.user_id)
+        self.assertEqual(context_one.workspace_id, context_two.workspace_id)
+        self.assertEqual(context_one.atlassian_account_id, 'synthetic-one')
+        self.assertEqual(context_two.atlassian_account_id, 'synthetic-two')
+        for client in (self.client, other):
+            self.assertTrue(client.get('/api/auth/status').get_json()['authenticated'])
+            with client.session_transaction() as cookie:
+                self.assertNotIn('atlassian_oauth_session_id', cookie)
+                self.assertEqual(set(cookie['db_oauth_session']), {'db_browser_session_id'})
+
+    def test_fixture_rejects_missing_explicit_db_connection(self):
+        with self.assertRaisesRegex(ValueError, 'does not exist'):
+            install_oauth_session(self.client, db_auth_connection_id='missing-connection')
+        with self.client.session_transaction() as cookie:
+            self.assertNotIn('db_oauth_session', cookie)
 
     def test_oauth_status_requires_login_without_session(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -72,33 +100,16 @@ class TestAuthRoutes(unittest.TestCase):
                 self.assertIn(new_scope, text)
                 self.assertNotIn(old_scope, text)
 
-    def test_status_requires_reconsent_when_oauth_session_has_old_scopes(self):
-        with self.client.session_transaction() as flask_session:
-            flask_session["atlassian_oauth_session_id"] = "session-1"
-        jira_server.OAUTH_TOKEN_STORE["session-1"] = {
-            "access_token": "access-123",
-            "refresh_token": "refresh-123",
-            "expires_at": 9999999999,
-            "cloudid": "cloud-123",
-            "site_url": "https://example.atlassian.net",
-            "site_name": "Example",
-            "account_id": "account-123",
-            "account_status": "active",
-            "stored_at": time.time(),
-            "scope": "read:me read:jira-work read:jira-user offline_access",
-        }
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "ATLASSIAN_SCOPES", "read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access"):
-            response = self.client.get("/api/auth/status")
-
+    def test_status_requires_reconsent_when_db_connection_has_old_scopes(self):
+        install_oauth_session(self.client, scope='read:me read:jira-work read:jira-user offline_access')
+        response = self.client.get('/api/auth/status')
         self.assertEqual(response.status_code, 200)
         payload = response.get_json()
-        self.assertEqual(payload["authenticated"], False)
-        self.assertEqual(payload["loginRequired"], True)
-        self.assertEqual(payload["loginUrl"], "/login?reason=missing_scope")
-        self.assertNotIn("access_token", str(payload))
-        self.assertNotIn("refresh_token", str(payload))
+        self.assertFalse(payload['authenticated'])
+        self.assertTrue(payload['loginRequired'])
+        self.assertEqual(payload['loginUrl'], '/login?reason=missing_scope')
+        self.assertNotIn('access_token', str(payload))
+        self.assertNotIn('refresh_token', str(payload))
 
     def test_oauth_refresh_requires_session(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -111,171 +122,70 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(response.get_json()['loginUrl'], '/login?reason=session_expired')
 
     def test_oauth_refresh_returns_authenticated_without_tokens(self):
-        with self.client.session_transaction() as session:
-            session['atlassian_oauth_session_id'] = 'session-123'
-        jira_server.OAUTH_TOKEN_STORE['session-123'] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 600,
-            'cloudid': 'cloud-123',
-            'site_url': 'https://example.atlassian.net',
-            'stored_at': time.time(),
-        }
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
-            response = self.client.post(
-                '/api/auth/refresh',
-                headers={'X-Requested-With': 'jira-execution-planner'},
-            )
+        install_oauth_session(self.client)
+        csrf = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'}).get_json()['csrfToken']
+        response = self.client.post('/api/auth/refresh', headers={
+            'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': csrf})
         self.assertEqual(response.status_code, 200)
-        body = response.get_json()
-        self.assertTrue(body['authenticated'])
-        self.assertNotIn('access_token', body)
-        self.assertNotIn('refresh_token', body)
+        self.assertTrue(response.get_json()['authenticated'])
+        self.assertNotIn('access_token', response.get_json())
+        self.assertNotIn('refresh_token', response.get_json())
 
     def test_db_csrf_token_survives_connection_rotation_only_in_issuing_browser(self):
-        """Connection rotation preserves CSRF validity only in the issuing browser."""
-        def context(browser_session_id, token_version):
-            return RequestAuthContext(
-                auth_mode='atlassian_oauth',
-                user_id='user-1',
-                stable_subject='account-1',
-                atlassian_account_id='account-1',
-                workspace_id='workspace-1',
-                auth_connection_id='connection-1',
-                cloud_id='cloud-1',
-                site_url='https://example.atlassian.net',
-                token_version=token_version,
-                account_status='active',
-                is_admin=False,
-                browser_session_id=browser_session_id,
-            )
-
         profile_a = jira_server.app.test_client()
         profile_b = jira_server.app.test_client()
-        before_rotation = context('browser-b', '1')
-        after_rotation_b = context('browser-b', '2')
-        after_rotation_a = context('browser-a', '2')
-        with profile_b.session_transaction() as flask_session:
-            flask_session['db_oauth_session'] = {
-                'db_browser_session_id': before_rotation.browser_session_id,
-            }
-
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=before_rotation):
-            response = profile_b.get('/api/auth/csrf')
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        payload_a = install_oauth_session(profile_a)
+        payload_b = install_oauth_session(profile_b)
+        context_a = resolve_db_request_auth_context(payload_a)
+        context_b = resolve_db_request_auth_context(payload_b)
+        self.assertEqual(context_a.auth_connection_id, context_b.auth_connection_id)
+        response = profile_b.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 200)
         token = response.get_json()['csrfToken']
-        with profile_b.session_transaction() as flask_session:
-            issued_hashes = list(flask_session[CSRF_SESSION_KEY])
-        with profile_a.session_transaction() as flask_session:
-            flask_session[CSRF_SESSION_KEY] = issued_hashes
-            self.assertFalse(validate_csrf_token(flask_session, {
-                'db_browser_session_id': after_rotation_a.browser_session_id,
-                'db_auth_connection_id': after_rotation_a.auth_connection_id,
-                'account_id': after_rotation_a.atlassian_account_id,
-            }, token))
-        with profile_b.session_transaction() as flask_session:
-            self.assertFalse(validate_csrf_token(flask_session, {
-                'db_browser_session_id': after_rotation_b.browser_session_id,
-                'db_auth_connection_id': 'connection-2',
-                'account_id': after_rotation_b.atlassian_account_id,
-            }, token))
-            self.assertFalse(validate_csrf_token(flask_session, {
-                'db_browser_session_id': after_rotation_b.browser_session_id,
-                'db_auth_connection_id': after_rotation_b.auth_connection_id,
-                'account_id': 'account-2',
-            }, token))
-            self.assertTrue(validate_csrf_token(flask_session, {
-                'db_browser_session_id': after_rotation_b.browser_session_id,
-                'db_auth_connection_id': after_rotation_b.auth_connection_id,
-                'account_id': after_rotation_b.atlassian_account_id,
-            }, token))
+        with db_engine.session_scope() as db:
+            db.get(models.AuthConnection, context_b.auth_connection_id).token_version += 1
+        after_rotation_b = resolve_db_request_auth_context(payload_b)
+        self.assertNotEqual(context_b.token_version, after_rotation_b.token_version)
+        from backend.auth.csrf import csrf_session_data_for_auth_context
+        # The token version is not part of the binding: the stored hash still matches after rotation,
+        # while another connection, account or browser session derives a different hash.
+        bound = csrf_token_hash(token, csrf_session_data_for_auth_context(after_rotation_b))
+        with db_engine.session_scope() as db:
+            self.assertEqual(db.get(models.BrowserCsrfToken, bound).browser_session_id,
+                             after_rotation_b.browser_session_id)
+        for changed in (replace(after_rotation_b, auth_connection_id='different-connection'),
+                        replace(after_rotation_b, atlassian_account_id='different-account'), context_a):
+            self.assertNotEqual(csrf_token_hash(token, csrf_session_data_for_auth_context(changed)), bound)
+        # Exercise actual token-bound private writes after rotation: only the issuing browser may use it.
+        response = profile_a.post('/api/epm/preferences', json={'viewEnabled': True}, headers={
+            'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': token})
+        self.assertEqual(response.status_code, 403)
+        response = profile_b.post('/api/epm/preferences', json={'viewEnabled': True}, headers={
+            'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': token})
+        self.assertEqual(response.status_code, 200)
 
     def test_csrf_context_mapping_preserves_precedence_and_is_shared_by_consumers(self):
-        """Use one mapping helper for opaque and legacy CSRF session data."""
         from backend.auth.csrf import csrf_session_data_for_auth_context
-
-        opaque_context = RequestAuthContext(
-            auth_mode='atlassian_oauth',
-            user_id='user-1',
-            stable_subject='account-1',
-            atlassian_account_id='account-1',
-            workspace_id='workspace-1',
-            auth_connection_id='connection-1',
-            cloud_id='cloud-1',
-            site_url='https://example.atlassian.net',
-            token_version='7',
-            account_status='active',
-            is_admin=False,
-            browser_session_id='browser-1',
-        )
-        legacy_context = RequestAuthContext(
-            auth_mode='atlassian_oauth',
-            user_id='user-1',
-            stable_subject='account-1',
-            atlassian_account_id='account-1',
-            workspace_id='workspace-1',
-            auth_connection_id='connection-1',
-            cloud_id='cloud-1',
-            site_url='https://example.atlassian.net',
-            token_version='7',
-            account_status='active',
-            is_admin=False,
-        )
-        opaque_data = {
-            'db_browser_session_id': 'browser-1',
-            'db_auth_connection_id': 'connection-1',
-            'account_id': 'account-1',
-        }
-        legacy_data = {
-            'db_browser_session_id': '',
-            'db_auth_connection_id': 'connection-1',
-            'account_id': 'account-1',
-            'db_token_version': '7',
-        }
-        self.assertEqual(csrf_session_data_for_auth_context(opaque_context), opaque_data)
-        self.assertEqual(csrf_session_data_for_auth_context(legacy_context), legacy_data)
-
-        issued_data = []
-
-        def issue_token(_flask_session, session_data):
-            issued_data.append(session_data)
-            return 'csrf-token'
-
-        with patch.object(
-            jira_server,
-            'csrf_session_data_for_auth_context',
-            wraps=csrf_session_data_for_auth_context,
-        ) as shared_mapper:
-            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-                 jira_server.app.test_request_context('/api/scenario', method='POST'):
-                with patch.object(
-                    jira_server,
-                    'scenario_draft_request_auth_context',
-                    return_value=opaque_context,
-                ):
-                    internal_data = jira_server.csrf_session_data_for_request()
-
-            with self.client.session_transaction() as flask_session:
-                flask_session['db_oauth_session'] = {
-                    'db_browser_session_id': opaque_context.browser_session_id,
-                }
-            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-                 patch.object(
-                     jira_server,
-                     'current_request_auth_context',
-                     return_value=opaque_context,
-                 ), patch.object(auth_routes, 'issue_csrf_token', side_effect=issue_token):
-                response = self.client.get('/api/auth/csrf')
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(internal_data, opaque_data)
-        self.assertEqual(issued_data, [opaque_data])
-        self.assertEqual(shared_mapper.call_count, 2)
+        payload = install_oauth_session(self.client)
+        context = resolve_db_request_auth_context(payload)
+        opaque_data = {'db_browser_session_id': context.browser_session_id,
+                       'db_auth_connection_id': context.auth_connection_id,
+                       'account_id': context.atlassian_account_id}
+        self.assertEqual(csrf_session_data_for_auth_context(context), opaque_data)
+        legacy = replace(context, browser_session_id='')
+        self.assertEqual(csrf_session_data_for_auth_context(legacy), {
+            'db_browser_session_id': '', 'db_auth_connection_id': context.auth_connection_id,
+            'account_id': context.atlassian_account_id})
+        with self.assertRaises(CsrfStorageUnavailable):  # no browser session row: no cookie fallback
+            issue_csrf_token(legacy)
+        with jira_server.app.test_request_context('/'):
+            jira_server.session['db_oauth_session'] = payload
+            self.assertEqual(csrf_session_data_for_auth_context(jira_server.csrf_request_auth_context()), opaque_data)
+        with patch.object(auth_routes, 'issue_csrf_token', wraps=issue_csrf_token) as issued:
+            response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.get_json()['csrfToken'])
+        self.assertEqual(csrf_session_data_for_auth_context(issued.call_args.args[0]), opaque_data)
 
     def test_oauth_login_redirects_to_atlassian(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
@@ -285,8 +195,7 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
              patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
              patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
+             patch.object(jira_server, 'database_storage_enabled', return_value=True):
             response = self.client.get('/api/auth/atlassian/login')
         self.assertEqual(response.status_code, 302)
         self.assertIn('https://auth.atlassian.com/authorize?', response.headers['Location'])
@@ -318,33 +227,6 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn('/api/auth/atlassian/login', body)
         self.assertIn('prompt=consent', body)
 
-    def test_oauth_login_rejects_non_local_token_store_environment(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'production'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            response = self.client.get('/api/auth/atlassian/login')
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
-
-    def test_oauth_login_rejects_disabled_local_token_store(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            response = self.client.get('/api/auth/atlassian/login')
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
 
     def test_oauth_logout_requires_unsafe_method_header(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
@@ -354,12 +236,10 @@ class TestAuthRoutes(unittest.TestCase):
 
     def test_oauth_login_rejects_basic_mode(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'JIRA_EMAIL', 'user@example.com'), \
-             patch.object(jira_server, 'JIRA_TOKEN', 'token-123'):
+             patch('builtins.open', side_effect=AssertionError('No legacy file I/O')):
             response = self.client.get('/api/auth/atlassian/login')
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'oauth_not_enabled')
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_callback_rejects_invalid_state(self):
         with self.client.session_transaction() as session:
@@ -373,179 +253,32 @@ class TestAuthRoutes(unittest.TestCase):
             self.assertNotIn('oauth_state', session)
             self.assertNotIn('oauth_pkce_verifier', session)
 
-    def test_logout_clears_auth_session(self):
-        with self.client.session_transaction() as session:
-            session['atlassian_oauth_session_id'] = 'session-123'
-        jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-        jira_server.OAUTH_REFRESH_LOCKS['session-123'] = threading.RLock()
-        response = self.client.post(
-            '/api/auth/logout',
-            headers={'X-Requested-With': 'jira-execution-planner'},
-        )
+    def test_logout_clears_auth_session_and_deletes_opaque_handle(self):
+        payload = install_oauth_session(self.client)
+        csrf = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'}).get_json()['csrfToken']
+        response = self.client.post('/api/auth/logout', headers={
+            'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': csrf})
         self.assertEqual(response.status_code, 200)
-        with self.client.session_transaction() as session:
-            self.assertNotIn('atlassian_oauth_session_id', session)
-        self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
-        self.assertNotIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
+        with self.client.session_transaction() as cookie:
+            self.assertNotIn('db_oauth_session', cookie)
+        with db_engine.session_scope() as db:
+            self.assertIsNone(db.get(models.BrowserSession, payload['db_browser_session_id']))
 
-    def test_save_oauth_session_clears_falsy_payload(self):
-        with jira_server.app.test_request_context('/'):
-            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = threading.RLock()
-            jira_server.save_oauth_session({})
-            self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
-            self.assertNotIn('session-123', jira_server.OAUTH_TOKEN_STORE)
-            self.assertNotIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
 
-    def test_save_oauth_session_clear_waits_for_in_flight_refresh(self):
-        class RecordingLock:
-            def __init__(self):
-                self.acquired = False
-
-            def __enter__(self):
-                self.acquired = True
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                self.acquired = False
-
-        lock = RecordingLock()
-        with jira_server.app.test_request_context('/'):
-            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = lock
-
-            def drop_session(session_id):
-                self.assertTrue(lock.acquired)
-
-            with patch.object(jira_server, '_drop_oauth_session', side_effect=drop_session) as mocked_drop:
-                jira_server.save_oauth_session({})
-
-            mocked_drop.assert_called_once_with('session-123')
-
-    def test_save_oauth_session_db_payload_waits_for_in_flight_refresh(self):
-        class RecordingLock:
-            def __init__(self):
-                self.acquired = False
-
-            def __enter__(self):
-                self.acquired = True
-                return self
-
-            def __exit__(self, exc_type, exc, tb):
-                self.acquired = False
-
-        lock = RecordingLock()
-        with jira_server.app.test_request_context('/'):
-            jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-            jira_server.OAUTH_TOKEN_STORE['session-123'] = {'access_token': 'access-123'}
-            jira_server.OAUTH_REFRESH_LOCKS['session-123'] = lock
-
-            def drop_session(session_id):
-                self.assertTrue(lock.acquired)
-
-            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                 patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-                 patch.object(jira_server, '_drop_oauth_session', side_effect=drop_session) as mocked_drop:
-                jira_server.save_oauth_session({
-                    'db_auth_connection_id': 'connection-1',
-                    'db_token_version': '2',
-                })
-
-            mocked_drop.assert_called_once_with('session-123')
-            self.assertNotIn('atlassian_oauth_session_id', jira_server.session)
-            self.assertEqual(jira_server.session['db_oauth_session'], {
-                'db_auth_connection_id': 'connection-1',
-                'db_token_version': '2',
-            })
-
-    def test_oauth_session_data_sweeps_expired_store_entries(self):
-        now = 1000
-        with jira_server.app.test_request_context('/'):
-            jira_server.session['atlassian_oauth_session_id'] = 'current-session'
-            jira_server.OAUTH_TOKEN_STORE['expired-session'] = {
-                'access_token': 'expired-access',
-                'stored_at': now - jira_server.OAUTH_TOKEN_STORE_TTL_SECONDS - 1,
-            }
-            jira_server.OAUTH_REFRESH_LOCKS['expired-session'] = object()
-            jira_server.OAUTH_TOKEN_STORE['current-session'] = {
-                'access_token': 'current-access',
-                'stored_at': now,
-            }
-
-            with patch.object(jira_server.time, 'time', return_value=now):
-                data = jira_server.oauth_session_data()
-
-            self.assertEqual(data['access_token'], 'current-access')
-            self.assertNotIn('expired-session', jira_server.OAUTH_TOKEN_STORE)
-            self.assertNotIn('expired-session', jira_server.OAUTH_REFRESH_LOCKS)
-
-    def test_oauth_session_data_restores_local_token_store_after_restart(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            store_path = f'{tmpdir}/oauth-token-store.json'
-            with jira_server.app.test_request_context('/'):
-                jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                     patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-                     patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-                     patch.object(jira_server, 'OAUTH_TOKEN_STORE_PATH', store_path):
-                    jira_server.save_oauth_session({
-                        'access_token': 'access-123',
-                        'refresh_token': 'refresh-123',
-                        'expires_at': time.time() + 600,
-                        'cloudid': 'cloud-123',
-                        'site_url': 'https://example.atlassian.net',
-                    })
-                    jira_server.OAUTH_TOKEN_STORE.clear()
-                    jira_server.OAUTH_REFRESH_LOCKS.clear()
-
-                    restored = jira_server.oauth_session_data()
-
-                self.assertEqual(restored['access_token'], 'access-123')
-                self.assertEqual(restored['refresh_token'], 'refresh-123')
-                self.assertIn('session-123', jira_server.OAUTH_REFRESH_LOCKS)
-
-    def test_oauth_session_clear_removes_local_token_store_entry(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            store_path = f'{tmpdir}/oauth-token-store.json'
-            with jira_server.app.test_request_context('/'):
-                jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                     patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-                     patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-                     patch.object(jira_server, 'OAUTH_TOKEN_STORE_PATH', store_path):
-                    jira_server.save_oauth_session({
-                        'access_token': 'access-123',
-                        'refresh_token': 'refresh-123',
-                        'expires_at': time.time() + 600,
-                    })
-                    jira_server.save_oauth_session({})
-                    jira_server.session['atlassian_oauth_session_id'] = 'session-123'
-
-                    restored = jira_server.oauth_session_data()
-
-                self.assertEqual(restored, {})
-
-    def test_startup_auth_validation_rejects_disallowed_local_token_store(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'production'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            with self.assertRaises(jira_server.AuthError) as raised:
-                jira_server.validate_startup_auth_config()
-
-        self.assertEqual(raised.exception.code, 'local_token_store_not_allowed')
+    def test_retired_profiles_reject_before_file_or_provider_io(self):
+        for auth_mode, storage in (('basic', 'db'), ('atlassian_oauth', 'jsonfile')):
+            with self.subTest(auth_mode=auth_mode, storage=storage), \
+                 patch.object(jira_server, 'JIRA_AUTH_MODE', auth_mode), \
+                 patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': storage}), \
+                 patch('builtins.open', side_effect=AssertionError('No legacy file I/O')), \
+                 patch.object(jira_server, 'exchange_authorization_code', side_effect=AssertionError('No provider I/O')):
+                with self.assertRaises(jira_server.AuthError) as raised:
+                    jira_server.validate_startup_auth_config()
+                self.assertEqual(raised.exception.code, 'runtime_auth_unsupported' if auth_mode == 'basic' else 'runtime_storage_unsupported')
 
     def test_db_oauth_startup_does_not_require_local_token_store(self):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'}), \
              patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
@@ -554,119 +287,44 @@ class TestAuthRoutes(unittest.TestCase):
              patch.object(jira_server, 'validate_config_storage_startup', return_value=None):
             jira_server.validate_startup_auth_config()
 
-    def test_startup_auth_validation_rejects_too_short_local_token_store_ttl(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'OAUTH_TOKEN_STORE_TTL_SECONDS', 30), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            with self.assertRaises(jira_server.AuthError) as raised:
-                jira_server.validate_startup_auth_config()
-
-        self.assertEqual(raised.exception.code, 'oauth_token_store_ttl_too_low')
-
-    def test_default_oauth_token_store_ttl_supports_persistent_local_sessions(self):
-        self.assertGreaterEqual(jira_server.OAUTH_TOKEN_STORE_TTL_SECONDS, 60 * 60 * 24 * 30)
 
     def test_credentialed_cors_rejects_wildcard_origins(self):
         with patch.dict('os.environ', {'APP_ALLOWED_ORIGINS': '*'}):
             with self.assertRaises(ValueError):
                 app_module._allowed_cors_origins()
 
-    def test_callback_stores_oauth_tokens_server_side_with_identity(self):
-        with self.client.session_transaction() as session:
-            session['oauth_state'] = 'state-123'
-            session['oauth_pkce_verifier'] = 'verifier-123'
-
-        token_data = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_in': 3600,
-        }
-        user_profile = {
-            'account_id': 'account-123',
-            'account_status': 'active',
-            'email': 'new@example.com',
-            'name': 'New Name',
-        }
-        resource = {
-            'id': 'cloud-123',
-            'url': 'https://example.atlassian.net/',
-            'name': 'Example Jira',
-        }
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'exchange_authorization_code', return_value=token_data) as exchange_code, \
-             patch.object(jira_server, 'fetch_current_user', return_value=user_profile), \
-             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            response = self.client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
-
+    def test_callback_stores_encrypted_tokens_and_only_opaque_cookie(self):
+        self._prime_callback()
+        with self._oauth_flow():
+            response = self.client.get(self.CALLBACK_URL)
         self.assertEqual(response.status_code, 302)
-        exchange_code.assert_called_once()
-        self.assertEqual(exchange_code.call_args.args[2], 'verifier-123')
-        with self.client.session_transaction() as session:
-            session_payload = dict(session)
-            session_id = session.get('atlassian_oauth_session_id')
-            self.assertIsNotNone(session_id)
-            self.assertNotIn('oauth_state', session)
-            self.assertNotIn('oauth_pkce_verifier', session)
-            self.assertNotIn('atlassian_oauth', session)
-            self.assertNotIn('access-123', str(session_payload))
-            self.assertNotIn('refresh-123', str(session_payload))
+        with self.client.session_transaction() as cookie:
+            payload = dict(cookie)
+            self.assertEqual(set(cookie['db_oauth_session']), {'db_browser_session_id'})
+            browser_id = cookie['db_oauth_session']['db_browser_session_id']
+            self.assertNotIn('atlassian_oauth_session_id', cookie)
+            self.assertNotIn('oauth_state', cookie)
+            self.assertNotIn('oauth_pkce_verifier', cookie)
+        self.assertNotIn('access-123', str(payload))
+        self.assertNotIn('refresh-123', str(payload))
+        with db_engine.session_scope() as db:
+            browser = db.get(models.BrowserSession, browser_id)
+            connection = db.get(models.AuthConnection, browser.auth_connection_id)
+            self.assertEqual(db.get(models.User, connection.user_id).external_subject, 'account-123')
+            tokens = db.query(models.AuthToken).filter_by(connection_id=connection.id).all()
+            self.assertEqual({token.token_kind for token in tokens}, {'access_token', 'refresh_token'})
+            for token in tokens:
+                self.assertNotIn('access-123', token.ciphertext)
+                self.assertNotIn('refresh-123', token.ciphertext)
 
-        stored = jira_server.OAUTH_TOKEN_STORE[session_id]
-        self.assertEqual(stored['access_token'], 'access-123')
-        self.assertEqual(stored['account_id'], 'account-123')
-        self.assertEqual(stored['account_status'], 'active')
-
-    def test_callback_rejects_disallowed_local_token_store_before_saving_tokens(self):
-        with self.client.session_transaction() as session:
-            session['oauth_state'] = 'state-123'
-            session['oauth_pkce_verifier'] = 'verifier-123'
-
-        token_data = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_in': 3600,
-        }
-        user_profile = {
-            'account_id': 'account-123',
-            'account_status': 'active',
-        }
-        resource = {
-            'id': 'cloud-123',
-            'url': 'https://example.atlassian.net/',
-            'name': 'Example Jira',
-        }
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'production'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', True), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
-             patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
-             patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
-             patch.object(jira_server, 'FLASK_SECRET_KEY', 'test-secret'), \
-             patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'), \
-             patch.object(jira_server, 'exchange_authorization_code', return_value=token_data), \
-             patch.object(jira_server, 'fetch_current_user', return_value=user_profile), \
-             patch.object(jira_server, 'fetch_accessible_resources', return_value=[resource]), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=False):
-            response = self.client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
-
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'local_token_store_not_allowed')
-        self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
+    def test_callback_rejects_retired_file_profile_before_exchange(self):
+        self._prime_callback()
+        with self._oauth_flow(), patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
+             patch('builtins.open', side_effect=AssertionError('No legacy file I/O')), \
+             patch.object(jira_server, 'exchange_authorization_code', side_effect=AssertionError('No provider I/O')):
+            response = self.client.get(self.CALLBACK_URL)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_storage_unsupported')
 
     PENDING_VIEW_KEY = 'pending_share_view'
     SHARE_LINK = 'v=1&mode=board&group=default&sprint=4182&find=50%25%20off'
@@ -677,17 +335,16 @@ class TestAuthRoutes(unittest.TestCase):
         values = dict(
             JIRA_AUTH_MODE='atlassian_oauth',
             APP_ENVIRONMENT_KEY='local',
-            OAUTH_LOCAL_TOKEN_STORE_ALLOWED=True,
             ATLASSIAN_CLIENT_ID='client-123',
             ATLASSIAN_CLIENT_SECRET='secret-123',
             ATLASSIAN_REDIRECT_URI='http://localhost:5050/api/auth/atlassian/callback',
             FLASK_SECRET_KEY='test-secret',
             JIRA_URL='https://example.atlassian.net',
-            database_storage_enabled=lambda: False,
             exchange_authorization_code=lambda config, code, verifier: {
                 'access_token': 'access-123',
                 'refresh_token': 'refresh-123',
                 'expires_in': 3600,
+                'scope': FULL_OAUTH_SCOPE,
             },
             fetch_current_user=lambda token: {'account_id': 'account-123', 'account_status': 'active'},
             fetch_accessible_resources=lambda token: [{
@@ -724,7 +381,7 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual((parts.scheme, parts.netloc, parts.path, parts.fragment), ('', '', '/', ''))
         with self.client.session_transaction() as flask_session:
             self.assertNotIn(self.PENDING_VIEW_KEY, flask_session)
-            self.assertIsNotNone(flask_session.get('atlassian_oauth_session_id'))
+            self.assertTrue(flask_session.get('db_oauth_session', {}).get('db_browser_session_id'))
             self.assertNotIn('oauth_state', flask_session)
 
     def test_callback_without_a_stash_redirects_to_root(self):
@@ -822,21 +479,6 @@ class TestAuthRoutes(unittest.TestCase):
             self.assertNotIn(self.PENDING_VIEW_KEY, flask_session)
             self.assertNotIn('oauth_state', flask_session)
 
-    def test_basic_mode_never_stashes_or_consumes_a_share_view(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'):
-            entry = self.client.get('/?' + self.SHARE_LINK)
-            entry.close()
-            self.assertEqual(entry.status_code, 200)
-            self.assertEqual(entry.headers.getlist('Set-Cookie'), [])
-            self.assertIsNone(self._stash())
-
-            stash = self._fresh_stash(self.SHARE_LINK)
-            with self.client.session_transaction() as flask_session:
-                flask_session[self.PENDING_VIEW_KEY] = stash
-            login = self.client.get('/login')
-            self.assertEqual(login.status_code, 302)
-            self.assertEqual(login.headers['Location'], '/')
-            self.assertEqual(self._stash(), stash)
 
     def test_full_login_return_chain_applies_the_link_once(self):
         forbid_jira_http(self)
@@ -864,8 +506,6 @@ class TestAuthRoutes(unittest.TestCase):
         with self.client.session_transaction() as flask_session:
             flask_session['db_oauth_session'] = {'db_browser_session_id': browser_session_id}
             flask_session['atlassian_oauth_session_id'] = browser_session_id
-            for _ in range(8):
-                issue_csrf_token(flask_session, {})
         longest = 'v=1&find=' + secrets.token_urlsafe(1200)[:1527]
         too_long = longest + 'a'
         self.assertEqual((len(longest), len(too_long)), (1536, 1537))
@@ -881,7 +521,7 @@ class TestAuthRoutes(unittest.TestCase):
             self.assertLessEqual(len(headers[0]), 4093)
         with self.client.session_transaction() as flask_session:
             self.assertEqual(flask_session[self.PENDING_VIEW_KEY]['q'], longest)
-            self.assertEqual(len(flask_session['csrf_token_hashes']), 8)
+            self.assertNotIn('csrf_token_hashes', flask_session)  # CSRF state lives in the database
             self.assertTrue(flask_session['oauth_state'])
             self.assertTrue(flask_session['oauth_pkce_verifier'])
         self.assertIn('state=' + flask_session['oauth_state'], login.headers['Location'])

@@ -1,10 +1,9 @@
 """Current-user saved view configuration routes."""
 
-from flask import Blueprint, g, jsonify, request, session
+from flask import Blueprint, g, jsonify, request
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
-from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.config.db_repository import DbConfigRepository, ViewConfigNotFound, infer_view_type
 from backend.config.shared_config import sanitize_private_view_payload, validate_private_view_ownership
@@ -42,15 +41,8 @@ def _require_token_bound_csrf():
         return None
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
         return None
-    if getattr(g, 'security_csrf_validated', False):
-        return None
-    data = oauth_session_data()
-    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'A valid CSRF token is required for this request.',
-    }), 403
+    from backend.security.guards import require_token_bound_csrf_once
+    return require_token_bound_csrf_once(get_jira_server())
 
 
 @bp.before_request

@@ -275,7 +275,6 @@ async function openEngCatchUp(page, viewport, options = {}) {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
         selectedView: 'eng',
-        planningLayout: 'list',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -630,50 +629,11 @@ test('Catch Up exposes the compact, filter-bar, and pinned-epic sticky stack', a
     await page.screenshot({ path: `${screenshotDir}/catch-up-sticky-stack.png`, fullPage: false });
 });
 
-test('Planning orders compact, filter bar, planning, and pinned epic without overlap', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1440, height: 600 }, {
-        expectedSurface: 'planning',
-        prefs: { showPlanning: true },
-        planningSelection: ['PRODUCT-1', 'TECH-2'],
-    });
-    await expect(page.locator('.planning-panel.open')).toBeVisible();
-    const snapshots = await collectStickySnapshots(page, waitForVisualSettled);
-    const witnesses = snapshots.filter(result => (
-        result.compactVisible && result.planning && result.filterbarPinned && result.pinnedEpic
-    ));
-    expect(witnesses.length, 'expected a pinned four-layer Planning witness').toBeGreaterThan(0);
-    witnesses.forEach((result) => {
-        expect(Math.abs(result.filterbarWrap.top - result.compact.bottom)).toBeLessThanOrEqual(1);
-        expect(Math.abs(result.planning.top - result.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
-        expect(result.planning.bottom).toBeLessThanOrEqual(result.epic.top + 1);
-        expect(Math.abs(result.epic.top - result.planning.bottom)).toBeLessThanOrEqual(1);
-        expect(result.filterbarOwnsPoint).toBe(true);
-        expect(result.epicOwnsPoint).toBe(true);
-    });
-    await page.screenshot({ path: `${screenshotDir}/planning-sticky-stack.png`, fullPage: false });
+// The Planning List sticky order (compact, filters, panel, pinned Epic) was retired with List (#323); the Planning Table pinned
+// stack is measured in planning_review_integration.spec.js.
 
-    await openFilters(page);
-    const option = facetOption(page, 'status', 'Done');
-    const optionOwnsPoint = await option.evaluate((node) => {
-        const box = node.getBoundingClientRect();
-        return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('.popover'));
-    });
-    expect(optionOwnsPoint).toBe(true);
-    await option.click();
-    await closeFilters(page);
-
-    const sort = page.locator('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
-    await sort.click();
-    const sortOption = page.locator('.eng-epic-sort-dropdown .sprint-dropdown-option:not(.selected)').first();
-    const sortOwnsPoint = await sortOption.evaluate((node) => {
-        const box = node.getBoundingClientRect();
-        return Boolean(document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2)?.closest('.sprint-dropdown-panel'));
-    });
-    expect(sortOwnsPoint).toBe(true);
-    await sortOption.click();
-});
-
-test('Initiative tooltip clears higher sticky layers in Catch Up and Planning for hover and keyboard focus', async ({ page }) => {
+// Group by Initiative is not rendered in the Planning Table (#323), so only Catch Up has the tooltip.
+test('Initiative tooltip clears higher sticky layers in Catch Up for hover and keyboard focus', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 600 }, { withInitiativeData: true });
 
     const pinCurrentSurface = async (planning) => {
@@ -694,20 +654,9 @@ test('Initiative tooltip clears higher sticky layers in Catch Up and Planning fo
         },
     };
 
-    await page.locator('.compact-sticky-header.is-visible .eng-mode-control')
-        .getByRole('radio', { name: 'Planning' })
-        .click();
-    await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await pinCurrentSurface(true);
-    results.planning = {
-        hover: await measureInitiativeTooltipLayer(page, 'hover', 'initiative-grouping-tooltip-planning-hover'),
-        focus: await measureInitiativeTooltipLayer(page, 'focus', 'initiative-grouping-tooltip-planning-focus'),
-    };
-
     const visibleAboveContent = { belowButton: true, ownsHitPoint: true };
     expect(results).toEqual({
         catchUp: { hover: visibleAboveContent, focus: visibleAboveContent },
-        planning: { hover: visibleAboveContent, focus: visibleAboveContent },
     });
 });
 
@@ -873,7 +822,9 @@ test('Catch Up Project Track counts Epics and filters their Stories in all four 
 
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
+    // Planning is the Table only (#323): its Story rows carry the same Project Track filter.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect.poll(() => page.locator('.planning-review-table tbody tr[data-row-kind="story"]').evaluateAll(rows => rows.map(row => row.dataset.issueKey))).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     expect(await storyKeys(page)).toEqual(['PRODUCT-U1', 'PRODUCT-U2']);
 

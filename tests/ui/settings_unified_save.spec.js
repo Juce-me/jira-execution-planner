@@ -262,7 +262,9 @@ async function mockConfigSettings(page, {
             }
             return json({
             jiraUrl: workspaceSnapshot?.jiraUrl || 'https://jira.example',
-            authMode: workspaceSnapshot ? 'atlassian_oauth' : '',
+            authMode: 'atlassian_oauth',
+            adminUserManagementAvailable: true,
+            userIsToolAdmin: userCanEditSettings,
             projectsConfigured: true,
             settingsAdminOnly,
             userCanEditSettings,
@@ -754,6 +756,9 @@ test('team membership: DB refresh commits without client POST', async ({ page })
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     const dialog = page.getByRole('dialog').first();
     await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(1);
+    // Settle bootstrap API results before measuring the unrelated Team-refresh quiet window.
+    await page.waitForLoadState('networkidle');
+    await expect.poll(() => page.evaluate(() => (window.dataLayer || []).filter(event => event.event_name === 'login').length)).toBe(1);
     const analyticsBaseline = await page.evaluate(() => (window.dataLayer || []).length);
     await dialog.getByRole('button', { name: 'Refresh teams' }).click();
     await expect.poll(() => calls.filter(call => call.pathname === '/api/teams').length).toBe(2);
@@ -763,7 +768,7 @@ test('team membership: DB refresh commits without client POST', async ({ page })
     expect(await page.evaluate(start => (window.dataLayer || []).slice(start), analyticsBaseline)).toEqual([]);
 });
 
-test('team membership: legacy refresh retains directory save', async ({ page }) => {
+test('developer artifact: legacy Team response retains directory save', async ({ page }) => {
     const calls = await mockConfigSettings(page, {
         sourceBundle: true,
         initialTeamCatalog: { catalog: {}, meta: {} },
@@ -1861,10 +1866,9 @@ test('the unified save posts all eleven administrator sections in the documented
     expect(body('/api/epm/config').baseRevision).toBeUndefined();
 });
 
-// ST5 R2: with no sharedConfig object in /api/config, loadConfig's fallback branch reads only the two sections the ENG
-// shell needs (the selected projects and the priority weights) at mount; the other eight sections load once when
-// Settings opens (which also re-reads those two). Nothing writes either way.
-test('startup without sharedConfig reads the projects and priority weights once and the other sections only when Settings opens', async ({ page }) => {
+// Without sharedConfig, OAuth bootstrap resolves all ten sections; Settings reuses those baselines.
+// Neither read may write configuration.
+test('startup without sharedConfig resolves all OAuth sections once and Settings reuses their baselines', async ({ page }) => {
     const calls = await mockConfigSettings(page, { sourceBundle: true });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
     const mountPaths = ['/api/projects/selected', '/api/stats/priority-weights-config'];
@@ -1876,15 +1880,15 @@ test('startup without sharedConfig reads the projects and priority weights once 
     await expect.poll(() => mountPaths.map(reads)).toEqual([1, 1]);
     await expect.poll(() => reads('/api/config')).toBe(1);
     await page.waitForTimeout(500);
-    expect([...mountPaths, ...modalPaths].map(reads)).toEqual([1, 1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    expect([...mountPaths, ...modalPaths].map(reads)).toEqual(Array(10).fill(1));
     expect(calls.filter(call => call.method !== 'GET' && call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/auth/refresh')).toEqual([]);
 
     await page.getByRole('button', { name: 'Manage team groups' }).click();
     await expect(page.getByRole('dialog').first()).toBeVisible();
     await expect.poll(() => modalPaths.map(reads)).toEqual(modalPaths.map(() => 1));
     await page.waitForTimeout(500);
-    // Opening Settings re-reads the projects and the priority weights as well (each twice in total).
-    expect([...mountPaths, ...modalPaths].map(reads)).toEqual([2, 2, 1, 1, 1, 1, 1, 1, 1, 1]);
+    // Opening Settings reuses the accepted OAuth section baselines.
+    expect([...mountPaths, ...modalPaths].map(reads)).toEqual(Array(10).fill(1));
     // Only the derived Team name directory persists on its own lifecycle; no configuration section is written.
     expect(calls.filter(call => call.method !== 'GET' && call.pathname !== '/api/auth/csrf' && call.pathname !== '/api/auth/refresh'
         && call.pathname !== '/api/team-catalog')).toEqual([]);
@@ -1950,7 +1954,7 @@ test('unverified saved Capacity mapping is re-attested without changing the sele
     expect(posts[0].body).toEqual({ ...capacity, baseRevision: 3 });
 });
 
-test('local OAuth JSON mode loads and re-attests an existing Capacity mapping', async ({ page }) => {
+test('OAuth fallback bootstrap re-attests a Capacity mapping at the initial DB revision', async ({ page }) => {
     const capacity = {
         project: 'DEMO',
         fieldId: 'customfield_10050',
@@ -2332,15 +2336,14 @@ test('Field mapping tab renders Delivery Owner Field as a fifth entry styled lik
     await dialog.screenshot({ path: `${screenshotDir}/field-mapping-delivery-owner.png` });
 });
 
-// ST3 R2: characterization of the unchanged behavior the separate selection-effect layer must keep. Settings
-// open queues the legacy default group B, the normalization effect then sees the old empty draft and queues
-// null, and the next render normalizes to A; moving normalization ahead of the modal-open effect selects B.
+// Discarding an empty Department draft restores the saved DB groups without a write.
+// Preserve the existing modal selection sequence: B initially, then A on reopen.
 test('discarding an empty Department draft preserves selection when Settings reopens', async ({ page }) => {
     // Freeze Date only (as the DOM parity capture test does): the modal prints a "Teams ... Updated" timestamp.
     await page.clock.setFixedTime(new Date('2026-09-02T09:00:00Z'));
     const calls = await mockConfigSettings(page, {
         sourceBundle: true,
-        workspaceSnapshots: [{ authMode: 'basic' }],
+        workspaceSnapshots: [{ authMode: 'atlassian_oauth' }],
         groupsConfig: {
             version: 1,
             groups: [
@@ -2349,7 +2352,8 @@ test('discarding an empty Department draft preserves selection when Settings reo
             ],
             defaultGroupId: 'b',
             configRevision: 2,
-            source: 'jsonfile',
+            source: 'workspace_db',
+            preferences: { customized: true, onboardingRequired: false, visibleGroupIds: ['a', 'b'], effectiveVisibleGroupIds: ['a', 'b'], activeGroupId: 'b', completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'] },
         },
     });
     const errors = [];

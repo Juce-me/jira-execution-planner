@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed on branch `feature/quarterly-allocation-split-sprint-scoping` (PR 334) from base `e4bc1f41`, head `5519d54c` (2026-11-09); kept for audit context only. Reworks parts of [DONE-delivery-allocation-split-and-sprint-scoping.md](DONE-delivery-allocation-split-and-sprint-scoping.md); that plan stays the record of what shipped first.
 
+> **Current accuracy, 2026-11-10:** Allocation value selection and Product/Tech mapping now belong to each shared Department, initialized empty by operator decision. Project config retains the Jira field mapping and dormant old value-map history. DELIVERY Board uses distinct `scope=allocation`; Legacy keeps `component`. See [Department Allocation contract](DONE-department-allocation-board-scope.md); the historical Project-level mapping steps below are superseded.
+
 > **Execution record:** the task bodies below are the pre-execution contract and their checkboxes were not ticked; per-task results are in Execution status at the end, and Outcome and Current Accuracy record where the implementation differs.
 
 ## Outcome

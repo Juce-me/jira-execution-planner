@@ -1,9 +1,8 @@
 # Install And Run
 
-This app has two local run modes:
+This app serves only with DB-backed Atlassian OAuth. Browser identities, encrypted OAuth grants, workspace configuration and derived catalogs use database storage. Basic/API-token and live JSON/local-file OAuth profiles are rejected.
 
-- JSON-file mode: starts with `python3 jira_server.py` after `.env` is configured.
-- DB mode: required for OAuth-backed users, encrypted OAuth tokens, service integrations, and the Home read access flow.
+Omitted, empty or whitespace selectors default to `JIRA_AUTH_MODE=atlassian_oauth` and `CONFIG_STORAGE_BACKEND=db`. Storage aliases `database`, `postgres` and `postgresql` also select DB storage. Existing supported local-loopback DB/OAuth installations may keep inert legacy credential and local-token keys; they are not read as credentials or imported. Hosted/network local-token opt-in remains invalid. Do not overwrite an existing configuration or rotate keys to remove unused entries. A retired selected profile needs an approved DB migration before serving.
 
 `python3 jira_server.py` does not start PostgreSQL, create the database, or run migrations.
 
@@ -81,15 +80,15 @@ Source-checkout developers may keep Flask in the local `.venv` while running onl
 
 This localhost-only runner replaces the manual migration, startup preflight, and Flask launch steps in sections 4 and 5: it starts PostgreSQL, waits for health, applies Alembic migrations, runs startup preflight, and then runs Flask. `Ctrl+C` removes its container and network while preserving the named database volume. It is separate from the production image, release archive, and hosted deployment path; see [the local runner guide](https://github.com/Juce-me/jira-execution-planner/blob/main/runners/local/README.md) for prerequisites and safety boundaries.
 
-## 3. `.env` For DB Mode
+## 3. DB/OAuth Configuration
 
-Copy the template if needed:
+For a new installation without an existing configuration, copy the template:
 
 ```bash
 cp .env.example .env
 ```
 
-Generate a local token-encryption key:
+For a new installation, generate a local token-encryption key. Preserve the existing key/provider/keyring and signing secret on an established DB/OAuth installation:
 
 ```bash
 python3 -c "import base64,secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())"
@@ -105,16 +104,16 @@ TOKEN_ENCRYPTION_MASTER_KEY_B64=<generated value>
 TOKEN_ENCRYPTION_KEY_ID=local-key
 ```
 
-For OAuth login, also set the Atlassian OAuth block:
+Also configure the required Atlassian OAuth app and selected Jira site:
 
 ```env
 JIRA_AUTH_MODE=atlassian_oauth
+JIRA_URL=https://your-company.atlassian.net
 ATLASSIAN_CLIENT_ID=<from Atlassian Developer Console>
 ATLASSIAN_CLIENT_SECRET=<from Atlassian Developer Console>
 ATLASSIAN_REDIRECT_URI=http://localhost:5050/api/auth/atlassian/callback
 ATLASSIAN_SCOPES=read:me read:jira-work write:jira-work read:jira-user read:board-scope:jira-software read:sprint:jira-software read:project:jira offline_access
 FLASK_SECRET_KEY=<random secret>
-OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true
 ```
 
 Generate a local Flask secret if needed:
@@ -124,6 +123,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
 ## 4. Run DB Migrations
+
+PostgreSQL is the only supported database. Run migrations after every update that adds a revision (for example `20261106_0024`, which moves CSRF tokens into the database); the app refuses to serve against an older schema. Tokens outstanding at the upgrade fail once and are re-issued.
 
 `jira_server.py` loads `.env`, but Alembic does not. Export the DB URL for command-line migration runs:
 
@@ -138,10 +139,10 @@ If you used a named PostgreSQL user, export that URL instead:
 export DATABASE_URL=postgresql+psycopg://jep:<password>@localhost:5432/jep_local
 ```
 
-Quick DB verification for source checkouts:
+Quick DB verification for source checkouts (the isolated runner provisions its own throwaway PostgreSQL and never uses `.env` or `jep_local`):
 
 ```bash
-.venv/bin/python -m unittest tests.test_db_session tests.test_db_migrations
+.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_db_session tests.test_db_migrations
 ```
 
 Prebuilt release zips omit the test suite; skip this check there and use the source checkout when you need to run tests.
@@ -172,7 +173,7 @@ After `./scripts/install.sh` or `python -m pip install -e .`, the equivalent con
 .venv/bin/jira-execution-planner
 ```
 
-By default the Flask server binds to `127.0.0.1`. Set `APP_BIND_HOST=0.0.0.0` only when intentionally exposing the app, and also set `ALLOW_NETWORK_BIND=true`. Basic auth network exposure additionally requires `ALLOW_BASIC_AUTH_ON_NETWORK=true` and remains local-profile only with `APP_ENVIRONMENT_KEY=local`.
+By default the Flask server binds to `127.0.0.1`. Set `APP_BIND_HOST=0.0.0.0` only when intentionally exposing the app, and also set `ALLOW_NETWORK_BIND=true`. Network serving requires `SESSION_COOKIE_SECURE=true`, a stable `FLASK_SECRET_KEY` and explicit `APP_ALLOWED_ORIGINS` matching the HTTPS origin. Do not enable the retired local-token opt-in for network serving.
 
 Developer diagnostics such as field probes require `ALLOW_DEV_DIAGNOSTIC_ENDPOINTS=true` and loopback access. They return `404` when disabled.
 
@@ -182,7 +183,7 @@ Open:
 http://localhost:5050/login
 ```
 
-Sign in again after switching to DB mode. The OAuth callback creates the DB user, workspace, auth connection, and encrypted token rows.
+Complete Atlassian sign-in. The callback creates the DB user, workspace, auth connection, encrypted token rows and an opaque DB browser session. Keep the signing secret and encryption configuration stable across restarts; startup does not rekey tokens or replace existing sessions. Microsoft Entra/Azure SSO through Atlassian is a required deployment acceptance journey when the organization enforces it; synthetic tests do not prove live SSO acceptance.
 
 ## 6. Home Read Access Flow
 
@@ -194,17 +195,19 @@ Home/Townsquare goals and projects are read with the signed-in user's Atlassian 
 - `TOKEN_ENCRYPTION_MASTER_KEY_B64` and `TOKEN_ENCRYPTION_KEY_ID`
 - the Atlassian app registration listing the four Home read scopes `read:goal:goals`, `read:access:goals`, `read:project:projects` and `read:access:projects` (an operator action in the Atlassian Developer Console; the app cannot check it)
 
-After sign-in, open `Settings -> Connections` and tick **Enable EPM view**, then Save. If the grant lacks the Home scopes, the card shows the missing-permission state with a same-tab link to grant them. EPM stays hidden until the preference is saved, the scopes are confirmed by the provider and Atlassian Home confirms access to the configured scope. Without database storage the toggle is unavailable and EPM follows the Basic/JSON compatibility behavior.
+After sign-in, open `Settings -> Connections` and tick **Enable EPM view**, then Save. If the grant lacks the Home scopes, the card shows the missing-permission state with a same-tab link to grant them. EPM stays hidden until the preference is saved, the scopes are confirmed by the provider and Atlassian Home confirms access to the configured scope. Database storage is required for serving; there is no Basic/JSON compatibility path.
 
 ## 7. Storage Boundaries
 
 DB/OAuth EPM separates three storage concerns:
 
 - User OAuth grants: encrypted `auth_tokens` for provider `atlassian_oauth`; the EPM view preference is a non-secret flag in the user's private saved view.
-- Operator/service integrations: encrypted `service_integration_tokens`, reserved for workflows that explicitly need shared operator credentials.
-- EPM saved view state: non-secret user view config only, such as root goal scope, selected sub-goals, label prefix, project label mappings, selected EPM tab, and selected sprint.
+- Historical service-integration rows and encrypted `service_integration_tokens` remain preserved and unused as application authentication or Jira/Home read credentials. They grant no Basic/API-token fallback.
+- EPM settings: root goal scope, selected sub-goals, label prefix and project label mappings live in the owning user's default private saved view. EPM tab and selected sprint remain private UI state; existing private-view values are preserved.
 
 Do not seed a Home/Townsquare service integration for the DB/OAuth EPM read path. The EPM tab appears only after the signed-in user enables the EPM view and the Home read scopes are granted.
+
+Explicit developer JSON import/export is retained for controlled artifact workflows. Runtime DB reads and startup never auto-import local dashboard, group or token files, and selecting live JSON storage does not enable a compatibility server. Use the application's configuration ownership rules when planning a migration; a JSON export is not a rollback of database schema or encrypted credentials.
 
 ## 8. Internal Hosting Pre-SRE Checklist
 
@@ -236,7 +239,6 @@ FLASK_SECRET_KEY=<from-secret>
 TOKEN_ENCRYPTION_KEY_SOURCE=env
 TOKEN_ENCRYPTION_MASTER_KEY_B64=<from-secret>
 TOKEN_ENCRYPTION_KEY_ID=<key-id>
-OAUTH_LOCAL_TOKEN_STORE_ALLOWED=false
 LOCAL_FILE_STATE_ENABLED=false
 SCENARIO_DRAFT_LEGACY_IMPORT_ENABLED=false
 RUN_DB_MIGRATIONS=false
@@ -318,7 +320,7 @@ Rollback depends on how far the cutover got:
 
 Environments that auto-migrate with `RUN_DB_MIGRATIONS=true`, including local runners, now adopt on upgrade (see above); run the manual steps only for workspaces `--list` still reports `pending` or `needs-merge`, with `--merge` below once any group row exists.
 
-**Restoring hidden review columns while the app serves (`--merge`, #299).** When the migration ran without adoption, or users saved something before it ran, `--apply` refuses because group rows exist. `--merge` adopts the legacy columns, values and Sprint views into groups that already hold rows. It never overwrites, clears, renames or resurrects anything in a group: a legacy column claims a group column by id first (so a column adopted earlier and renamed since is recognized), then by kind, label and type; a live cell or Sprint view wins over the legacy one; a column the group archived stays archived. On PostgreSQL it needs no quiesced window (SQLite has no row locks and is for tests only): the apply locks only the groups it writes, through the same schema-row lock every app save takes first, in sorted group order, and exits 2 with nothing written if a lock is not granted within 5 seconds. Its database identity needs `SELECT`, `INSERT` and `UPDATE` on `workspace_group_review_schemas` (`FOR UPDATE` and the column update need `UPDATE`), `SELECT` and `INSERT` on `group_review_cells` and `group_sprint_review_views`, `SELECT` on `workspaces`, `workspace_group_configs` and the two legacy tables, and, for the share lock, `UPDATE`, `DELETE` or `TRUNCATE` on the two legacy tables.
+**Restoring hidden review columns while the app serves (`--merge`, #299).** When the migration ran without adoption, or users saved something before it ran, `--apply` refuses because group rows exist. `--merge` adopts the legacy columns, values and Sprint views into groups that already hold rows. It never overwrites, clears, renames or resurrects anything in a group: a legacy column claims a group column by id first (so a column adopted earlier and renamed since is recognized), then by kind, label and type; a live cell or Sprint view wins over the legacy one; a column the group archived stays archived. It needs no quiesced window: the apply locks only the groups it writes, through the same schema-row lock every app save takes first, in sorted group order, and exits 2 with nothing written if a lock is not granted within 5 seconds. Its database identity needs `SELECT`, `INSERT` and `UPDATE` on `workspace_group_review_schemas` (`FOR UPDATE` and the column update need `UPDATE`), `SELECT` and `INSERT` on `group_review_cells` and `group_sprint_review_views`, `SELECT` on `workspaces`, `workspace_group_configs` and the two legacy tables, and, for the share lock, `UPDATE`, `DELETE` or `TRUNCATE` on the two legacy tables.
 
 1. Back up the database.
 2. Run `python scripts/adopt_legacy_sprint_reviews.py --list`. `needs-merge` means a merge would still insert something, `pending` means no group rows exist yet (the cutover steps above apply, and `--merge` works there too), `adopted` means nothing is left to insert, and `error` means the workspace cannot be planned (run the dry run for the reason).

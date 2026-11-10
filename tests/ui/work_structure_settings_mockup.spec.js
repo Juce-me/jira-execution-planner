@@ -4,18 +4,24 @@ const { spawn } = require('node:child_process');
 const { test, expect } = require('@playwright/test');
 const root = path.resolve(__dirname, '../..');
 const output = path.join(root, 'tmp/work-structure-mockup');
-const port = 5067;
-const url = `http://localhost:${port}/assets/mockups/quarterly-work-structure-settings.html`;
+let port;
+let url;
 let server;
 
 test.beforeAll(async () => {
     fs.mkdirSync(output, { recursive: true });
-    server = spawn(process.execPath, ['scripts/build_work_structure_mockup.cjs', '--serve', `--port=${port}`], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] });
+    server = spawn(process.execPath, ['scripts/build_work_structure_mockup.cjs', '--serve', '--port=0'], {
+        cwd: root, env: { PATH: '/usr/bin:/bin' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
     await new Promise((resolve, reject) => {
         let logs = '';
         const timeout = setTimeout(() => reject(new Error('Mockup server did not start: ' + logs)), 15000);
         const finish = error => { clearTimeout(timeout); error ? reject(error) : resolve(); };
-        server.stdout.on('data', chunk => { logs += chunk; if (logs.includes('Mockup ready at')) finish(); });
+        server.stdout.on('data', chunk => {
+            logs += chunk;
+            const ready = logs.match(/Mockup ready at (http:\/\/localhost:(\d+)\/assets\/mockups\/quarterly-work-structure-settings.html)/);
+            if (ready) { url = ready[1]; port = Number(ready[2]); finish(); }
+        });
         server.stderr.on('data', chunk => { logs += chunk; });
         server.once('error', finish);
         server.once('exit', code => finish(new Error('Mockup server exited ' + code + ': ' + logs)));

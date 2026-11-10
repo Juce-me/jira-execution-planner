@@ -111,8 +111,9 @@ export default function FirstRunGroupSelectionModal(props) {
                     ) : visibleGroups.map(group => {
                         const teamCount = (group.teamIds || []).filter(teamId => String(teamId || '').trim()).length;
                         const componentCount = (group.missingInfoComponents || []).filter(component => String(component || '').trim()).length;
-                        const hasScope = teamCount > 0 || componentCount > 0;
-                        const scopeSummary = `${teamCount} team${teamCount === 1 ? '' : 's'}${componentCount ? ` · ${componentCount} component${componentCount === 1 ? '' : 's'}` : ''}`;
+                        const allocationCount = (group.allocationTypes || []).length;
+                        const hasScope = teamCount > 0 || componentCount > 0 || allocationCount > 0;
+                        const scopeSummary = `${teamCount} team${teamCount === 1 ? '' : 's'}${componentCount ? ` · ${componentCount} component${componentCount === 1 ? '' : 's'}` : ''}${allocationCount ? ` · ${allocationCount} Allocation` : ''}`;
                         const selected = effectiveSelectedGroupId === group.id;
                         const radioId = `first-run-radio-${group.id}`;
                         return (
@@ -128,7 +129,7 @@ export default function FirstRunGroupSelectionModal(props) {
                                     <>
                                         <label className="department-first-run-option-main" htmlFor={radioId}>
                                             <span className="department-first-run-option-name">{group.name || group.id}</span>
-                                            <span className="department-first-run-option-help">Add at least one team or component before choosing this Department</span>
+                                            <span className="department-first-run-option-help">Add at least one team, component or Allocation before choosing this Department</span>
                                         </label>
                                         <span className="department-first-run-option-meta">{scopeSummary}</span>
                                         <button className="secondary compact department-first-run-configure" type="button" onClick={() => onConfigureGroup(group.id)} disabled={saving}>Configure and use {group.name || group.id}</button>

@@ -1,4 +1,4 @@
-// Group A to B to A restores per-group App state, and the saved-preferences object keeps its 63 keys (B0b, plus selectedQuarter).
+// Group A to B to A restores per-group App state, and the saved-preferences object keeps its 62 keys (B0b, plus selectedQuarter, minus planningLayout).
 // Mocked pages only: the host just scopes localStorage, and it must never be the live 5050 server.
 process.env.JEP_TEST_BASE_URL ||= 'http://localhost:5051';
 const { test, expect } = require('@playwright/test');
@@ -10,12 +10,13 @@ const savedPrefs = page => page.evaluate(key => JSON.parse(localStorage.getItem(
 // FROZEN copy of the object passed to saveUiPrefs({...}) in the ui-prefs save useEffect of dashboard.jsx
 // (62 keys read from the source at the B0b baseline, plus `selectedQuarter` added deliberately by the quarterly
 // work-structure migration: the quarter is private UI state in this same owner as `selectedSprint`, never shared
-// configuration; see docs/plans/DONE-quarterly-work-structure-migration.md). saveUiPrefs replaces the whole stored object, so a
+// configuration; see docs/plans/DONE-quarterly-work-structure-migration.md), minus `planningLayout`, removed deliberately when
+// Planning List was retired (#323: Planning is the Table only). saveUiPrefs replaces the whole stored object, so a
 // dropped key silently loses that preference; an added key must be added here on purpose. Keys marked "group"
 // are also part of the per-group snapshot; the rest (device or session preferences) are not.
 const FROZEN_SAVED_PREF_KEYS = [
     'selectedView', 'epmTab', 'epmSelectedProjectId', 'epmProjectSort', 'engEpicSort',
-    'planningLayout', 'planningTeamsEffortExpanded', 'planningInheritedHintDismissals',
+    'planningTeamsEffortExpanded', 'planningInheritedHintDismissals',
     'selectedSprint', 'selectedQuarter', 'sprintName', 'sprintCatalog', 'selectedTeams', 'activeGroupId',
     'showPlanning', 'showStats', 'showScenario', 'showBoard', 'showDependencies', 'showTech', 'showProduct',
     'engStatusFilter', 'engPriorityFilter', 'groupByInitiativeChoice', 'searchQuery',
@@ -32,7 +33,7 @@ const FROZEN_SAVED_PREF_KEYS = [
 ];
 // Keys that are not part of the per-group state (device/session preferences, caches and the group preference itself).
 const NON_GROUP_PREF_KEYS = [
-    'epmTab', 'epmSelectedProjectId', 'epmProjectSort', 'engEpicSort', 'planningLayout',
+    'epmTab', 'epmSelectedProjectId', 'epmProjectSort', 'engEpicSort',
     'planningTeamsEffortExpanded', 'planningInheritedHintDismissals', 'selectedView', 'sprintName', 'sprintCatalog',
     'searchQuery', 'scenarioLaneMode', 'groupVisibilityPreferences',
 ];
@@ -110,10 +111,10 @@ async function closeFilters(page) {
 }
 const facetOption = (page, facet, option) => page.locator(`.pop-group[data-facet="${facet}"] [data-option="${option}"]`);
 
-test('the saved-preferences object keeps exactly its frozen 63 keys', async ({ page }) => {
-    // The frozen list itself: 63 distinct keys, at least 8 of them outside the per-group state.
-    expect(FROZEN_SAVED_PREF_KEYS).toHaveLength(63);
-    expect(new Set(FROZEN_SAVED_PREF_KEYS).size).toBe(63);
+test('the saved-preferences object keeps exactly its frozen 62 keys', async ({ page }) => {
+    // The frozen list itself: 62 distinct keys, at least 8 of them outside the per-group state.
+    expect(FROZEN_SAVED_PREF_KEYS).toHaveLength(62);
+    expect(new Set(FROZEN_SAVED_PREF_KEYS).size).toBe(62);
     expect(NON_GROUP_PREF_KEYS.length).toBeGreaterThanOrEqual(8);
     for (const key of NON_GROUP_PREF_KEYS) expect(FROZEN_SAVED_PREF_KEYS, key).toContain(key);
 
@@ -208,18 +209,26 @@ test('A to B to A restores alert toggles, dismissed alerts, ENG filters, Tech/Pr
     }
 });
 
+// Planning selection is the group's shared plan (#331): A's saved plan comes back after B, and B never shows it.
 test('A to B to A restores selected Planning tasks', async ({ page }) => {
     test.setTimeout(60000);
     await openDashboard(page, { prefs: { showPlanning: true } });
-    const box = key => page.getByRole('checkbox', { name: `Select ${key} for sprint planning`, exact: true });
+    const showStories = () => page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const box = key => page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
+    const planned = page.locator('.planning-review-table tbody input[type=checkbox]:checked');
+    await showStories();
     await box('PIN-1').check();
     await box('PIN-3').check();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
     await settle(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(2);
+    await expect(planned).toHaveCount(2);
     await toB(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(0);
+    await showStories();
+    await expect(planned).toHaveCount(0);
     await toA(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(2);
+    await showStories();
+    await expect(planned).toHaveCount(2);
     await expect(box('PIN-1')).toBeChecked();
     await expect(box('PIN-3')).toBeChecked();
     await expect(box('PIN-2')).not.toBeChecked();
@@ -252,4 +261,59 @@ test('A to B to A keeps the deliberate quirk: the Burndown assignee resets to al
     await expect(page.locator('.stats-panel.open .stats-view-toggle').getByRole('radio', { name: 'Burndown' })).toHaveAttribute('aria-checked', 'true');
     // Original App at d0f8bc79 resets a valid saved assignee while scoped data reloads; the refactor preserves it.
     await expect(assignee()).toHaveValue('all');
+});
+
+test('a group switch keeps the stored Team selection when it differs from the cached group state (#323)', async ({ page }) => {
+    test.setTimeout(60000);
+    await openDashboard(page);
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.locator('.team-dropdown-option', { hasText: 'team-beta' }).locator('input').check();
+    await page.mouse.click(8, 8);
+    await expect(teamControl.locator('.team-dropdown-selection-label')).toHaveText('team-beta');
+    await expect.poll(async () => (await savedPrefs(page)).selectedTeams).toEqual(['team-beta']);
+    await toB(page);
+    const secondTeams = (await savedPrefs(page)).selectedTeams;
+    // Second shows All Teams, so on the way back the hydration guard's render-closure selection equals the stored
+    // target and its first run skips, while applyGroupState queues Default's cached Beta in the same flush.
+    expect(secondTeams).toEqual(['all']);
+    // Another tab stores the Default scope's selection as this group's current one while Default's cached state keeps Beta.
+    await page.evaluate(({ scopeKey, selectedTeams }) => {
+        const key = 'jira_dashboard_team_selection_state_v1';
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        map[scopeKey] = { selectedTeams, selectedTeamId: selectedTeams[0] || 'all' };
+        localStorage.setItem(key, JSON.stringify(map));
+    }, { scopeKey: `team-selection::${sprintId}::grp-default`, selectedTeams: secondTeams });
+    // Record every Team label the switch renders, every saved Team selection and every request URL from here on.
+    await page.evaluate(() => {
+        const seen = window.__teamSwitchTrace = { labels: [], saves: [] };
+        const read = () => document.querySelectorAll('.view-selector .team-dropdown-selection-label').forEach(node => seen.labels.push(node.textContent));
+        (seen.observer = new MutationObserver(read)).observe(document.body, { subtree: true, childList: true, characterData: true });
+        const setItem = seen.setItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key, value) {
+            if (key === 'jira_dashboard_team_selection_state_v1' || key === 'jira_dashboard_ui_prefs_v1') seen.saves.push(String(value));
+            return setItem.call(this, key, value);
+        };
+    });
+    const requests = [];
+    const onRequest = request => requests.push(request.url());
+    page.on('request', onRequest);
+    await toA(page);
+    // The measured window ends here: the storage patch, the observer and the request listener are removed.
+    page.off('request', onRequest);
+    const trace = await page.evaluate(() => {
+        const seen = window.__teamSwitchTrace;
+        Storage.prototype.setItem = seen.setItem;
+        seen.observer.disconnect();
+        return { labels: seen.labels, saves: seen.saves };
+    });
+    // No render, saved selection or request in between uses Default's cached Beta: the stored selection wins at once (#323 R5).
+    expect(trace.labels.filter(text => text.includes('team-beta')), 'labels rendered during the switch').toEqual([]);
+    expect(trace.saves.filter(value => value.includes('team-beta') && !value.includes('"team-selection::')), 'UI preferences saved with the cached selection').toEqual([]);
+    expect(trace.saves.filter(value => JSON.parse(value)[`team-selection::${sprintId}::grp-default`]?.selectedTeams?.includes('team-beta')), 'Default scope saved with the cached selection').toEqual([]);
+    // The selection travels as `team`; `teamIds` is the group's own Team list.
+    expect(requests.filter(url => (new URL(url).searchParams.get('team') || '').includes('team-beta')), 'requests scoped to the cached selection').toEqual([]);
+    // The pre-guard App (06bb74d0) let the stored selection win over the cached group state.
+    await expect.poll(async () => (await savedPrefs(page)).selectedTeams).toEqual(secondTeams);
+    await expect(teamControl.locator('.team-dropdown-selection-label')).not.toHaveText('team-beta');
 });

@@ -91,6 +91,7 @@ async function mockApp(page, configurationId) {
 
 // Text of every cell of the table, by row, with the grid columns each cell occupies.
 async function readTable(page) {
+    await page.getByRole('button', { name: 'Planned Teams Effort (Story Points)', exact: true }).click();
     const grid = page.locator('.capacity-panel .capacity-grid');
     await expect(grid.locator('.capacity-row.capacity-divider').first()).toBeVisible();
     return grid.evaluate(node => ({

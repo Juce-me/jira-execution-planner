@@ -40,7 +40,7 @@
     return value;
   }
   async function csrf(signal) {
-    const response = await fetch('/api/auth/csrf', {signal, credentials:'same-origin'});
+    const response = await fetch('/api/auth/csrf', {signal, credentials:'same-origin', headers:{'X-Requested-With':'jira-execution-planner'}});
     const body = await response.json();
     if (!response.ok || typeof body.csrfToken !== 'string') throw new Error('csrf_unavailable');
     return body.csrfToken;

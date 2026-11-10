@@ -21,7 +21,7 @@ if (process.argv.includes('--serve')) {
     const http = require('node:http');
     const requestedPort = process.argv.find(arg => arg.startsWith('--port='));
     const port = requestedPort ? Number(requestedPort.slice('--port='.length)) : 5062;
-    if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Use a port from 1024 through 65535.');
+    if (!Number.isInteger(port) || (port !== 0 && (port < 1024 || port > 65535))) throw new Error('Use port 0 or a port from 1024 through 65535.');
     const mockupPath = '/assets/mockups/quarterly-work-structure-settings.html';
     const server = http.createServer((request, response) => {
         let pathname;
@@ -47,7 +47,7 @@ if (process.argv.includes('--serve')) {
             response.end(request.method === 'HEAD' ? undefined : body);
         } catch { response.writeHead(404).end(); }
     });
-    server.listen(port, '127.0.0.1', () => console.log('Mockup ready at http://localhost:' + port + mockupPath));
+    server.listen(port, '127.0.0.1', () => console.log('Mockup ready at http://localhost:' + server.address().port + mockupPath));
     server.on('error', error => { console.error(error.message); process.exitCode = 1; });
     process.on('SIGTERM', () => server.close());
     process.on('SIGINT', () => server.close());

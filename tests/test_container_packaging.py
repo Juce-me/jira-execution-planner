@@ -66,6 +66,8 @@ class ContainerPackagingTests(unittest.TestCase):
 
         self.assertLess(entrypoint.index("alembic"), entrypoint.index("check_startup_preflight.py"))
         self.assertIn("exec gunicorn", entrypoint)
+        self.assertIn("'jira_server:create_serving_app()'", entrypoint)
+        self.assertNotRegex(entrypoint, r"(?m)^\s*jira_server:app\s*$")
 
     def test_entrypoint_uses_configurable_container_bind_host(self):
         entrypoint = (ROOT / "scripts" / "docker-entrypoint.sh").read_text(encoding="utf8")

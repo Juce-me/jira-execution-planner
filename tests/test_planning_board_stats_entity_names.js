@@ -20,6 +20,12 @@ const loadComponent = file => {
     return module.exports;
 };
 const render = (file, props, exportName = 'default') => renderToStaticMarkup(React.createElement(loadComponent(file)[exportName], props));
+// The Planning popover reads document.body while closed; a server render needs only that reference.
+const renderWithBody = (file, props) => {
+    const previous = globalThis.document;
+    globalThis.document = previous || { body: {} };
+    try { return render(file, props); } finally { if (previous === undefined) delete globalThis.document; }
+};
 const names = async () => {
     const { resolveEntityNames } = await import('../frontend/src/eng/engWorkModel.js');
     return {
@@ -84,10 +90,13 @@ test('Planning review rows and columns name the configured parent and child', as
 
 test('Planning action titles and assignee copy use the planning type; Legacy is unchanged', async () => {
     const { RENAMED } = await names();
-    const bar = props => render('frontend/src/eng/PlanningActionBar.jsx', { hasVisibleTasks: true, selectedCount: 0, selectedVisibleCount: 0, ...props });
-    assert.match(bar({ entityNames: RENAMED }), /title="Include all Accepted and In Progress deliverables for the current view"/);
-    assert.match(bar({ entityNames: RENAMED }), /aria-label="Open selected deliverables in Jira"/);
-    assert.match(bar({}), /title="Include all To Do \/ Pending stories for the current view"/);
+    const bar = props => renderWithBody('frontend/src/eng/PlanningActionBar.jsx', { hasVisiblePlanningTasks: true, matchingIncludedCount: 0, selectedVisibleCount: 0, ...props });
+    assert.match(bar({ entityNames: RENAMED }), /Applies to all deliverables matching the current Team and filters, including rows below\./);
+    assert.doesNotMatch(bar({ entityNames: RENAMED }), /stories/);
+    assert.match(bar({}), /Applies to all stories matching the current Team and filters, including rows below\./);
+    const dialog = props => render('frontend/src/eng/PlanningReviewTable.jsx', { review: { pendingScopeChange: {}, capabilities: {} }, ...props }, 'PlanningReviewScopeDialog');
+    assert.match(dialog({ entityNames: RENAMED }), /Deliverable inclusion and layout belong to this Sprint/);
+    assert.match(dialog({}), /Story inclusion and layout belong to this Sprint/);
     const source = read('frontend/src/eng/PlanningAssigneeCapacity.jsx');
     assert.match(source, /`\$\{names\.child\} of this Team is` : `\$\{names\.childPlural\} of this Team are`/);
     assert.match(source, /No \{names\.childPlural\} or saved people for this Team in this Sprint\./);
@@ -237,8 +246,8 @@ test('Legacy: one planning name and a mapped parent name every surface; kinds an
     const { buildPlanningReviewRows } = await import('../frontend/src/eng/planningReviewTableModel.js');
     const orphan = { key: 'NO_EPIC', epic: { key: 'NO_EPIC' }, tasks: [{ key: 'OLD-1', fields: { summary: 'Leaf' } }] };
     assert.equal(buildPlanningReviewRows({ epicGroups: [orphan], visibleTasks: orphan.tasks, mode: 'story', names: MAPPED })[0].epic, 'No Feature');
-    assert.match(render('frontend/src/eng/PlanningActionBar.jsx', { hasVisibleTasks: true, selectedCount: 0, selectedVisibleCount: 0, entityNames: MAPPED }),
-        /aria-label="Open selected tasks in Jira"/);
+    assert.match(renderWithBody('frontend/src/eng/PlanningActionBar.jsx', { hasVisiblePlanningTasks: true, matchingIncludedCount: 0, selectedVisibleCount: 0, entityNames: MAPPED }),
+        /Applies to all tasks matching the current Team and filters, including rows below\./);
     const { buildEngBoardFacetModel, resolveEngBoardFilters } = await import('../frontend/src/eng/engBoardFilters.js');
     assert.equal(resolveEngBoardFilters({ model: buildEngBoardFacetModel({ epicGroups: [epicGroup('P-1')], workModel: 'legacy', names: MAPPED }) }).readoutUnit, 'of 1 feature');
     const { roleLabels } = await import('../frontend/src/stats/statsScope.js');

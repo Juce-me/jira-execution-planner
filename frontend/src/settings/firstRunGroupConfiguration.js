@@ -57,6 +57,7 @@ export const buildFirstRunGroupDraft = ({
             ...uniqueGroupIdentity('New Department', existingGroups),
             teamIds: [],
             missingInfoComponents: [],
+            allocationTypes: [],
             excludedCapacityEpics: [],
         };
     }
@@ -67,6 +68,7 @@ export const buildFirstRunGroupDraft = ({
     return {
         ...draft,
         ...identity,
+        allocationTypes: draft.allocationTypes || [],
         ...(removeTeams ? { teamIds: [], teamLabels: {} } : {}),
         ...(removeComponents ? { missingInfoComponents: [] } : {}),
     };

@@ -1,15 +1,16 @@
 import base64
 import json
 import os
-import tempfile
 import threading
 import unittest
+import uuid
 from types import SimpleNamespace
 from unittest.mock import Mock, call, patch
 
 import jira_server
-from backend.auth.context import RequestAuthContext
+from backend.auth.db_context import invalidate_auth_status_cache, resolve_db_request_auth_context
 from backend.auth.db_tokens import store_oauth_callback_tokens
+from backend.auth.db_browser_sessions import create_browser_session
 from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine, models
 from backend.services import eng_board
@@ -18,7 +19,9 @@ from backend.services.eng_board_stream import EngBoardRequestTransport, EngBoard
 from backend.services.shared_group_config import ExistingSharedGroupsSnapshot
 from backend.services.workspace_dashboard_config import WorkspaceConfigSnapshot
 from backend.routes import eng_board_routes
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth, FULL_OAUTH_SCOPE
+from tests.db_oauth_test_helpers import seed_db_actor
+from tests.postgres_test_db import fresh_database_url
 
 
 BOARD_PATH = '/api/eng/board'
@@ -39,16 +42,28 @@ class FakeResponse:
 
 
 def db_context(*, token_version='1', browser_session_id='browser-1', user_id='user-1',
-               workspace_id='workspace-1', account_status='active'):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth', user_id=user_id, stable_subject='subject-1',
-        atlassian_account_id='account-1', workspace_id=workspace_id,
-        auth_connection_id='connection-1', cloud_id='cloud-1',
-        site_url='https://example.atlassian.net', token_version=token_version,
-        account_status=account_status, is_admin=False,
-        browser_session_id=browser_session_id,
-        granted_scopes=('read:jira-work',), granted_scopes_verified=True,
-    )
+               workspace_id='workspace-1'):
+    """Resolve a real fixture actor; arguments select persisted identity/rotation cases."""
+    cloud_id = 'cloud-123' if workspace_id == 'workspace-1' else workspace_id
+    site_url = ('https://example.atlassian.net' if workspace_id == 'workspace-1'
+                else f'https://{workspace_id}.example.invalid')
+    browser_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f'{workspace_id}:{user_id}:{browser_session_id}'))
+    with db_engine.session_scope() as db:
+        connection = db.query(models.AuthConnection).join(models.User).filter(
+            models.User.external_subject == user_id,
+            models.AuthConnection.cloud_id == cloud_id).first()
+        if connection is None:
+            actor = seed_db_actor(db,
+                workspace={'cloud_id': cloud_id, 'site_url': site_url},
+                account_identity=user_id)
+            connection = db.get(models.AuthConnection, actor.connection_id)
+        connection.token_version = int(token_version)
+        if db.get(models.BrowserSession, browser_id) is None:
+            db.add(models.BrowserSession(id=browser_id, user_id=connection.user_id,
+                workspace_id=connection.workspace_id, auth_connection_id=connection.id))
+    invalidate_auth_status_cache()
+    return resolve_db_request_auth_context({'db_browser_session_id': browser_id},
+                                          required_scopes='read:jira-work')
 
 
 def board_query(**overrides):
@@ -61,7 +76,9 @@ def board_query(**overrides):
 
 
 def board_snapshot(**overrides):
-    context = overrides.pop('context', db_context())
+    context = overrides.pop('context', None)
+    if context is None:
+        context = db_context()
     values = {
         'query': board_query(), 'context': context,
         'browser_session_id': context.browser_session_id,
@@ -126,13 +143,8 @@ class EngBoardRouteContractTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        self.database_url = set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
 
     def test_board_route_registers_exactly_one_get_and_no_control_route(self):
         rules = [
@@ -168,13 +180,9 @@ class EngBoardRouteContractTests(unittest.TestCase):
 
     def test_authenticated_get_requires_neither_csrf_nor_requested_with(self):
         install_oauth_session(self.client)
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.dict(
-            os.environ,
-            {'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': ''},
-            clear=False,
-        ):
+        with patch.object(eng_board_routes, '_capture_snapshot',
+                side_effect=eng_board_routes.BoardRouteError('board_unavailable', 409)):
             response = self.client.get(BOARD_PATH, query_string=VALID_QUERY)
-
         self.assertEqual(409, response.status_code, response.get_data(as_text=True))
         self.assertEqual('board_unavailable', response.get_json()['error'])
 
@@ -279,15 +287,11 @@ class EngBoardRouteContractTests(unittest.TestCase):
         frame_stream.assert_not_called()
 
     def test_basic_mode_cannot_enter_db_oauth_candidate(self):
-        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), patch.dict(
-            os.environ,
-            {'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': ''},
-            clear=False,
-        ):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(eng_board_routes, '_capture_snapshot', side_effect=AssertionError('retired adapter entered')):
             response = self.client.get(BOARD_PATH, query_string=VALID_QUERY)
-
-        self.assertEqual(409, response.status_code, response.get_data(as_text=True))
-        self.assertEqual('board_unavailable', response.get_json()['error'])
+        self.assertEqual(503, response.status_code, response.get_data(as_text=True))
+        self.assertEqual('runtime_auth_unsupported', response.get_json()['error'])
 
     def test_scope_version_is_keyed_and_rotates_with_authority(self):
         captured = {'workspace': 'workspace-a', 'configRevision': 7}
@@ -1038,63 +1042,59 @@ class EngBoardRouteContractTests(unittest.TestCase):
         self.assertIsInstance(resilient_get.call_args.kwargs['timeout'], (int, float))
 
     def test_real_current_jira_get_refreshes_db_token_outside_flask_request(self):
-        with tempfile.TemporaryDirectory() as directory:
-            database_url = f"sqlite+pysqlite:///{os.path.join(directory, 'board-refresh.db')}"
-            env = {
-                'CONFIG_STORAGE_BACKEND': 'database', 'DATABASE_URL': database_url,
-                'TEST_DATABASE_URL': '', 'APP_ENVIRONMENT_KEY': 'local',
-                'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([17]) * 32).decode('ascii'),
-                'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
-            }
-            with patch.dict(os.environ, env, clear=False):
-                engine = db_engine.get_engine(database_url)
-                models.Base.metadata.create_all(engine)
-                provider = key_provider_from_env()
-                with db_engine.session_scope(database_url) as session:
-                    stored = store_oauth_callback_tokens(
-                        session,
-                        token_data={
-                            'access_token': 'expired-access', 'refresh_token': 'refresh-token',
-                            'expires_in': 1, 'scope': 'read:jira-work offline_access',
-                        },
-                        resource={
-                            'id': 'cloud-1', 'url': 'https://example.atlassian.net', 'name': 'Example',
-                        },
-                        user_profile={'account_id': 'account-1', 'account_status': 'active'},
-                        environment_key='local', configured_jira_url='https://example.atlassian.net',
-                        key_provider=provider,
-                    )
-                context = RequestAuthContext(
-                    auth_mode='atlassian_oauth', user_id=stored.user_id,
-                    stable_subject='account-1', atlassian_account_id='account-1',
-                    workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id,
-                    cloud_id='cloud-1', site_url='https://example.atlassian.net',
-                    token_version='1', account_status='active', is_admin=False,
+        database_url = fresh_database_url(self.addCleanup)
+        env = {
+            'CONFIG_STORAGE_BACKEND': 'database', 'DATABASE_URL': database_url,
+            'TEST_DATABASE_URL': '', 'APP_ENVIRONMENT_KEY': 'local',
+            'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([17]) * 32).decode('ascii'),
+            'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
+        }
+        with patch.dict(os.environ, env, clear=False):
+            engine = db_engine.get_engine(database_url)
+            models.Base.metadata.create_all(engine)
+            provider = key_provider_from_env()
+            with db_engine.session_scope(database_url) as session:
+                stored = store_oauth_callback_tokens(
+                    session,
+                    token_data={
+                        'access_token': 'expired-access', 'refresh_token': 'refresh-token',
+                        'expires_in': 1, 'scope': FULL_OAUTH_SCOPE,
+                    },
+                    resource={
+                        'id': 'cloud-1', 'url': 'https://example.atlassian.net', 'name': 'Example',
+                    },
+                    user_profile={'account_id': 'account-1', 'account_status': 'active'},
+                    environment_key='local', configured_jira_url='https://example.atlassian.net',
+                    key_provider=provider,
                 )
-                refresh_response = FakeResponse({
-                    'access_token': 'fresh-access', 'refresh_token': 'fresh-refresh',
-                    'expires_in': 3600, 'scope': 'read:jira-work offline_access',
-                })
-                refresh_response.status_code = 200
-                jira_response = FakeResponse({'values': [], 'isLast': True})
-                jira_response.status_code = 200
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
-                    jira_server, 'JIRA_URL', 'https://example.atlassian.net',
-                ), patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-id'), patch.object(
-                    jira_server, 'ATLASSIAN_CLIENT_SECRET', 'client-secret',
-                ), patch.object(jira_server.HTTP_SESSION, 'post', return_value=refresh_response), patch.object(
-                    jira_server, 'resilient_jira_get', return_value=jira_response,
-                ) as jira_get:
-                    response = jira_server.current_jira_get(
-                        '/rest/api/3/project/search', context=context,
-                    )
+                browser = create_browser_session(session, user_id=stored.user_id,
+                    workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id)
+            context = resolve_db_request_auth_context({'db_browser_session_id': browser.id},
+                database_url=database_url, required_scopes='read:jira-work')
+            refresh_response = FakeResponse({
+                'access_token': 'fresh-access', 'refresh_token': 'fresh-refresh',
+                'expires_in': 3600, 'scope': FULL_OAUTH_SCOPE,
+            })
+            refresh_response.status_code = 200
+            jira_response = FakeResponse({'values': [], 'isLast': True})
+            jira_response.status_code = 200
+            with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), patch.object(
+                jira_server, 'JIRA_URL', 'https://example.atlassian.net',
+            ), patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-id'), patch.object(
+                jira_server, 'ATLASSIAN_CLIENT_SECRET', 'client-secret',
+            ), patch.object(jira_server.HTTP_SESSION, 'post', return_value=refresh_response), patch.object(
+                jira_server, 'resilient_jira_get', return_value=jira_response,
+            ) as jira_get:
+                response = jira_server.current_jira_get(
+                    '/rest/api/3/project/search', context=context,
+                )
 
-                self.assertIs(jira_response, response)
-                self.assertEqual('Bearer fresh-access', jira_get.call_args.kwargs['headers']['Authorization'])
-                with db_engine.session_scope(database_url) as session:
-                    connection = session.get(models.AuthConnection, stored.connection_id)
-                    self.assertEqual(2, connection.token_version)
-            db_engine.dispose_engines()
+            self.assertIs(jira_response, response)
+            self.assertEqual('Bearer fresh-access', jira_get.call_args.kwargs['headers']['Authorization'])
+            with db_engine.session_scope(database_url) as session:
+                connection = session.get(models.AuthConnection, stored.connection_id)
+                self.assertEqual(2, connection.token_version)
+        db_engine.dispose_engines()
 
     def test_route_source_has_no_control_state_migration_or_process_cache(self):
         with open(eng_board_routes.__file__, encoding='utf-8') as source_file:

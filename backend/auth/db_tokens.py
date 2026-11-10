@@ -62,8 +62,6 @@ def _postgresql_lock_timeout_ms(cooperative_budget=None):
 
 
 def _configure_postgresql_lock_timeout(session, cooperative_budget=None):
-    if session.get_bind().dialect.name != 'postgresql':
-        return
     timeout_ms = _postgresql_lock_timeout_ms(cooperative_budget)
     session.execute(
         text("SELECT set_config('lock_timeout', :lock_timeout, true)"),
@@ -79,9 +77,7 @@ def _lock_callback_natural_keys(
     resource,
     configured_jira_url,
 ):
-    """Serialize callback natural-key upserts on PostgreSQL; SQLite is a no-op."""
-    if session.get_bind().dialect.name != 'postgresql':
-        return
+    """Serialize callback natural-key upserts with sorted PostgreSQL transaction advisory locks."""
     _configure_postgresql_lock_timeout(session)
     account_id = str((user_profile or {}).get('account_id') or '').strip()
     cloud_id = str((resource or {}).get('id') or '').strip()

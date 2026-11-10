@@ -9,6 +9,7 @@ from backend.routes import work_structure_routes as work_routes
 from backend.services import eng_board
 from backend.services import work_structure as ws
 from tests.test_work_structure_routes import WorkStructureRouteBase, jira_response
+from tests.oauth_test_helpers import set_up_db_oauth
 
 SPRINT_FIELD, POINTS_FIELD, TEAM_FIELD = 'customfield_26', 'customfield_211', 'customfield_24'
 
@@ -49,6 +50,22 @@ def initiative_row(key, parent=None, labels=(), status='To Do'):
     if parent:
         fields['parent'] = {'key': parent}
     return {'key': key, 'id': key[-1], 'fields': fields}
+
+
+def seed_department(test, allocation_types=(), team_ids=('t1',), group_id='dept'):
+    from backend.db import models
+    with test.factory() as session:
+        row = session.query(models.WorkspaceGroupConfig).filter_by(workspace_id=test.workspace_id).one_or_none()
+        payload = {'version': 2, 'groups': [{'id': group_id, 'name': f'Department {group_id}', 'teamIds': list(team_ids),
+                    'allocationTypes': list(allocation_types)}], 'defaultGroupId': 'dept'}
+        if row is None:
+            session.add(models.WorkspaceGroupConfig(workspace_id=test.workspace_id, payload_version=2,
+                                                     config_revision=1, payload=payload))
+        else:
+            payload['groups'] = [group for group in row.payload.get('groups', []) if group['id'] != group_id] + payload['groups']
+            row.payload = payload
+            row.config_revision += 1
+        session.commit()
 
 
 class SelectorMatrixTests(WorkStructureRouteBase):
@@ -133,6 +150,8 @@ class PromotedTasksTests(WorkStructureRouteBase):
     def setUp(self):
         super().setUp()
         self.promoted_seed()
+        seed_department(self)
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=jira_response(200, {})))
         self.sources = self.stack.enter_context(patch.object(
             jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(
@@ -140,7 +159,7 @@ class PromotedTasksTests(WorkStructureRouteBase):
 
     def run_tasks(self, params, search):
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            return self.client.get('/api/tasks', query_string=params)
+            return self.client.get('/api/tasks', query_string={'groupId': 'dept', **params})
 
     def test_delivery_reads_epics_through_parent_with_one_unfiltered_request_lane(self):
         search = FakeSearch(
@@ -291,6 +310,8 @@ class AllocationStampTests(WorkStructureRouteBase):
             delivery['fields']['allocation'] = {'fieldId': ALLOCATION_FIELD, 'fieldName': 'Allocation'}
             delivery['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
         self.seed(mutate=mutate)
+        seed_department(self, [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}])
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=jira_response(200, {})))
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(
             work_routes, 'admit_sprint_source', return_value=(Mock(), {'id': 5, 'name': '2027Q1'})))
@@ -310,7 +331,7 @@ class AllocationStampTests(WorkStructureRouteBase):
                 rows = list(objectives)
             return jira_response(200, {'issues': rows, 'isLast': True})
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            response = self.client.get('/api/tasks', query_string=params)
+            response = self.client.get('/api/tasks', query_string={'groupId': 'dept', **params})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json(), payloads
 
@@ -321,6 +342,36 @@ class AllocationStampTests(WorkStructureRouteBase):
         if objective:
             row['fields']['parent'] = {'key': objective, 'fields': {'issuetype': {'id': '10010', 'name': 'Objective'}}}
         return row
+
+    def test_saved_department_mapping_partitions_same_teams_and_tasks_cache(self):
+        rows = [epic_row('PLAN-1', parent='PLAN-I1', sprint=5)]
+        parents = [self.with_allocation(initiative_row('PLAN-I1'), 'Platform')]
+        first, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5'}, rows, parents)
+        seed_department(self, [{'value': 'Platform', 'type': 'product'}], group_id='second')
+        second, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5', 'groupId': 'second'}, rows, parents)
+        self.assertEqual(first['issues'][0]['fields']['projectClassification'], 'tech')
+        self.assertEqual(second['issues'][0]['fields']['projectClassification'], 'product')
+        seed_department(self)
+        empty, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5'}, rows, parents)
+        self.assertEqual(empty['issues'][0]['fields']['projectClassification'], 'none')
+
+    def test_invalid_or_teamless_department_fails_before_jira(self):
+        fake = FakeSearch()
+        with patch.object(jira_server, 'jira_search_request', side_effect=fake):
+            for group_id, code, status in ((None, 'department_required', 400), ('unknown', 'department_not_found', 404)):
+                params = {'quarter': '2027Q1', 'sprint': '5'}
+                if group_id is not None:
+                    params['groupId'] = group_id
+                response = self.client.get('/api/tasks', query_string=params)
+                self.assertEqual((response.status_code, response.get_json()['error']), (status, code))
+            seed_department(self, team_ids=())
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
+        self.assertEqual((response.status_code, response.get_json()['error']), (400, 'department_teams_required'))
+        with patch.object(jira_server, 'load_request_effective_groups', side_effect=jira_server.ConfigStorageError('private storage details')):
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
+        self.assertEqual((response.status_code, response.get_json()), (503, {
+            'error': 'config_storage_unavailable', 'message': 'Configuration storage is temporarily unavailable.'}))
+        self.assertEqual(fake.calls, [])
 
     def test_stamp_is_the_initiatives_class_and_no_objective_batch(self):
         epics = [self.with_allocation(epic_row('PLAN-1', parent='PLAN-I1', sprint=5), 'Platform'),
@@ -357,7 +408,7 @@ class AllocationStampTests(WorkStructureRouteBase):
             rows = epics if 'issuetype = 10002' in payload['jql'] else []
             return jira_response(200, {'issues': rows, 'isLast': True})
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5'})
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['issues'][0]['fields']['projectClassification'], 'none')
@@ -479,7 +530,7 @@ if __name__ == '__main__':
 from types import SimpleNamespace  # noqa: E402
 
 from backend.routes import eng_board_routes  # noqa: E402
-from backend.services import planning_work  # noqa: E402
+from backend.services import allocation_classification, planning_work  # noqa: E402
 from backend.services.eng_board_stream import EngBoardRequestTransport  # noqa: E402
 from tests.test_eng_board_routes import FakeResponse, board_snapshot, db_context  # noqa: E402
 from tests.test_planning_work_profiles import bundle as profile_bundle, context as profile_context  # noqa: E402
@@ -502,43 +553,54 @@ def parent_shell(key, status='To Do'):
 
 
 class ComponentBoardStreamTests(unittest.TestCase):
-    """Paired fixture: Initiative I has Epic A (8 SP, Component A) and Epic B (5 SP, Component B)."""
+    """DELIVERY Allocation scope admits matching Initiatives and eligible leaves."""
 
-    LEAVES = {'PLAN-E1': leaf('PLAN-E1', 'PLAN-I1', 8, ('Component A',)),
-              'PLAN-E2': leaf('PLAN-E2', 'PLAN-I1', 5, ('Component B',)),
-              'PLAN-E3': leaf('PLAN-E3', 'PLAN-I1', 2, (), team='team-a')}
+    def setUp(self):
+        set_up_db_oauth(self)
 
-    def snapshot(self, components, teams=(), scope='component', mutate=None):
+    LEAVES = {'PLAN-E1': leaf('PLAN-E1', 'PLAN-I1', 8, ()),
+              'PLAN-E2': leaf('PLAN-E2', 'PLAN-I1', 5, ('Unrelated',)),
+              'PLAN-E3': leaf('PLAN-E3', 'PLAN-I2', 2, (), team='team-a'),
+              'PLAN-E4': leaf('PLAN-E4', 'PLAN-I2', 3, ('Platform',))}
+
+    def snapshot(self, components, teams=(), scope='allocation', mutate=None, allocation_types=()):
         roles = planning_work.WorkRoles(profile_context('2027Q1', profile_bundle(mutate)))
         return board_snapshot(
-            query=eng_board_routes.BoardQuery('department-a', scope, None, 'todo', False),
+            query=eng_board_routes.BoardQuery('department-a', scope, 42 if scope == 'sprint' else None, 'todo', False),
             components=components, teams=teams, projects=(('PLAN', 'other'),),
+            group={'id': 'department-a', 'allocationTypes': list(allocation_types)},
             issue_type_ids=('10002',), epic_link_field_id=None,
             work_request=SimpleNamespace(roles=roles, context=roles.context),
             parent_clause=roles.parent_clause())
 
-    def stream(self, snapshot, initiatives=None, plain=None, fail_leaf_discovery=False):
+    def stream(self, snapshot, initiatives=None, plain=None, fail_discovery=False):
         calls = []
-        initiatives = {'PLAN-I1': parent_shell('PLAN-I1')} if initiatives is None else initiatives
+        if initiatives is None:
+            initiatives = {key: parent_shell(key) for key in ('PLAN-I1', 'PLAN-I2')}
+            initiatives['PLAN-I1']['fields']['customfield_40001'] = {'value': 'Platform'}
+            initiatives['PLAN-I2']['fields']['customfield_40001'] = {'value': 'Growth'}
         plain = initiatives if plain is None else plain
 
         def search(payload, **kwargs):
             jql = payload['jql']
-            calls.append(jql)
+            calls.append(payload)
             keys = re.findall(r'"(PLAN-[A-Z0-9]+)"', jql)
-            if 'issuetype in ("10002")' in jql and 'component in' in jql:
-                if fail_leaf_discovery:
+            if 'issuetype = 10001' in jql and 'cf[40001]' in jql:
+                if fail_discovery:
                     return FakeResponse({}, 500)
-                names = set(re.findall(r'"(Component [A-Z])"', jql))
-                rows = [row for row in self.LEAVES.values()
-                        if names & {c['name'] for c in row['fields']['components']}]
+                values = re.findall(r'cf\[40001\] in \((.*?)\)', jql)[0]
+                wanted = re.findall(r'"([^"\\]*(?:\\.[^"\\]*)*)"', values)
+                rows = [row for row in initiatives.values()
+                        if allocation_classification.allocation_value(row['fields'].get('customfield_40001')) in wanted]
+            elif 'issuetype = 10001' in jql:
+                rows = [initiatives[key] for key in keys if key in initiatives] if keys else list(initiatives.values())
             elif 'issuetype in ("10002")' in jql and 'cf[30101]' in jql:
                 rows = [row for row in self.LEAVES.values() if row['fields']['customfield_30101']]
+            elif 'issuetype in ("10002")' in jql and 'parent in' in jql:
+                rows = [row for row in self.LEAVES.values() if row['fields']['parent']['key'] in keys]
             elif 'issuetype in ("10002")' in jql and 'key in' in jql:
                 rows = [self.LEAVES[key] for key in keys if key in self.LEAVES]
-            elif 'issuetype = 10001' in jql:
-                rows = [initiatives[key] for key in keys if key in initiatives]
-            else:  # plain parent read used to tell "excluded by rule" from "unreadable"
+            else:
                 rows = [plain[key] for key in keys if key in plain]
             return FakeResponse({'issues': rows, 'isLast': True})
 
@@ -557,99 +619,137 @@ class ComponentBoardStreamTests(unittest.TestCase):
         return sum(child['storyPoints'] or 0 for frame in frames if frame['type'] == 'column'
                    for child in frame['children'])
 
-    def test_a_only_shows_the_initiative_once_with_only_the_matching_epic(self):
-        frames, calls = self.stream(self.snapshot(('Component A',)))
+    def test_sprint_membership_uses_teams_not_allocation_or_legacy_components(self):
+        frames, calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='sprint'))
+        self.assertEqual(frames[-1].get('outcome'), 'success', frames)
+        self.assertFalse(any('cf[40001]' in row['jql'] or 'component in' in row['jql'] for row in calls))
+        child_queries = [row['jql'] for row in calls if 'issuetype in ("10002")' in row['jql']]
+        self.assertTrue(child_queries)
+        self.assertTrue(all('cf[10101] = 42' in jql and 'cf[30101] in ("team-a")' in jql
+                            for jql in child_queries), child_queries)
+
+    def test_empty_map_all_work_admits_only_team_leaves_without_allocation_field(self):
+        def missing(bundle):
+            bundle['configurations'][1]['fields']['allocation'] = {'fieldId': '', 'fieldName': ''}
+        frames, calls = self.stream(self.snapshot((), teams=('team-a',), scope='all_work', mutate=missing))
         self.assertEqual('success', frames[-1].get('outcome'), frames)
-        self.assertEqual(1, frames[-1]['epicCount'])
-        self.assertEqual(['PLAN-E1'], self.children(frames))
-        self.assertEqual(8, self.points(frames))
-        self.assertFalse(any('PLAN-E2' in jql for jql in calls))        # the sibling is never fetched
-        self.assertFalse(any('parent in' in jql for jql in calls))      # no blind parent->children query
-        authoritative = [f for f in frames if f['type'] == 'index' and f.get('membership') == 'authoritative']
-        self.assertEqual([['PLAN-I1']], [[e['key'] for e in f['epics']] for f in authoritative])
+        self.assertEqual(['PLAN-E3'], self.children(frames))
+        self.assertFalse(any('cf[40001]' in row['jql'] for row in calls))
 
-    def test_board_reads_no_objective_and_no_child_allocation_field(self):
-        field = 'customfield_40001'
-
-        def mapped(bundle):
-            bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
-        objective_type = {'id': '10010', 'name': 'Objective'}
-        leaves = {key: json.loads(json.dumps(row)) for key, row in self.LEAVES.items()}
-        leaves['PLAN-E1']['fields'][field] = {'value': 'Growth'}     # an Epic's own value is ignored
-        leaves['PLAN-E2']['fields'][field] = {'value': 'Platform'}
-        leaves['PLAN-E4'] = leaf('PLAN-E4', 'PLAN-I2', 3, ('Component A',))
-        valued = parent_shell('PLAN-I1')
-        valued['fields'][field] = {'value': 'Platform'}
-        blank = parent_shell('PLAN-I2')
-        blank['fields']['parent'] = {'key': 'PLAN-O1', 'fields': {'issuetype': objective_type}}
-        blank['fields'][field] = None
-        fields_seen = []
-        original = eng_board_routes._search_page
-
-        def spy(server, snapshot, transport, payload, timeout):
-            fields_seen.append(list(payload.get('fields') or []))
-            return original(server, snapshot, transport, payload, timeout)
-        with patch.object(self, 'LEAVES', leaves), patch.object(eng_board_routes, '_search_page', side_effect=spy):
-            frames, calls = self.stream(self.snapshot(('Component A', 'Component B'), mutate=mapped),
-                                        initiatives={'PLAN-I1': valued, 'PLAN-I2': blank})
+    def test_allocation_scope_admits_all_eligible_children_without_any_component_match(self):
+        frames, calls = self.stream(self.snapshot(('Platform',)))
         self.assertEqual('success', frames[-1].get('outcome'), frames)
-        classes = {child['key']: child['projectClassification'] for frame in frames if frame['type'] == 'column'
-                   for child in frame['children']}
-        self.assertEqual({'PLAN-E1': 'tech', 'PLAN-E2': 'tech', 'PLAN-E4': 'none'}, classes)
-        epic_frames = [frame for frame in frames if frame['type'] in {'index', 'column'}]
-        self.assertTrue(epic_frames)
-        for frame in epic_frames:
-            expected = {'PLAN-I1': 'tech', 'PLAN-I2': 'none'}
-            for epic in frame['epics']:
-                self.assertEqual(expected[epic['key']], epic['projectClassification'], frame['type'])
-        self.assertFalse(any('PLAN-O1' in jql for jql in calls))   # no Objective read
-        # Leaf discovery, Initiatives, children: only the Initiative read carries the Allocation field.
-        self.assertEqual([False, True, False], [field in fields for fields in fields_seen])
-
-    def test_a_plus_b_shows_both_epics_under_one_initiative(self):
-        frames, _calls = self.stream(self.snapshot(('Component A', 'Component B')))
         self.assertEqual(1, frames[-1]['epicCount'])
         self.assertEqual(['PLAN-E1', 'PLAN-E2'], self.children(frames))
         self.assertEqual(13, self.points(frames))
+        self.assertFalse(any('component' in p['jql'] for p in calls))
+        self.assertFalse(any('PLAN-E4' in p['jql'] for p in calls))
+        authoritative = [f for f in frames if f['type'] == 'index' and f.get('membership') == 'authoritative']
+        self.assertEqual([['PLAN-I1']], [[e['key'] for e in f['epics']] for f in authoritative])
 
-    def test_all_work_with_components_and_teams_unions_team_leaves_without_siblings(self):
-        frames, calls = self.stream(self.snapshot(('Component A',), teams=('team-a',), scope='all_work'))
-        self.assertEqual('success', frames[-1].get('outcome'), frames)
-        self.assertEqual(1, frames[-1]['epicCount'])
-        self.assertEqual(['PLAN-E1', 'PLAN-E3'], self.children(frames))
-        self.assertNotIn('PLAN-E2', ' '.join(calls))
-        # Team filtering is on the Epic leaves via the mapped Team field, never on the Initiative.
-        self.assertTrue(any('cf[30101]' in jql and 'issuetype in ("10002")' in jql for jql in calls))
-        self.assertFalse(any('cf[30101]' in jql and 'issuetype = 10001' in jql for jql in calls))
+    def test_matching_raw_values_do_not_depend_on_product_tech_mapping(self):
+        frames, _calls = self.stream(self.snapshot(('Platform', 'Growth')))
+        self.assertEqual(2, frames[-1]['epicCount'])
+        self.assertEqual(['PLAN-E1', 'PLAN-E2', 'PLAN-E3', 'PLAN-E4'], self.children(frames))
 
-    def test_initiatives_own_components_never_admit_it(self):
-        frames, calls = self.stream(self.snapshot(('Component C',)))
-        self.assertEqual('success', frames[-1].get('outcome'), frames)
-        self.assertEqual(0, frames[-1]['epicCount'])
-        self.assertFalse(any('issuetype = 10001' in jql and 'component' in jql for jql in calls))
+    def test_mismatching_or_missing_parent_allocation_never_admits_component_matching_children(self):
+        for allocation in (None, {'value': 'Growth'}):
+            with self.subTest(allocation=allocation):
+                parent = parent_shell('PLAN-I2')
+                parent['fields']['customfield_40001'] = allocation
+                frames, calls = self.stream(self.snapshot(('Platform',)), initiatives={'PLAN-I2': parent})
+                self.assertEqual('success', frames[-1].get('outcome'), frames)
+                self.assertEqual(0, frames[-1]['epicCount'])
+                self.assertEqual([], self.children(frames))
+                self.assertFalse(any('issuetype in ("10002")' in p['jql'] for p in calls))
 
-    def test_inaccessible_parent_keeps_the_readable_leaf_under_a_key_only_shell(self):
-        frames, _calls = self.stream(self.snapshot(('Component A',)), initiatives={}, plain={})
+    def test_all_work_unions_only_team_leaves_from_nonmatching_initiatives(self):
+        frames, calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='all_work'))
         self.assertEqual('success', frames[-1].get('outcome'), frames)
-        self.assertEqual(['PLAN-E1'], self.children(frames))
+        self.assertEqual(2, frames[-1]['epicCount'])
+        self.assertEqual(['PLAN-E1', 'PLAN-E2', 'PLAN-E3'], self.children(frames))
+        self.assertEqual(15, self.points(frames))
+        self.assertFalse(any('PLAN-E4' in p['jql'] for p in calls))
+        self.assertTrue(any('cf[30101]' in p['jql'] and 'issuetype in ("10002")' in p['jql'] for p in calls))
+        self.assertFalse(any('cf[30101]' in p['jql'] and 'issuetype = 10001' in p['jql'] for p in calls))
+
+    def test_unreadable_team_parent_keeps_only_its_readable_team_leaf_under_key_shell(self):
+        frames, _calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='all_work'),
+                                    initiatives={}, plain={})
+        self.assertEqual('success', frames[-1].get('outcome'), frames)
+        self.assertEqual(['PLAN-E3'], self.children(frames))
         shells = [e for f in frames if f['type'] == 'column' for e in f['epics']]
-        self.assertEqual(['PLAN-I1'], [e['key'] for e in shells])
-        self.assertEqual('PLAN-I1', shells[0]['summary'])  # key only: no Jira metadata exposed
+        self.assertEqual(['PLAN-I2'], [e['key'] for e in shells])
+        self.assertEqual('PLAN-I2', shells[0]['summary'])
+        self.assertEqual('none', shells[0]['projectClassification'])
 
-    def test_parent_excluded_by_the_terminal_rule_drops_its_leaves(self):
-        readable = {'PLAN-I1': parent_shell('PLAN-I1', status='Done')}
-        frames, calls = self.stream(self.snapshot(('Component A',)), initiatives={}, plain=readable)
+    def test_unreadable_allocation_parent_never_leaks_its_children(self):
+        frames, _calls = self.stream(self.snapshot(('Platform',)), initiatives={}, plain={})
         self.assertEqual(0, frames[-1]['epicCount'])
         self.assertEqual([], self.children(frames))
-        self.assertFalse(any('key in ("PLAN-E1")' in jql for jql in calls))
 
-    def test_incomplete_component_discovery_is_a_terminal_error_never_empty_or_ready(self):
-        frames, _calls = self.stream(self.snapshot(('Component A',)), fail_leaf_discovery=True)
+    def test_parent_excluded_by_terminal_retention_drops_its_team_leaves(self):
+        frames, calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='all_work'),
+                                    initiatives={}, plain={'PLAN-I2': parent_shell('PLAN-I2', 'Done')})
+        self.assertEqual(0, frames[-1]['epicCount'])
+        self.assertEqual([], self.children(frames))
+        self.assertFalse(any('key in ("PLAN-E3")' in p['jql'] for p in calls))
+        self.assertTrue(all('AFTER -28d' in p['jql'] for p in calls if 'issuetype = 10001' in p['jql']))
+
+    def test_matching_initiative_with_no_children_still_has_an_authoritative_card(self):
+        with patch.object(self, 'LEAVES', {}):
+            frames, _calls = self.stream(self.snapshot(('Platform',)))
+        self.assertEqual('success', frames[-1].get('outcome'), frames)
+        self.assertEqual(1, frames[-1]['epicCount'])
+        self.assertEqual([], self.children(frames))
+
+    def test_failed_allocation_discovery_is_terminal_never_empty_ready(self):
+        frames, _calls = self.stream(self.snapshot(('Platform',)), fail_discovery=True)
         self.assertEqual('error', frames[-1]['type'])
         self.assertFalse(any(f['type'] == 'index' and f.get('membership') == 'authoritative' for f in frames))
         self.assertFalse(any(f['type'] == 'column' for f in frames))
 
-    def test_cohort_signature_follows_membership(self):
+    def test_allocation_missing_field_fails_closed_without_jira_search(self):
+        def missing(bundle):
+            bundle['configurations'][1]['fields']['allocation'] = {'fieldId': '', 'fieldName': ''}
+        frames, calls = self.stream(self.snapshot(('Platform',), mutate=missing))
+        self.assertEqual('error', frames[-1]['type'])
+        self.assertEqual([], calls)
+
+    def test_allocation_only_on_initiative_drives_stream_classes(self):
+        def mapped(bundle):
+            bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
+        frames, calls = self.stream(self.snapshot(('Platform',), mutate=mapped, allocation_types=[{'value': 'Platform', 'type': 'tech'}]))
+        self.assertEqual('success', frames[-1].get('outcome'), frames)
+        self.assertEqual({'tech'}, {child['projectClassification'] for frame in frames if frame['type'] == 'column'
+                                   for child in frame['children']})
+        for frame in frames:
+            if frame['type'] in {'index', 'column'}:
+                self.assertTrue(all(e['projectClassification'] == 'tech' for e in frame['epics']))
+        self.assertFalse(any('issuetype = 10010' in p['jql'] for p in calls))
+        self.assertTrue(all(('customfield_40001' in p['fields']) == ('issuetype = 10001' in p['jql']) for p in calls))
+
+    def test_parent_and_leaf_unions_enforce_existing_issue_caps(self):
+        for setting, cap in (('MAX_EPICS', 1), ('MAX_CHILDREN', 2)):
+            with self.subTest(setting=setting), patch.object(eng_board, setting, cap):
+                frames, _calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='all_work'))
+                self.assertEqual('error', frames[-1]['type'])
+                self.assertEqual('scope_too_large', frames[-1]['code'])
+                self.assertFalse(any(f['type'] == 'index' and f.get('membership') == 'authoritative' for f in frames))
+
+    def test_same_allocation_membership_uses_each_department_class(self):
+        for classification in ('product', 'tech'):
+            frames, _calls = self.stream(self.snapshot(('Platform',), allocation_types=[
+                {'value': 'Platform', 'type': classification}]))
+            self.assertEqual(frames[0]['scope'], 'allocation')
+            self.assertEqual(frames[-1].get('outcome'), 'success', frames)
+            cards = [row for frame in frames if frame['type'] == 'column' for row in frame['epics']]
+            self.assertEqual([row['projectClassification'] for row in cards], [classification])
+            children = [row for frame in frames if frame['type'] == 'column' for row in frame['children']]
+            self.assertTrue(children)
+            self.assertEqual({row['projectClassification'] for row in children}, {classification})
+
+    def test_cohort_signature_follows_leaf_membership(self):
         a, ab = eng_board.LeafCohort(), eng_board.LeafCohort()
         a.add_leaf('PLAN-E1', 'PLAN-I1')
         ab.add_leaf('PLAN-E1', 'PLAN-I1')
@@ -659,7 +759,6 @@ class ComponentBoardStreamTests(unittest.TestCase):
 
     def test_legacy_component_discovery_is_unchanged(self):
         calls = []
-
         def search(payload, **kwargs):
             calls.append(payload['jql'])
             return FakeResponse({'issues': [], 'isLast': True})
@@ -673,6 +772,7 @@ class ComponentBoardStreamTests(unittest.TestCase):
 
 class BoardSelectorTests(unittest.TestCase):
     def setUp(self):
+        set_up_db_oauth(self)
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
         self.client = jira_server.app.test_client()
@@ -689,6 +789,31 @@ class BoardSelectorTests(unittest.TestCase):
             result = self.client.get('/api/eng/board', query_string={
                 'departmentId': 'd', 'scope': 'component', 'quarter': '2027Q1'})
         self.assertEqual((result.status_code, result.get_json()['error']), (409, 'configuration_required'))
+
+    def test_wrong_era_and_missing_allocation_fail_before_catalog_jira(self):
+        from tests.oauth_test_helpers import install_oauth_session
+        install_oauth_session(self.client)
+        server = SimpleNamespace(current_jira_get=Mock(side_effect=AssertionError('Jira catalog')))
+        cases = [('component', False, [{'value': 'Platform', 'type': 'tech'}], 'customfield_40001',
+                  'board_scope_model_mismatch', 400),
+                 ('allocation', True, [], '', 'board_scope_model_mismatch', 400),
+                 ('allocation', False, [], 'customfield_40001', 'board_allocations_required', 409),
+                 ('allocation', False, [{'value': 'Platform', 'type': 'tech'}], '',
+                  'board_allocation_field_required', 409)]
+        for scope, legacy, mapping, field, code, status in cases:
+            def capture(_server, query, transport, _secret):
+                group = {'id': 'd', 'allocationTypes': mapping, 'missingInfoComponents': ['Unrelated Legacy']}
+                return eng_board_routes._capture_shape(server, query, transport, {}, group, group,
+                    context=None, roles=SimpleNamespace(is_legacy=legacy, allocation_field_id=field))
+            with self.subTest(scope=scope, code=code), \
+                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(eng_board_routes, 'database_storage_enabled', return_value=True), \
+                 patch.object(eng_board_routes, '_capture_snapshot', side_effect=capture):
+                response = self.client.get('/api/eng/board', query_string={
+                    'departmentId': 'd', 'scope': scope, 'quarter': '2027Q1'})
+            self.assertEqual((response.status_code, response.get_json()), (status, {
+                'error': code, 'message': 'The ENG Board request could not continue safely.'}))
+        server.current_jira_get.assert_not_called()
 
     def test_selector_keys_are_accepted_by_the_query_parser(self):
         from werkzeug.datastructures import MultiDict

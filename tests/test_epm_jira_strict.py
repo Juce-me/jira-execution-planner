@@ -23,7 +23,7 @@ from backend.epm.jira_strict import (
     EpmRequestCancelled, JiraReadError, RequestCancellation, clamp_retry_after, raise_for_jira_status,
     strict_search_request,
 )
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 from tests.test_epm_home_access_and_errors import AccessCase, EPM_CONFIG
 
 
@@ -249,7 +249,7 @@ class RouteJiraFailureTests(AccessCase):
 
 class BasicKeepsSharedBehaviorTests(unittest.TestCase):
     def test_basic_rollup_query_still_goes_through_the_shared_iterator_and_returns_partial_pages(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         responses = [FakeJiraResponse(200, {'issues': [issue('A-1')], 'nextPageToken': 'p2', 'isLast': False}),
                      FakeJiraResponse(500)]
         with patch.object(jira_server, 'jira_search_request', lambda payload, **kw: responses.pop(0)):

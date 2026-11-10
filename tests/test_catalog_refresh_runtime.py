@@ -3,7 +3,6 @@ import base64
 import json
 import inspect
 import re
-import tempfile
 import time
 import unittest
 import uuid
@@ -16,7 +15,9 @@ import requests
 from sqlalchemy.exc import OperationalError
 
 import jira_server
-from backend.auth.context import RequestAuthContext
+from backend.auth.db_context import resolve_db_request_auth_context
+from backend.auth.db_browser_sessions import create_browser_session
+from tests.db_oauth_test_helpers import seed_db_actor
 from backend.auth import db_tokens as db_tokens_module
 from backend.epm import home as epm_home_module
 from backend.auth.db_tokens import store_oauth_callback_tokens
@@ -27,16 +28,16 @@ from backend.services.workspace_catalog_cache import claim_catalog_refresh
 from backend.services.workspace_catalog_cache import load_sprint_catalog, publish_catalog
 from backend.services.workspace_catalog_cache import finish_catalog_failure
 from backend.services.workspace_catalog_config import resolve_effective_catalog_config
+from tests.postgres_test_db import fresh_database_url
 
 
 class CatalogRefreshRuntimeTests(unittest.TestCase):
     def setUp(self):
         forbidden = (
             'current_jira_request', 'jira_search_request',
-            'oauth_session_data', 'save_oauth_session', 'oauth_refresh_lock',
+            'oauth_session_data', 'save_oauth_session',
             'oauth_session_data_for_auth_context',
-            'save_oauth_session_for_auth_context',
-            'oauth_refresh_lock_for_auth_context', 'fetch_teams_from_jira_api',
+            'fetch_teams_from_jira_api',
         )
         self._forbidden_patches = [
             patch.object(
@@ -44,61 +45,25 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
                 side_effect=AssertionError(f'forbidden catalog path reached: {name}'),
             ) for name in forbidden
         ]
-        local_store_methods = (
-            'persistence_enabled', 'read_persistent_token_store',
-            'write_persistent_token_store', '_drop_persistent_session',
-            '_save_persistent_session', '_load_persistent_session',
-            'existing_refresh_lock', 'drop_session',
-            'cleanup_expired_sessions', 'save_session', 'save_session_for_id',
-            'refresh_lock', 'refresh_lock_for_id', 'session_data',
-            'session_data_for_id', '_session_data_for_id',
-        )
-        self._forbidden_patches.extend(
-            patch.object(
-                jira_server._LOCAL_OAUTH_STORE, name,
-                side_effect=AssertionError(f'forbidden local OAuth store reached: {name}'),
-            ) for name in local_store_methods
-        )
-        self._forbidden_patches.extend((
-            patch.object(
-                epm_home_module, '_read_metadata_credential',
-                side_effect=AssertionError('forbidden Home credential resolver reached'),
-            ),
-        ))
+        self.assertFalse(hasattr(jira_server, '_LOCAL_OAUTH_STORE'))
+        self.assertFalse(hasattr(epm_home_module, '_read_metadata_credential'))
         for forbidden_patch in self._forbidden_patches:
             forbidden_patch.start()
             self.addCleanup(forbidden_patch.stop)
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'runtime.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
-            workspace = models.Workspace(environment_key='runtime', name='Runtime')
-            user = models.User(id='runtime-user', external_provider='test', external_subject='runtime-user')
-            session.add_all([workspace, user])
-            session.flush()
-            connection = models.AuthConnection(
-                id='runtime-connection', user_id=user.id, workspace_id=workspace.id,
-                provider='atlassian_oauth', cloud_id='runtime-cloud',
-                site_url='https://runtime.example.test', scopes=['read:jira-work'],
-                scope_provenance='provider',
-            )
-            session.add(connection)
-            session.add(models.WorkspaceDashboardConfig(
-                workspace_id=workspace.id,
-                payload={'board': {'boardId': '17'}, 'projects': [{'key': 'DEMO'}]},
-                config_revision=1,
-            ))
+            actor = seed_db_actor(session,
+                workspace={'environment_key': 'runtime', 'name': 'Runtime',
+                           'cloud_id': 'runtime-cloud', 'site_url': 'https://runtime.example.test'},
+                account_identity='runtime-user', roles=('admin',))
+            session.add(models.WorkspaceDashboardConfig(workspace_id=actor.workspace_id,
+                payload={'board': {'boardId': '17'}, 'projects': {'selected': [{'key': 'DEMO'}]}},
+                config_revision=1))
             session.commit()
-            self.workspace_id = workspace.id
-        self.context = RequestAuthContext(
-            auth_mode='atlassian_oauth', user_id='runtime-user', stable_subject='runtime-user',
-            atlassian_account_id='runtime-user', workspace_id=self.workspace_id,
-            auth_connection_id='runtime-connection', cloud_id='runtime-cloud',
-            site_url='https://runtime.example.test', token_version='1',
-            account_status='active', is_admin=True, granted_scopes=('read:jira-work',),
-            granted_scopes_verified=True,
-        )
+            self.workspace_id = actor.workspace_id
+        self.context = resolve_db_request_auth_context(actor.session_payload, database_url=self.database_url)
         self.runtime_inputs = {
             'jql_query': '', 'jira_board_id': '',
             'team_field_default': 'customfield_10001',
@@ -107,7 +72,6 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self.tmpdir.cleanup()
 
     def resolve(self, session, context):
         return resolve_effective_catalog_config(
@@ -155,15 +119,12 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
                 payload={'board': {'boardId': '17'}}, config_revision=1,
             ))
             session.commit()
-        context = RequestAuthContext(
-            auth_mode='atlassian_oauth', user_id=stored.user_id,
-            stable_subject='wrapper-account', atlassian_account_id='wrapper-account',
-            workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id,
-            cloud_id='wrapper-cloud', site_url='https://wrapper.example.test',
-            token_version='1', account_status='active', is_admin=True,
-            granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()),
-            granted_scopes_verified=True,
-        )
+        with self.factory() as session:
+            browser = create_browser_session(session, user_id=stored.user_id,
+                workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id)
+            browser_id = browser.id
+            session.commit()
+        context = resolve_db_request_auth_context({'db_browser_session_id': browser_id}, database_url=self.database_url)
         return context, key_env, stored
 
     @staticmethod
@@ -630,15 +591,12 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
                 payload={'board': {'boardId': '17'}}, config_revision=1,
             ))
             session.commit()
-        context = RequestAuthContext(
-            auth_mode='atlassian_oauth', user_id=stored.user_id,
-            stable_subject='wrapper-account', atlassian_account_id='wrapper-account',
-            workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id,
-            cloud_id='wrapper-cloud', site_url='https://wrapper.example.test',
-            token_version='1', account_status='active', is_admin=True,
-            granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()),
-            granted_scopes_verified=True,
-        )
+        with self.factory() as session:
+            browser = create_browser_session(session, user_id=stored.user_id,
+                workspace_id=stored.workspace_id, auth_connection_id=stored.connection_id)
+            browser_id = browser.id
+            session.commit()
+        context = resolve_db_request_auth_context({'db_browser_session_id': browser_id}, database_url=self.database_url)
 
         def response(status, payload):
             result = requests.Response()
@@ -753,6 +711,9 @@ class CatalogRefreshRuntimeTests(unittest.TestCase):
             def remaining(self, phase='catalog_refresh'):
                 if phase in {'auth', 'failure_cleanup'}:
                     raise CatalogRefreshDeadline(phase)
+                if phase == 'workspace_config_fence':
+                    # PostgreSQL sizes the claim's lock and statement timeouts from this phase.
+                    return 5
                 return 0.001
 
             def check(self, phase='catalog_refresh'):

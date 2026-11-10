@@ -1,7 +1,7 @@
 """A DB OAuth actor without the private Enable EPM view preference never reaches a Home credential path.
 
 Home is read only through the user's OAuth grant; the legacy (disabled) profile fails closed with a typed,
-token-free `epm_view_disabled` 409. Real DB OAuth browser session on SQLite, synthetic data, no network.
+token-free `epm_view_disabled` 409. Real DB OAuth browser session on PostgreSQL, synthetic data, no network.
 """
 import unittest
 from unittest.mock import patch
@@ -21,17 +21,9 @@ class ViewDisabledTests(AccessCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_read_metadata_credential_fails_closed_in_db_mode(self):
-        with patch.object(epm_home, 'database_storage_enabled', return_value=True):
-            with self.assertRaises(AuthError) as raised:
-                epm_home._read_metadata_credential(self.context)
-        self.assertEqual(raised.exception.code, 'epm_view_disabled')
-
-    def test_read_metadata_credential_is_unchanged_without_db_storage_or_context(self):
-        with patch.object(epm_home, 'database_storage_enabled', return_value=False):
-            self.assertIsNone(epm_home._read_metadata_credential(self.context))
-        with patch.object(epm_home, 'database_storage_enabled', return_value=True):
-            self.assertIsNone(epm_home._read_metadata_credential(None))
+    def test_retired_metadata_credential_paths_are_absent(self):
+        for name in ('_read_metadata_credential', 'HomeGraphQLClient', 'build_teamwork_graph_client'):
+            self.assertFalse(hasattr(epm_home, name), name)
 
     def test_disabled_actor_gets_a_typed_409_without_a_connect_url(self):
         self.forbid_home()

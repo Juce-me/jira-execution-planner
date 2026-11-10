@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -7,6 +6,7 @@ from unittest.mock import patch
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 FULL_SCOPE = (
@@ -22,10 +22,8 @@ class UnconfiguredWorkspaceGateTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmpdir.cleanup)
+        self.database_url = fresh_database_url(self.addCleanup)
         self.addCleanup(db_engine.dispose_engines)
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'gate.db')}"
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
@@ -157,7 +155,7 @@ class UnconfiguredWorkspaceGateTests(unittest.TestCase):
 
         self.assertEqual(body['adminSettingsMissing'], ['source'])
 
-    def test_basic_mode_config_has_no_gate_fields(self):
+    def test_retired_basic_mode_config_is_rejected(self):
         client = jira_server.app.test_client()
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False), \
                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
@@ -166,8 +164,9 @@ class UnconfiguredWorkspaceGateTests(unittest.TestCase):
                 patch.object(jira_server, 'resolve_groups_config_path', return_value='team-groups.json'):
             response = client.get('/api/config')
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
         body = response.get_json()
+        self.assertEqual(body['error'], 'runtime_auth_unsupported')
         self.assertNotIn('adminSettingsMissing', body)
         self.assertNotIn('adminContacts', body)
 

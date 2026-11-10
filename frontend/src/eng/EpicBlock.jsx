@@ -32,7 +32,6 @@ export function EpicBlock({
     onboardingPreviewSession,
     handleOnboardingPreviewLifecycleChange,
     showStats,
-    showPlanning,
     toggleSharedGroupExcludedCapacityEpic,
     canToggleSharedGroupExcludedCapacity,
     canEditSharedConfiguration,
@@ -43,8 +42,6 @@ export function EpicBlock({
     isEpicRefreshMode,
     epicRefresh,
     getTeamInfo,
-    selectedTasks,
-    toggleTaskSelection,
     removeTask,
     shouldRenderIssueDependencies,
     issueDependencyContext,
@@ -235,7 +232,7 @@ export function EpicBlock({
                             </>
                         )}
                         {epicGroup.key !== 'NO_EPIC' && renderEpicShareControl?.(epicGroup.key)}
-                        {(showStats || showPlanning) && (
+                        {showStats && (
                             <button
                                 className={`epic-stat-toggle ${excludedEpicSet.has(normalizeEpicKey(epicGroup.key)) ? '' : 'active'}`}
                                 onClick={() => toggleSharedGroupExcludedCapacityEpic(epicGroup.key)}
@@ -335,7 +332,7 @@ export function EpicBlock({
                             key={row.id}
                             requirement={row}
                             jiraUrl={jiraUrl}
-                            sourceSurface={showPlanning ? 'planning' : 'catch_up'}
+                            sourceSurface="catch_up"
                             entityNames={entityNames}
                             InitiativeIcon={InitiativeIcon}
                         />
@@ -355,9 +352,6 @@ export function EpicBlock({
                         teamLabel={teamLabel}
                         statusClassName={statusClassName}
                         renderPriorityIcon={renderPriorityIcon}
-                        showPlanning={showPlanning}
-                        isSelected={!!selectedTasks[task.key]}
-                        onToggleSelection={toggleTaskSelection}
                         onRemove={removeTask}
                         isLeaving={epicRefresh.leavingKeys.has(task.key)}
                         shouldRenderIssueDependencies={shouldRenderIssueDependencies}

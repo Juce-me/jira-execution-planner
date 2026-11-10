@@ -8,6 +8,35 @@ const scope = (rows = [row(1)]) => ({ sprintId: '100', groupId: 'g1', contextKey
 const settle = async () => { for (let i = 0; i < 5; i++) await new Promise(resolve => setImmediate(resolve)); };
 const deferred = () => { let resolve; const promise = new Promise(yes => { resolve = yes; }); return { promise, resolve }; };
 
+test('scope Save analytics reports the observed typed outcome once without replay', async () => {
+    for (const result of ['success', 'failure', 'conflict', 'unknown']) {
+        const actions = [];
+        let writes = 0, changed = false;
+        const c = await fixture({
+            onReviewAction: (action, params) => actions.push({ action, ...params }),
+            saveReview: async (_, sprintId, payload) => {
+                writes++;
+                if (result !== 'success') throw Object.assign(new Error('Synthetic save outcome'),
+                    result === 'unknown' ? { unconfirmed: true } : result === 'conflict' ? { status: 409, conflict: { cellConflicts: [] } } : { status: 400 });
+                return { sprintId, schemaRevision: 1, columns: [column], cells: payload.cellChanges.map(cell => ({ ...cell, revision: cell.baseRevision + 1 })) };
+            },
+        });
+        await c.setScope(scope()); c.setCell(row(1), column, '5');
+        const guarded = c.guardScopeChange(() => { changed = true; });
+        assert.equal(await c.resolveScopeChange('save'), result === 'success');
+        assert.deepEqual(actions, [{ action: 'save_review', result }]);
+        if (result !== 'success') {
+            await c.refresh();
+            await c.resolveScopeChange('stay');
+        }
+        assert.equal(await guarded, result === 'success');
+        assert.equal(changed, result === 'success');
+        assert.equal(writes, 1);
+        assert.equal(actions.length, 1);
+        c.dispose();
+    }
+});
+
 async function fixture(overrides = {}) {
     const { createPlanningSprintReviewController } = await load();
     return createPlanningSprintReviewController({ fetchSchema: async () => schema(), readValues: async () => ({ cells: [] }), saveReview: async (_, sprintId, payload) => ({ sprintId, schemaRevision: 1, columns: [column], cells: payload.cellChanges.map(cell => ({ ...cell, revision: cell.baseRevision + 1 })) }), ...overrides });
@@ -921,4 +950,445 @@ test('Legacy namespace requests are untouched by the role mapping', async () => 
     const c = await fixture({ fetchSchema: async () => schema(), readValues: async (_, __, payload) => { payloads.push(payload); return { cells: [] }; } });
     await c.setScope(scope([row(1)]));
     assert.deepEqual(payloads, [{ groupId: 'g1', rowKind: 'story', issueIds: ['1'] }]);
+});
+
+const sharedScope = (rows = [row(1), row(2)]) => ({ ...scope(rows), candidateRows: rows, planScope: { workspaceId: 'workspace-a', groupId: 'g1', sprintId: '100', namespaceId: null } });
+const sharedSchema = (revision = 0, exists = false) => ({ ...schema(), plan: { exists, revision }, scopeProof: `proof-${revision}`, planCapabilities: { canRead: true, canSave: true } });
+async function sharedFixture(overrides = {}) {
+    return fixture({ fetchSchema: async () => sharedSchema(), readValues: async (_, __, payload) => ({ cells: [], planEntries: payload.includePlan ? payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })) : undefined, planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] }), saveReview: async (_, __, payload) => ({ ...schema(), operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: payload.cellChanges.map(cell => ({ ...cell, revision: cell.baseRevision + 1 })), inclusionChanges: payload.inclusionChanges.map(change => ({ issueId: change.issueId, included: change.included, revision: 1 })) }), ...overrides });
+}
+
+test('shared plan has one scoped inclusion owner and can save explicitly empty initialization', async () => {
+    let submitted;
+    const c = await sharedFixture({ saveReview: async (_, __, payload) => { submitted = payload; return { ...schema(), operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: [], inclusionChanges: [] }; } });
+    await c.setScope(sharedScope());
+    assert.equal(c.getState().dirty, false);
+    c.includeShown(['1']); c.includeShown(['2']); c.removeShown(['1']);
+    assert.equal(c.getPlanSnapshot().effectiveEntries.get('2').included, true);
+    c.removeShown(['2']);
+    assert.equal(c.getState().dirty, true);
+    assert.equal(await c.save(), true);
+    assert.equal(submitted.version, 2); assert.equal(submitted.initializePlan, true);
+    assert.deepEqual(submitted.inclusionChanges, []);
+    assert.equal(c.getState().dirty, false);
+});
+
+test('shared pending save retains later inclusion changes and blocks inclusion Undo', async () => {
+    const wait = deferred(); let sent;
+    const c = await sharedFixture({ saveReview: async (_, __, payload) => { sent = payload; await wait.promise; return { ...schema(), operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: [], inclusionChanges: [{ issueId: '1', included: true, revision: 1 }] }; } });
+    await c.setScope(sharedScope()); c.includeShown(['1']); const saving = c.save();
+    c.removeShown(['1']); c.includeShown(['2']);
+    assert.equal(c.undoInclusion(), false);
+    wait.resolve(); assert.equal(await saving, true);
+    assert.equal(sent.inclusionChanges.length, 1);
+    assert.deepEqual(c.getPlanSnapshot().changes, [{ issueId: '1', included: false, baseRevision: 1 }, { issueId: '2', included: true, baseRevision: 0 }]);
+    assert.equal(c.getState().dirty, true);
+});
+
+test('shared projections stage complete chunks and retry a changed projection without partial selection', async () => {
+    const final = deferred(); let reads = 0, metadata = 0;
+    const candidates = Array.from({ length: 501 }, (_, index) => row(index + 1));
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(metadata++ ? 2 : 1, true), readValues: async (_, __, payload) => {
+        reads++;
+        if (reads === 2) throw Object.assign(new Error('changed'), { status: 409, code: 'plan_projection_changed' });
+        if (reads === 4) await final.promise;
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: true, revision: 1 })), planRevision: payload.expectedPlanRevision, scopeProof: payload.expectedScopeProof, unavailableIssueIds: [] };
+    } });
+    const loading = c.setScope(sharedScope(candidates)); await settle();
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 0);
+    final.resolve(); await loading;
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 501);
+    assert.equal(c.getState().plan.revision, 2);
+});
+
+test('shared unknown save cannot be released by a rejected retry and never retries automatically', async () => {
+    let writes = 0;
+    const c = await sharedFixture({ saveReview: async () => { writes++; throw Object.assign(new Error('lost'), { unconfirmed: true }); }, readOperation: async () => ({ status: 'unknown' }) });
+    await c.setScope(sharedScope()); c.includeShown(['1']); await c.save();
+    assert.equal(c.getState().unconfirmed, true);
+    assert.equal(await c.save(), false);
+    assert.equal(await c.reconcilePlan(), false);
+    assert.equal(c.getState().unconfirmed, true); assert.equal(writes, 1);
+    assert.ok(c.getPlanSnapshot().pendingOperation.payload.operationId);
+});
+
+test('shared column actions require matching acknowledgement before draft confirmation', async () => {
+    const c = await sharedFixture(); await c.setScope(sharedScope());
+    c.changeSchema({ action: 'rename', columnId: 'cost', label: 'New cost' });
+    assert.equal(await c.save(), false);
+    assert.equal(c.getState().unconfirmed, true);
+    assert.equal(c.getState().dirty, true);
+});
+
+test('shared review-only first edit explicitly initializes a plan and preserves legacy review edit lock', async () => {
+    const wait = deferred(); let sent;
+    const c = await sharedFixture({ saveReview: async (_, __, payload) => { sent = payload; await wait.promise; return { ...schema(), operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: payload.cellChanges.map(cell => ({ ...cell, revision: 1 })), inclusionChanges: [] }; } });
+    await c.setScope(sharedScope()); c.setCell(row(1), column, '2'); const saving = c.save();
+    assert.equal(c.setCell(row(1), column, '3').valid, false);
+    wait.resolve(); assert.equal(await saving, true);
+    assert.equal(sent.initializePlan, true); assert.deepEqual(sent.inclusionChanges, []);
+});
+
+test('shared projection retry is bounded and never publishes an incomplete or unauthorized chunk', async () => {
+    let metadata = 0;
+    const c = await sharedFixture({ fetchSchema: async () => { metadata++; return sharedSchema(1, true); }, readValues: async () => { throw Object.assign(new Error('changed'), { code: 'plan_projection_changed', status: 409 }); } });
+    assert.equal(await c.setScope(sharedScope()), false);
+    assert.equal(metadata, 3); assert.equal(c.getState().planReady, false);
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 0);
+    const denied = await sharedFixture({ readValues: async (_, __, payload) => ({ cells: [], planEntries: payload.issueIds.filter(id => id !== '2').map(issueId => ({ issueId, included: true, revision: 1 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: ['2'] }) });
+    await denied.setScope(sharedScope());
+    assert.deepEqual(denied.getSelectedTasks(), { 'DEMO-1': true });
+    assert.equal(denied.includeShown(['2']), false);
+});
+
+test('shared dirty scope refuses group or namespace reset and Discard reads current without PATCH', async () => {
+    let revision = 0, reads = 0, saves = 0;
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(revision, revision > 0), readValues: async (_, __, payload) => { reads++; return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: revision > 0, revision })), planRevision: revision, scopeProof: `proof-${revision}`, unavailableIssueIds: [] }; }, saveReview: async () => { saves++; } });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    assert.equal(await c.setScope({ ...sharedScope(), groupId: 'other', planScope: { ...sharedScope().planScope, groupId: 'other' } }), false);
+    assert.equal(c.getState().groupId, 'g1'); assert.equal(c.getState().dirty, true);
+    revision = 2; assert.equal(await c.discard(), true);
+    assert.ok(reads > 1); assert.equal(saves, 0);
+    assert.equal(c.getState().dirty, false); assert.equal(c.getState().plan.revision, 2);
+    assert.deepEqual(c.getSelectedTasks(), { 'DEMO-1': true, 'DEMO-2': true });
+});
+
+test('shared committed receipt reconciles inclusion only with the original plan revision and preserves later desired state', async () => {
+    let committed = false;
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(committed ? 1 : 0, committed), readValues: async (_, __, payload) => ({ cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: committed && issueId === '1', revision: committed && issueId === '1' ? 1 : 0 })), planRevision: committed ? 1 : 0, scopeProof: committed ? 'proof-1' : 'proof-0', unavailableIssueIds: [] }), saveReview: async () => { committed = true; throw Object.assign(new Error('lost'), { unconfirmed: true }); }, readOperation: async (_, __, operationId) => ({ operationId, status: 'committed', plan: { exists: true, revision: 1 } }) });
+    await c.setScope(sharedScope()); c.includeShown(['1']); await c.save();
+    assert.equal(await c.reconcilePlan(), true);
+    assert.equal(c.getState().unconfirmed, false); assert.equal(c.getState().dirty, false);
+    assert.equal(c.getPlanSnapshot().pendingOperation, null);
+    assert.deepEqual(c.getSelectedTasks(), { 'DEMO-1': true });
+});
+
+test('recovery restores original inclusion bases and invalid cell input after fresh reads without PATCH', async () => {
+    const old = await sharedFixture(); await old.setScope(sharedScope()); old.includeShown(['1']); old.setCell(row(1), column, '1e3');
+    const captured = old.capturePlanRecovery();
+    let writes = 0;
+    const fresh = await sharedFixture({ saveReview: async () => { writes++; } }); await fresh.setScope(sharedScope());
+    assert.equal(await fresh.restorePlanRecovery(captured), true);
+    assert.equal(fresh.getState().dirty, true); assert.equal(fresh.getState().canUndoInclusion, false);
+    assert.equal(fresh.getState().drafts['story::1::cost']?.input || Object.values(fresh.getState().drafts)[0].input, '1e3');
+    assert.equal(Object.values(fresh.getState().drafts)[0].valid, false);
+    assert.deepEqual(fresh.getPlanSnapshot().changes, [{ issueId: '1', included: true, baseRevision: 0 }]);
+    assert.equal(writes, 0);
+    assert.equal(await fresh.restorePlanRecovery({ ...captured, scope: { ...captured.scope, workspaceId: 'other' } }), false);
+});
+
+test('recovery retains an unknown frozen operation and later cancellation without replay or fake Undo', async () => {
+    const wait = deferred();
+    const original = await sharedFixture({ saveReview: async () => { await wait.promise; throw Object.assign(new Error('lost'), { unconfirmed: true }); } });
+    await original.setScope(sharedScope()); original.includeShown(['1']); const saving = original.save(); original.removeShown(['1']); wait.resolve(); await saving;
+    const captured = original.capturePlanRecovery();
+    let writes = 0;
+    const fresh = await sharedFixture({ saveReview: async () => { writes++; }, readOperation: async (_, __, operationId) => ({ operationId, status: 'unknown' }) }); await fresh.setScope(sharedScope());
+    assert.equal(await fresh.restorePlanRecovery(captured), true);
+    assert.equal(fresh.getState().unconfirmed, true);
+    assert.deepEqual(fresh.getPlanSnapshot().changes, []);
+    assert.deepEqual(fresh.getPlanSnapshot().pendingOperation.payload, captured.submission.payload);
+    assert.equal(fresh.getState().canUndoInclusion, false); assert.equal(await fresh.save(), false); assert.equal(writes, 0);
+});
+
+test('shared column acknowledgements verify final add, rename, archive, aggregation and reorder semantics', async () => {
+    const other = { ...column, id: 'other', label: 'Other', order: 1 };
+    const base = [column, other];
+    const cases = [
+        [{ action: 'rename', columnId: 'cost', label: ' New cost ' }, [{ ...column, label: 'New cost' }, other], [{ ...column, label: 'Cost' }, other]],
+        [{ action: 'archive', columnId: 'cost', archived: true }, [{ ...column, archived: true }, other], base],
+        [{ action: 'aggregation', columnId: 'cost', aggregation: 'none' }, [{ ...column, aggregation: 'none' }, other], base],
+        [{ action: 'reorder', rowKind: 'story', columnIds: ['other', 'cost'] }, [{ ...column, order: 1 }, { ...other, order: 0 }], base],
+        [{ action: 'add', column: { id: 'new', rowKind: 'story', label: 'New', type: 'text' } }, [...base, { id: 'new', rowKind: 'story', label: 'New', type: 'text', aggregation: 'none', archived: false, after: null, order: 2 }], [...base, { id: 'new', rowKind: 'story', label: 'New', type: 'text', aggregation: 'none', archived: false, after: 'summary', order: 2 }]],
+    ];
+    for (const [change, correct, wrong] of cases) for (const valid of [false, true]) {
+        const c = await sharedFixture({ fetchSchema: async () => ({ ...sharedSchema(), columns: base }), saveReview: async (_, __, payload) => ({ columns: valid ? correct : wrong, schemaRevision: 2, operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: [], inclusionChanges: [] }) });
+        await c.setScope(sharedScope()); c.changeSchema(change);
+        assert.equal(await c.save(), valid, change.action);
+        assert.equal(c.getState().dirty, !valid, change.action);
+        assert.equal(c.getState().unconfirmed, !valid, change.action);
+    }
+});
+
+test('shared uncertainty still blocks Save and scope-leave Save after later edits return to a clean baseline', async () => {
+    const wait = deferred();
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(1, true), readValues: async (_, __, payload) => ({ cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 1, scopeProof: 'proof-1', unavailableIssueIds: [] }), saveReview: async () => { await wait.promise; throw Object.assign(new Error('lost'), { unconfirmed: true }); } });
+    await c.setScope(sharedScope()); c.includeShown(['1']); const saving = c.save(); c.removeShown(['1']); wait.resolve(); await saving;
+    assert.equal(c.getState().dirty, false); assert.equal(c.getState().unconfirmed, true);
+    assert.equal(await c.save(), false);
+    let changed = false; const guarded = c.guardScopeChange(() => { changed = true; });
+    assert.equal(await c.resolveScopeChange('save'), false); assert.equal(changed, false);
+    await c.resolveScopeChange('stay'); assert.equal(await guarded, false);
+});
+
+test('shared unavailable capability never falls back to local inclusion or review editing', async () => {
+    const c = await sharedFixture({ fetchSchema: async () => ({ ...sharedSchema(), planCapabilities: { canRead: false, canSave: false } }) });
+    await c.setScope(sharedScope());
+    assert.equal(c.getState().capabilities.canSave, false); assert.equal(c.includeShown(['1']), false);
+    assert.equal(c.setCell(row(1), column, '2').valid, false);
+    assert.equal(c.changeSchema({ action: 'rename', columnId: 'cost', label: 'Other' }), false);
+});
+
+test('shared schema acknowledgement cannot retain the submitted base revision', async () => {
+    const c = await sharedFixture({ saveReview: async (_, __, payload) => ({ columns: [{ ...column, label: 'New' }], schemaRevision: payload.baseSchemaRevision, operationId: payload.operationId, plan: { exists: true, revision: 1 }, cells: [], inclusionChanges: [] }) });
+    await c.setScope(sharedScope()); c.changeSchema({ action: 'rename', columnId: 'cost', label: 'New' });
+    assert.equal(await c.save(), false); assert.equal(c.getState().unconfirmed, true); assert.equal(c.getState().dirty, true);
+});
+
+test('manual shared Refresh preserves review input typed while its full projection is pending', async () => {
+    const held = deferred(); let pause = false, revision = 1;
+    const c = await sharedFixture({ fetchSchema: async () => ({ ...sharedSchema(1, true), schemaRevision: revision }), readValues: async (_, __, payload) => { if (pause) await held.promise; return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 1, scopeProof: 'proof-1', unavailableIssueIds: [] }; } });
+    await c.setScope(sharedScope());
+    pause = true; revision = 2;
+    const refresh = c.refresh(); await settle();
+    assert.equal(c.setCell(row(1), column, '9').valid, true);
+    assert.equal(c.changeSchema({ action: 'rename', columnId: 'cost', label: 'My cost' }), true);
+    held.resolve(); assert.equal(await refresh, true);
+    assert.equal(c.getState().dirty, true);
+    assert.equal(Object.values(c.getState().drafts)[0].input, '9');
+    assert.equal(Object.values(c.getState().drafts)[0].baseRevision, 0);
+    assert.equal(c.getState().schemaRevision, 1);
+    assert.equal(c.getState().schemaChanges[0].label, 'My cost');
+    assert.equal(c.getState().conflict.schemaConflict, true);
+});
+
+test('explicit shared Discard rejects intervening mutations until its fresh baseline has loaded', async () => {
+    const held = deferred(); let pause = false;
+    const c = await sharedFixture({ readValues: async (_, __, payload) => { if (pause) await held.promise; return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] }; } });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    pause = true; const discard = c.discard(); await settle();
+    assert.equal(c.setCell(row(1), column, '9').valid, false);
+    assert.equal(c.changeSchema({ action: 'rename', columnId: 'cost', label: 'Do not lose me' }), false);
+    assert.equal(c.includeShown(['2']), false);
+    held.resolve(); assert.equal(await discard, true);
+    assert.equal(c.getState().dirty, false);
+    assert.equal(c.getState().discarding, false);
+});
+
+test('a complete shared projection retires unavailable Story cells and derived readability while preserving local input', async () => {
+    let unavailable = false;
+    const c = await sharedFixture({ readValues: async (_, __, payload) => ({ cells: unavailable ? [] : [{ issueId: '1', rowKind: 'story', columnId: 'cost', value: '7', revision: 1 }], planEntries: payload.issueIds.filter(id => !unavailable || id !== '1').map(issueId => ({ issueId, included: issueId === '1', revision: issueId === '1' ? 1 : 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: unavailable ? ['1'] : [] }) });
+    await c.setScope(sharedScope());
+    c.setCell(row(1), column, '9');
+    unavailable = true; assert.equal(await c.refresh(), true);
+    assert.equal(c.isRowReadable(row(1)), false);
+    assert.equal(Object.values(c.getState().savedCells).some(cell => cell.issueId === '1'), false);
+    assert.equal(Object.values(c.getState().drafts)[0].input, '9');
+    assert.deepEqual(c.getSelectedTasks(), {});
+    const { derivedValue } = await import('../frontend/src/eng/planningReviewTableModel.js');
+    const value = derivedValue({ rowKind: 'epic', children: [{ id: '1', fields: {} }] }, column, { cells: c.getState().cells, isLoaded: (issueId, rowKind) => c.isRowReadable({ issueId, rowKind }) });
+    assert.equal(value.value, null);
+    assert.equal(value.complete, false);
+});
+
+test('Plan saved feedback identity requires a validated acknowledgement and resets with scope', async () => {
+    let operationId;
+    const c = await sharedFixture({ saveReview: async (_, __, payload) => {
+        operationId = payload.operationId;
+        return { ...schema(), operationId, plan: { exists: true, revision: 1 }, cells: [], inclusionChanges: payload.inclusionChanges.map(change => ({ issueId: change.issueId, included: change.included, revision: 1 })) };
+    } });
+    await c.setScope(sharedScope()); assert.equal(c.getState().confirmedOperationId, null);
+    c.includeShown(['1']); assert.equal(await c.save(), true);
+    assert.equal(c.getState().confirmedOperationId, operationId);
+    await c.setScope({ ...sharedScope(), sprintId: '200', planScope: { ...sharedScope().planScope, sprintId: '200' } });
+    assert.equal(c.getState().confirmedOperationId, null);
+    const unknown = await sharedFixture({ saveReview: async () => { throw Object.assign(new Error('lost'), { unconfirmed: true }); }, readOperation: async (_, __, id) => ({ operationId: id, status: 'committed', plan: { exists: true, revision: 4 } }) });
+    await unknown.setScope(sharedScope()); unknown.includeShown(['1']); await unknown.save(); await unknown.reconcilePlan();
+    assert.equal(unknown.getState().confirmedOperationId, null);
+});
+
+test('manual shared Refresh publishes revoked read/save capabilities without retiring the local draft', async () => {
+    let denied = false;
+    const c = await sharedFixture({ fetchSchema: async () => denied ? { ...sharedSchema(), capabilities: { canRead: false, canSave: false }, planCapabilities: { canRead: false, canSave: false }, scopeProof: null } : sharedSchema() });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    denied = true; assert.equal(await c.refresh(), true);
+    assert.equal(c.getState().dirty, true);
+    assert.equal(c.getState().capabilities.canRead, false);
+    assert.equal(c.getState().capabilities.canSave, false);
+    assert.equal(c.getState().planReady, false);
+    assert.equal(c.includeShown(['2']), false);
+    assert.equal(c.setCell(row(1), column, '4').valid, false);
+});
+
+test('manual shared Refresh disables Plan when only its read capability is revoked', async () => {
+    let denied = false;
+    const c = await sharedFixture({ fetchSchema: async () => denied ? { ...sharedSchema(), planCapabilities: { canRead: false, canSave: false }, scopeProof: null } : sharedSchema() });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    denied = true; assert.equal(await c.refresh(), true);
+    assert.equal(c.getState().dirty, true);
+    assert.equal(c.getState().planReady, false);
+    assert.equal(c.getState().capabilities.canSave, false);
+    assert.equal(c.includeShown(['2']), false);
+    assert.equal(await c.save(), false);
+});
+
+test('manual shared Refresh does not resurrect a cell draft reverted while its projection was pending', async () => {
+    const held = deferred(); let pause = false;
+    const c = await sharedFixture({ readValues: async (_, __, payload) => { if (pause) await held.promise; return { cells: [{ issueId: '1', rowKind: 'story', columnId: 'cost', value: '7', revision: 1 }], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] }; } });
+    await c.setScope(sharedScope()); c.setCell(row(1), column, '9');
+    pause = true; const refresh = c.refresh(); await settle();
+    c.setCell(row(1), column, '7'); assert.equal(c.getState().dirty, false);
+    held.resolve(); assert.equal(await refresh, true);
+    assert.equal(c.getState().dirty, false);
+    assert.deepEqual(c.getState().drafts, {});
+});
+
+test('recovery authorizes a hidden Epic draft and surfaces its fresh cell revision conflict', async () => {
+    const parent = { issueId: '99', id: '99', key: 'SYN-99', rowKind: 'epic' };
+    const parentColumn = { ...column, id: 'parent-cost', rowKind: 'epic' };
+    let parentRevision = 1, hold = false; const held = deferred(), calls = [];
+    const options = {
+        fetchSchema: async () => ({ ...sharedSchema(), columns: [column, parentColumn] }),
+        readValues: async (_, __, payload) => {
+            calls.push(payload);
+            if (payload.rowKind === 'epic') { if (hold) await held.promise; return { cells: [{ issueId: '99', rowKind: 'epic', columnId: parentColumn.id, value: '1', revision: parentRevision }], unavailableIssueIds: [] }; }
+            return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] };
+        },
+    };
+    const old = await sharedFixture(options); await old.setScope(sharedScope([row(1), parent])); old.setCell(parent, parentColumn, '2');
+    const captured = old.capturePlanRecovery(); parentRevision = 2;
+    const fresh = await sharedFixture(options); await fresh.setScope(sharedScope([row(1)]));
+    calls.length = 0; hold = true; const restoring = fresh.restorePlanRecovery(captured); await settle();
+    assert.ok(calls.some(payload => payload.rowKind === 'epic' && payload.issueIds.includes('99')));
+    assert.deepEqual(fresh.getState().drafts, {}, 'recovery waits for the authorized parent read');
+    held.resolve(); assert.equal(await restoring, true);
+    const restored = Object.values(fresh.getState().drafts)[0];
+    assert.equal(restored.issueId, '99'); assert.equal(restored.baseRevision, 1); assert.equal(restored.input, '2');
+    assert.equal(fresh.getState().conflict.cellConflicts[0].revision, 2);
+    assert.equal(fresh.getState().savedCells[JSON.stringify(['epic', '99', 'parent-cost'])].revision, 2);
+});
+
+test('recovery reauthorizes original Story IDs absent from the current candidate pool without deriving a selection', async () => {
+    const old = await sharedFixture(); await old.setScope(sharedScope()); old.includeShown(['2']);
+    const captured = old.capturePlanRecovery(), calls = [];
+    const fresh = await sharedFixture({ readValues: async (_, __, payload) => {
+        calls.push(payload);
+        return { cells: [], planEntries: payload.issueIds.filter(id => id !== '2').map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: payload.issueIds.includes('2') ? ['2'] : [] };
+    } });
+    await fresh.setScope(sharedScope([row(1)])); calls.length = 0;
+    assert.equal(await fresh.restorePlanRecovery(captured), true);
+    assert.ok(calls.some(payload => payload.includePlan && payload.issueIds.includes('2')));
+    assert.equal(fresh.getState().conflict.planConflict, true);
+    assert.ok(fresh.getState().unavailableIssueIds.includes('2'));
+    assert.deepEqual(fresh.getPlanSnapshot().changes, [{ issueId: '2', included: true, baseRevision: 0 }]);
+    assert.deepEqual(fresh.getSelectedTasks(), {});
+    assert.equal(fresh.isRowReadable(row(2)), false);
+});
+
+test('recovery retains an unavailable hidden Epic input without exposing it through derived cells', async () => {
+    const parent = { issueId: '99', id: '99', key: 'SYN-99', rowKind: 'epic' }, parentColumn = { ...column, id: 'parent-cost', rowKind: 'epic' };
+    const old = await sharedFixture({ fetchSchema: async () => ({ ...sharedSchema(), columns: [column, parentColumn] }), readValues: async (_, __, payload) => payload.rowKind === 'epic' ? { cells: [], unavailableIssueIds: [] } : { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] } });
+    await old.setScope(sharedScope([row(1), parent])); old.setCell(parent, parentColumn, '5');
+    const fresh = await sharedFixture({ fetchSchema: async () => ({ ...sharedSchema(), columns: [column, parentColumn] }), readValues: async (_, __, payload) => payload.rowKind === 'epic' ? { cells: [], unavailableIssueIds: ['99'] } : { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] } });
+    await fresh.setScope(sharedScope([row(1)])); assert.equal(await fresh.restorePlanRecovery(old.capturePlanRecovery()), true);
+    assert.deepEqual(fresh.getState().conflict.unavailableIssueIds, ['99']);
+    assert.equal(fresh.getState().unavailableIssueIds.includes('99'), true);
+    assert.equal(Object.values(fresh.getState().drafts)[0].input, '5');
+    assert.equal(fresh.isRowReadable(parent), false);
+    const { derivedValue } = await import('../frontend/src/eng/planningReviewTableModel.js');
+    assert.equal(derivedValue({ rowKind: 'story', issueId: '1', epicIssueId: '99' }, parentColumn, { cells: fresh.getState().cells, isLoaded: (issueId, rowKind) => fresh.isRowReadable({ issueId, rowKind }) }).value, null);
+});
+
+test('recovery authorizes an original pending inclusion after the later draft cancelled it', async () => {
+    const held = deferred();
+    const old = await sharedFixture({ saveReview: async () => { await held.promise; throw Object.assign(new Error('lost'), { unconfirmed: true }); } });
+    await old.setScope(sharedScope()); old.includeShown(['2']); const saving = old.save(); old.removeShown(['2']); held.resolve(); await saving;
+    const captured = old.capturePlanRecovery(), calls = [];
+    assert.deepEqual(captured.draft.inclusionChanges, []);
+    const fresh = await sharedFixture({ readOperation: async (_, __, operationId) => ({ operationId, status: 'unknown' }), readValues: async (_, __, payload) => { calls.push(payload); return { cells: [], planEntries: payload.issueIds.filter(id => id !== '2').map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: payload.issueIds.includes('2') ? ['2'] : [] }; } });
+    await fresh.setScope(sharedScope([row(1)])); calls.length = 0;
+    assert.equal(await fresh.restorePlanRecovery(captured), true);
+    assert.ok(calls.some(payload => payload.includePlan && payload.issueIds.includes('2')));
+    assert.deepEqual(fresh.getPlanSnapshot().pendingOperation.payload, captured.submission.payload);
+    assert.deepEqual(fresh.getSelectedTasks(), {});
+    assert.equal(fresh.getState().unconfirmed, true);
+});
+
+test('a scope guard opened during manual shared Refresh stays visible and settles with Stay', async () => {
+    const held = deferred(); let pause = false;
+    const c = await sharedFixture({ readValues: async (_, __, payload) => {
+        if (pause) await held.promise;
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] };
+    } });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    pause = true; const refresh = c.refresh(); await settle();
+    let changed = false; const guarded = c.guardScopeChange(() => { changed = true; });
+    assert.equal(c.getState().pendingScopeChange, true);
+    held.resolve(); assert.equal(await refresh, true);
+    assert.equal(c.getState().pendingScopeChange, true);
+    assert.equal(c.getState().dirty, true); assert.equal(c.getState().sprintId, '100'); assert.equal(changed, false);
+    assert.equal(await c.resolveScopeChange('stay'), false);
+    assert.equal(await guarded, false); assert.equal(c.getState().pendingScopeChange, false); assert.equal(changed, false);
+});
+
+test('manual shared Refresh cannot reopen a guard resolved with Stay while its projection was pending', async () => {
+    const held = deferred(); let pause = false;
+    const c = await sharedFixture({ readValues: async (_, __, payload) => {
+        if (pause) await held.promise;
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 0, scopeProof: 'proof-0', unavailableIssueIds: [] };
+    } });
+    await c.setScope(sharedScope()); c.includeShown(['1']);
+    let changed = false; const guarded = c.guardScopeChange(() => { changed = true; });
+    pause = true; const refresh = c.refresh(); await settle();
+    assert.equal(await c.resolveScopeChange('stay'), false); assert.equal(await guarded, false);
+    held.resolve(); assert.equal(await refresh, true);
+    assert.equal(c.getState().pendingScopeChange, false); assert.equal(changed, false);
+    const nextGuarded = c.guardScopeChange(() => { changed = true; });
+    assert.equal(c.getState().pendingScopeChange, true);
+    pause = false;
+    assert.equal(await c.resolveScopeChange('discard'), true); assert.equal(await nextGuarded, true);
+    assert.equal(c.getState().pendingScopeChange, false); assert.equal(changed, true); assert.equal(c.getState().dirty, false);
+});
+
+test('shared projection bisects oversized batches without publishing any partial baseline', async () => {
+    const calls = [], stamps = [], held = deferred(), rows = [row(1), row(2), row(3), row(4)];
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(1, true), readValues: async (_, __, payload) => {
+        calls.push([...payload.issueIds]);
+        stamps.push([payload.includePlan, payload.expectedPlanRevision, payload.expectedScopeProof]);
+        if (payload.issueIds.length > 1) throw Object.assign(new Error('response too large'), { status: 413 });
+        if (payload.issueIds[0] === '4') await held.promise;
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: true, revision: 1 })), planRevision: 1, scopeProof: 'proof-1', unavailableIssueIds: [] };
+    } });
+    const sizes = []; c.subscribe(() => sizes.push(c.getPlanSnapshot().effectiveEntries.size));
+    const loading = c.setScope(sharedScope(rows)); await settle();
+    assert.deepEqual(calls, [['1', '2', '3', '4'], ['1', '2'], ['1'], ['2'], ['3', '4'], ['3'], ['4']]);
+    assert.ok(stamps.every(stamp => JSON.stringify(stamp) === JSON.stringify([true, 1, 'proof-1'])));
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 0);
+    assert.deepEqual(c.getSelectedTasks(), {});
+    held.resolve(); assert.equal(await loading, true);
+    assert.deepEqual([...new Set(sizes)], [0, 4]);
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 4);
+    assert.equal(c.getState().planReady, true);
+});
+
+test('shared projection splitting preserves original dirty bases and a single-ID 413 is terminal', async () => {
+    let split = false, terminal = false, reads = 0;
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(1, true), readValues: async (_, __, payload) => {
+        reads++;
+        if (terminal || split && payload.issueIds.length > 1) throw Object.assign(new Error('response too large'), { status: 413 });
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: false, revision: 0 })), planRevision: 1, scopeProof: 'proof-1', unavailableIssueIds: [] };
+    } });
+    await c.setScope(sharedScope()); c.includeShown(['1']); split = true;
+    assert.equal(await c.refresh(), true);
+    assert.deepEqual(c.getPlanSnapshot().changes, [{ issueId: '1', included: true, baseRevision: 0 }]);
+    assert.equal(c.getState().dirty, true);
+    reads = 0; terminal = true;
+    assert.equal(await c.refresh(), false);
+    assert.equal(reads, 2, 'one oversized two-ID batch, then its unsplittable one-ID batch; no whole-read retry');
+    assert.equal(c.getState().planReady, false);
+    assert.deepEqual(c.getPlanSnapshot().changes, [{ issueId: '1', included: true, baseRevision: 0 }]);
+});
+
+test('shared projection 413 splits do not reset the two-retry budget for revision changes', async () => {
+    let metadata = 0, reads = 0;
+    const c = await sharedFixture({ fetchSchema: async () => sharedSchema(++metadata, true), readValues: async (_, __, payload) => {
+        reads++;
+        if (payload.issueIds.length > 1) throw Object.assign(new Error('response too large'), { status: 413 });
+        if (payload.issueIds[0] === '2') throw Object.assign(new Error('changed'), { code: 'plan_projection_changed', status: 409 });
+        return { cells: [], planEntries: payload.issueIds.map(issueId => ({ issueId, included: true, revision: 1 })), planRevision: payload.expectedPlanRevision, scopeProof: payload.expectedScopeProof, unavailableIssueIds: [] };
+    } });
+    assert.equal(await c.setScope(sharedScope()), false);
+    assert.equal(metadata, 3); assert.equal(reads, 9);
+    assert.equal(c.getPlanSnapshot().effectiveEntries.size, 0);
+    assert.equal(c.getState().planReady, false);
 });

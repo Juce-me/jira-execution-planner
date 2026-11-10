@@ -51,18 +51,11 @@ def epm_config_generation():
 
 class TestOauthCacheIsolation(unittest.TestCase):
     def setUp(self):
-        self._env_patcher = patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'jsonfile',
-            'DATABASE_URL': '',
-            'TEST_DATABASE_URL': '',
-        }, clear=False)
-        self._env_patcher.start()
+        from tests.oauth_test_helpers import set_up_db_oauth
+        set_up_db_oauth(self)
 
-    def tearDown(self):
-        self._env_patcher.stop()
-
-    def test_basic_mode_allows_process_caches(self):
-        self.assertTrue(jira_home_process_cache_enabled(context('basic')))
+    def test_retired_basic_mode_does_not_enable_unpartitioned_caches(self):
+        self.assertFalse(jira_home_process_cache_enabled(context('basic')))
 
     def test_oauth_mode_disables_process_caches(self):
         self.assertFalse(jira_home_process_cache_enabled(context('atlassian_oauth')))
@@ -229,10 +222,14 @@ class TestOauthCacheIsolation(unittest.TestCase):
         self.assertEqual(cache[raw_key]['data'], {'project': {'id': 'other-context'}})
 
     def test_rollup_project_lookup_keeps_oauth_context_outside_request_thread(self):
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        from backend.services.user_view_config import save_user_epm_config
+        force_db_oauth_mode(self, jira_server)
         epm_config = {
             'version': 2,
             'labelPrefix': 'rnd_project_',
             'scope': {'rootGoalKey': 'ROOT', 'subGoalKeys': ['GOAL']},
+            'issueTypes': jira_server.DEFAULT_EPM_ISSUE_TYPES,
             'projects': {},
         }
         cache_key = jira_server.build_epm_home_projects_cache_key(epm_config['scope'])
@@ -257,9 +254,10 @@ class TestOauthCacheIsolation(unittest.TestCase):
             'resolvedLinkage': {'labels': [], 'epicKeys': []},
             'matchState': 'metadata-only',
         }
+        save_user_epm_config(jira_server.current_request_auth_context(), epm_config)
         fetched_scopes = []
 
-        def fetch_home_projects(scope, context=None):
+        def fetch_home_projects(scope, context=None, home_auth=None):
             fetched_scopes.append(scope)
             return [fresh_project]
 
@@ -273,8 +271,7 @@ class TestOauthCacheIsolation(unittest.TestCase):
         }
         try:
             with jira_server.app.test_request_context('/api/epm/projects/rollup/all?tab=active&sprint=42'):
-                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                     patch.object(jira_server, 'current_request_auth_context', return_value=context('atlassian_oauth')):
+                with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
                     deps = jira_server.build_epm_rollup_dependencies(sub_goal_keys=['GOAL'])
             with patch.object(jira_server, 'get_epm_config', return_value=epm_config), \
                  patch.object(jira_server, 'fetch_epm_home_projects', side_effect=fetch_home_projects):

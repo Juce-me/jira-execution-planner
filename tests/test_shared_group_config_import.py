@@ -1,3 +1,4 @@
+from pathlib import Path
 import json
 import os
 import tempfile
@@ -14,6 +15,7 @@ from backend.db import models
 from backend.services import shared_group_config
 from backend.services.user_view_config import save_imported_user_view
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 def validate_groups_config(payload, allow_empty=False):
@@ -23,8 +25,10 @@ def validate_groups_config(payload, allow_empty=False):
 class SharedGroupConfigImportTests(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
+        self._export_dir = tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1].parent)
+        self.addCleanup(self._export_dir.cleanup)
         self.dashboard_path = os.path.join(self._tmpdir.name, 'dashboard-config.json')
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'shared-group-import.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -127,7 +131,7 @@ class SharedGroupConfigImportTests(unittest.TestCase):
             validate_groups_config_fn=validate_groups_config,
             database_url=self.database_url,
         )
-        export_path = os.path.join(self._tmpdir.name, 'ad-hoc-rollback-export.json')
+        export_path = os.path.join(self._export_dir.name, 'ad-hoc-rollback-export.json')
         export_view_config_json(
             database_url=self.database_url,
             context=self.context,
@@ -172,7 +176,7 @@ class SharedGroupConfigImportTests(unittest.TestCase):
         self.assertEqual(shared['version'], 2)
         self.assertEqual(shared['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
 
-        export_path = os.path.join(self._tmpdir.name, 'team-labels-export.json')
+        export_path = os.path.join(self._export_dir.name, 'team-labels-export.json')
         export_view_config_json(
             database_url=self.database_url,
             context=self.context,
@@ -261,7 +265,7 @@ class SharedGroupConfigImportTests(unittest.TestCase):
             database_url=self.database_url,
         )
 
-        export_path = os.path.join(self._tmpdir.name, 'rollback-export.json')
+        export_path = os.path.join(self._export_dir.name, 'rollback-export.json')
         export_view_config_json(
             database_url=self.database_url,
             context=self.context,

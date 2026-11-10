@@ -20,7 +20,8 @@ class EngBoardFrontendIntegrationSourceGuards(unittest.TestCase):
         self.assertIn('buildStrictEngBoardViewModel(', integration)
         self.assertIn('streamEngBoard({ backendUrl, ...options })', integration)
         self.assertIn('const [boardAllWorkAvailable, setBoardAllWorkAvailable] = useState(null);', source)
-        self.assertIn('if (boardScopeRequested) return;', source)
+        # Board scope blocks the Sprint task load except while a Planning auth resume restores its plan (#331).
+        self.assertIn("if (!recoveringPlan && (selectedView !== 'eng' || isStatsSourceOnlyStatsView || boardScopeRequested)) return;", source)
         self.assertIn('strictBoardActive: boardScopeRequested,', source)
         self.assertNotIn('showBoard && boardAllWorkAvailable === null', source)
 

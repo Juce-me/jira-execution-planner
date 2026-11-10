@@ -1,14 +1,26 @@
-// The Planning table owns its Epics/Stories rows as local state that resets to Epics on every mount (reload, Sprint switch,
-// Table layout); the assignee capacity strip renders in another subtree. This channel carries the signals between them
+// The Planning table owns its Epics/Stories rows as local state that starts from the remembered choice, else Epics, on every mount (data reload,
+// Sprint switch, Table layout); the assignee capacity strip renders in another subtree. This channel carries the signals between them
 // (#323): the mounted table publishes the mode it shows (null once unmounted), whether that mode was chosen (a click on the
 // control or a link's rows) rather than the mount default, and its quiet setter; the strip asks that setter for Stories.
-// Nothing is stored beyond the mounted table's mode, and no path here emits analytics.
+// The user's choice is remembered in session memory only, so a data reload (which unmounts the table) restores it; a page
+// reload starts over. No storage, and no path here emits analytics.
 let mode = null;
 let chosen = false;
+let remembered = null;
 let switchRows = null;
 const listeners = new Set();
 
 export const getPlanningRowMode = () => mode;
+
+export const getRememberedPlanningRowMode = () => remembered;
+export const rememberPlanningRowMode = next => { remembered = next === 'epic' || next === 'story' ? next : null; };
+
+// The table's layout effect: a chosen mode is remembered; a quiet switch (the strip's) forgets a differing choice, so a
+// stale choice never overrides what the user last saw.
+export function syncRememberedPlanningRowMode(next, isChosen) {
+    if (isChosen) rememberPlanningRowMode(next);
+    else if (remembered && remembered !== next) rememberPlanningRowMode(null);
+}
 
 export function publishPlanningRowMode(next, { setter = null, chosen: isChosen = false } = {}) {
     const previous = mode;
@@ -53,6 +65,7 @@ export function createStripRowModeSync({ collapse }) {
 export function resetPlanningRowModeForTests() {
     mode = null;
     chosen = false;
+    remembered = null;
     switchRows = null;
     listeners.clear();
 }

@@ -1,10 +1,9 @@
-import json
-import os
-import tempfile
+from copy import deepcopy
 import unittest
 from unittest.mock import patch
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from backend.db import engine as db_engine, models
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -68,175 +67,69 @@ class TestGroupExcludedCapacityEpics(unittest.TestCase):
 
         self.assertTrue(any('both excludedCapacityEpics and adHocCapacityEpics' in error for error in errors))
 
-    def test_json_groups_config_rejects_excluded_and_ad_hoc_overlap_without_persisting(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({
-                    'version': 1,
-                    'teamGroups': {
-                        'version': 1,
-                        'groups': [{
-                            'id': 'default',
-                            'name': 'Default',
-                            'teamIds': ['team-1'],
-                            'excludedCapacityEpics': ['EX-1'],
-                        }],
-                        'defaultGroupId': 'default',
-                    },
-                }, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                before = client.get('/api/groups-config').get_json()
-                response = client.post('/api/groups-config', json={
-                    'version': 1,
-                    'groups': [{
-                        'id': 'default',
-                        'name': 'Default',
-                        'teamIds': ['team-1'],
-                        'excludedCapacityEpics': ['EX-1'],
-                        'adHocCapacityEpics': ['ex-1'],
-                    }],
-                    'defaultGroupId': 'default',
-                })
-                after = client.get('/api/groups-config').get_json()
+    def db_client_with_groups(self, *, version=2, **group_fields):
+        force_db_oauth_mode(self, jira_server)
+        group = {'id': 'default', 'name': 'Default', 'teamIds': ['team-1'], **group_fields}
+        with db_engine.session_scope() as db:
+            db.add(models.WorkspaceGroupConfig(workspace_id=self.db_actor.workspace_id,
+                payload={'version': version, 'groups': [group], 'defaultGroupId': 'default'},
+                payload_version=version, config_revision=1))
+        return jira_server.app.test_client()
 
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        self.assertTrue(any('both excludedCapacityEpics and adHocCapacityEpics' in error for error in response.get_json().get('errors', [])))
-        self.assertEqual(after['groups'], before['groups'])
-
-    def test_json_groups_config_rejects_more_than_three_team_labels_without_persisting(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({
-                    'version': 1,
-                    'teamGroups': {
-                        'version': 1,
-                        'groups': [{
-                            'id': 'default',
-                            'name': 'Default',
-                            'teamIds': ['team-1'],
-                        }],
-                        'defaultGroupId': 'default',
-                    },
-                }, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    before_raw = handle.read()
-                response = client.post('/api/groups-config', json={
-                    'version': 1,
-                    'groups': [{
-                        'id': 'default',
-                        'name': 'Default',
-                        'teamIds': ['team-1'],
-                        'teamLabels': {'team-1': ['label-a', 'label-b', 'label-c', 'label-d']},
-                    }],
-                    'defaultGroupId': 'default',
-                })
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    after_raw = handle.read()
-
+    def assert_invalid_group_unchanged(self, fields, expected_error, *, redact=()):
+        client = self.db_client_with_groups(excludedCapacityEpics=['EX-1'])
+        before = client.get('/api/groups-config').get_json()
+        response = client.post('/api/groups-config', json={
+            'version': 2, 'baseRevision': before['configRevision'],
+            'groups': [{'id': 'default', 'name': 'Default', 'teamIds': ['team-1'], **fields}],
+            'defaultGroupId': 'default',
+        })
         self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
         body = response.get_json()
-        self.assertNotIn('error', body)
-        self.assertTrue(any('has more than 3 Jira labels' in error for error in body.get('errors', [])))
-        for error in body.get('errors', []):
-            self.assertNotIn('label-a', error)
-        self.assertEqual(after_raw, before_raw)
+        self.assertEqual(body['error'], 'invalid_groups_config')
+        self.assertTrue(any(expected_error in error for error in body['errors']), body)
+        for secret_label in redact:
+            self.assertNotIn(secret_label, str(body['errors']))
+        self.assertEqual(client.get('/api/groups-config').get_json(), before)
+        with db_engine.session_scope() as db:
+            row = db.query(models.WorkspaceGroupConfig).one()
+            self.assertEqual(row.config_revision, before['configRevision'])
+            self.assertEqual(row.payload['groups'][0]['excludedCapacityEpics'], ['EX-1'])
 
-    def test_json_groups_config_rejects_comma_scalar_team_label_without_persisting(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump({
-                    'version': 1,
-                    'teamGroups': {
-                        'version': 1,
-                        'groups': [{
-                            'id': 'default',
-                            'name': 'Default',
-                            'teamIds': ['team-1'],
-                        }],
-                        'defaultGroupId': 'default',
-                    },
-                }, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    before_raw = handle.read()
-                response = client.post('/api/groups-config', json={
-                    'version': 2,
-                    'groups': [{
-                        'id': 'default',
-                        'name': 'Default',
-                        'teamIds': ['team-1'],
-                        'teamLabels': {'team-1': 'label_team_a,label_team_a_old'},
-                    }],
-                    'defaultGroupId': 'default',
-                })
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    after_raw = handle.read()
+    def test_db_groups_config_rejects_excluded_and_ad_hoc_overlap_without_persisting(self):
+        self.assert_invalid_group_unchanged(
+            {'excludedCapacityEpics': ['EX-1'], 'adHocCapacityEpics': ['ex-1']},
+            'both excludedCapacityEpics and adHocCapacityEpics')
 
-        self.assertEqual(response.status_code, 400, response.get_data(as_text=True))
-        body = response.get_json()
-        self.assertNotIn('error', body)
-        errors = body.get('errors', [])
-        self.assertTrue(any('has a Jira label containing a comma' in error for error in errors))
-        for error in errors:
-            self.assertNotIn('label_team_a', error)
-        self.assertEqual(after_raw, before_raw)
+    def test_db_groups_config_rejects_more_than_three_team_labels_without_persisting(self):
+        self.assert_invalid_group_unchanged(
+            {'teamLabels': {'team-1': ['label-a', 'label-b', 'label-c', 'label-d']}},
+            'has more than 3 Jira labels', redact=('label-a',))
 
-    def test_json_groups_config_reads_version_1_scalar_labels_as_version_2_arrays(self):
-        force_basic_auth_mode(self, jira_server)
-        app = jira_server.app
-        app.testing = True
-        client = app.test_client()
-        with tempfile.TemporaryDirectory() as tmpdir:
-            dashboard_path = os.path.join(tmpdir, 'dashboard-config.json')
-            stored = {
-                'version': 1,
-                'teamGroups': {
-                    'version': 1,
-                    'groups': [{
-                        'id': 'default',
-                        'name': 'Default',
-                        'teamIds': ['team-1'],
-                        'teamLabels': {'team-1': 'label_team_1'},
-                    }],
-                    'defaultGroupId': 'default',
-                },
-            }
-            with open(dashboard_path, 'w', encoding='utf-8') as handle:
-                json.dump(stored, handle)
-            with patch.object(jira_server, 'resolve_dashboard_config_path', return_value=dashboard_path):
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    before_raw = handle.read()
-                response = client.get('/api/groups-config')
-                with open(dashboard_path, encoding='utf-8') as handle:
-                    after_raw = handle.read()
+    def test_db_groups_config_rejects_comma_scalar_team_label_without_persisting(self):
+        self.assert_invalid_group_unchanged(
+            {'teamLabels': {'team-1': 'label_team_a,label_team_a_old'}},
+            'has a Jira label containing a comma', redact=('label_team_a',))
 
+    def test_db_groups_config_reads_version_1_scalar_labels_as_version_2_arrays_without_rewrite(self):
+        client = self.db_client_with_groups(version=1, teamLabels={'team-1': 'label_team_1'})
+        with db_engine.session_scope() as db:
+            before = deepcopy(db.query(models.WorkspaceGroupConfig).one().payload)
+        response = client.get('/api/groups-config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['version'], 2)
         self.assertEqual(body['groups'][0]['teamLabels'], {'team-1': ['label_team_1']})
-        self.assertEqual(after_raw, before_raw)
+        with db_engine.session_scope() as db:
+            row = db.query(models.WorkspaceGroupConfig).one()
+            self.assertEqual(row.payload, before)
+            self.assertEqual(row.config_revision, 1)
 
 
 @unittest.skipIf(jira_server is None, f'jira_server import unavailable: {_IMPORT_ERROR}')
 class TestEpicSearchEndpoint(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         app = jira_server.app
         app.testing = True
         self.client = app.test_client()

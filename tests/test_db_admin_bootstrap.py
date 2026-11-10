@@ -1,24 +1,22 @@
 import os
-import tempfile
 import unittest
 from unittest.mock import patch
 
 from backend.auth.admin_bootstrap import bootstrap_first_tool_admin
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 class DbAdminBootstrapTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'admin-bootstrap.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_user_connection(self, *, account_id, email='user@example.com', account_type='user'):
         with self.factory() as session:

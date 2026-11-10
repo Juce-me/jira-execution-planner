@@ -5,6 +5,7 @@ const { test, expect } = require('@playwright/test');
 const { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_view_fixture');
 const { captureDomParity } = require('./dom_parity_helpers');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const screenshotDir = path.join(repoRoot, 'test-results', 'codebase-structure-smoke');
@@ -766,31 +767,33 @@ async function expectWindowSticky(page, selector) {
     expect(Math.abs(result.top - result.expectedTop)).toBeLessThanOrEqual(8);
 }
 
-async function expectPlanningAboveEpic(page) {
-    await page.locator('.planning-panel.open').evaluate((element) => {
-        const rect = element.getBoundingClientRect();
-        const stickyTop = Number.parseFloat(getComputedStyle(element).top) || 0;
-        const target = Math.max(0, window.scrollY + rect.top - stickyTop + 80);
+// Planning is the Table only (#323): the Filters and overview share one sticky stack, and the table's
+// column headings dock below it, so the stack stays above the docked header as the Epic header did in List.
+async function expectPlanningAboveTableHeader(page) {
+    await page.locator('.planning-review-table thead').first().evaluate((element) => {
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        const stickyTop = Number.parseFloat(getComputedStyle(stack).top) || 0;
+        const target = Math.max(0, window.scrollY + element.getBoundingClientRect().top - stickyTop - stack.offsetHeight + 80);
         window.scrollTo(0, target);
     });
     await page.waitForTimeout(180);
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible();
     const layout = await page.evaluate(() => {
-        const planning = document.querySelector('.planning-panel.open');
-        const epic = document.querySelector('.epic-header');
-        const planningRect = planning.getBoundingClientRect();
-        const epicRect = epic.getBoundingClientRect();
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        const header = document.querySelector('.planning-review-docked-header');
+        const stackRect = stack.getBoundingClientRect();
         return {
-            planningZ: Number.parseInt(getComputedStyle(planning).zIndex, 10),
-            epicZ: Number.parseInt(getComputedStyle(epic).zIndex, 10),
-            planningBottom: planningRect.bottom,
-            epicTop: epicRect.top,
-            planningTop: planningRect.top,
-            planningStickyTop: Number.parseFloat(getComputedStyle(planning).top) || 0,
+            stackZ: Number.parseInt(getComputedStyle(stack).zIndex, 10),
+            headerZ: Number.parseInt(getComputedStyle(header).zIndex, 10),
+            stackBottom: stackRect.bottom,
+            headerTop: header.getBoundingClientRect().top,
+            stackTop: stackRect.top,
+            stackStickyTop: Number.parseFloat(getComputedStyle(stack).top) || 0,
         };
     });
-    expect(layout.planningZ).toBeGreaterThan(layout.epicZ);
-    expect(Math.abs(layout.planningTop - layout.planningStickyTop)).toBeLessThanOrEqual(8);
-    expect(layout.epicTop).toBeGreaterThanOrEqual(layout.planningBottom - 1);
+    expect(layout.stackZ).toBeGreaterThan(layout.headerZ);
+    expect(Math.abs(layout.stackTop - layout.stackStickyTop)).toBeLessThanOrEqual(8);
+    expect(layout.headerTop).toBeGreaterThanOrEqual(layout.stackBottom - 1);
 }
 
 async function expectContainerSticky(page, selector, containerSelector) {
@@ -868,6 +871,7 @@ async function installApiMocks(page, calls, options = {}) {
     const capacityPatchGate = options.deferCapacityPatch ? createDeferred() : null;
     const epmProjectCount = options.epmProjectCount || 1;
     const unexpectedCalls = [];
+    const planningReview = createPlanningReviewMock();
     const state = {
         configReleased: !configGate,
         rollupBeforeConfigRelease: false,
@@ -891,6 +895,7 @@ async function installApiMocks(page, calls, options = {}) {
         });
 
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
+        if (url.pathname === '/api/admin/users') return json({ users: [{ id: 'synthetic-admin', externalSubject: 'synthetic-admin-account', displayName: 'Synthetic Admin', accountType: 'admin', status: 'active', authConnections: [], projectAccess: [] }] });
         if (url.pathname === '/api/auth/csrf') return json({ csrfToken: 'csrf-capacity-smoke' });
         if (url.pathname === '/api/eng/story-readiness') {
             return json({ schemaVersion: 1, complete: true, scope: {}, epics: [] });
@@ -908,7 +913,9 @@ async function installApiMocks(page, calls, options = {}) {
             return json({
                 jiraUrl: 'https://jira.example',
                 capacityProject: options.capacityProject || '',
-                authMode: options.authMode || '',
+                authMode: options.authMode || 'atlassian_oauth',
+                adminUserManagementAvailable: true,
+                userIsToolAdmin: true,
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
                 userCanEditSettings: true,
@@ -1231,6 +1238,13 @@ async function installApiMocks(page, calls, options = {}) {
                 fallback: true,
             });
         }
+        // Planning is the Table only and reads the shared plan (#331); no plan is saved and no Team holds a stored number.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) {
+            return json(planningReview.response(request, { capabilities: { canRead: true, canSave: true } }));
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) {
+            return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
+        }
         unexpectedCalls.push(`${request.method()} ${url.pathname}`);
         return route.fulfill({
             status: 500,
@@ -1273,7 +1287,7 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1348,14 +1362,18 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     const stickyEngModes = page.locator('.compact-sticky-header .eng-mode-control');
     await stickyEngModes.getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.getByText('Selected SP by Project:')).toBeVisible();
+    // The overview starts compact (#323); the project split and Team cards are part of the capacity details.
+    await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
+    await expect(page.getByText('Planned SP by Project:')).toBeVisible();
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(2);
     const projectSplitBarVisible = await page.locator('.project-bar-graph').isVisible().catch(() => false);
-    const projectSplitEmptyVisible = await page.getByText('No tasks selected').isVisible().catch(() => false);
+    const projectSplitEmptyVisible = await page.getByText('No planned stories').isVisible().catch(() => false);
     expect(projectSplitBarVisible || projectSplitEmptyVisible).toBeTruthy();
     await captureSmokeScreenshot(page, 'planning');
-    await expectWindowSticky(page, '.planning-panel.open');
-    await expectPlanningAboveEpic(page);
+    // The Story rows give the page the scroll height the List's Epic blocks gave it.
+    await page.getByRole('radiogroup', { name: 'Planning review rows' }).getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expectWindowSticky(page, '.planning-review-sticky-stack');
+    await expectPlanningAboveTableHeader(page);
 
     const alphaCapacityCard = page.locator('.planning-team-capacity-cards .team-stat-card', { hasText: 'Alpha Team' });
     await alphaCapacityCard.hover();
@@ -1365,11 +1383,11 @@ test('ENG Catch Up, Planning, and Scenario render with scoped startup and sticky
     await alphaCapacityCard.getByRole('button', { name: 'Save Alpha Team capacity' }).click();
     await expect(alphaCapacityCard.locator('form.team-capacity-editor')).toHaveAttribute('aria-busy', 'true');
     await captureCapacitySmokeScreenshot(page, 'planning-capacity-pending');
-    await expectPlanningAboveEpic(page);
+    await expectPlanningAboveTableHeader(page);
     apiMocks.resolveCapacityPatch();
     await expect(alphaCapacityCard.getByRole('status')).toContainText('Capacity changed in Jira to 7');
     await captureCapacitySmokeScreenshot(page, 'planning-capacity-conflict');
-    await expectPlanningAboveEpic(page);
+    await expectPlanningAboveTableHeader(page);
 
     await stickyEngModes.getByRole('radio', { name: 'Scenario' }).click();
     await expect(page.getByText('Scenario Planner')).toBeVisible();
@@ -1387,7 +1405,7 @@ function seedEngPrefs(page, extraPrefs = {}) {
     return page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1530,7 +1548,7 @@ test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ pa
 test('ENG Board persists in ui prefs and survives a group switch', async ({ page }) => {
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
-        authMode: 'basic',
+        authMode: 'atlassian_oauth',
         analyticsContext: { enabled: true },
         groups: [
             { id: 'grp-default', name: 'Default', teamIds: groupTeamIds, teamLabels: { 'team-alpha': 'alpha_label', 'team-beta': 'beta_label' }, excludedCapacityEpics: [] },
@@ -1678,14 +1696,14 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
             tech: { [techEpicFixture.key]: techEpicFixture },
         },
         useCommittedDist: true,
-        authMode: 'basic',
+        authMode: 'atlassian_oauth',
         analyticsContext: { enabled: true },
     });
     await page.setViewportSize({ width: 1028, height: 720 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -1746,7 +1764,7 @@ test('Initiative and Epic search reveal loaded descendants', async ({ page }) =>
         source_surface: 'dashboard',
         query_length_bucket: '11_25',
         result_count_bucket: '1_5',
-        auth_mode: 'basic',
+        auth_mode: 'atlassian_oauth',
     });
     expect(Object.keys(populatedSearchEvent).sort()).toEqual([
         'auth_mode',
@@ -1841,7 +1859,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2195,7 +2213,7 @@ test('stats sprint range End panels keep long options inside the narrow viewport
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'excludedCapacity', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -2257,7 +2275,7 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true, statsView: 'cohort',
         cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1', cohortCapacityFilter: 'ad_hoc',
     });
@@ -2304,7 +2322,7 @@ test('Lead Times capacity exclusions re-slice locally and replace the legacy inc
 });
 
 const LEAD_TIMES_PREFS = {
-    selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+    selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
     activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
     showStats: true, statsView: 'cohort', cohortStartQuarter: '2026Q1', cohortEndQuarter: '2026Q1',
     cohortClosedStartQuarter: '2026Q1', cohortClosedEndQuarter: '2026Q1',
@@ -2678,7 +2696,7 @@ test('Statistics sprint range lists Sprints newest first, in the header Sprint s
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2718,7 +2736,7 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -2987,7 +3005,7 @@ test('Project Track excludes closed epics and links No track assignee segments t
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams: ['all'], showStats: true,
         statsView: 'projectTrack', excludedCapacityStartSprintId: String(selectedSprintId),
         excludedCapacityEndSprintId: String(selectedSprintId),
@@ -3057,7 +3075,7 @@ async function openProjectTrackStrips(page, calls, { board = stripBoardColumns, 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+        selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
         activeGroupId: 'grp-default', selectedTeams, showStats: true, statsView: 'projectTrack',
         projectTrackMode: 'team',
         excludedCapacityStartSprintId: String(selectedSprintId), excludedCapacityEndSprintId: String(selectedSprintId),
@@ -3236,7 +3254,7 @@ for (const width of [1280, 375]) test(`Project Track hides duplicate totals for 
         board: null, width, selectedTeams: ['team-alpha'],
         issues: scope => sourceIssues.filter(issue => scope.sprintIds.map(String).includes(String(issue.fields.customfield_10101[0].id))
             && scope.teamIds.includes(issue.fields.teamId)),
-        analyticsContext: { enabled: true }, authMode: 'basic',
+        analyticsContext: { enabled: true }, authMode: 'atlassian_oauth',
         sprints: [
             { id: selectedSprintId, name: selectedSprintName, state: 'active' },
             { id: longSprintId, name: longSprintName, state: 'future' },
@@ -3298,7 +3316,7 @@ test('Lead Times caps long epic lists with load more and keeps overflow scrollab
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -3368,7 +3386,7 @@ test('Excluded Capacity summary shows product and tech shares instead of source 
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -3894,7 +3912,7 @@ test('team dropdown restores scoped team selection after page refresh', async ({
         window.localStorage.setItem('jira_dashboard_team_selection_state_v1', JSON.stringify(teamSelection));
     }, {
         prefs: {
-            selectedView: 'eng', planningLayout: 'list',
+            selectedView: 'eng',
             selectedSprint: selectedSprintId,
             activeGroupId: 'grp-default',
             selectedTeams: ['all'],
@@ -4172,7 +4190,7 @@ test('Stats chart hover does not re-render App', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1280, height: 1100 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
-    }, { selectedView: 'eng', planningLayout: 'list', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+    }, { selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
          activeGroupId: 'grp-default', selectedTeams: ['all'], showPlanning: false, showScenario: false,
          showStats: true, statsView: 'priority' });
     await page.addInitScript(() => window.history.replaceState(null, '', '/?perf=1'));
@@ -4293,18 +4311,31 @@ test('Statistics preserves per-mode cold-load request contracts and cached reope
         const context = await browser.newContext();
         const page = await context.newPage();
         const calls = [];
-        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], useCommittedDist: true });
+        await installApiMocks(page, calls, { excludedCapacityEpics: ['BAU-EPIC'], useCommittedDist: true,
+            authMode: 'atlassian_oauth' });
         await seedStatsContractPrefs(page, { showStats: !['catch-up', 'planning'].includes(mode),
             showPlanning: mode === 'planning', statsView: ['catch-up', 'planning'].includes(mode) ? 'teams' : mode });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
         if (!['excludedCapacity', 'monoCrossShare', 'projectTrack'].includes(mode)) await waitForCallCount(calls, isTaskListRequest, 2);
         await settleContract(page);
-        // Extend the frozen ledger by exactly one cached directory read; no live Team discovery.
-        const expectedRequests = [...coldModeRequestContracts[mode], canonicalContract({
+        // The original empty-auth ledger predates the supported OAuth fixture. This
+        // deliberately incomplete config snapshot owes eight section reads; OAuth
+        // initialization also reads analytics context once, even when transport is off.
+        // Keep these exact additions in every mode, alongside the cached name directory.
+        // Planning is the Table only (#323): its cold load reads the shared plan once and every displayed
+        // Team's stored number through one batch POST (with its CSRF read); Statistics modes read neither.
+        const expectedRequests = [...coldModeRequestContracts[mode], ...[
+            '/api/team-catalog', '/api/board-config', '/api/capacity/config',
+            '/api/sprint-field/config', '/api/parent-name-field/config',
+            '/api/story-points-field/config', '/api/team-field/config',
+            '/api/delivery-owner-field/config', '/api/issue-types/config',
+        ].map(pathname => canonicalContract({
+            body: null, csrf: 'absent', method: 'GET', params: {}, pathname, requestedWith: null,
+        })), canonicalContract({
             body: null, csrf: 'absent', method: 'GET', params: {},
-            pathname: '/api/team-catalog', requestedWith: null,
+            pathname: '/api/analytics/context', requestedWith: 'jira-execution-planner',
         })];
-        expect(requestMultiset(calls)).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
+        expect(requestMultiset(calls), mode).toEqual(expectedRequests.map(call => JSON.stringify(call)).sort());
         const statsBeforeReopen = requestMultiset(calls.filter(call => call.pathname.startsWith('/api/stats/')));
         if (mode === 'burnout') {
             const tabs = page.locator('.view-selector .eng-mode-control');
@@ -4325,7 +4356,7 @@ test('Statistics preserves analytics event contracts', async ({ page }) => {
     // duration_bucket contract without depending on browser/host scheduling delays.
     await page.addInitScript(() => Object.defineProperty(performance, 'now', { value: () => 100 }));
     const calls = [];
-    await installApiMocks(page, calls, { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
+    await installApiMocks(page, calls, { useCommittedDist: true, authMode: 'atlassian_oauth', analyticsContext: { enabled: true }, excludedCapacityEpics: ['BAU-EPIC'] });
     await seedStatsContractPrefs(page);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await settleContract(page);
@@ -4850,6 +4881,30 @@ const coldModeRequestContracts = {
             "method": "POST",
             "params": {},
             "pathname": "/api/dependencies",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": { "groupId": "grp-default" },
+            "pathname": "/api/eng/sprints/34625/review",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": null,
+            "csrf": "absent",
+            "method": "GET",
+            "params": {},
+            "pathname": "/api/auth/csrf",
+            "requestedWith": "jira-execution-planner"
+        },
+        {
+            "body": { "teamIds": ["team-alpha", "team-beta"] },
+            "csrf": "present",
+            "method": "POST",
+            "params": {},
+            "pathname": "/api/eng/sprints/34625/assignee-capacity/planned/read",
             "requestedWith": "jira-execution-planner"
         }
     ],
@@ -5441,6 +5496,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],
@@ -5509,6 +5565,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],
@@ -5590,6 +5647,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],
@@ -5612,12 +5670,17 @@ const coldModeRequestContracts = {
 const statsAnalyticsBaseline = {
     "start": [
         {
+            "event": "userevent", "trigger": "userevent", "event_type": "event",
+            "event_name": "login", "feature_name": "auth", "method": "atlassian_oauth",
+            "result": "success", "source_surface": "dashboard", "auth_mode": "atlassian_oauth"
+        },
+        {
             "event": "pageview",
             "trigger": "pageview",
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/teams",
@@ -5654,12 +5717,17 @@ const statsAnalyticsBaseline = {
     ],
     "actions": [
         {
+            "event": "userevent", "trigger": "userevent", "event_type": "event",
+            "event_name": "login", "feature_name": "auth", "method": "atlassian_oauth",
+            "result": "success", "source_surface": "dashboard", "auth_mode": "atlassian_oauth"
+        },
+        {
             "event": "pageview",
             "trigger": "pageview",
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/teams",
@@ -5709,7 +5777,7 @@ const statsAnalyticsBaseline = {
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/mono_cross_share",
@@ -5758,7 +5826,7 @@ const statsAnalyticsBaseline = {
             "event_type": "pageview",
             "event_name": "page_view",
             "dashboard_view": "eng",
-            "auth_mode": "basic",
+            "auth_mode": "atlassian_oauth",
             "source_surface": "dashboard",
             "eng_mode": "statistics",
             "page_name": "eng/statistics/project_track",
@@ -6119,7 +6187,7 @@ test('Statistics lazy failure twice offers reload guidance', async ({ page }) =>
 });
 
 test('Statistics missing deployed assets offer a working page reload', async ({ page }, testInfo) => {
-    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic', analyticsContext: { enabled: true } });
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'atlassian_oauth', analyticsContext: { enabled: true } });
     await seedStatsContractPrefs(page);
     const { requests } = await installLazyStatsProbe(page, { missingChunk: true, missingManifest: true });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -6179,7 +6247,7 @@ for (const [name, mutateManifest] of [
 });
 
 test('Statistics lazy failure preserves terminal root auth lock', async ({ page }) => {
-    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'basic' });
+    await installApiMocks(page, [], { useCommittedDist: true, authMode: 'atlassian_oauth' });
     await seedStatsContractPrefs(page);
     const { requests } = await installLazyStatsProbe(page);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -6356,7 +6424,8 @@ test('Admin settings lazy Retry refetches the chunk after one abort and keeps th
     await tabs.getByRole('tab', { name: 'Jira source', exact: true }).click();
     await expect(dialog.getByText('Jira Source', { exact: true })).toBeVisible();
     await tabs.getByRole('tab', { name: 'Access', exact: true }).click();
-    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'App administrators' })).toBeVisible();
+    await expect(dialog.getByText('Basic authentication gives every user administrator access.')).toHaveCount(0);
     await tabs.getByRole('tab', { name: 'Performance', exact: true }).click();
     await expect(dialog.getByRole('status')).toContainText('No loads recorded in this selection yet.');
     await dialog.getByRole('button', { name: 'Departments', exact: true }).click();

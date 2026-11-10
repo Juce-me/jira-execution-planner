@@ -5,6 +5,20 @@ export const AUTH_RECOVERY_TAB_ATTEMPT_KEY = 'jira_dashboard_auth_recovery_attem
 export const AUTH_RECOVERY_CONSUMED_KEY = 'jira_dashboard_auth_recovery_consumed_v1';
 export const AUTH_RECOVERY_LEASE_MS = 5 * 60 * 1000;
 
+const resumeCaptures = new Set();
+
+export function registerAuthResumeCapture(capture) {
+    resumeCaptures.add(capture);
+    return () => resumeCaptures.delete(capture);
+}
+
+export function captureAuthResumeBeforeNavigation() {
+    try {
+        for (const capture of resumeCaptures) if (capture() !== true) return false;
+        return true;
+    } catch (error) { return false; }
+}
+
 export function getAuthRecoveryStores(win = globalThis.window) {
     try {
         const sharedStorage = win?.localStorage;
@@ -55,7 +69,7 @@ const readAuthRecoverySuccessStrict = (sharedStorage, now) => {
     return { attemptId: value.attemptId, completedAt: value.completedAt };
 };
 
-const consumeAuthRecoverySuccessStrict = (
+const pendingAuthRecoverySuccessStrict = (
     sharedStorage,
     tabStorage,
     now,
@@ -65,9 +79,20 @@ const consumeAuthRecoverySuccessStrict = (
     if (!success) return null;
     if (!validRequestStart(requestStartedAt, now) || success.completedAt < requestStartedAt) return null;
     if (tabStorage.getItem(AUTH_RECOVERY_CONSUMED_KEY) === success.attemptId) return null;
-    tabStorage.setItem(AUTH_RECOVERY_CONSUMED_KEY, success.attemptId);
     return success;
 };
+
+const consumeAuthRecoverySuccessStrict = (sharedStorage, tabStorage, now, requestStartedAt) => {
+    const success = pendingAuthRecoverySuccessStrict(sharedStorage, tabStorage, now, requestStartedAt);
+    if (success) tabStorage.setItem(AUTH_RECOVERY_CONSUMED_KEY, success.attemptId);
+    return success;
+};
+
+export function readPendingAuthRecoverySuccess(sharedStorage, tabStorage, { now = Date.now(), requestStartedAt } = {}) {
+    if (!validNow(now)) return null;
+    try { return pendingAuthRecoverySuccessStrict(sharedStorage, tabStorage, now, requestStartedAt); }
+    catch (error) { return null; }
+}
 
 const writeTabAttempt = (tabStorage, attemptId, startedAt) => {
     tabStorage.setItem(

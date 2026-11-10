@@ -20,6 +20,8 @@ def oauth_context():
 
 class IssueEditCacheGenerationTests(unittest.TestCase):
     def setUp(self):
+        from tests.auth_mode_test_utils import force_db_oauth_mode
+        force_db_oauth_mode(self, jira_server)
         jira_server.clear_auth_sensitive_caches('test_setup')
         eng_routes.SUBTASKS_CACHE.clear()
 
@@ -88,8 +90,7 @@ class IssueEditCacheGenerationTests(unittest.TestCase):
                 eng_routes._sync_server_globals()
                 responses.append(eng_routes.get_dependencies())
 
-        with patch.object(jira_server, 'current_request_auth_context', return_value=oauth_context()), \
-             patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True), \
+        with patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True), \
              patch.object(jira_server, 'collect_dependencies', side_effect=blocked_collect):
             worker = threading.Thread(target=request_once)
             worker.start()

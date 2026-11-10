@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import re
-import tempfile
 import unittest
 import uuid
 from unittest.mock import Mock, patch
@@ -20,6 +19,7 @@ from backend.auth.context import RequestAuthContext
 from backend.auth.jira_auth import AuthError
 from backend.db import engine as db_engine, models
 from backend.services import shared_group_config, sprint_review as review
+from tests.postgres_test_db import fresh_database_url
 
 
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
@@ -28,8 +28,7 @@ OTHER_GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'other-only', 'nam
 
 class ReviewFixture:
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'review.db')
+        self.url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.url))
         self.env = patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'})
         self.env.start()
@@ -56,7 +55,6 @@ class ReviewFixture:
     def tearDown(self):
         self.env.stop()
         db_engine.dispose_engines()
-        self.temp.cleanup()
 
     def _search(self, payload, **kwargs):
         self.assertIn(kwargs['context'].workspace_id, (self.workspace, self.other_workspace))
@@ -340,6 +338,8 @@ class GroupReviewContractTests(ReviewFixture, unittest.TestCase):
     def test_group_hidden_by_user_preference_still_reads_and_writes_without_preference_writes(self):
         # AC 14: visibility is a personal display preference; the server never gates review access on it.
         with db_engine.session_scope(self.url) as session:
+            session.add(models.User(id=self.context.user_id, external_provider='atlassian', external_subject=self.context.atlassian_account_id))
+            session.flush()
             session.add(models.UserGroupPreference(workspace_id=self.workspace, user_id=self.context.user_id, visible_group_ids=['group-y'], active_group_id='group-y', customized=True))
 
         def rows():
@@ -646,7 +646,8 @@ class GroupReviewContractTests(ReviewFixture, unittest.TestCase):
                                                              'load_group_preferences')]
         forbidden += [(workspace_catalog_cache, name) for name in ('load_sprint_catalog', 'load_sprint_team_catalog', 'claim_catalog_refresh', 'publish_catalog')]
         forbidden += [(sprints, name) for name in ('load_sprints_cache', 'save_sprints_cache', 'invalidate_sprints_cache', 'fetch_sprints_from_jira')]
-        forbidden += [(epm_home, '_read_metadata_credential'), (token_crypto, 'decrypt_token')]
+        self.assertFalse(hasattr(epm_home, '_read_metadata_credential'))
+        forbidden += [(token_crypto, 'decrypt_token')]
         patchers = [patch.object(target, name, side_effect=AssertionError(name + ' forbidden')) for target, name in forbidden]
         for patcher in patchers:
             patcher.start()
@@ -736,92 +737,90 @@ class ReviewStatementCountTests(ReviewFixture, unittest.TestCase):
 
 
 class GroupReviewMigrationTests(unittest.TestCase):
-    TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')
+    TABLES = ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views',
+              'group_sprint_plans', 'group_sprint_plan_entries', 'planning_save_operations')
 
-    def _config(self, directory, name):
-        url = 'sqlite+pysqlite:///' + str(Path(directory).resolve() / name)
+    def _config(self):
+        url = fresh_database_url(self.addCleanup)
         config = Config('backend/db/alembic.ini')
         config.set_main_option('sqlalchemy.url', url)
         return url, config
 
     def test_model_database_parity(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url, config = self._config(directory, 'group.db')
-            command.upgrade(config, 'head')
-            engine = db_engine.get_engine(url)
-            insp = inspect(engine)
-            for name in self.TABLES:
-                table = models.Base.metadata.tables[name]
-                columns = {c['name']: c for c in insp.get_columns(name)}
-                self.assertEqual(set(columns), set(table.columns.keys()))
-                for column in table.columns:
-                    self.assertEqual(columns[column.name]['nullable'], column.nullable, (name, column.name))
-                self.assertEqual({u['name']: tuple(u['column_names']) for u in insp.get_unique_constraints(name)},
-                                 {c.name: tuple(col.name for col in c.columns) for c in table.constraints
-                                  if c.__class__.__name__ == 'UniqueConstraint'})
-                self.assertEqual({c['name'] for c in insp.get_check_constraints(name)},
-                                 {c.name for c in table.constraints if c.__class__.__name__ == 'CheckConstraint'})
-                self.assertEqual({(tuple(f['constrained_columns']), f['referred_table'], f['options'].get('ondelete'))
-                                  for f in insp.get_foreign_keys(name)},
-                                 {(tuple(c.parent.name for c in f.elements), f.elements[0].column.table.name, f.ondelete)
-                                  for f in table.foreign_key_constraints})
-            self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('group_review_cells')},
-                             {('workspace_group_review_schemas', 'CASCADE')})
-            self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('workspace_group_review_schemas')},
-                             {('workspaces', 'CASCADE')})
-            self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('group_sprint_review_views')},
-                             {('workspaces', 'CASCADE')})
-            indexes = {i['name']: i['column_names'] for i in insp.get_indexes('group_sprint_review_views')}
-            self.assertIn(['workspace_id', 'group_id', 'sprint_order'], indexes.values())
-            db_engine.dispose_engines()
+        url, config = self._config()
+        command.upgrade(config, 'head')
+        engine = db_engine.get_engine(url)
+        insp = inspect(engine)
+        for name in self.TABLES:
+            table = models.Base.metadata.tables[name]
+            columns = {c['name']: c for c in insp.get_columns(name)}
+            self.assertEqual(set(columns), set(table.columns.keys()))
+            for column in table.columns:
+                self.assertEqual(columns[column.name]['nullable'], column.nullable, (name, column.name))
+            self.assertEqual({u['name']: tuple(u['column_names']) for u in insp.get_unique_constraints(name)},
+                             {c.name: tuple(col.name for col in c.columns) for c in table.constraints
+                              if c.__class__.__name__ == 'UniqueConstraint'})
+            self.assertEqual({c['name'] for c in insp.get_check_constraints(name)},
+                             {c.name for c in table.constraints if c.__class__.__name__ == 'CheckConstraint'})
+            self.assertEqual({(tuple(f['constrained_columns']), f['referred_table'], f['options'].get('ondelete'))
+                              for f in insp.get_foreign_keys(name)},
+                             {(tuple(c.parent.name for c in f.elements), f.elements[0].column.table.name, f.ondelete)
+                              for f in table.foreign_key_constraints})
+        self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('group_review_cells')},
+                         {('workspace_group_review_schemas', 'CASCADE')})
+        self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('workspace_group_review_schemas')},
+                         {('workspaces', 'CASCADE')})
+        self.assertEqual({(f['referred_table'], f['options'].get('ondelete')) for f in insp.get_foreign_keys('group_sprint_review_views')},
+                         {('workspaces', 'CASCADE')})
+        indexes = {i['name']: i['column_names'] for i in insp.get_indexes('group_sprint_review_views')}
+        self.assertIn(['workspace_id', 'group_id', 'sprint_order'], indexes.values())
+        db_engine.dispose_engines()
 
     def test_legacy_rows_survive_upgrade_and_downgrade(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url, config = self._config(directory, 'legacy.db')
-            command.upgrade(config, '20261001_0018')
-            engine = db_engine.get_engine(url)
+        url, config = self._config()
+        command.upgrade(config, '20261001_0018')
+        engine = db_engine.get_engine(url)
+        with db_engine.session_scope(url) as session:
+            workspace = models.Workspace(environment_key='synthetic-group', name='Synthetic')
+            session.add(workspace)
+            session.flush()
+            session.execute(text("INSERT INTO workspace_sprint_reviews (id,workspace_id,sprint_id,schema_revision,columns,layouts) VALUES ('00000000000000000000000000000001',:w,'17',3,'[]','{}')"), {'w': workspace.id})
+            session.execute(text("INSERT INTO sprint_review_cells (id,review_id,issue_id,row_kind,column_id,value,revision) VALUES ('00000000000000000000000000000002','00000000000000000000000000000001','1','epic','c','v',2)"))
+
+        def legacy():
             with db_engine.session_scope(url) as session:
-                workspace = models.Workspace(environment_key='synthetic-group', name='Synthetic')
-                session.add(workspace)
-                session.flush()
-                session.execute(text("INSERT INTO workspace_sprint_reviews (id,workspace_id,sprint_id,schema_revision,columns,layouts) VALUES ('00000000000000000000000000000001',:w,'17',3,'[]','{}')"), {'w': workspace.id})
-                session.execute(text("INSERT INTO sprint_review_cells (id,review_id,issue_id,row_kind,column_id,value,revision) VALUES ('00000000000000000000000000000002','00000000000000000000000000000001','1','epic','c','v',2)"))
+                review_row = session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001')
+                cell = session.get(models.SprintReviewCell, '00000000-0000-0000-0000-000000000002')
+                return (review_row.schema_revision, review_row.columns, review_row.layouts, cell.value, cell.revision)
 
-            def legacy():
-                with db_engine.session_scope(url) as session:
-                    review_row = session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001')
-                    cell = session.get(models.SprintReviewCell, '00000000-0000-0000-0000-000000000002')
-                    return (review_row.schema_revision, review_row.columns, review_row.layouts, cell.value, cell.revision)
-
-            expected = (3, [], {}, 'v', 2)
-            command.upgrade(config, 'head')
-            self.assertTrue(set(self.TABLES) <= set(inspect(engine).get_table_names()))
-            self.assertEqual(legacy(), expected)
-            command.downgrade(config, '20261001_0018')
-            tables = set(inspect(engine).get_table_names())
-            self.assertFalse(set(self.TABLES) & tables)
-            self.assertTrue({'workspace_sprint_reviews', 'sprint_review_cells'} <= tables)
-            self.assertEqual(legacy(), expected)
-            command.upgrade(config, 'head')
-            self.assertEqual(legacy(), expected)
-            db_engine.dispose_engines()
+        expected = (3, [], {}, 'v', 2)
+        command.upgrade(config, 'head')
+        self.assertTrue(set(self.TABLES) <= set(inspect(engine).get_table_names()))
+        self.assertEqual(legacy(), expected)
+        command.downgrade(config, '20261001_0018')
+        tables = set(inspect(engine).get_table_names())
+        self.assertFalse(set(self.TABLES) & tables)
+        self.assertTrue({'workspace_sprint_reviews', 'sprint_review_cells'} <= tables)
+        self.assertEqual(legacy(), expected)
+        command.upgrade(config, 'head')
+        self.assertEqual(legacy(), expected)
+        db_engine.dispose_engines()
 
     def test_unpadded_sprint_order_is_rejected(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url, config = self._config(directory, 'order.db')
-            command.upgrade(config, 'head')
+        url, config = self._config()
+        command.upgrade(config, 'head')
+        with db_engine.session_scope(url) as session:
+            workspace = models.Workspace(environment_key='synthetic-order', name='Synthetic')
+            session.add(workspace)
+            session.flush()
+            workspace_id = workspace.id
+        insert = text("INSERT INTO group_sprint_review_views (id,workspace_id,group_id,sprint_id,sprint_order,layouts,view_revision) VALUES (:id,:w,'g','17',:o,'{}',1)")
+        with self.assertRaises(IntegrityError):
             with db_engine.session_scope(url) as session:
-                workspace = models.Workspace(environment_key='synthetic-order', name='Synthetic')
-                session.add(workspace)
-                session.flush()
-                workspace_id = workspace.id
-            insert = text("INSERT INTO group_sprint_review_views (id,workspace_id,group_id,sprint_id,sprint_order,layouts,view_revision) VALUES (:id,:w,'g','17',:o,'{}',1)")
-            with self.assertRaises(IntegrityError):
-                with db_engine.session_scope(url) as session:
-                    session.execute(insert, {'id': '00000000000000000000000000000003', 'w': workspace_id, 'o': '17'})
-            with db_engine.session_scope(url) as session:
-                session.execute(insert, {'id': '00000000000000000000000000000004', 'w': workspace_id, 'o': review.sprint_order('17')})
-            db_engine.dispose_engines()
+                session.execute(insert, {'id': '00000000000000000000000000000003', 'w': workspace_id, 'o': '17'})
+        with db_engine.session_scope(url) as session:
+            session.execute(insert, {'id': '00000000000000000000000000000004', 'w': workspace_id, 'o': review.sprint_order('17')})
+        db_engine.dispose_engines()
 
     def test_sprint_order_pads_to_128(self):
         self.assertEqual(review.sprint_order('17'), '0' * 126 + '17')
@@ -831,40 +830,38 @@ class GroupReviewMigrationTests(unittest.TestCase):
 
 class SprintReviewMigrationTests(unittest.TestCase):
     def test_layout_upgrade_preserves_existing_review(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url = 'sqlite+pysqlite:///' + str(Path(directory).resolve() / 'layout.db')
-            config = Config('backend/db/alembic.ini')
-            config.set_main_option('sqlalchemy.url', url)
-            command.upgrade(config, '20261001_0017')
-            engine = db_engine.get_engine(url)
-            with db_engine.session_scope(url) as session:
-                workspace = models.Workspace(environment_key='synthetic-layout', name='Synthetic')
-                session.add(workspace)
-                session.flush()
-                session.execute(text("INSERT INTO workspace_sprint_reviews (id,workspace_id,sprint_id,schema_revision,columns) VALUES ('00000000000000000000000000000001',:workspace,'17',3,'[]')"), {'workspace':workspace.id})
-            command.upgrade(config, 'head')
-            with db_engine.session_scope(url) as session:
-                row = session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001')
-                self.assertEqual((row.schema_revision,row.columns,row.layouts), (3,[],{}))
-            command.downgrade(config, '20261001_0017')
-            self.assertNotIn('layouts', [column['name'] for column in inspect(engine).get_columns('workspace_sprint_reviews')])
-            command.upgrade(config, 'head')
-            with db_engine.session_scope(url) as session:
-                self.assertEqual(session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001').schema_revision,3)
-            db_engine.dispose_engines()
+        url = fresh_database_url(self.addCleanup)
+        config = Config('backend/db/alembic.ini')
+        config.set_main_option('sqlalchemy.url', url)
+        command.upgrade(config, '20261001_0017')
+        engine = db_engine.get_engine(url)
+        with db_engine.session_scope(url) as session:
+            workspace = models.Workspace(environment_key='synthetic-layout', name='Synthetic')
+            session.add(workspace)
+            session.flush()
+            session.execute(text("INSERT INTO workspace_sprint_reviews (id,workspace_id,sprint_id,schema_revision,columns) VALUES ('00000000000000000000000000000001',:workspace,'17',3,'[]')"), {'workspace':workspace.id})
+        command.upgrade(config, 'head')
+        with db_engine.session_scope(url) as session:
+            row = session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001')
+            self.assertEqual((row.schema_revision,row.columns,row.layouts), (3,[],{}))
+        command.downgrade(config, '20261001_0017')
+        self.assertNotIn('layouts', [column['name'] for column in inspect(engine).get_columns('workspace_sprint_reviews')])
+        command.upgrade(config, 'head')
+        with db_engine.session_scope(url) as session:
+            self.assertEqual(session.get(models.WorkspaceSprintReview, '00000000-0000-0000-0000-000000000001').schema_revision,3)
+        db_engine.dispose_engines()
 
     def test_upgrade_downgrade_and_model_contract(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url = 'sqlite+pysqlite:///' + str(Path(directory).resolve() / 'migration.db')
-            config = Config('backend/db/alembic.ini')
-            config.set_main_option('sqlalchemy.url', url)
-            command.upgrade(config, 'head')
-            engine = db_engine.get_engine(url)
-            for name in ('workspace_sprint_reviews', 'sprint_review_cells'):
-                self.assertIn(name, inspect(engine).get_table_names())
-                self.assertEqual(set(c['name'] for c in inspect(engine).get_columns(name)), set(models.Base.metadata.tables[name].columns.keys()))
-            command.downgrade(config, '20260913_0016')
-            self.assertNotIn('workspace_sprint_reviews', inspect(engine).get_table_names())
-            self.assertNotIn('sprint_review_cells', inspect(engine).get_table_names())
-            self.assertIn('workspace_sprint_team_catalogs', inspect(engine).get_table_names())
-            db_engine.dispose_engines()
+        url = fresh_database_url(self.addCleanup)
+        config = Config('backend/db/alembic.ini')
+        config.set_main_option('sqlalchemy.url', url)
+        command.upgrade(config, 'head')
+        engine = db_engine.get_engine(url)
+        for name in ('workspace_sprint_reviews', 'sprint_review_cells'):
+            self.assertIn(name, inspect(engine).get_table_names())
+            self.assertEqual(set(c['name'] for c in inspect(engine).get_columns(name)), set(models.Base.metadata.tables[name].columns.keys()))
+        command.downgrade(config, '20260913_0016')
+        self.assertNotIn('workspace_sprint_reviews', inspect(engine).get_table_names())
+        self.assertNotIn('sprint_review_cells', inspect(engine).get_table_names())
+        self.assertIn('workspace_sprint_team_catalogs', inspect(engine).get_table_names())
+        db_engine.dispose_engines()

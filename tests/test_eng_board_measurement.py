@@ -1,3 +1,4 @@
+from pathlib import Path
 import importlib.util
 import pathlib
 import re
@@ -83,7 +84,7 @@ class EngBoardMeasurementCoreTests(unittest.TestCase):
         spec.loader.exec_module(module)
         with self.assertRaises(ValueError):
             module.validate_output_path(ROOT / 'diagnostic.json', repo_root=ROOT)
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1].parent) as directory:
             module.validate_output_path(pathlib.Path(directory) / 'diagnostic.json', repo_root=ROOT)
 
 

@@ -427,3 +427,14 @@ test('validateImportedTeamLabels rejects invalid alias arrays with label-free me
         'Import rejected: a Team has more than 3 Jira labels.'
     );
 });
+
+test('Department Allocation normalization is empty by default, strict, case-sensitive, bounded and first-duplicate-wins', async () => {
+    const { normalizeGroupsConfig, validateAllocationTypes, groupHasScope } = await import('../frontend/src/settings/groupConfigUtils.js');
+    assert.deepEqual(normalizeGroupsConfig({ groups: [{ id: 'a', name: 'A', missingInfoComponents: ['Legacy'] }] }).groups[0].allocationTypes, []);
+    assert.deepEqual(validateAllocationTypes([{ value: ' Growth ', type: 'tech' }, { value: 'Growth', type: 'product' }, { value: 'growth', type: 'product' }]), {
+        allocationTypes: [{ value: 'Growth', type: 'tech' }, { value: 'growth', type: 'product' }], error: null,
+    });
+    for (const bad of [null, {}, '', [{ value: '', type: 'tech' }], [{ value: 'a'.repeat(256), type: 'product' }], [{ value: 2, type: 'tech' }], [{ value: 'x', type: 'Tech' }], [{ value: 'x', type: 'tech', extra: 1 }], Array(201).fill({ value: 'x', type: 'tech' })]) assert.ok(validateAllocationTypes(bad).error);
+    assert.equal(groupHasScope({ allocationTypes: [{ value: 'Growth', type: 'tech' }] }), true);
+    assert.equal(groupHasScope({ allocationTypes: [] }), false);
+});

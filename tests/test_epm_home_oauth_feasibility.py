@@ -2,6 +2,7 @@ import json
 import unittest
 
 from backend.epm import home as epm_home
+from backend.auth.jira_auth import AuthError
 
 
 class HomeGraphQLOAuthFeasibilityTests(unittest.TestCase):
@@ -77,7 +78,6 @@ class HomeGraphQLOAuthFeasibilityTests(unittest.TestCase):
 # public-read-v1 (Task 1): registry, strict client, typed errors, tags, probe
 # ---------------------------------------------------------------------------
 import hashlib
-import inspect
 import io
 import os
 import tempfile
@@ -203,11 +203,11 @@ class PublicReadRegistryTests(unittest.TestCase):
             self.assertNotEqual(hashlib.sha256(entry["query"].encode()).hexdigest(), digest)
         self.assertNotIn("projects_createUpdate", json.dumps(epm_home.PUBLIC_READ_V1_REGISTRY))
 
-    def test_legacy_constants_and_basic_signature_are_unchanged(self):
+    def test_historical_query_constants_remain_but_basic_client_is_retired(self):
         self.assertEqual(epm_home.HOME_GRAPHQL_ENDPOINT, "https://team.atlassian.com/gateway/api/graphql")
         self.assertEqual(epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT, "https://api.atlassian.com/graphql")
-        params = list(inspect.signature(epm_home.HomeGraphQLClient.__init__).parameters)
-        self.assertEqual(params, ["self", "email", "api_token", "endpoint"])
+        self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+        self.assertFalse(hasattr(epm_home, 'build_home_graphql_client'))
         self.assertIn("owner", epm_home.QUERY_GOAL_PROJECTS)
         self.assertEqual(epm_home.HOME_MAX_RETRY_WAIT_SECONDS, 30)
 
@@ -283,15 +283,12 @@ class StrictClientBoundaryTests(unittest.TestCase):
         self.assertEqual(result.errors, ())
         self.assertNotIn(FAKE_TOKEN, repr(client))
 
-    def test_basic_client_still_sends_basic_and_legacy_query(self):
-        http = _FakeHttp({"data": {"ok": 1}})
-        client = epm_home.HomeGraphQLClient("u@example.invalid", "tok")
-        with patch.object(epm_home, "urlopen", http):
-            data = client.execute(epm_home.QUERY_PROJECT_TAGS, {"projectId": "p"})
-        self.assertEqual(data, {"data": {"ok": 1}})
-        self.assertEqual(http.requests[0]["url"], epm_home.HOME_GRAPHQL_ENDPOINT)
-        self.assertTrue(http.requests[0]["headers"]["Authorization"].startswith("Basic "))
-        self.assertNotIn("operationName", http.requests[0]["body"])
+    def test_retired_basic_client_cannot_be_constructed_or_send_a_query(self):
+        http = _FakeHttp({'data': {}})
+        with patch.object(epm_home, 'urlopen', http):
+            self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+            self.assertFalse(hasattr(epm_home, 'build_home_graphql_client'))
+        self.assertEqual(http.requests, [])
 
 
 class StrictTypedErrorTests(unittest.TestCase):
@@ -387,13 +384,13 @@ class StrictTypedErrorTests(unittest.TestCase):
         self.assertEqual([c.args[0] for c in sleep.call_args_list], [1])
         self.assertEqual(len(http.requests), 2)
 
-    def test_basic_retry_semantics_are_unchanged(self):
-        http = _FakeHttp(_http_error(429, retry_after="99999"))
-        client = epm_home.HomeGraphQLClient("u@example.invalid", "tok")
-        with patch.object(epm_home, "urlopen", http), patch.object(epm_home.time, "sleep") as sleep:
-            with self.assertRaises(epm_home.HomeRateLimitError):
-                client.execute("query Q { x }", {})
-        self.assertEqual([c.args[0] for c in sleep.call_args_list], [99999, 99999, 99999])
+    def test_retired_non_strict_read_is_rejected_without_retry_or_network(self):
+        http = _FakeHttp(_http_error(429, retry_after='99999'))
+        with patch.object(epm_home, 'urlopen', http), patch.object(epm_home.time, 'sleep') as sleep:
+            with self.assertRaises(AuthError):
+                epm_home.fetch_sub_goals(object(), 'goal-1')
+        self.assertEqual(http.requests, [])
+        sleep.assert_not_called()
 
 
 class StrictOptionalTagTests(unittest.TestCase):
@@ -487,13 +484,13 @@ class StrictOptionalTagTests(unittest.TestCase):
 
     def test_project_tags_confined_error_is_unavailable_and_empty_is_available(self):
         client = epm_home.HomeOAuthGraphQLClient(FAKE_TOKEN)
-        twg = patch.object(epm_home, "build_teamwork_graph_client", side_effect=AssertionError("TWG forbidden"))
+        self.assertFalse(hasattr(epm_home, 'build_teamwork_graph_client'))
         confined = {"data": {"projects_byId": {"tags": None}},
                     "errors": [{"message": "m", "path": ["projects_byId", "tags"]}]}
-        with twg, patch.object(epm_home, "urlopen", _FakeHttp(confined)):
+        with patch.object(epm_home, "urlopen", _FakeHttp(confined)):
             self.assertIsNone(epm_home.fetch_project_tags(client, {"id": "p1"}))
         empty = {"data": {"projects_byId": {"tags": {"edges": []}}}}
-        with twg, patch.object(epm_home, "urlopen", _FakeHttp(empty)) as _:
+        with patch.object(epm_home, "urlopen", _FakeHttp(empty)) as _:
             http = epm_home.urlopen
             self.assertEqual(epm_home.fetch_project_tags(client, {"id": "p1"}), [])
             self.assertEqual(len(http.requests), 1)
@@ -572,12 +569,14 @@ class StrictConsumerPropagationTests(unittest.TestCase):
             rows = epm_home.fetch_latest_project_update(self.client, "p1")
         self.assertEqual(rows[0]["id"], "u1")
 
-    def test_basic_swallow_behavior_is_preserved(self):
-        basic = epm_home.HomeGraphQLClient("u@example.invalid", "t")
-        with patch.object(epm_home, "urlopen", _FakeHttp(_http_error(500))):
-            self.assertEqual(epm_home.fetch_sub_goals(basic, "goal-1"), [])
-        with patch.object(epm_home, "urlopen", _FakeHttp(_http_error(500))):
-            self.assertEqual(epm_home.fetch_latest_project_update(basic, "p1"), [])
+    def test_retired_non_strict_consumers_raise_before_network_instead_of_swallowing(self):
+        for consumer, identifier in ((epm_home.fetch_sub_goals, 'goal-1'),
+                                     (epm_home.fetch_latest_project_update, 'p1')):
+            http = _FakeHttp(_http_error(500))
+            with self.subTest(consumer=consumer.__name__), patch.object(epm_home, 'urlopen', http):
+                with self.assertRaises(AuthError):
+                    consumer(object(), identifier)
+            self.assertEqual(http.requests, [])
 
 
 def _probe_responder(overrides=None, cloud_scope=True):

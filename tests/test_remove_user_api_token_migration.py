@@ -4,7 +4,6 @@ All data is synthetic; ciphertext values are placeholders, never real tokens.
 """
 import os
 from pathlib import Path
-import tempfile
 import unittest
 
 from alembic import command
@@ -16,12 +15,18 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 ROOT = Path(__file__).resolve().parents[1]
 PARENT, HEAD = '20261023_0020', '20261028_0021'
-LATEST = '20261030_0022'
+LATEST = '20261106_0024'
 TOKEN_PROVIDER = 'atlassian_user_api_token'
 TOKEN_INDEX = 'uq_auth_connections_user_api_token_cloud'
+# Every constraint of the table, rendered as `name definition`, joined in a stable order.
+TABLE_CONSTRAINTS_SQL = (
+    "SELECT string_agg(conname || ' ' || pg_get_constraintdef(oid), '; ' ORDER BY conname) "
+    "FROM pg_constraint WHERE conrelid = 'auth_connections'::regclass"
+)
 
 
 def token_row(connection_id, kind='api_token'):
@@ -33,8 +38,7 @@ def token_row(connection_id, kind='api_token'):
 
 class RemoveUserApiTokenMigrationTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'token.db')
+        self.url = fresh_database_url(self.addCleanup)
         self.config = Config(str(ROOT / 'backend' / 'db' / 'alembic.ini'))
         self.config.set_main_option('sqlalchemy.url', self.url)
         self.config.set_main_option('script_location', str(ROOT / 'backend' / 'db' / 'migrations'))
@@ -42,7 +46,6 @@ class RemoveUserApiTokenMigrationTests(unittest.TestCase):
 
     def tearDown(self):
         self.engine.dispose()
-        self.temp.cleanup()
 
     def seed(self):
         with Session(self.engine) as session:
@@ -85,8 +88,7 @@ class RemoveUserApiTokenMigrationTests(unittest.TestCase):
         self.assertTrue({'uq_auth_connections_current_cloud', 'uq_auth_connections_current_site'} <= indexes)
         with self.engine.connect() as connection:
             self.assertEqual(connection.execute(text('SELECT version_num FROM alembic_version')).scalar(), LATEST)
-            sql = connection.execute(
-                text("SELECT sql FROM sqlite_master WHERE name = 'auth_connections'")).scalar()
+            sql = connection.execute(text(TABLE_CONSTRAINTS_SQL)).scalar()
         self.assertNotIn(TOKEN_PROVIDER, sql)
         self.assertIn('ck_auth_connections_provider', sql)
 
@@ -129,8 +131,7 @@ class RemoveUserApiTokenMigrationTests(unittest.TestCase):
         self.assertEqual(self.providers(), ['atlassian_oauth'])
         self.assertIn(TOKEN_INDEX, {i['name'] for i in inspect(self.engine).get_indexes('auth_connections')})
         with self.engine.connect() as connection:
-            sql = connection.execute(
-                text("SELECT sql FROM sqlite_master WHERE name = 'auth_connections'")).scalar()
+            sql = connection.execute(text(TABLE_CONSTRAINTS_SQL)).scalar()
         self.assertIn(TOKEN_PROVIDER, sql)
         command.upgrade(self.config, 'head')
         self.assertEqual(self.providers(), ['atlassian_oauth'])

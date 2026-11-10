@@ -1,6 +1,5 @@
 import base64
 import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
@@ -13,6 +12,7 @@ from backend.auth.key_provider import key_provider_from_env
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 class FakeResponse:
@@ -26,8 +26,7 @@ class FakeResponse:
 
 class TokenRefreshReuseTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'reuse.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -81,7 +80,6 @@ class TokenRefreshReuseTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def test_refresh_reuse_revokes_connection_deletes_tokens_and_writes_audit(self):
         config = AuthConfig(
@@ -139,7 +137,7 @@ class TokenRefreshReuseTests(unittest.TestCase):
             browser_session_id=next(iter(self.browser_session_ids)),
         )
         with patch.dict(os.environ, {
-            'DATABASE_URL': self.database_url,
+            'DATABASE_URL': self.database_url, 'CONFIG_STORAGE_BACKEND': 'db',
             'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([12]) * 32).decode('ascii'),
             'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
         }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \

@@ -16,18 +16,19 @@ import uuid
 
 from sqlalchemy import func, select, text
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import DBAPIError
 
 from backend.db import engine as db_engine, models
 from backend.services.sprint_review import (
-    ReviewError, group_identity, require_review_context, sprint_identity, sprint_order)
+    ReviewError, capabilities, group_identity, require_review_context, sprint_identity, sprint_order)
 
 MAX_ROWS = 100
 MAX_CHANGES = 50
 MAX_DOCUMENTS_PER_WORKSPACE = 2000
 MAX_NUMBER = Decimal('10000')
 MAX_REQUEST_BYTES = 64 * 1024
+MAX_BATCH_TEAM_IDS = 500
+MAX_BATCH_REQUEST_BYTES = 128 * 1024
 MAX_RESPONSE_BYTES = 256 * 1024
 # Headroom for what the route adds to a saved document (`capabilities`), so a stored document always reads back.
 RESPONSE_RESERVE_BYTES = 1024
@@ -216,6 +217,41 @@ def get_document(context, sprint_id, team_id, database_url=None):
         return _document(sprint_id, team_id, _nearest(session, context.workspace_id, sprint_id, team_id))
 
 
+def validate_batch(sprint_id, team_ids):
+    """Stateless shape checks for a batch read: 1 to 500 unique Team ids and a Sprint id."""
+    sprint_identity(sprint_id)
+    if not isinstance(team_ids, list) or not 1 <= len(team_ids) <= MAX_BATCH_TEAM_IDS:
+        raise ReviewError()
+    for team_id in team_ids:
+        team_identity(team_id)
+    if len(set(team_ids)) != len(team_ids):
+        raise ReviewError()
+
+
+def read_planned_numbers(context, sprint_id, team_ids, database_url=None):
+    """Stored Team numbers only, one column-limited statement: never rows, notes or people (#323)."""
+    require_review_context(context)
+    validate_batch(sprint_id, team_ids)
+    table = models.PlanningTeamSprintCapacity
+    with db_engine.session_scope(database_url) as session:
+        stored = {row.team_id: row for row in session.execute(
+            select(table.team_id, table.sprint_id, table.revision, table.planned_capacity, table.planned_source)
+            .where(table.workspace_id == context.workspace_id, table.team_id.in_(team_ids),
+                   table.sprint_order <= sprint_order(sprint_id))
+            .distinct(table.team_id).order_by(table.team_id, table.sprint_order.desc()))}
+    teams = []
+    for team_id in team_ids:
+        row = stored.get(team_id)
+        if row is None:
+            teams.append({'teamId': team_id, 'revision': 0, 'planned': None, 'inherited': None})
+        elif row.sprint_id == sprint_id:
+            teams.append({'teamId': team_id, 'revision': row.revision, 'planned': _stored_planned(row), 'inherited': None})
+        else:
+            teams.append({'teamId': team_id, 'revision': 0, 'planned': None, 'inherited': {
+                'fromSprintId': row.sprint_id, 'planned': _inherit_planned(_stored_planned(row))}})
+    return {'sprintId': sprint_id, 'teams': teams, 'capabilities': capabilities(context)}
+
+
 def _require_readable(document):
     """Write-time size guard: a document whose response would exceed the read limit is never stored."""
     encoded = json.dumps(document, ensure_ascii=False, separators=(',', ':')).encode('utf-8')
@@ -256,16 +292,13 @@ def _apply(session, context, sprint_id, team_id, changes, planned=None):
     rows_change = bool(changes) and merge_changes(base, changes) != base
     if not rows_change and _planned_target(base_planned, planned) == base_planned:
         return _document(sprint_id, team_id, seen)
-    dialect = session.bind.dialect.name
-    insert = postgres_insert if dialect == 'postgresql' else sqlite_insert if dialect == 'sqlite' else None
-    if insert is None:
+    if session.bind.dialect.name != 'postgresql':
         raise ReviewError('review_storage_unavailable', 503)
-    if dialect == 'postgresql':
-        session.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
+    session.execute(text(f"SET LOCAL lock_timeout = '{LOCK_TIMEOUT}'"))
     if not own and session.scalar(select(func.count()).select_from(models.PlanningTeamSprintCapacity).where(
             models.PlanningTeamSprintCapacity.workspace_id == workspace_id)) >= MAX_DOCUMENTS_PER_WORKSPACE:
         raise ReviewError('assignee_capacity_document_limit')
-    inserted = session.execute(insert(models.PlanningTeamSprintCapacity).values(
+    inserted = session.execute(postgres_insert(models.PlanningTeamSprintCapacity).values(
         id=str(uuid.uuid4()), workspace_id=workspace_id, sprint_id=sprint_id, sprint_order=sprint_order(sprint_id),
         team_id=team_id, rows=[], revision=1, created_at=models._utcnow(), updated_at=models._utcnow(),
     ).on_conflict_do_nothing(index_elements=['workspace_id', 'sprint_id', 'team_id'])

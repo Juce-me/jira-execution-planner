@@ -690,6 +690,8 @@ test('eng_board terminal api_result accepts only bounded scope and omits high-ca
         featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'component',
     });
     assert.equal(pushed[1].scope_type, 'component');
+    trackApiResult('eng_board', { featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'allocation' });
+    assert.equal(pushed[2].scope_type, 'allocation');
     assert.throws(
         () => trackApiResult('eng_board', {
             featureName: 'eng_board', status: 200, scopeType: 'department-secret',
@@ -1433,6 +1435,10 @@ test('planning capacity workflow helper emits only fixed allowlisted payloads', 
     trackPlanningCapacityAction('capacity_change_result', { result: 'failure', jiraUrl: 'https://example.invalid/browse/CAP-1' });
     trackPlanningCapacityAction('capacity_change_result', { result: 'conflict', expectedCapacity: 8 });
     trackPlanningCapacityAction('capacity_change_result', { result: 'invalid' });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'success', issueKey: 'CAP-1', capacity: 14 });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'failure', teamName: 'Team Alpha' });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'conflict', currentCapacity: 20 });
+    trackPlanningCapacityAction('capacity_reconcile_push', { result: 'already_current' });
     trackPlanningCapacityAction('unknown_action', { result: 'failure' });
 
     assert.deepEqual(events, [
@@ -1442,6 +1448,10 @@ test('planning capacity workflow helper emits only fixed allowlisted payloads', 
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'failure' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning', result: 'conflict' } },
         { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_change_result', source_surface: 'planning' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'success' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'failure' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning', result: 'conflict' } },
+        { eventName: 'planning_action', payload: { feature_name: 'planning_capacity_edit', workflow_action: 'capacity_reconcile_push', source_surface: 'planning' } },
     ]);
 });
 
@@ -1530,9 +1540,14 @@ test('Planning review analytics excludes every custom column and issue value', a
     const params = buildPlanningReviewAnalyticsParams('column_add', { columnId: 'private-id', label: 'Private review label', value: '50', issueKey: 'DEMO-1' });
     assert.deepEqual(params, { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'column_add' });
     assert.equal(buildPlanningReviewAnalyticsParams('Private label'), null);
-    for(const action of ['review_options_opened','refresh_review']) assert.equal(buildPlanningReviewAnalyticsParams(action), null, `${action} was retired with its control`);
+    for(const action of ['review_options_opened','refresh_review','layout_table','layout_list']) assert.equal(buildPlanningReviewAnalyticsParams(action), null, `${action} was retired with its control`);
     for(const action of ['panel_expanded','panel_collapsed']) assert.deepEqual(buildPlanningReviewAnalyticsParams(action,{teamName:'Private team'}), {feature_name:'planning_review',source_surface:'planning',workflow_action:action});
     assert.deepEqual(buildPlanningReviewAnalyticsParams('save_result', { result: 'conflict' }), { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_result', result: 'conflict' });
+    for (const result of ['success', 'failure', 'conflict', 'unknown']) {
+        const saved = buildPlanningReviewAnalyticsParams('save_review', { result, operationId: 'private-operation', issueId: 'private-issue', value: 'private-value' });
+        assert.deepEqual(saved, { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_review', result });
+    }
+    assert.deepEqual(buildPlanningReviewAnalyticsParams('save_review', { result: 'private-error-message' }), { feature_name: 'planning_review', source_surface: 'planning', workflow_action: 'save_review' });
     for (const fieldName of ['summary', 'team']) {
         assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'story', sourceSurface: 'catch_up' }), null);
         assert.equal(buildIssueFieldEditAnalyticsParams('open', { fieldName, issueKind: 'epic', sourceSurface: 'planning' }).feature_name, 'planning_review');
@@ -1678,7 +1693,7 @@ test('dashboard pageviews name each visible ENG mode and subview once', async ()
     global.window.dataLayer = capturingDataLayer(pushed);
     global.fetch = async () => ({ ok: true, json: async () => ({ enabled: true }) });
     const runtime = createRuntime();
-    let props = { authMode: 'basic', selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false, showBoard: false, statsView: 'teams', planningLayout: 'table', serverConnectionError: '' };
+    let props = { authMode: 'basic', selectedView: 'eng', showPlanning: false, showStats: false, showScenario: false, showBoard: false, statsView: 'teams', serverConnectionError: '' };
     const render = (changes = {}) => {
         props = { ...props, ...changes };
         runtime.begin();
@@ -1692,28 +1707,28 @@ test('dashboard pageviews name each visible ENG mode and subview once', async ()
         await new Promise(resolve => setTimeout(resolve, 0));
         render();
         render();
-        render({ statsView: 'cohort', planningLayout: 'list' });
+        render({ statsView: 'cohort' });
         assert.deepEqual(views().map(entry => entry.page_name), ['eng/catch_up'], 'hidden subviews and rerenders do not count');
 
-        render({ showPlanning: true });
-        render({ planningLayout: 'table' });
+        // Planning is the table only (#323): a stale saved List layout is not an input and has no page.
+        render({ showPlanning: true, planningLayout: 'list' });
         render({ showPlanning: false, showBoard: true });
         render({ showBoard: false, showScenario: true });
         render({ showScenario: false, showStats: true });
         for (const statsView of ['teams', 'priority', 'burnout', 'excludedCapacity', 'monoCrossShare', 'projectTrack']) render({ statsView });
         render({ selectedView: 'epm' });
-        render({ statsView: 'teams', planningLayout: 'list' });
+        render({ statsView: 'teams' });
         render({ selectedView: 'eng' });
         render({ showStats: false });
 
         assert.deepEqual(views().map(entry => entry.page_name), [
-            'eng/catch_up', 'eng/planning/list', 'eng/planning/table', 'eng/board', 'eng/scenario',
+            'eng/catch_up', 'eng/planning/table', 'eng/board', 'eng/scenario',
             'eng/statistics/lead_times', 'eng/statistics/teams', 'eng/statistics/priority',
             'eng/statistics/burndown', 'eng/statistics/excluded_capacity',
             'eng/statistics/mono_cross_share', 'eng/statistics/project_track',
             'epm', 'eng/statistics/teams', 'eng/catch_up',
         ]);
-        assert.equal(views()[12].eng_mode, undefined, 'EPM does not carry hidden ENG state');
+        assert.equal(views()[11].eng_mode, undefined, 'EPM does not carry hidden ENG state');
         for (const entry of views()) {
             assert.equal(entry.trigger, 'pageview');
             assert.equal(entry.event_type, 'pageview');
@@ -1734,7 +1749,7 @@ test('hierarchical page names allow only the fixed product taxonomy', async () =
     for (const pageName of ['eng/catch_up', 'eng/planning/table', 'eng/statistics/lead_times', 'epm', 'dashboard']) {
         assert.deepEqual(sanitizeAnalyticsParams({ page_name: pageName }, 'page_view'), { page_name: pageName });
     }
-    for (const pageName of ['eng/statistics/secret', 'eng/planning/table/TEST-123', 'eng/catch_up?find=secret', 'https://example.invalid/eng', '/Users/local/path', 'eng/board/free text']) {
+    for (const pageName of ['eng/statistics/secret', 'eng/planning/list', 'eng/planning/table/TEST-123', 'eng/catch_up?find=secret', 'https://example.invalid/eng', '/Users/local/path', 'eng/board/free text']) {
         assert.throws(() => sanitizeAnalyticsParams({ page_name: pageName }, 'page_view'), /analytics value/);
     }
     assert.throws(() => sanitizeAnalyticsParams({ source_surface: 'eng/planning/table' }, 'page_view'), /unsafe analytics value/);

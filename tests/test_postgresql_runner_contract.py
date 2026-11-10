@@ -318,7 +318,7 @@ class RunnerIsolationContractTests(unittest.TestCase):
         runner_section = source.index(
             "### Optional localhost Docker runner (source checkout only)"
         )
-        env_section = source.index("## 3. `.env` For DB Mode")
+        env_section = source.index("## 3. DB/OAuth Configuration")
 
         self.assertLess(runner_section, env_section)
         self.assertIn(

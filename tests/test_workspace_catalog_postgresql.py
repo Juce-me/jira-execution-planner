@@ -104,6 +104,11 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
             )
             session.add(connection)
             session.flush()
+            # Refresh contexts are captured from real DB browser sessions; unbound contexts fail closed.
+            browser_session = models.BrowserSession(
+                id=str(uuid.uuid4()), user_id=user.id, workspace_id=workspace.id, auth_connection_id=connection.id,
+            )
+            session.add(browser_session)
             session.add(models.WorkspaceDashboardConfig(
                 workspace_id=workspace.id,
                 payload={'board': {'boardId': '17'}, 'projects': [{'key': 'DEMO'}]},
@@ -113,7 +118,7 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
         self.context = RequestAuthContext(
             auth_mode='atlassian_oauth', user_id=user.id, stable_subject=user.id,
             atlassian_account_id=user.external_subject, workspace_id=workspace.id,
-            auth_connection_id=connection.id, cloud_id=connection.cloud_id,
+            auth_connection_id=connection.id, browser_session_id=browser_session.id, cloud_id=connection.cloud_id,
             site_url='https://synthetic.example.test', token_version='1',
             account_status='active', is_admin=True,
             granted_scopes=('read:jira-work',), granted_scopes_verified=True,
@@ -1157,9 +1162,14 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
                 scopes=['read:jira-work'],
                 scope_provenance='provider',
             )
+            same_browser_session = models.BrowserSession(
+                id=str(uuid.uuid4()), user_id=same_user.id, workspace_id=self.context.workspace_id,
+                auth_connection_id=same_connection.id,
+            )
             session.add_all([
                 same_connection,
                 other_connection,
+                same_browser_session,
                 models.WorkspaceDashboardConfig(
                     workspace_id=other_workspace.id,
                     payload={'board': {'boardId': '17'}, 'projects': [{'key': 'DEMO'}]},
@@ -1174,6 +1184,7 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
                 'stable_subject': same_user.id,
                 'atlassian_account_id': same_user.external_subject,
                 'auth_connection_id': same_connection.id,
+                'browser_session_id': same_browser_session.id,
             },
         )
         other_context = RequestAuthContext(

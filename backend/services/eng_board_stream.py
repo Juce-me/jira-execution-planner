@@ -429,7 +429,7 @@ def _validate_body(frame, delivery=False):
     frame_type = frame['type']
     if frame_type == 'start':
         _exact(frame, base + ('scope', 'scopeVersion', 'scopeCohortDigest', 'columns'))
-        _one_of(frame['scope'], ('all_work', 'component', 'sprint'))
+        _one_of(frame['scope'], ('all_work', 'component', 'allocation', 'sprint'))
         _string(frame['scopeVersion'], _MAX['identity'])
         _string(frame['scopeCohortDigest'], 64,
                 pattern=lambda value: len(value) == 64 and all(char in '0123456789abcdef' for char in value))

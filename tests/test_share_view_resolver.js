@@ -397,18 +397,24 @@ test('alerts: off hides the panel, none collapses all, and a category the sprint
     assert.deepEqual(Object.keys(planFor({ alerts: ['done'] }).apply.alerts.expanded), [...SHARE_VIEW_ALERT_KEYS]);
 });
 
-test('Planning plan: the table carries rows, the list carries initiatives and sort', () => {
+test('Planning plan: Planning is the table only, so a link applies its rows and never a layout, initiatives or sort', () => {
     const table = planFor({ mode: 'planning', initiatives: true, sort: 'status' });
-    assert.deepEqual(table, {
-        apply: { find: '', lanes: SHARE_VIEW_DEFAULTS.lanes, layout: SHARE_VIEW_DEFAULTS.layout, rows: SHARE_VIEW_DEFAULTS.rows },
-        reported: [],
-    });
+    assert.deepEqual(table, { apply: { find: '', lanes: SHARE_VIEW_DEFAULTS.lanes, rows: SHARE_VIEW_DEFAULTS.rows }, reported: [] });
     assert.deepEqual(planFor({ mode: 'planning', layout: 'table', rows: 'story' }).apply.rows, 'story');
-    const list = planFor({ mode: 'planning', layout: 'list', rows: 'story', initiatives: true, sort: 'status', find: 'x' });
-    assert.deepEqual(list.apply, {
-        find: 'x', lanes: SHARE_VIEW_DEFAULTS.lanes, layout: 'list', initiatives: true, sort: 'status',
-    });
-    assert.deepEqual(Object.keys(planFor({ mode: 'planning', layout: 'list' }).apply).sort(), ['find', 'initiatives', 'lanes', 'layout', 'sort']);
+});
+
+// Planning List is retired (#323, G2 2026-11-06): an old List link opens the table; its rows follow the focus kind so the focus is kept.
+test('Planning plan: an old List link with Sprint, Team and Story focus opens the table on Story rows and keeps the focus', () => {
+    const story = { kind: 'story', key: 'DEMO-34' };
+    const old = { mode: 'planning', sprint: '4183', teams: ['t2'], layout: 'list', initiatives: true, sort: 'status', find: 'x', focus: story };
+    assert.deepEqual(planFor(old), { apply: { find: 'x', lanes: SHARE_VIEW_DEFAULTS.lanes, rows: 'story' }, reported: [] });
+    assert.deepEqual(resolveShareViewFocus(link(old), 'planning'), story);
+    assert.equal(scopeFor(old).sprint.id, 4183);
+    assert.deepEqual(resolveShareViewTeams(link(old), GROUP).teams, ['t2']);
+    const epic = { ...old, focus: { kind: 'epic', key: 'DEMO-12' } };
+    assert.equal(planFor(epic).apply.rows, 'epic');
+    assert.deepEqual(resolveShareViewFocus(link(epic), 'planning'), epic.focus);
+    assert.equal(planFor({ mode: 'planning', layout: 'list' }).apply.rows, SHARE_VIEW_DEFAULTS.rows);
 });
 
 test('Board plan: find and scope; the default scope needs no readiness', () => {
@@ -549,7 +555,7 @@ test('focus: a kind outside epic and story never resolves', () => {
     }
 });
 
-test('focus: an Epic or Story resolves in Catch Up and in the Planning list', () => {
+test('focus: an Epic or Story resolves in Catch Up and in an old Planning List link', () => {
     for (const [mode, layout] of [['catch-up', undefined], ['planning', 'list']]) {
         assert.deepEqual(resolveShareViewFocus(link({ mode, layout, focus: { kind: 'epic', key: 'DEMO-12' } }), mode), { kind: 'epic', key: 'DEMO-12' }, mode);
         assert.deepEqual(resolveShareViewFocus(link({ mode, layout, focus: { kind: 'story', key: 'DEMO-34' } }), mode), { kind: 'story', key: 'DEMO-34' }, mode);

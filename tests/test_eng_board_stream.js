@@ -127,6 +127,15 @@ test('Component scope start frames pass strict stream validation', async () => {
     assert.doesNotMatch(api.fetchCalls[0][0], /sprintId=/);
 });
 
+test('Allocation scope keeps its distinct wire token and no Sprint id', async () => {
+    const api = harness(async () => streamedResponse([encoded({ ...start(), scope: 'allocation' }), encoded(complete())]).response);
+    const delivered = [];
+    await api.exports.streamEngBoard({ departmentId: 'department-1', scope: 'allocation', onFrame: value => delivered.push(value) });
+    assert.equal(delivered[0].scope, 'allocation');
+    assert.match(api.fetchCalls[0][0], /scope=allocation/);
+    assert.doesNotMatch(api.fetchCalls[0][0], /sprintId=/);
+});
+
 test('column frames accept the DELIVERY none class and an optional epic class, and reject bogus', async t => {
     const epic = {
         key: 'PLAN-I1', summary: 'Initiative', status: { id: '1', name: 'To Do' }, priority: null, assignee: null,

@@ -178,7 +178,7 @@ def _story_readiness_effective_groups(context):
     db_context = context if is_db_auth_context(context) else None
     return shared_group_config.load_effective_groups(
         db_context,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        fallback_loader=None,
         validate_groups_config_fn=validate_groups_config,
         dashboard_loader=load_dashboard_config,
         groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
@@ -200,7 +200,7 @@ def _story_readiness_dashboard_snapshot(context, *, fresh=False):
     if fresh and is_db_auth_context(context):
         return build_db_config_repository().load_dashboard_config_snapshot(
             context,
-            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            fallback_loader=None,
             legacy_site_url=JIRA_URL or '',
         )
     return load_dashboard_config_snapshot()
@@ -247,6 +247,7 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
         'id': group_id,
         'revision': int(groups.get('configRevision') or 0),
         'teams': teams,
+        'allocationTypes': allocation_classification.department_allocation_types(match),
     }
 
 
@@ -576,7 +577,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 'projectTrack': _story_readiness_project_track(fields.get(track_field)),
                 'projectKey': project_key,
                 'projectClass': allocation_classification.classify_initiative(
-                    fields.get(allocation_field) if allocation_field else None, roles.allocation_types,
+                    fields.get(allocation_field) if allocation_field else None, group_snapshot.get('allocationTypes') or (),
                 ) if new_model else project_map.get(project_key, ''),
                 'initiative': initiative,
             })

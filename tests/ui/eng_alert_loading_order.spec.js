@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const screenshotDir = path.join(__dirname, '..', '..', 'tmp', 'eng-alert-navigation');
@@ -22,7 +23,8 @@ function taskPayload(project, { alert = false, label = '' } = {}) {
     const epicKey = `${prefix}-EPIC`;
     return {
         issues: [{
-            id: `${prefix}-1`,
+            // Planning plans real Jira issues by numeric id (#331).
+            id: project === 'tech' ? '9101' : '9001',
             key: `${prefix}-1`,
             fields: {
                 summary: `${label}${project} visible story`,
@@ -82,6 +84,7 @@ async function installFixture(page, {
     sprintGate = null,
 } = {}) {
     const calls = [];
+    const review = createPlanningReviewMock();
     const alertSourceCounts = new Map();
     await installDashboardShell(page);
     page.on('requestfailed', request => {
@@ -247,6 +250,9 @@ async function installFixture(page, {
         }
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacities: {} });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        // The shared Planning review (#331): no saved plan yet.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) return json(review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         return json({});
     });
     return calls;
@@ -263,7 +269,7 @@ async function seedMode(page, mode) {
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -438,6 +444,8 @@ test('Planning mutation re-arms deferred alerts for the next Catch Up entry', as
 
     await selectEngMode(page, 'Planning');
     await page.getByRole('button', { name: 'Select All' }).click();
+    // Planning is the Table only (#323): its Story rows carry the pill.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     const statusTrigger = page.locator('[data-status-transition-trigger][data-issue-kind="story"][data-issue-key="PROD-1"]');
     await statusTrigger.click();
     await page.locator('.status-transition-menu[data-issue-key="PROD-1"]')

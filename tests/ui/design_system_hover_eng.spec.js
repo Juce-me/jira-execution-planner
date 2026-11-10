@@ -2,7 +2,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { mockDashboard, appBaseUrl, catchUpPrefs, groupsConfigPayload } = require('./eng_epic_refresh_fixture');
-const { hoverEvidence, evidenceDir, contrast } = require('./design_system_hover_helpers');
+const { hoverEvidence, evidenceDir } = require('./design_system_hover_helpers');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 test.use({ viewport: { width: 1400, height: 1000 }, reducedMotion: 'reduce',
     deviceScaleFactor: async ({browserName},use)=>use(browserName==='chromium'?1:2),
@@ -16,14 +17,14 @@ async function openSurface(page, mode, {canEdit=true,canSave=true,reviewLayouts=
     ctx.respond('/api/groups-config', ({ json }) => json({ ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, excludedCapacityEpics:canEdit?(excludedCapacityEpics||group.excludedCapacityEpics):['EPIC-3'], board: { columns: [{ id:'todo', name:'To do', colour:'#597ef7', star:true, statuses:['To Do','In Progress'], min:null, max:null }, { id:'done', name:'Done', colour:'#52c41a', star:false, statuses:['Done'], min:null, max:null }] } })) }));
     ctx.respond('/api/dependencies', ({ json }) => json({ dependencies: { 'E1-S01': [{ key:'E2-S01', category:'block', direction:'inward', dependentKey:'E1-S01', prereqKey:'E2-S01', status:'To Do' }] } }));
     ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/, ({ json }) => json({schemaRevision:1, columns:[], layouts:reviewLayouts, capabilities:{canRead:true,canSave},cells:[]}));
-    await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), catchUpPrefs({ showPlanning:mode.startsWith('planning'), planningLayout:mode==='planning-table'?'table':'list', showBoard:mode==='board' }));
+    await page.addInitScript(value => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(value)), catchUpPrefs({ showPlanning:mode.startsWith('planning'), showBoard:mode==='board' }));
     if(beforeNavigate) beforeNavigate(ctx);
     await page.goto(appBaseUrl, { waitUntil:'networkidle' });
     await expect(page.locator('.container')).toBeVisible();
     await page.addStyleTag({content:'* { animation: none !important; }'});
     return ctx;
 }
-for (const mode of ['catch-up','planning-list','planning-table','board']) {
+for (const mode of ['catch-up','planning-table','board']) {
     test(`${mode} real controls retain geometry, fills, contrast and click reachability`, async ({page}, testInfo) => {
         await openSurface(page,mode);
         testInfo.setTimeout(60000);
@@ -85,12 +86,8 @@ for (const mode of ['catch-up','planning-list','planning-table','board']) {
         await hoverEvidence(page,option,testInfo,`${mode}-menu-option`,{rowTint:true,unchangedFill:false});
         await option.click(); await expect(menu).toHaveCount(0);
         const submit=page.locator('.dependency-count').first();
-        if(mode==='catch-up'||mode==='planning-list') await expect(submit).toBeVisible();
+        if(mode==='catch-up') await expect(submit).toBeVisible();
         if(await submit.count()) await hoverEvidence(page,submit,testInfo,`${mode}-dependency`,{pill:true,clipped:true,unchangedFill:false});
-        if(mode==='planning-list') {
-            const capacity=page.locator('.epic-stat-toggle').first(); await expect(capacity).toBeVisible();
-            await hoverEvidence(page,capacity,testInfo,`${mode}-selected-capacity`,{pill:true});
-        }
     });
 }
 
@@ -141,9 +138,10 @@ test('mounted Catch Up passive alert row retains its resting border and surface'
 });
 
 
+
 // A saved synthetic layout exposes the existing optional Capacity column without
 // granting settings rights or changing the mounted control's disabled attribute.
-test('read-only Planning Table capacity and empty Planning List Clear Selected have no hover delta',async({page},testInfo)=>{
+test('read-only Planning Table capacity, overview row and status toggles have no hover delta',async({page},testInfo)=>{
     testInfo.setTimeout(60000);
     await openSurface(page,'planning-table',{canEdit:false,canSave:false,reviewLayouts:{epic:{hidden:[]}}});
     const capacity=page.locator('.planning-review-capacity .epic-stat-toggle').first();
@@ -158,13 +156,18 @@ test('read-only Planning Table capacity and empty Planning List Clear Selected h
     const columnMenu=page.getByRole('button',{name:'Key column options',exact:true});
     await expect(columnMenu).toBeDisabled();
     await hoverEvidence(page,columnMenu,testInfo,'planning-table-disabled-column-menu',{disabled:true,restTarget:page.getByRole('button',{name:'Key',exact:true})});
-    await page.getByRole('button',{name:'Show Planning list',exact:true}).click();
-    const clear=page.getByRole('button',{name:'Clear Selected',exact:true});
-    await expect(clear).toBeVisible(); await expect(clear).toBeDisabled();
-    await hoverEvidence(page,clear,testInfo,'planning-list-disabled-clear',{disabled:true});
-    for(const name of ['Undo','Postponed','Awaiting Val.']){
-        const action=page.getByRole('button',{name,exact:true});await expect(action).toBeDisabled();
-        await hoverEvidence(page,action,testInfo,`planning-list-disabled-${name}`,{disabled:true});
+    // The overview row (2026-11-06): without a saving profile the inclusion controls and status toggles are disabled.
+    const panel=page.locator('.planning-panel');
+    for(const name of ['Clear Selection','Undo']){
+        const action=panel.getByRole('button',{name,exact:true});await expect(action).toBeDisabled();
+        await hoverEvidence(page,action,testInfo,`planning-table-disabled-${name}`,{disabled:true});
+    }
+    await panel.getByRole('button',{name:'Include by status',exact:true}).click();
+    const toggles=page.getByRole('dialog',{name:'Include by status',exact:true}).locator('button.planning-action-button');
+    await expect(toggles).toHaveCount(4);
+    for(const [index,toggle] of (await toggles.all()).entries()){
+        await expect(toggle).toBeDisabled();
+        await hoverEvidence(page,toggle,testInfo,`planning-table-disabled-status-${index}`,{disabled:true});
     }
 });
 
@@ -219,7 +222,7 @@ test('mounted pinned-column menu keeps its locked move action unchanged on hover
     await expect(page.getByRole('dialog',{name:'Status column options',exact:true})).toHaveCount(0);
 });
 
-for (const mode of ['catch-up','planning-list','planning-table','board']) {
+for (const mode of ['catch-up','planning-table','board']) {
     test(`${mode} mounted filter actions use rings, circles, underlines and unframed option rows`,async({page},testInfo)=>{
         testInfo.setTimeout(90000);
         await openSurface(page,mode);
@@ -283,25 +286,27 @@ test('mounted dirty Planning Table Save keeps its dark fill and disabled saving 
     testInfo.setTimeout(60000);
     const ctx=await openSurface(page,'planning-table');
     let release;const hold=new Promise(resolve=>{release=resolve;});
-    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/,async({call,json})=>{
+    // The shared Planning review answers with its plan (#331), so the layout draft saves through Save plan.
+    const review=createPlanningReviewMock();
+    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/,async({route,call,json})=>{
         if(call.method==='PATCH') await hold;
         const layouts={};
         for(const change of call.body?.schemaChanges||[]) if(change.action==='layout') layouts[change.rowKind]={order:change.order,hidden:change.hidden};
-        return json({schemaRevision:call.method==='PATCH'?2:1,columns:[],layouts,capabilities:{canRead:true,canSave:true},cells:[]});
+        return json(review.response(route.request(),{schemaRevision:call.method==='PATCH'?2:1,columns:[],layouts,capabilities:{canRead:true,canSave:true},cells:[]}));
     });
     await page.getByRole('button',{name:'Priority column options',exact:true}).click();
     const hide=page.getByRole('dialog',{name:'Priority column options',exact:true}).getByRole('button',{name:'Hide column',exact:true});
     await hoverEvidence(page,hide,testInfo,'planning-table-hide-option',{rowTint:true,unchangedFill:false});
     await hide.click();
-    const save=page.getByRole('button',{name:'Save review',exact:true});
+    const save=page.getByRole('button',{name:'Save plan',exact:true});
     await expect(save).toBeEnabled();
     await hoverEvidence(page,save,testInfo,'planning-table-primary-save',{foundation:true});
-    await hoverEvidence(page,page.getByRole('button',{name:'Discard',exact:true}),testInfo,'planning-table-discard',{foundation:true});
+    await hoverEvidence(page,page.getByRole('button',{name:'Discard changes',exact:true}),testInfo,'planning-table-discard',{foundation:true});
     await save.click();
     try {
         await expect(save).toBeDisabled();
         await hoverEvidence(page,save,testInfo,'planning-table-disabled-saving-primary',{disabled:true});
-        await hoverEvidence(page,page.getByRole('button',{name:'Discard',exact:true}),testInfo,'planning-table-disabled-saving-discard',{disabled:true});
+        await hoverEvidence(page,page.getByRole('button',{name:'Discard changes',exact:true}),testInfo,'planning-table-disabled-saving-discard',{disabled:true});
     }finally{release();}
     await expect(save).toHaveCount(0);
 });
@@ -325,7 +330,7 @@ test.describe('touch filter fallback',()=>{
     });
 });
 
-for(const mode of ['catch-up','planning-list','board']) {
+for(const mode of ['catch-up','board']) {
     test(`${mode} mounted issue icons, links and passive rows use their registered treatment`,async({page},testInfo)=>{
         testInfo.setTimeout(90000);
         await openSurface(page,mode);
@@ -476,29 +481,18 @@ test.describe('touch issue actions',()=>{
     });
 });
 
-for(const mode of ['planning-list','planning-table']) test(`${mode} Planning ownership controls retain their kinds and geometry`,async({page},testInfo)=>{
+for(const mode of ['planning-table']) test(`${mode} Planning ownership controls retain their kinds and geometry`,async({page},testInfo)=>{
     testInfo.setTimeout(120000);
     await openSurface(page,mode,{reviewLayouts:{epic:{hidden:[]}},excludedCapacityEpics:['EPIC-3']});
-    const layout=page.locator('.planning-layout-toggle:visible').first();
-    await hoverEvidence(page,layout,testInfo,`${mode}-layout`,mode==='planning-table'?{pill:true,selected:true,iconOnly:true}:{foundation:true});
-    expect(await layout.evaluate(node=>getComputedStyle(node).backgroundImage)).toBe('none');
-    if(mode==='planning-list') {
-        const jira=page.getByRole('button',{name:'Open selected stories in Jira',exact:true});
-        await hoverEvidence(page,jira,testInfo,'planning-list-disabled-jira',{disabled:true});
-        await hoverEvidence(page,page.locator('.task-checkbox').first(),testInfo,'planning-list-task-checkbox',{pill:true});
-        const accepted=page.getByRole('button',{name:'Accepted',exact:true});
-        await hoverEvidence(page,accepted,testInfo,'planning-list-unselected-accepted',{foundation:true});
-        await accepted.click();
-        await expect(accepted).toHaveClass(/active/);
-        await hoverEvidence(page,accepted,testInfo,'planning-list-selected-accepted',{pill:true,selected:true,semanticHover:{color:'rgb(56, 158, 13)',background:'rgb(246, 255, 237)'}});
-        const all=page.getByRole('button',{name:'Select All',exact:true});
-        await hoverEvidence(page,all,testInfo,'planning-list-select-all',{foundation:true});
-        await all.click();
-        await expect(jira).toBeEnabled();
-        await hoverEvidence(page,jira,testInfo,'planning-list-framed-jira',{foundation:true});
-        expect(await jira.evaluate(node=>getComputedStyle(node).backgroundImage)).toBe('none');
-        await hoverEvidence(page,page.getByRole('button',{name:'Clear Selected',exact:true}),testInfo,'planning-list-clear-selected',{foundation:true});
-    } else {
+    // The overview row replaces the Planning options menu and the List toggle (2026-11-06): framed direct buttons.
+    const rowControls=['Include by status',...(mode==='planning-table'?['Show capacity details']:[])];
+    for(const name of rowControls){
+        const control=page.locator('.planning-panel').getByRole('button',{name,exact:true});
+        await hoverEvidence(page,control,testInfo,`${mode}-${name}`,{foundation:true});
+        expect(await control.evaluate(node=>getComputedStyle(node).backgroundImage)).toBe('none');
+    }
+    await expect(page.locator('.planning-layout-toggle')).toHaveCount(0);
+    {
         const rowKind=page.getByRole('radiogroup',{name:'Planning review rows'}).getByRole('radio',{checked:true});
         await hoverEvidence(page,rowKind,testInfo,'planning-table-selected-row-kind',{pill:true,selected:true,ringPseudo:true});
         const heading=page.getByRole('button',{name:'Status',exact:true});
@@ -541,10 +535,12 @@ for(const mode of ['planning-list','planning-table']) test(`${mode} Planning own
 
 test('Planning capacity rail icons and inline fields retain reveal and edit geometry',async({page},testInfo)=>{
     testInfo.setTimeout(90000);
-    await openSurface(page,'planning-list',{beforeNavigate:ctx=>{
+    // Planning has no List toggle (2026-11-06): open Table and its capacity details directly.
+    await openSurface(page,'planning-table',{beforeNavigate:ctx=>{
         ctx.respond('/api/config',({json})=>json({jiraUrl:'https://jira.example',capacityProject:'CAP',authMode:'atlassian_oauth',projectsConfigured:true,userCanEditSettings:true,environmentConfigExists:true}));
         ctx.respond('/api/capacity',({json})=>json({enabled:true,mutationEnabled:true,sprint:'2026Q2 Sprint 42',capacities:{'Alpha Team':5.5,'Beta Team':3},entries:[{teamName:'Alpha Team',issueKey:'CAP-101',capacity:5.5},{teamName:'Beta Team',issueKey:'CAP-102',capacity:3}]}));
     }});
+    await page.locator('.planning-panel').getByRole('button',{name:'Show capacity details',exact:true}).click();
     const card=page.locator('.planning-team-capacity-cards .team-stat-card').filter({has:page.locator('.team-stat-label',{hasText:'Alpha Team'})});
     await expect(card).toBeVisible();await card.hover();
     const pencil=page.getByRole('button',{name:'Edit Alpha Team capacity',exact:true});
@@ -560,7 +556,6 @@ test('Planning capacity rail icons and inline fields retain reveal and edit geom
     await hoverEvidence(page,page.getByRole('button',{name:'Cancel Alpha Team capacity edit',exact:true}),testInfo,'planning-capacity-cancel',{foundation:true});
     await page.getByRole('button',{name:'Cancel Alpha Team capacity edit',exact:true}).click();
     await page.screenshot({path:path.join(evidenceDir(testInfo),'planning-capacity-rail.png'),animations:'disabled'});
-    await page.getByRole('button',{name:'Show Planning table',exact:true}).click();
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const person=page.locator('input.issue-person-editor-trigger').first();
     await page.addStyleTag({content:'html {scroll-behavior:auto!important;} * {transition:none!important;}'});
@@ -591,7 +586,7 @@ test('Planning Table shared summary recovery action uses ordinary feedback',asyn
 });
 
 
-for (const mode of ['catch-up','planning-list','planning-table','board']) test(`${mode} Stats-owned capacity has its actual mounted contract`,async({page},testInfo)=>{
+for (const mode of ['catch-up','planning-table','board']) test(`${mode} Stats-owned capacity has its actual mounted contract`,async({page},testInfo)=>{
     await openSurface(page,mode,{reviewLayouts:{epic:{hidden:[]}},excludedCapacityEpics:['EPIC-3']});
     if(mode==='catch-up'||mode==='board') {
         await expect(page.locator('.epic-stat-toggle:visible')).toHaveCount(0);
@@ -601,31 +596,7 @@ for (const mode of ['catch-up','planning-list','planning-table','board']) test(`
     const excluded=page.locator('.epic-stat-toggle:not(.active):visible').first();
     await hoverEvidence(page,included,testInfo,`${mode}-stats-owned-included`,{pill:true,selected:true,clipped:mode==='planning-table'});
     fs.writeFileSync(path.join(evidenceDir(testInfo),`${mode}-excluded-ancestor-opacity.json`),JSON.stringify(await excluded.evaluate(node=>{const chain=[]; for(let p=node;p;p=p.parentElement) {const style=getComputedStyle(p); chain.push({className:p.className,opacity:style.opacity,fill:style.backgroundColor,color:style.color});} return chain;}),null,2));
-    if(mode==='planning-table') {
-        await hoverEvidence(page,excluded,testInfo,`${mode}-stats-owned-excluded`,{pill:true,clipped:true});
-    } else {
-        // Exact pre-existing excluded-Epic opacity debt: preserve it, while every
-        // ordinary control retains the strict general ring/readability checks.
-        const evidence=await hoverEvidence(page,excluded,testInfo,`${mode}-stats-owned-excluded`);
-        expect(evidence.hover.shadow).toBe('rgb(47, 128, 237) 0px 0px 0px 1px, rgba(47, 128, 237, 0.25) 0px 0px 0px 3px');
-        expect(evidence.hover.filter).toBe('brightness(0.94)');
-        expect(evidence.hover.color).toBe('rgb(102, 102, 102)');
-        expect(evidence.hover.background).toBe('rgb(255, 255, 255)');
-        expect(await excluded.locator('xpath=ancestor::*[contains(@class,"epic-excluded")]').evaluate(node=>getComputedStyle(node).opacity)).toBe('0.55');
-        expect(await page.locator('body').evaluate(node=>getComputedStyle(node).backgroundColor)).toBe('rgb(248, 247, 244)');
-        const box=evidence.hover.box;
-        const png=await page.screenshot({clip:{x:box[0]-3,y:box[1]-3,width:box[2]+6,height:box[3]+6},animations:'disabled'});
-        const samples=await page.evaluate(async data=>{
-            const img=new Image();img.src=data;await img.decode();const canvas=document.createElement('canvas');canvas.width=img.width;canvas.height=img.height;const ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data;
-            const counts={ink:0,fill:0,ring:0};
-            for(let i=0;i<pixels.length;i+=4)for(const [key,rgb] of Object.entries({ink:[164,163,162],fill:[244,243,242],ring:[136,177,232]}))if(rgb.every((value,index)=>Math.abs(pixels[i+index]-value)<=1))counts[key]++;
-            return counts;
-        },'data:image/png;base64,'+png.toString('base64'));
-        expect(samples.ink).toBeGreaterThan(4); expect(samples.fill).toBeGreaterThan(4); expect(samples.ring).toBeGreaterThan(4);
-        expect(contrast([164,163,162],[244,243,242])).toBeCloseTo(2.272307781750222,8);
-        expect(contrast([136,177,232],[248,247,244])).toBeCloseTo(2.063155996174732,8);
-        fs.writeFileSync(path.join(evidenceDir(testInfo),'planning-list-excluded-composed-paint.json'),JSON.stringify({samples,textContrast:contrast([164,163,162],[244,243,242]),ringContrast:contrast([136,177,232],[248,247,244])},null,2));
-    }
+    await hoverEvidence(page,excluded,testInfo,`${mode}-stats-owned-excluded`,{pill:true,clipped:true});
 });
 
 test('Planning Table Stats-owned disclosure preserves collapsed and expanded text geometry',async({page},testInfo)=>{

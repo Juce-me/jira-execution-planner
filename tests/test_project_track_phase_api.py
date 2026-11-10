@@ -8,7 +8,7 @@ from jira_server import (
     parse_jira_datetime,
     parse_track_transitions,
 )
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session
 
 
 class FakeResponse:
@@ -115,19 +115,9 @@ class TrackPhaseDurationRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
 
     def _issue_response(self, key, *, created, track_value, histories, total=None):
         changelog = {'histories': histories}

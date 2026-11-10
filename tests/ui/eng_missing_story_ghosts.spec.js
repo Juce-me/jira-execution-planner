@@ -98,7 +98,7 @@ async function installFixture(page, {
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: sprintId,
         sprintName,
         activeGroupId: 'grp-default',
@@ -343,7 +343,14 @@ test('Planning requests readiness without starting Catch Up alert sources', asyn
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-    await expect(page.locator('.story-requirement-card')).toBeVisible();
+    // Planning is the Table only (#323): the readiness-only Epic row carries its awaited requirement, and the Story rows
+    // show the requirement as its awaiting-creation placeholder.
+    const epicRow = page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'ZERO-EPIC', exact: true }) });
+    await expect(epicRow).toHaveCount(1);
+    await expect(epicRow.locator('.planning-review-awaiting')).toBeVisible();
+    await expect(epicRow.locator('.planning-review-awaiting')).toContainText('1 Story awaited');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(page.locator('.planning-review-table tbody tr').filter({ hasText: 'awaiting creation' }).filter({ has: page.locator('a[href$="/browse/ZERO-EPIC"]') })).toHaveCount(1);
     await waitForCall(calls, '/api/eng/story-readiness');
     expect(calls.filter(call => (
         call.pathname === '/api/missing-info'
@@ -424,7 +431,7 @@ test('Back to top stays above page content throughout scrolling', async ({ page 
 for (const sprintState of ['active', 'future']) {
     test(`${sprintState} requirement is an external Jira link with the matching urgency`, async ({ page }) => {
         await installFixture(page, {
-            mode: 'planning',
+            mode: 'catchUp',
             sprintState,
             readinessEpics: [readinessEpic('ZERO-EPIC')],
         });
@@ -447,7 +454,7 @@ for (const sprintState of ['active', 'future']) {
 test('no-story Epics are dotted directly and inside Initiative grouping while mixed Epics are not', async ({ page }) => {
     const initiative = { key: 'INIT-1', summary: 'Checkout initiative' };
     await installFixture(page, {
-        mode: 'planning',
+        mode: 'catchUp',
         groupByInitiativeChoice: true,
         productIssues: [story()],
         productEpics: { 'MIX-EPIC': productEpic() },
@@ -486,30 +493,9 @@ test('no-story Epics are dotted directly and inside Initiative grouping while mi
     await expect(mixed).not.toHaveCSS('border-top-style', 'dotted');
 });
 
-test('Planning puts requirement rows and requirement-bearing Epics first', async ({ page }) => {
-    await installFixture(page, {
-        mode: 'planning',
-        productIssues: [story()],
-        productEpics: { 'MIX-EPIC': productEpic() },
-        readinessEpics: [
-            readinessEpic('ZERO-EPIC'),
-            readinessEpic('MIX-EPIC', { reason: 'team_uncovered' }),
-        ],
-    });
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-
-    const mixedRows = page.locator('.epic-block[data-epic-key="MIX-EPIC"] > .story-requirement-card, .epic-block[data-epic-key="MIX-EPIC"] > .task-item');
-    await expect(mixedRows).toHaveCount(2);
-    await expect(mixedRows.nth(0)).toHaveClass(/story-requirement-card/);
-    await expect(mixedRows.nth(1)).toHaveClass(/task-item/);
-    await expect(page.locator('.epic-block').first()).toContainText('Story required');
-    await expect(page.locator('.eng-empty-results')).toHaveCount(0);
-    await expect(page.getByText(/1 story · 2 required/i)).toBeVisible();
-});
-
 test('a ghost-only hierarchy is a non-empty ENG result', async ({ page }) => {
     await installFixture(page, {
-        mode: 'planning',
+        mode: 'catchUp',
         readinessEpics: [readinessEpic('ZERO-EPIC')],
     });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
@@ -521,7 +507,7 @@ test('a ghost-only hierarchy is a non-empty ENG result', async ({ page }) => {
 
 test('keyboard activation and narrow layout preserve native link behavior and containment', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 760 });
-    await installFixture(page, { mode: 'planning', readinessEpics: [readinessEpic('ZERO-EPIC')] });
+    await installFixture(page, { mode: 'catchUp', readinessEpics: [readinessEpic('ZERO-EPIC')] });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
     const card = page.locator('.story-requirement-card');
@@ -725,9 +711,14 @@ for (const mode of ['catchUp', 'planning']) {
             readinessEpics: [readinessEpic('MIX-EPIC'), readinessEpic('UNCOVERED-EPIC')],
         });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-        await expect(page.locator('.story-requirement-card[data-epic-key="UNCOVERED-EPIC"]')).toHaveCount(1);
+        // Planning is the Table only (#323): its requirement is the awaiting-creation placeholder row under the Epic.
+        const requirement = epicKey => mode === 'planning'
+            ? page.locator('.planning-review-table tbody tr').filter({ hasText: 'awaiting creation' }).filter({ has: page.locator(`a[href$="/browse/${epicKey}"]`) })
+            : page.locator(`.story-requirement-card[data-epic-key="${epicKey}"]`);
+        if (mode === 'planning') await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+        await expect(requirement('UNCOVERED-EPIC')).toHaveCount(1);
         await page.screenshot({ path: testInfo.outputPath('completed-quarter-readiness.png'), animations: 'disabled' });
-        await expect(page.locator('.story-requirement-card[data-epic-key="MIX-EPIC"]')).toHaveCount(0);
+        await expect(requirement('MIX-EPIC')).toHaveCount(0);
         if (mode === 'catchUp') {
             const alerts = page.locator('#eng-alert-needs-stories');
             await expect(alerts).toContainText('UNCOVERED-EPIC');

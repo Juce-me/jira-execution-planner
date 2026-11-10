@@ -6,7 +6,7 @@ import { strictEngBoardViewProps } from '../frontend/src/eng/useStrictEngBoardIn
 test('selector scheduling keeps requested scope suppression separate from ready owner activation', () => {
     const source = fs.readFileSync(new URL('../frontend/src/dashboard.jsx', import.meta.url), 'utf8');
     assert.match(source, /const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';/);
-    assert.match(source, /if \(boardScopeRequested\) return;/);
+    assert.match(source, /const recoveringPlan = Boolean\(pendingPlanningAuthResumeRef\.current\);\s*if \(!recoveringPlan && \(selectedView !== 'eng' \|\| isStatsSourceOnlyStatsView \|\| boardScopeRequested\)\) return;/);
     assert.match(source, /strictBoardActive: boardScopeRequested,/);
     assert.match(source, /useStrictEngBoardOwner\(\{ active: strictBoardOwnerActive,/);
     assert.match(source, /groupRevision: acceptedStrictBoardRevision,/);
@@ -99,4 +99,16 @@ test("retainPendingBoardPatches keeps a pending Epic's patch and drops a settled
 test('strict Board owner refresh retains pending patches instead of clearing all', () => {
     const source = fs.readFileSync(new URL('../frontend/src/eng/useStrictEngBoardIntegration.js', import.meta.url), 'utf8');
     assert.match(source, /options\?\.source !== 'automatic'\) setIssuePatchesByKey\(previous => retainPendingBoardPatches\(previous, freshnessBridge\?\.current\?\.pendingKeys\?\.\(\) \?\? new Set\(\)\)\);/);
+});
+
+
+test('Department Allocation Board errors give setup guidance without configuration values', () => {
+    for (const [code, expected] of [
+        ['board_scope_model_mismatch', 'This Board scope is unavailable for the viewed quarter. Choose a Sprint or the available Board scope.'],
+        ['board_allocations_required', 'Add Allocation values in Department settings, then retry.'],
+        ['board_allocation_field_required', 'Ask a workspace tool administrator to configure the Initiative Allocation field, then retry.'],
+    ]) {
+        const props = strictEngBoardViewProps({ active: true, owner: { data: { status: 'error', error: { code }, retry() {} } }, model: { columns: [], authoritative: false, stale: false } });
+        assert.equal(props.error, expected);
+    }
 });

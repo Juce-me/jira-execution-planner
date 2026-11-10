@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from contextlib import ExitStack
 from copy import deepcopy
@@ -16,12 +14,12 @@ from backend.db import models
 from backend.services import work_structure as ws
 from backend.services import workspace_dashboard_config as storage
 from scripts import check_work_configuration_rollback as rollback
+from tests.postgres_test_db import drop_database, fresh_database_url
 
 
 class StorageHarness(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'work.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         engine = create_engine(self.database_url, future=True)
         models.Base.metadata.create_all(engine)
         self.factory = sessionmaker(bind=engine, future=True, expire_on_commit=False)
@@ -42,7 +40,6 @@ class StorageHarness(unittest.TestCase):
 
     def tearDown(self):
         self.engine.dispose()
-        self.tmpdir.cleanup()
 
     def seed(self, payload, revision=4, **columns):
         with self.factory() as session:
@@ -187,6 +184,56 @@ class NoAmbientReadTests(StorageHarness):
         self.assertFalse(envelope['promoted'])
         self.assertEqual(envelope['workConfigurations']['configurations'][0]['scope']['projects'],
                          [{'key': 'OLD', 'type': 'tech'}])
+
+
+class DepartmentAllocationOwnershipTests(StorageHarness):
+    def test_first_promotion_rejects_admin_mapping_edits(self):
+        self.seed(FLAT)
+        before = self.envelope()
+        draft = deepcopy(before['workConfigurations'])
+        draft['configurations'][1]['allocationTypes'] = [{'value': 'Growth', 'type': 'product'}]
+        error = self.expect_error('allocation_mapping_department_owned',
+                                  lambda: self.save(draft, before['configRevision'], legacy_edits=[]), 400)
+        self.assertEqual(error.response()[0], {
+            'error': 'allocation_mapping_department_owned', 'status': 'error',
+            'message': 'Configure Allocation values in Department settings.'})
+        self.assertEqual(self.envelope(), before)
+
+    def test_first_promotion_preserves_omitted_history_and_rejects_explicit_clear(self):
+        history = [{'value': 'Growth', 'type': 'product'}]
+        seed = ws.capture_virtual_bundle(FLAT)
+        seed['configurations'][1]['allocationTypes'] = history
+        self.seed({**deepcopy(FLAT), 'workConfigurations': seed})
+        before = self.envelope()
+        draft = deepcopy(before['workConfigurations'])
+        self.expect_error('allocation_mapping_department_owned',
+                          lambda: self.save(draft, before['configRevision'], legacy_edits=[]), 400)
+        self.assertEqual(self.envelope(), before)
+        del draft['configurations'][1]['allocationTypes']
+        saved = self.save(draft, before['configRevision'], legacy_edits=[])
+        self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+
+    def test_old_global_map_is_preserved_on_echo_and_omission_but_not_edit_or_clear(self):
+        history = [{'value': 'Growth', 'type': 'product'}]
+        seed = ws.capture_virtual_bundle(FLAT)
+        seed['configurations'][1]['allocationTypes'] = history
+        self.seed({**deepcopy(FLAT), 'workConfigurations': seed})
+        for promoted in (False, True):
+            before = self.envelope()
+            draft = deepcopy(before['workConfigurations'])
+            draft['configurations'][1]['allocationTypes'] = history
+            saved = self.save(draft, before['configRevision'], **({} if promoted else {'legacy_edits': []}))
+            self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+            draft = deepcopy(saved['workConfigurations'])
+            del draft['configurations'][1]['allocationTypes']
+            saved = self.save(draft, saved['configRevision'])
+            self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+            for mapping in ([], [{'value': 'Growth', 'type': 'tech'}]):
+                draft = deepcopy(saved['workConfigurations'])
+                draft['configurations'][1]['allocationTypes'] = mapping
+                self.expect_error('allocation_mapping_department_owned',
+                                  lambda: self.save(draft, saved['configRevision']), 400)
+            self.assertEqual(self.envelope()['workConfigurations']['configurations'][1]['allocationTypes'], history)
 
 
 class FirstSaveTests(StorageHarness):
@@ -680,8 +727,10 @@ class RollbackCheckerTests(StorageHarness):
         self.assertEqual(rollback.main(['--workspace-id', 'workspace-2'], database_url=self.database_url), 0)
 
     def test_unavailable_database_reports_two_without_details(self):
+        missing = fresh_database_url()
+        drop_database(missing)
         with mock.patch('sys.stderr'):
-            self.assertEqual(rollback.main(['--workspace-id', 'w'], database_url='sqlite+pysqlite:////nonexistent-dir/x.db'), 2)
+            self.assertEqual(rollback.main(['--workspace-id', 'w'], database_url=missing), 2)
 
 
 class PrivateViewOwnershipTests(unittest.TestCase):

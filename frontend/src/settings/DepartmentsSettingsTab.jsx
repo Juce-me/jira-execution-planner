@@ -96,6 +96,7 @@ export default function DepartmentsSettingsTab({
     returnFromFirstRunConfigurationRecovery,
     savedBoardId,
     savedSelectedProjects,
+    savedWorkConfigurations,
     scheduleJiraLabelSearch,
     selectDepartmentSettingsTab,
     selectTeamLabel,
@@ -103,6 +104,7 @@ export default function DepartmentsSettingsTab({
     setComponentSearchOpen,
     setComponentSearchQuery,
     setFavoriteGroupDraft,
+    setGroupDraft,
     setGroupImportText,
     setGroupSearchQuery,
     setLabelAddOpen,
@@ -194,6 +196,9 @@ export default function DepartmentsSettingsTab({
         >
         <TeamGroupsSettings
             {...{
+                BACKEND_URL,
+                savedWorkConfigurations,
+                setGroupDraft,
                 workModel,
                 groupManageTab,
                 showGroupListMobile,

@@ -6,6 +6,51 @@ Epic and Objective values are ignored.
 """
 
 
+import hashlib
+import json
+
+
+ALLOCATION_TYPES = ('product', 'tech')
+ALLOCATION_TYPES_MAX = 200
+
+
+def normalize_allocation_types(values):
+    """Strict shared Department mapping grammar; no stored global-map fallback."""
+    if not isinstance(values, list):
+        raise ValueError('must be an array.')
+    if len(values) > ALLOCATION_TYPES_MAX:
+        raise ValueError(f'must contain at most {ALLOCATION_TYPES_MAX} values.')
+    result, seen = [], set()
+    for index, item in enumerate(values):
+        prefix = f'[{index}]'
+        if not isinstance(item, dict) or set(item) != {'value', 'type'}:
+            raise ValueError(f'{prefix} must contain exactly value and type.')
+        value = item['value']
+        if (not isinstance(value, str) or not value.strip() or len(value.strip()) > 255
+                or any(ord(char) < 32 or ord(char) == 127 for char in value.strip())):
+            raise ValueError(f'{prefix}.value must be a nonempty string of at most 255 characters.')
+        if item['type'] not in ALLOCATION_TYPES:
+            raise ValueError(f'{prefix}.type must be product or tech.')
+        value = value.strip()
+        if value not in seen:
+            result.append({'value': value, 'type': item['type']})
+            seen.add(value)
+    return result
+
+
+def department_allocation_types(group):
+    """Read only the saved Department mapping; pre-field Departments are explicitly empty."""
+    return normalize_allocation_types((group or {}).get('allocationTypes', []))
+
+
+def department_allocation_digest(group):
+    """Partition classification snapshots by Department identity and effective mapping."""
+    mapping = sorted(department_allocation_types(group), key=lambda item: item['value'])
+    material = {'groupId': str((group or {}).get('id') or ''), 'allocationTypes': mapping}
+    canonical = json.dumps(material, sort_keys=True, separators=(',', ':'), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode('utf-8')).hexdigest()
+
+
 def allocation_value(raw):
     """A Jira option object, string or single-item list as its trimmed ``value`` string, or None."""
     if isinstance(raw, list):

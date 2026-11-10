@@ -1,4 +1,5 @@
 import React from 'react';
+import { groupHasScope } from './groupConfigUtils.js';
 import { isAuthenticationRequiredError } from '../api/authRequired.js';
 
 import { saveGroupPreferences as requestSaveGroupPreferences } from '../api/configApi.js';
@@ -22,10 +23,7 @@ const EMPTY_GROUP_PREFERENCES = {
     activeGroupId: null,
 };
 
-const hasGroupScope = (group) => (
-    (group?.teamIds || []).some(teamId => String(teamId || '').trim())
-    || (group?.missingInfoComponents || []).some(component => String(component || '').trim())
-);
+const hasGroupScope = groupHasScope;
 
 export function useGroupVisibilityPreferences({
     backendUrl,
@@ -54,7 +52,7 @@ export function useGroupVisibilityPreferences({
 
     const firstRunGroupsSignature = React.useMemo(() => (
         (groupsConfig.groups || []).map(group => (
-            `${group.id}:${(group.teamIds || []).map(teamId => String(teamId || '').trim()).filter(Boolean).join(',')}:${(group.missingInfoComponents || []).map(component => String(component || '').trim()).filter(Boolean).join(',')}`
+            `${group.id}:${(group.teamIds || []).map(teamId => String(teamId || '').trim()).filter(Boolean).join(',')}:${(group.missingInfoComponents || []).map(component => String(component || '').trim()).filter(Boolean).join(',')}:${JSON.stringify(group.allocationTypes || [])}`
         )).join('|')
     ), [groupsConfig.groups]);
 
@@ -152,7 +150,7 @@ export function useGroupVisibilityPreferences({
         if (!favoriteGroupDraftId || !visibleGroupDraftIds.includes(favoriteGroupDraftId)) {
             return 'Choose one visible group as your favorite.';
         }
-        return hasGroupScope(favorite) ? '' : 'Configure teams or components before setting this group as your favorite.';
+        return hasGroupScope(favorite) ? '' : 'Configure teams, components or Allocation before setting this group as your favorite.';
     }, [favoriteGroupDraftId, groupDraft?.groups, useBackendPreferences, visibleGroupDraftIds]);
 
     const selectFirstRunFavoriteGroup = React.useCallback((groupId) => {

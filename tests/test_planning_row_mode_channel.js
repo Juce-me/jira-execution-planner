@@ -10,8 +10,16 @@ async function fixture() {
     const table = {
         // `seeded`: a link's rows; a plain mount starts in the Epics default, which is no choice.
         mount(mode = 'epic', { seeded = false } = {}) { channel.publishPlanningRowMode(mode, { setter: table.quiet, chosen: seeded }); },
-        quiet(next) { calls.switches.push(next); channel.publishPlanningRowMode(next, { setter: table.quiet }); },
-        user(next) { channel.publishPlanningRowMode(next, { setter: table.quiet, chosen: true }); },
+        // The table's own mount: the remembered choice seeds the mode as chosen, then the layout effect syncs and publishes.
+        remount({ link = null } = {}) {
+            const remembered = channel.getRememberedPlanningRowMode();
+            const mode = link || remembered || 'epic', chosen = Boolean(link || remembered);
+            channel.syncRememberedPlanningRowMode(mode, chosen);
+            channel.publishPlanningRowMode(mode, { setter: table.quiet, chosen });
+            return mode;
+        },
+        quiet(next) { calls.switches.push(next); channel.syncRememberedPlanningRowMode(next, false); channel.publishPlanningRowMode(next, { setter: table.quiet }); },
+        user(next) { channel.syncRememberedPlanningRowMode(next, true); channel.publishPlanningRowMode(next, { setter: table.quiet, chosen: true }); },
         unmount() { channel.publishPlanningRowMode(null); },
     };
     const sync = channel.createStripRowModeSync({ collapse: () => { calls.collapses += 1; } });
@@ -96,4 +104,56 @@ test('without a mounted table, a header expansion asks nothing; a disconnected s
     disconnect();
     table.mount('epic');
     assert.equal(calls.collapses, 0);
+});
+
+test('a remembered row mode: set, get, clear and reset (#323)', async () => {
+    const { channel } = await fixture();
+    assert.equal(channel.getRememberedPlanningRowMode(), null);
+    channel.rememberPlanningRowMode('story');
+    assert.equal(channel.getRememberedPlanningRowMode(), 'story');
+    channel.rememberPlanningRowMode(null);
+    assert.equal(channel.getRememberedPlanningRowMode(), null);
+    channel.rememberPlanningRowMode('epic');
+    channel.resetPlanningRowModeForTests();
+    assert.equal(channel.getRememberedPlanningRowMode(), null);
+});
+
+test('a chosen mode survives an unmount and remount; a page reload (reset) starts on Epics (#323)', async () => {
+    const { channel, table } = await fixture();
+    table.remount();
+    table.user('story');
+    table.unmount();
+    assert.equal(table.remount(), 'story');
+    assert.equal(channel.getRememberedPlanningRowMode(), 'story');
+    // A link's rows are remembered too.
+    table.unmount(); channel.resetPlanningRowModeForTests();
+    table.remount({ link: 'story' });
+    assert.equal(channel.getRememberedPlanningRowMode(), 'story');
+    // No choice: Epics again after a data reload, nothing remembered.
+    channel.resetPlanningRowModeForTests();
+    table.remount(); table.unmount();
+    assert.equal(table.remount(), 'epic');
+    assert.equal(channel.getRememberedPlanningRowMode(), null);
+});
+
+test('the strip\'s quiet switch clears a differing remembered mode (#323)', async () => {
+    const { channel, table } = await fixture();
+    table.remount(); table.user('epic');
+    assert.equal(channel.getRememberedPlanningRowMode(), 'epic');
+    table.quiet('story');
+    assert.equal(channel.getRememberedPlanningRowMode(), null);
+    table.unmount();
+    assert.equal(table.remount(), 'epic');
+});
+
+test('a remembered Epics collapses an open strip on remount exactly as a chosen Epics does (#323)', async () => {
+    const { calls, table, sync } = await fixture();
+    table.remount(); table.user('epic');
+    sync.setOpen(false);
+    table.unmount();
+    sync.setOpen(true);
+    assert.equal(calls.collapses, 0, 'no table yet');
+    assert.equal(table.remount(), 'epic');
+    assert.equal(calls.collapses, 1);
+    assert.deepEqual(calls.switches, [], 'the remembered rows stay Epics');
 });

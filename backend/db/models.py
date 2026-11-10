@@ -144,7 +144,6 @@ class Workspace(Base):
             'environment_key',
             'jira_cloud_id',
             unique=True,
-            sqlite_where=text('jira_cloud_id IS NOT NULL'),
             postgresql_where=text('jira_cloud_id IS NOT NULL'),
         ),
         Index(
@@ -152,7 +151,6 @@ class Workspace(Base):
             'environment_key',
             'jira_site_url',
             unique=True,
-            sqlite_where=text('jira_site_url IS NOT NULL'),
             postgresql_where=text('jira_site_url IS NOT NULL'),
         ),
     )
@@ -179,7 +177,6 @@ class ViewConfig(Base):
             'workspace_id',
             'owner_user_id',
             unique=True,
-            sqlite_where=text('is_default = 1 AND archived_at IS NULL'),
             postgresql_where=text('is_default IS TRUE AND archived_at IS NULL'),
         ),
         Index(
@@ -189,7 +186,6 @@ class ViewConfig(Base):
             'source_path',
             'source_hash',
             unique=True,
-            sqlite_where=text('source_path IS NOT NULL AND source_hash IS NOT NULL'),
             postgresql_where=text('source_path IS NOT NULL AND source_hash IS NOT NULL'),
         ),
     )
@@ -476,7 +472,6 @@ class ScenarioDraft(Base):
             'workspace_id',
             'scope_key',
             unique=True,
-            sqlite_where=text('archived_at IS NULL'),
             postgresql_where=text('archived_at IS NULL'),
         ),
         Index('ix_scenario_drafts_workspace_updated', 'workspace_id', 'updated_at'),
@@ -595,7 +590,6 @@ class AuthConnection(Base):
             'provider',
             'cloud_id',
             unique=True,
-            sqlite_where=text('cloud_id IS NOT NULL'),
             postgresql_where=text('cloud_id IS NOT NULL'),
         ),
         Index(
@@ -605,7 +599,6 @@ class AuthConnection(Base):
             'provider',
             'site_url',
             unique=True,
-            sqlite_where=text('site_url IS NOT NULL'),
             postgresql_where=text('site_url IS NOT NULL'),
         ),
     )
@@ -647,6 +640,21 @@ class BrowserSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 
+class BrowserCsrfToken(Base):
+    """One outstanding single-use CSRF token (hash only); deleted with its browser session."""
+    __tablename__ = 'browser_csrf_tokens'
+    __table_args__ = (
+        Index('ix_browser_csrf_tokens_session_created', 'browser_session_id', 'created_at'),
+    )
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    browser_session_id: Mapped[str] = mapped_column(
+        ForeignKey('browser_sessions.id', ondelete='CASCADE'),
+        nullable=False,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
 class AuthToken(Base):
     __tablename__ = 'auth_tokens'
     __table_args__ = (
@@ -656,7 +664,6 @@ class AuthToken(Base):
             'connection_id',
             'token_kind',
             unique=True,
-            sqlite_where=text('revoked_at IS NULL'),
             postgresql_where=text('revoked_at IS NULL'),
         ),
     )
@@ -688,7 +695,6 @@ class ServiceIntegration(Base):
             'workspace_id',
             'provider',
             unique=True,
-            sqlite_where=text("status = 'active'"),
             postgresql_where=text("status = 'active'"),
         ),
     )
@@ -716,7 +722,6 @@ class ServiceIntegrationToken(Base):
             'service_integration_id',
             'token_kind',
             unique=True,
-            sqlite_where=text('revoked_at IS NULL'),
             postgresql_where=text('revoked_at IS NULL'),
         ),
     )
@@ -853,9 +858,9 @@ class WorkspaceGroupReviewSchema(Base):
     __table_args__ = (
         CheckConstraint('schema_revision >= 0', name='ck_group_review_schema_revision'),
         Index('uq_group_review_schema_legacy', 'workspace_id', 'group_id', unique=True,
-              postgresql_where=text('configuration_id IS NULL'), sqlite_where=text('configuration_id IS NULL')),
+              postgresql_where=text('configuration_id IS NULL')),
         Index('uq_group_review_schema_configuration', 'workspace_id', 'group_id', 'configuration_id', unique=True,
-              postgresql_where=text('configuration_id IS NOT NULL'), sqlite_where=text('configuration_id IS NOT NULL')),
+              postgresql_where=text('configuration_id IS NOT NULL')),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
@@ -891,12 +896,11 @@ class GroupSprintReviewView(Base):
         CheckConstraint('view_revision >= 1', name='ck_group_sprint_review_view_revision'),
         Index('ix_group_sprint_review_views_order', 'workspace_id', 'group_id', 'sprint_order'),
         Index('uq_group_sprint_review_view_legacy', 'workspace_id', 'group_id', 'sprint_id', unique=True,
-              postgresql_where=text('configuration_id IS NULL'), sqlite_where=text('configuration_id IS NULL')),
+              postgresql_where=text('configuration_id IS NULL')),
         Index('uq_group_sprint_review_view_configuration', 'workspace_id', 'group_id', 'sprint_id', 'configuration_id',
-              unique=True, postgresql_where=text('configuration_id IS NOT NULL'),
-              sqlite_where=text('configuration_id IS NOT NULL')),
+              unique=True, postgresql_where=text('configuration_id IS NOT NULL')),
         Index('ix_group_sprint_review_views_quarter', 'workspace_id', 'group_id', 'configuration_id', 'quarter_ordinal',
-              postgresql_where=text('configuration_id IS NOT NULL'), sqlite_where=text('configuration_id IS NOT NULL')),
+              postgresql_where=text('configuration_id IS NOT NULL')),
     )
     id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
     workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
@@ -933,3 +937,50 @@ class PlanningTeamSprintCapacity(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class GroupSprintPlan(Base):
+    """Exact Department/namespace/Sprint inclusion document; an empty row is initialized."""
+    __tablename__ = 'group_sprint_plans'
+    __table_args__ = (
+        UniqueConstraint('schema_id', 'sprint_id', name='uq_group_sprint_plan'),
+        CheckConstraint('revision >= 1', name='ck_group_sprint_plan_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    schema_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('workspace_group_review_schemas.id', ondelete='CASCADE'), nullable=False)
+    sprint_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow)
+
+
+class GroupSprintPlanEntry(Base):
+    """Immutable issue identity with revisioned desired inclusion, including false tombstones."""
+    __tablename__ = 'group_sprint_plan_entries'
+    __table_args__ = (
+        UniqueConstraint('plan_id', 'issue_id', name='uq_group_sprint_plan_entry'),
+        CheckConstraint('revision >= 1', name='ck_group_sprint_plan_entry_revision'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    plan_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('group_sprint_plans.id', ondelete='CASCADE'), nullable=False)
+    issue_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    included: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PlanningSaveOperation(Base):
+    """Actor-bound bounded acknowledgement, expiring at its operation's immutable timestamp +24h."""
+    __tablename__ = 'planning_save_operations'
+    __table_args__ = (
+        UniqueConstraint('workspace_id', 'actor_user_id', 'operation_id', name='uq_planning_save_operation'),
+        CheckConstraint('length(request_hash) = 64', name='ck_planning_save_operation_hash'),
+        Index('ix_planning_save_operation_expiry', 'actor_user_id', 'plan_id', 'expires_at'),
+    )
+    id: Mapped[str] = mapped_column(Uuid(as_uuid=False), primary_key=True, default=_uuid)
+    workspace_id: Mapped[str] = mapped_column(String(36), ForeignKey('workspaces.id', ondelete='CASCADE'), nullable=False)
+    actor_user_id: Mapped[str] = mapped_column(String(36), ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    operation_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    plan_id: Mapped[str] = mapped_column(Uuid(as_uuid=False), ForeignKey('group_sprint_plans.id', ondelete='CASCADE'), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    acknowledgement: Mapped[dict] = mapped_column(JSON, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

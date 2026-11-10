@@ -1,4 +1,5 @@
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
+import { buildTeamDropdownOptions } from '../teamSelectionUtils.mjs';
 
 export function normalizeCapacityTeamName(name) {
     if (!name) return '';
@@ -24,7 +25,9 @@ export function buildCapacityScopeSignature(sprintName, teamNames = []) {
     return JSON.stringify({ sprintName: String(sprintName || ''), teams });
 }
 
-function resolveUniqueCapacityCandidate(valuesByTeam, teamName) {
+// `exactOnly` (a zero-effort Team) skips the containment fallback; the fallback never takes a candidate whose key is a
+// configured Team's own (`configuredTeamKeys`), so "Core" never borrows "Platform Core"'s ticket or stored number (#323).
+function resolveUniqueCapacityCandidate(valuesByTeam, teamName, { exactOnly = false, configuredTeamKeys = null } = {}) {
     const key = normalizeCapacityKey(teamName);
     if (!key || !valuesByTeam || typeof valuesByTeam !== 'object') {
         return { matched: false, ambiguous: false, value: null };
@@ -41,22 +44,23 @@ function resolveUniqueCapacityCandidate(valuesByTeam, teamName) {
         return { matched: false, ambiguous: true, value: null };
     }
 
-    const candidates = entries.filter(candidate => candidate.key.includes(key) || key.includes(candidate.key));
+    if (exactOnly) return { matched: false, ambiguous: false, value: null };
+    const candidates = entries.filter(candidate => !configuredTeamKeys?.has(candidate.key) && (candidate.key.includes(key) || key.includes(candidate.key)));
     if (candidates.length === 1) {
         return { matched: true, ambiguous: false, value: candidates[0].value };
     }
     return { matched: false, ambiguous: candidates.length > 1, value: null };
 }
 
-export function resolveUniqueCapacityValue(capacityByTeam, teamName) {
-    const resolved = resolveUniqueCapacityCandidate(capacityByTeam, teamName);
+export function resolveUniqueCapacityValue(capacityByTeam, teamName, options) {
+    const resolved = resolveUniqueCapacityCandidate(capacityByTeam, teamName, options);
     return resolved.matched
         ? { matched: true, value: resolved.value }
         : { matched: false, value: null };
 }
 
-export function resolveUniqueCapacityTarget(capacityTargetsByTeam, teamName) {
-    const resolved = resolveUniqueCapacityCandidate(capacityTargetsByTeam, teamName);
+export function resolveUniqueCapacityTarget(capacityTargetsByTeam, teamName, options) {
+    const resolved = resolveUniqueCapacityCandidate(capacityTargetsByTeam, teamName, options);
     if (resolved.matched) return resolved.value;
     return { state: resolved.ambiguous ? 'ambiguous' : 'missing' };
 }
@@ -106,8 +110,9 @@ export function buildCapacityReadState(payload = {}) {
 // displayed team: `noTicket` holds the "no ticket" predicate (no target, not ambiguous, no Jira number: the stored
 // number is editable); `fallback` also covers a matched ticket with a blank value. A fallback team gets its stored number
 // as a finite number under normalizeCapacityKey(team.name) in capacityByTeam only; targets, count and mutation stay Jira's.
+// `matchOptions(teamName)` gives each team's resolver options (see resolveUniqueCapacityCandidate).
 export function resolvePlannedCapacity({
-    capacityState, teamNames = [], plannedCapacityByTeam = null,
+    capacityState, teamNames = [], plannedCapacityByTeam = null, matchOptions = () => undefined,
     capacityEnabled = false, capacityLoading = false, capacityReadError = '', capacityDataStale = false,
 }) {
     const noTicketKeys = new Set();
@@ -116,11 +121,14 @@ export function resolvePlannedCapacity({
     if (!capacityEnabled || capacityLoading || capacityReadError || capacityDataStale || capacityState?.capacityIssueCount == null) {
         return { noTicketKeys, fallbackKeys, capacityByTeam };
     }
+    const keyCounts = new Map();
+    teamNames.forEach(name => { const key = normalizeCapacityKey(name); if (key) keyCounts.set(key, (keyCounts.get(key) || 0) + 1); });
     for (const teamName of teamNames) {
         const key = normalizeCapacityKey(teamName);
-        if (!key) continue;
-        const target = resolveUniqueCapacityTarget(capacityState.capacityTargetsByTeam, teamName);
-        const numeric = resolveUniqueCapacityValue(capacityState.capacityByTeam, teamName);
+        // A dropped stored mapping is not proof that either of two Teams sharing this key has no ticket.
+        if (!key || keyCounts.get(key) !== 1) continue;
+        const target = resolveUniqueCapacityTarget(capacityState.capacityTargetsByTeam, teamName, matchOptions(teamName));
+        const numeric = resolveUniqueCapacityValue(capacityState.capacityByTeam, teamName, matchOptions(teamName));
         if (numeric.matched) continue;
         const noTicket = target.state === 'missing';
         if (noTicket) noTicketKeys.add(key);
@@ -132,6 +140,35 @@ export function resolvePlannedCapacity({
         }
     }
     return { noTicketKeys, fallbackKeys, capacityByTeam };
+}
+
+// A Team name that cannot be matched to a capacity ticket or stored number: the raw-id fallback, or a name with a comma
+// (the Jira read joins names with commas). Such a Team keeps its card but gets no stored number and no Jira read (#323 D3).
+export const isUnresolvedCapacityTeam = team => {
+    const name = String(team?.name ?? '').trim();
+    return !name || name === String(team?.id ?? '').trim() || name.includes(',');
+};
+
+// The stored numbers of the displayed Teams (`getPlannedNumbers()`), keyed like capacityByTeam, for the selected Sprint
+// only. An unresolved Team or a key two displayed Teams share yields no entry; null when nothing is stored.
+export function buildPlannedCapacityByTeam({ plannedCapacity, displayedTeamOptions = [], sprintId }) {
+    if (!plannedCapacity?.byTeam || String(plannedCapacity.sprintId) !== String(sprintId ?? '')) return null;
+    const keyCounts = new Map();
+    displayedTeamOptions.forEach(team => { const key = normalizeCapacityKey(team.name); if (key) keyCounts.set(key, (keyCounts.get(key) || 0) + 1); });
+    const result = {};
+    for (const team of displayedTeamOptions) {
+        const key = normalizeCapacityKey(team.name);
+        const value = plannedCapacity.byTeam[String(team.id)]?.value;
+        if (!key || keyCounts.get(key) !== 1 || isUnresolvedCapacityTeam(team) || typeof value !== 'number' || !Number.isFinite(value)) continue;
+        result[key] = value;
+    }
+    return Object.keys(result).length ? result : null;
+}
+
+// The compact "Capacity:" total is shown only when every Team with effort or a capacity value has a value (#323 D2).
+export function isCapacityTotalAvailable(entries = []) {
+    const judged = entries.filter(entry => entry.hasEffort || entry.hasCapacityValue);
+    return judged.length > 0 && judged.every(entry => entry.hasCapacityValue);
 }
 
 export function applyCapacitySaveResult(state, result) {
@@ -488,16 +525,36 @@ export function buildTeamSpTotals(capacityTasks, getTeamInfo) {
     return totals;
 }
 
+// The Teams that get capacity cards (#323 D3). Once work is known, `cardTeamIds` (buildPlanningCardTeamIds) decides;
+// without it, the pointed Teams plus the explicitly selected ones.
 export function buildDisplayedTeamOptions({
     teamOptions,
     isAllTeamsSelected,
     selectedTeamSet,
-    teamSpTotals
+    teamSpTotals,
+    cardTeamIds = null
 }) {
     const base = !isAllTeamsSelected
         ? teamOptions.filter(team => team.id !== 'all' && selectedTeamSet.has(team.id))
         : teamOptions.filter(team => team.id !== 'all');
-    return base.filter(team => (teamSpTotals[team.id] || 0) > 0);
+    if (cardTeamIds) {
+        const cards = new Set([...cardTeamIds].map(String));
+        return base.filter(team => cards.has(String(team.id)));
+    }
+    return base.filter(team => (teamSpTotals[team.id] || 0) > 0 || selectedTeamSet.has(team.id));
+}
+
+// The card Teams (#323 D3): the Teams selector's set for the current selection, before any search text. Before work is
+// known (the selector then lists every configured Team) it is today's set: the pointed Teams, or the selected Teams.
+export function buildPlanningCardTeamIds({ teamOptions = [], tasks = [], getTeamInfo, readinessEpics = [], workKnown = false, selectedTeamIds = [], isAllTeamsSelected = true }) {
+    const selected = new Set([...selectedTeamIds].map(String).filter(id => id !== 'all'));
+    const teams = teamOptions.filter(team => team.id !== 'all');
+    if (!workKnown) {
+        const spTotals = buildTeamSpTotals(tasks, getTeamInfo);
+        return teams.filter(team => (isAllTeamsSelected ? (spTotals[team.id] || 0) > 0 : selected.has(String(team.id)))).map(team => String(team.id));
+    }
+    const shown = new Set(buildTeamDropdownOptions({ teamOptions, tasks, getTeamInfo, readinessEpics, workKnown, selectedTeamIds }).map(team => String(team.id)));
+    return teams.filter(team => shown.has(String(team.id)) && (isAllTeamsSelected || selected.has(String(team.id)))).map(team => String(team.id));
 }
 
 export function buildExcludedCapacityByTeamId({
@@ -555,12 +612,13 @@ export function buildSelectedTeamEntries({
     capacityTargetsByTeam,
     getTeamCapacity,
     getTeamNetCapacity,
-    capacityMultiplier
+    capacityMultiplier,
+    matchOptions = () => undefined
 }) {
     if (!showPlanning) return [];
     return displayedTeamOptions.map((team) => {
-        const target = resolveUniqueCapacityTarget(capacityTargetsByTeam, team.name);
-        const numeric = resolveUniqueCapacityValue(capacityByTeam, team.name);
+        const target = resolveUniqueCapacityTarget(capacityTargetsByTeam, team.name, matchOptions(team.name));
+        const numeric = resolveUniqueCapacityValue(capacityByTeam, team.name, matchOptions(team.name));
         const rawCapacity = numeric.matched ? numeric.value : null;
         return {
             id: team.id,
@@ -570,6 +628,8 @@ export function buildSelectedTeamEntries({
             planningCapacity: capacityEnabled ? getTeamNetCapacity(team) * capacityMultiplier : null,
             rawCapacity,
             hasCapacityValue: numeric.matched,
+            // The factor between a Jira ticket value and the card's Cap (a Product-only share), for values the card shows.
+            capacityMultiplier,
             capacityIssueKey: target.state === 'matched' ? target.issueKey : '',
             capacityTargetTeamName: target.state === 'matched' ? target.teamName : '',
             capacityTargetCapacity: target.state === 'matched' ? target.capacity : null,

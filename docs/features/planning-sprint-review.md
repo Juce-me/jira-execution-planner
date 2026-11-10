@@ -1,17 +1,35 @@
 # Planning Sprint review
 
-Planning defaults to Table when no valid layout preference is saved. An explicit
-List choice remains remembered. The icon beside Open selected stories in Jira switches
-between List and a compact spreadsheet, including when no Stories are selected.
-The layout is a private browser presentation preference. The shared header,
+Planning is the Table only; List stays in Catch Up. Planning List was retired
+(#323, operator decision 2026-11-06): a List choice saved earlier or carried by an old
+link opens Table, and the link keeps its focus by opening the Epics or Stories rows of
+its focus kind. No layout preference is stored. The shared header,
 Sprint/Teams controls and filters retain their list width. Every Table scope,
-including multiple Teams, starts with the sticky Planning overview reduced to
-one desktop row of capacity and Product/Tech graph bars. Graph labels and the dashed target marker stay visible when any Product, Tech or Ad Hoc segment is hovered. Product/Tech fills use pale tints with dark labels; Ad Hoc retains its striped Product tint. Collapse panel returns
-expanded details to that same graph row. Show panel restores selection
-actions and per-Team capacity details without changing selection or fetching
-new datasets. List retains the full Planning overview. On narrow screens, the
-graphs stack to keep their values readable. Capacity errors remain visible in
-the compact row. Only the spreadsheet region widens; extra columns scroll inside it.
+including multiple Teams, starts with the sticky Planning overview compact: one
+desktop row with Select All, Clear Selection, Undo, Status ▾ (accessible name "Include
+by status"), an icon-only Open in Jira (accessible name "Open planned stories in Jira"),
+the short summary in the flexible gap and Details (accessible name "Show capacity
+details"; "Hide details" when expanded) right-aligned. The Table summary reads
+`209 stories · 220.0 SP · Cap 183.4 SP`, followed by `· N unestimated` and `· N hidden`
+(planned stories the filters hide) only when they are above zero, and `Cap unavailable`
+when capacity is unavailable; it uses the configured child word. Its values never
+ellipsize: the worst case fits whole at 1280x720 and 1440x900, and only the whole line
+would ellipsize as a last resort. The compact row stays 46.9px; a capacity error adds
+one line under it. At narrow widths the row wraps and the summary may wrap inside its
+box. The summary has no hover or focus readout; the breakdown lives in the capacity
+details. Open in Jira opens the planned stories matching the
+current Team and filters and is disabled when none match. Status ▾ opens the Include by status popover with one line of status
+toggles (Accepted + In Progress, To Do / Pending, Postponed, Awaiting validation),
+each labelled `<group> · <included>/<total>` over the stories matching the current
+Team and filters. A toggle is pressed when every matching story of its group is in
+the plan; clicking a pressed toggle removes them all, clicking any other includes the
+rest. A group with no matching story is disabled. The popover stays open so several
+groups can be toggled, and closes on an outside click or Escape. The popover stays inside the viewport and wraps whole toggles onto further lines; each toggle stays one line tall and never wraps, ellipsizes or clips its label. Hiding capacity
+details keeps the controls and counts visible; Details reveals the
+existing graphs and Team capacity content without changing inclusion or fetching
+another dataset. Capacity errors ("Capacity unavailable — show capacity details to
+retry") remain visible while details are hidden. Only the spreadsheet region widens;
+extra columns scroll inside it.
 Summary titles and Teams in scope use bounded single lines with ellipsis in both
 read-only and editable profiles. Hover or keyboard focus reveals full text using
 the shared in-app readout above table/sticky layers. Clicking an editable title opens a wrapping editor inside its
@@ -38,8 +56,7 @@ column in both modes, including that no input pokes past its heading span.
 In Table view, Filters precedes the capacity graphs in a shared sticky stack below
 the compact header. The first document scroll brings that stack into its sticky
 position. The shared `EngFilterControls` module occupies the second dashboard controls row,
-before Catch Up alerts and Planning capacity content; List also uses Filters-first
-ordering.
+before Catch Up alerts and Planning capacity content.
 Numeric headings, cells, editors and totals align right; text aligns left.
 A real Epic or Story row with 0 SP (a missing Jira value counts as 0) is tinted red
 across the whole row, with the same `#fff1f0` the alerts and board use. Awaiting-creation
@@ -57,22 +74,22 @@ treatment on hover, adding an inset blue ring that remains visible within the ce
 Keyboard focus keeps its existing light fill and visible outline. Disabled chips
 retain their resting appearance.
 
-Accepted is a computed number column right after the points column, visible by default
+Planned SP is a computed number column right after the points column, visible by default
 (it is optional, so it can be hidden, moved and restored like the other Jira columns, and its
 order and visibility save with the shared layout). A Story row shows its points only while
 that Story is ticked; an Epic row (and the No Epic group) shows the sum of its ticked real
 child Stories; awaiting-creation placeholders show nothing. The footer total is the sum over
 the rows in the current mode, so it reads 0 with nothing ticked. It stands in for the accepted
-numbers of the Planned Teams Effort panel inside the table, is never editable, and selecting
-Stories does not make the review dirty.
+numbers of the Planned Teams Effort panel inside the table and is never editable.
+Changing Story inclusion makes the shared plan dirty; Jira's Accepted status is unchanged.
 
 In Table view the Planned Teams Effort panel is a one-line strip (its title with a caret) until
 the user expands it, which keeps the table near the top of the page; its header is the toggle (a
 native button, so it works by tap), the grid stays mounted but hidden while collapsed, and
 expanding neither refetches nor changes selection. The choice is a private browser preference
 (`planningTeamsEffortExpanded` in the saved UI preferences) that survives reloads; collapsed is
-the default. Planning List shows the full panel exactly as before. The accepted numbers it
-shows are also available in the table through the Accepted column.
+the default. The accepted numbers it
+shows are also available in the table through the Planned SP column.
 
 The table's surfaces, borders and secondary text use the shared design tokens (`--bg-primary`,
 `--bg-secondary`, `--border`, `--text-primary`, `--text-secondary`) rather than slate literals, so it
@@ -96,11 +113,17 @@ Epics remain in the Epic table, marked with a "N Story awaited" chip beside the 
 placeholder shows its Team and links its parent Epic; it has no Jira key or
 Story Points and cannot be selected or edited. Table placeholders remain visible
 through Story status/priority filters, while Department, Team, project, Project
-Track and search scope still apply. List filtering retains its existing behavior. Selection reuses Planning
-Story selection and Undo; Epic checkboxes affect visible real child Stories.
+Track and search scope still apply.
+The shared inclusion document belongs to a Department group, Sprint and review
+namespace. Team and ordinary filters project it without replacing other Teams'
+inclusion. Select All adds every matching real child Story, including rows below
+the viewport; Clear Selection removes matching included Stories only. Epic
+checkboxes use the same filtered child set. Undo reverses the last local inclusion
+gesture, up to 20 gestures. Legacy browser selections remain untouched and are
+not imported. A missing plan and a saved empty plan have distinct messages.
 Synthetic rows cannot edit Jira or store custom values. Team and Project columns
 appear for multiple admitted Teams/projects. Sort epics and Group by Initiative are not
-rendered in Table view (they never changed table ordering); List and Catch Up keep them and
+rendered in Table view (they never changed table ordering); Catch Up keeps them and
 their stored choices.
 
 Priority and status edits made in the Table settle locally (see Planning edits in
@@ -111,11 +134,14 @@ focused review cell holds its row so neither the slide nor a filter can unmount 
 
 There is no table toolbar tier. The Epics/Stories switch (the shared SegmentedControl in its
 compact form, `eng-mode-control segmented-control-compact`) sits in the Filters row's
-view-controls slot, followed at the right end by Discard and Save, which appear only while
-the review has local changes (Discard asks for an inline confirmation, using the Filters
-button style; Save is the row's single filled button); a muted Loading… note shows there
+view-controls slot, followed at the right end by Discard changes and Save plan, which appear only while
+the review has local changes (Discard changes asks for an inline confirmation, using the Filters
+button style; Save plan is the row's single filled button); a muted Loading… note shows there
 while the review loads. There is
-no options menu or usage help: the app-header Refresh also reloads the shared
+no separate table toolbar: Include by status and Open in Jira stay with the primary inclusion controls.
+Save plan commits pending inclusion across Teams together with app-owned review
+changes; Jira edits and capacity saves remain independent. Discard changes reads
+the latest confirmed document. The app-header Refresh also reloads the shared
 review (drafts are preserved; it leaves a review that is already loading or
 saving alone), and a third click on a sorted heading clears the sort.
 Column work happens in the table header. The corner + in the pinned select header cell
@@ -302,12 +328,16 @@ After promotion, review data is isolated per work configuration. Existing rows k
 ## Assignee capacity strip (#323)
 
 With exactly one Team selected in the Table layout, Planning shows a collapsible in-flow strip, "Assignee Capacity (Story
-Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams,
-All Teams and the List layout keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
+Points)", below the controls stack (portaled into `#planning-assignee-capacity-host`, outside the pinned overview). Two Teams
+and All Teams keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
 (`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points. The strip and the table's Epics/Stories
 control follow each other: expanding the strip from its header selects Stories, and choosing Epics (a click or a link's rows)
-while it is expanded collapses it; the Epics a table mount starts with (reload, Sprint switch) yields to an expanded strip by
+while it is expanded collapses it; the Epics a table mount starts with (page reload) yields to an expanded strip by
 selecting Stories. Neither direction emits analytics or adds a request.
+The Epics/Stories choice (a click or a link's rows) is kept in session memory while the page lives: a header Refresh or a
+Sprint switch, which unmounts the table while ENG loads, reopens it on the chosen rows (and a chosen Epics keeps the strip
+collapsed) without an analytics event or request. A page reload starts from the Epics default, or from a link's rows. The strip's
+quiet switch to Stories forgets a differing choice.
 
 **Columns.** Assignee, Planned capacity, Estimated effort, Vacations, Notes, with a Totals row summing the three numeric
 columns. Planned capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500
@@ -359,22 +389,31 @@ Story's current name, so a person with no Stories (including one deactivated in 
 "Removed from this Sprint and later ones:", where each underlined name restores the person with one tap; values are kept.
 
 **Saving.** Enter or blur commits, Escape cancels; an invalid draft stays in its cell with its error. One serial queue per
-Sprint and Team coalesces commits within about 200 ms into one PATCH, keeps one request in flight and reuses the CSRF token.
+Sprint and Team coalesces commits within about 200 ms into one PATCH and keeps one request in flight; each dispatched
+PATCH fetches its own fresh, single-use CSRF token, with one retry using a fresh token only when `csrf_required` rejects
+the request before dispatch. Across Teams at most 4 assignee-capacity PATCHes run at once.
 An unconfirmed write is read back and only the differing fields are resent (last write wins per field, so retries are
 idempotent). A failed save shows "Not saved" with Retry and Discard changes, in the table and in the collapsed header; a
 change the server refuses waits for Retry or Discard so it cannot fail later batches. Changing Team or Sprint sends the old
-scope's commits in the background; a scope left with a failed save keeps its drafts for the page session (the last five
-scopes) and shows Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. Without database
-storage or save rights the read reports `capabilities` and the strip is read-only (no Remove, Restore or Add assignee) or
-hidden.
+scope's commits in the background; a scope left with drafts, a save in flight or a failed save is never evicted and keeps
+its drafts for the page session (only clean, idle scopes beyond the last five are dropped, keeping their number), and shows
+Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. The supported runtime is
+database-backed Atlassian OAuth; unsupported auth or storage profiles are rejected. In that runtime the read reports
+`capabilities`; when `canSave` is false the strip is read-only (no Remove, Restore or Add assignee), and when `canRead` is
+false it is hidden.
 
 **Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
 stored team number, which shares the queue) can be undone with the Undo button at the right end of the expanded strip header
 (beside the save status, a sibling of the header toggle; the collapsed strip shows no Undo), or with Cmd/Ctrl+Z while focus
-is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored). An
+is in the table and no cell holds an edit of its own (that cell keeps the input's native undo; key auto-repeat is ignored).
+Enter leaves focus on the committed cell, so Cmd/Ctrl+Z right after Enter undoes that commit. An
 undo re-commits the previous full row through the same queue, so it is an ordinary save; one undone before its edit was sent
-sends nothing. Undoing an Add assignee removes the person again (there is no delete). Undoing the first edit of an inherited
-Sprint keeps the Sprint's own copy with the inherited values, and a muted line says so. The stack is cleared on a Team or
+sends nothing. Undoing an Add assignee removes the person again: it sends `removed: true`, because there is no delete
+route. Undoing the first edit of an inherited Sprint keeps the Sprint's own copy with the inherited values, and the muted
+line "Undo kept this Sprint's own copy with the inherited values." says so; a restored inherited stored team number is
+saved as this Sprint's own number with `source: 'user'` (inheritance itself is unchanged: the next Sprint inherits that
+own copy). Between users the last write wins per field: Undo re-sends the earlier values without checking whether someone
+else changed them meanwhile, except that a re-read bringing a different document clears the stack. The stack is cleared on a Team or
 Sprint change, on any failed or refused save, Retry or Discard, on a re-read that brings a different document, and on a new
 auth session. Read-only strips show no Undo.
 
@@ -403,10 +442,18 @@ the stored number as a fallback while its pencil keeps editing Jira. The stored 
 Jira value (multiplier and excluded capacity apply), so the amber bar and the underbar appear for a Team without a ticket.
 Jira wins on screen whenever it has a value. A Sprint without its own document shows the nearest earlier number gray
 (source `inherited`). After a user-initiated capacity read, a Jira value that differs is mirrored silently into an existing
-own document (database only; never into a typed number, never while the queue is busy, failures dropped). A typed number
-that differs from the ticket shows a banner above the cards with Write to ticket (opens the existing Jira editor prefilled;
-the user saves there), Use ticket value and Not now (hidden per Sprint and Team until either number changes). Nothing is
-written to Jira except through that editor's Save; a successful Jira save turns a typed number into the ticket value.
+own document (database only; never into a typed number, never while the queue is busy, never creating a document,
+failures dropped). A typed number that differs from the ticket marks its card (`data-capacity-attention="mismatch"`); there
+is no banner, Use ticket value or Not now. With the capacity mutation right the card's hover rail then reads Jira · → ·
+pencil: one click on → writes the stored number to that Team's own matched ticket (`PATCH /api/capacity/<issue_key>` with a
+numeric `capacity` and the read `expectedCapacity`; write contract `capacityReconcilePush` in
+[design-system.md](../design-system.md)). While it runs the → is unavailable with "Applying…" and that Team's Jira pencil is
+disabled; on success the → disappears and the stored number settles to `jira`. A `409 capacity_conflict` shows Jira's
+current value on the card and "Capacity changed in Jira to N. Apply M SP again to replace it." (it never claims nothing was
+written), and the next click expects that value; other errors keep the editor's copy. The overview's state note adds
+"Applying N Teams to Jira…", "N Jira push(es) failed" or "N Jira push(es) need(s) review". Each push has its own abort; a
+scope change aborts pushes in flight and never retargets them. Nothing is written to Jira except by an explicit click on a
+card's Jira pencil Save or its →; a successful Jira save turns a typed number into the ticket value in any scope.
 
 **Add assignee.** Under the table and in the empty state, a person picker searches the active users assignable in the
 workspace's selected Product and Tech Jira projects through `POST /api/eng/assignee-capacity/user-options` (the signed-in
@@ -417,8 +464,38 @@ removed person restores them; picking a listed person focuses their row.
 for the page session. The Planning automatic follow-up and the header Refresh re-read it, never while it loads or holds
 unsaved changes; an unchanged document is not republished, a failure keeps the held document, and an automatic height
 change of the strip above the viewport keeps the reading position. A new auth session clears the cache and re-reads.
+With several Teams the same refresh re-reads every card's stored number through one batch read (one Team through its full
+GET): a clean Team takes the new number, while a Team with a draft, a save in flight or a failed save keeps its own value,
+and an open card editor keeps its text and focus. The automatic follow-up waits while a card editor or a push is open; an
+unchanged projection keeps its identity (App does not re-render); answers that arrive after a scope change, a new auth
+session or a sign-in stop are dropped. A failed batch read keeps the held numbers, disables the stored-number pencils and
+shows "Capacity could not be refreshed. Retry before editing."; the next successful read recovers without sending a PATCH.
 
-**Limitations.** The stored team number is used only in the Table layout with one Team: List layout and several Teams show
-Jira values only. A Team with no pointed Stories has no card, so its stored number can be typed only once it has Stories.
-Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
-against Jira. Undo is not built yet.
+**Every displayed Team.** The cards are the Teams the Teams selector shows for the current selection (explicitly
+selected Teams always; with All Teams, configured Teams with Sprint work or awaited Stories), or the pointed and selected
+Teams until the Sprint's work is known. Every card shows its Team's stored number where Jira has none, read once per scope
+(one Team from its document, more Teams through one batch read); a zero-effort Team with capacity counts in the totals and
+the project split, and the compact "Capacity:" total judges only Teams with effort or a capacity value. A Team whose name
+is unresolved (its id) or contains a comma keeps its card but shows no stored number and is not sent to the Jira read, and
+a Team never borrows another configured Team's ticket or stored number by name containment. Teams sharing a normalized
+capacity name keep their cards but have no stored-number fallback or pencil. Each card edits its own
+Team's stored number with its own pencil, for its own Team and Sprint only; saves of different Teams run independently (at
+most 4 at once) and a scope change never retargets one. A failed save shows ↻ Retry and × Discard changes (that Team's
+stored-number draft only) in the card's hover rail, its message in the rail's readout and "N Team save(s) failed: hover a card to
+retry" (or "Saving N Team(s)…") in the overview's state note. When the workspace holds `MAX_DOCUMENTS_PER_WORKSPACE` (2,000)
+documents, a Team's first save is that Team's visible rejection, "Team capacity not saved: the server refused it." (D4).
+Between users the last write wins: the stored number carries no revision precondition, so the later save replaces an
+earlier one without a conflict, and the other member sees it on the next read. Within this page, cards sharing a matched
+Jira ticket cannot push or open its Jira editor while that ticket's push is pending; different tickets remain independent.
+
+**Limitations.** Sprint id orders inheritance (as for review views). Account ids and the stored team number's source
+are not verified against Jira. Undo covers the strip's Team only (see Undo above); a card edit of another Team has no Undo.
+Concurrent edits of one Team's number by two users resolve last-write-wins with no warning. With All Teams, a Team whose
+Sprint Stories are all unpointed joins the cards only once the Sprint's work is known, so the Jira capacity read runs
+twice on load (the pointed Teams, then every card Team); when every Team is pointed it runs once.
+
+Browser reliability follow-ups are tracked in [#337](https://github.com/Juce-me/jira-execution-planner/issues/337).
+Runtime hardening and operator installation/performance acceptance are tracked in
+[#338](https://github.com/Juce-me/jira-execution-planner/issues/338) and the
+[separate follow-up record](../plans/FUTURE-planning-finalization-follow-ups.md). Completing the implementation does not
+attest a live installation cutover or resolve the recorded browser/lint exceptions.

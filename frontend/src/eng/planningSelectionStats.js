@@ -34,6 +34,21 @@ export function sumPlanningStoryPoints(tasks) {
     return storyPointTotalValue(total);
 }
 
+// Team totals use the complete authorized projection; display facets only partition shown/hidden work.
+export function buildPlanningSelectionSummary({ tasks, shownTasks, selectedTasks, selectedTeamIds, allTeams, getTeamInfo }) {
+    const seen = new Set(), shownIds = new Set(shownTasks.map(task => String(task.id || '')));
+    const selected = tasks.filter(task => {
+        const id = String(task.id || '');
+        if (!/^[1-9][0-9]*$/.test(id) || seen.has(id) || !selectedTasks[task.key]) return false;
+        if (!allTeams && !selectedTeamIds.has(getTeamInfo(task).id)) return false;
+        seen.add(id);
+        return true;
+    });
+    const hidden = selected.filter(task => !shownIds.has(String(task.id)));
+    const missingEstimateCount = selected.filter(task => task.fields.customfield_10004 == null || task.fields.customfield_10004 === '' || !Number.isFinite(parseFloat(task.fields.customfield_10004))).length;
+    return { selectedTasks: selected, count: selected.length, sp: sumPlanningStoryPoints(selected), missingEstimateCount, hiddenCount: hidden.length };
+}
+
 export function buildSelectedTeamStats(tasks, getTeamInfo) {
     const totals = tasks.reduce((acc, task) => {
         const teamInfo = getTeamInfo(task);

@@ -55,7 +55,7 @@ test('a matching Planning capsule round-trips through one tab store', () => {
         capturedAt: 1_000,
         principal: { workspaceId: 'workspace-1', viewConfigId: 'view-1' },
         view: { ...snapshot.view, activeGroupId: 'group-1', selectedSprint: 'sprint-1' },
-        planning: { ...snapshot.planning, scopeKey: 'planning::sprint-1::group-1', selectedTaskKeys: ['TASK-2', 'TASK-1'], selectedTeams: ['team-1', 'team-2'] },
+        planning: { ...snapshot.planning, scopeKey: '', selectedTaskKeys: [], selectedTeams: ['team-1', 'team-2'] },
     });
     assert.notEqual(storage.getItem(AUTH_RESUME_STORAGE_KEY), null);
 });
@@ -306,4 +306,189 @@ test('blocked sessionStorage getter is fail-soft', () => {
     assert.doesNotThrow(() => api.clearAuthResumeState(null));
     assert.equal(api.writeAuthResumeState(null, planningSnapshot(), 1_000), false);
     assert.equal(api.readAuthResumeState(null, planningSnapshot().principal, 1_000), null);
+});
+
+function sharedPlanningSnapshot() {
+    const columnId = '11111111-1111-4111-8111-111111111111';
+    const draft = {
+        inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 2 }], initializePlan: false,
+        basePlanRevision: 4, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 1, baseViewRevision: 0,
+        schemaChanges: [], cellChanges: [{ issueId: '8101', rowKind: 'story', columnId, value: null, baseRevision: 1, input: 'bad number', valid: false }],
+    };
+    const payload = { version: 2, groupId: 'group-1', operationId: '019a413c-0000-7000-8000-000000000001', initializePlan: false,
+        basePlanRevision: 4, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 1, baseViewRevision: 0,
+        inclusionChanges: [{ issueId: '8101', included: false, baseRevision: 2 }], schemaChanges: [], cellChanges: [] };
+    return { version: 2, principal: { workspaceId: 'workspace-1', viewConfigId: 'view-1' },
+        view: { selectedView: 'eng', activeGroupId: 'group-1', selectedSprint: '101', engMode: 'planning', settingsOpen: false, settingsTab: 'scope' },
+        planning: { scope: { workspaceId: 'workspace-1', groupId: 'group-1', sprintId: '101', namespaceId: null }, draft, submission: { payload, sequence: 7 }, selectedTeams: ['team-1'] } };
+}
+
+test('v2 preserves scoped draft, invalid typed input and original frozen submission independently', () => {
+    const api = loadModule(), snapshot = sharedPlanningSnapshot(), storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, snapshot, 1000), true);
+    const restored = JSON.parse(JSON.stringify(api.readAuthResumeState(storage, snapshot.principal, 2000)));
+    assert.deepEqual(restored, { ...snapshot, capturedAt: 1000 });
+    assert.equal(restored.planning.draft.inclusionChanges[0].included, true);
+    assert.equal(restored.planning.submission.payload.inclusionChanges[0].included, false);
+});
+
+test('v1 recovery is shell and Team intent only, never shared inclusion authority', () => {
+    const api = loadModule(), snapshot = planningSnapshot(), storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, snapshot, 1000), true);
+    const restored = api.readAuthResumeState(storage, snapshot.principal, 2000);
+    assert.equal(restored.version, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(restored.planning)), { scopeKey: '', selectedTaskKeys: [], selectedTeams: ['team-1', 'team-2'], selectionMode: 'manual' });
+});
+
+test('v2 rejects unknown keys, mismatched scope, invalid identities and duplicate changes atomically', () => {
+    const api = loadModule();
+    const mutations = [
+        value => { value.planning.secret = 'synthetic'; },
+        value => { value.planning.scope.workspaceId = 'other'; },
+        value => { value.planning.scope.sprintId = 'sprint-name'; },
+        value => { value.planning.scope.namespaceId = ''; },
+        value => { value.planning.draft.inclusionChanges[0].issueId = 'SYN-1'; },
+        value => { value.planning.draft.inclusionChanges.push({ ...value.planning.draft.inclusionChanges[0] }); },
+        value => { value.planning.draft.cellChanges[0].rawIssue = {}; },
+        value => { delete value.planning.draft.cellChanges[0].valid; },
+        value => { value.planning.submission.payload.operationId = '11111111-1111-4111-8111-111111111111'; },
+        value => { value.planning.submission.payload.groupId = 'other'; },
+        value => { value.planning.submission.payload.configuration = { id: 'other', revision: 1, quarter: '2027Q1', digest: null, token: 'synthetic' }; },
+        value => { value.planning.draft.schemaChanges = [{ action: 'rename', columnId: 'not-a-uuid', label: 'Name' }]; },
+        value => { value.planning.submission.payload.cellChanges = [{ ...value.planning.draft.cellChanges[0] }]; },
+    ];
+    for (const mutate of mutations) {
+        const value = sharedPlanningSnapshot(); mutate(value);
+        const storage = createStorage('preserve');
+        assert.equal(api.writeAuthResumeState(storage, value, 1000), false);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), 'preserve');
+        const raw = JSON.stringify({ ...value, capturedAt: 1000 });
+        const readStorage = createStorage(raw);
+        assert.equal(api.readAuthResumeState(readStorage, value.principal, 2000), null);
+        assert.equal(readStorage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
+    }
+});
+
+test('v2 enforces combined identity count, cell count and byte limits without truncation', () => {
+    const api = loadModule();
+    const values = [];
+    const many = sharedPlanningSnapshot();
+    many.planning.draft.inclusionChanges = Array.from({ length: 500 }, (_, index) => ({ issueId: String(index + 1), included: true, baseRevision: 0 }));
+    many.planning.draft.cellChanges[0].issueId = '9999'; values.push(many);
+    const cells = sharedPlanningSnapshot();
+    cells.planning.draft.cellChanges = Array.from({ length: 101 }, (_, index) => ({ issueId: String(index + 1), rowKind: 'story', columnId: '11111111-1111-4111-8111-111111111111', value: null, baseRevision: 0 })); values.push(cells);
+    const bytes = sharedPlanningSnapshot(); bytes.planning.draft.cellChanges[0].input = '🧪'.repeat(70 * 1024); values.push(bytes);
+    for (const value of values) {
+        const storage = createStorage('preserve');
+        assert.equal(api.writeAuthResumeState(storage, value, 1000), false);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), 'preserve');
+    }
+    const validLongInput = sharedPlanningSnapshot(); validLongInput.planning.draft.cellChanges[0].input = 'x'.repeat(2000);
+    assert.equal(api.writeAuthResumeState(createStorage(), validLongInput, 1000), true, 'invalid typed input has a byte bound, no invented text-field bound');
+});
+
+test('v2 supports mapped native submission kinds and shell-only recovery', () => {
+    const api = loadModule(), mapped = sharedPlanningSnapshot();
+    mapped.planning.scope.namespaceId = 'configuration-1';
+    mapped.planning.submission.payload.configuration = { id: 'configuration-1', revision: 2, quarter: '2027Q1', digest: 'synthetic-digest' };
+    mapped.planning.submission.payload.cellChanges = [{ issueId: '8101', rowKind: 'initiative', columnId: '11111111-1111-4111-8111-111111111111', value: 'Note', baseRevision: 0 }];
+    assert.equal(api.writeAuthResumeState(createStorage(), mapped, 1000), true);
+    const shell = { ...sharedPlanningSnapshot(), planning: null };
+    assert.equal(api.writeAuthResumeState(createStorage(), shell, 1000), true);
+});
+
+test('v2 stored capsules reject expiry, future clocks, principal mismatch and extra envelope fields', () => {
+    const api = loadModule(), value = sharedPlanningSnapshot();
+    for (const [capturedAt, principal, extra] of [[-1, value.principal, {}], [3000, value.principal, {}], [1000, { ...value.principal, viewConfigId: 'other' }, {}], [1000, value.principal, { rawResponse: {} }], [1000, value.principal, { version: 99 }]]) {
+        const storage = createStorage(JSON.stringify({ ...value, capturedAt, ...extra }));
+        assert.equal(api.readAuthResumeState(storage, principal, 2000), null);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
+    }
+    const expired = createStorage(JSON.stringify({ ...value, capturedAt: 1000 }));
+    assert.equal(api.readAuthResumeState(expired, value.principal, 1001 + api.AUTH_RESUME_TTL_MS), null);
+});
+
+test('v2 valid capsules retain the first capture and storage failures preserve prior bytes', () => {
+    const api = loadModule(), value = sharedPlanningSnapshot(), storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, value, 1000), true);
+    const prior = storage.getItem(api.AUTH_RESUME_STORAGE_KEY);
+    const later = sharedPlanningSnapshot(); later.planning.draft.inclusionChanges[0].included = false;
+    assert.equal(api.writeAuthResumeState(storage, later, 2000), false);
+    assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), prior);
+    const replacement = sharedPlanningSnapshot(); replacement.principal.viewConfigId = 'other';
+    assert.equal(api.writeAuthResumeState(createThrowingWriteStorage(prior), replacement, 2000), false);
+    assert.equal(api.writeAuthResumeState(null, value, 1000), false);
+});
+
+test('v2 rejects sparse arrays rather than writing a capsule that cannot be read', () => {
+    const api = loadModule();
+    for (const field of ['schemaChanges', 'inclusionChanges', 'cellChanges', 'selectedTeams']) {
+        const value = sharedPlanningSnapshot();
+        if (field === 'selectedTeams') value.planning.selectedTeams = new Array(1);
+        else value.planning.draft[field] = new Array(1);
+        assert.equal(api.writeAuthResumeState(createStorage(), value, 1000), false, field);
+    }
+});
+
+test('v2 retains invalid overlong text drafts but rejects them in frozen wire submissions', async () => {
+    const { validateReviewValue } = await import('../frontend/src/eng/planningReviewTableModel.js');
+    const api = loadModule(), value = sharedPlanningSnapshot(), input = 'x'.repeat(501);
+    const parsed = validateReviewValue({ type: 'text' }, input);
+    assert.equal(parsed.valid, false);
+    const cell = value.planning.draft.cellChanges[0];
+    Object.assign(cell, { value: parsed.value, input, valid: parsed.valid });
+    const storage = createStorage();
+    assert.equal(api.writeAuthResumeState(storage, value, 1000), true);
+    const restored = api.readAuthResumeState(storage, value.principal, 2000).planning.draft.cellChanges[0];
+    assert.equal(restored.value, input);
+    assert.equal(restored.input, input);
+    assert.equal(restored.valid, false);
+    value.planning.submission.payload.cellChanges = [{
+        issueId: cell.issueId, rowKind: cell.rowKind, columnId: cell.columnId,
+        value: parsed.value, baseRevision: cell.baseRevision,
+    }];
+    assert.equal(api.writeAuthResumeState(createStorage(), value, 1000), false);
+    value.planning.submission = null;
+    cell.input = 'different typed input';
+    assert.equal(api.writeAuthResumeState(createStorage(), value, 1000), false);
+});
+
+test('v2 group identities preserve spaces, Unicode and backend code-point bounds', () => {
+    const api = loadModule();
+    for (const groupId of ['group x', 'отдел 🧪', '🧪'.repeat(128), '\uFEFFgroup']) {
+        const value = sharedPlanningSnapshot();
+        value.view.activeGroupId = groupId;
+        value.planning.scope.groupId = groupId;
+        value.planning.submission.payload.groupId = groupId;
+        const storage = createStorage();
+        assert.equal(api.writeAuthResumeState(storage, value, 1000), true);
+        const restored = api.readAuthResumeState(storage, value.principal, 2000);
+        assert.equal(restored.view.activeGroupId, groupId);
+        assert.equal(restored.planning.scope.groupId, groupId);
+        assert.equal(restored.planning.submission.payload.groupId, groupId);
+    }
+});
+
+test('v2 rejects invalid group identities and retains exact scope binding', () => {
+    const api = loadModule();
+    for (const groupId of ['', ' group', 'group ', '\u00A0group', 'group\u3000', 'group\u0000x', 'group\u0085x', '🧪'.repeat(129)]) {
+        const value = sharedPlanningSnapshot();
+        value.view.activeGroupId = groupId;
+        value.planning.scope.groupId = groupId;
+        value.planning.submission.payload.groupId = groupId;
+        const storage = createStorage('preserve');
+        assert.equal(api.writeAuthResumeState(storage, value, 1000), false);
+        assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), 'preserve');
+        const stored = createStorage(JSON.stringify({ ...value, capturedAt: 1000 }));
+        assert.equal(api.readAuthResumeState(stored, value.principal, 2000), null);
+    }
+    for (const mutate of [
+        value => { value.view.activeGroupId = 'different group'; },
+        value => { value.planning.submission.payload.groupId = 'different group'; },
+        value => { value.planning.scope.workspaceId = 'other-workspace'; },
+    ]) {
+        const value = sharedPlanningSnapshot();
+        mutate(value);
+        assert.equal(api.writeAuthResumeState(createStorage(), value, 1000), false);
+    }
 });

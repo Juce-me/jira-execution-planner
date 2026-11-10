@@ -1,7 +1,7 @@
 """Raw-boundary parity oracle for the EPM Home/Jira read path.
 
-Task 0 of docs/plans/DONE-home-oauth-public-reads.md. It freezes TODAY's
-behavior before any Home transport change, through the REAL route ->
+Frozen behavior from docs/plans/DONE-home-oauth-public-reads.md, retained through
+Task0 auth retirement in DONE-planning-shared-plan-331.md via the REAL route ->
 discovery -> normalization -> exact-label -> Jira hierarchy path. Only external
 I/O is stubbed: the Home GraphQL transport (`urlopen` in backend.epm.home) and
 the Jira search transport (`jira_server.jira_search_request`). Every value in
@@ -22,9 +22,12 @@ this small interface:
 
 `register_mode(name, factory)` adds a mode. Tasks 1-3 register the OAuth
 candidate (for example "db_oauth_public_read"), then compare its ModeRun with
-`compare_candidate(expected, actual, comparison)`. The Basic baseline mode uses
-`compare_baseline`, which is exact. The frozen `db_user_token` expected values in the fixture are the
-recorded pre-removal baseline for the candidate; that runner was removed with the API-token connection.
+`compare_candidate(expected, actual, comparison)`. Only the real DB OAuth runtime
+adapter remains. The frozen Basic and `db_user_token` fixture values are historical
+oracles, never runtime profiles. `compare_baseline` stays exact for pure comparer
+falsification tests; public-read comparisons allow only the documented omissions.
+The unpromoted workspace with the feature disabled uses the legitimate Legacy
+work-model path; authentication, private configuration and Home authority stay DB OAuth.
 """
 
 import base64
@@ -33,7 +36,6 @@ import json
 import os
 import re
 import socket
-import tempfile
 import unittest
 from contextlib import ExitStack, contextmanager
 from datetime import datetime as _real_datetime
@@ -42,7 +44,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import jira_server
-from backend.auth.context import RequestAuthContext
 from backend.epm import access as epm_access
 from backend.epm import home as epm_home
 from backend.epm import issues as epm_issues_module
@@ -355,33 +356,6 @@ def reset_epm_caches():
 # Mode runners
 # --------------------------------------------------------------------------
 
-class BasicModeRunner:
-    """Today's Basic/JSON path: dashboard-config.json EPM config, ATLASSIAN_EMAIL/TOKEN Home credentials."""
-    name = 'basic_json'
-
-    def enter(self, stack, fixture, transports):
-        env = fixture['environment']
-        self.home_email = env['basicHomeEmail']
-        tmpdir = stack.enter_context(tempfile.TemporaryDirectory())
-        self.config_path = os.path.join(tmpdir, 'dashboard-config.json')
-        stack.enter_context(patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'jsonfile', 'JIRA_AUTH_MODE': 'basic', 'JIRA_URL': env['jiraUrl'],
-            'ATLASSIAN_EMAIL': self.home_email, 'ATLASSIAN_API_TOKEN': 'basic-token-fixture',
-        }, clear=False))
-        stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'))
-        stack.enter_context(patch.object(jira_server, 'JIRA_URL', env['jiraUrl']))
-        stack.enter_context(patch.object(jira_server, 'DASHBOARD_CONFIG_PATH', self.config_path))
-        stack.enter_context(patch.object(epm_home, 'urlopen', transports.home.urlopen))
-        self.client = jira_server.app.test_client()
-
-    def install_config(self, config):
-        with open(self.config_path, 'w', encoding='utf-8') as handle:
-            json.dump({'epm': config}, handle)
-
-    def get(self, path):
-        return self.client.get(path)
-
-
 HOME_READ_SCOPES = ('read:goal:goals', 'read:access:goals', 'read:project:projects', 'read:access:projects')
 
 
@@ -408,31 +382,37 @@ class DbOAuthPublicReadRunner:
     name = 'db_oauth_public_read'
 
     def enter(self, stack, fixture, transports):
-        from tests import test_db_oauth_cutover as cutover
-        from backend.db import models
+        from flask import session as browser_cookie
+        from backend.auth.db_context import invalidate_auth_status_cache
+        from backend.db import engine, models
+        from tests.db_oauth_test_helpers import seed_db_actor, FULL_OAUTH_SCOPE
+        from tests.postgres_test_db import fresh_database_url
 
         self.home_email = ''
-        helper = cutover.DbOauthCutoverTests('test_callback_writes_encrypted_db_tokens_and_returns_session_metadata')
-        helper.setUp()
-        stack.callback(helper.tearDown)
-        self.helper = helper
-        callback = helper._store_callback_through_route(client=helper.client)
-        stack.enter_context(helper._db_route_mode())
-        with helper.factory() as session:
-            connection = session.get(models.AuthConnection, callback.connection_id)
-            connection.scopes = sorted(set(connection.scopes or []) | set(HOME_READ_SCOPES))
-            connection.scope_provenance = 'provider'
-            session.commit()
-            self.context = RequestAuthContext(
-                auth_mode='atlassian_oauth', user_id=connection.user_id,
-                stable_subject='account-123', atlassian_account_id='account-123',
-                workspace_id=connection.workspace_id, auth_connection_id=connection.id,
-                cloud_id=connection.cloud_id, site_url='https://example.atlassian.net',
-                token_version=str(connection.token_version), account_status='active', is_admin=False,
-            )
+        database_url = fresh_database_url(stack.callback)
+        stack.enter_context(patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': database_url,
+            'TEST_DATABASE_URL': database_url, 'WORK_CONFIGURATIONS_ENABLED': 'false',
+        }))
+        stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
+        stack.enter_context(patch.object(jira_server, 'JIRA_URL', fixture['environment']['jiraUrl']))
+        models.Base.metadata.create_all(engine.get_engine(database_url))
+        stack.callback(engine.dispose_engines)
+        stack.callback(invalidate_auth_status_cache)
+        with engine.session_scope(database_url) as db:
+            actor = seed_db_actor(db,
+                workspace={'cloud_id': fixture['environment']['cloudId'], 'site_url': fixture['environment']['jiraUrl']},
+                account_identity='synthetic-parity-user',
+                token_data={'scope': FULL_OAUTH_SCOPE + ' ' + ' '.join(HOME_READ_SCOPES)})
+        self.client = jira_server.app.test_client()
+        with self.client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = actor.session_payload
+        with jira_server.app.test_request_context('/'):
+            browser_cookie['db_oauth_session'] = actor.session_payload
+            self.context = jira_server.current_request_auth_context()
         self.transports = transports
         from backend.services.user_view_config import set_user_epm_view_enabled
-        set_user_epm_view_enabled(self.context, True, database_url=helper.database_url)
+        set_user_epm_view_enabled(self.context, True, database_url=database_url)
 
         def urlopen(request, timeout=None):
             headers = {str(k).lower(): v for k, v in request.header_items()}
@@ -444,7 +424,6 @@ class DbOAuthPublicReadRunner:
             return FakeOAuthHttpResponse(_strip_identity_fields(payload))
 
         stack.enter_context(patch.object(epm_home, 'urlopen', urlopen))
-        self.client = helper.client
 
     def install_config(self, config):
         from backend.services.user_view_config import save_user_epm_config
@@ -455,7 +434,6 @@ class DbOAuthPublicReadRunner:
 
 
 MODE_FACTORIES = {
-    BasicModeRunner.name: BasicModeRunner,
     DbOAuthPublicReadRunner.name: DbOAuthPublicReadRunner,
 }
 
@@ -791,12 +769,11 @@ class _ModeOracleMixin:
         cls.mode_run = run_mode(cls.mode_name, cls.fixture)
 
     def test_home_transport_used_the_modes_identity(self):
-        runner_email = self.fixture['environment'][self.home_email_key]
-        self.assertEqual(self.mode_run.home_emails, {runner_email})
+        self.assertEqual(self.mode_run.home_emails, set())
 
-    def test_scenarios_match_frozen_expected_exactly(self):
-        outcome = compare_run(assemble_expected(self.fixture, self.mode_name), self.mode_run,
-                              self.fixture['comparison'], compare_baseline)
+    def test_scenarios_match_frozen_expected_with_public_read_allowances(self):
+        outcome = compare_run(assemble_expected(self.fixture, 'db_user_token'), self.mode_run,
+                              self.fixture['comparison'], compare_candidate)
         self.assertEqual(set(outcome), {s['name'] for s in self.fixture['scenarios']})
         for name, mismatches in outcome.items():
             with self.subTest(scenario=name):
@@ -871,9 +848,8 @@ class _ModeOracleMixin:
         self.assertEqual([c['maxResults'] for c in truncation['jira']['calls']][-2:], [100, 1])
 
 
-class BasicModeOracleTests(_ModeOracleMixin, unittest.TestCase):
-    mode_name = 'basic_json'
-    home_email_key = 'basicHomeEmail'
+class DbOAuthLegacyWorkOracleTests(_ModeOracleMixin, unittest.TestCase):
+    mode_name = 'db_oauth_public_read'
 
 
 class OracleCanFailTests(unittest.TestCase):
@@ -883,10 +859,10 @@ class OracleCanFailTests(unittest.TestCase):
     def setUpClass(cls):
         cls.fixture = load_fixture()
         cls.comparison = cls.fixture['comparison']
-        cls.expected = assemble_expected(cls.fixture, 'basic_json')
+        cls.expected = assemble_expected(cls.fixture, 'db_user_token')
 
-    def _run_basic(self, fixture, names):
-        return run_mode('basic_json', fixture, names)
+    def _run_oauth(self, fixture, names):
+        return run_mode('db_oauth_public_read', fixture, names)
 
     def test_empty_jira_hierarchy_fails_the_oracle(self):
         mutated = copy.deepcopy(self.fixture)
@@ -894,11 +870,11 @@ class OracleCanFailTests(unittest.TestCase):
             for page in entry['pages']:
                 page['issueKeys'] = []
         names = ['rollup_alpha_s101', 'rollup_all_active_s101', 'issues_alpha_s101']
-        outcome = compare_run(self.expected, self._run_basic(mutated, names), self.comparison, compare_baseline)
+        outcome = compare_run(self.expected, self._run_oauth(mutated, names), self.comparison, compare_candidate)
         for name in names:
             self.assertTrue(outcome[name], f'{name}: an empty Jira hierarchy must not pass')
         self.assertTrue(any('emptyRollup' in m or 'length' in m for m in outcome['rollup_alpha_s101']))
-        candidate = compare_run(self.expected, self._run_basic(mutated, names), self.comparison, compare_candidate)
+        candidate = compare_run(self.expected, self._run_oauth(mutated, names), self.comparison, compare_candidate)
         for name in names:
             self.assertTrue(candidate[name], f'{name}: the candidate comparison must also fail')
 
@@ -907,9 +883,9 @@ class OracleCanFailTests(unittest.TestCase):
         tags = mutated['home']['projects']['proj-001']['tags']['edges']
         tags[0]['node']['name'] = 'rnd_project_alphb'
         names = ['rollup_alpha_s101', 'projects_active']
-        run = self._run_basic(mutated, names)
+        run = self._run_oauth(mutated, names)
         self.assertTrue(run.results['rollup_alpha_s101']['unexpected'], 'wrong label must reach an unmodelled JQL')
-        outcome = compare_run(self.expected, run, self.comparison, compare_baseline)
+        outcome = compare_run(self.expected, run, self.comparison, compare_candidate)
         self.assertTrue(outcome['rollup_alpha_s101'])
         self.assertTrue(outcome['projects_active'])
         self.assertTrue(compare_run(self.expected, run, self.comparison, compare_candidate)['rollup_alpha_s101'])
@@ -917,9 +893,9 @@ class OracleCanFailTests(unittest.TestCase):
     def test_wrong_manual_label_row_fails_the_oracle(self):
         mutated = copy.deepcopy(self.fixture)
         mutated['configs']['main']['projects']['custom-1']['label'] = 'custom_exact_labeL'
-        run = self._run_basic(mutated, ['rollup_custom_row_zero_home'])
+        run = self._run_oauth(mutated, ['rollup_custom_row_zero_home'])
         self.assertTrue(run.results['rollup_custom_row_zero_home']['unexpected'])
-        self.assertTrue(compare_run(self.expected, run, self.comparison, compare_baseline)['rollup_custom_row_zero_home'])
+        self.assertTrue(compare_run(self.expected, run, self.comparison, compare_candidate)['rollup_custom_row_zero_home'])
 
     def _scenario(self, name='rollup_all_active_s101'):
         return copy.deepcopy(self.expected[name])
@@ -1058,7 +1034,7 @@ class DbOAuthPublicReadCandidateTests(unittest.TestCase):
 
 class CandidateSeamTests(unittest.TestCase):
     def test_registered_modes_expose_the_runner_interface(self):
-        self.assertEqual(sorted(MODE_FACTORIES), ['basic_json', 'db_oauth_public_read'])
+        self.assertEqual(sorted(MODE_FACTORIES), ['db_oauth_public_read'])
         for factory in MODE_FACTORIES.values():
             for attribute in ('enter', 'install_config', 'get'):
                 self.assertTrue(callable(getattr(factory, attribute)))

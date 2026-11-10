@@ -26,10 +26,6 @@ RETRYABLE_UNIQUE_CONSTRAINTS = frozenset({
     'uq_view_configs_active_default',
     'uq_view_config_versions_number',
 })
-RETRYABLE_SQLITE_UNIQUE_MESSAGES = (
-    'unique constraint failed: view_configs.workspace_id, view_configs.owner_user_id',
-    'unique constraint failed: view_config_versions.view_config_id, view_config_versions.version_number',
-)
 
 
 class UserViewConfigNotFound(LookupError):
@@ -110,24 +106,18 @@ def _active_statement(context):
     )
 
 
-def _locked(statement, dialect_name):
-    return statement.with_for_update() if dialect_name == 'postgresql' else statement
-
-
-def _default_view(session, context, dialect_name):
-    return session.execute(_locked(
+def _default_view(session, context):
+    return session.execute(
         _active_statement(context).where(models.ViewConfig.is_default.is_(True)).order_by(
             models.ViewConfig.created_at.asc(),
-        ),
-        dialect_name,
-    )).scalars().first()
+        ).with_for_update()
+    ).scalars().first()
 
 
-def _selected_view(session, context, view_config_id, dialect_name):
-    return session.execute(_locked(
-        _active_statement(context).where(models.ViewConfig.id == view_config_id),
-        dialect_name,
-    )).scalars().first()
+def _selected_view(session, context, view_config_id):
+    return session.execute(
+        _active_statement(context).where(models.ViewConfig.id == view_config_id).with_for_update()
+    ).scalars().first()
 
 
 def _scope_lock_key(context):
@@ -141,17 +131,12 @@ def _workspace_import_lock_key(context):
 
 
 def _begin_serialized(session, context):
-    dialect_name = session.get_bind().dialect.name
-    if dialect_name == 'sqlite':
-        session.execute(text('BEGIN IMMEDIATE'))
-    elif dialect_name == 'postgresql':
-        session.execute(
-            text('SELECT pg_advisory_xact_lock(:lock_key)'),
-            {'lock_key': _scope_lock_key(context)},
-        )
-    else:
+    if session.get_bind().dialect.name != 'postgresql':
         raise UserViewConfigStorageError('unsupported private-view storage dialect')
-    return dialect_name
+    session.execute(
+        text('SELECT pg_advisory_xact_lock(:lock_key)'),
+        {'lock_key': _scope_lock_key(context)},
+    )
 
 
 def _latest_version(session, view_id):
@@ -161,8 +146,8 @@ def _latest_version(session, view_id):
     return int(value or 0)
 
 
-def _effective_epm(session, context, dialect_name):
-    default = _default_view(session, context, dialect_name)
+def _effective_epm(session, context):
+    default = _default_view(session, context)
     if default is None:
         return normalize_epm_config({})
     epm = default.payload.get('epm') if isinstance(default.payload, dict) else {}
@@ -197,8 +182,8 @@ def _append_version(session, view, context, change_note):
     return version_number
 
 
-def _result(session, view, context, dialect_name, before_epm, version_number):
-    after_epm = _effective_epm(session, context, dialect_name)
+def _result(session, view, context, before_epm, version_number):
+    after_epm = _effective_epm(session, context)
     return UserViewMutationResult(
         view_config_id=view.id,
         workspace_id=view.workspace_id,
@@ -246,11 +231,11 @@ def _with_view_enabled(payload, enabled):
 
 def _run_mutation_once(context, database_url, operation, before_commit=None):
     with db_engine.session_scope(database_url) as session:
-        dialect_name = _begin_serialized(session, context)
-        before_epm = _effective_epm(session, context, dialect_name)
-        view, version_number = operation(session, dialect_name)
+        _begin_serialized(session, context)
+        before_epm = _effective_epm(session, context)
+        view, version_number = operation(session)
         session.flush()
-        result = _result(session, view, context, dialect_name, before_epm, version_number)
+        result = _result(session, view, context, before_epm, version_number)
         if before_commit is not None:
             before_commit()
         return result
@@ -260,10 +245,7 @@ def _is_retryable_integrity_error(error):
     original = getattr(error, 'orig', None)
     diagnostic = getattr(original, 'diag', None)
     constraint_name = getattr(diagnostic, 'constraint_name', None)
-    if constraint_name in RETRYABLE_UNIQUE_CONSTRAINTS:
-        return True
-    message = str(original or error).strip().lower()
-    return any(candidate in message for candidate in RETRYABLE_SQLITE_UNIQUE_MESSAGES)
+    return constraint_name in RETRYABLE_UNIQUE_CONSTRAINTS
 
 
 def _run_transaction(context, database_url, operation, *, post_commit=None, before_commit=None):
@@ -298,12 +280,12 @@ def create_user_view(
     if view_type not in {'eng', 'epm', 'mixed'}:
         raise ValueError('viewType must be eng, epm, or mixed')
 
-    def operation(session, dialect_name):
+    def operation(session):
         view_payload = payload
         if is_default:
-            existing_defaults = session.execute(_locked(
-                _active_statement(context).where(models.ViewConfig.is_default.is_(True)), dialect_name,
-            )).scalars().all()
+            existing_defaults = session.execute(
+                _active_statement(context).where(models.ViewConfig.is_default.is_(True)).with_for_update(),
+            ).scalars().all()
             # The owner's enablement is never adopted from, or reset by, the incoming view.
             view_payload = _with_view_enabled(
                 payload, _payload_view_enabled(existing_defaults[0].payload) if existing_defaults else None,
@@ -357,18 +339,18 @@ def mutate_user_view(
     if view_type is not _UNSET and view_type not in {'eng', 'epm', 'mixed'}:
         raise ValueError('viewType must be eng, epm, or mixed')
 
-    def operation(session, dialect_name):
-        view = _selected_view(session, context, view_config_id, dialect_name)
+    def operation(session):
+        view = _selected_view(session, context, view_config_id)
         if view is None:
             raise UserViewConfigNotFound('view config not found')
         current_version = _latest_version(session, view.id)
         if payload is not _UNSET and current_version != base_version:
             current = _result(
-                session, view, context, dialect_name,
-                _effective_epm(session, context, dialect_name), current_version,
+                session, view, context,
+                _effective_epm(session, context), current_version,
             )
             raise UserViewConfigConflict(current)
-        owner_default = _default_view(session, context, dialect_name)
+        owner_default = _default_view(session, context)
         owner_enabled = _payload_view_enabled(owner_default.payload) if owner_default is not None else None
         if name is not _UNSET:
             normalized_name = str(name or '').strip()
@@ -386,13 +368,12 @@ def mutate_user_view(
         elif is_default is not _UNSET:
             make_default = bool(is_default)
             if make_default:
-                for existing in session.execute(_locked(
+                for existing in session.execute(
                     _active_statement(context).where(
                         models.ViewConfig.is_default.is_(True),
                         models.ViewConfig.id != view.id,
-                    ),
-                    dialect_name,
-                )).scalars().all():
+                    ).with_for_update(),
+                ).scalars().all():
                     existing.is_default = False
                 session.flush()
             view.is_default = make_default
@@ -417,8 +398,8 @@ def save_user_epm_config(
 ):
     normalized = normalize_epm_settings_payload(payload)
 
-    def operation(session, dialect_name):
-        view = _default_view(session, context, dialect_name)
+    def operation(session):
+        view = _default_view(session, context)
         if view is None:
             view = models.ViewConfig(
                 workspace_id=context.workspace_id,
@@ -458,8 +439,8 @@ def set_user_epm_view_enabled(
     if not isinstance(enabled, bool):
         raise ValueError('viewEnabled must be a boolean')
 
-    def operation(session, dialect_name):
-        view = _default_view(session, context, dialect_name)
+    def operation(session):
+        view = _default_view(session, context)
         if view is None:
             view = models.ViewConfig(
                 workspace_id=context.workspace_id,
@@ -488,7 +469,7 @@ def load_user_epm_view_enabled(context, *, database_url=None):
     """The owner's saved enablement; false when there is no default view or no saved boolean."""
     try:
         with db_engine.session_scope(database_url) as session:
-            view = _default_view(session, context, session.get_bind().dialect.name)
+            view = _default_view(session, context)
             return view is not None and _payload_view_enabled(view.payload) is True
     except SQLAlchemyError as error:
         raise UserViewConfigStorageError('user EPM preference read failed') from error
@@ -516,11 +497,11 @@ def strip_epm_view_enabled(*, database_url=None, context=None):
         scope = SimpleNamespace(workspace_id=workspace_id, user_id=owner_user_id)
         try:
             with db_engine.session_scope(database_url) as session:
-                dialect_name = _begin_serialized(session, scope)
-                views = session.execute(_locked(select(models.ViewConfig).where(
+                _begin_serialized(session, scope)
+                views = session.execute(select(models.ViewConfig).where(
                     models.ViewConfig.workspace_id == workspace_id,
                     models.ViewConfig.owner_user_id == owner_user_id,
-                ), dialect_name)).scalars().all()
+                ).with_for_update()).scalars().all()
                 for view in views:
                     if _has_view_enabled(view.payload):
                         view.payload = _with_view_enabled(view.payload, None)
@@ -551,22 +532,20 @@ def save_imported_user_view(
     normalized = validate_private_view_ownership(payload)
     attempt_state = {'imported': False}
 
-    def operation(session, dialect_name):
+    def operation(session):
         attempt_state['imported'] = False
         if shared_groups is not None:
             if validate_groups_config_fn is None:
                 raise ValueError('group validation is required for legacy import')
-            if dialect_name == 'postgresql':
-                session.execute(
-                    text('SELECT pg_advisory_xact_lock(:lock_key)'),
-                    {'lock_key': _workspace_import_lock_key(context)},
-                )
-            existing_groups = session.execute(_locked(
+            session.execute(
+                text('SELECT pg_advisory_xact_lock(:lock_key)'),
+                {'lock_key': _workspace_import_lock_key(context)},
+            )
+            existing_groups = session.execute(
                 select(models.WorkspaceGroupConfig).where(
                     models.WorkspaceGroupConfig.workspace_id == context.workspace_id,
-                ),
-                dialect_name,
-            )).scalars().first()
+                ).with_for_update(),
+            ).scalars().first()
             if existing_groups is None:
                 shared_group_config.ensure_workspace_group_config(
                     session,
@@ -574,18 +553,17 @@ def save_imported_user_view(
                     shared_groups,
                     validate_groups_config_fn=validate_groups_config_fn,
                 )
-        duplicate = session.execute(_locked(
+        duplicate = session.execute(
             select(models.ViewConfig).where(
                 models.ViewConfig.workspace_id == context.workspace_id,
                 models.ViewConfig.owner_user_id == context.user_id,
                 models.ViewConfig.source_path == str(source_path),
                 models.ViewConfig.source_hash == str(source_hash),
-            ),
-            dialect_name,
-        )).scalars().first()
+            ).with_for_update(),
+        ).scalars().first()
         if duplicate is not None:
             return duplicate, _latest_version(session, duplicate.id)
-        view = _default_view(session, context, dialect_name)
+        view = _default_view(session, context)
         owner_payload = _with_view_enabled(
             normalized, _payload_view_enabled(view.payload) if view is not None else None,
         )
@@ -622,7 +600,6 @@ def save_imported_user_view(
 def load_user_epm_config(context, *, database_url=None):
     try:
         with db_engine.session_scope(database_url) as session:
-            dialect_name = session.get_bind().dialect.name
-            return _effective_epm(session, context, dialect_name)
+            return _effective_epm(session, context)
     except SQLAlchemyError as error:
         raise UserViewConfigStorageError('user EPM read failed') from error

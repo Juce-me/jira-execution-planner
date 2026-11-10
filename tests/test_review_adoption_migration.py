@@ -14,7 +14,6 @@ from pathlib import Path
 import random
 import subprocess
 import sys
-import tempfile
 import unittest
 from unittest.mock import Mock, patch
 import uuid
@@ -28,10 +27,11 @@ from backend.auth.context import RequestAuthContext
 from backend.db import engine as db_engine, models
 from backend.services import sprint_review as review
 from scripts import adopt_legacy_sprint_reviews as adopt
+from tests.postgres_test_db import fresh_database_url
 
 ROOT = Path(__file__).resolve().parents[1]
 REVISION_FILE = ROOT / 'backend' / 'db' / 'migrations' / 'versions' / '20261023_0020_adopt_legacy_sprint_reviews.py'
-PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261030_0022'
+PARENT, ADOPTION, HEAD = '20261020_0019', '20261023_0020', '20261106_0024'
 GROUPS = [{'id': 'group-x', 'name': 'Platform'}, {'id': 'group-y', 'name': 'Payments'}]
 SECRET_LABEL, SECRET_VALUE = 'Secret-Label-Zq', 'Secret-Value-4711'
 LOGGER = 'review_adoption'
@@ -67,8 +67,7 @@ def load_revision():
 
 class RevisionCase(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'adopt.db')
+        self.url = fresh_database_url(self.addCleanup)
         self.env = patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.url,
                                            'DATABASE_CONNECTION_MODE': 'url'})
         self.env.start()
@@ -82,7 +81,6 @@ class RevisionCase(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
         db_engine.dispose_engines()
-        self.temp.cleanup()
 
     def make_workspace(self, name, groups=None, payload=None, identity=None):
         with db_engine.session_scope(self.url) as session:
@@ -182,8 +180,9 @@ class UpgradeBehaviorTests(RevisionCase):
         with db_engine.session_scope(self.url) as session:
             ids = [row[0] for row in session.execute(text('SELECT id FROM workspace_group_review_schemas'))]
             self.assertEqual(len(ids), 2)
-            self.assertTrue(all(len(i) == 32 and i == i.lower() and '-' not in i for i in ids))
-            self.assertIsInstance(session.execute(text('SELECT columns FROM workspace_group_review_schemas')).scalar(), str)
+            # PostgreSQL stores the ORM's Uuid natively and its JSON as a JSON array, not a JSON string.
+            self.assertTrue(all(isinstance(i, uuid.UUID) for i in ids))
+            self.assertIsInstance(session.execute(text('SELECT columns FROM workspace_group_review_schemas')).scalar(), list)
             self.assertEqual(session.execute(text('SELECT count(*) FROM group_review_cells')).scalar(), 2)
 
     def test_group_that_holds_rows_is_untouched_and_logged(self):
@@ -271,14 +270,13 @@ class UpgradeBehaviorTests(RevisionCase):
         self.assertEqual(len(self.group_state()[0]), 2)
 
     def test_fresh_database_upgrades_to_head(self):
-        with tempfile.TemporaryDirectory(dir='tests') as directory:
-            url = 'sqlite+pysqlite:///' + str(Path(directory).resolve() / 'fresh.db')
-            config = Config(str(ROOT / 'backend' / 'db' / 'alembic.ini'))
-            config.set_main_option('sqlalchemy.url', url)
-            config.set_main_option('script_location', str(ROOT / 'backend' / 'db' / 'migrations'))
-            command.upgrade(config, 'head')
-            with db_engine.session_scope(url) as session:
-                self.assertEqual(session.execute(text('SELECT version_num FROM alembic_version')).scalar(), HEAD)
+        url = fresh_database_url(self.addCleanup)
+        config = Config(str(ROOT / 'backend' / 'db' / 'alembic.ini'))
+        config.set_main_option('sqlalchemy.url', url)
+        config.set_main_option('script_location', str(ROOT / 'backend' / 'db' / 'migrations'))
+        command.upgrade(config, 'head')
+        with db_engine.session_scope(url) as session:
+            self.assertEqual(session.execute(text('SELECT version_num FROM alembic_version')).scalar(), HEAD)
 
     def test_a_missing_required_table_fails_the_upgrade_before_any_write(self):
         self.simple()
@@ -323,8 +321,10 @@ class AdoptAllSeamTests(RevisionCase):
     def test_a_database_error_is_reraised_without_driver_text(self):
         self.simple(label=SECRET_LABEL, value=SECRET_VALUE)
         with db_engine.get_engine(self.url).begin() as connection:
-            connection.execute(text("CREATE TRIGGER boom BEFORE INSERT ON group_review_cells BEGIN "
-                                    "SELECT RAISE(ABORT, 'boom'); END"))
+            connection.execute(text("CREATE FUNCTION boom() RETURNS trigger LANGUAGE plpgsql AS "
+                                    "$$ BEGIN RAISE EXCEPTION 'boom'; END $$"))
+            connection.execute(text("CREATE TRIGGER boom BEFORE INSERT ON group_review_cells "
+                                    "FOR EACH ROW EXECUTE FUNCTION boom()"))
         revision = load_revision()
         with self.assertRaises(revision.ReviewAdoptionError) as caught:
             with db_engine.get_engine(self.url).begin() as connection:
@@ -481,7 +481,7 @@ class DifferentialTests(RevisionCase):
 
     def run_case(self, seed):
         rng = random.Random(seed)
-        script_url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / f'script{seed}.db')
+        script_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(script_url))
         workspaces = [uid(9000 + n) for n in range(rng.randint(1, 3))]
         group_sets = [[{'id': f'g{n}-{k}', 'name': 'G'} for k in range(rng.randint(1, 3))] for n in range(len(workspaces))]

@@ -31,7 +31,7 @@ function input(overrides = {}) {
             showProduct: true, showTech: true, groupByInitiativeChoice: null, statsView: 'teams',
             cohortStartQuarter: '2026Q3', cohortEndQuarter: '2026Q4', showAlertsPanel: true,
         },
-        searchQuery: '', sort: 'priority', layout: 'table', rowsMode: null, boardStrictScope: '',
+        searchQuery: '', sort: 'priority', rowsMode: null, boardStrictScope: '',
         sprintRange: { start: '', end: '' }, alertFlags: noFlags, alertCounts: {}, focus: null,
         ...overrides,
     };

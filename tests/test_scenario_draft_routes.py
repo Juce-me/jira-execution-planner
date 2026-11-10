@@ -1,16 +1,15 @@
 import os
-import tempfile
 import threading
 import time
 import unittest
-from dataclasses import replace
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from flask import jsonify, request
 
-from backend.auth.context import RequestAuthContext
-from backend.auth.csrf import issue_csrf_token
+from backend.auth.db_context import invalidate_auth_status_cache, resolve_db_request_auth_context
+from backend.auth.csrf_store import issue_csrf_token
 from backend.auth.db_browser_sessions import create_browser_session
 from backend.db import engine as db_engine
 from backend.db import models
@@ -22,6 +21,8 @@ from backend.scenario_drafts import (
     save_draft,
 )
 import jira_server
+from tests.db_oauth_test_helpers import seed_db_actor
+from tests.postgres_test_db import fresh_database_url
 
 
 FULL_SCOPE = (
@@ -35,16 +36,17 @@ class ScenarioDraftRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self.client = jira_server.app.test_client()
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'scenario-draft-routes.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self._env_patcher = patch.dict(os.environ, {
             'CONFIG_STORAGE_BACKEND': 'db',
             'DATABASE_URL': self.database_url,
         }, clear=False)
         self._env_patcher.start()
+        auth_mode = patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth')
+        auth_mode.start()
+        self.addCleanup(auth_mode.stop)
+        self.addCleanup(invalidate_auth_status_cache)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -72,44 +74,16 @@ class ScenarioDraftRouteTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self._env_patcher.stop()
-        self._tmpdir.cleanup()
 
     def _seed_user(self, account_id, *, site='https://example.atlassian.net', cloud='cloud-1'):
         with self.factory() as session:
-            workspace = models.Workspace(
-                environment_key='local',
-                name=f'Workspace {account_id}',
-                jira_site_url=site,
-                jira_cloud_id=cloud,
-                created_by='test',
-            )
-            user = models.User(
-                external_provider='atlassian',
-                external_subject=account_id,
-                account_type='user',
-                status='active',
-                created_by='test',
-            )
-            session.add_all([workspace, user])
-            session.flush()
-            connection = models.AuthConnection(
-                user_id=user.id,
-                workspace_id=workspace.id,
-                provider='atlassian_oauth',
-                site_url=site,
-                cloud_id=cloud,
-                scopes=FULL_SCOPE.split(),
-                scope_provenance='provider',
-                status='active',
-                token_version=1,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(connection)
+            actor = seed_db_actor(session,
+                workspace={'cloud_id': cloud, 'site_url': site},
+                account_identity={'account_id': account_id, 'display_name': account_id},
+                roles=('admin',))
             session.commit()
-            return workspace.id, user.id, connection.id
+            return actor.workspace_id, actor.user_id, actor.connection_id
 
     def _seed_browser_session(self, workspace_id, user_id, connection_id):
         with self.factory() as session:
@@ -123,44 +97,29 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             return handle.id
 
     def _context(self, workspace_id, user_id, connection_id, *, account_id='account-1', site='https://example.atlassian.net', cloud='cloud-1', browser_session_id=''):
-        return RequestAuthContext(
-            auth_mode='atlassian_oauth',
-            user_id=user_id,
-            stable_subject=account_id,
-            atlassian_account_id=account_id,
-            workspace_id=workspace_id,
-            auth_connection_id=connection_id,
-            cloud_id=cloud,
-            site_url=site,
-            token_version='1',
-            account_status='active',
-            is_admin=True,
-            browser_session_id=browser_session_id,
-            granted_scopes=tuple(FULL_SCOPE.split()),
-            granted_scopes_verified=True,
-        )
+        with self.factory() as db:
+            connection = db.get(models.AuthConnection, connection_id)
+            if connection.user_id != user_id or connection.workspace_id != workspace_id:
+                # Shared-workspace collaborators need their own real connection.
+                actor = seed_db_actor(db, workspace=db.get(models.Workspace, workspace_id),
+                    account_identity={'account_id': account_id, 'display_name': account_id}, roles=('admin',))
+                connection_id = actor.connection_id
+                browser_session_id = actor.browser_session_id
+                db.commit()
+        if not browser_session_id:
+            browser_session_id = self._seed_browser_session(workspace_id, user_id, connection_id)
+        return resolve_db_request_auth_context({'db_browser_session_id': browser_session_id},
+            database_url=self.database_url, required_scopes=FULL_SCOPE)
 
     def _install_session(self, session_id, account_id, connection_id, browser_session_id=''):
+        if not browser_session_id:
+            with self.factory() as db:
+                connection = db.get(models.AuthConnection, connection_id)
+                user_id, workspace_id = connection.user_id, connection.workspace_id
+            browser_session_id = self._seed_browser_session(workspace_id, user_id, connection_id)
         with self.client.session_transaction() as flask_session:
-            flask_session['atlassian_oauth_session_id'] = session_id
-            flask_session['db_oauth_session'] = (
-                {'db_browser_session_id': browser_session_id}
-                if browser_session_id
-                else {'db_auth_connection_id': connection_id}
-            )
-        jira_server.OAUTH_TOKEN_STORE[session_id] = {
-            'access_token': 'access-123',
-            'refresh_token': 'refresh-123',
-            'expires_at': time.time() + 3600,
-            'scope': FULL_SCOPE,
-            'cloudid': 'cloud-1',
-            'site_url': 'https://example.atlassian.net',
-            'account_id': account_id,
-            'account_status': 'active',
-            'db_auth_connection_id': connection_id,
-            'db_token_version': '1',
-            'stored_at': time.time(),
-        }
+            flask_session.pop('atlassian_oauth_session_id', None)
+            flask_session['db_oauth_session'] = {'db_browser_session_id': browser_session_id}
 
     def _env_patch(self):
         return patch.dict(os.environ, {
@@ -175,20 +134,27 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         }
 
     def _csrf_token(self, context=None):
-        context = context or self.context
-        data = {
-            'db_auth_connection_id': context.auth_connection_id,
-            'account_id': context.atlassian_account_id,
-        }
-        if context.browser_session_id:
-            data['db_browser_session_id'] = context.browser_session_id
-        else:
-            data['db_token_version'] = context.token_version
-        with self.client.session_transaction() as flask_session:
-            return issue_csrf_token(flask_session, data)
+        if context is not None:
+            with self._route_patch(context):
+                return self._csrf_token()
+        response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        return response.get_json()['csrfToken']
 
+    @contextmanager
     def _route_patch(self, context=None):
-        return patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=context or self.context)
+        # Switch actual browser authority for ownership cases; never replace a resolver.
+        if context is None:
+            yield
+            return
+        with self.client.session_transaction() as cookie:
+            previous = cookie.get('db_oauth_session')
+            cookie['db_oauth_session'] = {'db_browser_session_id': context.browser_session_id}
+        try:
+            yield
+        finally:
+            with self.client.session_transaction() as cookie:
+                cookie['db_oauth_session'] = previous
 
     def test_get_active_draft_requires_scope_key(self):
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), self._route_patch():
@@ -211,7 +177,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             session.query(models.User).delete()
             session.query(models.Workspace).delete()
             workspace = models.Workspace(environment_key='local', name='Only', jira_site_url='https://example.atlassian.net', jira_cloud_id='cloud-1', created_by='test')
-            user = models.User(external_provider='atlassian', external_subject='account-only', account_type='user', status='active', created_by='test')
+            user = models.User(external_provider='atlassian', external_subject='account-only', account_type='admin', status='active', created_by='test')
             session.add_all([workspace, user])
             session.flush()
             connection = models.AuthConnection(
@@ -286,19 +252,15 @@ class ScenarioDraftRouteTests(unittest.TestCase):
 
     def test_draft_write_uses_upgraded_browser_session_csrf_binding(self):
         """Draft writes use the upgraded browser-session CSRF binding."""
-        context = replace(self.context, browser_session_id='browser-1')
+        context = self.context
         with self.client.session_transaction() as flask_session:
             flask_session['db_oauth_session'] = {
                 'db_browser_session_id': context.browser_session_id,
             }
-            token = issue_csrf_token(flask_session, {
-                'db_browser_session_id': context.browser_session_id,
-                'db_auth_connection_id': context.auth_connection_id,
-                'account_id': context.atlassian_account_id,
-            })
+        with self._env_patch():
+            token = issue_csrf_token(context)
 
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
              self._route_patch(context):
             response = self.client.post(
                 '/api/scenario/drafts',
@@ -362,13 +324,15 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(token_without_header.get_json()['error'], 'csrf_required')
 
     def test_auth_csrf_token_supports_db_bound_scenario_draft_post(self):
-        jira_server.OAUTH_TOKEN_STORE['session-1'].pop('db_auth_connection_id', None)
-        jira_server.OAUTH_TOKEN_STORE['session-1'].pop('db_token_version', None)
+        with self.factory() as db:
+            db.get(models.User, self.user_id).account_type = 'user'
+            db.commit()
+        invalidate_auth_status_cache()
 
         # The member is not an admin: unlock Scenario so the CSRF/auth path is what is exercised.
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'scenario_planner_for_everyone', return_value=True):
-            csrf_response = self.client.get('/api/auth/csrf')
+            csrf_response = self.client.get('/api/auth/csrf', headers={'X-Requested-With': 'jira-execution-planner'})
             self.assertEqual(csrf_response.status_code, 200, csrf_response.get_data(as_text=True))
             response = self.client.post(
                 '/api/scenario/drafts',
@@ -804,7 +768,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
 
     def test_reload_source_loader_resolves_captured_browser_session_without_creating_rows(self):
         """Reload resolves the captured browser session without creating rows."""
-        context = replace(self.context, browser_session_id='browser-1')
+        context = self.context
         draft = {
             'scopePayload': {
                 'config': {'lane_mode': 'team'},
@@ -816,10 +780,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             self.assertEqual(session_data, {
                 'db_browser_session_id': context.browser_session_id,
             })
-            return context
+            return original_resolver(session_data, **_kwargs)
+
+        original_resolver = jira_server.resolve_db_request_auth_context
 
         def planner():
-            self.assertIs(jira_server.current_request_auth_context(), context)
+            self.assertEqual(jira_server.current_request_auth_context(), context)
             return jsonify({
                 'config': {},
                 'filters': {},
@@ -841,7 +807,8 @@ class ScenarioDraftRouteTests(unittest.TestCase):
 
     def test_reload_source_loader_rejects_context_without_browser_session(self):
         """Reload rejects an auth context without a browser session."""
-        context = replace(self.context, browser_session_id='')
+        context = resolve_db_request_auth_context({'db_auth_connection_id': self.connection_id, 'db_token_version': '1'},
+            database_url=self.database_url, required_scopes=FULL_SCOPE)
         with patch.object(
             jira_server,
             'scenario_planner',
@@ -907,15 +874,10 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         def post_reload():
             client = jira_server.app.test_client()
             with client.session_transaction() as flask_session:
-                flask_session['atlassian_oauth_session_id'] = 'thread-session'
                 flask_session['db_oauth_session'] = {
                     'db_browser_session_id': self.context.browser_session_id,
                 }
-                token = issue_csrf_token(flask_session, {
-                    'db_browser_session_id': self.context.browser_session_id,
-                    'db_auth_connection_id': self.context.auth_connection_id,
-                    'account_id': self.context.atlassian_account_id,
-                })
+            token = issue_csrf_token(self.context)
             started = time.monotonic()
             response = client.post(
                 f'/api/scenario/drafts/{draft_id}/reload-from-jira',
@@ -930,7 +892,6 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             result['body'] = response.get_json()
 
         with self._env_patch(), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-             patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=self.context), \
              patch.object(jira_server, 'scenario_planner', side_effect=slow_planner), \
              patch('backend.routes.scenario_draft_routes.SCENARIO_RELOAD_TIMEOUT_SECONDS', 0.05):
             worker = threading.Thread(target=post_reload)
@@ -949,6 +910,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             self.assertEqual(session.query(models.ScenarioDraftEvent).filter_by(scenario_draft_id=draft_id).count(), 1)
 
     def test_writeback_preview_is_dry_run_and_writeback_is_blocked_without_credential_paths(self):
+        self.assertFalse(hasattr(jira_server.epm_home, '_read_metadata_credential'))
         saved = save_draft(self.context, 'scope-writeback', 'Writeback', {})
         draft_id = saved['activeDraft']['draftId']
         guards = [
@@ -959,7 +921,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             patch.object(jira_server, 'current_jira_get', side_effect=AssertionError('current_jira_get forbidden')),
             patch.object(jira_server, 'current_jira_search', side_effect=AssertionError('current_jira_search forbidden')),
             patch.object(jira_server, 'jira_search_request', side_effect=AssertionError('jira_search_request forbidden')),
-            patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('home credential forbidden')),
+            patch('backend.epm.home.build_home_oauth_graphql_client', side_effect=AssertionError('Home OAuth client forbidden')),
             patch('backend.auth.service_integrations.get_service_integration_summary', side_effect=AssertionError('service integration forbidden')),
             patch('backend.auth.service_integrations.list_service_integration_summaries', side_effect=AssertionError('service integration list forbidden')),
         ]
@@ -1014,11 +976,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
                 self.assertTrue(jira_server.is_oauth_ready_api_path(path))
 
     def test_draft_save_load_does_not_resolve_external_credentials(self):
+        self.assertFalse(hasattr(jira_server.epm_home, '_read_metadata_credential'))
         guards = [
             patch.object(jira_server, 'jira_get', side_effect=AssertionError('jira_get forbidden')),
             patch.object(jira_server, 'jira_post', side_effect=AssertionError('jira_post forbidden')),
             patch.object(jira_server, 'jira_request', side_effect=AssertionError('jira_request forbidden')),
-            patch('backend.epm.home._read_metadata_credential', side_effect=AssertionError('home credential forbidden')),
+            patch('backend.epm.home.build_home_oauth_graphql_client', side_effect=AssertionError('Home OAuth client forbidden')),
             patch('backend.auth.service_integrations.get_service_integration_summary', side_effect=AssertionError('service integration forbidden')),
             patch('backend.auth.service_integrations.list_service_integration_summaries', side_effect=AssertionError('service integration list forbidden')),
         ]
@@ -1065,7 +1028,7 @@ class ScenarioDraftRouteTests(unittest.TestCase):
             response = self.client.post(
                 '/api/scenario/drafts',
                 json={'scope_key': 'scope-no-db-session', 'name': 'No DB session', 'overrides': {}},
-                headers={'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': self._csrf_token()},
+                headers={'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': 'invalid-without-db-session'},
             )
 
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
@@ -1083,15 +1046,12 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(body['storage'], 'db')
         self.assertEqual(body['activeDraft']['draftRevision'], 1)
 
-    def test_legacy_get_preserves_json_fallback_shape_in_basic_mode(self):
-        legacy = {'version': 1, 'scenarios': {'scope-basic-get': {'overrides': {'ENG-1': {'end': '2026-05-20'}}}}}
-        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': ''}, clear=False), \
-             patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-             patch.object(jira_server, 'load_scenario_overrides', return_value=legacy):
+    def test_legacy_get_rejects_retired_basic_profile_before_json(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'load_scenario_overrides', side_effect=AssertionError('live JSON read')):
             response = self.client.get('/api/scenario/overrides?scope_key=scope-basic-get')
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'overrides': {'ENG-1': {'end': '2026-05-20'}}})
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_legacy_post_is_not_oauth_ready_in_db_mode_without_revision(self):
         save_draft(self.context, 'scope-legacy-post', 'Legacy POST', {'ENG-1': {'start': '2026-05-18'}})
@@ -1160,18 +1120,14 @@ class ScenarioDraftRouteTests(unittest.TestCase):
         self.assertEqual(response.status_code, 501, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['error'], 'route_not_oauth_ready')
 
-    def test_legacy_post_basic_mode_writes_json_without_csrf(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = os.path.join(tmpdir, 'scenario-overrides.json')
-            with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': ''}, clear=False), \
-                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
-                 patch.object(jira_server, 'SCENARIO_OVERRIDES_PATH', path):
-                response = self.client.post('/api/scenario/overrides', json={'scope_key': 'scope-basic-post', 'name': 'Basic', 'overrides': {'ENG-1': {'start': '2026-05-18'}}})
-                loaded = jira_server.load_scenario_overrides()
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'ok': True})
-        self.assertEqual(loaded['scenarios']['scope-basic-post']['overrides'], {'ENG-1': {'start': '2026-05-18'}})
+    def test_legacy_post_basic_profile_is_rejected_before_json_write(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'save_scenario_overrides', side_effect=AssertionError('live JSON write')):
+            response = self.client.post('/api/scenario/overrides', json={
+                'scope_key': 'scope-basic-post', 'name': 'Basic',
+                'overrides': {'ENG-1': {'start': '2026-05-18'}}})
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
     def test_scope_payload_rejects_membership_shapes(self):
         payloads = [

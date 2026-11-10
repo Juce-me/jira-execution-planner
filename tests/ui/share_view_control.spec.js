@@ -5,6 +5,16 @@ const { test, expect } = require('@playwright/test');
 const { catchUpPrefs, deferred, groupsConfigPayload, mockDashboard, openCatchUp } = require('./eng_epic_refresh_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
 
+// Planning is the Table only (#323): opens Planning and waits for the first Epic row.
+async function openPlanningTable(page, { width, height }) {
+    await page.setViewportSize({ width, height });
+    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true }));
+    await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
+    await expect(page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-1"]')).toBeVisible();
+    // The Epic table is shorter than the List was: give the document room to scroll the compact header in.
+    await page.addStyleTag({ content: 'body{padding-bottom:1600px}' });
+}
+
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const harnessUrl = `${appBaseUrl}/share-view-control-harness`;
@@ -571,7 +581,7 @@ test.describe('Share control: in the app', () => {
     // Sticky layering (MRT009) and the header's no-overflow contract: the baseline is the same page with the Share wrappers hidden.
     test('Share adds no compact-header height, moves no sticky offset and adds no horizontal overflow', async ({ page }) => {
         const ctx = await mockDashboard(page);
-        await openCatchUp(page, ctx, { width: 1440, height: 900, prefs: { showPlanning: true, planningLayout: 'list' } });
+        await openPlanningTable(page, { width: 1440, height: 900 });
         await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
         const setShare = (shown) => page.evaluate((visible) => {
             let style = document.getElementById('share-baseline');
@@ -661,7 +671,8 @@ test.describe('Share control: in the app', () => {
         test(`the fallback notice is not covered by the sticky stack in ${mode} when the compact control is used`, async ({ page }) => {
             await installClipboard(page, 'missing');
             const ctx = await mockDashboard(page);
-            await openCatchUp(page, ctx, { width: 1440, height: 900, prefs: mode === 'planning' ? { showPlanning: true, planningLayout: 'list' } : {} });
+            if (mode === 'planning') await openPlanningTable(page, { width: 1440, height: 900 });
+            else await openCatchUp(page, ctx, { width: 1440, height: 900 });
             await page.evaluate(() => window.scrollTo(0, 900));
             await expect(page.locator('.compact-sticky-header.is-visible')).toHaveCount(1);
             await shareButton(page, 'compact').click();
@@ -692,7 +703,7 @@ async function openShareFixture(page, layout = 'list', withSynthetic = false) {
     }
     if (layout === 'list') await openCatchUp(page, ctx, { width: 1440, height: 900 });
     else {
-        await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true, planningLayout: 'table' }));
+        await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ showPlanning: true }));
         await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
         await expect(page.locator('tr[data-row-kind="epic"][data-issue-key="EPIC-1"]')).toBeVisible();
     }
@@ -1091,7 +1102,7 @@ test('genuine warnings match the Jira warning typography and wrapping across mai
                     preferences: { ...groupsConfigPayload.preferences, activeGroupId: groupId, effectiveVisibleGroupIds: [groupId] },
                 }));
                 await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({
-                    activeGroupId: groupId, showPlanning: host === 'table', planningLayout: host === 'table' ? 'table' : 'list',
+                    activeGroupId: groupId, showPlanning: host === 'table',
                 }));
                 await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
                 await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });

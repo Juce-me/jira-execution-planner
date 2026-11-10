@@ -99,6 +99,11 @@ export function useConnectionRecovery({
 
     const consume = React.useCallback((principal) => {
         const recovery = readConnectionRecoveryState(getConnectionRecoveryStorage(window), principal);
+        const pending = pendingRef.current;
+        // A background config refresh must not reinstall an already restored owner,
+        // or erase a validated mounted draft when its tab storage becomes unavailable.
+        if (pending && sameConnectionRecoveryPrincipal(pending.principal, principal)
+            && (!recovery || pending.capturedAt === recovery.capturedAt && pending.outage.id === recovery.outage.id)) return pending;
         pendingRef.current = recovery;
         if (recovery?.droppedSettings) setNotice(settingsDiscardedNotice);
         if (recovery) setStagedRevision(revision => revision + 1);
@@ -140,23 +145,32 @@ export function useConnectionRecovery({
                 setNotice(null);
                 if (readPendingAuthenticationRequired()) return;
             }
-            const captured = mountedPrincipal ? snapshotRef.current?.() : null;
-            if (identityChanged && captured?.scenario && !discardUnsaved) {
+            let captured;
+            try { captured = mountedPrincipal ? snapshotRef.current?.() : null; }
+            catch (error) {
+                if (!discardUnsaved) {
+                    setStatus('unavailable');
+                    setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
+                    return;
+                }
+                captured = null;
+            }
+            if (identityChanged && (captured?.scenario || captured?.planning) && !discardUnsaved) {
                 setStatus('discard_required');
                 setNotice({
                     kind: 'discard_required',
-                    message: 'The active workspace or private view changed. Reloading will discard your unsaved Scenario changes.',
+                    message: `The active workspace or private view changed. Reloading will discard your unsaved ${[captured.planning && 'Planning', captured.scenario && 'Scenario'].filter(Boolean).join(' and ')} changes.`,
                 });
                 return;
             }
             const snapshot = captured && !identityChanged ? { ...captured, outage: { id: outageId } } : null;
             const capsuleWritten = snapshot ? writeConnectionRecoveryState(storage, snapshot) : false;
             if (!capsuleWritten) clearConnectionRecoveryState(storage);
-            if (!capsuleWritten && snapshot?.scenario) {
+            if (!capsuleWritten && (snapshot?.scenario || snapshot?.planning) && !discardUnsaved) {
                 setStatus('unavailable');
                 setNotice({
                     kind: 'preservation_failed',
-                    message: 'The page cannot reload safely because your unsaved Scenario changes could not be preserved in this tab.',
+                    message: `The page cannot reload safely because your unsaved ${[snapshot.planning && 'Planning', snapshot.scenario && 'Scenario'].filter(Boolean).join(' and ')} changes could not be preserved in this tab.`,
                 });
                 return;
             }
@@ -264,6 +278,7 @@ export function buildConnectionRecoverySnapshot({
     dirtySettings,
     principal,
     scenario,
+    planning,
     selectedSprint,
     selectedView,
     viewMode,
@@ -281,5 +296,6 @@ export function buildConnectionRecoverySnapshot({
         },
         droppedSettings: Boolean(dirtySettings),
         scenario,
+        ...(planning === undefined ? {} : { planning }),
     };
 }

@@ -15,6 +15,7 @@ from flask import Flask, Response, jsonify, send_file, send_from_directory
 
 import jira_server
 from backend import response_compression
+from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session
 from backend.response_compression import (
     COMPRESSIBLE_TYPES,
     EXCLUDED_PATH_PREFIXES,
@@ -448,11 +449,12 @@ class RealAppTests(unittest.TestCase):
     def setUp(self):
         response_compression._MEMOIZED_ASSETS.clear()
         self.addCleanup(response_compression._MEMOIZED_ASSETS.clear)
-        patcher = patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic')
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        set_up_db_oauth(self)
         jira_server.app.config['TESTING'] = True
-        self.client = BufferedClient(jira_server.app.test_client())
+        jira_server.app.secret_key = 'synthetic-compression-session'
+        client = jira_server.app.test_client()
+        install_oauth_session(client, roles=('admin',))
+        self.client = BufferedClient(client)
 
     def test_real_board_stream_and_scenario_sse_routes_ignore_gzip(self):
         # The Board NDJSON half lives in tests/test_eng_board_routes.py; this is the SSE half.
@@ -463,9 +465,6 @@ class RealAppTests(unittest.TestCase):
         page = {'events': events, 'nextSince': 3, 'isLast': True}
         path = '/api/scenario/drafts/draft-1/events/stream?since=0'
         with patch.dict(os.environ, {'SCENARIO_DRAFT_SSE_ENABLED': 'true'}, clear=False), \
-             patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-             patch.object(jira_server, 'scenario_draft_request_auth_context', return_value=object()), \
-             patch.object(jira_server, 'scenario_access_error', return_value=None), \
              patch.object(scenario_draft_routes, 'get_events_page', return_value=page):
             plain = self.client.get(path)
             gzipped = self.client.get(path, headers=GZIP)
@@ -493,21 +492,24 @@ class RealAppTests(unittest.TestCase):
         with patch.object(analytics_routes, 'load_analytics_config', return_value=BigConfig()):
             response = self.client.get(
                 '/api/analytics/context',
-                headers={**GZIP, 'Origin': 'http://localhost:5050'},
+                headers={**GZIP, 'Origin': 'http://127.0.0.1:5050'},
             )
         self.assertEqual(200, response.status_code)
         self.assertEqual('gzip', response.headers['Content-Encoding'])
         self.assertEqual('no-store', response.headers['Cache-Control'])
         self.assertIn("default-src 'self'", response.headers['Content-Security-Policy'])
         self.assertEqual('nosniff', response.headers['X-Content-Type-Options'])
-        self.assertTrue({'origin', 'accept-encoding'} <= vary_tokens(response), response.headers.getlist('Vary'))
+        # The isolated app has one fixed allowed origin; CORS need not vary by Origin.
+        self.assertEqual('http://127.0.0.1:5050', response.headers['Access-Control-Allow-Origin'])
+        self.assertTrue({'cookie', 'accept-encoding'} <= vary_tokens(response), response.headers.getlist('Vary'))
         decoded = gzip.decompress(response.data)
         self.assertEqual(str(len(response.data)), response.headers['Content-Length'])
         self.assertIn(b'ENG-1000', decoded)
 
-        health = self.client.get('/health', headers={**GZIP, 'Origin': 'http://localhost:5050'})
+        health = self.client.get('/health', headers={**GZIP, 'Origin': 'http://127.0.0.1:5050'})
         self.assertNotIn('Content-Encoding', health.headers)
-        self.assertTrue({'origin', 'accept-encoding'} <= vary_tokens(health))
+        self.assertEqual('http://127.0.0.1:5050', health.headers['Access-Control-Allow-Origin'])
+        self.assertIn('accept-encoding', vary_tokens(health))
 
     def test_real_dist_assets_compress_below_their_ratio_gates(self):
         chunks = sorted(

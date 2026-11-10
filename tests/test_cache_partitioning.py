@@ -1,6 +1,4 @@
 import base64
-import os
-import tempfile
 import unittest
 
 from backend.auth.key_provider import key_provider_from_env
@@ -8,12 +6,12 @@ from backend.auth.service_integrations import seed_service_integration
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 class TestCachePartitioning(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'cache.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -47,7 +45,6 @@ class TestCachePartitioning(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
         jira_server.clear_auth_sensitive_caches('test-teardown')
 
     def _warm_caches(self):

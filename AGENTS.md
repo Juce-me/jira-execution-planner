@@ -142,6 +142,7 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Frontend: React 19 + esbuild with a Node 20.x toolchain
 - Package management: Python dependencies in `requirements.txt`; frontend dependencies in `package-lock.json`
 - Runtime: local Flask server on port `5050` by default; dashboard served by Flask at `http://localhost:5050/`; direct `file://` opening of `jira-dashboard.html` is unsupported
+- Database: PostgreSQL only, for serving, local development and tests (operator decision 2026-11-06). SQLite is retired: do not add SQLite paths, dialect branches or SQLite-based concurrency evidence. Tests create per-test databases with `tests/postgres_test_db.py` on the runner's owned cluster, and `tests/test_postgresql_only_source_guard.py` flags SQLite URLs, drivers and dialect branches in Python sources (lines that only assert SQLite's refusal carry `# sqlite-refusal-check`).
 
 ### Commands
 - Install backend deps: `.venv/bin/python -m pip install -r requirements.txt && .venv/bin/python -m pip install -e .`
@@ -150,15 +151,15 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Build: `npm run build`
 - Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`
-- Test (all): `python3 -m unittest discover -s tests` (run `npm run build` first: `frontend/dist` is gitignored and not committed, so tests that read it need a build; the same applies to `npm run test:frontend:unit`)
-- Test (single file): `python3 -m unittest tests.test_planning`
-- Test (single case): `python3 -m unittest tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
-- Test (UI, local only): `npm run build && npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes). Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. The Project Track glyph guard runs only with `--headed`; run it with `--browser=firefox` and `--browser=webkit` when touching emoji or form-control geometry.
+- Test (all): `.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)"` with Node 20 on PATH and PostgreSQL server binaries (`initdb`, `pg_ctl`, `createdb`) on PATH or in `JEP_TEST_PG_BIN`; the runner provisions and removes its own throwaway cluster (run `npm run build` first: `frontend/dist` is gitignored and not committed, so tests that read it need a build; the same applies to `npm run test:frontend:unit`)
+- Test (single file): `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning`
+- Test (single case): `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
+- Test (UI, local only): `npm run build && npx playwright test tests/ui --browser=chromium --workers=4` (about 8 minutes). Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. Real-server (DB/OAuth) specs need the PostgreSQL server binaries on PATH or in `JEP_TEST_PG_BIN`, as for the backend suite. The Project Track glyph guard runs only with `--headed`; run it with `--browser=firefox` and `--browser=webkit` when touching emoji or form-control geometry.
 - Run locally: `.venv/bin/python jira_server.py`
 - Quick API check: `curl http://localhost:5050/api/test`
 - EPM scope: configure `rootGoalKey` and `subGoalKey` in `Settings -> EPM`; the Atlassian site cloudId is detected from Jira /_edge/tenant_info
 
-Prefer single-file or single-test runs during iteration. Run the full suite before push.
+Prefer single-file or single-test runs during iteration. Run the full suite before push. Application-importing tests use the isolated runner before imports; never run them against the checkout dotenv or application DB. While new task files are untracked, pass each reviewed source/test with `--include`. The owned throwaway cluster is the default test database; `--postgres --postgres-config` remains only for a separately approved disposable descriptor, never an application database. Sequence full backend and browser gates to avoid resource contention; stream non-PostgreSQL diagnostics through the runner's existing redaction, and keep PostgreSQL output summary-only.
 
 ### Layout
 - Backend/API: `jira_server.py`, `backend/epm/`, `backend/routes/`, `planning/`
@@ -204,7 +205,7 @@ Prefer single-file or single-test runs during iteration. Run the full suite befo
 - For analytics-style views, prefer one scoped fetch plus client-side regrouping/filtering. Re-fetch only when scope changes or the user explicitly refreshes.
 - If per-issue Jira enrichment is required, define strict fan-out limits before implementation.
 - If the user uses a domain term like `quarter`, map it to existing data structures before building new UI.
-- Keep the shared ENG filter controls in the second controls row, before Catch Up alerts and Planning capacity content. Planning Table combines Filters and capacity in one sticky stack; the Epics/Stories switch and the dirty-only Save/Discard live in the Filters row's view-controls slot with no separate toolbar tier, and Sort and Group by Initiative are not rendered in Table view; Planning List keeps the same Filters-first ordering with measured offsets. `.epic-header` sticks below the active header/filter/panel tiers. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
+- Keep the shared ENG filter controls in the second controls row, before Catch Up alerts and Planning capacity content. Planning Table combines Filters and capacity in one sticky stack; the Epics/Stories switch and the dirty-only Save/Discard live in the Filters row's view-controls slot with no separate toolbar tier, and Sort and Group by Initiative are not rendered in Table view; Planning has no List (retired in #323; List stays in Catch Up). `.epic-header` sticks below the active header/filter/panel tiers. Re-verify Catch Up, Planning, and Scenario modes after changing sticky UI.
 - In settings/config modals, preserve established selected-chip/remove/search behavior unless the user explicitly asks for a new interaction pattern.
 - `.gitattributes` applies `merge=union` to `/AGENTS.md`, `/docs/README_ANALYTICS.md` and `/docs/plans/README.md` only (anchored; `docs/AGENTS.md` and `docs/plans/AGENTS.md` are excluded). Union keeps both sides of a concurrent edit, so edit a bullet or table row you did not add only after rebasing, and run `tests.test_agents_md_learnings` before pushing: it fails on duplicate bullets, duplicate plan links and duplicate analytics rows. Union helps only local merges; the GitHub web merge button is believed to ignore it. Residuals: a rewritten last bullet beside an appended one keeps the old bullet, and a deleted line the other side edited is resurrected.
 - Overrides the template ontology bullets in section 1: never edit `docs/ontology.md` line 3 (the Coverage line); date only the touched section's `Verified on`.
@@ -419,11 +420,11 @@ When the user corrects your approach, append a one-line rule here before ending 
 
 - In Planning Table, retain readiness-only Epics and show one awaiting-creation placeholder per uncovered Team; Story status/priority filters must not hide these placeholders, and placeholders must never be selectable or editable.
 
-- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Collapse panel for details; collapsed mode retains graph bars and capacity warnings, keeps graph labels and target markers above hovered fills, and expansion must preserve selection and mounted editors.
+- Start the Planning Table sticky overview compact for every Team scope, including All Teams, with Show/Hide capacity details as a direct overview button; collapsed mode keeps controls, counts and capacity warnings, and graphs show only on Show capacity details, with graph labels and target markers above hovered fills; expansion must preserve selection and mounted editors.
 
 - In Planning table headers, reset inherited global button margins on sort buttons and drag handles; keep custom and Story Points inputs compact and vertically centered within the existing Epic row height, with fixed focus geometry and no inherited focus shadow instead of padding every column to text-field width.
 
-- Default Planning to Table when no valid layout preference exists; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text (the dismissible inherited-view hint is the one recorded exception, as a private per-viewer preference), and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
+- Planning is the Table only: a saved or linked List opens Table and no layout preference is stored (#323); the Epics/Stories view the user chose survives a data reload (Refresh, Sprint switch) through the session-memory `rememberPlanningRowMode`, while a page reload starts from the default or a link; keep Table chrome minimal: Epics/Stories in the Filters row, Save and Discard only while the review is dirty, no options menu or persistent instructional text (the dismissible inherited-view hint is the one recorded exception, as a private per-viewer preference), and the app-header Refresh also reloads the review; Planned Teams Effort is a collapsed strip in Table view, and the Accepted column (selected Story Points) carries its accepted numbers inside the table.
 
 - Clear Planning column-layout drafts only after the Sprint's view response confirms their exact order and visibility; missing layout acknowledgement must preserve the draft as unconfirmed.
 
@@ -471,8 +472,16 @@ When the user corrects your approach, append a one-line rule here before ending 
 - The header and shell must not move when the view mode or search focus changes: keep the scrollbar gutter reserved on `html` in every mode (`shared/shell.css`), keep a hidden control's slot (`.header-icon-reserve` for the Share button in Scenario), and let the focused search widen over free space with a negative margin instead of reflowing the title block; the ENG/EPM switch left of it is not free space, so it slides left by the same margin and below 1060px the field keeps its width (#309); `eng_group_board_view.spec.js` compares every mode and idle against focused, with and without the switch (`epmEnabled`), and a new mode-specific header control needs a slot there.
 - In ENG alert groups, the group's count text (`alert-team-count`) is the only copy-link control and the category chip is the only Jira link; never add a parallel share icon or per-Team Jira link, and show no hover-only affordance (tap must work).
 - Resolve local runner overrides before reading app DB rows; Home read probes use the requested Basic profile's Home site/scope, and GATE-05 gates writes only.
+- Use DB-backed OAuth as the sole application auth mode; do not add or preserve Basic/API-token or local-file OAuth compatibility, and never import unverifiable browser selections into shared plans.
 - Treat dashboard planning sprints as quarters (`YYYYQn`); inspect the sprint catalog before asking whether a sprint means a team iteration.
 - In Admin, keep Project config, Capacity, Priority weights, Access and Performance at the workspace level; only Project config contains the Department-style left configuration list, with Scope, Source and Field mapping tabs inside the selected configuration’s right panel.
 - Render existing Settings components directly in mockups; never replace Source or Field mapping with handwritten cards, selects or previews.
 - Use Jira issue-type names in migration settings, documentation and questions; do not replace them with process-specific labels.
 - For the 2027 structure, preserve existing calculations and shift Jira entities one level up: Story to Epic, Epic to Initiative, and Initiative to Objective; roll up each Initiative from its Epics’ Story Points instead of introducing new effort formulas; Department team-label matching moves to Initiatives, but alerts require explicit per-category dispositions: only Stories Required shifts directly, and absent Initiative Sprint or optional Team must not become a hygiene error.
+- Create every new worktree and task branch from freshly fetched `origin/main`, never local `main` or the current `HEAD`; verify the starting SHA matches `origin/main` before editing, and name feature branches for the requested capability even when the first commit contains only its spec or plan.
+- For UI mockups, render the branch's existing components and styles with synthetic data and capture browser screenshots; preserve the existing table layout and do not substitute generated images or a redesign. In Planning, retain Select All and Clear Selection, explain scope through tooltips/accessibility descriptions, and show counts separately.
+- Do not add hover readouts that repeat what an expandable panel already shows; keep the compact Planning summary as plain text.
+- Keep Team-card capacity editing and reconciliation in the existing card hover rail without growing the card; show UI changes with screenshots.
+
+- Keep DELIVERY Allocation values and Product/Tech mappings in shared Department settings; Legacy Component scope shows Epics and DELIVERY Allocation scope shows Initiatives under distinct scope tokens.
+- Prioritize laptop and wide-screen layouts for Planning; mobile viewport acceptance is opt-in with `JEP_TEST_MOBILE=1` unless explicitly requested.

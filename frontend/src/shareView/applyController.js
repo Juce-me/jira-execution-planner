@@ -105,7 +105,7 @@ function writeRange(o, apply) {
 // Mode booleans first, then every key of the mode: its default or the link's value. Returns what the link leaves unapplied
 // and the Planning rows mode to seed once the scope has loaded.
 function runStageB(o, state, scope) {
-    const boardScopeReady = (_groupId, token) => (token === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness) === 'ready';
+    const boardScopeReady = (_groupId, token) => (token === 'allocation' ? o.engSprintSelectorState.allocationReadiness : token === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness) === 'ready';
     const { apply, reported } = buildShareViewFieldPlan(state, scope, { ...resolverContext(o), boardScopeReady });
     o.setShowPlanning(scope.mode === 'planning');
     o.setShowStats(scope.mode === 'statistics');
@@ -115,7 +115,6 @@ function runStageB(o, state, scope) {
     if (has(apply, 'lanes')) { o.setShowProduct(apply.lanes.product); o.setShowTech(apply.lanes.tech); }
     if (has(apply, 'initiatives')) o.setGroupByInitiativeChoice(apply.initiatives);
     if (has(apply, 'sort')) o.setEngEpicSort(apply.sort);
-    if (has(apply, 'layout')) o.setPlanningLayout(apply.layout);
     if (has(apply, 'stats')) o.setStatsView(apply.stats);
     if (apply.range) writeRange(o, apply);
     if (has(apply, 'alerts')) {
@@ -123,6 +122,7 @@ function runStageB(o, state, scope) {
         SHARE_VIEW_ALERT_KEYS.forEach(key => o.alertFlags[key][1](Boolean(apply.alerts.expanded[key])));
     }
     if (has(apply, 'scope')) o.setBoardStrictScope(apply.scope);
+    else if ((state.scope === 'component' && o.engSprintSelectorState.componentReadiness === 'scope_model_mismatch') || (state.scope === 'allocation' && o.engSprintSelectorState.allocationReadiness === 'scope_model_mismatch')) o.setBoardStrictScope('');
     if (has(apply, 'boardFilters')) {
         o.setEngBoardFilterSelection(apply.boardFilters);
         o.setBoardView(apply.boardColumn ? { fromLink: true, focusedId: apply.boardColumn } : null);
@@ -177,6 +177,7 @@ export function createApplyController({ readOptions, now = clock }) {
     let planningRows = null;
     let pendingTrack = null;
     let trackQueued = false;
+    let scopeGuard = null, scopeApproval = null;
     const reported = new Set();
     const addReported = categories => (categories || []).forEach(category => reported.add(category));
 
@@ -196,8 +197,8 @@ export function createApplyController({ readOptions, now = clock }) {
         resolved = preScope ? resolveApplyPlan(o, state) : resolved;
         const target = preScope ? (resolved.ok ? { groupId: resolved.scope.group.id, sprintId: String(resolved.scope.sprint.id) } : null) : locked.target;
         const mode = preScope ? resolved.scope?.mode : locked.mode;
-        const boardToken = mode === 'board' && (state.scope === 'component' || state.scope === 'all_work') ? state.scope : null;
-        const readiness = boardToken === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness;
+        const boardToken = mode === 'board' && ['component', 'allocation', 'all_work'].includes(state.scope) ? state.scope : null;
+        const readiness = boardToken === 'allocation' ? o.engSprintSelectorState.allocationReadiness : boardToken === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness;
         const teamsHydrated = Boolean(o.teamSelectionScopeKey) && o.teamSelectionHydratedScopeRef.current === o.teamSelectionScopeKey;
         const focus = resolveShareViewFocus(state, mode);
         const epochReady = machine.scopeChange ? o.loadEpochRef.current > machine.epochAtA : o.loadEpochRef.current >= machine.epochAtA;
@@ -241,6 +242,34 @@ export function createApplyController({ readOptions, now = clock }) {
     const abort = (categories) => {
         machine = { ...machine, finished: true };
         conclude({ result: 'partial', categories: unique([...reported, ...categories]) });
+    };
+
+    const scopeKey = o => JSON.stringify([String(o.activeGroupId), String(o.selectedSprint)]);
+    const targetKey = resolution => JSON.stringify([String(resolution.scope.group.id), String(resolution.scope.sprint.id)]);
+    const currentGuard = guard => {
+        const snapshot = getShareViewSnapshot();
+        return !machine.finished && !readPendingAuthenticationRequired() && !snapshot.terminal
+            && snapshot.entry === guard.entry && scopeKey(readOptions()) === guard.origin;
+    };
+    const requestScopePermission = (o, entry, target) => {
+        const guard = { entry, target, origin: scopeKey(o), accepted: false };
+        scopeGuard = guard;
+        const finish = allowed => {
+            if (scopeGuard !== guard) return;
+            scopeGuard = null;
+            if (!currentGuard(guard)) return;
+            if (allowed !== true || !guard.accepted) {
+                machine = { ...machine, finished: true };
+                conclude({ result: 'cancelled', categories: [] });
+                return;
+            }
+            scopeApproval = guard;
+            controller.evaluate();
+        };
+        try {
+            Promise.resolve(o.guardPlanningScopeChange(() => { if (currentGuard(guard)) guard.accepted = true; }))
+                .then(finish, () => finish(false));
+        } catch { finish(false); }
     };
 
     // Returns false when the link no longer resolves, which ends it.
@@ -288,7 +317,7 @@ export function createApplyController({ readOptions, now = clock }) {
     const controller = {
         noteCommit() { commit += 1; },
         noteInterrupt(kind) { if (kind === 'deliberate' || interrupt === null) interrupt = kind; },
-        isPaused: () => isApplyPaused(readOptions()),
+        isPaused: () => { const o = readOptions(); return Boolean(scopeGuard || scopeApproval && o.planningReviewBusy) || isApplyPaused(o); },
         evaluate() {
             const snapshot = getShareViewSnapshot();
             const active = snapshot.phase === SHARE_VIEW_PHASES.PENDING || snapshot.phase === SHARE_VIEW_PHASES.RUNNING;
@@ -303,13 +332,29 @@ export function createApplyController({ readOptions, now = clock }) {
             try {
                 const o = readOptions();
                 const input = buildInput(o, state);
+                if (scopeGuard && scopeGuard.entry !== snapshot.entry) scopeGuard = null;
+                if (scopeApproval && !currentGuard(scopeApproval)) scopeApproval = null;
+                // Save/Discard inside the guard owns this wait. Its dialog interactions and
+                // asynchronous save time must not cancel or consume the link's active budget.
+                if (scopeGuard || scopeApproval && input.reviewBusy) {
+                    input.paused = true;
+                    input.reviewBusy = false;
+                }
                 interrupt = null;
                 const stepped = stepApplyMachine(machine, input);
+                const scopeAction = stepped.actions.find(action => action.type === 'run' && action.stage === 'A' && action.scopeChange);
+                if (scopeAction && typeof o.guardPlanningScopeChange === 'function'
+                    && (!scopeApproval || scopeApproval.entry !== snapshot.entry || scopeApproval.target !== targetKey(resolved))) {
+                    // Do not commit the tentative Stage A state until permission resolves.
+                    machine = { ...machine, active: stepped.state.active, lastNow: input.now, lastPaused: true };
+                    requestScopePermission(o, snapshot.entry, targetKey(resolved));
+                    return;
+                }
                 machine = stepped.state;
                 for (const action of stepped.actions) {
                     if (action.type === 'releaseHold') markShareViewScopeCommitted();
                     else if (action.type === 'cancelReveal') { revealCancelled = true; reveal?.cancel(); }
-                    else if (action.type === 'run') { failing = action; if (!runStage(action, o, state)) break; failing = null; }
+                    else if (action.type === 'run') { failing = action; if (!runStage(action, o, state)) break; if (action.stage === 'A') scopeApproval = null; failing = null; }
                     else conclude(action);
                 }
             } catch (error) {

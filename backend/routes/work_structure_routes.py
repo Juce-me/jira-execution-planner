@@ -242,7 +242,7 @@ def sprint_source_snapshot(auth_context, config):
     return load_sprint_catalog(auth_context, config=config)
 
 
-def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=None, quarter=None):
+def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=None, quarter=None, snapshot_loader=None):
     """Admit a physical Sprint id through exactly one configuration source.
 
     A quarter or configuration selector only narrows the candidates; it is never
@@ -250,6 +250,7 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
     ``sprint_catalog_mismatch``; if no candidate has a complete catalog yet the
     existing pending contract applies.  Returns ``(config, sprint_row)``.
     """
+    load_snapshot = snapshot_loader or sprint_source_snapshot
     candidates = list(sources)
     if configuration_id is not None:
         candidates = [item for item in candidates if item.configuration_id == configuration_id]
@@ -266,7 +267,7 @@ def admit_sprint_source(auth_context, sources, sprint_id, *, configuration_id=No
     for config in candidates:
         if not config.sprint_identity:
             continue
-        snapshot = sprint_source_snapshot(auth_context, config)
+        snapshot = load_snapshot(auth_context, config)
         rows = [] if snapshot.payload is None else in_range_sprints(config, snapshot.payload)
         for item in rows:
             if str(item.get('id')) == str(sprint_id):

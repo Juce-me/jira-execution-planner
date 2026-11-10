@@ -7,7 +7,7 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from backend.db import engine as db_engine
-from scripts.check_startup_preflight import run_preflight
+from scripts.check_startup_preflight import run_preflight, _check_frontend_build
 from tests.test_frontend_build import _add_sources, _build_dist, _write, HTML
 
 
@@ -58,34 +58,61 @@ class StartupPreflightTests(unittest.TestCase):
             "DATABASE_URL": database_url,
         })
 
-    def test_jsonfile_basic_preflight_passes_without_db_checks(self):
+    def test_retired_basic_json_profile_rejects_before_database_checks(self):
         code, output = self._run({
-            "JIRA_URL": "https://example.atlassian.net",
-            "JIRA_AUTH_MODE": "basic",
-            "JIRA_EMAIL": "user@example.com",
-            "JIRA_TOKEN": "secret-token",
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "APP_BIND_HOST": "127.0.0.1",
+            "JIRA_URL": "https://example.atlassian.net", "JIRA_AUTH_MODE": "basic",
+            "JIRA_EMAIL": "synthetic@example.test", "JIRA_TOKEN": "synthetic-private-token",
+            "CONFIG_STORAGE_BACKEND": "jsonfile", "APP_BIND_HOST": "127.0.0.1",
         })
+        self.assertEqual(code, 1, output)
+        self.assertIn("FAIL runtime_profile", output)
+        self.assertNotIn("synthetic-private-token", output)
+        self.assertNotIn("database_url", output)
+        self.assertNotIn("migrations", output)
 
-        self.assertEqual(code, 0, output)
-        self.assertIn("PASS auth_config: basic", output)
-        self.assertIn("PASS database_url: not required for jsonfile config storage", output)
-        self.assertIn("PASS migrations: not required for jsonfile config storage", output)
+    def test_sqlite_database_url_fails_preflight_without_echoing_it(self):
+        code, output = self._run(self._hosted_oauth_env({"DATABASE_URL": "sqlite:///synthetic-retired.db"}))  # sqlite-refusal-check
+        self.assertEqual(code, 1, output)
+        self.assertIn("FAIL database_url", output)
+        self.assertIn("PostgreSQL is the only supported database", output)
+        self.assertNotIn("synthetic-retired.db", output)
 
     def test_db_alias_requires_database_url(self):
-        code, output = self._run({
-            "JIRA_URL": "https://example.atlassian.net",
-            "JIRA_AUTH_MODE": "basic",
-            "JIRA_EMAIL": "user@example.com",
-            "JIRA_TOKEN": "secret-token",
-            "CONFIG_STORAGE_BACKEND": "postgresql",
-            "APP_BIND_HOST": "127.0.0.1",
-        })
-
+        env = self._hosted_oauth_env({"CONFIG_STORAGE_BACKEND": "postgresql"})
+        env.pop("DATABASE_URL")
+        code, output = self._run(env)
         self.assertEqual(code, 1)
         self.assertIn("PASS config_storage: db", output)
         self.assertIn("FAIL database_url", output)
+
+    def test_supported_local_db_profiles_preserve_inert_legacy_keys(self):
+        for backend in ("db", "database", "postgres", "postgresql"):
+            for flag in ("true", "false", ""):
+                with self.subTest(backend=backend, flag=flag):
+                    env = self._hosted_oauth_env({
+                        "CONFIG_STORAGE_BACKEND": backend, "APP_ENVIRONMENT_KEY": "local",
+                        "APP_BIND_HOST": "127.0.0.1", "OAUTH_LOCAL_TOKEN_STORE_ALLOWED": flag,
+                        "OAUTH_TOKEN_STORE_PATH": "must-not-be-read.json",
+                        "OAUTH_TOKEN_STORE_TTL_SECONDS": "not-an-integer",
+                        "JIRA_EMAIL": "unused@example.test", "JIRA_TOKEN": "unused-private-token",
+                    })
+                    code, output = self._run(env)
+                    self.assertEqual(code, 0, output)
+                    self.assertIn("PASS oauth_local_token_store: not required for db oauth", output)
+                    self.assertNotIn("unused-private-token", output)
+
+    def test_missing_blank_and_whitespace_selectors_use_same_supported_default(self):
+        for value in (None, "", " "):
+            env = self._hosted_oauth_env()
+            for key in ("JIRA_AUTH_MODE", "CONFIG_STORAGE_BACKEND"):
+                if value is None:
+                    env.pop(key)
+                else:
+                    env[key] = value
+            code, output = self._run(env)
+            self.assertEqual(code, 0, output)
+            self.assertIn("PASS config_storage: db", output)
+            self.assertIn("PASS auth_config: atlassian_oauth", output)
 
     def test_preflight_output_does_not_print_basic_token(self):
         code, output = self._run({
@@ -228,20 +255,16 @@ class StartupPreflightTests(unittest.TestCase):
 class StartupPreflightFrontendBuildTests(unittest.TestCase):
     """The frontend_build item against a synthetic tree, with the build helpers unpatched."""
 
-    ENV = {
-        "JIRA_URL": "https://example.atlassian.net",
-        "JIRA_AUTH_MODE": "basic",
-        "JIRA_EMAIL": "user@example.com",
-        "JIRA_TOKEN": "secret-token",
-        "CONFIG_STORAGE_BACKEND": "jsonfile",
-    }
+    ENV = {"JIRA_AUTH_MODE": "atlassian_oauth", "CONFIG_STORAGE_BACKEND": "db"}
 
     def tearDown(self):
         db_engine.dispose_engines()
 
     def _run(self, root):
         output = io.StringIO()
-        with patch("scripts.check_startup_preflight.REPO_ROOT", Path(root)), redirect_stdout(output):
+        with patch("scripts.check_startup_preflight.REPO_ROOT", Path(root)), \
+             patch("scripts.check_startup_preflight.CHECKS", (("frontend_build", _check_frontend_build),)), \
+             redirect_stdout(output):
             code = run_preflight(dict(self.ENV))
         return code, output.getvalue()
 

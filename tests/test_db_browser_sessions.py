@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 
@@ -14,12 +12,12 @@ from backend.auth.db_browser_sessions import (
     resolve_browser_session,
 )
 from backend.auth.jira_auth import AuthError
+from tests.postgres_test_db import fresh_database_url
 
 
 class DbBrowserSessionTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'browser-sessions.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -80,7 +78,6 @@ class DbBrowserSessionTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     @staticmethod
     def _connection(user_id, workspace_id, cloud_id):

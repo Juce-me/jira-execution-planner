@@ -17,7 +17,6 @@ except ModuleNotFoundError as exc:  # pragma: no cover
 class TestBackendServiceExtraction(unittest.TestCase):
     def test_backend_modules_export_extracted_services(self):
         jira_client = importlib.import_module('backend.jira_client')
-        local_oauth_store = importlib.import_module('backend.auth.local_oauth_store')
         capacity_service = importlib.import_module('backend.services.capacity')
         sprint_service = importlib.import_module('backend.services.sprints')
         stats_cache_service = importlib.import_module('backend.services.stats_cache')
@@ -46,7 +45,6 @@ class TestBackendServiceExtraction(unittest.TestCase):
         self.assertTrue(hasattr(team_catalog_service, 'normalize_group_team_labels'))
         self.assertTrue(hasattr(group_config_service, 'validate_groups_config'))
         self.assertTrue(hasattr(group_config_service, 'build_default_groups_config'))
-        self.assertTrue(hasattr(local_oauth_store, 'LocalOAuthTokenStore'))
         self.assertTrue(hasattr(config_store, 'load_dashboard_config'))
         self.assertTrue(hasattr(config_store, 'save_dashboard_config'))
         self.assertTrue(hasattr(epm_config, 'normalize_epm_config'))

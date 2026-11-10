@@ -32,7 +32,7 @@ const epics = delivery => Object.fromEntries(Object.entries(INITIATIVES).map(([k
     ...(delivery ? { allocationClass } : {}),
 }]));
 
-async function mockApp(page, configurationId) {
+async function mockApp(page, configurationId, { boardScope = false, emptyMembership = false } = {}) {
     const sprint = SPRINTS[configurationId];
     const delivery = configurationId === 'delivery';
     await installDashboardShell(page);
@@ -51,10 +51,10 @@ async function mockApp(page, configurationId) {
         if (p === '/api/analytics/context' || p === '/api/version') return json({ enabled: false });
         if (p === '/api/config') {
             return json({
-                jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: false,
+                boardAllWorkAvailable: boardScope, jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: false,
                 userCanEditSettings: true, capacityProject: 'CAP', techProjects: ['TECH'],
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: {} },
-                sharedConfig: { version: 1, capacity: {}, statsPriorityWeights: [] }, sharedConfigRevision: 3,
+                sharedConfig: { version: 1, capacity: {}, statsPriorityWeights: [], ...(boardScope ? { projects: { selected: [{ key: 'PLAN', type: 'other' }] }, board: { boardId: '', boardName: '' } } : {}) }, sharedConfigRevision: 3,
                 workConfigurationsEnabled: true, workConfigurationsPromoted: true,
                 workConfigurationSummaries: SUMMARIES, adminSettingsMissingByConfiguration: { legacy: [], delivery: [] },
             });
@@ -62,7 +62,7 @@ async function mockApp(page, configurationId) {
         if (p === '/api/work-structure/config') return json({ workConfigurations: { version: 1, promotionRevision: 6, configurations: [] }, configRevision: 3, promoted: true, userCanEditSettings: true, featureEnabled: true });
         if (p === '/api/groups-config' && request.method() === 'GET') {
             return json({
-                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: TEAMS.map(team => team.id), teamLabels: {} }],
+                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: emptyMembership ? [] : TEAMS.map(team => team.id), teamLabels: {}, ...(boardScope ? { missingInfoComponents: emptyMembership ? [] : ['Legacy Component'], allocationTypes: emptyMembership ? [] : [{ value: 'Platform', type: 'tech' }], board: { columns: [{ id: 'todo', name: 'To do', colour: '#597ef7', statuses: ['To Do'] }, { id: 'done', name: 'Done', colour: '#52c41a', statuses: ['Done'] }], doneEpicRetentionDays: 28 } } : {}) }],
                 defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
                 preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true,
                     completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
@@ -74,6 +74,20 @@ async function mockApp(page, configurationId) {
             const id = params.configurationId || '';
             if (!id) return json({ error: 'configuration_required' }, 409);
             return json({ sprints: [{ ...SPRINTS[id], configurationId: id }], context: { configurationId: id, configurationRevision: Number(params.configurationRevision) } });
+        }
+        if (p === '/api/projects/selected') return json({ selected: [{ key: 'PLAN', type: 'other' }], configRevision: 3 });
+        if (p === '/api/board-config') return json({ boardId: '', boardName: '', source: 'config', configRevision: 3 });
+        if (p === '/api/eng/board') {
+            const columns = [{ id: 'todo', name: 'To do', color: '#597ef7', statusNames: ['To Do'], terminal: false },
+                { id: 'done', name: 'Done', color: '#52c41a', statusNames: ['Done'], terminal: true }];
+            const frames = [{ type: 'start', scope: params.scope, scopeVersion: 'synthetic-scope', scopeCohortDigest: 'a'.repeat(64), columns },
+                { type: 'index', epics: [], membership: 'authoritative' },
+                ...columns.map(column => ({ type: 'column', columnId: column.id, epics: [], children: [], authoritative: true })),
+                { type: 'complete', outcome: 'success', authoritative: true, epicCount: 0, childCount: 0,
+                    diagnostics: { indexMs: 1, focusedCompleteMs: 2, durationMs: 3, jiraRequests: 1, jiraPages: 1, jiraRetries: 0,
+                        peakChildSearches: 0, cacheState: 'miss', completeness: 'complete' } }];
+            return route.fulfill({ contentType: 'application/x-ndjson', body: frames.map((frame, sequence) => JSON.stringify({ protocolVersion: 1,
+                generationId: 'synthetic-generation', sequence, ...frame })).join('\n') + '\n' });
         }
         if (p === '/api/team-catalog') return json({ catalog: Object.fromEntries(TEAMS.map(team => [team.id, team])), meta: {} });
         if (p === '/api/teams') return json({ teams: TEAMS });
@@ -89,12 +103,13 @@ async function mockApp(page, configurationId) {
     });
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await settle(page);
+    await settle(page, !emptyMembership);
 }
 
-async function settle(page) {
+async function settle(page, expectTasks = true) {
     await page.addStyleTag({ content: '*, *::before, *::after { animation: none !important; transition: none !important; }' });
-    await expect(page.locator('.task-item[data-task-key="PLAN-1"], .task-item[data-task-key="PLAN-4"]').first()).toBeVisible();
+    if (expectTasks) await expect(page.locator('.task-item[data-task-key="PLAN-1"], .task-item[data-task-key="PLAN-4"]').first()).toBeVisible();
+    else await expect(page.locator('.sprint-dropdown').first().getByRole('button', { name: 'Select sprint', exact: true })).toBeVisible();
 }
 
 const popover = page => page.locator('.popover');
@@ -216,4 +231,68 @@ test('Legacy keeps the Projects facet and never shows No Allocation', async ({ p
     for (const item of legacy.options) expect(Math.abs(item.box.height - allocation.options[0].box.height)).toBeLessThanOrEqual(0.5);
     await popover(page).screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'legacy-projects-facet.png'), animations: 'disabled' });
     expect(await visibleKeys(page)).toEqual(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-4']);
+});
+
+
+test('Board scope uses Allocation for DELIVERY and searches its displayed label', async ({ page }) => {
+    await mockApp(page, 'delivery', { boardScope: true });
+    const scopeRequest = page.waitForRequest(req => new URL(req.url()).pathname === '/api/eng/board' && new URL(req.url()).searchParams.get('scope') === 'allocation');
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    const selector = page.locator('.sprint-dropdown').first();
+    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    await expect(trigger).toBeVisible();
+    await trigger.click();
+    await expect(selector.getByRole('option', { name: 'All work', exact: true })).toBeVisible();
+    const capture = path.join(__dirname, '..', '..', 'tmp', 'planning-323-every-team', 'finalize',
+        `board-allocation-${process.env.JEP_BOARD_SCOPE_CAPTURE || 'after'}.png`);
+    await page.screenshot({ path: capture, animations: 'disabled' });
+    await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toBeVisible();
+    const search = selector.getByRole('combobox');
+    await search.fill('alloc');
+    await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toBeVisible();
+    await expect(selector.getByRole('option', { name: 'All work', exact: true })).toHaveCount(0);
+    await selector.getByRole('option', { name: 'Allocation', exact: true }).click();
+    expect(new URL((await scopeRequest).url()).searchParams.get('quarter')).toBe('2027Q1');
+    await expect(trigger).toHaveText('Allocation');
+    await trigger.click();
+    await search.fill('work');
+    await selector.getByRole('option', { name: 'All work', exact: true }).click();
+    await expect(trigger).toHaveText('All work');
+});
+
+
+test('Legacy Board scope keeps Component and its Component search label', async ({ page }) => {
+    await mockApp(page, 'legacy', { boardScope: true });
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    const selector = page.locator('.sprint-dropdown').first();
+    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    await expect(trigger).toHaveText('Component');
+    await trigger.click();
+    await selector.getByRole('combobox').fill('comp');
+    await expect(selector.getByRole('option', { name: 'Component', exact: true })).toBeVisible();
+    await expect(selector.getByRole('option', { name: 'Allocation', exact: true })).toHaveCount(0);
+    await selector.getByRole('combobox').fill('');
+    const other = selector.getByRole('option', { name: 'Allocation', exact: true });
+    await expect(other).toBeVisible();
+    await expect(other).toHaveAttribute('aria-disabled', 'true');
+    await expect(other).toContainText('Other quarters');
+    await expect(selector.getByRole('option', { name: 'Component', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('DELIVERY All work without Department membership shows Allocation guidance without a stream request', async ({ page }) => {
+    const boardRequests = [];
+    page.on('request', request => {
+        if (new URL(request.url()).pathname === '/api/eng/board') boardRequests.push(request.url());
+    });
+    await mockApp(page, 'delivery', { boardScope: true, emptyMembership: true });
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    const selector = page.locator('.sprint-dropdown').first();
+    await selector.getByRole('button', { name: 'Select sprint', exact: true }).click();
+    await selector.getByRole('option', { name: 'All work', exact: true }).click();
+    const status = page.getByRole('status', { name: 'Board scope status', exact: true });
+    await expect(status.getByRole('heading', { level: 2 })).toHaveText('Add Teams or Allocation values to this Department to use All work.');
+    await expect(status.getByRole('button', { name: 'Configure Department membership', exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(boardRequests).toEqual([]);
+    await page.screenshot({ path: path.join(__dirname, '..', '..', 'tmp', 'screenshots', 'delivery-all-work-membership-guidance.png'), animations: 'disabled' });
 });

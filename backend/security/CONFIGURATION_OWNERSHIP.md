@@ -9,7 +9,7 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Configuration | Canonical storage | Read access | Write access | Sharing rule |
 | --- | --- | --- | --- | --- |
 | Administrator settings | `workspace_dashboard_configs` | Authenticated workspace users | `shared_admin_write` | One effective value per workspace; only tool admins configure it when `SETTINGS_ADMIN_ONLY=true` |
-| Department groups, group labels, memberships, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
+| Department groups, group labels, memberships, DELIVERY Allocation values and Product/Tech mappings, exclusions, and department board layouts | `workspace_group_configs` | `authenticated_read` | `user_write` | One shared catalog per workspace; every authenticated user sees and may configure it. A group's id is also the storage key for its Sprint review columns, values and views; the server never gates that data on the group's visibility (the UI cannot pick a hidden group as the review scope, because the active group resolves only from visible groups), and a group re-created with a deleted group's id reattaches the old review data |
 | Scenario planner access switch (`scenarioPlanner.enabledForEveryone`) | `workspace_dashboard_configs.payload` (its own admin section) | Authenticated workspace users (`/api/config` `scenarioPlannerForEveryone`, `GET /api/scenario-access/config`) | `shared_admin_write` via `POST /api/scenario-access/config` only | One value per workspace, default off; while off only editors (`userCanEditSettings`) may use Scenario and every other user's Scenario request answers `403 scenario_locked`; never stored in private views or group configuration |
 | Quarterly work configurations (`workConfigurations` bundle) | `workspace_dashboard_configs.payload` (one revisioned key, server-owned `promotionRevision`) | Authenticated workspace users (virtual capture before promotion; no write on GET) | `shared_admin_write` via the dedicated bundle transaction only | One bundle per workspace: exactly Legacy then DELIVERY; after promotion it replaces the flat projects/Board/Sprint/Story Points/parent-name/Team/Project Track/Delivery owner/issue-type keys; Capacity, priority weights, groups and private payloads stay where they are |
 | Group visibility, favorite/star, and active group | `user_group_preferences` | Current user | `user_write` | Private to one user in one workspace; never copied into shared group configuration |
@@ -22,8 +22,16 @@ write access, bootstrap precedence, and frontend edit gates must change together
 | Derived per-Sprint Team membership | `workspace_sprint_team_catalogs` | `authenticated_read` | Authenticated Jira refresh runtime only | Shared per workspace and Sprint, but valid only for the persisted effective-scope digest; membership is distinct from Team names |
 | Workspace user directory and tool-admin grants | `users`, `auth_connections` (via `/api/admin/users*`) | Explicit tool admin only, regardless of `SETTINGS_ADMIN_ONLY` | `tool_admin`, explicit tool admin only | Non-admins never read other users; the only exposure is `adminContacts` (tool-admin display names) in `/api/config` while the workspace is unconfigured |
 | ENG Sprint review columns, values and Sprint views | `workspace_group_review_schemas`, `group_review_cells`, `group_sprint_review_views` (legacy `workspace_sprint_reviews`, `sprint_review_cells` retired from reading) | Authenticated workspace users, cells additionally require current-user Jira issue authorization | `user_write` with requested-with and CSRF | Columns and values are shared per workspace + Department group + review namespace (NULL `configuration_id` is the Legacy namespace; each quarterly work configuration has its own, see Quarterly Work Configurations); views (column order and hidden columns) per workspace + group + Sprint + namespace; independent Epic/Story cells use immutable Jira IDs; Team is a filter, never a storage key |
-| ENG Planning assignee capacity (Capacity, Vacations, Notes, removed flag per person; stored team capacity `planned_capacity`/`planned_source`, "Team capacity (not in Jira)", never written to Jira by this store) | `planning_team_sprint_capacity` | Authenticated workspace users | `user_write` with requested-with and CSRF; read `authenticated_read` | Shared per workspace + Sprint + Team (a Team is part of this store's key, unlike review data, where Team stays a filter); no user columns; not stored in `workspace_dashboard_configs` or `shared_capacity_config`; a Sprint without a document reads the nearest earlier one, including its stored team capacity as `inherited` |
+| ENG Planning assignee capacity (Capacity, Vacations, Notes, removed flag per person; stored team capacity `planned_capacity`/`planned_source`, "Team capacity (not in Jira)", never written to Jira by this store) | `planning_team_sprint_capacity` | Authenticated workspace users | `user_write` with requested-with and CSRF; read `authenticated_read`; the read-only batch Team-number read `POST /api/eng/sprints/<sprint_id>/assignee-capacity/planned/read` (`eng-assignee-capacity-planned-read`, body exactly `teamIds`, at most 500 ids, writes nothing) is `user_write` for token-bound CSRF | Shared per workspace + Sprint + Team (a Team is part of this store's key, unlike review data, where Team stays a filter); no user columns; not stored in `workspace_dashboard_configs` or `shared_capacity_config`; a Sprint without a document reads the nearest earlier one, including its stored team capacity as `inherited` |
 | Debug load observations | `load_performance` | Explicit tool admin in the current workspace/environment | Authenticated `user_write`, debug-enabled only | Derived operational history, retained 30 days; workspace identity comes from auth context, never the browser payload; no configuration or issue content |
+
+## Application Profile and Artifact Boundary
+
+The supported application profile is DB-backed Atlassian OAuth only. Omitted, empty or whitespace selectors default to `atlassian_oauth` and `db`; `db`, `database`, `postgres` and `postgresql` select the same storage backend. Local-loopback supported profiles may retain inert legacy credential/token-store keys without file access or import. Hosted/network local-store opt-in, cookie, origin, database connection and encryption constraints remain enforced.
+
+Browser authority comes from DB users, auth connections and opaque browser sessions; user tokens remain encrypted in `auth_tokens`. Legacy DB-cookie upgrades retain their validated version/recovery behavior. Basic headers, local-file cookies and old token files grant no authority. Existing historical service-integration rows stay preserved and unused as application authentication or Jira/Home read credentials.
+
+Explicit developer JSON artifact import/export is retained under its ownership and validation contracts. Automatic runtime JSON fallback/import is retired: a missing workspace configuration remains unconfigured, not a source of authority from operator files. No migration may infer a shared configuration owner from a private view or move EPM settings into workspace administrator storage.
 
 ## Exact Boundaries
 
@@ -39,7 +47,7 @@ In DB/OAuth mode, `resolve_effective_catalog_config` also reports `missing_admin
 when no selected projects and no `JQL_QUERY` exist, and `source` when no numeric Jira source Board
 resolves. `/api/config` returns it as `adminSettingsMissing`; while it is non-empty the dashboard starts
 no ENG Jira work, opens Admin settings for editors, and shows non-editors the `adminContacts` display
-names (never emails or ids). Basic and JSON-file modes do not report it.
+names (never emails or ids). DB-backed OAuth is the sole serving profile; retired Basic/API-token and live JSON/local-file OAuth selections fail closed before feature routes.
 
 In DB/OAuth mode, `resolve_effective_catalog_config` is the canonical resolver for Sprint and Team
 catalog identity. Sprint rows are keyed by `workspace_id + board_id`. Per-Sprint Team rows are keyed
@@ -65,7 +73,9 @@ The frontend grants administrator-section editing only when `GET /api/config` re
 
 Department group configuration is deliberately collaborative. A non-admin user must be able to
 read and save `/api/groups-config`. Concurrent saves use `configRevision` and return `409` rather
-than silently overwriting another user's change. Department board layouts belong to this shared
+than silently overwriting another user's change. Department Allocation `allocationTypes: [{value,type}]` belongs to this shared payload (optional version-2 field; missing old data reads as empty). Jira Allocation field mapping stays administrator-owned. Existing global value maps remain dormant history; stale Project edits cannot change or clear them. Missing-field Department saves preserve the current saved map under the same revision transaction; explicit `[]` clears it. Allocation-only Departments can use strict DELIVERY Allocation Board, while Sprint-bound DELIVERY work still requires Teams.
+
+Department board layouts belong to this shared
 group payload; they are distinct from the administrator-owned Jira source board.
 
 The shared group payload's `teamLabels` field is `Record<TeamId, JiraLabel[]>`: each configured
@@ -115,7 +125,7 @@ a `groupId` selector. A group hidden by a user's visibility preference stays ful
 GET returns the schema, the Sprint's layouts, `viewRevision`, `inheritedFrom` and capabilities only. Batched values reads and saves authorize every requested immutable issue ID
 through the current user's OAuth Jira REST context; workspace sharing never grants Jira access.
 Inaccessible or nonexistent issues cannot expose saved cells. No Basic, service integration, Home,
-or local token-store fallback is supported. Other profiles return saving-unavailable guidance.
+or local token-store fallback is supported. Retired application profiles receive sanitized runtime-profile rejection before feature routing.
 
 A workspace/group schema-row transaction fence protects first-create, schema, view, and cell races.
 Schema changes require the current schema revision; layout changes require the Sprint's current view revision. Cell changes require only their own current
@@ -186,6 +196,9 @@ never touches Capacity, its verification columns, priority weights, groups or pr
 - `403 admin_required` is reserved for authenticated users attempting administrator-only writes.
 - Shared group writes and user-owned EPM writes require authenticated `user_write` plus the normal
   requested-with and token-bound CSRF checks, but no administrator check.
+- Token-bound CSRF tokens are single-use rows in `browser_csrf_tokens` (hash only, deleted with their
+  browser session). `GET /api/auth/csrf` requires `X-Requested-With: jira-execution-planner`; a CSRF
+  storage failure is `503 config_storage_unavailable` and the route is not dispatched.
 - `409` represents a revision conflict and must preserve the losing user's unsaved draft.
 
 ## Change Checklist

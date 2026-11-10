@@ -1,225 +1,42 @@
-import {
-    PLANNING_SELECTION_MODE_DEFAULT_ALL,
-    PLANNING_SELECTION_MODE_MANUAL,
-    resolvePlanningSelectionState,
-    savePlanningState
-} from '../planningSelectionState.mjs';
-import { sanitizeSelectedTeamsForScope } from '../teamSelectionUtils.mjs';
-
-export const selectedTaskMapFromKeys = (keys) => {
-    const next = {};
-    (keys || []).forEach((key) => {
-        const normalizedKey = String(key || '').trim();
-        if (normalizedKey) next[normalizedKey] = true;
-    });
-    return next;
-};
-
 export const selectedTaskKeysFromMap = (selectedTasks, validTaskKeySet = null) => Object.keys(selectedTasks || {})
     .filter(key => selectedTasks[key] && (!validTaskKeySet || validTaskKeySet.has(key)))
     .sort();
 
-export function resolvePlanningAuthResume({ resume, planningScopeKey, validTaskKeys, validTeamIds } = {}) {
-    if (!resume || resume.scopeKey !== planningScopeKey) return null;
-    const selectionMode = resume.selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
-        ? PLANNING_SELECTION_MODE_DEFAULT_ALL
-        : PLANNING_SELECTION_MODE_MANUAL;
-    const tasks = selectionMode === PLANNING_SELECTION_MODE_DEFAULT_ALL
-        ? [...new Set([...validTaskKeys].map(key => String(key || '').trim()).filter(Boolean))].sort()
-        : [...new Set(resume.selectedTaskKeys || [])]
-            .filter(key => validTaskKeys.has(key))
-            .sort();
-    const teams = [...new Set(resume.selectedTeams || [])]
-        .filter(teamId => validTeamIds.has(teamId))
-        .sort();
-    return {
-        selectedTaskKeys: tasks,
-        selectedTeams: teams,
-        selectionMode,
+// This adapter owns labels/analytics only. Immutable IDs and all draft state belong to the review controller.
+export function createPlanningSelectionHandlers({ controller, selectionTasks = [], visibleTasksForList = [], normalizeStatus, trackPlanningSelection } = {}) {
+    const ids = tasks => [...new Set(tasks.map(task => String(task?.id ?? task?.issueId ?? '')).filter(id => /^[1-9][0-9]*$/.test(id)))];
+    const selectedKeys = () => selectedTaskKeysFromMap(controller.getSelectedTasks()).join('|');
+    const act = (action, tasks, included) => {
+        const before = selectedKeys();
+        if (included) controller.includeShown(ids(tasks));
+        else controller.removeShown(ids(tasks));
+        if (before !== selectedKeys()) trackPlanningSelection?.(action, controller.getSelectedTasks(), selectionTasks);
     };
-}
-
-export function resolvePlanningSelectionForDashboard({
-    selectedTasks,
-    selectedTeams,
-    planningSelectionMode,
-    isFutureSprintSelected,
-    selectionTasks,
-    teamOptions,
-    activeGroupTeamIds
-} = {}) {
-    const validTaskKeySet = new Set((selectionTasks || []).map(task => String(task?.key || '').trim()).filter(Boolean));
-    const validTeamIds = (teamOptions || []).map(team => String(team?.id || '').trim()).filter(id => id && id !== 'all');
-    const resolvedPlanningState = resolvePlanningSelectionState({
-        hasStoredState: true,
-        storedState: {
-            selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks, validTaskKeySet),
-            selectedTeams,
-            selectionMode: planningSelectionMode
-        },
-        isFutureSprint: isFutureSprintSelected,
-        validTaskKeys: validTaskKeySet,
-        validTeamIds: new Set(validTeamIds)
-    });
-    return {
-        validTaskKeySet,
-        nextSelectedTaskKeys: resolvedPlanningState.selectedTaskKeys,
-        nextSelectionMode: resolvedPlanningState.selectionMode,
-        nextSelectedTeams: sanitizeSelectedTeamsForScope(resolvedPlanningState.selectedTeams, {
-            activeGroupTeamIds,
-            availableTeamIds: validTeamIds
-        })
-    };
-}
-
-export function persistPlanningSelectionState({
-    storage,
-    scopeKey,
-    selectedTasks,
-    selectionMode,
-    selectedTeams,
-    normalizeSelectedTeams
-} = {}) {
-    if (!scopeKey) return false;
-    return Boolean(savePlanningState(storage, scopeKey, {
-        selectedTaskKeys: selectedTaskKeysFromMap(selectedTasks),
-        selectedTeams: normalizeSelectedTeams(selectedTeams),
-        selectionMode
-    }));
-}
-
-export function toggleTaskSelectionMap(selectedTasks, taskKey) {
-    const next = { ...(selectedTasks || {}) };
-    if (next[taskKey]) {
-        delete next[taskKey];
-    } else {
-        next[taskKey] = true;
-    }
-    return next;
-}
-
-export function selectAllVisiblePlanningTasksMap(visibleTasksForList) {
-    const next = {};
-    (visibleTasksForList || []).forEach(task => {
-        if (task?.key) next[task.key] = true;
-    });
-    return next;
-}
-
-export function selectPlanningTasksByStatusMap(selectionTasks, statuses, normalizeStatus) {
-    const allowed = new Set((statuses || []).map(normalizeStatus));
-    const next = {};
-    (selectionTasks || []).forEach(task => {
-        if (allowed.has(normalizeStatus(task.fields.status?.name))) next[task.key] = true;
-    });
-    return next;
-}
-
-export function includePlanningTasksByStatusMap(selectedTasks, selectionTasks, statuses, normalizeStatus) {
-    const next = { ...(selectedTasks || {}) };
-    const allowed = new Set((statuses || []).map(normalizeStatus));
-    (selectionTasks || []).forEach(task => {
-        if (allowed.has(normalizeStatus(task.fields.status?.name))) next[task.key] = true;
-    });
-    return next;
-}
-
-export function toggleIncludeByStatusMap(selectedTasks, selectionTasks, statuses, normalizeStatus) {
-    const next = { ...(selectedTasks || {}) };
-    const allowed = new Set((statuses || []).map(normalizeStatus));
-    const matching = (selectionTasks || []).filter(task => allowed.has(normalizeStatus(task.fields.status?.name)));
-    const allSelected = matching.length > 0 && matching.every(task => selectedTasks?.[task.key]);
-    matching.forEach(task => {
-        if (allSelected) {
-            delete next[task.key];
-        } else {
-            next[task.key] = true;
-        }
-    });
-    return { next, allSelected };
-}
-
-export function createPlanningSelectionHandlers({
-    storage,
-    planningScopeKey,
-    selectedTasks,
-    selectedTeams,
-    selectionTasks,
-    visibleTasksForList,
-    isFutureSprintSelected,
-    normalizeStatus,
-    normalizeSelectedTeams,
-    setPlanningSelectionMode,
-    setCanUndoPlanningSelection,
-    setSelectedTasks,
-    trackPlanningSelection,
-    planningLoadedSelectionRef
-} = {}) {
-    const savePlanningSelection = (nextSelectedTasks, selectionMode, nextSelectedTeams = selectedTeams) =>
-        persistPlanningSelectionState({ storage, scopeKey: planningScopeKey, selectedTasks: nextSelectedTasks, selectionMode, selectedTeams: nextSelectedTeams, normalizeSelectedTeams });
-    const markPlanningBulkSelectionChanged = () => {
-        if (planningLoadedSelectionRef.current?.scopeKey === planningScopeKey) {
-            setCanUndoPlanningSelection(true);
-        }
+    const matching = statuses => {
+        const allowed = new Set(statuses.map(normalizeStatus));
+        return visibleTasksForList.filter(task => allowed.has(normalizeStatus(task.fields?.status?.name)));
     };
     return {
         toggleTaskSelection(taskKey) {
-            const newSelected = toggleTaskSelectionMap(selectedTasks, taskKey);
-            setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-            savePlanningSelection(newSelected, PLANNING_SELECTION_MODE_MANUAL);
-            setSelectedTasks(newSelected);
-            trackPlanningSelection('toggle_task', newSelected, selectionTasks);
+            const task = visibleTasksForList.find(candidate => candidate.key === taskKey);
+            if (task) act('toggle_task', [task], !controller.getSelectedTasks()[taskKey]);
         },
-        clearSelectedTasks() {
-            markPlanningBulkSelectionChanged();
-            setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-            savePlanningSelection({}, PLANNING_SELECTION_MODE_MANUAL);
-            setSelectedTasks({});
-            trackPlanningSelection('clear_selection', {}, selectionTasks);
+        selectPlanningReviewStories(stories, included) {
+            const matchingKeys = new Set(visibleTasksForList.map(task => task.key));
+            act('select_epic_visible', stories.filter(task => matchingKeys.has(task.key)), included);
         },
-        selectAllVisiblePlanningTasks() {
-            markPlanningBulkSelectionChanged();
-            const next = selectAllVisiblePlanningTasksMap(visibleTasksForList);
-            const nextMode = isFutureSprintSelected ? PLANNING_SELECTION_MODE_DEFAULT_ALL : PLANNING_SELECTION_MODE_MANUAL;
-            setPlanningSelectionMode(nextMode);
-            savePlanningSelection(next, nextMode);
-            setSelectedTasks(next);
-            trackPlanningSelection('select_all_visible', next, selectionTasks);
-        },
-        selectPlanningTasksByStatus(statuses) {
-            const next = selectPlanningTasksByStatusMap(selectionTasks, statuses, normalizeStatus);
-            markPlanningBulkSelectionChanged();
-            setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-            savePlanningSelection(next, PLANNING_SELECTION_MODE_MANUAL);
-            setSelectedTasks(next);
-            trackPlanningSelection('select_status', next, selectionTasks);
-        },
-        includePlanningTasksByStatus(statuses) {
-            setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-            setSelectedTasks(prev => {
-                const next = includePlanningTasksByStatusMap(prev, selectionTasks, statuses, normalizeStatus);
-                savePlanningSelection(next, PLANNING_SELECTION_MODE_MANUAL);
-                return next;
-            });
-        },
+        clearSelectedTasks() { act('clear_selection', visibleTasksForList, false); },
+        selectAllVisiblePlanningTasks() { act('select_all_visible', visibleTasksForList, true); },
+        selectPlanningTasksByStatus(statuses) { act('select_status', matching(statuses), true); },
+        includePlanningTasksByStatus(statuses) { act('include_status', matching(statuses), true); },
+        removePlanningTasksByStatus(statuses) { act('exclude_status', matching(statuses), false); },
         toggleIncludeByStatus(statuses) {
-            const { next, allSelected } = toggleIncludeByStatusMap(selectedTasks, selectionTasks, statuses, normalizeStatus);
-            markPlanningBulkSelectionChanged();
-            setPlanningSelectionMode(PLANNING_SELECTION_MODE_MANUAL);
-            savePlanningSelection(next, PLANNING_SELECTION_MODE_MANUAL);
-            setSelectedTasks(next);
-            trackPlanningSelection(allSelected ? 'exclude_status' : 'include_status', next, selectionTasks);
+            const tasks = matching(statuses), selected = controller.getSelectedTasks();
+            const included = !(tasks.length && tasks.every(task => selected[task.key]));
+            act(included ? 'include_status' : 'exclude_status', tasks, included);
         },
         undoPlanningSelectionChange() {
-            const baseline = planningLoadedSelectionRef.current;
-            if (!baseline || baseline.scopeKey !== planningScopeKey) return;
-            const nextSelectedTasks = baseline.selectedTasks || {};
-            const nextSelectionMode = baseline.selectionMode || PLANNING_SELECTION_MODE_MANUAL;
-            setSelectedTasks(nextSelectedTasks);
-            setPlanningSelectionMode(nextSelectionMode);
-            savePlanningSelection(nextSelectedTasks, nextSelectionMode);
-            setCanUndoPlanningSelection(false);
-            trackPlanningSelection('undo_selection', nextSelectedTasks, selectionTasks);
-        }
+            if (controller.undoInclusion()) trackPlanningSelection?.('undo_selection', controller.getSelectedTasks(), selectionTasks);
+        },
     };
 }

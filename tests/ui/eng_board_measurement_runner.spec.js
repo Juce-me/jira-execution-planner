@@ -1,16 +1,17 @@
-const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
+const { test: base, expect } = require('@playwright/test');
+const { DB_OAUTH_SETUP_TIMEOUT_MS, startDbOAuthServer } = require('./db_oauth_fixture');
 const fs = require('node:fs');
 const path = require('node:path');
 const { python, pythonMissingReason } = require('./python_interpreter');
 
 const root = path.resolve(__dirname, '../..');
-const port = 5067;
-const baseUrl = `http://127.0.0.1:${port}`;
-let server;
-
-test.afterAll(() => {
-  if (server && !server.killed) server.kill('SIGTERM');
+const test = base.extend({
+  measurementServer: [async ({}, use) => {
+    base.skip(Boolean(pythonMissingReason), pythonMissingReason);
+    const server = await startDbOAuthServer({ python, mode: 'measurement' });
+    try { await use(server); }
+    finally { await server.stop(); }
+  }, { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 30000 }],
 });
 
 test('measurement runner is external-script-only and keeps results transient', async () => {
@@ -26,49 +27,30 @@ test('measurement runner is external-script-only and keeps results transient', a
   expect(js).toContain('deadline_bound_unproven');
 });
 
-test('runner loads through Flask with production CSP and its external script', async ({ page, request }) => {
-  test.skip(Boolean(pythonMissingReason), pythonMissingReason);
-  let startupError;
-  server = spawn(python, ['-c',
-    `import jira_server; jira_server.app.run(host='127.0.0.1', port=${port}, debug=False, use_reloader=False)`], {
-    cwd: root,
-    env: {...process.env, APP_ENVIRONMENT_KEY:'local', ALLOW_DEV_DIAGNOSTIC_ENDPOINTS:'true',
-      JIRA_AUTH_MODE:'basic', CONFIG_STORAGE_BACKEND:'json', DATABASE_URL:''},
-    stdio: 'ignore',
-  });
-  server.once('error', error => { startupError = error; });
-  const deadline = Date.now() + 20000;
-  let ready = false;
-  while (Date.now() < deadline) {
-    if (startupError) throw new Error(`Flask test process could not start (${startupError.code})`);
-    if (server.exitCode !== null || server.signalCode !== null) {
-      throw new Error(`Flask test process exited before readiness (${server.exitCode ?? server.signalCode})`);
-    }
-    try {
-      const response = await fetch(`${baseUrl}/health`, { signal: AbortSignal.timeout(1000) });
-      if (response.ok) { ready = true; break; }
-    } catch (_) {}
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-  if (!ready) throw new Error('real Flask test server did not become ready within 20 seconds');
-  const pageErrors = [];
-  page.on('pageerror', error => pageErrors.push(error.message));
-  await page.addInitScript(() => {
-    window.__measurementCspViolations = [];
-    document.addEventListener('securitypolicyviolation', event => {
-      window.__measurementCspViolations.push({directive:event.effectiveDirective, blocked:event.blockedURI});
+test('runner loads through Flask with production CSP and its external script', async ({ browser, measurementServer: server }) => {
+  const baseUrl = server.baseUrl;
+  const context = await server.createContext(browser);
+  const page = await context.newPage();
+  try {
+    const pageErrors = [];
+    page.on('pageerror', error => pageErrors.push(error.message));
+    await page.addInitScript(() => {
+      window.__measurementCspViolations = [];
+      document.addEventListener('securitypolicyviolation', event => {
+        window.__measurementCspViolations.push({directive:event.effectiveDirective, blocked:event.blockedURI});
+      });
     });
-  });
-  const response = await page.goto(`${baseUrl}/api/dev/eng-board-measurement`);
-  expect(response.status()).toBe(200);
-  const csp = response.headers()['content-security-policy'];
-  expect(csp).toContain("script-src 'self'");
-  expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
-  await expect(page.locator('#status')).not.toHaveText('Loading options…');
-  expect(await page.evaluate(() => window.__measurementCspViolations)).toEqual([]);
-  expect(pageErrors).toEqual([]);
-  const asset = await request.head(`${baseUrl}/api/dev/eng-board-measurement/runner.js`);
-  expect(asset.status()).toBe(200);
-  expect(asset.headers()['content-type']).toContain('application/javascript');
-  expect(asset.headers()['x-content-type-options']).toBe('nosniff');
+    const response = await page.goto(`${baseUrl}/api/dev/eng-board-measurement`);
+    expect(response.status()).toBe(200);
+    const csp = response.headers()['content-security-policy'];
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    await expect(page.locator('#status')).not.toHaveText('Loading options…');
+    expect(await page.evaluate(() => window.__measurementCspViolations)).toEqual([]);
+    expect(pageErrors).toEqual([]);
+    const asset = await context.request.head(`${baseUrl}/api/dev/eng-board-measurement/runner.js`);
+    expect(asset.status()).toBe(200);
+    expect(asset.headers()['content-type']).toContain('application/javascript');
+    expect(asset.headers()['x-content-type-options']).toBe('nosniff');
+  } finally { await context.close(); }
 });

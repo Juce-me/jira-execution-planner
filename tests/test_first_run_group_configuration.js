@@ -328,6 +328,7 @@ test('create draft starts clean and avoids existing name and id collisions', () 
         name: 'New Department 3',
         teamIds: [],
         missingInfoComponents: [],
+        allocationTypes: [],
         excludedCapacityEpics: [],
     });
 });
@@ -486,7 +487,7 @@ test('Department editor exposes one canonical row favorite and ordered preferenc
     assert.ok(source.includes('aria-label="Show in Department selector, checked. Favorite Departments are always shown"'));
     assert.match(source, /type="checkbox"[\s\S]*aria-describedby=\{visibilityDescriptionIds\}/);
     assert.match(source, /firstRunConfigurationActive && isActive[\s\S]*className="group-list-star group-list-star-status"[\s\S]*data-first-run-guide-target="favorite"[\s\S]*role="status"[\s\S]*aria-label="Favorite Department, selected pending save"/);
-    assert.match(source, /const hasGroupScope = teamCount > 0[\s\S]*missingInfoComponents[\s\S]*disabled=\{groupVisibilitySaving \|\| !hasGroupScope\}/);
+    assert.match(source, /const hasGroupScope = groupHasScope\(group\)[\s\S]*[\s\S]*disabled=\{groupVisibilitySaving \|\| !hasGroupScope\}/);
     assert.equal(source.includes('className="group-star-button'), false);
     assert.equal(source.includes('Controls whether this Department appears in the dashboard Department menu.'), false);
     assert.equal(source.includes('Your favorite Department is always shown'), false);
@@ -538,8 +539,8 @@ test('dashboard owns one reducer session and ordered first-run preference handof
     assert.ok(saveHook.includes('groupsSnapshot:'));
     assert.ok(saveHook.includes('selectedGroupId: firstRunSession.pendingGroupId'));
     assert.ok(preferences.includes('saveFirstRunGroupPreferences = React.useCallback(async ({ groupsSnapshot = groupsConfig, selectedGroupId = firstRunFavoriteGroupId } = {})'));
-    assert.ok(preferences.includes('const hasGroupScope = (group) =>'));
-    assert.ok(preferences.includes("(group?.missingInfoComponents || []).some(component => String(component || '').trim())"));
+    assert.ok(preferences.includes('const hasGroupScope = groupHasScope'));
+    assert.ok(preferences.includes("import { groupHasScope }"));
     assert.ok(preferences.includes('const remainsEligible = hasGroupScope(selectedGroup)'));
     assert.match(preferences, /firstRunGroupsSignature[\s\S]*missingInfoComponents/);
     assert.ok(preferences.includes('const snapshotHasScope = hasGroupScope(snapshotGroup)'));
@@ -551,7 +552,7 @@ test('first-run Department chooser treats Team or Component scope as eligible', 
     const source = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'src', 'settings', 'FirstRunGroupSelectionModal.jsx'), 'utf8');
     assert.match(source, /const hasScope = teamCount > 0 \|\| componentCount > 0/);
     assert.match(source, /disabled=\{saving \|\| !hasScope\}/);
-    assert.ok(source.includes('Add at least one team or component before choosing this Department'));
+    assert.ok(source.includes('Add at least one team, component or Allocation before choosing this Department'));
 });
 
 test('group save returns the normalized committed snapshot to first-run preference save', () => {
@@ -652,4 +653,13 @@ test('duplicate draft keeps the Board colour inheritance flag', () => {
     const draft = buildFirstRunGroupDraft({ mode: 'duplicate', sourceGroup, existingGroups: [sourceGroup] });
     assert.equal(draft.board.inheritColumnColours, true);
     assert.deepEqual(draft.board, sourceGroup.board);
+});
+
+test('Allocation-only Departments pass first-run validation and duplication preserves their map when Legacy Components are removed', () => {
+    const { buildFirstRunGroupDraft, validateFirstRunPendingGroup } = loadFirstRunGroupConfiguration();
+    const group = { id: 'allocation', name: 'Allocation only', teamIds: [], missingInfoComponents: ['Legacy'], allocationTypes: [{ value: 'Growth', type: 'tech' }] };
+    const duplicate = buildFirstRunGroupDraft({ mode: 'duplicate', sourceGroup: group, existingGroups: [group], removeTeams: true, removeComponents: true });
+    assert.deepEqual(duplicate.missingInfoComponents, []);
+    assert.deepEqual(duplicate.allocationTypes, group.allocationTypes);
+    assert.equal(validateFirstRunPendingGroup([duplicate], duplicate.id).ok, true);
 });

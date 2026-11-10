@@ -48,7 +48,7 @@ function boardViewState(mode, snapshot, focusColumn, combinedWorkModel) {
 const BOARD_FACET_KEYS = [['priority', 'bpriority'], ['projects', 'bprojects']];
 
 // `combinedWorkModel` (DELIVERY) carries the Allocation facet as `alloc`; Legacy carries `lanes`.
-export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, layout, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus, combinedWorkModel = false }) {
+export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQuery, sort, rowsMode, boardStrictScope, sprintRange, alertFlags, alertCounts, focus, combinedWorkModel = false }) {
     const rendered = SHARE_VIEW_ALERT_KEYS.filter(key => Number(alertCounts?.[key] || 0) > 0);
     // A link to one alert group opens only that group's card; every other card is folded.
     const targetKey = focus?.kind === 'alertTeam' ? (focus.anchor === 'followupEpics' ? 'followup' : focus.anchor) : null;
@@ -68,7 +68,7 @@ export function buildShareViewState({ mode, groupId, sprintId, snapshot, searchQ
         lanes: combinedWorkModel ? undefined : { product: snapshot.showProduct, tech: snapshot.showTech },
         alloc: combinedWorkModel && Array.isArray(snapshot.engAllocationFilter) ? [...snapshot.engAllocationFilter] : undefined,
         initiatives: typeof snapshot.groupByInitiativeChoice === 'boolean' ? snapshot.groupByInitiativeChoice : undefined,
-        sort, layout, rows: rowsMode || undefined,
+        sort, rows: rowsMode || undefined,
         ...boardViewState(mode, snapshot, focus?.column, combinedWorkModel),
         stats: statsView, ...range, ...(rangeKind === 'quarter' ? leadTimesFilters(snapshot) : {}),
         alerts: rendered.length ? (snapshot.showAlertsPanel || targetKey ? (expanded.length ? expanded : 'none') : 'off') : undefined,

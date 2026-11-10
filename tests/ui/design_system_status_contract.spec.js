@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprint = { id: 3001, name: 'Synthetic sprint', state: 'future' };
 const columns = [{ id: 'doing', name: 'Doing', star: true, statuses: ['In Progress'], colour: '#597ef7' }, { id: 'ready', name: 'Ready', statuses: ['To Do'], colour: '#8c8c8c' }, { id: 'wrap', name: 'Wrap', statuses: ['Release'], colour: '#13c2c2' }];
@@ -9,19 +10,20 @@ const cases = [
     ['Catch Up Story', 'catch_up', 'story', 'SYNTH-1'],
     ['Catch Up subtask', 'catch_up', 'subtask', 'SYNTH-1-A'],
     ['Catch Up Epic', 'catch_up', 'epic', 'SYNTH-EPIC'],
-    ['Planning list Story', 'list', 'story', 'SYNTH-1'],
-    ['Planning list Epic', 'list', 'epic', 'SYNTH-EPIC'],
     ['Planning table Story', 'table', 'story', 'SYNTH-1'],
     ['Planning table Epic', 'table', 'epic', 'SYNTH-EPIC'],
     ['Board panel Story', 'board', 'story', 'SYNTH-1'],
     ['Board panel Epic', 'board', 'epic', 'SYNTH-EPIC'],
     ['Board drop', 'drop', 'epic', 'SYNTH-EPIC'],
 ];
+// Planning plans real Jira issues by numeric id (#331): SYNTH-n is issue 810n.
+const storyId = key => String(8100 + Number(key.split('-').pop()));
 async function fixture(page, surface) {
     const calls = [];
+    const review = createPlanningReviewMock();
     const statuses = { 'SYNTH-EPIC': 'In Progress', 'SYNTH-1': 'To Do', 'SYNTH-2': 'To Do', 'SYNTH-1-A': 'To Do' };
     await installDashboardShell(page);
-    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), { selectedView: 'eng', selectedSprint: sprint.id, sprintName: sprint.name, activeGroupId: 'synthetic', planningLayout: surface === 'table' ? 'table' : 'list', showBoard: ['board', 'drop'].includes(surface), showPlanning: ['list', 'table'].includes(surface), showAlertsPanel: false });
+    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), { selectedView: 'eng', selectedSprint: sprint.id, sprintName: sprint.name, activeGroupId: 'synthetic', showBoard: ['board', 'drop'].includes(surface), showPlanning: surface === 'table', showAlertsPanel: false });
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
@@ -37,7 +39,7 @@ async function fixture(page, surface) {
         if (url.pathname === '/api/projects/selected') return json({ selected: [] });
         if (url.pathname === '/api/tasks-with-team-name') {
             const epic = { key: 'SYNTH-EPIC', summary: 'Synthetic epic', status: statuses['SYNTH-EPIC'], teamId: 'synthetic-team', teamName: 'Synthetic team', sprint: [sprint] };
-            const issues = ['SYNTH-1', 'SYNTH-2'].map(key => ({ id: key, key, fields: { summary: `${key} synthetic story`, status: { name: statuses[key] }, priority: { name: 'Major' }, issuetype: { name: 'Story' }, customfield_10004: 1, epicKey: epic.key, parentSummary: epic.summary, projectKey: 'SYNTH', teamId: 'synthetic-team', teamName: 'Synthetic team', sprint: [sprint], subtaskSummary: key === 'SYNTH-1' ? { total: 1, done: 0, inProgress: 0, waiting: 1, statusCounts: { 'To Do': 1 } } : null } }));
+            const issues = ['SYNTH-1', 'SYNTH-2'].map(key => ({ id: storyId(key), key, fields: { summary: `${key} synthetic story`, status: { name: statuses[key] }, priority: { name: 'Major' }, issuetype: { name: 'Story' }, customfield_10004: 1, epicKey: epic.key, parentSummary: epic.summary, projectKey: 'SYNTH', teamId: 'synthetic-team', teamName: 'Synthetic team', sprint: [sprint], subtaskSummary: key === 'SYNTH-1' ? { total: 1, done: 0, inProgress: 0, waiting: 1, statusCounts: { 'To Do': 1 } } : null } }));
             return json(url.searchParams.get('project') === 'tech' || url.searchParams.get('purpose') ? { issues: [], epics: {}, epicsInScope: [], names: {} } : { issues, epics: { [epic.key]: epic }, epicsInScope: [epic], names: {} });
         }
         if (url.pathname === '/api/issues/subtasks') return json({ parentKey: 'SYNTH-1', subtasks: [{ key: 'SYNTH-1-A', summary: 'Synthetic subtask', status: { name: statuses['SYNTH-1-A'] }, issueType: 'Sub-task' }], summary: { total: 1, done: 0, waiting: 1, statusCounts: { 'To Do': 1 } } });
@@ -48,6 +50,9 @@ async function fixture(page, surface) {
         }
         if (url.pathname === '/api/issues/description') return json({ key: 'SYNTH-EPIC', html: '<p>Synthetic description</p>', isEmpty: false });
         if (url.pathname === '/api/issues/statuses/catalog') return json({ statuses: ['To Do', 'In Progress', 'Release'].map(name => ({ name, statusCategoryKey: 'indeterminate' })) });
+        // The shared Planning review (#331): no saved plan yet, so the Table's checkboxes start unticked.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) return json(review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
         if (url.pathname === '/api/missing-info') return json({ issues: [], epics: [], count: 0, epicCount: 0 });
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
@@ -62,14 +67,11 @@ for (const [label, surface, kind, key] of cases) {
         await page.emulateMedia({ reducedMotion: 'reduce' });
         const { calls, statuses } = await fixture(page, surface);
         await page.goto(appBaseUrl, { waitUntil: 'networkidle' });
-        if (['list', 'table'].includes(surface)) {
+        if (surface === 'table') {
             await expect(page.locator('.planning-panel.open')).toBeVisible();
-            if (surface === 'list') await page.getByRole('button', { name: 'Select All', exact: true }).click();
-            if (surface === 'table') {
-                await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-                for (const storyKey of ['SYNTH-1', 'SYNTH-2']) await page.getByRole('checkbox', { name: `Select ${storyKey}`, exact: true }).check();
-                if (kind === 'epic') await page.getByRole('radio', { name: 'Epics', exact: true }).click();
-            }
+            await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+            for (const storyKey of ['SYNTH-1', 'SYNTH-2']) await page.getByRole('checkbox', { name: `Select ${storyKey}`, exact: true }).check();
+            if (kind === 'epic') await page.getByRole('radio', { name: 'Epics', exact: true }).click();
         }
         if (surface === 'board') await page.locator('.ecard[data-epic-key="SYNTH-EPIC"]').click();
         if (kind === 'subtask') await page.locator('.task-item[data-task-key="SYNTH-1"] .story-subtasks-toggle').click();

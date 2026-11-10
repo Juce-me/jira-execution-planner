@@ -1,6 +1,4 @@
 import base64
-import os
-import tempfile
 import unittest
 
 from backend.auth.key_provider import key_provider_from_env
@@ -11,12 +9,12 @@ from backend.auth.service_integrations import (
 from backend.auth.token_crypto import decrypt_token
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 class ServiceIntegrationTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'service-integrations.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -50,7 +48,6 @@ class ServiceIntegrationTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def test_seed_writes_service_token_without_user_auth_token_rows(self):
         with self.factory() as session:

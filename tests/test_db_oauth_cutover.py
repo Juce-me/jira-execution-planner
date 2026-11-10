@@ -1,6 +1,5 @@
 import base64
 import os
-import tempfile
 import time
 import unittest
 from contextlib import contextmanager
@@ -20,7 +19,8 @@ from backend.auth.jira_auth import refresh_oauth_token
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
-from tests.oauth_test_helpers import forbid_jira_http, install_oauth_session
+from tests.oauth_test_helpers import forbid_jira_http
+from tests.postgres_test_db import fresh_database_url
 
 
 class FakeResponse:
@@ -36,10 +36,7 @@ class DbOauthCutoverTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'oauth-cutover.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -52,7 +49,6 @@ class DbOauthCutoverTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _store_callback(self):
         with self.factory() as session:
@@ -91,7 +87,6 @@ class DbOauthCutoverTests(unittest.TestCase):
             'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
         }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-             patch.object(jira_server, 'OAUTH_LOCAL_TOKEN_STORE_ALLOWED', False), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_ID', 'client-123'), \
              patch.object(jira_server, 'ATLASSIAN_CLIENT_SECRET', 'secret-123'), \
              patch.object(jira_server, 'ATLASSIAN_REDIRECT_URI', 'http://localhost:5050/api/auth/atlassian/callback'), \
@@ -249,7 +244,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             self.assertEqual(connection.scope_provenance, 'provider')
             self.assertEqual(connection.scopes, jira_server.ATLASSIAN_SCOPES.split())
 
-    def test_local_refresh_without_scope_never_upgrades_unknown_provenance(self):
+    def test_provider_refresh_without_scope_never_upgrades_unknown_provenance(self):
         config = jira_server.current_auth_config()
         verified = refresh_oauth_token(
             config,
@@ -273,19 +268,16 @@ class DbOauthCutoverTests(unittest.TestCase):
         self.assertEqual((verified['scope'], verified['scope_provenance']), ('read:me', 'provider'))
         self.assertEqual(unknown['scope_provenance'], 'unknown')
 
-    def test_local_requested_only_session_fails_closed(self):
-        install_oauth_session(
-            self.client,
-            scope=jira_server.ATLASSIAN_SCOPES,
-            scope_provenance='unknown',
-        )
-        with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}, clear=False), \
-             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+    def test_old_local_cookie_is_not_an_authenticated_db_session(self):
+        with self.client.session_transaction() as cookie:
+            cookie['atlassian_oauth_session_id'] = 'retired-session'
+        with self._db_route_mode(), \
+             patch('builtins.open', side_effect=AssertionError('No legacy file I/O')):
             response = self.client.get('/api/auth/status')
-
         self.assertEqual(response.status_code, 200)
         self.assertFalse(response.get_json()['authenticated'])
-        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=missing_scope')
+        with self.factory() as db:
+            self.assertEqual(db.query(models.BrowserSession).count(), 0)
 
     def test_current_request_context_prefers_db_connection_metadata(self):
         result = self._store_callback()
@@ -515,7 +507,6 @@ class DbOauthCutoverTests(unittest.TestCase):
                 'db_browser_session_id': result.browser_session_id,
             })
             self.assertNotIn('atlassian_oauth_session_id', session)
-        self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
 
         with self.factory() as session:
             user_count = session.query(models.User).count()
@@ -535,42 +526,22 @@ class DbOauthCutoverTests(unittest.TestCase):
             })
             self.assertNotIn('atlassian_oauth_session_id', session)
 
-        self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
 
     def test_db_mode_session_data_reads_database_tokens_not_local_store(self):
         result = self._store_callback()
-        context = jira_server.RequestAuthContext(
-            auth_mode='atlassian_oauth',
-            user_id=result.user_id,
-            stable_subject='account-123',
-            atlassian_account_id='account-123',
-            workspace_id=result.workspace_id,
-            auth_connection_id=result.connection_id,
-            cloud_id='cloud-123',
-            site_url='https://example.atlassian.net',
-            token_version='1',
-            account_status='active',
-            is_admin=False,
-        )
-        with jira_server.app.test_request_context('/'):
-            jira_server.OAUTH_TOKEN_STORE['session-1'] = {
-                'access_token': 'expired-access',
-                'refresh_token': 'refresh-123',
-                'expires_at': time.time() - 60,
-                'cloudid': 'cloud-123',
-                'site_url': 'https://example.atlassian.net',
-                'stored_at': time.time(),
-                **result.session_metadata,
-            }
-            with patch.dict(os.environ, {
-                'DATABASE_URL': self.database_url,
-                'TOKEN_ENCRYPTION_MASTER_KEY_B64': base64.b64encode(bytes([7]) * 32).decode('ascii'),
-                'TOKEN_ENCRYPTION_KEY_ID': 'local-key',
-            }), patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
+        with self.factory() as db:
+            browser = create_browser_session(db, user_id=result.user_id,
+                workspace_id=result.workspace_id, auth_connection_id=result.connection_id)
+            browser_id = browser.id
+            db.commit()
+        with self._db_route_mode(), jira_server.app.test_request_context('/'):
+            jira_server.session['db_oauth_session'] = {'db_browser_session_id': browser_id}
+            jira_server.session['atlassian_oauth_session_id'] = 'retired-session'
+            context = jira_server.current_request_auth_context()
+            with patch.object(jira_server, 'oauth_session_data', side_effect=AssertionError('local cookie fallback reached')):
                 data = jira_server.current_jira_session_data(context)
-
         self.assertEqual(data['access_token'], 'access-123')
-        self.assertNotEqual(data['access_token'], 'expired-access')
+        self.assertEqual(context.browser_session_id, browser_id)
 
     def test_auth_status_uses_signed_db_session_without_local_token_store(self):
         result = self._store_callback()
@@ -939,7 +910,7 @@ class DbOauthCutoverTests(unittest.TestCase):
             )),
         ]
         if local_store_forbidden:
-            for name in ('oauth_session_data', 'save_oauth_session', 'oauth_refresh_lock',
+            for name in ('oauth_session_data', 'save_oauth_session',
                          'oauth_session_data_for_auth_context'):
                 patches.append(patch.object(
                     jira_server, name, side_effect=AssertionError(f'local token store helper {name} forbidden'),
@@ -968,7 +939,6 @@ class DbOauthCutoverTests(unittest.TestCase):
         with self.client.session_transaction() as session:
             self.assertEqual(session['db_oauth_session'], {'db_browser_session_id': result.browser_session_id})
             self.assertNotIn('atlassian_oauth_session_id', session)
-        self.assertEqual(jira_server.OAUTH_TOKEN_STORE, {})
 
     def test_dev_home_graphql_probe_fails_closed_when_private_epm_storage_is_unavailable(self):
         self._store_callback_through_route()
@@ -1064,7 +1034,8 @@ class DbOauthCutoverTests(unittest.TestCase):
         with self._probe_mode() as _, patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
              patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:
             response = self.client.get(self.PROBE_PATH + '?profile=public-read-v1')
-        self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()['error'], 'runtime_storage_unsupported')
         public_probe.assert_not_called()
         with self._probe_mode(), patch.dict(os.environ, {'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': ''}), \
              patch('backend.routes.auth_routes.epm_home.run_home_graphql_public_read_probe') as public_probe:

@@ -145,6 +145,7 @@ const DECODE_VECTORS = [
     // scope
     ['?v=1&scope=all_work', ok({ scope: 'all_work' })],
     ['?v=1&scope=component', ok({ scope: 'component' })],
+    ['?v=1&scope=allocation', ok({ scope: 'allocation' })],
     ...drops('mode', ['?v=1&scope=all-work', '?v=1&scope=']),
     // teams
     ['?v=1&teams=all', ok({ teams: ['all'] })],
@@ -198,6 +199,8 @@ const DECODE_VECTORS = [
     // layout and rows
     ['?v=1&layout=table&rows=stories', ok({ layout: 'table', rows: 'story' })],
     ['?v=1&layout=list&rows=epics', ok({ layout: 'list', rows: 'epic' })],
+    // An old Planning List link still parses (#323): the resolver opens it as the table.
+    ['?v=1&mode=planning&group=g&sprint=41&teams=t1&initiatives=0&sort=status&layout=list&story=PROJ-102', ok({ mode: 'planning', group: 'g', sprint: '41', teams: ['t1'], initiatives: false, sort: 'status', layout: 'list', focus: { kind: 'story', key: 'PROJ-102' } })],
     ...drops('mode', ['?v=1&layout=grid', '?v=1&rows=story']),
     // stats and ranges
     ['?v=1&stats=burnout', ok({ stats: 'burnout' })],
@@ -981,10 +984,9 @@ test('owner pins: dashboard.jsx literals that have no exported constant (Stats v
     assert.deepEqual([...stats[1].matchAll(/value === '([^']+)'/g)].map((match) => match[1]), plain(defaults.SHARE_VIEW_STATS_VIEWS));
     assert.equal(stats[2], defaults.SHARE_VIEW_DEFAULTS.stats);
 
-    const layout = /useState\(savedPrefsRef\.current\.planningLayout === '([^']+)' \? '\1' : '([^']+)'\)/.exec(dashboard);
-    assert.ok(layout, 'dashboard.jsx planningLayout changed: update SHARE_VIEW_PLANNING_LAYOUTS and the layout default');
-    assert.deepEqual([layout[1], layout[2]].sort(), [...plain(defaults.SHARE_VIEW_PLANNING_LAYOUTS)].sort());
-    assert.equal(layout[2], defaults.SHARE_VIEW_DEFAULTS.layout);
+    // Planning List is retired (#323): Planning is the table only, so no saved preference or link can choose a layout.
+    assert.ok(!/planningLayout|setPlanningLayout/.test(dashboard), 'dashboard.jsx keeps no Planning layout state');
+    assert.equal(defaults.SHARE_VIEW_DEFAULTS.layout, 'table');
 
     const scopes = /const boardScopeRequested = [^\n]*\[((?:'[a-z_]+'(?:, )?)+)\]\.includes\(boardStrictScope\)/.exec(dashboard);
     assert.ok(scopes, 'dashboard.jsx boardScopeRequested changed: update SHARE_VIEW_BOARD_SCOPES');
@@ -1010,7 +1012,7 @@ test('owner pins: dashboard.jsx literals that have no exported constant (Stats v
 
 // The row mode as the table declares it: a plain initial value today, and the lazy initializer Task 8
 // puts there so a link can seed it. Either way the value after `||` is the default.
-const PLANNING_ROW_MODE = /const \[mode, setMode\] = React\.useState\((?:\(\) => takeInitialPlanningRowMode\(\) \|\| )?'([^']+)'\);/;
+const PLANNING_ROW_MODE = /const \[mode, setMode\] = React\.useState\((?:\(\) => takeInitialPlanningRowMode\(\) \|\| (?:getRememberedPlanningRowMode\(\) \|\| )?)?'([^']+)'\);/;
 
 test('owner pins: the Planning table row mode defaults to epic and has a story mode', () => {
     const mode = PLANNING_ROW_MODE.exec(readSource('eng/PlanningReviewTable.jsx'));

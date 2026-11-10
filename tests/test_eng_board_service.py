@@ -31,6 +31,51 @@ def issue(key, *, status='To Do', project_key='PROD', project_name='Product', pa
 
 
 class EngBoardScopeTests(unittest.TestCase):
+    def test_allocation_scope_batches_raw_values_with_realistic_continuation_tokens(self):
+        import math
+        values = tuple(f'Allocation {i:03d} ' + 'x' * 48 for i in range(150))
+        calls = []
+        counters = eng_board.PagerCounters()
+        def search(payload):
+            calls.append(payload)
+            return {'issues': [], 'isLast': True} if payload.get('nextPageToken') else {
+                'issues': [], 'isLast': False,
+                'nextPageToken': 'x' * math.ceil(len(payload['jql']) * 1.5)}
+        batches = list(eng_board.iter_allocation_cohort_batches(
+            search, projects=(('PLAN', 'other'),), planning_type_ids=('10002',), components=values,
+            allocation_field_id='customfield_40001', parent_clause='issuetype = 10001',
+            parent_fields=eng_board.EPIC_FIELDS + ('customfield_40001',), terminal_statuses=('Done',),
+            cohort=eng_board.LeafCohort(), counters=counters))
+        self.assertEqual(([], True), batches[-1])
+        self.assertGreater(len(calls), 2)
+        first_pages = [p for p in calls if 'nextPageToken' not in p]
+        combined = ' '.join(p['jql'] for p in first_pages)
+        for value in values:
+            self.assertEqual(1, combined.count('"' + value + '"'))
+        for payload in calls:
+            self.assertIn('issuetype = 10001', payload['jql'])
+            self.assertIn('cf[40001] in', payload['jql'])
+            self.assertIn('AFTER -28d', payload['jql'])
+            self.assertNotIn('component in', payload['jql'])
+            self.assertLessEqual(eng_board.encoded_search_bytes(payload['jql'], payload['fields'], payload.get('nextPageToken')),
+                                 eng_board.MAX_ENCODED_REQUEST_BYTES)
+        self.assertEqual(len(calls), counters.pages)
+
+    def test_allocation_scope_checks_exact_raw_value_after_jira_matching(self):
+        parent = issue('PLAN-I1', project_key='PLAN', issue_type='Initiative')
+        parent['fields']['customfield_40001'] = {'value': 'platform'}
+        calls = []
+        def search(payload):
+            calls.append(payload)
+            return {'issues': [parent], 'isLast': True}
+        batches = list(eng_board.iter_allocation_cohort_batches(
+            search, projects=(('PLAN', 'other'),), planning_type_ids=('10002',), components=('Platform',),
+            allocation_field_id='customfield_40001', parent_clause='issuetype = 10001',
+            parent_fields=eng_board.EPIC_FIELDS + ('customfield_40001',), terminal_statuses=(),
+            cohort=eng_board.LeafCohort()))
+        self.assertEqual(([], True), batches[-1])
+        self.assertEqual(1, len(calls))
+
     def test_all_work_accepts_team_scope_without_components(self):
         board = {'columns': [{'id': 'col-00000001', 'name': 'To do', 'statuses': ['To Do']}],
                  'doneEpicRetentionDays': 28}

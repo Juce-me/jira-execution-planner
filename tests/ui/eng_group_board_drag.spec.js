@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
 
 // Moving an epic by dragging its card (§6.4, §9.5, §10.1, §10.2, §10.3, D37, D42) — a second
@@ -89,7 +90,8 @@ function storyPayload(extraPlat1Statuses = []) {
     EPIC_SPECS.forEach(([epicKey, , total, done]) => {
         for (let index = 0; index < total; index += 1) {
             stories.push({
-                id: `${epicKey}-s${index}`,
+                // Planning plans real Jira issues by numeric id (#331); the payload order is fixed, so the ids are stable.
+                id: String(9001 + stories.length),
                 key: `${epicKey}-s${index}`,
                 fields: {
                     summary: `${epicKey} story ${index}`,
@@ -111,7 +113,7 @@ function storyPayload(extraPlat1Statuses = []) {
         if (epicKey === 'PLAT-1') {
             extraPlat1Statuses.forEach((statusName, extraIndex) => {
                 stories.push({
-                    id: `${epicKey}-x${extraIndex}`,
+                    id: String(9001 + stories.length),
                     key: `${epicKey}-x${extraIndex}`,
                     fields: {
                         summary: `${epicKey} extra story ${extraIndex}`,
@@ -146,6 +148,7 @@ async function installBoardFixture(page, calls, {
     extraPlat1Statuses = [],
 } = {}) {
     await installDashboardShell(page);
+    const review = createPlanningReviewMock();
     await page.route('**/api/**', async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -245,6 +248,9 @@ async function installBoardFixture(page, calls, {
         if (url.pathname === '/api/backlog-epics') return json({ epics: [] });
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        // The shared Planning review (#331): no saved plan yet.
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) return json(review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         return json({});
     });
 }
@@ -256,7 +262,7 @@ async function loadDashboard(page, calls, options = {}) {
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
-        selectedView: 'eng', planningLayout: 'list',
+        selectedView: 'eng',
         selectedSprint: selectedSprintId,
         sprintName: selectedSprintName,
         activeGroupId: 'grp-default',
@@ -837,7 +843,8 @@ test('a drag never writes to the Planning selection', async ({ page }) => {
     await loadDashboard(page, calls, { showBoard: false, showPlanning: true });
     await page.locator('.planning-panel.open').waitFor();
     await page.getByRole('button', { name: 'Select All' }).click();
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).not.toHaveText('0 · 0.0 SP');
+    await expect(page.locator('.planning-panel.open .planning-stats.compact').first()).not.toContainText('0 stories · 0.0 SP');
+    await expect(page.locator('.planning-panel.open .planning-stats.compact').first()).toContainText(/[1-9]\d* stor(y|ies) · /);
 
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Board' }).click();
     await page.waitForSelector('.eng-board .col');

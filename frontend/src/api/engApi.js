@@ -229,9 +229,10 @@ export const fetchBacklogEpics = (backendUrl, { project, teamIds = [], signal } 
     });
 };
 
-export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], refresh = false, signal, scoped = true } = {}) => {
+export const fetchExcludedCapacityStatsSource = (backendUrl, { sprintIds = [], teamIds = [], groupId, refresh = false, signal, scoped = true } = {}) => {
     // A mixed-era range is sent unstamped: the server admits each sprintId through its own source.
-    const body = scoped ? stampBody({ sprintIds, teamIds }) : { sprintIds, teamIds };
+    const selectors = { sprintIds, teamIds, ...(groupId ? { groupId } : {}) };
+    const body = scoped ? stampBody(selectors) : selectors;
     if (refresh) body.refresh = true;
     return scopedFetch(`${backendUrl}/api/stats/excluded-capacity-source`, {
         method: 'POST',

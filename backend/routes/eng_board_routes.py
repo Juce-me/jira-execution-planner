@@ -19,7 +19,7 @@ from backend.auth.db_context import is_db_auth_context, resolve_db_request_auth_
 from backend.auth.jira_auth import AuthError
 from backend.config.repository import ConfigStorageError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
-from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config
+from backend.services import allocation_classification, eng_board, shared_group_config, workspace_dashboard_config
 from backend.services.eng_board_stream import (
     ENG_BOARD_PROTOCOL_VERSION, EngBoardChildScheduler, EngBoardRequestDeadline,
     EngBoardFrameError, EngBoardRequestTransport, EngBoardStreamWriter,
@@ -100,9 +100,7 @@ class BoardSnapshot:
     scope_version: str
     scope_cohort_digest: str
     secret_key: bytes
-    adapter: str = 'db_oauth'
     focused_column_id: str | None = None
-    adapter_server: object | None = None
     work_request: object | None = None
     parent_clause: str = 'issuetype = Epic'
 
@@ -139,7 +137,7 @@ def _parse_query(args):
     sprint_raw = _single_arg(args, 'sprintId')
     focused = _single_arg(args, 'focusedColumnId') or None
     refresh = _single_arg(args, 'refresh') or '0'
-    if len(department_id.encode('utf-8')) > 256 or scope not in {'all_work', 'component', 'sprint'}:
+    if len(department_id.encode('utf-8')) > 256 or scope not in {'all_work', 'component', 'allocation', 'sprint'}:
         raise BoardRouteError('invalid_board_scope', 400)
     if focused is not None and len(focused.encode('utf-8')) > 256:
         raise BoardRouteError('invalid_board_scope', 400)
@@ -298,8 +296,6 @@ def _auth_partition(context):
 
 
 def _assert_current(snapshot):
-    if snapshot.adapter == 'basic_json':
-        return _assert_basic_snapshot_current(snapshot.adapter_server or get_jira_server(), snapshot)
     context = _context_from_browser_session(snapshot)
     if _auth_partition(context) != _auth_partition(snapshot.context):
         raise BoardScopeChanged('scope_changed')
@@ -311,31 +307,6 @@ def _assert_current(snapshot):
     if current != snapshot.scope_version:
         raise BoardScopeChanged('scope_changed')
     return context
-
-
-def _basic_request_checkpoint(server, snapshot, budget, *, phase):
-    cancelled = getattr(budget, 'cancelled', None)
-    if cancelled is not None and cancelled.is_set():
-        raise EngBoardRequestDeadline('request_cancelled')
-    budget.check(phase)
-    _assert_basic_snapshot_current(server, snapshot, checkpoint=phase)
-
-
-def _assert_basic_snapshot_current(server, snapshot, *, checkpoint='scope'):
-    del checkpoint
-    try:
-        current = eng_board_basic.capture_authority(
-            server, snapshot.query.department_id, snapshot.secret_key,
-        )
-    except eng_board_basic.BasicBoardCompatibilityError as error:
-        raise BoardScopeChanged('scope_changed') from error
-    current_version = eng_board.build_scope_version(
-        snapshot.secret_key, current.authority_payload,
-        token_version=current.credential_version,
-    )
-    if current_version != snapshot.scope_version:
-        raise BoardScopeChanged('scope_changed')
-    return None
 
 
 def _resolve_projects(server, dashboard_payload, context, transport):
@@ -358,7 +329,7 @@ def _resolve_projects(server, dashboard_payload, context, transport):
 def _run_catalog_reads(reads, *, concurrent):
     """Run independent catalog reads side by side; a failure is raised in the order the reads were given.
 
-    Only a captured auth context lets a worker thread call Jira, so the context-free Basic adapter stays serial.
+    Captured DB OAuth context is passed explicitly to every worker.
     """
     if not concurrent:
         return [read() for read in reads]
@@ -368,9 +339,17 @@ def _run_catalog_reads(reads, *, concurrent):
 
 
 def _capture_shape(server, query, transport, dashboard, group, raw_group, *, context, roles=None):
+    delivery = roles is not None and not roles.is_legacy
+    if (query.scope == 'component' and delivery) or (query.scope == 'allocation' and not delivery):
+        raise BoardRouteError('board_scope_model_mismatch', 400)
+    values = ([item['value'] for item in allocation_classification.department_allocation_types(group)]
+              if delivery else group.get('missingInfoComponents') or ())
+    if query.scope == 'allocation' and not values:
+        raise BoardRouteError('board_allocations_required', 409)
+    if delivery and values and query.scope != 'sprint' and not roles.allocation_field_id:
+        raise BoardRouteError('board_allocation_field_required', 409)
     validated = eng_board.validate_scope_configuration(
-        query.scope, raw_group.get('board'), group.get('missingInfoComponents') or (),
-        team_ids=_configured_teams(group),
+        query.scope, raw_group.get('board'), values, team_ids=_configured_teams(group),
     )
     board = validated['board']
     column_ids = {row['id'] for row in board['columns']}
@@ -381,7 +360,7 @@ def _capture_shape(server, query, transport, dashboard, group, raw_group, *, con
         board['columns'][0]['id'],
     )
     teams = _configured_teams(group)
-    if query.scope == 'sprint' and not validated['components'] and not teams:
+    if query.scope == 'sprint' and not teams and (delivery or not validated['components']):
         raise BoardRouteError('board_team_scope_required', 409)
     projects, issue_types, fields = _run_catalog_reads((
         lambda: _resolve_projects(server, {**dashboard, **roles.flat_admin_settings()} if roles is not None else dashboard,
@@ -480,50 +459,6 @@ def _capture_snapshot(server, query, transport, secret_key):
         focused_column_id=shape['focused'], work_request=work_request,
         parent_clause=roles.parent_clause() if roles is not None else 'issuetype = Epic',
     )
-
-
-def _capture_basic_snapshot(server, query, transport, secret_key):
-    try:
-        captured = eng_board_basic.capture_authority(
-            server, query.department_id, secret_key,
-        )
-    except eng_board_basic.BasicBoardCompatibilityError as error:
-        raise BoardRouteError(error.code, error.status) from error
-    group = captured.group
-    shape = _capture_shape(
-        server, query, transport, captured.dashboard_payload, group, group, context=None,
-    )
-    scope_version = eng_board.build_scope_version(
-        secret_key, captured.authority_payload,
-        token_version=captured.credential_version,
-    )
-    cohort = eng_board.build_scope_version(secret_key, {
-        'adapter': 'basic_json',
-        'departmentId': query.department_id,
-        'dashboard': captured.dashboard_payload,
-        'group': group,
-        'projects': shape['projects'],
-        'fields': shape['fields'],
-        'issueTypeIds': shape['issueTypeIds'],
-        'components': shape['components'],
-        'teams': shape['teams'],
-        'board': shape['board'],
-        'scope': query.scope,
-        'sprintId': query.sprint_id,
-    }, token_version='basic-json-v1')
-    snapshot = BoardSnapshot(
-        query, None, '', '', captured.authority_payload, captured.dashboard_payload,
-        group, group, shape['board'], shape['projects'], shape['components'], shape['teams'],
-        shape['issueTypeIds'], shape['fields']['epicLink'], shape['fields']['sprint'],
-        shape['fields']['storyPoints'], shape['fields']['team'], shape['fields']['projectTrack'],
-        shape['fields']['deliveryOwner'], scope_version, cohort, secret_key,
-        adapter='basic_json', focused_column_id=shape['focused'], adapter_server=server,
-    )
-    try:
-        _assert_basic_snapshot_current(server, snapshot, checkpoint='preheader')
-    except BoardScopeChanged as error:
-        raise BoardRouteError('scope_changed', 409) from error
-    return snapshot
 
 
 def _wire_columns(board):
@@ -696,27 +631,21 @@ def _diagnostics(transport, counters, started, index_ms, focused_ms, peak, compl
 
 
 def _allocation_options(snapshot):
-    """DELIVERY classifies each Initiative by its own Allocation (field id + mapping from the admitted context);
+    """DELIVERY classifies each Initiative by its own Allocation (admitted field id and captured Department mapping);
     Legacy classifies children by project."""
     roles = snapshot.work_request.roles if snapshot.work_request is not None else None
     if roles is None or roles.is_legacy:
         return {}
-    return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': roles.allocation_types}
+    return {'allocation_field_id': roles.allocation_field_id, 'allocation_types': allocation_classification.department_allocation_types(snapshot.group)}
 
 
 def _search_page(server, snapshot, transport, payload, timeout):
-    if snapshot.adapter == 'basic_json':
-        _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
     response = server.current_jira_search(
         payload, context=snapshot.context,
         timeout=timeout[1] if isinstance(timeout, tuple) else timeout,
         diagnostic_transport=transport,
     )
-    if snapshot.adapter == 'basic_json':
-        _basic_request_checkpoint(server, snapshot, transport.budget, phase='jira_search')
     if response.status_code == 401:
-        if snapshot.adapter == 'basic_json':
-            raise BoardJiraUnavailable('jira_unavailable')
         raise AuthError('auth_required', 'Atlassian authentication is required.')
     if response.status_code != 200:
         raise BoardJiraUnavailable('jira_unavailable')
@@ -742,7 +671,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
     discovery_complete = False
     work_roles = snapshot.work_request.roles if snapshot.work_request is not None else None
     leaf_cohort = (eng_board.LeafCohort()
-                   if work_roles is not None and not work_roles.is_legacy and snapshot.components else None)
+                   if work_roles is not None and not work_roles.is_legacy and snapshot.query.scope in {'allocation', 'all_work'} else None)
 
     def emit(frame_type, *, optional_candidate_bytes=None, **payload):
         nonlocal sequence
@@ -840,14 +769,13 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                 )
                 if line is not None:
                     yield line
-        elif snapshot.components:
+        elif (snapshot.components and not (allocation and snapshot.query.scope == 'sprint')) or leaf_cohort is not None:
             epics = []
             if leaf_cohort is not None:
-                # New model: Components live on the Epic leaves. Membership is decided there, before
-                # any Initiative is admitted; Team leaves join the same cohort for Component-backed all-work.
-                component_batches = eng_board.iter_leaf_cohort_batches(
+                # DELIVERY scope values match Initiative Allocation; All work also admits Team leaves.
+                component_batches = eng_board.iter_allocation_cohort_batches(
                     search_page, projects=snapshot.projects, planning_type_ids=snapshot.issue_type_ids,
-                    components=snapshot.components,
+                    components=snapshot.components, allocation_field_id=work_roles.allocation_field_id,
                     team_ids=snapshot.teams if snapshot.query.scope == 'all_work' else (),
                     team_field_id=snapshot.team_field_id, parent_clause=snapshot.parent_clause,
                     parent_fields=epic_fields, terminal_statuses=terminal_statuses,
@@ -898,7 +826,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
                 )
                 if line is not None:
                     yield line
-        if snapshot.query.scope in {'all_work', 'component'}:
+        if snapshot.query.scope in {'all_work', 'component', 'allocation'}:
             epics = candidate_policy.latest_epics
         index_ms = round((time.monotonic() - index_started) * 1000, 1)
         index_projection = eng_board.project_board(
@@ -909,7 +837,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         index_shells = _shells(index_projection)
         yield emit('index', epics=index_shells,
                    membership='authoritative'
-                   if snapshot.query.scope in {'all_work', 'component'} else 'candidate')
+                   if snapshot.query.scope in {'all_work', 'component', 'allocation'} else 'candidate')
         discovery_complete = True
         raw_by_key = {str(row['key']).strip().upper(): row for row in epics}
         column_keys = {
@@ -925,7 +853,7 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
             ) if value
         )))
         child_budget = eng_board.UniqueKeyBudget(eng_board.MAX_CHILDREN)
-        team_ids = snapshot.teams if snapshot.query.scope == 'sprint' and not snapshot.components else ()
+        team_ids = snapshot.teams if snapshot.query.scope == 'sprint' and (allocation or not snapshot.components) else ()
 
         def child_jql(keys):
             if leaf_cohort is not None:
@@ -1141,8 +1069,6 @@ def get_eng_board():
     except BoardRouteError as error:
         return _unavailable() if error.code == 'board_unavailable' else _error(error.code, error.status)
     except AuthError:
-        if auth_mode == 'basic':
-            return _unavailable()
         payload, status = server.oauth_auth_required_payload()
         return jsonify(payload), status
     except eng_board.EngBoardError as error:

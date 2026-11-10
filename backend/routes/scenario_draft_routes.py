@@ -6,7 +6,6 @@ from copy import deepcopy
 
 from flask import Blueprint, Response, g, jsonify, request, session, stream_with_context
 
-from backend.auth.csrf import validate_csrf_token
 from backend.auth.jira_auth import AUTH_MODE_ATLASSIAN_OAUTH, AuthError
 from backend.db.engine import DatabaseConfigurationError, database_storage_enabled
 from backend.scenario_drafts import (
@@ -81,18 +80,8 @@ def _require_token_bound_csrf():
             'error': 'csrf_required',
             'message': 'A valid CSRF token is required for this request.',
         }), 403
-    try:
-        data = csrf_session_data_for_request()
-    except AuthError as error:
-        return auth_error_response(error, 401)
-    except DatabaseConfigurationError:
-        return _storage_error_response()
-    if validate_csrf_token(session, data, request.headers.get('X-CSRF-Token')):
-        return None
-    return jsonify({
-        'error': 'csrf_required',
-        'message': 'A valid CSRF token is required for this request.',
-    }), 403
+    from backend.security.guards import require_token_bound_csrf_once
+    return require_token_bound_csrf_once(get_jira_server())
 
 
 @bp.before_request

@@ -1,3 +1,4 @@
+from pathlib import Path
 import importlib.util
 import pathlib
 import tempfile
@@ -92,7 +93,7 @@ class EngBoardEndpointCollectorTests(unittest.TestCase):
         self.assertEqual('http://127.0.0.1:5050', collector.validate_base_url('http://127.0.0.1:5050'))
         with self.assertRaises(ValueError):
             collector.validate_external_path(ROOT / 'result.json', repo_root=ROOT)
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1].parent) as directory:
             target = pathlib.Path(directory) / 'result.json'
             self.assertEqual(target.resolve(), collector.validate_external_path(target, repo_root=ROOT))
 
@@ -111,7 +112,7 @@ class EngBoardEndpointCollectorTests(unittest.TestCase):
 
     def test_output_is_private_and_atomic(self):
         collector = load_collector()
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1].parent) as directory:
             path = pathlib.Path(directory) / 'summary.json'
             collector.write_summary(path, {'schemaVersion': 1, 'result': 'complete'})
             self.assertEqual(0, path.stat().st_mode & 0o077)

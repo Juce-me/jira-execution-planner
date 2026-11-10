@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 class _FakeResp:
@@ -118,7 +118,7 @@ class DeliveryOwnerFieldRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.client = jira_server.app.test_client()
 
     def test_get_returns_unset_when_no_config(self):
@@ -126,24 +126,21 @@ class DeliveryOwnerFieldRouteTests(unittest.TestCase):
             response = self.client.get('/api/delivery-owner-field/config')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'fieldId': '', 'fieldName': ''})
+        self.assertEqual(response.get_json(), {'configRevision': 1, 'fieldId': '', 'fieldName': ''})
 
     def test_post_persists_field_config(self):
-        with patch.object(jira_server, 'load_dashboard_config', return_value={}), \
-             patch.object(jira_server, 'save_dashboard_config') as mock_save:
-            response = self.client.post(
-                '/api/delivery-owner-field/config',
-                json={'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner'},
-            )
-
+        from backend.db import engine as db_engine, models
+        response = self.client.post('/api/delivery-owner-field/config', json={
+            'baseRevision': 1, 'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner',
+        })
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner'})
-        mock_save.assert_called_once()
-        saved_config = mock_save.call_args[0][0]
-        self.assertEqual(
-            saved_config['deliveryOwnerField'],
-            {'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner'},
-        )
+        self.assertEqual(response.get_json(), {'configRevision': 2,
+            'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner'})
+        with db_engine.session_scope() as db:
+            saved = db.query(models.WorkspaceDashboardConfig).one()
+            self.assertEqual(saved.payload['deliveryOwnerField'],
+                {'fieldId': 'customfield_99999', 'fieldName': 'Delivery Owner'})
+            self.assertEqual(saved.config_revision, 2)
 
 
 if __name__ == '__main__':

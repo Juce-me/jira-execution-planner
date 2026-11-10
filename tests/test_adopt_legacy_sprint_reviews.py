@@ -10,7 +10,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -23,6 +22,7 @@ from backend.auth.context import RequestAuthContext
 from backend.db import engine as db_engine, models
 from backend.services import sprint_review as review
 from scripts import adopt_legacy_sprint_reviews as adopt
+from tests.postgres_test_db import fresh_database_url
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'scripts' / 'adopt_legacy_sprint_reviews.py'
@@ -42,8 +42,7 @@ def uid(number):
 
 class AdoptionTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'adopt.db')
+        self.url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.url))
         self.env = patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.url,
                                            'DATABASE_CONNECTION_MODE': 'url'})
@@ -60,7 +59,6 @@ class AdoptionTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
         db_engine.dispose_engines()
-        self.temp.cleanup()
 
     # Helpers
     def legacy(self, sprint, columns=(), layouts=None, cells=(), workspace=None, identity=None, revision=1):
@@ -175,8 +173,7 @@ class AdoptionTests(unittest.TestCase):
             sqlstate = '55P03'
 
         class FakeSession:
-            def __init__(self, dialect, fail=False):
-                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect))
+            def __init__(self, fail=False):
                 self.statements, self.fail = [], fail
 
             def execute(self, statement, params=None):
@@ -184,7 +181,7 @@ class AdoptionTests(unittest.TestCase):
                 if self.fail and 'LOCK TABLE' in str(statement):
                     raise DBAPIError(str(statement), params, LockNotAvailable())
 
-        session = FakeSession('postgresql')
+        session = FakeSession()
         adopt._set_timeouts(session)
         adopt._lock_tables(session)
         self.assertEqual([p['value'] for _, p in session.statements[:2]], ['5s', '60s'])
@@ -197,33 +194,29 @@ class AdoptionTests(unittest.TestCase):
             'LOCK TABLE workspace_sprint_reviews IN SHARE MODE',
             'LOCK TABLE sprint_review_cells IN SHARE MODE'])
         with self.assertRaises(adopt.AdoptionLockTimeout):
-            adopt._lock_tables(FakeSession('postgresql', fail=True))
-        sqlite = FakeSession('sqlite')
-        adopt._set_timeouts(sqlite)
-        adopt._lock_tables(sqlite)
-        self.assertEqual(sqlite.statements, [])
+            adopt._lock_tables(FakeSession(fail=True))
 
-    def test_sqlite_racing_check_then_insert_aborts_on_unique_key_sanitized(self):
+    def test_unique_key_violation_inside_the_locked_apply_aborts_sanitized_with_zero_writes(self):
+        # Concurrent writers block on the apply's table locks (tests.test_sprint_review_postgresql); a unique-key
+        # violation inside the locked transaction must still abort with the SQLSTATE only and roll everything back.
         self.simple()
         digest = self.digest()
 
-        def racer(_session):
-            with db_engine.session_scope(self.url) as other:
-                other.add(models.WorkspaceGroupReviewSchema(workspace_id=self.workspace, group_id='group-x',
-                                                            schema_revision=0, columns=[]))
+        def colliding(session):
+            session.add(models.WorkspaceGroupReviewSchema(workspace_id=self.workspace, group_id='group-x',
+                                                          schema_revision=0, columns=[]))
+            session.flush()
 
-        with patch.object(adopt, '_before_write', racer):
+        with patch.object(adopt, '_before_write', colliding):
             with self.assertRaises(ValueError) as caught:
                 self.adopt('--apply', '--expected-sha256', digest)
         message = str(caught.exception)
-        self.assertIn('IntegrityError', message)
+        self.assertIn('(23505)', message)
         self.assertIn('no database changes applied', message)
         for leaked in ('INSERT', self.workspace, 'group-x', 'Estimate', '101'):
             self.assertNotIn(leaked, message)
         self.assertIsNone(caught.exception.__cause__)
-        schemas, cells, views = self.group_state()
-        self.assertEqual([(s[1], s[2]) for s in schemas], [('group-x', 0)])
-        self.assertEqual((cells, views), ([], []))
+        self.assertTrue(self.empty())
 
     def test_duplicate_legacy_column_id_across_sprints_aborts_with_count(self):
         shared = str(uuid.uuid4())
@@ -779,8 +772,7 @@ class AdoptionTests(unittest.TestCase):
             sqlstate = '55P03'
 
         class FakeSession:
-            def __init__(self, dialect, fail=False):
-                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect))
+            def __init__(self, fail=False):
                 self.statements, self.fail = [], fail
 
             def execute(self, statement, params=None):
@@ -791,21 +783,18 @@ class AdoptionTests(unittest.TestCase):
         calls = []
         locked = lambda session, context, group: (calls.append((group, context.workspace_id)), SimpleNamespace(id=group))[1]  # noqa: E731
         with patch.object(review, '_locked_schema', locked):
-            session = FakeSession('postgresql')
+            session = FakeSession()
             rows = adopt._lock_merge(session, 'w1', ['group-z', 'group-a'])
             self.assertEqual(session.statements, ['LOCK TABLE workspace_sprint_reviews IN SHARE MODE',
                                                   'LOCK TABLE sprint_review_cells IN SHARE MODE'])  # no lock on the group tables
             self.assertEqual((calls, sorted(rows)), ([('group-a', 'w1'), ('group-z', 'w1')], ['group-a', 'group-z']))
             with self.assertRaises(adopt.AdoptionLockTimeout):
-                adopt._lock_merge(FakeSession('postgresql', fail=True), 'w1', ['group-a'])
-            sqlite = FakeSession('sqlite')
-            adopt._lock_merge(sqlite, 'w1', ['group-a'])
-            self.assertEqual(sqlite.statements, [])
+                adopt._lock_merge(FakeSession(fail=True), 'w1', ['group-a'])
 
         def timing_out(session, context, group):
             raise DBAPIError('lock', None, LockNotAvailable())
         with patch.object(review, '_locked_schema', timing_out), self.assertRaises(adopt.AdoptionLockTimeout):
-            adopt._lock_merge(FakeSession('postgresql'), 'w1', ['group-a'])
+            adopt._lock_merge(FakeSession(), 'w1', ['group-a'])
 
     def test_merge_dry_run_writes_nothing_and_apply_requires_a_matching_digest(self):
         self.simple()
@@ -1121,7 +1110,7 @@ class AdoptionTests(unittest.TestCase):
                 "spec = importlib.util.spec_from_file_location('adopt_legacy_sprint_reviews', sys.argv[2]); "
                 "module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module); "
                 "assert callable(module.main); print('jira_server' in sys.modules)")
-        result = subprocess.run([sys.executable, '-I', '-c', code, str(ROOT), str(SCRIPT)],
+        result = subprocess.run([sys.executable, '-s', '-c', code, str(ROOT), str(SCRIPT)],
                                 capture_output=True, text=True, timeout=120, cwd=str(ROOT / 'tests'))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), 'False')

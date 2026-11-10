@@ -1,7 +1,6 @@
 import io
 import json
 import os
-import tempfile
 import traceback
 import unittest
 from datetime import datetime, timezone
@@ -19,6 +18,7 @@ from sqlalchemy.orm import Session
 from backend.auth.db_browser_sessions import create_browser_session
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -61,54 +61,87 @@ class DbMigrationTests(unittest.TestCase):
 
     def test_browser_sessions_migration_contract(self):
         """Browser-session migration preserves the required table and index contract."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'browser-sessions.db')}"
-            config = self._config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
 
-            command.upgrade(config, '20260830_0009')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                self.assertIn('browser_sessions', inspector.get_table_names())
-                self.assertEqual(
-                    {column['name'] for column in inspector.get_columns('browser_sessions')},
-                    {'id', 'user_id', 'workspace_id', 'auth_connection_id', 'created_at'},
+        command.upgrade(config, '20260830_0009')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            self.assertIn('browser_sessions', inspector.get_table_names())
+            self.assertEqual(
+                {column['name'] for column in inspector.get_columns('browser_sessions')},
+                {'id', 'user_id', 'workspace_id', 'auth_connection_id', 'created_at'},
+            )
+            index_names = {index['name'] for index in inspector.get_indexes('browser_sessions')}
+            self.assertEqual(index_names, {
+                'ix_browser_sessions_connection',
+                'ix_browser_sessions_user_workspace',
+            })
+            foreign_keys = {
+                foreign_key['constrained_columns'][0]: (
+                    foreign_key['referred_table'],
+                    foreign_key['options'].get('ondelete'),
                 )
-                index_names = {index['name'] for index in inspector.get_indexes('browser_sessions')}
-                self.assertEqual(index_names, {
-                    'ix_browser_sessions_connection',
-                    'ix_browser_sessions_user_workspace',
-                })
-                foreign_keys = {
-                    foreign_key['constrained_columns'][0]: (
-                        foreign_key['referred_table'],
-                        foreign_key['options'].get('ondelete'),
-                    )
-                    for foreign_key in inspector.get_foreign_keys('browser_sessions')
-                }
-                self.assertEqual(foreign_keys, {
-                    'user_id': ('users', 'CASCADE'),
-                    'workspace_id': ('workspaces', 'CASCADE'),
-                    'auth_connection_id': ('auth_connections', 'CASCADE'),
-                })
-                self.assertNotIn('access_token', str(inspector.get_columns('browser_sessions')))
-            finally:
-                engine.dispose()
+                for foreign_key in inspector.get_foreign_keys('browser_sessions')
+            }
+            self.assertEqual(foreign_keys, {
+                'user_id': ('users', 'CASCADE'),
+                'workspace_id': ('workspaces', 'CASCADE'),
+                'auth_connection_id': ('auth_connections', 'CASCADE'),
+            })
+            self.assertNotIn('access_token', str(inspector.get_columns('browser_sessions')))
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260827_0008')
-            engine = create_engine(database_url, future=True)
-            try:
-                self.assertNotIn('browser_sessions', inspect(engine).get_table_names())
-                self.assertIn('auth_connections', inspect(engine).get_table_names())
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260827_0008')
+        engine = create_engine(database_url, future=True)
+        try:
+            self.assertNotIn('browser_sessions', inspect(engine).get_table_names())
+            self.assertIn('auth_connections', inspect(engine).get_table_names())
+        finally:
+            engine.dispose()
+
+    def test_browser_csrf_tokens_migration_preserves_sessions_and_stores_hashes_only(self):
+        """Revision 0024 adds hash-only CSRF rows that die with their browser session."""
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20261102_0023')
+        engine = create_engine(database_url, future=True)
+        self.addCleanup(engine.dispose)
+        with Session(engine) as session:  # the 0023 schema already matches these models
+            workspace = models.Workspace(environment_key='synthetic-csrf', name='Synthetic')
+            user = models.User(external_provider='test', external_subject='synthetic-csrf-user')
+            session.add_all([workspace, user])
+            session.flush()
+            connection = models.AuthConnection(user_id=user.id, workspace_id=workspace.id, provider='atlassian_oauth')
+            session.add(connection)
+            session.flush()
+            browser_session_id = create_browser_session(
+                session, user_id=user.id, workspace_id=workspace.id, auth_connection_id=connection.id).id
+            session.commit()
+        command.upgrade(config, '20261106_0024')
+        inspector = inspect(engine)
+        self.assertEqual({column['name'] for column in inspector.get_columns('browser_csrf_tokens')},
+                         {'token_hash', 'browser_session_id', 'created_at'})
+        self.assertEqual({index['name'] for index in inspector.get_indexes('browser_csrf_tokens')},
+                         {'ix_browser_csrf_tokens_session_created'})
+        self.assertEqual([(key['referred_table'], key['options'].get('ondelete'))
+                          for key in inspector.get_foreign_keys('browser_csrf_tokens')],
+                         [('browser_sessions', 'CASCADE')])
+        with engine.begin() as connection:
+            self.assertEqual(connection.execute(text('SELECT id FROM browser_sessions')).scalars().all(), [browser_session_id])
+            connection.execute(text("INSERT INTO browser_csrf_tokens VALUES (:hash, :sid, now())"),
+                               {'hash': 'a' * 64, 'sid': browser_session_id})
+            connection.execute(text('DELETE FROM browser_sessions WHERE id = :sid'), {'sid': browser_session_id})
+            self.assertEqual(connection.execute(text('SELECT count(*) FROM browser_csrf_tokens')).scalar(), 0)
+        command.downgrade(config, '20261102_0023')
+        self.assertNotIn('browser_csrf_tokens', inspect(engine).get_table_names())
 
     def test_browser_session_model_cascades_with_auth_connection_delete(self):
         """Deleting an auth connection cascades to its browser-session rows."""
-        engine = create_engine('sqlite+pysqlite:///:memory:', future=True)
+        engine = create_engine(fresh_database_url(self.addCleanup), future=True)
         try:
-            with engine.begin() as connection:
-                connection.exec_driver_sql('PRAGMA foreign_keys=ON')
             models.Base.metadata.create_all(engine)
             with Session(engine) as session:
                 user = models.User(
@@ -148,186 +181,183 @@ class DbMigrationTests(unittest.TestCase):
             engine.dispose()
 
     def test_initial_auth_migration_upgrades_downgrades_and_reruns(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'migration.db')}"
-            config = self._config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
 
-            command.upgrade(config, 'head')
-            self.assertTrue(self._has_auth_tables(database_url))
-            columns, indexes = self._auth_connection_schema(database_url)
-            self.assertIn('credential_subject', columns)
-            self.assertIn('capabilities', columns)
-            self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
+        command.upgrade(config, 'head')
+        self.assertTrue(self._has_auth_tables(database_url))
+        columns, indexes = self._auth_connection_schema(database_url)
+        self.assertIn('credential_subject', columns)
+        self.assertIn('capabilities', columns)
+        self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
 
-            command.upgrade(config, 'head')
-            self.assertTrue(self._has_auth_tables(database_url))
+        command.upgrade(config, 'head')
+        self.assertTrue(self._has_auth_tables(database_url))
 
-            command.downgrade(config, '20260511_0001')
-            self.assertTrue(self._has_auth_tables(database_url))
-            columns, indexes = self._auth_connection_schema(database_url)
-            self.assertNotIn('credential_subject', columns)
-            self.assertNotIn('capabilities', columns)
-            self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
+        command.downgrade(config, '20260511_0001')
+        self.assertTrue(self._has_auth_tables(database_url))
+        columns, indexes = self._auth_connection_schema(database_url)
+        self.assertNotIn('credential_subject', columns)
+        self.assertNotIn('capabilities', columns)
+        self.assertNotIn('uq_auth_connections_user_api_token_cloud', indexes)
 
-            command.upgrade(config, 'head')
-            self.assertTrue(self._has_auth_tables(database_url))
+        command.upgrade(config, 'head')
+        self.assertTrue(self._has_auth_tables(database_url))
 
-            command.downgrade(config, 'base')
-            self.assertFalse(self._has_auth_tables(database_url))
+        command.downgrade(config, 'base')
+        self.assertFalse(self._has_auth_tables(database_url))
 
     def test_online_migrations_use_shared_engine_factory_with_null_pool(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'shared.db')}"
-            config = self._config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
 
-            with patch.dict(
-                os.environ,
-                {"DATABASE_CONNECTION_MODE": "url"},
-                clear=False,
-            ), patch.object(
-                db_engine,
-                "create_database_engine",
-                wraps=db_engine.create_database_engine,
-            ) as factory:
-                command.upgrade(config, "head")
+        with patch.dict(
+            os.environ,
+            {"DATABASE_CONNECTION_MODE": "url"},
+            clear=False,
+        ), patch.object(
+            db_engine,
+            "create_database_engine",
+            wraps=db_engine.create_database_engine,
+        ) as factory:
+            command.upgrade(config, "head")
 
-            factory.assert_called()
-            self.assertEqual(factory.call_args.args[0], database_url)
-            self.assertIs(factory.call_args.kwargs["poolclass"], pool.NullPool)
+        factory.assert_called()
+        self.assertEqual(factory.call_args.args[0], database_url)
+        self.assertIs(factory.call_args.kwargs["poolclass"], pool.NullPool)
 
     def test_catalog_migration_empty_upgrade_downgrade_and_reupgrade(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'catalogs.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260908_0015')
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO users (
-                            id, external_provider, external_subject, account_type,
-                            status, created_by, created_at, updated_at
-                        ) VALUES (
-                            '00000000-0000-0000-0000-000000000001', 'atlassian',
-                            'catalog-user', 'user', 'active', 'test',
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        INSERT INTO workspaces (
-                            id, environment_key, name, created_by, created_at, updated_at
-                        ) VALUES (
-                            '00000000-0000-0000-0000-000000000002', 'catalog-test',
-                            'Catalog test', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        INSERT INTO workspace_dashboard_configs (
-                            id, workspace_id, payload_version, payload, config_revision,
-                            updated_by, created_at, updated_at
-                        ) VALUES (
-                            '00000000-0000-0000-0000-000000000003',
-                            '00000000-0000-0000-0000-000000000002', 1,
-                            '{"board":{"boardId":"17"}}', 3,
-                            '00000000-0000-0000-0000-000000000001',
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        INSERT INTO workspace_team_catalogs (
-                            id, workspace_id, payload_version, payload, config_revision,
-                            updated_by, created_at, updated_at
-                        ) VALUES (
-                            '00000000-0000-0000-0000-000000000004',
-                            '00000000-0000-0000-0000-000000000002', 1,
-                            '{"catalog":{"team-1":{"name":"Synthetic"}}}', 2,
-                            '00000000-0000-0000-0000-000000000001',
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-            finally:
-                engine.dispose()
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260908_0015')
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    INSERT INTO users (
+                        id, external_provider, external_subject, account_type,
+                        status, created_by, created_at, updated_at
+                    ) VALUES (
+                        '00000000-0000-0000-0000-000000000001', 'atlassian',
+                        'catalog-user', 'user', 'active', 'test',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspaces (
+                        id, environment_key, name, created_by, created_at, updated_at
+                    ) VALUES (
+                        '00000000-0000-0000-0000-000000000002', 'catalog-test',
+                        'Catalog test', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspace_dashboard_configs (
+                        id, workspace_id, payload_version, payload, config_revision,
+                        updated_by, created_at, updated_at
+                    ) VALUES (
+                        '00000000-0000-0000-0000-000000000003',
+                        '00000000-0000-0000-0000-000000000002', 1,
+                        '{"board":{"boardId":"17"}}', 3,
+                        '00000000-0000-0000-0000-000000000001',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspace_team_catalogs (
+                        id, workspace_id, payload_version, payload, config_revision,
+                        updated_by, created_at, updated_at
+                    ) VALUES (
+                        '00000000-0000-0000-0000-000000000004',
+                        '00000000-0000-0000-0000-000000000002', 1,
+                        '{"catalog":{"team-1":{"name":"Synthetic"}}}', 2,
+                        '00000000-0000-0000-0000-000000000001',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, '20260913_0016')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                expected_common = {
-                    'id', 'workspace_id', 'payload_version', 'updated_by',
-                    'created_at', 'updated_at', 'validated_at', 'catalog_version',
-                    'refresh_attempt_id', 'attempt_identity', 'attempt_config_digest',
-                    'attempt_deadline_at', 'refresh_status', 'failure_code',
-                    'last_failure_at', 'retry_at', 'refresh_lease_owner',
-                    'refresh_lease_until',
+        command.upgrade(config, '20260913_0016')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            expected_common = {
+                'id', 'workspace_id', 'payload_version', 'updated_by',
+                'created_at', 'updated_at', 'validated_at', 'catalog_version',
+                'refresh_attempt_id', 'attempt_identity', 'attempt_config_digest',
+                'attempt_deadline_at', 'refresh_status', 'failure_code',
+                'last_failure_at', 'retry_at', 'refresh_lease_owner',
+                'refresh_lease_until',
+            }
+            self.assertEqual(
+                {column['name'] for column in inspector.get_columns('workspace_sprint_catalogs')},
+                expected_common | {'board_id', 'sprints', 'next_refresh_at'},
+            )
+            self.assertEqual(
+                {column['name'] for column in inspector.get_columns('workspace_sprint_team_catalogs')},
+                expected_common | {
+                    'sprint_id', 'sprint_name', 'scope_digest', 'teams',
+                    'attempt_scope_digest',
+                },
+            )
+            for table, identity_column in (
+                ('workspace_sprint_catalogs', 'board_id'),
+                ('workspace_sprint_team_catalogs', 'sprint_id'),
+            ):
+                columns = {column['name']: column for column in inspector.get_columns(table)}
+                self.assertEqual(str(columns['payload_version']['default']).strip("'\""), '1')
+                payload_column = 'sprints' if table == 'workspace_sprint_catalogs' else 'teams'
+                self.assertIn('[]', str(columns[payload_column]['default']))
+                uniques = {
+                    frozenset(item['column_names'])
+                    for item in inspector.get_unique_constraints(table)
                 }
-                self.assertEqual(
-                    {column['name'] for column in inspector.get_columns('workspace_sprint_catalogs')},
-                    expected_common | {'board_id', 'sprints', 'next_refresh_at'},
-                )
-                self.assertEqual(
-                    {column['name'] for column in inspector.get_columns('workspace_sprint_team_catalogs')},
-                    expected_common | {
-                        'sprint_id', 'sprint_name', 'scope_digest', 'teams',
-                        'attempt_scope_digest',
-                    },
-                )
-                for table, identity_column in (
-                    ('workspace_sprint_catalogs', 'board_id'),
-                    ('workspace_sprint_team_catalogs', 'sprint_id'),
-                ):
-                    columns = {column['name']: column for column in inspector.get_columns(table)}
-                    self.assertEqual(str(columns['payload_version']['default']).strip("'\""), '1')
-                    payload_column = 'sprints' if table == 'workspace_sprint_catalogs' else 'teams'
-                    self.assertIn('[]', str(columns[payload_column]['default']))
-                    uniques = {
-                        frozenset(item['column_names'])
-                        for item in inspector.get_unique_constraints(table)
-                    }
-                    self.assertIn(frozenset({'workspace_id', identity_column}), uniques)
-                    self.assertFalse(any('updated_by' in columns for columns in uniques))
-                    foreign_keys = {
-                        tuple(item['constrained_columns']): (
-                            item['referred_table'], item['options'].get('ondelete')
-                        )
-                        for item in inspector.get_foreign_keys(table)
-                    }
-                    self.assertEqual(foreign_keys[('workspace_id',)], ('workspaces', 'CASCADE'))
-                    self.assertEqual(foreign_keys[('updated_by',)], ('users', 'SET NULL'))
-                    indexes = {item['name']: item['column_names'] for item in inspector.get_indexes(table)}
-                    self.assertTrue(any('attempt_deadline_at' in value for value in indexes.values()))
-                    self.assertTrue(any('refresh_lease_until' in value for value in indexes.values()))
-                with engine.connect() as connection:
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
-            finally:
-                engine.dispose()
+                self.assertIn(frozenset({'workspace_id', identity_column}), uniques)
+                self.assertFalse(any('updated_by' in columns for columns in uniques))
+                foreign_keys = {
+                    tuple(item['constrained_columns']): (
+                        item['referred_table'], item['options'].get('ondelete')
+                    )
+                    for item in inspector.get_foreign_keys(table)
+                }
+                self.assertEqual(foreign_keys[('workspace_id',)], ('workspaces', 'CASCADE'))
+                self.assertEqual(foreign_keys[('updated_by',)], ('users', 'SET NULL'))
+                indexes = {item['name']: item['column_names'] for item in inspector.get_indexes(table)}
+                self.assertTrue(any('attempt_deadline_at' in value for value in indexes.values()))
+                self.assertTrue(any('refresh_lease_until' in value for value in indexes.values()))
+            with engine.connect() as connection:
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260908_0015')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('workspace_sprint_catalogs', tables)
-                self.assertNotIn('workspace_sprint_team_catalogs', tables)
-                with engine.connect() as connection:
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM users')).scalar_one(), 1)
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260908_0015')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('workspace_sprint_catalogs', tables)
+            self.assertNotIn('workspace_sprint_team_catalogs', tables)
+            with engine.connect() as connection:
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM users')).scalar_one(), 1)
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, '20260913_0016')
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.connect() as connection:
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
-                    self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
-            finally:
-                engine.dispose()
+        command.upgrade(config, '20260913_0016')
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.connect() as connection:
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_catalogs')).scalar_one(), 0)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_sprint_team_catalogs')).scalar_one(), 0)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_dashboard_configs')).scalar_one(), 1)
+                self.assertEqual(connection.execute(text('SELECT count(*) FROM workspace_team_catalogs')).scalar_one(), 1)
+        finally:
+            engine.dispose()
 
     def test_catalog_model_identity_attempt_and_lease_constraints(self):
-        engine = create_engine('sqlite+pysqlite:///:memory:', future=True)
+        engine = create_engine(fresh_database_url(self.addCleanup), future=True)
         models.Base.metadata.create_all(engine)
         now = datetime.now(timezone.utc)
         workspace_id = '00000000-0000-0000-0000-000000000011'
@@ -517,155 +547,156 @@ class DbMigrationTests(unittest.TestCase):
         self.assertNotIn('workspace_sprint_reviews', sql)
 
     def test_workspace_config_migration_is_data_neutral_and_reversible(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-config.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260604_0006')
-            engine = create_engine(database_url, future=True)
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "INSERT INTO users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
-                    "VALUES ('user-1', 'atlassian', 'subject-1', 'admin', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
-                    "VALUES ('workspace-1', 'test', 'Workspace', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
-                    "VALUES ('view-1', 'workspace-1', 'user-1', 'Default', 'mixed', 'configuration', 1, '{}', 'private', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO view_config_versions (id, view_config_id, version_number, payload, created_by, created_at, change_note) "
-                    "VALUES ('version-1', 'view-1', 1, '{}', 'user-1', CURRENT_TIMESTAMP, 'compatibility save')"
-                )
-            engine.dispose()
-
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            archive_inspector = inspect(engine)
-            archive_columns = {
-                column['name']: column for column in archive_inspector.get_columns(
-                    'workspace_epm_config_migration_archive'
-                )
-            }
-            self.assertEqual(set(archive_columns), {'workspace_id', 'epm_payload', 'original_revision'})
-            self.assertFalse(archive_columns['workspace_id']['nullable'])
-            self.assertTrue(archive_columns['epm_payload']['nullable'])
-            self.assertFalse(archive_columns['original_revision']['nullable'])
-            self.assertEqual(
-                archive_inspector.get_pk_constraint('workspace_epm_config_migration_archive')['constrained_columns'],
-                ['workspace_id'],
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260604_0006')
+        engine = create_engine(database_url, future=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
+                "VALUES ('user-1', 'atlassian', 'subject-1', 'admin', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             )
-            archive_fk = archive_inspector.get_foreign_keys(
+            connection.exec_driver_sql(
+                "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
+                "VALUES ('workspace-1', 'test', 'Workspace', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
+                "VALUES ('view-1', 'workspace-1', 'user-1', 'Default', 'mixed', 'configuration', 1, '{}', 'private', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO view_config_versions (id, view_config_id, version_number, payload, created_by, created_at, change_note) "
+                "VALUES ('version-1', 'view-1', 1, '{}', 'user-1', CURRENT_TIMESTAMP, 'compatibility save')"
+            )
+        engine.dispose()
+
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        archive_inspector = inspect(engine)
+        archive_columns = {
+            column['name']: column for column in archive_inspector.get_columns(
                 'workspace_epm_config_migration_archive'
-            )[0]
-            self.assertEqual(archive_fk['referred_table'], 'workspaces')
-            self.assertEqual(archive_fk['options'].get('ondelete'), 'CASCADE')
-            inspector = inspect(engine)
-            self.assertEqual(
-                {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')},
-                {
-                    'id', 'workspace_id', 'payload_version', 'payload', 'config_revision',
-                    'created_by', 'updated_by', 'created_at', 'updated_at',
-                    'capacity_jira_site_url', 'capacity_jira_cloud_id',
-                    'capacity_field_schema_type', 'capacity_field_verified_at',
-                },
             )
-            self.assertEqual(
-                {column['name'] for column in inspector.get_columns('workspace_team_catalogs')},
-                {'id', 'workspace_id', 'payload_version', 'payload', 'config_revision', 'updated_by', 'created_at', 'updated_at'},
-            )
-            with engine.connect() as connection:
-                self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM workspace_dashboard_configs').scalar_one(), 0)
-                self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM view_config_versions').scalar_one(), 1)
-            engine.dispose()
+        }
+        self.assertEqual(set(archive_columns), {'workspace_id', 'epm_payload', 'original_revision'})
+        self.assertFalse(archive_columns['workspace_id']['nullable'])
+        self.assertTrue(archive_columns['epm_payload']['nullable'])
+        self.assertFalse(archive_columns['original_revision']['nullable'])
+        self.assertEqual(
+            archive_inspector.get_pk_constraint('workspace_epm_config_migration_archive')['constrained_columns'],
+            ['workspace_id'],
+        )
+        archive_fk = archive_inspector.get_foreign_keys(
+            'workspace_epm_config_migration_archive'
+        )[0]
+        self.assertEqual(archive_fk['referred_table'], 'workspaces')
+        self.assertEqual(archive_fk['options'].get('ondelete'), 'CASCADE')
+        inspector = inspect(engine)
+        self.assertEqual(
+            {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')},
+            {
+                'id', 'workspace_id', 'payload_version', 'payload', 'config_revision',
+                'created_by', 'updated_by', 'created_at', 'updated_at',
+                'capacity_jira_site_url', 'capacity_jira_cloud_id',
+                'capacity_field_schema_type', 'capacity_field_verified_at',
+            },
+        )
+        self.assertEqual(
+            {column['name'] for column in inspector.get_columns('workspace_team_catalogs')},
+            {'id', 'workspace_id', 'payload_version', 'payload', 'config_revision', 'updated_by', 'created_at', 'updated_at'},
+        )
+        with engine.connect() as connection:
+            self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM workspace_dashboard_configs').scalar_one(), 0)
+            self.assertEqual(connection.exec_driver_sql('SELECT count(*) FROM view_config_versions').scalar_one(), 1)
+        engine.dispose()
 
-            command.downgrade(config, '20260604_0006')
-            engine = create_engine(database_url, future=True)
-            self.assertNotIn('workspace_dashboard_configs', inspect(engine).get_table_names())
-            self.assertNotIn('workspace_team_catalogs', inspect(engine).get_table_names())
-            engine.dispose()
-            command.upgrade(config, 'head')
+        command.downgrade(config, '20260604_0006')
+        engine = create_engine(database_url, future=True)
+        self.assertNotIn('workspace_dashboard_configs', inspect(engine).get_table_names())
+        self.assertNotIn('workspace_team_catalogs', inspect(engine).get_table_names())
+        engine.dispose()
+        command.upgrade(config, 'head')
 
     def test_workspace_epm_migration_round_trips_every_json_value_and_recovers_bad_current_payload(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-epm-values.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260826_0007')
-            values = [None, 'text', True, False, 17, ['one', 2], {}]
-            engine = create_engine(database_url, future=True)
-            with engine.begin() as connection:
-                for index, value in enumerate(values):
-                    workspace_id = f'workspace-{index}'
-                    connection.exec_driver_sql(
-                        "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
-                        "VALUES (?, ?, ?, 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                        (workspace_id, f'value-{index}', f'Value {index}'),
-                    )
-                    connection.exec_driver_sql(
-                        "INSERT INTO workspace_dashboard_configs "
-                        "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                        "VALUES (?, ?, 1, ?, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                        (f'config-{index}', workspace_id, json.dumps({'board': {'index': index}, 'epm': value})),
-                    )
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260826_0007')
+        values = [None, 'text', True, False, 17, ['one', 2], {}]
+        engine = create_engine(database_url, future=True)
+        with engine.begin() as connection:
+            for index, value in enumerate(values):
+                workspace_id = f'workspace-{index}'
                 connection.exec_driver_sql(
                     "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
-                    "VALUES ('workspace-precision', 'precision', 'Precision', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    "VALUES (%s, %s, %s, 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (workspace_id, f'value-{index}', f'Value {index}'),
                 )
                 connection.exec_driver_sql(
                     "INSERT INTO workspace_dashboard_configs "
                     "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                    "VALUES ('config-precision', 'workspace-precision', 1, "
-                    "'{\"board\":{\"kept\":true},\"epm\":1.234567890123456789}', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    "VALUES (%s, %s, 1, %s, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                    (f'config-{index}', workspace_id, json.dumps({'board': {'index': index}, 'epm': value})),
                 )
-            engine.dispose()
+            connection.exec_driver_sql(
+                "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
+                "VALUES ('workspace-precision', 'precision', 'Precision', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspace_dashboard_configs "
+                "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
+                "VALUES ('config-precision', 'workspace-precision', 1, "
+                "'{\"board\":{\"kept\":true},\"epm\":1.234567890123456789}', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+        engine.dispose()
 
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            with engine.begin() as connection:
-                archives = connection.exec_driver_sql(
-                    'SELECT workspace_id, epm_payload FROM workspace_epm_config_migration_archive ORDER BY workspace_id'
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        with engine.begin() as connection:
+            archives = connection.exec_driver_sql(
+                'SELECT workspace_id, epm_payload FROM workspace_epm_config_migration_archive ORDER BY workspace_id'
+            ).all()
+            self.assertEqual([
+                json.loads(row.epm_payload) if isinstance(row.epm_payload, str) else row.epm_payload
+                for row in archives if row.workspace_id != 'workspace-precision'
+            ], values)
+            precision_archive = next(
+                row.epm_payload for row in archives if row.workspace_id == 'workspace-precision'
+            )
+            self.assertEqual(precision_archive, '1.234567890123456789')
+            connection.exec_driver_sql(
+                "UPDATE workspace_dashboard_configs SET payload='\"current scalar\"' WHERE workspace_id='workspace-0'"
+            )
+            # PostgreSQL rejects malformed JSON text, so a non-object array stands in for it.
+            connection.exec_driver_sql(
+                "UPDATE workspace_dashboard_configs SET payload='[\"broken\"]' WHERE workspace_id='workspace-1'"
+            )
+            connection.exec_driver_sql(
+                "UPDATE workspace_dashboard_configs SET payload='{\"epm\":\"newer\",\"board\":{\"kept\":true}}' "
+                "WHERE workspace_id='workspace-2'"
+            )
+        engine.dispose()
+
+        command.downgrade(config, '20260826_0007')
+        engine = create_engine(database_url, future=True)
+        with engine.connect() as connection:
+            restored = {
+                row.workspace_id: json.loads(row.payload)
+                for row in connection.exec_driver_sql(
+                    'SELECT workspace_id, CAST(payload AS TEXT) AS payload FROM workspace_dashboard_configs '
+                    'ORDER BY workspace_id'
                 ).all()
-                self.assertEqual([
-                    json.loads(row.epm_payload) if isinstance(row.epm_payload, str) else row.epm_payload
-                    for row in archives if row.workspace_id != 'workspace-precision'
-                ], values)
-                precision_archive = next(
-                    row.epm_payload for row in archives if row.workspace_id == 'workspace-precision'
-                )
-                self.assertEqual(precision_archive, '1.234567890123456789')
-                connection.exec_driver_sql(
-                    "UPDATE workspace_dashboard_configs SET payload='\"current scalar\"' WHERE workspace_id='workspace-0'"
-                )
-                connection.exec_driver_sql(
-                    "UPDATE workspace_dashboard_configs SET payload='{broken' WHERE workspace_id='workspace-1'"
-                )
-                connection.exec_driver_sql(
-                    "UPDATE workspace_dashboard_configs SET payload='{\"epm\":\"newer\",\"board\":{\"kept\":true}}' "
-                    "WHERE workspace_id='workspace-2'"
-                )
-            engine.dispose()
-
-            command.downgrade(config, '20260826_0007')
-            engine = create_engine(database_url, future=True)
-            with engine.connect() as connection:
-                restored = {
-                    row.workspace_id: json.loads(row.payload)
-                    for row in connection.exec_driver_sql(
-                        'SELECT workspace_id, payload FROM workspace_dashboard_configs ORDER BY workspace_id'
-                    ).all()
-                }
-                precision_payload = connection.exec_driver_sql(
-                    "SELECT payload FROM workspace_dashboard_configs WHERE workspace_id='workspace-precision'"
-                ).scalar_one()
-            engine.dispose()
-            self.assertEqual(restored['workspace-0'], {'epm': None})
-            self.assertEqual(restored['workspace-1'], {'epm': 'text'})
-            self.assertEqual(restored['workspace-2'], {'board': {'kept': True}, 'epm': True})
-            for index, value in enumerate(values[3:], start=3):
-                self.assertEqual(restored[f'workspace-{index}']['epm'], value)
-            self.assertIn('"epm":1.234567890123456789', precision_payload)
+            }
+            precision_payload = connection.exec_driver_sql(
+                "SELECT CAST(payload AS TEXT) FROM workspace_dashboard_configs WHERE workspace_id='workspace-precision'"
+            ).scalar_one()
+        engine.dispose()
+        self.assertEqual(restored['workspace-0'], {'epm': None})
+        self.assertEqual(restored['workspace-1'], {'epm': 'text'})
+        self.assertEqual(restored['workspace-2'], {'board': {'kept': True}, 'epm': True})
+        for index, value in enumerate(values[3:], start=3):
+            self.assertEqual(restored[f'workspace-{index}']['epm'], value)
+        # jsonb renders a space after the colon; the full-precision number is kept.
+        self.assertIn('"epm": 1.234567890123456789', precision_payload)
 
     def test_workspace_config_migration_renders_offline_sql(self):
         config = self._config('postgresql+psycopg://user@db.example:5432/planner?sslmode=require')
@@ -678,139 +709,141 @@ class DbMigrationTests(unittest.TestCase):
         self.assertIn('workspace_team_catalogs', sql)
 
     def test_workspace_epm_migration_archives_removes_restores_and_reupgrades(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-epm.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260826_0007')
-            engine = create_engine(database_url, future=True)
-            epm = {'version': 2, 'scope': {'rootGoalKey': 'ROOT-1'}, 'projects': {'p': {'label': 'project_p'}}}
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) VALUES "
-                    "('workspace-epm', 'epm', 'EPM', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
-                    "('workspace-plain', 'plain', 'Plain', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
-                    "('workspace-scalar', 'scalar', 'Scalar', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
-                    "('workspace-malformed', 'malformed', 'Malformed', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspace_dashboard_configs "
-                    "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                    "VALUES (?, ?, 1, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
-                    [
-                        ('config-epm', 'workspace-epm', json.dumps({'board': {'boardId': '7'}, 'epm': epm}), 4),
-                        ('config-plain', 'workspace-plain', json.dumps({'board': {'boardId': '8'}}), 5),
-                        ('config-scalar', 'workspace-scalar', json.dumps('scalar'), 6),
-                        ('config-malformed', 'workspace-malformed', '{broken', 7),
-                    ],
-                )
-            engine.dispose()
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260826_0007')
+        engine = create_engine(database_url, future=True)
+        epm = {'version': 2, 'scope': {'rootGoalKey': 'ROOT-1'}, 'projects': {'p': {'label': 'project_p'}}}
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) VALUES "
+                "('workspace-epm', 'epm', 'EPM', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
+                "('workspace-plain', 'plain', 'Plain', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
+                "('workspace-scalar', 'scalar', 'Scalar', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP), "
+                "('workspace-malformed', 'malformed', 'Malformed', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspace_dashboard_configs "
+                "(id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
+                "VALUES (%s, %s, 1, %s, %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                [
+                    ('config-epm', 'workspace-epm', json.dumps({'board': {'boardId': '7'}, 'epm': epm}), 4),
+                    ('config-plain', 'workspace-plain', json.dumps({'board': {'boardId': '8'}}), 5),
+                    ('config-scalar', 'workspace-scalar', json.dumps('scalar'), 6),
+                    # PostgreSQL rejects malformed JSON text, so a non-object array stands in for it.
+                    ('config-malformed', 'workspace-malformed', '["broken"]', 7),
+                ],
+            )
+        engine.dispose()
 
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            with engine.begin() as connection:
-                changed = connection.exec_driver_sql(
-                    "SELECT payload, config_revision FROM workspace_dashboard_configs WHERE workspace_id='workspace-epm'"
-                ).one()
-                self.assertEqual(json.loads(changed.payload), {'board': {'boardId': '7'}})
-                self.assertEqual(changed.config_revision, 5)
-                archive = connection.exec_driver_sql(
-                    'SELECT epm_payload, original_revision FROM workspace_epm_config_migration_archive'
-                ).one()
-                self.assertEqual(json.loads(archive.epm_payload), epm)
-                self.assertEqual(archive.original_revision, 4)
-                untouched = connection.exec_driver_sql(
-                    "SELECT workspace_id, payload, config_revision FROM workspace_dashboard_configs "
-                    "WHERE workspace_id != 'workspace-epm' ORDER BY workspace_id"
-                ).all()
-                self.assertEqual([(row.workspace_id, row.payload, row.config_revision) for row in untouched], [
-                    ('workspace-malformed', '{broken', 7),
-                    ('workspace-plain', json.dumps({'board': {'boardId': '8'}}), 5),
-                    ('workspace-scalar', json.dumps('scalar'), 6),
-                ])
-                connection.exec_driver_sql(
-                    "UPDATE workspace_dashboard_configs SET payload=?, config_revision=9 WHERE workspace_id='workspace-epm'",
-                    (json.dumps({'board': {'boardId': '99'}, 'capacity': {'project': 'NEW'}}),),
-                )
-            engine.dispose()
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        with engine.begin() as connection:
+            changed = connection.exec_driver_sql(
+                "SELECT CAST(payload AS TEXT) AS payload, config_revision FROM workspace_dashboard_configs "
+                "WHERE workspace_id='workspace-epm'"
+            ).one()
+            self.assertEqual(json.loads(changed.payload), {'board': {'boardId': '7'}})
+            self.assertEqual(changed.config_revision, 5)
+            archive = connection.exec_driver_sql(
+                'SELECT epm_payload, original_revision FROM workspace_epm_config_migration_archive'
+            ).one()
+            self.assertEqual(json.loads(archive.epm_payload), epm)
+            self.assertEqual(archive.original_revision, 4)
+            untouched = connection.exec_driver_sql(
+                "SELECT workspace_id, CAST(payload AS TEXT) AS payload, config_revision FROM workspace_dashboard_configs "
+                "WHERE workspace_id != 'workspace-epm' ORDER BY workspace_id"
+            ).all()
+            self.assertEqual([(row.workspace_id, row.payload, row.config_revision) for row in untouched], [
+                ('workspace-malformed', '["broken"]', 7),
+                ('workspace-plain', json.dumps({'board': {'boardId': '8'}}), 5),
+                ('workspace-scalar', json.dumps('scalar'), 6),
+            ])
+            connection.exec_driver_sql(
+                "UPDATE workspace_dashboard_configs SET payload=%s, config_revision=9 WHERE workspace_id='workspace-epm'",
+                (json.dumps({'board': {'boardId': '99'}, 'capacity': {'project': 'NEW'}}),),
+            )
+        engine.dispose()
 
-            command.downgrade(config, '20260826_0007')
-            engine = create_engine(database_url, future=True)
-            self.assertNotIn('workspace_epm_config_migration_archive', inspect(engine).get_table_names())
-            with engine.connect() as connection:
-                restored = connection.exec_driver_sql(
-                    "SELECT payload, config_revision FROM workspace_dashboard_configs WHERE workspace_id='workspace-epm'"
-                ).one()
-                self.assertEqual(json.loads(restored.payload), {
-                    'board': {'boardId': '99'}, 'capacity': {'project': 'NEW'}, 'epm': epm,
-                })
-                self.assertEqual(restored.config_revision, 10)
-            engine.dispose()
+        command.downgrade(config, '20260826_0007')
+        engine = create_engine(database_url, future=True)
+        self.assertNotIn('workspace_epm_config_migration_archive', inspect(engine).get_table_names())
+        with engine.connect() as connection:
+            restored = connection.exec_driver_sql(
+                "SELECT CAST(payload AS TEXT) AS payload, config_revision FROM workspace_dashboard_configs "
+                "WHERE workspace_id='workspace-epm'"
+            ).one()
+            self.assertEqual(json.loads(restored.payload), {
+                'board': {'boardId': '99'}, 'capacity': {'project': 'NEW'}, 'epm': epm,
+            })
+            self.assertEqual(restored.config_revision, 10)
+        engine.dispose()
 
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            with engine.connect() as connection:
-                rerun = connection.exec_driver_sql(
-                    "SELECT payload, config_revision FROM workspace_dashboard_configs WHERE workspace_id='workspace-epm'"
-                ).one()
-                self.assertNotIn('epm', json.loads(rerun.payload))
-                self.assertEqual(rerun.config_revision, 11)
-            engine.dispose()
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        with engine.connect() as connection:
+            rerun = connection.exec_driver_sql(
+                "SELECT CAST(payload AS TEXT) AS payload, config_revision FROM workspace_dashboard_configs "
+                "WHERE workspace_id='workspace-epm'"
+            ).one()
+            self.assertNotIn('epm', json.loads(rerun.payload))
+            self.assertEqual(rerun.config_revision, 11)
+        engine.dispose()
 
     def test_workspace_epm_migration_does_not_touch_other_ownership_tables(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'workspace-epm-isolation.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260826_0007')
-            engine = create_engine(database_url, future=True)
-            with engine.begin() as connection:
-                connection.exec_driver_sql(
-                    "INSERT INTO users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
-                    "VALUES ('user-1', 'atlassian', 'subject-1', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
-                    "VALUES ('workspace-1', 'test', 'Workspace', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspace_dashboard_configs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                    "VALUES ('dashboard-1', 'workspace-1', 1, '{\"epm\":{\"version\":2},\"board\":{}}', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
-                    "VALUES ('view-1', 'workspace-1', 'user-1', 'Default', 'epm', 'configuration', 1, '{\"epm\":{\"version\":2}}', 'private', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO view_config_versions (id, view_config_id, version_number, payload, created_by, created_at) "
-                    "VALUES ('version-1', 'view-1', 1, '{\"epm\":{\"version\":2}}', 'user-1', CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspace_group_configs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                    "VALUES ('groups-1', 'workspace-1', 1, '{\"groups\":[]}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO user_group_preferences (id, workspace_id, user_id, payload_version, visible_group_ids, customized, created_at, updated_at) "
-                    "VALUES ('prefs-1', 'workspace-1', 'user-1', 1, '[\"group-1\"]', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO workspace_team_catalogs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
-                    "VALUES ('catalog-1', 'workspace-1', 1, '{\"catalog\":{\"team-1\":{}}}', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO auth_connections (id, user_id, workspace_id, provider, status, token_version, capabilities, created_at, updated_at) "
-                    "VALUES ('connection-1', 'user-1', 'workspace-1', 'atlassian_oauth', 'active', 1, '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
-                )
-                connection.exec_driver_sql(
-                    "INSERT INTO auth_tokens (id, connection_id, token_kind, algorithm, ciphertext, nonce, wrapped_dek, key_id, aad_hash) "
-                    "VALUES ('token-1', 'connection-1', 'access_token', 'test', 'cipher', 'nonce', 'dek', 'key', 'hash')"
-                )
-                protected = {}
-                for table in ('view_configs', 'view_config_versions', 'workspace_group_configs', 'user_group_preferences', 'workspace_team_catalogs', 'auth_connections', 'auth_tokens'):
-                    protected[table] = connection.exec_driver_sql(f'SELECT * FROM {table}').mappings().all()
-            command.upgrade(config, '20260827_0008')
-            with engine.connect() as connection:
-                for table, before in protected.items():
-                    self.assertEqual(connection.exec_driver_sql(f'SELECT * FROM {table}').mappings().all(), before, table)
-            engine.dispose()
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260826_0007')
+        engine = create_engine(database_url, future=True)
+        with engine.begin() as connection:
+            connection.exec_driver_sql(
+                "INSERT INTO users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
+                "VALUES ('user-1', 'atlassian', 'subject-1', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspaces (id, environment_key, name, created_by, created_at, updated_at) "
+                "VALUES ('workspace-1', 'test', 'Workspace', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspace_dashboard_configs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
+                "VALUES ('dashboard-1', 'workspace-1', 1, '{\"epm\":{\"version\":2},\"board\":{}}', 2, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
+                "VALUES ('view-1', 'workspace-1', 'user-1', 'Default', 'epm', 'configuration', 1, '{\"epm\":{\"version\":2}}', 'private', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO view_config_versions (id, view_config_id, version_number, payload, created_by, created_at) "
+                "VALUES ('version-1', 'view-1', 1, '{\"epm\":{\"version\":2}}', 'user-1', CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspace_group_configs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
+                "VALUES ('groups-1', 'workspace-1', 1, '{\"groups\":[]}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO user_group_preferences (id, workspace_id, user_id, payload_version, visible_group_ids, customized, created_at, updated_at) "
+                "VALUES ('prefs-1', 'workspace-1', 'user-1', 1, '[\"group-1\"]', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO workspace_team_catalogs (id, workspace_id, payload_version, payload, config_revision, created_at, updated_at) "
+                "VALUES ('catalog-1', 'workspace-1', 1, '{\"catalog\":{\"team-1\":{}}}', 4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO auth_connections (id, user_id, workspace_id, provider, status, token_version, capabilities, created_at, updated_at) "
+                "VALUES ('connection-1', 'user-1', 'workspace-1', 'atlassian_oauth', 'active', 1, '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            connection.exec_driver_sql(
+                "INSERT INTO auth_tokens (id, connection_id, token_kind, algorithm, ciphertext, nonce, wrapped_dek, key_id, aad_hash) "
+                "VALUES ('token-1', 'connection-1', 'access_token', 'test', 'cipher', 'nonce', 'dek', 'key', 'hash')"
+            )
+            protected = {}
+            for table in ('view_configs', 'view_config_versions', 'workspace_group_configs', 'user_group_preferences', 'workspace_team_catalogs', 'auth_connections', 'auth_tokens'):
+                protected[table] = connection.exec_driver_sql(f'SELECT * FROM {table}').mappings().all()
+        command.upgrade(config, '20260827_0008')
+        with engine.connect() as connection:
+            for table, before in protected.items():
+                self.assertEqual(connection.exec_driver_sql(f'SELECT * FROM {table}').mappings().all(), before, table)
+        engine.dispose()
 
     def test_workspace_epm_migration_renders_postgresql_upgrade_and_downgrade_offline(self):
         config = self._config('postgresql+psycopg://user@db.example:5432/planner?sslmode=require')
@@ -896,33 +929,32 @@ class DbMigrationTests(unittest.TestCase):
                 self.assertNotIn("secret", rendered)
 
     def test_capacity_migration_upgrades_downgrades_and_has_portable_postgres_offline_metadata(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'capacity.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260604_0006')
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                columns = {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')}
-                self.assertTrue({
-                    'capacity_jira_site_url', 'capacity_jira_cloud_id',
-                    'capacity_field_schema_type', 'capacity_field_verified_at',
-                }.issubset(columns))
-                self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
-                self.assertIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
-            finally:
-                engine.dispose()
-            command.downgrade(config, '20260604_0006')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
-                self.assertNotIn('workspace_dashboard_configs', inspector.get_table_names())
-                self.assertNotIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
-            finally:
-                engine.dispose()
-            command.upgrade(config, 'head')
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260604_0006')
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            columns = {column['name'] for column in inspector.get_columns('workspace_dashboard_configs')}
+            self.assertTrue({
+                'capacity_jira_site_url', 'capacity_jira_cloud_id',
+                'capacity_field_schema_type', 'capacity_field_verified_at',
+            }.issubset(columns))
+            self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
+            self.assertIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+        finally:
+            engine.dispose()
+        command.downgrade(config, '20260604_0006')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            self.assertNotIn('workspace_capacity_configs', inspector.get_table_names())
+            self.assertNotIn('workspace_dashboard_configs', inspector.get_table_names())
+            self.assertNotIn('scope_provenance', {column['name'] for column in inspector.get_columns('auth_connections')})
+        finally:
+            engine.dispose()
+        command.upgrade(config, 'head')
 
         config = self._config('postgresql+psycopg://planner@db.example.test:5432/planner?sslmode=require')
         output = io.StringIO()
@@ -937,323 +969,351 @@ class DbMigrationTests(unittest.TestCase):
         self.assertIn('ck_auth_connections_scope_provenance', sql)
 
     def test_scope_provenance_reconciliation_repairs_stamped_schema(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'scope-provenance-drift.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260902_0011')
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260902_0011')
 
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    operations = Operations(MigrationContext.configure(connection))
-                    with operations.batch_alter_table('auth_connections') as batch_op:
-                        batch_op.drop_constraint('ck_auth_connections_scope_provenance', type_='check')
-                        batch_op.drop_column('scope_provenance')
-
-                command.upgrade(config, 'head')
-
-                inspector = inspect(engine)
-                columns = {column['name'] for column in inspector.get_columns('auth_connections')}
-                constraints = {
-                    constraint['name']
-                    for constraint in inspector.get_check_constraints('auth_connections')
-                }
-                self.assertIn('scope_provenance', columns)
-                self.assertIn('ck_auth_connections_scope_provenance', constraints)
-            finally:
-                engine.dispose()
-
-    def test_head_schema_reconciliation_repairs_browser_sessions_and_capacity_columns(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'head-schema-drift.db')}"
-            config = self._config(database_url)
-            command.upgrade(config, '20260902_0012')
-
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    operations = Operations(MigrationContext.configure(connection))
-                    operations.drop_table('browser_sessions')
-                    with operations.batch_alter_table('workspace_dashboard_configs') as batch_op:
-                        batch_op.drop_column('capacity_field_verified_at')
-                        batch_op.drop_column('capacity_field_schema_type')
-                        batch_op.drop_column('capacity_jira_cloud_id')
-                        batch_op.drop_column('capacity_jira_site_url')
-                    connection.execute(text("""
-                        INSERT INTO users (
-                            id, external_provider, external_subject, account_type,
-                            status, created_by, created_at, updated_at
-                        ) VALUES (
-                            'user-reconciliation', 'atlassian', 'subject-reconciliation',
-                            'user', 'active', 'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        INSERT INTO workspaces (
-                            id, environment_key, name, created_by, created_at, updated_at
-                        ) VALUES (
-                            'workspace-reconciliation', 'migration-test', 'Migration Test',
-                            'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        INSERT INTO workspace_dashboard_configs (
-                            id, workspace_id, payload_version, payload, config_revision,
-                            created_by, updated_by, created_at, updated_at
-                        ) VALUES (
-                            'dashboard-reconciliation', 'workspace-reconciliation', 1, '{}', 7,
-                            'user-reconciliation', 'user-reconciliation',
-                            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-
-                command.upgrade(config, 'head')
-
-                inspector = inspect(engine)
-                self.assertIn('browser_sessions', inspector.get_table_names())
-                browser_columns = {
-                    column['name']: (str(column['type']), column['nullable'])
-                    for column in inspector.get_columns('browser_sessions')
-                }
-                self.assertEqual(browser_columns, {
-                    'id': ('VARCHAR(36)', False),
-                    'user_id': ('VARCHAR(36)', False),
-                    'workspace_id': ('VARCHAR(36)', False),
-                    'auth_connection_id': ('VARCHAR(36)', False),
-                    'created_at': ('DATETIME', False),
-                })
-                self.assertEqual(
-                    {index['name'] for index in inspector.get_indexes('browser_sessions')},
-                    {'ix_browser_sessions_connection', 'ix_browser_sessions_user_workspace'},
-                )
-                browser_foreign_keys = {
-                    foreign_key['constrained_columns'][0]: (
-                        foreign_key['referred_table'],
-                        foreign_key['options'].get('ondelete'),
-                    )
-                    for foreign_key in inspector.get_foreign_keys('browser_sessions')
-                }
-                self.assertEqual(browser_foreign_keys, {
-                    'user_id': ('users', 'CASCADE'),
-                    'workspace_id': ('workspaces', 'CASCADE'),
-                    'auth_connection_id': ('auth_connections', 'CASCADE'),
-                })
-
-                dashboard_columns = {
-                    column['name']: (str(column['type']), column['nullable'])
-                    for column in inspector.get_columns('workspace_dashboard_configs')
-                }
-                self.assertEqual(dashboard_columns['capacity_jira_site_url'], ('VARCHAR(512)', True))
-                self.assertEqual(dashboard_columns['capacity_jira_cloud_id'], ('VARCHAR(255)', True))
-                self.assertEqual(dashboard_columns['capacity_field_schema_type'], ('VARCHAR(64)', True))
-                self.assertEqual(dashboard_columns['capacity_field_verified_at'], ('DATETIME', True))
-
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO auth_connections (
-                            id, user_id, workspace_id, provider, site_url, cloud_id,
-                            scopes, scope_provenance, status, token_version, created_at, updated_at
-                        ) VALUES (
-                            'connection-reconciliation', 'user-reconciliation',
-                            'workspace-reconciliation', 'atlassian_oauth',
-                            'https://example.invalid', 'cloud-reconciliation', '[]',
-                            'provider', 'active', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-
-                with Session(engine) as session:
-                    dashboard_config = session.get(
-                        models.WorkspaceDashboardConfig,
-                        'dashboard-reconciliation',
-                    )
-                    self.assertIsNotNone(dashboard_config)
-                    self.assertEqual(dashboard_config.config_revision, 7)
-                    dashboard_config.capacity_jira_site_url = 'https://example.invalid'
-                    dashboard_config.capacity_jira_cloud_id = 'cloud-reconciliation'
-                    dashboard_config.capacity_field_schema_type = 'option'
-                    dashboard_config.capacity_field_verified_at = datetime(
-                        2026, 9, 2, 12, 0, tzinfo=timezone.utc,
-                    )
-                    handle = create_browser_session(
-                        session,
-                        user_id='user-reconciliation',
-                        workspace_id='workspace-reconciliation',
-                        auth_connection_id='connection-reconciliation',
-                    )
-                    session.commit()
-                    session.refresh(dashboard_config)
-                self.assertEqual(handle.auth_connection_id, 'connection-reconciliation')
-                self.assertEqual(dashboard_config.capacity_jira_site_url, 'https://example.invalid')
-                self.assertEqual(dashboard_config.capacity_jira_cloud_id, 'cloud-reconciliation')
-                self.assertEqual(dashboard_config.capacity_field_schema_type, 'option')
-                self.assertEqual(dashboard_config.capacity_field_verified_at.year, 2026)
-            finally:
-                engine.dispose()
-
-    def test_screen_scoped_onboarding_migration_backfills_and_downgrades_only_modules(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding.db')}"
-            config = self._config(database_url)
-
-            command.upgrade(config, '20260604_0006')
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO user_group_preferences (
-                            id, workspace_id, user_id, payload_version, visible_group_ids,
-                            active_group_id, customized, created_at, updated_at
-                        ) VALUES (
-                            'preference-existing', 'workspace-1', 'user-1', 1, '[]',
-                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-            finally:
-                engine.dispose()
-
-            command.upgrade(config, '20260829_0009')
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO user_group_preferences (
-                            id, workspace_id, user_id, payload_version, visible_group_ids,
-                            active_group_id, customized, onboarding_done, created_at, updated_at
-                        ) VALUES (
-                            'preference-new', 'workspace-2', 'user-2', 1, '[]',
-                            'platform', 1, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-            finally:
-                engine.dispose()
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                operations = Operations(MigrationContext.configure(connection))
+                with operations.batch_alter_table('auth_connections') as batch_op:
+                    batch_op.drop_constraint('ck_auth_connections_scope_provenance', type_='check')
+                    batch_op.drop_column('scope_provenance')
 
             command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                columns = {
-                    column['name']: column
-                    for column in inspector.get_columns('user_group_preferences')
-                }
-                self.assertFalse(columns['onboarding_done']['nullable'])
-                self.assertFalse(columns['onboarding_completed_modules']['nullable'])
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO user_group_preferences (
-                            id, workspace_id, user_id, payload_version, visible_group_ids,
-                            active_group_id, customized, created_at, updated_at
-                        ) VALUES (
-                            'preference-defaults', 'workspace-3', 'user-3', 1, '[]',
-                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    rows = {
-                        row.id: row
-                        for row in connection.execute(text("""
-                            SELECT id, onboarding_done, onboarding_completed_modules
-                            FROM user_group_preferences
-                            ORDER BY id
-                        """)).mappings()
-                    }
 
-                completed_modules = rows['preference-existing']['onboarding_completed_modules']
-                incomplete_modules = rows['preference-new']['onboarding_completed_modules']
-                default_modules = rows['preference-defaults']['onboarding_completed_modules']
-                if isinstance(completed_modules, str):
-                    completed_modules = json.loads(completed_modules)
-                if isinstance(incomplete_modules, str):
-                    incomplete_modules = json.loads(incomplete_modules)
-                if isinstance(default_modules, str):
-                    default_modules = json.loads(default_modules)
-                self.assertTrue(bool(rows['preference-existing']['onboarding_done']))
-                self.assertEqual(completed_modules, [
-                    'catch-up',
-                    'configuration',
-                    'planning',
-                    'board',
-                    'statistics',
-                ])
-                self.assertFalse(bool(rows['preference-new']['onboarding_done']))
-                self.assertEqual(incomplete_modules, [])
-                self.assertFalse(bool(rows['preference-defaults']['onboarding_done']))
-                self.assertEqual(default_modules, [])
-            finally:
-                engine.dispose()
+            inspector = inspect(engine)
+            columns = {column['name'] for column in inspector.get_columns('auth_connections')}
+            constraints = {
+                constraint['name']
+                for constraint in inspector.get_check_constraints('auth_connections')
+            }
+            self.assertIn('scope_provenance', columns)
+            self.assertIn('ck_auth_connections_scope_provenance', constraints)
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260829_0009')
-            engine = create_engine(database_url, future=True)
-            try:
-                preference_columns = {
-                    column['name']
-                    for column in inspect(engine).get_columns('user_group_preferences')
+    def test_head_schema_reconciliation_repairs_browser_sessions_and_capacity_columns(self):
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+        command.upgrade(config, '20260902_0012')
+
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                operations = Operations(MigrationContext.configure(connection))
+                operations.drop_table('browser_sessions')
+                with operations.batch_alter_table('workspace_dashboard_configs') as batch_op:
+                    batch_op.drop_column('capacity_field_verified_at')
+                    batch_op.drop_column('capacity_field_schema_type')
+                    batch_op.drop_column('capacity_jira_cloud_id')
+                    batch_op.drop_column('capacity_jira_site_url')
+                connection.execute(text("""
+                    INSERT INTO users (
+                        id, external_provider, external_subject, account_type,
+                        status, created_by, created_at, updated_at
+                    ) VALUES (
+                        'user-reconciliation', 'atlassian', 'subject-reconciliation',
+                        'user', 'active', 'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspaces (
+                        id, environment_key, name, created_by, created_at, updated_at
+                    ) VALUES (
+                        'workspace-reconciliation', 'migration-test', 'Migration Test',
+                        'migration-test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspace_dashboard_configs (
+                        id, workspace_id, payload_version, payload, config_revision,
+                        created_by, updated_by, created_at, updated_at
+                    ) VALUES (
+                        'dashboard-reconciliation', 'workspace-reconciliation', 1, '{}', 7,
+                        'user-reconciliation', 'user-reconciliation',
+                        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+
+            command.upgrade(config, 'head')
+
+            inspector = inspect(engine)
+            self.assertIn('browser_sessions', inspector.get_table_names())
+            browser_columns = {
+                column['name']: (column['type'].compile(dialect=engine.dialect), column['nullable'])
+                for column in inspector.get_columns('browser_sessions')
+            }
+            self.assertEqual(browser_columns, {
+                'id': ('VARCHAR(36)', False),
+                'user_id': ('VARCHAR(36)', False),
+                'workspace_id': ('VARCHAR(36)', False),
+                'auth_connection_id': ('VARCHAR(36)', False),
+                'created_at': ('TIMESTAMP WITH TIME ZONE', False),
+            })
+            self.assertEqual(
+                {index['name'] for index in inspector.get_indexes('browser_sessions')},
+                {'ix_browser_sessions_connection', 'ix_browser_sessions_user_workspace'},
+            )
+            browser_foreign_keys = {
+                foreign_key['constrained_columns'][0]: (
+                    foreign_key['referred_table'],
+                    foreign_key['options'].get('ondelete'),
+                )
+                for foreign_key in inspector.get_foreign_keys('browser_sessions')
+            }
+            self.assertEqual(browser_foreign_keys, {
+                'user_id': ('users', 'CASCADE'),
+                'workspace_id': ('workspaces', 'CASCADE'),
+                'auth_connection_id': ('auth_connections', 'CASCADE'),
+            })
+
+            dashboard_columns = {
+                column['name']: (column['type'].compile(dialect=engine.dialect), column['nullable'])
+                for column in inspector.get_columns('workspace_dashboard_configs')
+            }
+            self.assertEqual(dashboard_columns['capacity_jira_site_url'], ('VARCHAR(512)', True))
+            self.assertEqual(dashboard_columns['capacity_jira_cloud_id'], ('VARCHAR(255)', True))
+            self.assertEqual(dashboard_columns['capacity_field_schema_type'], ('VARCHAR(64)', True))
+            self.assertEqual(dashboard_columns['capacity_field_verified_at'], ('TIMESTAMP WITH TIME ZONE', True))
+
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    INSERT INTO auth_connections (
+                        id, user_id, workspace_id, provider, site_url, cloud_id,
+                        scopes, scope_provenance, status, token_version, created_at, updated_at
+                    ) VALUES (
+                        'connection-reconciliation', 'user-reconciliation',
+                        'workspace-reconciliation', 'atlassian_oauth',
+                        'https://example.invalid', 'cloud-reconciliation', '[]',
+                        'provider', 'active', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+
+            with Session(engine) as session:
+                dashboard_config = session.get(
+                    models.WorkspaceDashboardConfig,
+                    'dashboard-reconciliation',
+                )
+                self.assertIsNotNone(dashboard_config)
+                self.assertEqual(dashboard_config.config_revision, 7)
+                dashboard_config.capacity_jira_site_url = 'https://example.invalid'
+                dashboard_config.capacity_jira_cloud_id = 'cloud-reconciliation'
+                dashboard_config.capacity_field_schema_type = 'option'
+                dashboard_config.capacity_field_verified_at = datetime(
+                    2026, 9, 2, 12, 0, tzinfo=timezone.utc,
+                )
+                handle = create_browser_session(
+                    session,
+                    user_id='user-reconciliation',
+                    workspace_id='workspace-reconciliation',
+                    auth_connection_id='connection-reconciliation',
+                )
+                session.commit()
+                session.refresh(dashboard_config)
+            self.assertEqual(handle.auth_connection_id, 'connection-reconciliation')
+            self.assertEqual(dashboard_config.capacity_jira_site_url, 'https://example.invalid')
+            self.assertEqual(dashboard_config.capacity_jira_cloud_id, 'cloud-reconciliation')
+            self.assertEqual(dashboard_config.capacity_field_schema_type, 'option')
+            self.assertEqual(dashboard_config.capacity_field_verified_at.year, 2026)
+        finally:
+            engine.dispose()
+
+    def test_screen_scoped_onboarding_migration_backfills_and_downgrades_only_modules(self):
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
+
+        command.upgrade(config, '20260604_0006')
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                # PostgreSQL enforces the preference foreign keys, so seed their parents.
+                connection.execute(text("""
+                    INSERT INTO users (
+                        id, external_provider, external_subject, account_type,
+                        status, created_by, created_at, updated_at
+                    ) VALUES
+                        ('user-1', 'atlassian', 'subject-1', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                        ('user-2', 'atlassian', 'subject-2', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                        ('user-3', 'atlassian', 'subject-3', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspaces (
+                        id, environment_key, name, created_by, created_at, updated_at
+                    ) VALUES
+                        ('workspace-1', 'onboarding-1', 'Workspace 1', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                        ('workspace-2', 'onboarding-2', 'Workspace 2', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+                        ('workspace-3', 'onboarding-3', 'Workspace 3', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """))
+                connection.execute(text("""
+                    INSERT INTO user_group_preferences (
+                        id, workspace_id, user_id, payload_version, visible_group_ids,
+                        active_group_id, customized, created_at, updated_at
+                    ) VALUES (
+                        'preference-existing', 'workspace-1', 'user-1', 1, '[]',
+                        'platform', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+        finally:
+            engine.dispose()
+
+        command.upgrade(config, '20260829_0009')
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    INSERT INTO user_group_preferences (
+                        id, workspace_id, user_id, payload_version, visible_group_ids,
+                        active_group_id, customized, onboarding_done, created_at, updated_at
+                    ) VALUES (
+                        'preference-new', 'workspace-2', 'user-2', 1, '[]',
+                        'platform', true, false, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+        finally:
+            engine.dispose()
+
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            columns = {
+                column['name']: column
+                for column in inspector.get_columns('user_group_preferences')
+            }
+            self.assertFalse(columns['onboarding_done']['nullable'])
+            self.assertFalse(columns['onboarding_completed_modules']['nullable'])
+            with engine.begin() as connection:
+                connection.execute(text("""
+                    INSERT INTO user_group_preferences (
+                        id, workspace_id, user_id, payload_version, visible_group_ids,
+                        active_group_id, customized, created_at, updated_at
+                    ) VALUES (
+                        'preference-defaults', 'workspace-3', 'user-3', 1, '[]',
+                        'platform', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                rows = {
+                    row.id: row
+                    for row in connection.execute(text("""
+                        SELECT id, onboarding_done, onboarding_completed_modules
+                        FROM user_group_preferences
+                        ORDER BY id
+                    """)).mappings()
                 }
-                self.assertIn('onboarding_done', preference_columns)
-                self.assertNotIn('onboarding_completed_modules', preference_columns)
-                with engine.connect() as connection:
-                    legacy_values = {
-                        row.id: bool(row.onboarding_done)
-                        for row in connection.execute(text("""
-                            SELECT id, onboarding_done
-                            FROM user_group_preferences
-                            ORDER BY id
-                        """)).mappings()
-                    }
-                self.assertEqual(legacy_values, {
-                    'preference-defaults': False,
-                    'preference-existing': True,
-                    'preference-new': False,
-                })
-            finally:
-                engine.dispose()
+
+            completed_modules = rows['preference-existing']['onboarding_completed_modules']
+            incomplete_modules = rows['preference-new']['onboarding_completed_modules']
+            default_modules = rows['preference-defaults']['onboarding_completed_modules']
+            if isinstance(completed_modules, str):
+                completed_modules = json.loads(completed_modules)
+            if isinstance(incomplete_modules, str):
+                incomplete_modules = json.loads(incomplete_modules)
+            if isinstance(default_modules, str):
+                default_modules = json.loads(default_modules)
+            self.assertTrue(bool(rows['preference-existing']['onboarding_done']))
+            self.assertEqual(completed_modules, [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ])
+            self.assertFalse(bool(rows['preference-new']['onboarding_done']))
+            self.assertEqual(incomplete_modules, [])
+            self.assertFalse(bool(rows['preference-defaults']['onboarding_done']))
+            self.assertEqual(default_modules, [])
+        finally:
+            engine.dispose()
+
+        command.downgrade(config, '20260829_0009')
+        engine = create_engine(database_url, future=True)
+        try:
+            preference_columns = {
+                column['name']
+                for column in inspect(engine).get_columns('user_group_preferences')
+            }
+            self.assertIn('onboarding_done', preference_columns)
+            self.assertNotIn('onboarding_completed_modules', preference_columns)
+            with engine.connect() as connection:
+                legacy_values = {
+                    row.id: bool(row.onboarding_done)
+                    for row in connection.execute(text("""
+                        SELECT id, onboarding_done
+                        FROM user_group_preferences
+                        ORDER BY id
+                    """)).mappings()
+                }
+            self.assertEqual(legacy_values, {
+                'preference-defaults': False,
+                'preference-existing': True,
+                'preference-new': False,
+            })
+        finally:
+            engine.dispose()
 
     def test_onboarding_migrations_handle_existing_columns_and_backfill(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'onboarding-existing-column.db')}"
-            config = self._config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = self._config(database_url)
 
-            command.upgrade(config, '20260604_0006')
-            engine = create_engine(database_url, future=True)
-            try:
-                with engine.begin() as connection:
-                    connection.execute(text("""
-                        INSERT INTO user_group_preferences (
-                            id, workspace_id, user_id, payload_version, visible_group_ids,
-                            active_group_id, customized, created_at, updated_at
-                        ) VALUES (
-                            'preference-existing-column', 'workspace-1', 'user-1', 1, '[]',
-                            'platform', 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                        )
-                    """))
-                    connection.execute(text("""
-                        ALTER TABLE user_group_preferences
-                        ADD COLUMN onboarding_done BOOLEAN NOT NULL DEFAULT false
-                    """))
-                    connection.execute(text("""
-                        ALTER TABLE user_group_preferences
-                        ADD COLUMN onboarding_completed_modules JSON NOT NULL DEFAULT '[]'
-                    """))
+        command.upgrade(config, '20260604_0006')
+        engine = create_engine(database_url, future=True)
+        try:
+            with engine.begin() as connection:
+                # PostgreSQL enforces the preference foreign keys, so seed their parents.
+                connection.execute(text("""
+                    INSERT INTO users (
+                        id, external_provider, external_subject, account_type,
+                        status, created_by, created_at, updated_at
+                    ) VALUES
+                        ('user-1', 'atlassian', 'subject-1', 'user', 'active', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """))
+                connection.execute(text("""
+                    INSERT INTO workspaces (
+                        id, environment_key, name, created_by, created_at, updated_at
+                    ) VALUES
+                        ('workspace-1', 'onboarding-1', 'Workspace 1', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                """))
+                connection.execute(text("""
+                    INSERT INTO user_group_preferences (
+                        id, workspace_id, user_id, payload_version, visible_group_ids,
+                        active_group_id, customized, created_at, updated_at
+                    ) VALUES (
+                        'preference-existing-column', 'workspace-1', 'user-1', 1, '[]',
+                        'platform', true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+                    )
+                """))
+                connection.execute(text("""
+                    ALTER TABLE user_group_preferences
+                    ADD COLUMN onboarding_done BOOLEAN NOT NULL DEFAULT false
+                """))
+                connection.execute(text("""
+                    ALTER TABLE user_group_preferences
+                    ADD COLUMN onboarding_completed_modules JSON NOT NULL DEFAULT '[]'
+                """))
 
-                command.upgrade(config, 'head')
+            command.upgrade(config, 'head')
 
-                with engine.connect() as connection:
-                    row = connection.execute(text("""
-                        SELECT onboarding_done, onboarding_completed_modules
-                        FROM user_group_preferences
-                        WHERE id = 'preference-existing-column'
-                    """)).mappings().one()
-                completed_modules = row['onboarding_completed_modules']
-                if isinstance(completed_modules, str):
-                    completed_modules = json.loads(completed_modules)
-                self.assertTrue(bool(row['onboarding_done']))
-                self.assertEqual(completed_modules, [
-                    'catch-up',
-                    'configuration',
-                    'planning',
-                    'board',
-                    'statistics',
-                ])
-            finally:
-                engine.dispose()
+            with engine.connect() as connection:
+                row = connection.execute(text("""
+                    SELECT onboarding_done, onboarding_completed_modules
+                    FROM user_group_preferences
+                    WHERE id = 'preference-existing-column'
+                """)).mappings().one()
+            completed_modules = row['onboarding_completed_modules']
+            if isinstance(completed_modules, str):
+                completed_modules = json.loads(completed_modules)
+            self.assertTrue(bool(row['onboarding_done']))
+            self.assertEqual(completed_modules, [
+                'catch-up',
+                'configuration',
+                'planning',
+                'board',
+                'statistics',
+            ])
+        finally:
+            engine.dispose()
 
 
 if __name__ == '__main__':

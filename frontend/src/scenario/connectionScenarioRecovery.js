@@ -2,10 +2,35 @@ import * as React from 'react';
 import { clearConnectionRecoveryState, getConnectionRecoveryStorage } from '../api/connectionRecoveryState.js';
 import { normalizeScenarioDraftOverrides, overlayScenarioDraftDelta } from './scenarioDraftOverrides.js';
 
+// Both feature owners may restore from one tab capsule. Keep the original backup,
+// including its capture time, until every present owner has installed its draft.
+const completedOwners = new WeakMap();
+export const isConnectionRecoveryOwnerComplete = (recovery, owner) => completedOwners.get(recovery)?.has(owner) === true;
+
+export function completeConnectionRecoveryOwner({ pendingRecoveryRef, owner, releaseOwnership, recovery: expectedRecovery }) {
+    if (!['scenario', 'planning'].includes(owner)) throw new TypeError('Invalid recovery owner.');
+    const recovery = pendingRecoveryRef.current;
+    if (expectedRecovery && recovery !== expectedRecovery) return false;
+    if (!recovery) return true;
+    const completed = completedOwners.get(recovery) || new Set();
+    completed.add(owner);
+    completedOwners.set(recovery, completed);
+    if (recovery.scenario && !completed.has('scenario') || recovery.planning && !completed.has('planning')) return false;
+    clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
+    pendingRecoveryRef.current = null;
+    completedOwners.delete(recovery);
+    releaseOwnership('idle');
+    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
+        window.scrollTo({ left: recovery.view.scrollX, top: recovery.view.scrollY, behavior: 'auto' });
+    }));
+    return true;
+}
+
 export function applyScenarioConnectionRecovery({
     activeDraft,
     idleActionState,
     recovery,
+    pendingRecoveryRef,
     releaseOwnership,
     scenarioScopeKey,
     scopePayload,
@@ -57,9 +82,12 @@ export function applyScenarioConnectionRecovery({
             : 'Unsaved Scenario changes were restored after reconnecting.',
         error: '',
     }));
-    clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
+    if (pendingRecoveryRef) completeConnectionRecoveryOwner({ pendingRecoveryRef, owner: 'scenario', releaseOwnership, recovery });
+    else if (!recovery.planning) {
+        clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
+        releaseOwnership('idle');
+    }
     setConnectionRecoveryNotice(recovery.droppedSettings ? settingsDiscardedNotice : null);
-    releaseOwnership('idle');
     window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
         const timeline = scenarioTimelineRef.current;
         if (timeline) {
@@ -97,6 +125,7 @@ export function useConnectionScenarioRecovery({
     React.useEffect(() => {
         const recovery = pendingRecoveryRef.current;
         if (!recovery || groupsLoading || sprintsLoading || pendingShellRef.current) return;
+        if (isConnectionRecoveryOwnerComplete(recovery, 'scenario')) return;
         if (attemptedRevisionRef.current === stagedRevision) return;
         const requestedGroup = String(recovery.scenario?.groupId || recovery.view.activeGroupId || '');
         const requestedSprint = String(recovery.scenario?.sprintId || recovery.view.selectedSprint || '');
@@ -115,12 +144,7 @@ export function useConnectionScenarioRecovery({
         };
         if (!recovery.scenario) {
             attemptedRevisionRef.current = stagedRevision;
-            pendingRecoveryRef.current = null;
-            clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
-            window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-                window.scrollTo({ left: recovery.view.scrollX, top: recovery.view.scrollY, behavior: 'auto' });
-            }));
-            releaseOwnership('idle');
+            completeConnectionRecoveryOwner({ pendingRecoveryRef, owner: 'scenario', releaseOwnership });
             return;
         }
         const shellScopeSettled = String(activeGroupId || '') === String(recovery.view.activeGroupId || '')
@@ -141,7 +165,7 @@ export function useConnectionScenarioRecovery({
         setStatus('restoring');
         void runScenario({ recovery }).finally(() => {
             scenarioStartedRef.current = false;
-            if (pendingRecoveryRef.current) {
+            if (pendingRecoveryRef.current === recovery && !isConnectionRecoveryOwnerComplete(recovery, 'scenario')) {
                 releaseOwnership('failed');
                 setNotice({
                     kind: 'failed',

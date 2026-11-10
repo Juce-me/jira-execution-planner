@@ -5,15 +5,17 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import patch
 
-from backend.auth.context import RequestAuthContext
+from backend.auth.db_context import resolve_db_request_auth_context
+from tests.db_oauth_test_helpers import seed_db_actor
 from backend.config.import_config import export_view_config_json, import_dashboard_config
 from backend.config.repository import db_repository
 from backend.db import engine as db_engine
 from backend.db import models
 import jira_server
+from tests.postgres_test_db import fresh_database_url
 
 
 FULL_SCOPE = (
@@ -31,68 +33,26 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         self._tmpdir = tempfile.TemporaryDirectory()
         self.dashboard_path = os.path.join(self._tmpdir.name, 'dashboard-config.json')
         self.groups_path = os.path.join(self._tmpdir.name, 'team-groups.json')
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'views.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
         self.workspace_id, self.user_id, self.connection_id = self._seed_user()
-        self.context = RequestAuthContext(
-            auth_mode='atlassian_oauth',
-            user_id=self.user_id,
-            stable_subject='account-1',
-            atlassian_account_id='account-1',
-            workspace_id=self.workspace_id,
-            auth_connection_id=self.connection_id,
-            cloud_id='cloud-1',
-            site_url='https://example.atlassian.net',
-            token_version='1',
-            account_status='active',
-            is_admin=False,
-            granted_scopes=tuple(FULL_SCOPE.split()),
-            granted_scopes_verified=True,
-        )
+        self.context = resolve_db_request_auth_context(self.session_payload, database_url=self.database_url)
         with open(self.dashboard_path, 'w', encoding='utf-8') as handle:
             json.dump(self._dashboard_config(), handle)
 
     def tearDown(self):
         db_engine.dispose_engines()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         self._tmpdir.cleanup()
 
     def _seed_user(self):
         with self.factory() as session:
-            workspace = models.Workspace(
-                environment_key='local',
-                name='Local',
-                jira_site_url='https://example.atlassian.net',
-                jira_cloud_id='cloud-1',
-                created_by='test',
-            )
-            user = models.User(
-                external_provider='atlassian',
-                external_subject='account-1',
-                account_type='user',
-                status='active',
-                created_by='test',
-            )
-            session.add_all([workspace, user])
-            session.flush()
-            connection = models.AuthConnection(
-                user_id=user.id,
-                workspace_id=workspace.id,
-                provider='atlassian_oauth',
-                site_url=workspace.jira_site_url,
-                cloud_id=workspace.jira_cloud_id,
-                scopes=FULL_SCOPE.split(),
-                scope_provenance='provider',
-                status='active',
-                token_version=1,
-                expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
-            )
-            session.add(connection)
+            actor = seed_db_actor(session, workspace={'cloud_id': 'cloud-1', 'site_url': 'https://example.atlassian.net'},
+                                  account_identity='account-1')
             session.commit()
-            return workspace.id, user.id, connection.id
+            self.session_payload = actor.session_payload
+            return actor.workspace_id, actor.user_id, actor.connection_id
 
     def _dashboard_config(self):
         return {
@@ -127,23 +87,8 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
         }
 
     def _route_payloads(self, *, backend):
-        if backend == 'db':
-            session_id = 'config-fallback-session'
-            with self.client.session_transaction() as flask_session:
-                flask_session['atlassian_oauth_session_id'] = session_id
-                flask_session['db_oauth_session'] = {'db_auth_connection_id': self.connection_id}
-            jira_server.OAUTH_TOKEN_STORE[session_id] = {
-                'access_token': 'access-123',
-                'refresh_token': 'refresh-123',
-                'expires_at': 9999999999,
-                'scope': FULL_SCOPE,
-                'cloudid': 'cloud-1',
-                'site_url': 'https://example.atlassian.net',
-                'account_id': 'account-1',
-                'account_status': 'active',
-                'db_auth_connection_id': self.connection_id,
-                'db_token_version': '1',
-            }
+        with self.client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = self.session_payload
         patches = [
             patch.dict(os.environ, {
                 'CONFIG_STORAGE_BACKEND': backend,
@@ -154,7 +99,7 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
             patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True),
             patch.object(jira_server, 'resolve_dashboard_config_path', return_value=self.dashboard_path),
             patch.object(jira_server, 'resolve_groups_config_path', return_value=self.groups_path),
-            patch.object(jira_server, 'current_request_auth_context', return_value=self.context),
+            patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('No runtime JSON fallback')),
         ]
         for active_patch in patches:
             active_patch.start()
@@ -275,52 +220,44 @@ class ConfigJsonfileFallbackTests(unittest.TestCase):
             view = session.query(models.ViewConfig).filter_by(id=result.view_config_id).one()
             self.assertEqual(view.payload['epm']['scope']['rootGoalKey'], 'FIRST')
 
-    def test_legacy_get_routes_match_before_import_after_import_and_json_rollback(self):
-        before = self._route_payloads(backend='jsonfile')
-        imported = import_dashboard_config(
-            database_url=self.database_url,
-            context=self.context,
-            source_path=self.dashboard_path,
-            actor_user_id=self.user_id,
-        )
+    def test_explicit_json_import_exports_artifacts_without_restoring_a_serving_profile(self):
+        source_bytes = Path(self.dashboard_path).read_bytes()
+        imported = import_dashboard_config(database_url=self.database_url, context=self.context,
+            source_path=self.dashboard_path, actor_user_id=self.user_id)
         after_import = self._route_payloads(backend='db')
-        rollback = self._route_payloads(backend='jsonfile')
+        db_config = after_import['/api/config']
+        self.assertNotIn('epm', db_config['sharedConfig'])
+        self.assertEqual(set(db_config['adminSettingsMissing']), {'scope', 'source'})
+        # Adapter capability is profile-level; missing administrator scope still blocks loading.
+        self.assertTrue(db_config['boardAllWorkAvailable'])
+        self.assertEqual(after_import['/api/epm/config']['scope'], self._dashboard_config()['epm']['scope'])
+        groups = after_import['/api/groups-config']
+        self.assertEqual(groups['groups'][0]['id'], 'platform')
+        self.assertEqual(groups['groups'][0]['adHocCapacityEpics'], [])
+        self.assertEqual(groups['source'], 'workspace_db')
+        self.assertEqual(groups['configRevision'], 1)
+        self.assertTrue(groups['preferences']['onboardingRequired'])
+        self.assertEqual(groups['preferences']['effectiveVisibleGroupIds'], [])
+        with patch.dict(os.environ, {'JIRA_AUTH_MODE': 'basic', 'CONFIG_STORAGE_BACKEND': 'jsonfile'}), \
+             patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, '_load_dashboard_config_json', side_effect=AssertionError('No retired profile file read')):
+            for path in ('/api/config', '/api/groups-config', '/api/epm/config'):
+                response = self.client.get(path)
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
+        self.assertEqual(Path(self.dashboard_path).read_bytes(), source_bytes)
 
-        db_config = dict(after_import['/api/config'])
-        shared_config = db_config.pop('sharedConfig')
-        shared_revision = db_config.pop('sharedConfigRevision')
-        sprint_catalog_source = db_config.pop('sprintCatalogSource')
-        self.assertEqual(db_config.pop('adminSettingsMissing'), [])
-        before_config = dict(before['/api/config'])
-        self.assertFalse(before_config.pop('boardAllWorkAvailable'))
-        self.assertTrue(db_config.pop('boardAllWorkAvailable'))
-        db_epm = dict(after_import['/api/epm/config'])
-        self.assertNotIn('configRevision', db_epm)
-        self.assertEqual(db_config, before_config)
-        self.assertEqual(db_epm, before['/api/epm/config'])
-        self.assertEqual(shared_revision, 0)
-        self.assertEqual(sprint_catalog_source['backend'], 'postgresql')
-        self.assertEqual(sprint_catalog_source['boardId'], db_config['boardId'])
-        self.assertTrue(sprint_catalog_source['browserContextId'].startswith('bc1:'))
-        self.assertNotIn('epm', shared_config)
-        self.assertEqual(rollback, before)
-        self.assertEqual(after_import['/api/groups-config']['groups'], before['/api/groups-config']['groups'])
-        self.assertEqual(after_import['/api/groups-config']['defaultGroupId'], before['/api/groups-config']['defaultGroupId'])
-        self.assertEqual(after_import['/api/groups-config']['groups'][0]['adHocCapacityEpics'], [])
-        self.assertEqual(after_import['/api/groups-config']['source'], 'workspace_db')
-        self.assertEqual(after_import['/api/groups-config']['configRevision'], 1)
-        self.assertTrue(after_import['/api/groups-config']['preferences']['onboardingRequired'])
-        self.assertEqual(after_import['/api/groups-config']['preferences']['effectiveVisibleGroupIds'], [])
-
-        export_path = os.path.join(self._tmpdir.name, 'rollback-export.json')
-        export_view_config_json(
-            database_url=self.database_url,
-            context=self.context,
-            view_config_id=imported.view_config_id,
-            output_path=export_path,
-        )
-        with open(export_path, 'r', encoding='utf-8') as handle:
-            exported = json.load(handle)
+        # Export tooling requires a destination outside the synthetic checkout.
+        with tempfile.TemporaryDirectory(dir=Path(jira_server.__file__).resolve().parent.parent) as export_directory:
+            export_path = os.path.join(export_directory, 'rollback-export.json')
+            export_view_config_json(
+                database_url=self.database_url,
+                context=self.context,
+                view_config_id=imported.view_config_id,
+                output_path=export_path,
+            )
+            with open(export_path, 'r', encoding='utf-8') as handle:
+                exported = json.load(handle)
         self.assertNotIn('projects', exported)
         self.assertNotIn('board', exported)
         self.assertNotIn('capacity', exported)

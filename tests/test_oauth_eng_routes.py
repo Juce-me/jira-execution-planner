@@ -1,7 +1,4 @@
-import base64
-import dataclasses
 import os
-import tempfile
 import threading
 import time
 import unittest
@@ -19,6 +16,7 @@ from backend.services.jira_issue_project_track import ProjectTrackServiceError
 from backend.services.jira_issue_transitions import IssueTransitionServiceError
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
+from tests.postgres_test_db import fresh_database_url
 
 
 class FakeResponse:
@@ -66,29 +64,47 @@ def _synthetic_epic():
     }
 
 
-def _local_oauth_context(session_id="session-1", stored_at=0):
-    site_url = "https://example.atlassian.net"
-    cloud_id = "cloud-123"
-    return jira_server.RequestAuthContext(
-        auth_mode="atlassian_oauth",
-        user_id="local-oauth-user:account-123",
-        stable_subject="account-123",
-        atlassian_account_id="account-123",
-        workspace_id=jira_server.stable_local_workspace_id(jira_server.APP_ENVIRONMENT_KEY, site_url, cloud_id),
-        auth_connection_id=f"local-oauth-connection:{session_id}",
-        cloud_id=cloud_id,
-        site_url=site_url,
-        token_version=str(stored_at),
-        account_status="active",
-        is_admin=False,
-        granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()),
-        granted_scopes_verified=True,
-    )
+class DbOAuthFixture:
+    def _setup_db(self):
+        from backend.auth.db_context import invalidate_auth_status_cache
+        self.database_url = fresh_database_url(self.addCleanup)
+        self._env_patcher = patch.dict(os.environ, {
+            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url,
+            'TEST_DATABASE_URL': self.database_url, 'WORK_CONFIGURATIONS_ENABLED': 'false',
+        })
+        self._env_patcher.start()
+        self.addCleanup(self._env_patcher.stop)
+        for name, value in [('JIRA_AUTH_MODE', 'atlassian_oauth'), ('JIRA_URL', 'https://example.atlassian.net')]:
+            patcher = patch.object(jira_server, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.addCleanup(db_engine.dispose_engines)
+        self.addCleanup(invalidate_auth_status_cache)
+        self.client = jira_server.app.test_client()
+        install_oauth_session(self.client)
+
+    def _auth_context(self, *, project_access=None):
+        from flask import session as cookie
+        from backend.auth.db_context import invalidate_auth_status_cache
+        with self.client.session_transaction() as stored:
+            payload = dict(stored['db_oauth_session'])
+        with jira_server.app.test_request_context('/'):
+            cookie['db_oauth_session'] = payload
+            context = jira_server.current_request_auth_context()
+        if project_access is not None:
+            with db_engine.session_scope() as db:
+                for entry in project_access:
+                    db.add(models.JiraProjectAccess(connection_id=context.auth_connection_id,
+                        workspace_id=context.workspace_id, project_key=entry.project_key,
+                        project_type=entry.project_type, status=entry.status))
+            invalidate_auth_status_cache()
+            return self._auth_context()
+        return context
 
 
-class OAuthEngRouteTests(unittest.TestCase):
+class OAuthEngRouteTests(DbOAuthFixture, unittest.TestCase):
     def test_story_readiness_team_catalog_unwraps_the_persisted_catalog_envelope(self):
-        context = dataclasses.replace(_local_oauth_context(), auth_mode='basic')
+        context = self._auth_context()
         team_id = '2100282b-b1ef-408f-b668-c27d1a302d11'
         envelope = {
             'catalog': {
@@ -97,33 +113,23 @@ class OAuthEngRouteTests(unittest.TestCase):
             'meta': {'source': 'synthetic'},
         }
 
-        with patch.dict(
-                eng_routes.__dict__, {'load_team_catalog': lambda: envelope}, clear=False):
-            catalog = eng_routes._story_readiness_team_catalog(context)
+        with db_engine.session_scope() as db:
+            db.add(models.WorkspaceTeamCatalog(workspace_id=context.workspace_id, payload=envelope))
+        catalog = eng_routes._story_readiness_team_catalog(context)
 
         self.assertEqual(catalog[team_id]['name'], 'Orbit')
 
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
+        self._setup_db()
 
     def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.TASKS_CACHE.clear()
         if hasattr(jira_server, "MISSING_INFO_CACHE"):
             jira_server.MISSING_INFO_CACHE.clear()
         if hasattr(jira_server, "DEPENDENCIES_CACHE"):
             jira_server.DEPENDENCIES_CACHE.clear()
-        self._env_patcher.stop()
 
     def test_tasks_route_is_oauth_ready(self):
         issue = _synthetic_issue()
@@ -203,8 +209,7 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(body["recoveryUrl"], "/auth/reconnect")
 
     def test_story_readiness_worker_receives_captured_oauth_context(self):
-        context = dataclasses.replace(
-            _local_oauth_context(),
+        context = self._auth_context(
             project_access=(
                 ProjectAccessSnapshot('PROD', 'product', 'accessible'),
                 ProjectAccessSnapshot('TECH', 'tech', 'accessible'),
@@ -237,7 +242,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             eng_routes._STORY_READINESS_INFLIGHT.clear()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
              patch.object(eng_routes, '_story_readiness_team_catalog', return_value={
@@ -252,7 +257,7 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertTrue(response.get_json()['complete'])
 
     def test_story_readiness_allows_absent_access_snapshots_for_configured_projects(self):
-        context = _local_oauth_context()
+        context = self._auth_context()
         groups = {
             'configRevision': 2,
             'groups': [{
@@ -274,7 +279,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             eng_routes._STORY_READINESS_INFLIGHT.clear()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
              patch.object(eng_routes, '_story_readiness_team_catalog', return_value={
@@ -289,8 +294,7 @@ class OAuthEngRouteTests(unittest.TestCase):
         compute.assert_called_once()
 
     def test_story_readiness_checks_only_configured_project_types(self):
-        context = dataclasses.replace(
-            _local_oauth_context(),
+        context = self._auth_context(
             project_access=(ProjectAccessSnapshot('TECH', 'tech', 'unknown'),),
         )
         groups = {
@@ -314,7 +318,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             eng_routes._STORY_READINESS_INFLIGHT.clear()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
              patch.object(eng_routes, '_story_readiness_team_catalog', return_value={
@@ -329,15 +333,14 @@ class OAuthEngRouteTests(unittest.TestCase):
         compute.assert_called_once()
 
     def test_story_readiness_denies_explicit_unknown_for_configured_project_type(self):
-        context = dataclasses.replace(
-            _local_oauth_context(),
+        context = self._auth_context(
             project_access=(ProjectAccessSnapshot('PROD', 'product', 'unknown'),),
         )
         config = {'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]}}
 
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_compute') as compute:
             response = self.client.get(
@@ -349,15 +352,14 @@ class OAuthEngRouteTests(unittest.TestCase):
         compute.assert_not_called()
 
     def test_story_readiness_denies_explicit_inaccessible_for_configured_project_type(self):
-        context = dataclasses.replace(
-            _local_oauth_context(),
+        context = self._auth_context(
             project_access=(ProjectAccessSnapshot('PROD', 'product', 'inaccessible'),),
         )
         config = {'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]}}
 
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_compute') as compute:
             response = self.client.get(
@@ -369,7 +371,7 @@ class OAuthEngRouteTests(unittest.TestCase):
         compute.assert_not_called()
 
     def test_story_readiness_reports_jira_failure_after_absent_snapshot_falls_through(self):
-        context = _local_oauth_context()
+        context = self._auth_context()
         groups = {
             'configRevision': 2,
             'groups': [{
@@ -384,7 +386,7 @@ class OAuthEngRouteTests(unittest.TestCase):
             eng_routes._STORY_READINESS_INFLIGHT.clear()
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
              patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server, 'load_dashboard_config_snapshot', return_value=SimpleNamespace(
+             patch.object(eng_routes, '_story_readiness_dashboard_snapshot', return_value=SimpleNamespace(
                  payload=config, config_revision=4)), \
              patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
              patch.object(eng_routes, '_story_readiness_team_catalog', return_value={
@@ -401,7 +403,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_tasks_with_team_name_uses_oauth_partitioned_cache(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         raw_key = jira_server.build_tasks_cache_key(
             "2026Q2",
             "default",
@@ -425,7 +427,6 @@ class OAuthEngRouteTests(unittest.TestCase):
         }
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "database_storage_enabled", return_value=False), \
              patch.object(jira_server, "resolve_team_field_id", side_effect=AssertionError("cache hit should not resolve Jira fields")):
             response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all")
 
@@ -434,16 +435,10 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertRegex(response.headers.get("Server-Timing"), r"^cache;dur=1, groups;dur=[0-9.]+$")
 
     def _seed_db_group_row(self, database_url, team_labels):
-        db_engine.dispose_engines()
         models.Base.metadata.create_all(db_engine.get_engine(database_url))
         factory = db_engine.session_factory(database_url)
         with factory() as session:
-            workspace = models.Workspace(
-                environment_key="local", name="Local", jira_site_url="https://example.atlassian.net",
-                jira_cloud_id="cloud-123", created_by="test",
-            )
-            session.add(workspace)
-            session.flush()
+            workspace = session.get(models.Workspace, self._auth_context().workspace_id)
             row = models.WorkspaceGroupConfig(
                 workspace_id=workspace.id, payload_version=1, config_revision=1,
                 payload={"version": 1, "defaultGroupId": "department-a", "groups": [{
@@ -456,14 +451,9 @@ class OAuthEngRouteTests(unittest.TestCase):
             return workspace.id, row.id, factory
 
     def test_tasks_route_reads_saved_aliases_from_workspace_group_configs_for_cache_and_jql(self):
-        tmpdir = tempfile.TemporaryDirectory()
-        self.addCleanup(tmpdir.cleanup)
-        self.addCleanup(db_engine.dispose_engines)
-        database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir.name, 'groups.db')}"
+        database_url = self.database_url
         workspace_id, row_id, factory = self._seed_db_group_row(database_url, {"team-a": "label_team_a"})
-        db_context = dataclasses.replace(
-            _local_oauth_context(), auth_connection_id="db-connection-1", workspace_id=workspace_id,
-        )
+        db_context = self._auth_context()
         self.assertTrue(is_db_auth_context(db_context))
         epic_jqls = []
 
@@ -582,7 +572,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_missing_info_uses_oauth_partitioned_cache_and_timing(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         if not hasattr(jira_server, "MISSING_INFO_CACHE"):
             jira_server.MISSING_INFO_CACHE = {}
         cache_key = build_jira_home_process_cache_key(
@@ -598,7 +588,6 @@ class OAuthEngRouteTests(unittest.TestCase):
         }
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "database_storage_enabled", return_value=False), \
              patch.object(jira_server, "resolve_team_field_id", side_effect=AssertionError("cache hit should not resolve Jira fields")):
             response = self.client.get("/api/missing-info?sprint=2026Q2&teamIds=team-alpha&components=Comp%20A")
 
@@ -622,7 +611,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def _missing_info_patches(self, calls):
         return (
             patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"),
-            patch.object(jira_server, "database_storage_enabled", return_value=False),
+            patch.object(jira_server, "database_storage_enabled", return_value=True),
             patch.object(jira_server, "resolve_team_field_id", return_value=None),
             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None),
             patch.object(jira_server, "current_jira_search", side_effect=self._missing_info_search(calls)),
@@ -668,7 +657,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_missing_info_cache_key_gains_epic_key_only_when_present(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         base = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "")
         scoped = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "", "PROD-5")
         calls = []
@@ -691,7 +680,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_missing_info_refresh_true_bypasses_cache_read_and_rewrites_entry(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         key = build_jira_home_process_cache_key(auth_context, "missing-info", "2026Q2", "", "")
         cache = jira_server.MISSING_INFO_CACHE
         seeded = {key: {"timestamp": time.time(), "data": {"issues": [], "epics": [], "count": 7}}}
@@ -751,7 +740,7 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_dependencies_uses_oauth_partitioned_cache_and_timing(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         if not hasattr(jira_server, "DEPENDENCIES_CACHE"):
             jira_server.DEPENDENCIES_CACHE = {}
         cache_key = build_jira_home_process_cache_key(
@@ -765,7 +754,6 @@ class OAuthEngRouteTests(unittest.TestCase):
         }
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "database_storage_enabled", return_value=False), \
              patch.object(jira_server, "collect_dependencies", side_effect=AssertionError("cache hit should not query Jira")):
             response = self.client.post(
                 "/api/dependencies",
@@ -780,13 +768,12 @@ class OAuthEngRouteTests(unittest.TestCase):
     def test_dependencies_refresh_body_field_bypasses_cache_and_rewrites_entry(self):
         stored_at = time.time()
         install_oauth_session(self.client, stored_at=stored_at)
-        auth_context = _local_oauth_context(stored_at=stored_at)
+        auth_context = self._auth_context()
         cache_key = build_jira_home_process_cache_key(auth_context, "dependencies", "PROD-1")
         seeded = {cache_key: {"timestamp": time.time(), "data": {"PROD-1": [{"key": "TECH-2"}]}}}
         headers = {"X-Requested-With": "jira-execution-planner"}
 
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "database_storage_enabled", return_value=False), \
              patch.dict(jira_server.DEPENDENCIES_CACHE, seeded, clear=True), \
              patch.object(jira_server, "collect_dependencies", return_value={"PROD-1": []}) as collect:
             cached = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]}, headers=headers)
@@ -834,16 +821,11 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["issues"][0]["key"], "PROD-1")
         mock_search.assert_called()
 
-    def test_teams_route_is_oauth_ready(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
-             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
-             patch.object(jira_server, "current_jira_search", return_value=FakeResponse(200, {"issues": [_synthetic_issue()], "isLast": True})) as mock_search:
-            response = self.client.get("/api/teams?sprint=2026Q2")
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["teams"][0]["id"], "team-alpha")
-        mock_search.assert_called()
+    def test_teams_db_catalog_rejects_quarter_name_before_jira(self):
+        with patch.object(jira_server, 'current_jira_search', side_effect=AssertionError('invalid catalog selector queried Jira')):
+            response = self.client.get('/api/teams?sprint=2026Q2')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'invalid_sprint')
 
     def test_teams_resolve_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -867,35 +849,12 @@ class OAuthEngRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["teams"][0]["id"], "team-alpha")
         mock_search.assert_called()
 
-    def test_teams_all_falls_back_to_project_scan_when_sprint_has_no_teams(self):
-        calls = []
-
-        def fake_search(payload):
-            calls.append(payload["jql"])
-            if "Sprint = 2026Q2" in payload["jql"]:
-                return FakeResponse(200, {
-                    "issues": [],
-                    "names": {"customfield_team": "Team[Team]"},
-                    "isLast": True,
-                })
-            return FakeResponse(200, {
-                "issues": [_synthetic_issue()],
-                "names": {"customfield_team": "Team[Team]"},
-                "isLast": True,
-            })
-
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
-             patch.object(jira_server, "resolve_team_field_id", return_value="customfield_team"), \
-             patch.object(jira_server, "jira_search_request", side_effect=fake_search), \
-             patch.object(jira_server, "fetch_teams_from_jira_api", return_value={}):
-            response = self.client.get("/api/teams?sprint=2026Q2&all=true")
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["teams"][0]["id"], "team-alpha")
-        self.assertEqual(len(calls), 2)
-        self.assertIn("Sprint = 2026Q2", calls[0])
-        self.assertNotIn("Sprint = 2026Q2", calls[1])
+    def test_teams_all_rejects_quarter_selector_without_project_scan_fallback(self):
+        with patch.object(jira_server, 'jira_search_request', side_effect=AssertionError('project scan fallback called')), \
+             patch.object(jira_server, 'fetch_teams_from_jira_api', side_effect=AssertionError('global team fallback called')):
+            response = self.client.get('/api/teams?sprint=2026Q2&all=true')
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json()['error'], 'invalid_sprint')
 
     def test_backlog_epics_route_is_oauth_ready(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -910,31 +869,16 @@ class OAuthEngRouteTests(unittest.TestCase):
         mock_fetch.assert_called()
 
 
-class IssueTransitionRouteTests(unittest.TestCase):
+class IssueTransitionRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+        self._setup_db()
 
     def _csrf_token(self):
-        # The write route's token-bound CSRF is bound to the OAuth session, so the
-        # token must be minted under atlassian_oauth mode to validate on the POST.
-        # Patch here so callers work regardless of the process JIRA_AUTH_MODE (CI
-        # runs with JIRA_AUTH_MODE=basic), not only when a local .env sets oauth mode.
+        # Mint the token against the actual DB browser session before the POST.
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
-            response = self.client.get("/api/auth/csrf")
+            response = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 
@@ -1016,19 +960,16 @@ class IssueTransitionRouteTests(unittest.TestCase):
         self.assertIn("CSRF", response.get_json()["message"])
 
     def test_transitions_write_returns_missing_scope_before_jira_call_when_write_scope_absent(self):
-        # Simulate a session/server pair that predates the write:jira-work scope
-        # rollout: the middleware's blanket ATLASSIAN_SCOPES check does not catch
-        # this (server config agrees with the session), so only the route's own
-        # explicit write:jira-work check can catch it.
+        # A provider grant missing write:jira-work is rejected by actual DB
+        # admission before the route can reach Jira.
         old_scope = (
             "read:me read:jira-work read:jira-user read:board-scope:jira-software "
             "read:sprint:jira-software read:project:jira offline_access"
         )
+        csrf_token = self._csrf_token()
         install_oauth_session(self.client, scope=old_scope)
 
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "ATLASSIAN_SCOPES", old_scope):
-            csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             with patch.object(eng_routes, "transition_issues", side_effect=AssertionError("must not resolve/post transitions")), \
                  patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira")), \
                  patch.object(jira_server, "current_jira_search", side_effect=AssertionError("must not call Jira")):
@@ -1040,11 +981,11 @@ class IssueTransitionRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         body = response.get_json()
-        self.assertEqual(body["error"], "missing_oauth_scope")
-        self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
+        self.assertEqual(body["error"], "auth_required")
+        self.assertEqual(body["loginUrl"], "/login?reason=missing_scope")
 
     def test_transitions_write_uses_auth_context_and_forwards_to_service(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_transition_issues(issue_keys, target_status, *, jira_request, search_request, context=None):
@@ -1164,34 +1105,21 @@ class IssueTransitionRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_transition_failed")
 
 
-class IssuePriorityRouteTests(unittest.TestCase):
+class IssuePriorityRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+        self._setup_db()
 
     def _csrf_token(self):
-        # Mirrors IssueTransitionRouteTests._csrf_token: mint under oauth mode
-        # regardless of the process JIRA_AUTH_MODE (CI runs with basic mode).
+        # Mint the token against the actual DB browser session.
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
-            response = self.client.get("/api/auth/csrf")
+            response = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 
     def test_priority_options_route_uses_current_auth_context(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_load_priority_options(*, jira_request, context=None):
@@ -1225,7 +1153,7 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_priority_options_failed")
 
     def test_priority_options_route_with_issue_key_filters_via_editmeta(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         calls = []
 
         def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
@@ -1330,18 +1258,15 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertIn("CSRF", response.get_json()["message"])
 
     def test_priority_write_returns_missing_scope_before_jira_call_when_write_scope_absent(self):
-        # Same rationale as the sibling status-transition test: a session/server
-        # pair that predates write:jira-work must still be caught by the route's
-        # own explicit scope check, not just the middleware's blanket check.
+        # DB admission must reject the missing provider scope before Jira.
         old_scope = (
             "read:me read:jira-work read:jira-user read:board-scope:jira-software "
             "read:sprint:jira-software read:project:jira offline_access"
         )
+        csrf_token = self._csrf_token()
         install_oauth_session(self.client, scope=old_scope)
 
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "ATLASSIAN_SCOPES", old_scope):
-            csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             with patch.object(eng_routes, "update_issue_priorities", side_effect=AssertionError("must not resolve/post priorities")), \
                  patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira")), \
                  patch.object(jira_server, "current_jira_search", side_effect=AssertionError("must not call Jira")):
@@ -1353,11 +1278,11 @@ class IssuePriorityRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         body = response.get_json()
-        self.assertEqual(body["error"], "missing_oauth_scope")
-        self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
+        self.assertEqual(body["error"], "auth_required")
+        self.assertEqual(body["loginUrl"], "/login?reason=missing_scope")
 
     def test_priority_write_uses_oauth_context_and_clears_caches_on_success(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_update_issue_priorities(issue_keys, target_priority_id, *, jira_request, search_request, context=None):
@@ -1477,29 +1402,16 @@ class IssuePriorityRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_priority_update_failed")
 
 
-class IssueProjectTrackRouteTests(unittest.TestCase):
+class IssueProjectTrackRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+        self._setup_db()
 
     def _csrf_token(self):
-        # Mirrors IssuePriorityRouteTests._csrf_token: mint under oauth mode
-        # regardless of the process JIRA_AUTH_MODE (CI runs with basic mode).
+        # Mint the token against the actual DB browser session.
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
-            response = self.client.get("/api/auth/csrf")
+            response = self.client.get("/api/auth/csrf", headers={"X-Requested-With": "jira-execution-planner"})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()["csrfToken"]
 
@@ -1508,8 +1420,8 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
              patch.object(eng_routes, "load_project_track_options_for_issue", side_effect=AssertionError("must not reach Jira in basic mode")):
             response = self.client.get("/api/issues/project-track/options?issueKey=PRODUCT-1")
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
     def test_options_route_requires_issue_key(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -1520,7 +1432,7 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "invalid_issue_key")
 
     def test_options_route_uses_current_auth_context(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_load_options(issue_key, *, jira_request, get_project_track_field_id, context=None):
@@ -1631,8 +1543,8 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
                 json={"issueKey": "PRODUCT-1", "targetTrack": "Committed"},
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
     def test_write_returns_missing_scope_before_jira_call_when_write_scope_absent(self):
         # Same rationale as the sibling priority/status-transition tests: a
@@ -1643,11 +1555,10 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
             "read:me read:jira-work read:jira-user read:board-scope:jira-software "
             "read:sprint:jira-software read:project:jira offline_access"
         )
+        csrf_token = self._csrf_token()
         install_oauth_session(self.client, scope=old_scope)
 
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "ATLASSIAN_SCOPES", old_scope):
-            csrf_token = self._csrf_token()
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
             with patch.object(eng_routes, "update_issue_project_track", side_effect=AssertionError("must not resolve/post project track")), \
                  patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not call Jira")):
                 response = self.client.post(
@@ -1658,8 +1569,8 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 401, response.get_data(as_text=True))
         body = response.get_json()
-        self.assertEqual(body["error"], "missing_oauth_scope")
-        self.assertEqual(body["recoveryUrl"], "/login?reason=missing_scope")
+        self.assertEqual(body["error"], "auth_required")
+        self.assertEqual(body["loginUrl"], "/login?reason=missing_scope")
 
     def test_write_maps_input_errors_to_400(self):
         cases = [
@@ -1759,7 +1670,7 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_project_track_update_failed")
 
     def test_write_uses_oauth_context_and_clears_caches_on_success(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_update(issue_key, target_track, *, jira_request, get_project_track_field_id, context=None):
@@ -1827,26 +1738,14 @@ class IssueProjectTrackRouteTests(unittest.TestCase):
         mock_clear.assert_called_once_with(reason="issue_project_track_update")
 
 
-class IssueStatusCatalogRouteTests(unittest.TestCase):
+class IssueStatusCatalogRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+        self._setup_db()
 
     def test_status_catalog_route_uses_current_auth_context(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_request(method, path, *, json_body=None, params=None, timeout=30, context=None):
@@ -1922,23 +1821,11 @@ class IssueStatusCatalogRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "jira_status_catalog_failed")
 
 
-class IssueDescriptionRouteTests(unittest.TestCase):
+class IssueDescriptionRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-        install_oauth_session(self.client)
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
-        self._env_patcher.stop()
+        self._setup_db()
 
     def test_description_route_renders_adf_to_html(self):
         description = {
@@ -2284,7 +2171,7 @@ class IssueDescriptionRouteTests(unittest.TestCase):
         self.assertEqual(body["message"], "Jira returned status 503")
 
     def test_description_route_uses_current_auth_context(self):
-        sentinel_context = _local_oauth_context()
+        sentinel_context = self._auth_context()
         captured = {}
 
         def fake_get(path, *, params=None, timeout=30, context=None):
@@ -2304,52 +2191,40 @@ class IssueDescriptionRouteTests(unittest.TestCase):
         self.assertEqual(captured["params"], {"fields": "description"})
 
 
-class MissingWriteJiraWorkScopeHelperTests(unittest.TestCase):
-    """Direct coverage of the route-level defense-in-depth scope check.
+class MissingWriteJiraWorkScopeHelperTests(DbOAuthFixture, unittest.TestCase):
+    """DB admission verifies scopes before the route's defense-in-depth helper."""
 
-    DB-backed auth contexts already had write:jira-work verified inside
-    current_request_auth_context() (resolve_db_request_auth_context checks the
-    full ATLASSIAN_SCOPES set), so the helper must skip the local session
-    re-check for them without touching oauth_session_data() at all.
-    """
+    def setUp(self):
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'test-secret'
+        self._setup_db()
 
+    def test_skips_local_store_recheck_for_db_backed_context(self):
+        context = self._auth_context()
+        with patch.object(jira_server, 'oauth_session_data', side_effect=AssertionError('local store recheck')):
+            eng_routes.bind_server_globals(eng_routes.__dict__)
+            self.assertFalse(eng_routes._missing_write_jira_work_scope(context))
+
+    def test_db_admission_rejects_missing_write_scope(self):
+        install_oauth_session(self.client, scope='read:me read:jira-work')
+        with patch.object(jira_server, 'current_jira_request', side_effect=AssertionError('Jira called')):
+            response = self.client.get('/api/config')
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.get_json()['error'], 'auth_required')
+        self.assertEqual(response.get_json()['loginUrl'], '/login?reason=missing_scope')
+
+    def test_provider_granted_db_context_with_write_scope_is_not_missing(self):
+        context = self._auth_context()
+        self.assertIn('write:jira-work', context.granted_scopes)
+        eng_routes.bind_server_globals(eng_routes.__dict__)
+        self.assertFalse(eng_routes._missing_write_jira_work_scope(context))
+
+
+class BasicEngRouteTests(DbOAuthFixture, unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-
-    def test_skips_recheck_for_db_backed_context(self):
-        db_context = SimpleNamespace(auth_connection_id="db-connection-42")
-        with patch.object(jira_server, "oauth_session_data", side_effect=AssertionError("must not check local session for a DB-backed context")):
-            eng_routes.bind_server_globals(eng_routes.__dict__)
-            self.assertFalse(eng_routes._missing_write_jira_work_scope(db_context))
-
-    def test_flags_local_context_missing_write_scope(self):
-        local_context = SimpleNamespace(auth_connection_id="local-oauth-connection:session-1")
-        with patch.object(jira_server, "oauth_session_data", return_value={"scope": "read:me read:jira-work"}):
-            eng_routes.bind_server_globals(eng_routes.__dict__)
-            self.assertTrue(eng_routes._missing_write_jira_work_scope(local_context))
-
-    def test_local_context_with_write_scope_is_not_missing(self):
-        local_context = SimpleNamespace(auth_connection_id="local-oauth-connection:session-1")
-        with patch.object(jira_server, "oauth_session_data", return_value={"scope": "read:me write:jira-work"}):
-            eng_routes.bind_server_globals(eng_routes.__dict__)
-            self.assertFalse(eng_routes._missing_write_jira_work_scope(local_context))
-
-
-class BasicEngRouteTests(unittest.TestCase):
-    def setUp(self):
-        jira_server.app.config["TESTING"] = True
-        jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
-        self.client = jira_server.app.test_client()
-
-    def tearDown(self):
-        self._env_patcher.stop()
+        self._setup_db()
 
     def test_transition_options_rejects_basic_mode(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
@@ -2359,13 +2234,11 @@ class BasicEngRouteTests(unittest.TestCase):
                 json={"issueKeys": ["PROD-1"]},
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
-    def test_transitions_write_rejects_basic_mode_after_csrf_satisfied(self):
-        # Basic mode does not enforce X-Requested-With/CSRF at the middleware
-        # layer, so the request reaches route code without those headers; the
-        # route's own OAuth-mode guard must still refuse it.
+    def test_transitions_write_rejects_basic_mode_before_csrf(self):
+        # Retired profiles fail before CSRF validation or route dispatch.
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(eng_routes, "transition_issues", side_effect=AssertionError("must not reach Jira in basic mode")):
             response = self.client.post(
@@ -2373,21 +2246,19 @@ class BasicEngRouteTests(unittest.TestCase):
                 json={"issueKeys": ["PROD-1"], "targetStatus": "Accepted"},
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
     def test_priority_options_route_requires_oauth_mode(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(eng_routes, "load_priority_options", side_effect=AssertionError("must not reach Jira in basic mode")):
             response = self.client.get("/api/issues/priorities/options")
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
-    def test_priorities_write_rejects_basic_mode_after_csrf_satisfied(self):
-        # Basic mode does not enforce X-Requested-With/CSRF at the middleware
-        # layer, so the request reaches route code without those headers; the
-        # route's own OAuth-mode guard must still refuse it.
+    def test_priorities_write_rejects_basic_mode_before_csrf(self):
+        # Retired profiles fail before CSRF validation or route dispatch.
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(eng_routes, "update_issue_priorities", side_effect=AssertionError("must not reach Jira in basic mode")):
             response = self.client.post(
@@ -2395,50 +2266,28 @@ class BasicEngRouteTests(unittest.TestCase):
                 json={"issueKeys": ["PROD-1"], "targetPriorityId": "3"},
             )
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
     def test_status_catalog_route_requires_oauth_mode(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
              patch.object(eng_routes, "load_status_catalog", side_effect=AssertionError("must not reach Jira in basic mode")):
             response = self.client.get("/api/issues/statuses/catalog")
 
-        self.assertEqual(response.status_code, 403, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["error"], "jira_oauth_required")
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
-    def test_tasks_with_team_name_basic_uses_jira_url_basic_auth_without_csrf_header(self):
-        calls = []
-
-        def fake_get(url, **kwargs):
-            calls.append((url, kwargs))
-            return FakeResponse(200, {"issues": [], "isLast": True})
-
-        expected_token = base64.b64encode(b"basic@example.com:api-token").decode("ascii")
+    def test_tasks_basic_profile_is_rejected_before_network(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "JIRA_URL", "https://basic.atlassian.net"), \
-             patch.object(jira_server, "JIRA_EMAIL", "basic@example.com"), \
-             patch.object(jira_server, "JIRA_TOKEN", "api-token"), \
-             patch.object(jira_server, "build_base_jql", return_value='project = "PROD"'), \
-             patch.object(jira_server, "get_selected_projects_typed", return_value=[]), \
-             patch.object(jira_server, "get_configured_issue_types", return_value=[]), \
-             patch.object(jira_server, "resolve_team_field_id", return_value=None), \
-             patch.object(jira_server, "resolve_epic_link_field_id", return_value=None), \
-             patch.object(jira_server, "get_sprint_field_id", return_value="customfield_sprint"), \
-             patch.object(jira_server, "fetch_epic_details_bulk", return_value={}), \
-             patch.object(jira_server, "fetch_epics_for_empty_alert", return_value=[]), \
-             patch.object(jira_server, "fetch_story_counts_for_epics", return_value={}), \
-             patch.object(jira_server, "fetch_story_distribution_for_epics", return_value={}), \
-             patch.object(jira_server, "resilient_jira_get", side_effect=fake_get):
+             patch.object(jira_server, "resilient_jira_get", side_effect=AssertionError("retired Basic transport called")):
             response = self.client.get("/api/tasks-with-team-name?sprint=2026Q2&project=all&refresh=true")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(calls[0][0], "https://basic.atlassian.net/rest/api/3/search/jql")
-        self.assertEqual(calls[0][1]["headers"]["Authorization"], f"Basic {expected_token}")
-
-    def test_dependencies_basic_mode_does_not_require_csrf_header(self):
+    def test_dependencies_basic_profile_is_rejected_before_route(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "collect_dependencies", return_value={"PROD-1": []}):
+             patch.object(jira_server, "collect_dependencies", side_effect=AssertionError("retired Basic route called")):
             response = self.client.post("/api/dependencies", json={"keys": ["PROD-1"]})
 
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {"dependencies": {"PROD-1": []}})
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()["error"], "runtime_auth_unsupported")

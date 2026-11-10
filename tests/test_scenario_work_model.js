@@ -100,16 +100,23 @@ test('the dashboard opens Scenario only on an explicit grant and leaves a locked
 test('the Access tab renders the Scenario switch with the existing checkbox grammar', () => {
     const AdminAccessSettings = loadComponent('frontend/src/settings/AdminAccessSettings.jsx').default;
     const access = { enabled: true, setEnabled() {} };
-    for (const authMode of ['basic', 'atlassian_oauth']) {
+    for (const authMode of ['atlassian_oauth']) {
         const html = renderToStaticMarkup(React.createElement(AdminAccessSettings, {
-            authMode, adminUserManagementAvailable: false, adminUsers: [], selectedAdminUserIds: [],
+            authMode, adminUserManagementAvailable: true, adminUsers: [], selectedAdminUserIds: [],
             scenarioPlannerAccess: access, canEditScenarioPlannerAccess: true,
         }));
         assert.match(html, /<label class="group-visible-control"><input type="checkbox"[^>]*checked=""[^>]*\/><span>Scenario planner for everyone<\/span><\/label>/);
         assert.match(html, /class="group-visible-helper"/);
     }
+    for (const [authMode, directory] of [['basic', true], ['atlassian_oauth', false]]) {
+        const unsupported = renderToStaticMarkup(React.createElement(AdminAccessSettings, {
+            authMode, adminUserManagementAvailable: directory, adminUsers: [], selectedAdminUserIds: [],
+            scenarioPlannerAccess: access, canEditScenarioPlannerAccess: true,
+        }));
+        assert.equal(unsupported, '');
+    }
     const readOnly = renderToStaticMarkup(React.createElement(AdminAccessSettings, {
-        authMode: 'atlassian_oauth', adminUserManagementAvailable: false, adminUsers: [], selectedAdminUserIds: [],
+        authMode: 'atlassian_oauth', adminUserManagementAvailable: true, adminUsers: [], selectedAdminUserIds: [],
         scenarioPlannerAccess: { enabled: false, setEnabled() {} }, canEditScenarioPlannerAccess: false,
     }));
     assert.match(readOnly, /<input type="checkbox" disabled=""[^>]*\/><span>Scenario planner for everyone/);

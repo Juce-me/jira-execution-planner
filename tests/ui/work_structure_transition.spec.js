@@ -3,7 +3,7 @@
 //
 // Covered: combined-model Catch Up/Planning table/Board rendering with the configuration stamp on every scoped request,
 // own-key writes and a stale stamp that keeps its draft without replay, independent review layouts across an era round
-// trip, the Component Board A-only/A+B sets rendered exactly as the server provided them, the viewed quarter on every
+// trip, the Allocation Board A-only/A+B sets rendered exactly as the server provided them, the viewed quarter on every
 // scoped view, no automatic Settings navigation, and Legacy-era behavior unchanged.
 const fs = require('fs');
 const path = require('path');
@@ -102,7 +102,7 @@ const boardParent = (key, summary) => ({ key, summary, issueType: { id: '10002',
 
 async function mockApp(page, {
     prefs = { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1' },
-    components = [], boardSets = {}, writeStatus = 200,
+    allocationTypes = [], teamIds = ['team-alpha'], boardSets = {}, writeStatus = 200,
 } = {}) {
     const state = { log: [], writes: [], summaries: SUMMARIES(), layoutSaves: [], configRequests: 0, boardRequests: [], writeStatus };
     await installDashboardShell(page);
@@ -136,7 +136,7 @@ async function mockApp(page, {
         if (p === '/api/groups-config' && request.method() === 'GET') {
             return json(route, {
                 version: 1, groups: [{
-                    id: 'platform', name: 'Platform', teamIds: ['team-alpha'], missingInfoComponents: components, labels: [], excludedCapacityEpics: [],
+                    id: 'platform', name: 'Platform', teamIds, missingInfoComponents: [], allocationTypes, labels: [], excludedCapacityEpics: [],
                     board: { columns: [
                         { id: 'todo', name: 'To Do', colour: '#597ef7', star: true, min: null, max: null, statuses: ['To Do'] },
                         { id: 'progress', name: 'In Progress', colour: '#fa8c16', star: false, min: null, max: null, statuses: ['In Progress'] },
@@ -173,7 +173,9 @@ async function mockApp(page, {
         if (p === '/api/backlog-epics') return json(route, { epics: [] });
         if (p === '/api/dependencies') return json(route, { dependencies: {} });
         if (p === '/api/capacity') return json(route, { enabled: false, capacity: [], teams: [], totalCapacity: 0 });
-        if (p === '/api/eng/story-readiness') return json(route, { epics: [], stories: [], summary: {}, status: 'complete' });
+        if (p === '/api/eng/story-readiness') return teamIds.length
+            ? json(route, { epics: [], stories: [], summary: {}, status: 'complete' })
+            : json(route, { error: 'story_readiness_configuration_invalid', message: 'Story readiness configuration is incomplete.', reason: 'teams_missing' }, 409);
         if (/^\/api\/eng\/sprints\/[^/]+\/review$/.test(p) && request.method() === 'GET') return json(route, reviewSchema(params.configurationId === 'delivery' ? 'delivery' : 'legacy', params.quarter));
         if (/\/review\/values\/read$/.test(p)) return json(route, { cells: [], unavailableIssueIds: [] });
         if (/^\/api\/eng\/sprints\/[^/]+\/review$/.test(p) && request.method() === 'PATCH') {
@@ -194,7 +196,7 @@ async function mockApp(page, {
         }
         if (p === '/api/eng/board') {
             state.boardRequests.push(params);
-            const frames = (boardSets[params.scope] || boardSets.default || []);
+            const frames = (boardSets[params.scope] || []);
             return route.fulfill({ status: 200, contentType: 'application/x-ndjson', body: ndjson(frames) });
         }
         return json(route, {});
@@ -292,7 +294,7 @@ test('a stale stamp keeps the Story Points draft, refreshes the configuration on
 });
 
 test('Planning table (combined): Initiatives/Epics, native review kinds, stamped review calls; era round trip keeps independent layouts', async ({ page }) => {
-    const state = await start(page, { prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', planningLayout: 'table', showPlanning: true } });
+    const state = await start(page, { prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', showPlanning: true } });
     await expect(page.locator('.task-item, .planning-review-region').first()).toBeVisible();
     const region = page.getByRole('region', { name: 'Planning Sprint review' });
     if (!(await region.isVisible())) await page.getByRole('radio', { name: 'Planning', exact: true }).click();
@@ -327,35 +329,66 @@ test('Planning table (combined): Initiatives/Epics, native review kinds, stamped
     expect(state.log.filter(call => call.method === 'PATCH')).toEqual([]);
 });
 
-test('Component Board: A-only versus A+B render exactly the server-provided Epic set, under the viewed quarter, with a stamped stream', async ({ page }) => {
+test('Allocation Board: A-only versus A+B render exactly the server-provided Initiative set, under the viewed quarter, with a stamped stream', async ({ page }) => {
     const aOnly = boardFrames({
-        scope: 'component', epics: [boardEpic('PLAN-100', 'Initiative A synthetic', 'todo', 'To Do', boardParent('PLAN-1', 'Parent A'))],
+        scope: 'allocation', epics: [boardEpic('PLAN-100', 'Initiative A synthetic', 'todo', 'To Do', boardParent('PLAN-1', 'Parent A'))],
         children: [],
     });
     const aPlusB = boardFrames({
-        scope: 'component', epics: [
+        scope: 'allocation', epics: [
             boardEpic('PLAN-100', 'Initiative A synthetic', 'todo', 'To Do', boardParent('PLAN-1', 'Parent A')),
             boardEpic('PLAN-101', 'Initiative B synthetic', 'todo', 'To Do', boardParent('PLAN-2', 'Parent B')),
         ],
     });
-    const sets = { default: aOnly, component: aOnly };
-    const state = await start(page, { components: ['Platform'], boardSets: sets, prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', engMode: 'board' } });
-    await page.getByRole('radio', { name: 'Board', exact: true }).click().catch(() => {});
+    const sets = { allocation: aOnly };
+    const state = await start(page, { allocationTypes: [{ value: 'Platform', type: 'product' }], boardSets: sets, prefs: { selectedView: 'eng', selectedQuarter: '2027Q1', selectedSprint: 91, sprintName: '2027Q1', engMode: 'board' } });
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await trigger(page).click();
+    await page.getByRole('option', { name: 'Allocation', exact: true }).click();
     await expect.poll(() => state.boardRequests.length).toBeGreaterThan(0);
     const request = state.boardRequests[0];
-    expect(request).toMatchObject({ configurationId: 'delivery', configurationRevision: '2', quarter: '2027Q1' });
+    expect(request).toMatchObject({ scope: 'allocation', configurationId: 'delivery', configurationRevision: '2', quarter: '2027Q1' });
     expect('configurationDigest' in request).toBe(false);
+    expect('sprintId' in request).toBe(false);
+    await expect(trigger(page)).toHaveText('Allocation');
     await expect(page.locator('[data-board-quarter]')).toContainText('Quarter 2027Q1');
     await expect(page.locator('.ecard')).toHaveCount(1);
     await expect(page.locator('.ecard').first()).toContainText('Initiative A synthetic');
-    await page.screenshot({ path: path.join(shotDir, 'board-component-a-only.png') });
+    await page.screenshot({ path: path.join(shotDir, 'board-allocation-a-only.png') });
     // The server now answers the A+B expansion: the board renders precisely that set, no client-side widening.
-    sets.component = aPlusB;
-    sets.default = aPlusB;
+    sets.allocation = aPlusB;
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click();
     await expect(page.locator('.ecard')).toHaveCount(2);
     await expect(page.locator('.ecard', { hasText: 'Initiative B synthetic' })).toHaveCount(1);
-    await page.screenshot({ path: path.join(shotDir, 'board-component-a-plus-b.png') });
+    expect(state.boardRequests.every(call => call.scope === 'allocation')).toBe(true);
+    await page.screenshot({ path: path.join(shotDir, 'board-allocation-a-plus-b.png') });
+});
+
+test('Allocation-only Department: switching from Allocation Board to Sprint never falls back to an unscoped task request', async ({ page }) => {
+    const state = await start(page, {
+        teamIds: [], allocationTypes: [{ value: 'Platform', type: 'product' }],
+        boardSets: { allocation: boardFrames({ scope: 'allocation', epics: [boardEpic('PLAN-100', 'Allocation-only initiative', 'todo', 'To Do', null)] }) },
+    });
+    await page.getByRole('radio', { name: 'Board', exact: true }).click();
+    await trigger(page).click();
+    await page.getByRole('option', { name: 'Allocation', exact: true }).click();
+    await expect(trigger(page)).toHaveText('Allocation');
+    await expect(page.locator('.ecard')).toHaveCount(1);
+    await quiesce(page, state);
+    expect(state.boardRequests.length).toBeGreaterThan(0);
+    expect(state.boardRequests.every(call => call.scope === 'allocation')).toBe(true);
+    expect(work(state)).toEqual([]);
+
+    await pickQuarter(page, '2027Q1');
+    await quiesce(page, state);
+    await expect(page.locator('.ecard')).toHaveCount(0);
+    expect(work(state)).toEqual([]);
+    expect(state.boardRequests.every(call => call.scope === 'allocation')).toBe(true);
+    await page.getByRole('radio', { name: 'Catch Up', exact: true }).click();
+    await expect(page.locator('.story-readiness-notice')).toContainText('Epics Required needs at least one Team in this Department. Open Settings to add Teams to the Department.');
+    await quiesce(page, state);
+    expect(work(state)).toEqual([]);
+    await page.screenshot({ path: path.join(shotDir, 'board-allocation-only-sprint.png') });
 });
 
 test('quarter stays visible in each scoped view and no Settings dialog opens by itself', async ({ page }) => {

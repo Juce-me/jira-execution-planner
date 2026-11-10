@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+import math
 import re
 import threading
 import uuid
@@ -76,9 +78,7 @@ def _remaining(budget, phase='catalog_storage'):
 
 
 def _db_now(session):
-    if session.bind.dialect.name == 'postgresql':
-        return session.execute(text('SELECT clock_timestamp()')).scalar_one()
-    return _now()
+    return session.execute(text('SELECT clock_timestamp()')).scalar_one()
 
 
 def _snapshot(row, *, identity, payload_attr, matches=True):
@@ -125,6 +125,10 @@ class SprintSourceProof:
     catalog_version: str
     sprint_id: str
     sprint_name: str
+
+
+class ScopedSprintCatalogBusy(TimeoutError):
+    """The process-local publication fence could not be acquired within its budget."""
 
 
 class ScopedSprintCatalogStore:
@@ -210,8 +214,8 @@ class ScopedSprintCatalogStore:
             )
             return True
 
-    def snapshot(self, identity):
-        with self._lock:
+    def snapshot(self, identity, *, timeout=None):
+        with (self._lock if timeout is None else self._bounded_lock(timeout)):
             entry = self._entries.get(identity)
             attempt = self._attempts.get(identity)
             return CatalogSnapshot(
@@ -251,19 +255,45 @@ class ScopedSprintCatalogStore:
                         )
             return None
 
+    def _matches_locked(self, proof):
+        if proof is None:
+            return False
+        entry = self._entries.get(proof.source_identity)
+        if entry is None or entry['version'] != proof.catalog_version \
+                or entry['source_digest'] != proof.source_digest:
+            return False
+        return any(
+            isinstance(item, dict) and str(item.get('id')) == proof.sprint_id
+            and str(item.get('name') or '').strip() == proof.sprint_name
+            for item in entry['sprints']
+        )
+
     def matches(self, proof):
         if proof is None:
             return False
         with self._lock:
-            entry = self._entries.get(proof.source_identity)
-            if entry is None or entry['version'] != proof.catalog_version \
-                    or entry['source_digest'] != proof.source_digest:
-                return False
-            return any(
-                isinstance(item, dict) and str(item.get('id')) == proof.sprint_id
-                and str(item.get('name') or '').strip() == proof.sprint_name
-                for item in entry['sprints']
-            )
+            return self._matches_locked(proof)
+
+    @contextmanager
+    def _bounded_lock(self, timeout):
+        if type(timeout) not in (int, float) or not math.isfinite(timeout) or timeout < 0:
+            raise ValueError('A finite nonnegative proof-lock budget is required.')
+        if not self._lock.acquire(timeout=min(timeout, 5)):
+            raise ScopedSprintCatalogBusy('Scoped Sprint publication fence is busy.')
+        try:
+            yield
+        finally:
+            self._lock.release()
+
+    @contextmanager
+    def proof_guard(self, proof, *, timeout):
+        """Hold exact publication evidence against publish/retire until transaction exit.
+
+        Callers acquire their database locks first and keep this context open through
+        commit or rollback. No database or network work is performed by this guard.
+        """
+        with self._bounded_lock(timeout):
+            yield self._matches_locked(proof)
 
 
 SCOPED_SPRINT_CATALOGS = ScopedSprintCatalogStore()
@@ -287,11 +317,18 @@ def in_range_sprints(config, payload):
     ]
 
 
-def load_scoped_sprint_catalog(context, *, config, database_url=None, store=None):
-    """Process-local issue-scanned catalog; the actor is validated like a DB read."""
-    with db_engine.session_scope(database_url) as session:
-        assert_catalog_refresh_actor(session, context)
-    return (store or SCOPED_SPRINT_CATALOGS).snapshot(config.sprint_identity)
+def load_scoped_sprint_catalog(context, *, config, database_url=None, store=None, session=None, budget=None):
+    """Read an actor-validated snapshot, optionally within the caller's budgeted session."""
+    manager = db_engine.session_scope(database_url) if session is None else nullcontext(session)
+    with manager as read_session:
+        assert_catalog_refresh_actor(read_session, context, budget=budget)
+    timeout = _remaining(budget, 'scoped_catalog_snapshot') if budget is not None else None
+    reader = store or SCOPED_SPRINT_CATALOGS
+    result = (reader.snapshot(config.sprint_identity) if timeout is None else
+              reader.snapshot(config.sprint_identity, timeout=timeout))
+    if budget is not None:
+        _remaining(budget, 'scoped_catalog_snapshot')
+    return result
 
 
 def capture_sprint_proof(config, sprint_id, *, store=None):
@@ -306,18 +343,25 @@ def _require_board_source(config):
         raise ValueError('issue-scanned Sprint catalogs have no Board row')
 
 
-def load_sprint_catalog(context, *, config, database_url=None):
+def load_sprint_catalog(context, *, config, database_url=None, session=None, budget=None):
+    """Read a Board snapshot without taking ownership of a supplied read transaction."""
+    if budget is not None:
+        _remaining(budget, 'catalog_snapshot')
     identity = config.sprint_identity
     if identity is None:
         return _snapshot(None, identity=None, payload_attr='sprints')
     _require_board_source(config)
-    with db_engine.session_scope(database_url) as session:
-        assert_catalog_refresh_actor(session, context)
-        row = session.execute(select(models.WorkspaceSprintCatalog).where(
+    manager = db_engine.session_scope(database_url) if session is None else nullcontext(session)
+    with manager as read_session:
+        assert_catalog_refresh_actor(read_session, context, budget=budget)
+        row = read_session.execute(select(models.WorkspaceSprintCatalog).where(
             models.WorkspaceSprintCatalog.workspace_id == context.workspace_id,
             models.WorkspaceSprintCatalog.board_id == config.board_id,
         )).scalars().first()
-        return _snapshot(row, identity=identity, payload_attr='sprints')
+        result = _snapshot(row, identity=identity, payload_attr='sprints')
+        if budget is not None:
+            _remaining(budget, 'catalog_snapshot')
+        return result
 
 
 def _scope_digest(config):
@@ -348,13 +392,10 @@ def load_sprint_team_catalog(context, *, sprint_id, config, database_url=None):
 def assert_catalog_refresh_actor(session, context, *, budget=None, lock_for_publication=False):
     if budget is not None:
         _remaining(budget, 'actor_validation')
-    lock = session.bind.dialect.name == 'postgresql'
     user_query = select(models.User).where(
         models.User.id == context.user_id, models.User.status == 'active',
         models.User.external_subject == context.atlassian_account_id,
-    )
-    if lock:
-        user_query = user_query.with_for_update(read=True)
+    ).with_for_update(read=True)
     if session.execute(user_query).scalars().first() is None:
         raise AuthError('auth_required', 'Atlassian authentication is required.')
     if budget is not None:
@@ -366,9 +407,7 @@ def assert_catalog_refresh_actor(session, context, *, budget=None, lock_for_publ
         models.AuthConnection.provider == 'atlassian_oauth',
         models.AuthConnection.status == 'active',
         models.AuthConnection.scope_provenance == 'provider',
-    )
-    if lock:
-        connection_query = connection_query.with_for_update(read=True)
+    ).with_for_update(read=True)
     connection = session.execute(connection_query).scalars().first()
     if connection is None:
         raise AuthError('auth_required', 'Atlassian authentication is required.')
@@ -376,9 +415,7 @@ def assert_catalog_refresh_actor(session, context, *, budget=None, lock_for_publ
         _remaining(budget, 'actor_validation')
     workspace_query = select(models.Workspace).where(
         models.Workspace.id == context.workspace_id,
-    )
-    if lock:
-        workspace_query = workspace_query.with_for_update(read=True)
+    ).with_for_update(read=True)
     workspace = session.execute(workspace_query).scalars().first()
     if workspace is None:
         raise AuthError('auth_required', 'Atlassian authentication is required.')
@@ -409,7 +446,7 @@ def assert_catalog_refresh_actor(session, context, *, budget=None, lock_for_publ
             models.BrowserSession.workspace_id == context.workspace_id,
             models.BrowserSession.auth_connection_id == context.auth_connection_id,
         )
-        if lock and lock_for_publication:
+        if lock_for_publication:
             browser_query = browser_query.with_for_update(read=True)
         if session.execute(browser_query).scalars().first() is None:
             raise AuthError('auth_required', 'Atlassian authentication is required.')
@@ -429,9 +466,7 @@ def _validate_kind(kind, sprint_id):
 def _row_for_claim(session, context, kind, key):
     model = models.WorkspaceSprintCatalog if kind == 'sprints' else models.WorkspaceSprintTeamCatalog
     field = model.board_id if kind == 'sprints' else model.sprint_id
-    query = select(model).where(model.workspace_id == context.workspace_id, field == key)
-    if session.bind.dialect.name == 'postgresql':
-        query = query.with_for_update()
+    query = select(model).where(model.workspace_id == context.workspace_id, field == key).with_for_update()
     return session.execute(query).scalars().first()
 
 
@@ -610,9 +645,7 @@ def publish_catalog(
             if issue_names is not None:
                 directory_query = select(models.WorkspaceTeamCatalog).where(
                     models.WorkspaceTeamCatalog.workspace_id == context.workspace_id,
-                )
-                if session.bind.dialect.name == 'postgresql':
-                    directory_query = directory_query.with_for_update()
+                ).with_for_update()
                 directory_row = session.execute(directory_query).scalars().first()
                 latest_catalog = (
                     (directory_row.payload or {}).get('catalog') or {}

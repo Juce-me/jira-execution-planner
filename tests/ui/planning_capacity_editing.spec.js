@@ -3,10 +3,13 @@ const fs = require('node:fs');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const capacityArtifactDir = path.join(repoRoot, '.superpowers', 'sdd', 'EXEC-planning-capacity-editing', 'task-8-artifacts');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
+// Laptop/wide-screen coverage is the default; opt into deferred mobile checks explicitly.
+const testMobile = process.env.JEP_TEST_MOBILE === '1';
 const sprintId = 3001;
 const sprintName = '2026Q2';
 const nextSprintId = 3002;
@@ -392,7 +395,7 @@ async function installCapacityFixture(page, options = {}) {
         }));
     }, {
         prefs: {
-            selectedView: 'eng', planningLayout: 'list', selectedSprint: sprintId, sprintName,
+            selectedView: 'eng', selectedSprint: sprintId, sprintName,
             activeGroupId: 'group-capacity', showPlanning: true, showScenario: false,
             showStats: false, showBoard: false, selectedTeams: ['all'],
             ...(options.prefs || {}),
@@ -408,8 +411,18 @@ async function openPlanning(page, options = {}) {
     const fixture = await installCapacityFixture(page, options);
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     await expect(page.locator('.planning-panel.open')).toBeVisible();
+    // Planning is the Table only (#323): its overview starts compact, so the capacity cards are behind Show capacity details.
+    if (options.details !== false) await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(options.teamCount || 3);
+    // The opened panel's padding transitions for 0.6s; idle geometry is read only after it settles (headed Firefox and
+    // WebKit are still mid-transition here, which read as a hover width change).
+    await page.evaluate(() => Promise.all(document.getAnimations().filter(item => item instanceof CSSTransition).map(item => item.finished)));
     return fixture;
+}
+
+// The overview starts compact; Show capacity details is a direct overview button (2026-11-06).
+async function showCapacityDetails(page) {
+    await page.getByRole('button', { name: 'Show capacity details', exact: true }).click();
 }
 
 // Group-scoped review stubs: the group comes from the GET query or the values-read/PATCH body, and each group has its own
@@ -419,8 +432,11 @@ async function stubGroupReview(page, { derived = false } = {}) {
     const groupOf = request => request.method() === 'GET' ? new URL(request.url()).searchParams.get('groupId') : requestBody(request)?.groupId ?? null;
     const columnsFor = groupId => derived && groupId === 'group-capacity' ? [{ id: 'effort', rowKind: 'story', label: 'Effort', type: 'number', aggregation: 'sum', order: 0 }] : [];
     const reviewGroups = [];
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { const groupId = groupOf(route.request()); reviewGroups.push(groupId); return json(route, { schemaRevision: 1, columns: columnsFor(groupId), layouts: {}, capabilities: { canRead: true, canSave: true } }); });
-    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { reviewGroups.push(groupOf(route.request())); return json(route, { cells: [], unavailableIssueIds: [] }); });
+    // The shared Planning review payload carries `plan` and `scopeProof` (#331); the mock adds them to each response.
+    const planning = createPlanningReviewMock();
+    const planned = (route, body) => json(route, planning.response(route.request(), body));
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => { const groupId = groupOf(route.request()); reviewGroups.push(groupId); return planned(route, { schemaRevision: 1, columns: columnsFor(groupId), layouts: {}, capabilities: { canRead: true, canSave: true } }); });
+    await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => { reviewGroups.push(groupOf(route.request())); return planned(route, { cells: [], unavailableIssueIds: [] }); });
     return reviewGroups;
 }
 
@@ -479,12 +495,18 @@ async function captureCapacityScreenshot(page, testInfo, name, options = {}) {
 
 test('planning team capacity cards stay alphabetical when selected story points change', async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    await openPlanning(page, { teamCount: 7 });
+    // Changing the plan needs a saving-capable shared review; its routes must win over the fixture's catch-all.
+    await installCapacityFixture(page, { teamCount: 7 });
+    await stubGroupReview(page);
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    await showCapacityDetails(page);
     const teamLabels = page.locator('.planning-team-capacity-cards .team-stat-label');
     const alphabeticalOrder = ['Alpha', 'Beta', 'Delta', 'Epsilon', 'Eta', 'Gamma', 'Zeta'];
 
     await expect(teamLabels).toHaveText(alphabeticalOrder);
-    await page.locator('.task-item', { hasText: 'PLAN-ALPHA' }).locator('input.task-checkbox').uncheck();
+    // Planning is the Table only (#323): change the planned Story Points through the Story row's checkbox.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Select PLAN-ALPHA', exact: true }).click();
     await expect(teamLabels).toHaveText(alphabeticalOrder);
     await captureCapacityScreenshot(page, testInfo, 'capacity-cards-alphabetical');
 });
@@ -551,7 +573,7 @@ test('capacity hover reveals safe Jira and edit controls without changing the id
 
     for (const invalidBase of ['', 'jira.example', '//jira.example', 'ftp://jira.example']) {
         fixture.state.jiraUrl = invalidBase;
-        await page.reload({ waitUntil: 'networkidle' });
+        await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
         await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(3);
         const invalidCard = page.locator('.team-stat-card', { hasText: 'Alpha' });
         await expect(invalidCard.getByRole('link', { name: 'Open Alpha capacity ticket in Jira' })).toHaveCount(0);
@@ -576,7 +598,7 @@ test('capacity Jira links discard configured query and fragment and reject crede
     expect(sanitizedParts).toEqual({ pathname: '/browse/CAP-101', search: '', hash: '' });
 
     fixture.state.jiraUrl = 'https://jira.example?source=config#capacity';
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
     await expect(alphaCard().getByRole('link', { name: linkName }))
         .toHaveAttribute('href', 'https://jira.example/browse/CAP-101');
 
@@ -585,7 +607,7 @@ test('capacity Jira links discard configured query and fragment and reject crede
         'https://user:password@jira.example/path?source=config#capacity',
     ]) {
         fixture.state.jiraUrl = credentialBase;
-        await page.reload({ waitUntil: 'networkidle' });
+        await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
         await expect(alphaCard().getByRole('link', { name: linkName })).toHaveCount(0);
     }
 });
@@ -639,18 +661,181 @@ test('capacity Jira pencil Save and Cancel expose solid accent keyboard focus', 
     expect(Math.round(editorGeometry[0].top)).toBe(Math.round(editorGeometry[1].top));
 });
 
+// Team cards never grow (#323, operator rule): an open capacity editor keeps its card at the idle card's exact height.
+test('a Team card keeps its idle height while its capacity editor is open, at rest and with the panel stuck', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openPlanning(page);
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    // The used height (computed `height`; padding and border are unchanged), exact in every engine. Firefox's DOMRect height of
+    // the stuck card differs in the fifth decimal between two equal layouts (58.649994 vs 58.650009), so it is not the measure.
+    const height = () => card.evaluate(node => getComputedStyle(node).height);
+    for (const state of ['at rest', 'stuck']) {
+        if (state === 'stuck') {
+            // The short synthetic table cannot scroll the panel into its stuck state, so the page gets room to scroll.
+            await page.addStyleTag({ content: 'body{min-height:2400px}' });
+            await page.evaluate(() => window.scrollTo(0, 600));
+            await expect(page.locator('.planning-panel.stuck')).toHaveCount(1);
+        }
+        await settled();
+        const idle = await height();
+        await card.hover();
+        const pencil = card.getByRole('button', { name: 'Edit Alpha capacity' });
+        const pencilBefore = await pencil.boundingBox();
+        await pencil.click();
+        await expect(card.locator('form.team-capacity-editor')).toHaveCount(1);
+        await settled();
+        expect(await height(), `editing card height, ${state}`).toBe(idle);
+        // The overlay sits where the bar and meta were: below the label row, inside the card, and it takes the pointer.
+        const overlay = await card.evaluate(node => {
+            const rect = element => element.getBoundingClientRect().toJSON();
+            const input = node.querySelector('.team-capacity-input'), inputBox = input.getBoundingClientRect();
+            const hit = document.elementFromPoint(inputBox.left + inputBox.width / 2, inputBox.top + inputBox.height / 2);
+            return { card: rect(node), label: rect(node.querySelector('.team-capacity-label-row')), row: rect(node.querySelector('.team-capacity-editor-row')),
+                inputHeight: inputBox.height, hitIsInput: hit === input, controls: [...node.querySelectorAll('.team-capacity-editor-row > *')].map(rect) };
+        });
+        expect(overlay.inputHeight, `28px editor, ${state}`).toBe(28);
+        expect(overlay.hitIsInput, `the input takes the pointer, ${state}`).toBe(true);
+        expect(overlay.row.top, `below the label row, ${state}`).toBeGreaterThanOrEqual(overlay.label.bottom);
+        for (const box of overlay.controls) {
+            expect(box.left, `inside the card, ${state}`).toBeGreaterThanOrEqual(overlay.card.left);
+            expect(box.right, `inside the card, ${state}`).toBeLessThanOrEqual(overlay.card.right);
+            expect(box.bottom, `inside the card, ${state}`).toBeLessThanOrEqual(overlay.card.bottom);
+        }
+        if (state === 'at rest') {
+            await page.mouse.move(5, 890);
+            await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r3-cards-editing-1440x900.png', animations: 'disabled' });
+        }
+        await card.getByRole('button', { name: 'Cancel Alpha capacity edit' }).click();
+        await expect(card.locator('form.team-capacity-editor')).toHaveCount(0);
+        await settled();
+        expect(await height(), `card height after cancel, ${state}`).toBe(idle);
+        await card.hover();
+        await settled();
+        expect(await pencil.boundingBox(), `the pencil keeps its position, ${state}`).toEqual(pencilBefore);
+        if (state === 'at rest') {
+            await page.mouse.move(5, 890);
+            await page.waitForTimeout(150);
+            await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r3-cards-idle-1440x900.png', animations: 'disabled' });
+        }
+    }
+});
+
+test('a row of Teams with no capacity keeps its card and panel height idle, while editing and after the first save', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Every Team has a Jira capacity ticket with a blank value, so no card has a delta (meta) line of its own.
+    await openPlanning(page, { capacityPayload: { enabled: true, mutationEnabled: true, sprint: sprintName, capacities: {}, entries: [
+        { teamName: 'Alpha', issueKey: 'CAP-101', capacity: null },
+        { teamName: 'Beta', issueKey: 'CAP-102', capacity: null },
+        { teamName: 'Gamma', issueKey: 'CAP-103', capacity: null },
+    ] } });
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    // Computed used heights, exact (see the case above for why not the DOMRect).
+    const heights = () => page.evaluate(() => ({
+        cards: [...document.querySelectorAll('.planning-team-capacity-cards .team-stat-card')].map(node => getComputedStyle(node).height),
+        panel: getComputedStyle(document.querySelector('.planning-panel.open')).height,
+    }));
+    const capture = name => page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task8/r4-no-capacity-${name}-1440x900.png`, animations: 'disabled' });
+    await settled();
+    const idle = await heights();
+    await page.mouse.move(5, 890);
+    await capture('idle');
+    // A card without a delta keeps an aria-hidden blank meta line, so every card has the same structure.
+    for (const team of ['Alpha', 'Beta', 'Gamma']) {
+        const meta = page.locator('.team-stat-card', { hasText: team }).locator('.microbar-meta');
+        await expect(meta).toHaveCount(1);
+        await expect(meta).toHaveAttribute('aria-hidden', 'true');
+        await expect(meta).toHaveText(' ');
+    }
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
+    const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
+    await expect(input).toBeFocused();
+    await settled();
+    expect(await heights(), 'while editing').toEqual(idle);
+    await page.mouse.move(5, 890);
+    await capture('editing');
+    await input.fill('6');
+    await input.press('Enter');
+    await expect(card.locator('form.team-capacity-editor')).toHaveCount(0);
+    await expect(card.locator('.microbar-meta')).toContainText('Cap 6.0');
+    await settled();
+    expect(await heights(), 'after the first save').toEqual(idle);
+    await page.mouse.move(5, 890);
+    await capture('saved');
+});
+
+test('a status shown while editing sits on the label row\'s one-line context slot and keeps the card height', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Product only, so the slot first holds the share note and the status replaces it.
+    const fixture = await openPlanning(page, { prefs: { showProduct: true, showTech: false } });
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    const height = () => card.evaluate(node => getComputedStyle(node).height);
+    await settled();
+    const idle = await height();
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
+    const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
+    await input.fill('6.5');
+    const note = await card.locator('.team-capacity-editor-context[role="note"]').elementHandle();
+    fixture.state.patchStatus = 409;
+    fixture.state.patchResponse = { error: 'capacity_conflict', currentCapacity: 7 };
+    await input.press('Enter');
+    const message = 'Capacity changed in Jira to 7.0. Review and save again, or cancel.';
+    const status = card.getByRole('status');
+    // The live region mounts as a new element; the note's node is gone, not re-roled in place.
+    await expect(status).toHaveText(message);
+    expect(await note.evaluate(node => node.isConnected), 'the note node left the document').toBe(false);
+    expect(await status.evaluate((node, old) => node !== old, note), 'the status is a new element').toBe(true);
+    // The accessible text is the whole message, though the line is ellipsized; no native title carries it.
+    await expect(status).toHaveText(message);
+    await expect(status).toHaveClass('team-capacity-editor-context');
+    await expect(status).not.toHaveAttribute('title');
+    await expect(input).toHaveAccessibleDescription(message);
+    await settled();
+    expect(await height(), 'card height while the status shows').toBe(idle);
+    const geometry = await card.evaluate(node => {
+        const statusNode = node.querySelector('[role="status"]'), style = getComputedStyle(statusNode);
+        const range = document.createRange();
+        range.setStart(statusNode.firstChild, 0); range.setEnd(statusNode.firstChild, 1);
+        const glyph = range.getBoundingClientRect(), box = statusNode.getBoundingClientRect(), cardBox = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(glyph.left + glyph.width / 2, glyph.top + glyph.height / 2);
+        const overlaps = [...node.querySelectorAll('.team-capacity-editor-row input, .team-capacity-editor-row button')].map(control => control.getBoundingClientRect())
+            .some(rect => rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top);
+        const label = node.querySelector('.team-stat-label');
+        return { nameWhole: label.scrollWidth <= label.clientWidth, hitIsStatus: hit === statusNode, overlaps, visibility: style.visibility, whiteSpace: style.whiteSpace, textOverflow: style.textOverflow,
+            truncated: statusNode.scrollWidth > statusNode.clientWidth, oneLine: box.height <= parseFloat(style.lineHeight) + 1, inside: box.left >= cardBox.left && box.right <= cardBox.right };
+    });
+    expect(geometry).toEqual({ nameWhole: true, hitIsStatus: true, overlaps: false, visibility: 'visible', whiteSpace: 'nowrap', textOverflow: 'ellipsis', truncated: true, oneLine: true, inside: true });
+    await page.mouse.move(5, 890);
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r5-long-status-1440x900.png', animations: 'disabled' });
+});
+
 test('capacity edit and cancel keep one accessible 28px editor and restore focus', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const { calls } = await openPlanning(page);
     const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    // The baseline is taken after Show capacity details has finished its transition (the cards' width animates for ~400 ms).
+    await page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
     const originalBox = await card.boundingBox();
 
     await card.hover();
     await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
     await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
     await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
-    await expect(card.locator('.microbar')).toHaveCount(0);
-    await expect(page.locator('.microbar')).toHaveCount(2);
+    // The bar and meta line stay in the editing card only as invisible, aria-hidden sizers (#323 Task 8 R3, replacing "no
+    // .microbar in the editing card"): none is visible, and neither reaches the accessibility tree.
+    await expect(card.locator('.microbar:visible, .microbar-meta:visible')).toHaveCount(0);
+    await expect(page.locator('.microbar:visible')).toHaveCount(2);
+    for (const sizer of [card.locator('.microbar'), card.locator('.microbar-meta')]) {
+        await expect(sizer).toHaveCount(1);
+        await expect(sizer).toHaveAttribute('aria-hidden', 'true');
+        await expect(sizer).toHaveCSS('visibility', 'hidden');
+    }
+    const editingTree = await card.ariaSnapshot();
+    expect(editingTree, 'the sizers are absent from the accessibility tree').not.toMatch(/story points selected|SP ·|-5\.5/);
 
     const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
     await expect(input).toBeFocused();
@@ -1087,30 +1272,32 @@ test('long actionless capacity labels never reserve the action rail footprint on
     expect(desktopGeometry.label.right).toBeLessThanOrEqual(desktopGeometry.row.right);
     expect(desktopGeometry.scrollWidth).toBeLessThanOrEqual(desktopGeometry.clientWidth);
 
-    const touchContext = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
-    const touchPage = await touchContext.newPage();
-    try {
-        await openPlanning(touchPage, { teamCount: 1, longTeamLabel: true, actionlessLongTeam: true });
-        const touchCard = touchPage.locator('.planning-team-capacity-cards .team-stat-card');
-        const touchGeometry = await touchCard.locator('.team-capacity-label-row').evaluate(row => ({
-            paddingRight: Number.parseFloat(getComputedStyle(row).paddingRight),
-            label: row.querySelector('.team-stat-label').getBoundingClientRect(),
-            row: row.getBoundingClientRect(),
-            scrollWidth: row.querySelector('.team-stat-label').scrollWidth,
-            clientWidth: row.querySelector('.team-stat-label').clientWidth,
-            textOverflow: getComputedStyle(row.querySelector('.team-stat-label')).textOverflow,
-        }));
-        await expect(touchCard.locator('.team-capacity-action-rail')).toHaveCount(0);
-        expect(touchGeometry.paddingRight, 'actionless touch label rail padding').toBe(0);
-        expect(touchGeometry.label.right).toBeLessThanOrEqual(touchGeometry.row.right);
-        expect(touchGeometry.scrollWidth).toBeGreaterThan(touchGeometry.clientWidth);
-        expect(touchGeometry.textOverflow).toBe('ellipsis');
-    } finally {
-        await touchContext.close();
+    if (testMobile) {
+        const touchContext = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
+        const touchPage = await touchContext.newPage();
+        try {
+            await openPlanning(touchPage, { teamCount: 1, longTeamLabel: true, actionlessLongTeam: true });
+            const touchCard = touchPage.locator('.planning-team-capacity-cards .team-stat-card');
+            const touchGeometry = await touchCard.locator('.team-capacity-label-row').evaluate(row => ({
+                paddingRight: Number.parseFloat(getComputedStyle(row).paddingRight),
+                label: row.querySelector('.team-stat-label').getBoundingClientRect(),
+                row: row.getBoundingClientRect(),
+                scrollWidth: row.querySelector('.team-stat-label').scrollWidth,
+                clientWidth: row.querySelector('.team-stat-label').clientWidth,
+                textOverflow: getComputedStyle(row.querySelector('.team-stat-label')).textOverflow,
+            }));
+            await expect(touchCard.locator('.team-capacity-action-rail')).toHaveCount(0);
+            expect(touchGeometry.paddingRight, 'actionless touch label rail padding').toBe(0);
+            expect(touchGeometry.label.right).toBeLessThanOrEqual(touchGeometry.row.right);
+            expect(touchGeometry.scrollWidth).toBeGreaterThan(touchGeometry.clientWidth);
+            expect(touchGeometry.textOverflow).toBe('ellipsis');
+        } finally {
+            await touchContext.close();
+        }
     }
 });
 
-test('hoverless touch keeps the capacity Jira and pencil controls visible and operable', async ({ browser }, testInfo) => {
+if (testMobile) test('hoverless touch keeps the capacity Jira and pencil controls visible and operable', async ({ browser }, testInfo) => {
     const context = await browser.newContext({ hasTouch: true, viewport: { width: 375, height: 720 } });
     const touchPage = await context.newPage();
     try {
@@ -1268,7 +1455,7 @@ test('already-current saves reconcile numeric values and null conflicts keep the
 });
 
 test('capacity scope and read-only gates detach editors and keep unsafe actions unavailable', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 720 });
+    await page.setViewportSize({ width: testMobile ? 375 : 1028, height: 720 });
     const fixture = await openPlanning(page);
     const card = page.locator('.team-stat-card', { hasText: 'Beta' });
     await card.hover();
@@ -1285,7 +1472,7 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
             cardRight: row.closest('.team-stat-card').getBoundingClientRect().right,
         };
     });
-    expect(responsive.inputWidth).toBeLessThan(84);
+    if (testMobile) expect(responsive.inputWidth).toBeLessThan(84);
     expect(responsive.heights).toEqual([28, 28, 28]);
     expect(responsive.lastRight).toBeLessThanOrEqual(responsive.cardRight);
 
@@ -1299,7 +1486,7 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
     await expect(page.locator('form.team-capacity-editor')).toHaveCount(0);
     expect(capacityCalls(fixture.calls, 'PATCH')).toHaveLength(0);
 
-    fixture.state.authMode = 'basic';
+    fixture.state.capacityPayload.mutationEnabled = false;
     await page.evaluate(({ id, name }) => {
         const prefs = JSON.parse(window.localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}');
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
@@ -1308,9 +1495,13 @@ test('capacity scope and read-only gates detach editors and keep unsafe actions 
             sprintName: name,
         }));
     }, { id: sprintId, name: sprintName });
-    await page.reload({ waitUntil: 'networkidle' });
+    await page.reload({ waitUntil: 'networkidle' }); await showCapacityDetails(page);
     await expect(page.locator('.planning-team-capacity-cards .team-stat-card')).toHaveCount(3);
-    await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
+    await expect(page.locator('form.team-capacity-editor')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /^Edit .+ capacity$/ })).toHaveCount(0);
+    await page.locator('.team-stat-card', { hasText: 'Alpha' }).hover();
+    await expect(page.getByRole('link', { name: 'Open Alpha capacity ticket in Jira' })).toBeVisible();
+    expect(capacityCalls(fixture.calls, 'PATCH')).toHaveLength(0);
 });
 
 test('an empty future sprint explains missing issues and refreshes only Capacity', async ({ page }, testInfo) => {
@@ -1334,33 +1525,35 @@ test('an empty future sprint explains missing issues and refreshes only Capacity
     await expect(refreshButton).toBeEnabled();
     await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues');
 
-    await page.setViewportSize({ width: 375, height: 720 });
-    await emptyStatus.scrollIntoViewIfNeeded();
-    const mobileGeometry = await emptyStatus.evaluate(status => {
-        const text = status.querySelector('span');
-        const button = status.querySelector('button');
-        const dimensions = node => ({
-            rect: node.getBoundingClientRect(),
-            scrollWidth: node.scrollWidth,
-            clientWidth: node.clientWidth,
-            scrollHeight: node.scrollHeight,
-            clientHeight: node.clientHeight,
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await emptyStatus.scrollIntoViewIfNeeded();
+        const mobileGeometry = await emptyStatus.evaluate(status => {
+            const text = status.querySelector('span');
+            const button = status.querySelector('button');
+            const dimensions = node => ({
+                rect: node.getBoundingClientRect(),
+                scrollWidth: node.scrollWidth,
+                clientWidth: node.clientWidth,
+                scrollHeight: node.scrollHeight,
+                clientHeight: node.clientHeight,
+            });
+            return {
+                status: dimensions(status),
+                text: dimensions(text),
+                button: dimensions(button),
+                viewportWidth: window.innerWidth,
+            };
         });
-        return {
-            status: dimensions(status),
-            text: dimensions(text),
-            button: dimensions(button),
-            viewportWidth: window.innerWidth,
-        };
-    });
-    for (const element of [mobileGeometry.status, mobileGeometry.text, mobileGeometry.button]) {
-        expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
-        expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight);
-        expect(element.rect.left).toBeGreaterThanOrEqual(0);
-        expect(element.rect.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+        for (const element of [mobileGeometry.status, mobileGeometry.text, mobileGeometry.button]) {
+            expect(element.scrollWidth).toBeLessThanOrEqual(element.clientWidth);
+            expect(element.scrollHeight).toBeLessThanOrEqual(element.clientHeight);
+            expect(element.rect.left).toBeGreaterThanOrEqual(0);
+            expect(element.rect.right).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+        }
+        await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues-mobile', { fullPage: true });
+        await page.setViewportSize({ width: 1028, height: 720 });
     }
-    await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues-mobile', { fullPage: true });
-    await page.setViewportSize({ width: 1028, height: 720 });
 
     const capacityGetsBefore = capacityCalls(fixture.calls, 'GET').length;
     const taskGetsBefore = fixture.calls.filter(call => call.method === 'GET'
@@ -1458,16 +1651,24 @@ test('capacity reference states remain settled, bounded, and visible in Planning
         clientWidth: status.clientWidth,
         scrollHeight: status.scrollHeight,
         clientHeight: status.clientHeight,
+        textOverflow: getComputedStyle(status).textOverflow,
+        whiteSpace: getComputedStyle(status).whiteSpace,
         status: status.getBoundingClientRect(),
         card: status.closest('.team-stat-card').getBoundingClientRect(),
     }));
-    expect(conflictGeometry.scrollWidth).toBeLessThanOrEqual(conflictGeometry.clientWidth);
+    // The conflict is one ellipsized line in the editing card's context slot (#323 Task 8 R5, replacing "the whole message
+    // fits"); the node keeps the whole message as its text.
+    await expect(alpha.getByRole('status')).toHaveText('Capacity changed in Jira to 7.0. Review and save again, or cancel.');
+    if (conflictGeometry.scrollWidth > conflictGeometry.clientWidth) {
+        expect(conflictGeometry.textOverflow).toBe('ellipsis');
+        expect(conflictGeometry.whiteSpace).toBe('nowrap');
+    }
     expect(conflictGeometry.scrollHeight).toBeLessThanOrEqual(conflictGeometry.clientHeight);
     expect(conflictGeometry.status.left).toBeGreaterThanOrEqual(conflictGeometry.card.left);
     expect(conflictGeometry.status.right).toBeLessThanOrEqual(conflictGeometry.card.right);
     await captureCapacityScreenshot(page, testInfo, 'capacity-conflict');
 
-    await page.locator('.epic-header').first().evaluate(element => {
+    await page.locator('.planning-review-table tbody tr').first().evaluate(element => {
         window.scrollTo(0, window.scrollY + element.getBoundingClientRect().top + 120);
     });
     await captureCapacityScreenshot(page, testInfo, 'capacity-planning-stuck-error');
@@ -1488,11 +1689,13 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     await page.waitForTimeout(180);
     await expectReadStatusBounds('sticky Planning Retry');
 
-    await page.setViewportSize({ width: 375, height: 720 });
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectReadStatusBounds('mobile Retry');
-    await captureCapacityScreenshot(page, testInfo, 'capacity-mobile-stale-retry', { fullPage: true });
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await expectReadStatusBounds('mobile Retry');
+        await captureCapacityScreenshot(page, testInfo, 'capacity-mobile-stale-retry', { fullPage: true });
+    }
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
@@ -1511,11 +1714,13 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     });
     await page.waitForTimeout(180);
     await expectReadStatusBounds('sticky Planning Retrying');
-    await page.setViewportSize({ width: 375, height: 720 });
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
-    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
-    await expectReadStatusBounds('mobile Retrying');
-    await captureCapacityScreenshot(page, testInfo, 'capacity-stale-retrying');
+    if (testMobile) {
+        await page.setViewportSize({ width: 375, height: 720 });
+        await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+        await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        await expectReadStatusBounds('mobile Retrying');
+        await captureCapacityScreenshot(page, testInfo, 'capacity-stale-retrying');
+    }
     fixture.state.capacityGetGate = null;
     resolveRetry();
 });
@@ -1539,6 +1744,8 @@ test('a long team name in the Planned Teams Effort table is ellipsized and revea
     await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = await openPlanning(page, { teamCount: 6, longTeamLabel: true });
     const fullName = fixture.state.teamNames.at(-1);
+    // In the Table the Planned Teams Effort panel is a collapsed strip until its header is clicked.
+    await page.locator('.capacity-panel.open .capacity-header-toggle').click();
     const table = page.locator('.capacity-panel.open .capacity-grid');
     const longCell = table.locator('.capacity-team', { hasText: fullName });
     const shortCell = table.locator('.capacity-team', { hasText: 'Alpha' });
@@ -1634,7 +1841,7 @@ for (const teamCount of [1, 6, 7]) {
                 const rail = card.querySelector('.team-capacity-action-rail');
                 const microbar = card.querySelector('.microbar');
                 const texts = [...card.querySelectorAll('.microbar-meta, .team-capacity-editor-context, [role="status"]')]
-                    .map(node => ({ text: node.textContent.trim(), scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
+                    .map(node => ({ text: node.textContent.trim(), status: node.getAttribute('role') === 'status', textOverflow: getComputedStyle(node).textOverflow, whiteSpace: getComputedStyle(node).whiteSpace, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
                 return {
                     rect,
                     cell: cellFor(index),
@@ -1671,7 +1878,11 @@ for (const teamCount of [1, 6, 7]) {
                 expect(card.scrollHeight, `${stateName} card vertical overflow`).toBeLessThanOrEqual(card.clientHeight);
                 rows.set(card.cell.row, [...(rows.get(card.cell.row) || []), card.rect.height]);
                 card.texts.forEach(text => {
-                    expect(text.scrollWidth, `${stateName} ${text.text} horizontal overflow`).toBeLessThanOrEqual(text.clientWidth);
+                    // A status while editing is one ellipsized line in the context slot (#323 Task 8 R5); its node keeps the whole text.
+                    if (text.status && text.scrollWidth > text.clientWidth) {
+                        expect(text.textOverflow, `${stateName} ${text.text} ellipsis`).toBe('ellipsis');
+                        expect(text.whiteSpace, `${stateName} ${text.text} one line`).toBe('nowrap');
+                    } else expect(text.scrollWidth, `${stateName} ${text.text} horizontal overflow`).toBeLessThanOrEqual(text.clientWidth);
                     expect(text.scrollHeight, `${stateName} ${text.text} vertical overflow`).toBeLessThanOrEqual(text.clientHeight);
                 });
                 if (card.label.scrollWidth > card.label.clientWidth) {
@@ -1707,13 +1918,22 @@ for (const teamCount of [1, 6, 7]) {
 
         const defaultGeometry = await measureGrid();
         expectGridGeometry('default', defaultGeometry, 'hidden');
-        // Task 0's original label/microbar/meta card stack measures 58.64px at the 16px root.
-        const taskZeroIdleRowHeight = 58.64;
+        // The Task 0 idle card is the label/microbar/meta stack with a one-line label. Measure it in this engine by giving the
+        // first card a short label for one layout, so every engine compares against its own idle height, exactly.
+        const taskZeroIdleRowHeight = await cards.first().evaluate(card => {
+            const label = card.querySelector('.team-stat-label');
+            const nodes = [...label.childNodes];
+            label.replaceChildren(document.createTextNode('A'));
+            const height = card.getBoundingClientRect().height;
+            label.replaceChildren(...nodes);
+            return height;
+        });
         const rowHeights = geometry => Object.fromEntries([...new Set(geometry.map(card => card.cell.row))]
             .map(row => [row, Math.max(...geometry.filter(card => card.cell.row === row).map(card => card.rect.height))]));
         Object.values(rowHeights(defaultGeometry)).forEach((height, row) => {
-            expect(height, `default row ${row} matches the Task 0 idle-card baseline`)
-                .toBeCloseTo(taskZeroIdleRowHeight, 1);
+            // Compared in layout units (1/60 px in Firefox, 1/64 px in WebKit and Chromium; 3840 is a multiple of both): Firefox
+            // reports one layout at two offsets with float noise in the fifth decimal (see the stuck-card note above).
+            expect(Math.round(height * 3840), `default row ${row} matches the Task 0 idle-card baseline`).toBe(Math.round(taskZeroIdleRowHeight * 3840));
         });
         const compareToDefault = (stateName, geometry, { rowGrowth = 1 } = {}) => {
             const defaultByTeam = new Map(defaultGeometry.map(card => [card.label.text, card]));
@@ -1767,6 +1987,7 @@ for (const teamCount of [1, 6, 7]) {
         expectGridGeometry('success', successGeometry, 'visible');
         compareToDefault('success', successGeometry);
 
+        const idleHeight = await firstCard.evaluate(node => getComputedStyle(node).height);
         await firstCard.hover();
         fixture.state.patchStatus = 409;
         fixture.state.patchResponse = { error: 'capacity_conflict', currentCapacity: 7 };
@@ -1776,52 +1997,56 @@ for (const teamCount of [1, 6, 7]) {
         await expect(firstCard.getByRole('status')).toContainText('Capacity changed in Jira to 7');
         const conflictGeometry = await measureGrid();
         expectGridGeometry('conflict', conflictGeometry, 'absent');
-        compareToDefault('conflict', conflictGeometry, { rowGrowth: 120 });
+        compareToDefault('conflict', conflictGeometry);
+        // The conflict sits in the context slot (#323 Task 8 R5): the card keeps its exact idle height.
+        expect(await firstCard.evaluate(node => getComputedStyle(node).height), 'conflict card height').toBe(idleHeight);
         await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-desktop-conflict`);
 
-        await page.setViewportSize({ width: 375, height: 720 });
-        await firstCard.getByRole('button', { name: `Cancel ${firstTeamName} capacity edit` }).click();
-        await firstCard.hover();
-        await firstCard.getByRole('button', { name: `Edit ${firstTeamName} capacity` }).click();
-        await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
-        await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
-        expectGridGeometry('mobile editing', await measureGrid(), 'absent');
-        const mobileGeometry = await firstCard.locator('.team-capacity-editor-row').evaluate(row => {
-            const card = row.closest('.team-stat-card');
-            const grid = card.parentElement;
-            const controls = [row.querySelector('input'), ...row.querySelectorAll('button')];
-            const rects = controls.map(control => control.getBoundingClientRect());
-            return {
-                gridScrollWidth: grid.scrollWidth,
-                gridClientWidth: grid.clientWidth,
-                documentWidth: document.documentElement.scrollWidth,
-                viewportWidth: window.innerWidth,
-                columnCount: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
-                card: card.getBoundingClientRect(),
-                rects,
-            };
-        });
-        expect(mobileGeometry.gridScrollWidth).toBeLessThanOrEqual(mobileGeometry.gridClientWidth);
-        expect(mobileGeometry.documentWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
-        expect(mobileGeometry.columnCount).toBeLessThanOrEqual(2);
-        expect(mobileGeometry.rects[0].width).toBeLessThan(desktopEditor.controls[0].width);
-        expect(mobileGeometry.rects.map(rect => rect.height)).toEqual([28, 28, 28]);
-        expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.top))).size).toBe(1);
-        expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.bottom))).size).toBe(1);
-        mobileGeometry.rects.forEach(rect => {
-            expect(rect.left).toBeGreaterThanOrEqual(mobileGeometry.card.left);
-            expect(rect.right).toBeLessThanOrEqual(mobileGeometry.card.right);
-        });
-        await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-mobile-edit`);
+        if (testMobile) {
+            await page.setViewportSize({ width: 375, height: 720 });
+            await firstCard.getByRole('button', { name: `Cancel ${firstTeamName} capacity edit` }).click();
+            await firstCard.hover();
+            await firstCard.getByRole('button', { name: `Edit ${firstTeamName} capacity` }).click();
+            await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
+            await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
+            expectGridGeometry('mobile editing', await measureGrid(), 'absent');
+            const mobileGeometry = await firstCard.locator('.team-capacity-editor-row').evaluate(row => {
+                const card = row.closest('.team-stat-card');
+                const grid = card.parentElement;
+                const controls = [row.querySelector('input'), ...row.querySelectorAll('button')];
+                const rects = controls.map(control => control.getBoundingClientRect());
+                return {
+                    gridScrollWidth: grid.scrollWidth,
+                    gridClientWidth: grid.clientWidth,
+                    documentWidth: document.documentElement.scrollWidth,
+                    viewportWidth: window.innerWidth,
+                    columnCount: getComputedStyle(grid).gridTemplateColumns.split(' ').length,
+                    card: card.getBoundingClientRect(),
+                    rects,
+                };
+            });
+            expect(mobileGeometry.gridScrollWidth).toBeLessThanOrEqual(mobileGeometry.gridClientWidth);
+            expect(mobileGeometry.documentWidth).toBeLessThanOrEqual(mobileGeometry.viewportWidth);
+            expect(mobileGeometry.columnCount).toBeLessThanOrEqual(2);
+            expect(mobileGeometry.rects[0].width).toBeLessThan(desktopEditor.controls[0].width);
+            expect(mobileGeometry.rects.map(rect => rect.height)).toEqual([28, 28, 28]);
+            expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.top))).size).toBe(1);
+            expect(new Set(mobileGeometry.rects.map(rect => Math.round(rect.bottom))).size).toBe(1);
+            mobileGeometry.rects.forEach(rect => {
+                expect(rect.left).toBeGreaterThanOrEqual(mobileGeometry.card.left);
+                expect(rect.right).toBeLessThanOrEqual(mobileGeometry.card.right);
+            });
+            await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-mobile-edit`);
+        }
     });
 }
 
 test('automatic Planning capacity editor defers primary work and cancels a late guarded capacity read', async ({ page }) => {
     const { installLifecycleControl, deferred } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
-    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    const { calls, state } = await openPlanning(page, { details: false });
     await stubGroupReview(page);
     await page.waitForLoadState('networkidle');
-    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await showCapacityDetails(page);
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' });
     await card.hover();
     await card.getByRole('button', { name: 'Edit Alpha capacity', exact: true }).click(); const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' }); await input.fill('37');
@@ -1839,13 +2064,449 @@ test('automatic Planning capacity editor defers primary work and cancels a late 
 
 for (const status of [429, 500, 401]) test(`automatic Planning capacity ${status} holds clean values and never replays`, async ({ page }) => {
     const { installLifecycleControl } = require('./eng_epic_refresh_fixture'); const lifecycle = await installLifecycleControl(page);
-    const { calls, state } = await openPlanning(page, { prefs: { planningLayout: 'table' } });
+    const { calls, state } = await openPlanning(page, { details: false });
     await stubGroupReview(page);
-    await page.getByRole('button', { name: 'Show panel', exact: true }).click();
+    await showCapacityDetails(page);
     const card = page.locator('.planning-team-capacity-cards .team-stat-card').filter({ hasText: 'Alpha' }); await card.hover();
     await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await page.waitForLoadState('networkidle');
     state.capacityGetStatus = status; const since = calls.length; await lifecycle.returnAfter(13 * 60000); await expect.poll(() => capacityCalls(calls.slice(since), 'GET').length).toBe(1);
     if (status === 401) { await expect(page.getByRole('alertdialog').getByRole('link', { name: 'Sign in again', exact: true })).toBeVisible(); await lifecycle.returnAfter(24 * 60 * 60000); await page.waitForTimeout(150); expect(capacityCalls(calls.slice(since), 'GET')).toHaveLength(1); }
     else { await page.waitForTimeout(150); await expect(card.getByRole('button', { name: 'Edit Alpha capacity', exact: true })).toBeEnabled(); await expect(page.getByText('Capacity could not be refreshed. Retry before editing.', { exact: true })).toHaveCount(0); }
     expect(capacityCalls(calls.slice(since), 'PATCH')).toHaveLength(0);
+});
+
+// ---- #323 Task 6: the mismatch push icon (→) in the card's hover rail writes that Team's stored number to its own matched
+// ticket in one click (operator design 2026-11-09: no reconcile rows; pending, conflict and error states live on the →) ----
+
+let pushHarness;
+function buildPushHarness() {
+    if (pushHarness) return pushHarness;
+    pushHarness = esbuild.buildSync({
+        stdin: {
+            contents: `
+                import React from 'react';
+                import { createRoot } from 'react-dom/client';
+                import PlanningTeamCapacityCards from './frontend/src/eng/PlanningTeamCapacityCards.jsx';
+                import { PlanningAssigneeCapacityContext } from './frontend/src/eng/PlanningAssigneeCapacity.jsx';
+                const numbers = Object.freeze({ sprintId: '3001', byTeam: Object.freeze({ 'team-a': Object.freeze({ value: '14', source: 'user' }), 'team-b': Object.freeze({ value: '30', source: 'jira' }), 'team-c': Object.freeze({ value: '5', source: 'user' }) }) });
+                const status = Object.freeze({ load: 'ready', readError: '', save: 'idle', error: '', canSave: true });
+                const noop = () => {};
+                window.__commits = []; window.__requests = []; window.__events = []; window.__holds = []; window.__saved = [];
+                const controller = { subscribe: () => noop, getPlannedNumbers: () => numbers, subscribeTeam: () => noop, getTeamStatus: () => status,
+                    ensureTeamDocument: noop, mirrorTeamPlanned: () => false, commitTeamPlanned: (...args) => { window.__commits.push(args); return true; }, retryTeam: noop, discardTeamPlanned: noop };
+                const context = { oneTeam: false, teamId: '', state: { plannedSave: '' }, controller, getTeamStatus: controller.getTeamStatus, subscribeTeam: controller.subscribeTeam };
+                const entry = (id, name, key, ticket, sp) => ({ id, name, storyPoints: sp, capacityTargetState: 'matched', capacityIssueKey: key, capacityTargetTeamName: name,
+                    capacityTargetCapacity: ticket, hasCapacityValue: true, teamCapacity: ticket, rawCapacity: ticket, capacitySource: 'jira', plannedEditable: false });
+                // Each request waits until the test settles it: window.__requests[i].resolve(body) or .reject({ status, code, currentCapacity, name }).
+                const request = (issueKey, payload, options) => new Promise((resolve, reject) => {
+                    const call = { issueKey, payload, get aborted() { return options.signal.aborted; }, resolve,
+                        reject: fields => reject(Object.assign(new Error(fields.code || 'error'), fields)) };
+                    options.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
+                    window.__requests.push(call);
+                });
+                function Harness() {
+                    const [props, setProps] = React.useState(() => ({ canEditCapacity: true, scopeSignature: 'scope', withRequest: window.__withRequest !== false }));
+                    const [entries, setEntries] = React.useState(() => [entry('team-a', 'Alpha Team', 'CAP-1', 20, 12), entry('team-b', 'Beta Team', 'CAP-2', 30, 8), entry('team-c', 'Gamma Team', 'CAP-3', 7, 4)]);
+                    window.__setProps = patch => setProps(previous => ({ ...previous, ...patch }));
+                    window.__patchEntry = (id, patch) => setEntries(list => list.map(item => (item.id === id ? { ...item, ...patch } : item)));
+                    return (
+                        <PlanningAssigneeCapacityContext.Provider value={context}>
+                            <PlanningTeamCapacityCards entries={entries} capacityEnabled canOpenCapacityJira canEditCapacity={props.canEditCapacity} jiraUrl="https://jira.example"
+                                sprintName="2026Q3" scopeSignature={props.scopeSignature} resolveTeamColor={() => '#7a8bc4'} getTeamCapacityMeta={() => ({ status: '' })}
+                                updateCapacityRequest={props.withRequest ? request : undefined}
+                                onAnalyticsAction={(action, params) => window.__events.push([action, params?.result])}
+                                onInteractionChange={value => window.__holds.push(value)}
+                                onCapacitySaved={result => { window.__saved.push(result); setEntries(list => list.map(item => (item.capacityIssueKey === result.issueKey ? { ...item, capacityTargetCapacity: result.capacity, teamCapacity: result.capacity } : item))); }} />
+                        </PlanningAssigneeCapacityContext.Provider>
+                    );
+                }
+                const root = createRoot(document.getElementById('root'));
+                window.__unmount = () => root.unmount();
+                root.render(<Harness />);
+            `,
+            resolveDir: repoRoot,
+            loader: 'jsx',
+        },
+        bundle: true,
+        write: false,
+        format: 'iife',
+        loader: { '.css': 'empty' },
+        define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+    return pushHarness;
+}
+
+async function mountPushHarness(page, withRequest = true) {
+    await page.setViewportSize({ width: 1280, height: 720 });
+    // setContent keeps the window, so a previous mount's React root would keep rendering its portalled readout into the
+    // new body (two readouts in Firefox); unmount it first.
+    await page.evaluate(() => window.__unmount?.());
+    await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="width: 760px; margin: 40px;"></div></body></html>');
+    await page.addStyleTag({ content: `${fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8')}\n*,*::before,*::after{animation:none!important;transition:none!important}` });
+    await page.evaluate(value => { window.__withRequest = value; }, withRequest);
+    await page.addScriptTag({ content: buildPushHarness() });
+    await expect(page.locator('.team-stat-card')).toHaveCount(3);
+}
+
+const pushCard = (page, teamId) => page.locator(`.team-stat-card[data-capacity-team="${teamId}"]`);
+const pushButton = (page, teamId = 'team-a', name = 'Alpha Team') => pushCard(page, teamId).getByRole('button', { name: `Apply ${name} team capacity to Jira` });
+const pushReadout = page => page.locator('.epic-full-value-readout');
+const pushRequests = page => page.evaluate(() => window.__requests.map(call => ({ issueKey: call.issueKey, payload: call.payload, aborted: call.aborted })));
+const settlePush = (page, index, how, value) => page.evaluate(([i, kind, body]) => window.__requests[i][kind](body), [index, how, value]);
+async function hoverPush(page, teamId = 'team-a', name = 'Alpha Team') {
+    await page.mouse.move(5, 700);
+    await pushCard(page, teamId).hover();
+    const button = pushButton(page, teamId, name);
+    await expect(button).toBeVisible();
+    await button.hover();
+    return button;
+}
+// Settled hover (box unchanged, painted only when available) and the card controls' solid keyboard focus outline.
+async function expectSettledPush(page, button, { ring }) {
+    const box = await button.boundingBox();
+    expect(box.width).toBeCloseTo(24, 0); expect(box.height).toBeCloseTo(24, 0);
+    await button.hover();
+    await page.waitForTimeout(150);
+    expect(await button.boundingBox()).toEqual(box);
+    expect(await button.evaluate(node => getComputedStyle(node).boxShadow) !== 'none', 'hover paint').toBe(ring);
+    // macOS WebKit reaches buttons with Option+Tab only.
+    const tab = page.context().browser().browserType().name() === 'webkit' ? 'Alt+Tab' : 'Tab';
+    await button.focus();
+    await page.keyboard.press(`Shift+${tab}`); await page.keyboard.press(tab);
+    await expect(button).toBeFocused();
+    expect(await button.evaluate(node => { const style = getComputedStyle(node); return [style.outlineStyle, style.outlineWidth]; })).toEqual(['solid', '2px']);
+    await page.evaluate(() => document.activeElement?.blur());
+}
+// A real pointer click at the control's centre (Playwright's click() waits on aria-disabled controls).
+async function pointerClick(page, locator) {
+    const box = await locator.boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+const knownCopy = {
+    capacity_issue_mismatch: 'This card no longer matches its Jira capacity ticket. Refresh Planning.',
+    capacity_forbidden: 'Jira did not allow this capacity change.',
+    capacity_issue_not_found: 'This capacity ticket is no longer available. Refresh Planning.',
+    jira_capacity_update_conflict: 'Jira could not apply the capacity change yet. Review and try again.',
+    jira_capacity_update_failed: 'Capacity could not be updated in Jira. Try again.',
+};
+
+test('the mismatch → is absent without a Jira capacity writer: the rail keeps only Jira and the pencil', async ({ page }) => {
+    await mountPushHarness(page, false);
+    await expect(pushCard(page, 'team-a')).toHaveAttribute('data-capacity-attention', 'mismatch');
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeVisible();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+});
+
+test('the mismatch → sits left of the pencil in the hover rail, with the pencil\'s geometry, hover, focus and readout; one click sends one PATCH to that Team\'s own ticket', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    expect(await card.locator('.team-capacity-action-rail').evaluate(node => getComputedStyle(node).opacity), 'idle: hidden with the pencil').toBe('0');
+    expect(await card.locator('.team-stat-label').evaluate(node => node.scrollWidth <= node.clientWidth), 'idle title whole').toBe(true);
+    await card.hover();
+    const button = pushButton(page);
+    await expect(button).toBeVisible();
+    expect(await card.locator('.team-capacity-action-rail').evaluate(node => [...node.children].map(child => child.getAttribute('aria-label'))))
+        .toEqual(['Open Alpha Team capacity ticket in Jira', 'Apply Alpha Team team capacity to Jira', 'Edit Alpha Team capacity']);
+    const pencil = card.getByRole('button', { name: 'Edit Alpha Team capacity' });
+    const [box, pencilBox, cardBox] = [await button.boundingBox(), await pencil.boundingBox(), await card.boundingBox()];
+    expect(box.width).toBeCloseTo(pencilBox.width, 1); expect(box.height).toBeCloseTo(pencilBox.height, 1);
+    expect(Math.abs(box.y - pencilBox.y)).toBeLessThanOrEqual(0.5);
+    expect(box.x + box.width).toBeLessThanOrEqual(pencilBox.x + 0.5);
+    expect(box.x).toBeGreaterThanOrEqual(cardBox.x); expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width);
+    expect(cardBox.height, 'the rail never grows the card').toBeCloseTo(idle.height, 2);
+    expect(await card.evaluate(node => node.querySelector('.team-stat-label').getBoundingClientRect().right <= node.querySelector('.team-capacity-action-rail').getBoundingClientRect().left + 0.5), 'three icons stay clear of the title').toBe(true);
+    await button.hover();
+    await expect(pushReadout(page)).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    await expectSettledPush(page, button, { ring: true });
+    expect(await pushRequests(page), 'hover and focus write nothing').toEqual([]);
+    await button.click();
+    expect(await pushRequests(page)).toEqual([{ issueKey: 'CAP-1', payload: { sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 20, capacity: 14 }, aborted: false }]);
+    expect(typeof (await pushRequests(page))[0].payload.capacity, 'capacity is a JSON number').toBe('number');
+    await pushCard(page, 'team-b').hover();
+    await expect(pushCard(page, 'team-b').getByRole('button', { name: /^Apply / }), 'equal numbers: no push').toHaveCount(0);
+});
+
+test('a push in flight: the → is unavailable with "Applying…", a second click and that Team\'s pencil send nothing, and the card keeps its idle height', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    const button = await hoverPush(page);
+    await button.click();
+    await expect(button).toHaveAttribute('aria-disabled', 'true');
+    await expect(button).toHaveAttribute('data-push-state', 'pending');
+    await button.hover();
+    await expect(pushReadout(page)).toHaveText('Applying…');
+    await expectSettledPush(page, button, { ring: false });
+    await pointerClick(page, button);
+    await expect(card.getByRole('button', { name: 'Edit Alpha Team capacity' })).toBeDisabled();
+    await card.getByRole('button', { name: 'Edit Alpha Team capacity' }).click({ force: true });
+    await expect(card.locator('.team-capacity-editor')).toHaveCount(0);
+    expect((await pushRequests(page)).length, 'one PATCH').toBe(1);
+    await page.mouse.move(5, 700);
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+    await card.hover();
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+});
+
+test.describe('capacity push readouts on a hoverless touch screen', () => {
+    test.use({ hasTouch: true });
+
+    // Tap the real hit area: locator.tap() waits for aria-disabled controls to become enabled.
+    async function tapPush(page, button) {
+        const box = await button.boundingBox();
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    }
+
+    test('an explicit tap writes once; pending taps reveal and dismiss Applying without another write', async ({ page }) => {
+        await mountPushHarness(page);
+        expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+        const button = pushButton(page);
+        await expect(button).toBeVisible();
+        await tapPush(page, button);
+        await expect(button).toHaveAttribute('aria-disabled', 'true');
+        expect(await pushRequests(page)).toEqual([{ issueKey: 'CAP-1', payload: { sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 20, capacity: 14 }, aborted: false }]);
+        // Dismiss the initial tap's readout, then reopen it from the unavailable icon.
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await page.screenshot({ path: 'tmp/capacity-review/touch-pending-before-tap.png', animations: 'disabled' });
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        await page.screenshot({ path: 'tmp/capacity-review/touch-pending-readout.png', animations: 'disabled' });
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        expect((await pushRequests(page)).length, 'unavailable taps never retry').toBe(1);
+    });
+
+    for (const [code, status, copy] of [
+        ['capacity_issue_mismatch', 409, knownCopy.capacity_issue_mismatch],
+        ['capacity_config_missing', 409, 'Capacity editing is no longer configured. Refresh Planning.'],
+        ['capacity_config_unverified', 409, 'Capacity editing needs an Admin to verify the Jira Capacity field. Refresh after it is saved.'],
+        ['capacity_config_conflict', 409, 'Capacity configuration needs Admin resolution. Refresh after it is resolved.'],
+    ]) {
+        test(`${code}: tapping the unavailable push exposes its reason without retry`, async ({ page }) => {
+            await mountPushHarness(page);
+            const button = pushButton(page);
+            await tapPush(page, button);
+            await settlePush(page, 0, 'reject', { code, status });
+            await expect(button).toHaveAttribute('aria-disabled', 'true');
+            await page.touchscreen.tap(5, 700);
+            await expect(pushReadout(page)).toHaveCount(0);
+            await tapPush(page, button);
+            await expect(pushReadout(page)).toHaveText(copy);
+            await page.touchscreen.tap(5, 700);
+            await expect(pushReadout(page)).toHaveCount(0);
+            expect((await pushRequests(page)).length, 'the reason readout writes nothing').toBe(1);
+        });
+    }
+
+    test('a failed push keeps its reason visible until outside tap; an explicit retry tap writes once', async ({ page }) => {
+        await mountPushHarness(page);
+        const button = pushButton(page);
+        await tapPush(page, button);
+        await settlePush(page, 0, 'reject', { code: 'jira_capacity_update_failed', status: 502 });
+        await expect(pushReadout(page)).toHaveText(knownCopy.jira_capacity_update_failed);
+        expect((await pushRequests(page)).length).toBe(1);
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1', 'CAP-1']);
+    });
+});
+
+test('two Team cards sharing one ticket exclude a second push and Jira editor until the first push settles', async ({ page }) => {
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityIssueKey: 'CAP-1', capacityTargetTeamName: 'Alpha Team', capacityTargetCapacity: 20, rawCapacity: 20, teamCapacity: 20 }));
+    const sibling = pushCard(page, 'team-c');
+    await sibling.hover();
+    const push = pushButton(page, 'team-c', 'Gamma Team');
+    const pencil = sibling.getByRole('button', { name: 'Edit Gamma Team capacity' });
+    const idle = [await push.boundingBox(), await pencil.boundingBox()];
+    await (await hoverPush(page)).click();
+    await sibling.hover();
+    await expect(push).toHaveAttribute('aria-disabled', 'true');
+    await push.hover();
+    await expect(pushReadout(page)).toHaveCount(1);
+    await expect(pushReadout(page)).toHaveText('Applying this ticket…');
+    expect([await push.boundingBox(), await pencil.boundingBox()], 'unavailable controls keep their settled boxes').toEqual(idle);
+    await page.screenshot({ path: 'tmp/capacity-review/shared-ticket-unavailable.png', animations: 'disabled' });
+    await pointerClick(page, push);
+    await expect(pencil).toBeDisabled();
+    await pencil.click({ force: true });
+    await expect(sibling.locator('.team-capacity-editor')).toHaveCount(0);
+    expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1']);
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(push).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(pencil).toBeEnabled();
+    await pencil.click();
+    await expect(sibling.locator('.team-capacity-editor')).toHaveCount(1);
+    await sibling.getByRole('button', { name: 'Cancel Gamma Team capacity edit' }).click();
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page)).map(call => [call.issueKey, call.payload.expectedCapacity])).toEqual([['CAP-1', 20], ['CAP-1', 14]]);
+});
+
+test('success and already_current update the ticket value, settle the stored number to jira and remove the →; analytics says success', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(pushCard(page, 'team-a')).not.toHaveAttribute('data-capacity-attention', 'mismatch');
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__commits)).toEqual([['team-a', '14', 'jira']]);
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    await settlePush(page, 1, 'resolve', { issueKey: 'CAP-3', capacity: 5, result: 'already_current' });
+    await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+    expect(await page.evaluate(() => window.__saved.map(result => [result.issueKey, result.capacity, result.result]))).toEqual([['CAP-1', 14, 'success'], ['CAP-3', 5, 'already_current']]);
+    expect(await page.evaluate(() => window.__events)).toEqual([['capacity_reconcile_push', 'success'], ['capacity_reconcile_push', 'success']]);
+});
+
+test('a 409 capacity_conflict shows Jira\'s current value without saying nothing was written; the next click expects that value', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    await page.mouse.move(5, 700);
+    const idle = await card.boundingBox();
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 22 });
+    const button = await hoverPush(page);
+    await expect(button).toHaveAttribute('data-push-state', 'conflict');
+    await expect(button).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(pushReadout(page)).toHaveText('Capacity changed in Jira to 22.0. Apply 14 SP again to replace it.');
+    await expect(pushReadout(page)).not.toHaveText(/nothing|not written|prevented/i);
+    await expectSettledPush(page, button, { ring: true });
+    expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
+    await button.click();
+    expect((await pushRequests(page))[1].payload).toEqual({ sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 22, capacity: 14 });
+    expect(await page.evaluate(() => window.__events)).toEqual([['capacity_reconcile_push', 'conflict']]);
+    await settlePush(page, 1, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: null });
+    await hoverPush(page);
+    await expect(pushReadout(page)).toHaveText('Capacity is now blank in Jira. Apply 14 SP again to replace it.');
+    // Jira already holds the stored number: nothing is left to push.
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    await settlePush(page, 2, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 5 });
+    await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / })).toHaveCount(0);
+});
+
+test('other errors show the existing editor copy on the → readout; a target error leaves the → unavailable, and analytics says failure', async ({ page }) => {
+    let index = 0;
+    for (const [code, status] of [['capacity_forbidden', 403], ['jira_capacity_update_conflict', 502], ['jira_capacity_update_failed', 502], ['capacity_issue_mismatch', 409], ['capacity_issue_not_found', 404]]) {
+        await mountPushHarness(page);
+        index = 0;
+        await (await hoverPush(page)).click();
+        await settlePush(page, index, 'reject', { status, code });
+        const button = await hoverPush(page);
+        await expect(button, code).toHaveAttribute('data-push-state', 'failed');
+        await expect(pushReadout(page), code).toHaveText(knownCopy[code]);
+        const target = code === 'capacity_issue_mismatch' || code === 'capacity_issue_not_found';
+        if (target) await expect(button, `${code}: no push to a blocked target`).toHaveAttribute('aria-disabled', 'true');
+        else await expect(button, code).not.toHaveAttribute('aria-disabled', 'true');
+        await pointerClick(page, button);
+        expect((await pushRequests(page)).length, `${code}: retry only when the target is still writable`).toBe(target ? 1 : 2);
+        expect(await page.evaluate(() => window.__events), code).toEqual([['capacity_reconcile_push', 'failure']]);
+    }
+});
+
+test('a 401 sends no further request, keeps no failed state and emits no push event', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await settlePush(page, 0, 'reject', { status: 401, code: 'auth_required', name: 'AuthenticationRequiredError' });
+    const button = await hoverPush(page);
+    await expect(button).not.toHaveAttribute('data-push-state', /.+/);
+    await expect(pushReadout(page)).toHaveText('Apply 14 SP to Jira (ticket 20 SP)');
+    await page.waitForTimeout(200);
+    expect((await pushRequests(page)).length, 'no replay').toBe(1);
+    expect(await page.evaluate(() => window.__events)).toEqual([]);
+});
+
+test('editor invalid targets, config suppression and a missing mutation right offer no push; an open editor hides it', async ({ page }) => {
+    for (const code of ['capacity_issue_mismatch', 'capacity_config_missing']) {
+        await mountPushHarness(page);
+        const card = pushCard(page, 'team-a');
+        await card.hover();
+        await card.getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+        await expect(card.getByRole('button', { name: /^Apply / }), 'an open editor hides the push').toHaveCount(0);
+        await card.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).fill('21');
+        await card.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' }).press('Enter');
+        await settlePush(page, 0, 'reject', { status: 409, code });
+        await card.getByRole('button', { name: 'Cancel Alpha Team capacity edit' }).click();
+        await page.mouse.move(5, 700);
+        await card.hover();
+        await expect(card.getByRole('button', { name: /^Apply / }), code).toHaveCount(0);
+        if (code === 'capacity_config_missing') await expect(pushCard(page, 'team-c').getByRole('button', { name: /^Apply / }), `${code} suppresses every Team`).toHaveCount(0);
+    }
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__setProps({ canEditCapacity: false }));
+    await pushCard(page, 'team-a').hover();
+    await expect(pushCard(page, 'team-a').getByRole('button', { name: /^Apply / }), 'no mutation right').toHaveCount(0);
+    expect(await pushRequests(page)).toEqual([]);
+});
+
+test('one abort controller per Team: two pushes overlap, closing another editor keeps the freshness hold, and a scope change aborts both without retargeting', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1', 'CAP-3']);
+    expect(await page.evaluate(() => window.__holds.at(-1))).toBe(true);
+    // Beta's editor opens and closes while both pushes are in flight: the hold stays.
+    await pushCard(page, 'team-b').hover();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Cancel Beta Team capacity edit' }).click();
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'closing an editor mid-push keeps the hold').toBe(true);
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(pushCard(page, 'team-a')).not.toHaveAttribute('data-capacity-attention', 'mismatch');
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'one push still open').toBe(true);
+    await page.evaluate(() => window.__setProps({ scopeSignature: 'scope-2' }));
+    await expect.poll(async () => (await pushRequests(page))[1].aborted).toBe(true);
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'released once nothing is open').toBe(false);
+    expect((await pushRequests(page)).length, 'never retargeted').toBe(2);
+});
+
+test('unmounting with a push in flight and another Team\'s editor open leaves the freshness hold released', async ({ page }) => {
+    await mountPushHarness(page);
+    await (await hoverPush(page)).click();
+    await pushCard(page, 'team-b').hover();
+    await pushCard(page, 'team-b').getByRole('button', { name: 'Edit Beta Team capacity' }).click();
+    await expect(pushCard(page, 'team-b').locator('.team-capacity-editor')).toHaveCount(1);
+    expect(await page.evaluate(() => window.__holds.at(-1))).toBe(true);
+    await page.evaluate(() => window.__unmount());
+    await page.waitForTimeout(100);
+    expect(await page.evaluate(() => window.__holds.at(-1)), 'the last hold after unmount').toBe(false);
+});
+
+test('with → hovered only its readout shows: the card\'s own value tooltip is suppressed for every rail control', async ({ page }) => {
+    await mountPushHarness(page);
+    const card = pushCard(page, 'team-a');
+    const cardTooltip = () => card.evaluate(node => getComputedStyle(node, '::after').content);
+    await page.mouse.move(5, 700);
+    await card.locator('.microbar').hover();
+    expect(await cardTooltip(), 'the card tooltip still shows on the card itself').not.toBe('none');
+    await hoverPush(page);
+    await expect(pushReadout(page)).toHaveCount(1);
+    expect(await cardTooltip()).toBe('none');
+    for (const name of ['Edit Alpha Team capacity', 'Open Alpha Team capacity ticket in Jira']) {
+        await card.getByRole(name.startsWith('Open') ? 'link' : 'button', { name }).hover();
+        expect(await cardTooltip(), name).toBe('none');
+    }
+});
+
+test('after a conflict the card scales Jira\'s value by the card\'s capacity multiplier, also when the read ticket was 0', async ({ page }) => {
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityTargetCapacity: 0, rawCapacity: 0, teamCapacity: 0, capacityMultiplier: 0.5 }));
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 0.0');
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page))[0].payload).toMatchObject({ expectedCapacity: 0, capacity: 5 });
+    await settlePush(page, 0, 'reject', { status: 409, code: 'capacity_conflict', currentCapacity: 10 });
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 5.0');
+    // A changed read value (any other path) drops the display override at once.
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityTargetCapacity: 12, rawCapacity: 12, teamCapacity: 6 }));
+    await expect(pushCard(page, 'team-c').locator('.microbar-meta')).toContainText('Cap 6.0');
+    await hoverPush(page, 'team-c', 'Gamma Team');
+    await expect(pushReadout(page)).toHaveText('Apply 5 SP to Jira (ticket 12 SP)');
 });

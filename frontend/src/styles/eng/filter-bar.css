@@ -450,11 +450,6 @@
             --eng-filter-status-colour: #fa8c16;
         }
 
-        .pop-opt-visual .task-priority-icon[data-priority]::after {
-            content: none;
-            display: none;
-        }
-
         .pop-opt.is-locked {
             cursor: not-allowed;
         }

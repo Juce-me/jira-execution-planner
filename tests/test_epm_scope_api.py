@@ -2,44 +2,13 @@ import unittest
 from unittest.mock import patch
 
 import jira_server
-from backend.auth.context import RequestAuthContext
-from backend.auth.home_credentials import HomeCredential
 from backend.auth.jira_auth import AuthError
-from tests.auth_mode_test_utils import force_basic_auth_mode
-
-
-def _oauth_context():
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth',
-        user_id='user-1',
-        stable_subject='account-1',
-        atlassian_account_id='account-1',
-        workspace_id='workspace-1',
-        auth_connection_id='connection-1',
-        cloud_id='cloud-1',
-        site_url='https://example.atlassian.net',
-        token_version='1',
-        account_status='active',
-        is_admin=False,
-    )
-
-
-def _home_credential():
-    return HomeCredential(
-        credential_type='service',
-        provider='home_townsquare_basic',
-        email='service@example.com',
-        api_token='service-token',
-        workspace_id='workspace-1',
-        site_url='https://example.atlassian.net',
-        cloud_id='cloud-1',
-        cache_key=('workspace-1', 'service-1', 1),
-    )
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 
 class TestEpmScopeApi(unittest.TestCase):
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()
@@ -128,41 +97,27 @@ class TestEpmScopeApi(unittest.TestCase):
         self.assertEqual(body['error'], 'auth_required')
         self.assertEqual(body['loginUrl'], '/login?reason=session_expired')
 
-    def test_goal_catalog_uses_db_home_service_credential_in_request_context(self):
-        context = _oauth_context()
-        credential = _home_credential()
+    def test_goal_catalog_uses_user_db_oauth_authority(self):
+        with self.app.test_request_context('/api/epm/goals'):
+            context = jira_server.current_request_auth_context()
+            authority = jira_server.resolve_epm_home_read_auth(context)
+            self.assertTrue(authority.strict)
+            with patch.object(jira_server.epm_home.HomeOAuthGraphQLClient, 'execute_paginated', return_value=[]) as pages:
+                result = jira_server.fetch_epm_goal_catalog(context=context, home_auth=authority)
+            self.assertEqual(result, [])
+            self.assertEqual(pages.call_args.args[2], 'goals_search')
+            self.assertFalse(hasattr(jira_server.epm_home, 'build_home_graphql_client'))
 
-        with self.app.test_request_context('/api/epm/goals'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server.epm_home, '_read_metadata_credential', return_value=credential) as mock_credential, \
-             patch.object(jira_server, 'fetch_home_site_cloud_id', return_value='cloud-1'), \
-             patch.object(jira_server.epm_home, 'build_home_graphql_client') as mock_build_client:
-            mock_build_client.return_value.execute_paginated.return_value = []
-            jira_server.fetch_epm_goal_catalog()
-
-        mock_credential.assert_called_once_with(context)
-        mock_build_client.assert_called_once_with(credential)
-
-    def test_child_goal_catalog_uses_db_home_service_credential_in_request_context(self):
-        context = _oauth_context()
-        credential = _home_credential()
-
-        with self.app.test_request_context('/api/epm/goals?rootGoalKey=ROOT-100'), \
-             patch.object(jira_server, 'current_request_auth_context', return_value=context), \
-             patch.object(jira_server.epm_home, '_read_metadata_credential', return_value=credential) as mock_credential, \
-             patch.object(jira_server, 'fetch_home_site_cloud_id', return_value='cloud-1'), \
-             patch.object(jira_server.epm_home, 'build_home_graphql_client') as mock_build_client, \
-             patch.object(jira_server.epm_home, 'fetch_sub_goals_for_root_key', return_value=[]) as mock_fetch_sub_goals:
-            jira_server.fetch_epm_sub_goals('ROOT-100')
-
-        mock_credential.assert_called_once_with(context)
-        mock_build_client.assert_called_once_with(credential)
-        mock_fetch_sub_goals.assert_called_once_with(
-            mock_build_client.return_value,
-            'ROOT-100',
-            jira_server.epm_home._container_id_from_cloud('cloud-1'),
-            context=context,
-        )
+    def test_child_goal_catalog_keeps_the_verified_db_authority(self):
+        with self.app.test_request_context('/api/epm/goals?rootGoalKey=ROOT-100'):
+            context = jira_server.current_request_auth_context()
+            authority = jira_server.resolve_epm_home_read_auth(context)
+            with patch.object(jira_server.epm_home, 'fetch_sub_goals_for_root_key', return_value=[]) as lookup:
+                result = jira_server.fetch_epm_sub_goals('ROOT-100', context=context, home_auth=authority)
+            self.assertEqual(result, [])
+            self.assertIsInstance(lookup.call_args.args[0], jira_server.epm_home.HomeOAuthGraphQLClient)
+            self.assertEqual(lookup.call_args.args[1], 'ROOT-100')
+            self.assertEqual(lookup.call_args.kwargs['context'].auth_connection_id, self.db_actor.connection_id)
 
 
 if __name__ == '__main__':

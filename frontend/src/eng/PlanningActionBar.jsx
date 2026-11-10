@@ -1,143 +1,64 @@
 import * as React from 'react';
+import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
+import PlanningPopover from './PlanningPopover.jsx';
+import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import { lowerEntityWord, resolveEntityNames } from './engWorkModel.js';
 
-export function PlanningLayoutToggle({ planningLayout = 'list', onTogglePlanningLayout }) {
-    return <button type="button" className="planning-action-button planning-icon-button planning-layout-toggle" onClick={onTogglePlanningLayout}
-        aria-label={planningLayout === 'table' ? 'Show Planning list' : 'Show Planning table'} aria-pressed={planningLayout === 'table'}
-        title={planningLayout === 'table' ? 'Show Planning list' : 'Show Planning table'}>
-        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
-            {planningLayout === 'table' ? <path d="M2 3h12M2 8h12M2 13h12" /> : <><rect x="1.5" y="2" width="13" height="12" rx="1" /><path d="M1.5 6h13M1.5 10h13M6 2v12" /></>}
-        </svg>
-    </button>;
+export const planningScopeHelp = (childWords = 'stories') =>
+    `Applies to all ${childWords} matching the current Team and filters, including rows below.`;
+
+function ScopedAction({ children, descriptionId, help, ...props }) {
+    return <EpicHeaderValueReadout value={help} alwaysOn suppressed={props.disabled}>
+        {({ triggerRef, pointerProps, focusProps }) => <button type="button" ref={triggerRef} {...pointerProps} {...focusProps} {...props} aria-describedby={descriptionId}>{children}</button>}
+    </EpicHeaderValueReadout>;
 }
 
 export default function PlanningActionBar({
-    isAcceptedIncluded,
-    isTodoIncluded,
-    isPostponedIncluded,
-    isAwaitingValidationIncluded,
-    areAllVisiblePlanningTasksSelected,
-    hasVisibleTasks,
-    hasVisiblePlanningTasks,
-    hasPostponedTasks,
-    hasAwaitingValidationTasks,
-    selectedCount,
-    selectedVisibleCount,
-    jiraUrl,
-    onToggleAccepted,
-    onToggleTodo,
-    onTogglePostponed,
-    onToggleAwaitingValidation,
-    onSelectAllVisible,
-    canUndoPlanningSelection,
-    onUndoPlanningSelection,
-    onClearSelected,
-    onOpenSelectedInJira,
-    planningLayout = 'list',
-    onTogglePlanningLayout,
-    panelControl = null,
-    statusTransitionError = '',
-    statusTransitionErrorCode = '',
-    statusTransitionResult = null,
-    entityNames = null,
+    enabled = false, hasVisiblePlanningTasks, areAllVisiblePlanningTasksSelected,
+    matchingIncludedCount = 0, selectedVisibleCount, jiraUrl,
+    onSelectAllVisible, canUndoPlanningSelection, onUndoPlanningSelection, onClearSelected, onOpenSelectedInJira,
+    statusGroups = [], onIncludeStatus, onRemoveStatus, panelControl = null, summary = null, notice = null,
+    statusTransitionError = '', statusTransitionErrorCode = '', statusTransitionResult = null, entityNames = null,
 }) {
     const childWords = lowerEntityWord((entityNames || resolveEntityNames()).childPlural);
-    // Feedback only: the status change itself is triggered from the clicked status
-    // pill/menu, never from a button in this action bar.
-    const statusFeedback = (() => {
-        if (statusTransitionResult) {
-            const { succeeded = 0, failed = 0 } = statusTransitionResult;
-            const noun = (count) => (count === 1 ? 'issue' : 'issues');
-            if (failed === 0) return `Status updated for ${succeeded} ${noun(succeeded)}.`;
-            if (succeeded === 0) return `Status change failed for ${failed} ${noun(failed)}.`;
-            return `Status updated for ${succeeded}, ${failed} failed.`;
-        }
-        if (statusTransitionError) return statusTransitionError;
-        return '';
+    const scopeHelp = planningScopeHelp(childWords);
+    const [statusOpen, setStatusOpen] = React.useState(false);
+    const scopeId = React.useId();
+    const undoId = React.useId();
+    React.useEffect(() => { if (!enabled) setStatusOpen(false); }, [enabled]);
+    const feedback = (() => {
+        if (!statusTransitionResult) return statusTransitionError;
+        const { succeeded = 0, failed = 0 } = statusTransitionResult;
+        const noun = count => count === 1 ? 'issue' : 'issues';
+        if (failed === 0) return `Status updated for ${succeeded} ${noun(succeeded)}.`;
+        if (succeeded === 0) return `Status change failed for ${failed} ${noun(failed)}.`;
+        return `Status updated for ${succeeded}, ${failed} failed.`;
     })();
-    const statusFeedbackIsError = Boolean(statusTransitionErrorCode || statusTransitionError);
-
-    return (
-        <div className="planning-actions">
-            <button
-                className={`planning-action-button ${isAcceptedIncluded ? 'active' : ''}`}
-                onClick={onToggleAccepted}
-                disabled={!hasVisibleTasks}
-                title={`Include all Accepted and In Progress ${childWords} for the current view`}
-            >
-                Accepted
-            </button>
-            <button
-                className={`planning-action-button ${isTodoIncluded ? 'active' : ''}`}
-                onClick={onToggleTodo}
-                disabled={!hasVisibleTasks}
-                title={`Include all To Do / Pending ${childWords} for the current view`}
-            >
-                To Do
-            </button>
-            <button
-                className={`planning-action-button ${isPostponedIncluded ? 'active' : ''}`}
-                onClick={onTogglePostponed}
-                disabled={!hasPostponedTasks}
-                title={`Include all Postponed ${childWords} for the current view`}
-            >
-                Postponed
-            </button>
-            <button
-                className={`planning-action-button ${isAwaitingValidationIncluded ? 'active' : ''}`}
-                onClick={onToggleAwaitingValidation}
-                disabled={!hasAwaitingValidationTasks}
-                title={`Include all Awaiting Validation ${childWords} for the current view`}
-            >
-                Awaiting Val.
-            </button>
-            <button
-                className={`planning-action-button ${areAllVisiblePlanningTasksSelected ? 'active' : ''}`}
-                onClick={onSelectAllVisible}
-                disabled={!hasVisiblePlanningTasks}
-                title="Select every task currently visible in the planning list"
-            >
-                Select All
-            </button>
-            <button
-                className="planning-action-button"
-                onClick={onUndoPlanningSelection}
-                disabled={!canUndoPlanningSelection}
-                title="Undo bulk selection changes and restore the loaded planning selection"
-            >
-                Undo
-            </button>
-            <button
-                className="uncheck-button"
-                onClick={onClearSelected}
-                disabled={selectedCount === 0}
-                title="Clear all selected tasks"
-            >
-                Clear Selected
-            </button>
-            <button
-                className="planning-action-button planning-icon-button"
-                onClick={onOpenSelectedInJira}
-                disabled={selectedVisibleCount === 0 || !jiraUrl}
-                title={`Open selected ${childWords} matching the current filters in Jira (tip: bulk move them to Accepted)`}
-                aria-label={`Open selected ${childWords} in Jira`}
-            >
-                <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-                    <path d="M10 2h4v4h-1.5V4.56L8.53 8.53l-1.06-1.06L11.44 3.5H10V2z" />
-                    <path d="M13 9v4a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4v1.5H3.5v8h8V9H13z" />
-                </svg>
-            </button>
-            {onTogglePlanningLayout && <PlanningLayoutToggle planningLayout={planningLayout} onTogglePlanningLayout={onTogglePlanningLayout} />}
-            {statusFeedback && (
-                <span
-                    className={`planning-status-feedback${statusFeedbackIsError ? ' is-error' : ''}`}
-                    role="status"
-                    aria-live="polite"
-                >
-                    {statusFeedback}
-                </span>
-            )}
-            {panelControl}
-        </div>
-    );
+    return <div className="planning-actions">
+        <span id={scopeId} className="planning-review-sr-only">{scopeHelp}</span>
+        <span id={undoId} className="planning-review-sr-only">Undo the last inclusion change.</span>
+        <ScopedAction className={`planning-action-button${areAllVisiblePlanningTasksSelected ? ' active' : ''}`} descriptionId={scopeId} help={scopeHelp}
+            disabled={!enabled || !hasVisiblePlanningTasks || areAllVisiblePlanningTasksSelected} onClick={onSelectAllVisible}>Select All</ScopedAction>
+        <ScopedAction className="uncheck-button" descriptionId={scopeId} help={scopeHelp} disabled={!enabled || matchingIncludedCount === 0} onClick={onClearSelected}>Clear Selection</ScopedAction>
+        <button type="button" className="planning-action-button" aria-describedby={undoId} title="Undo the last inclusion change."
+            disabled={!enabled || !canUndoPlanningSelection} onClick={onUndoPlanningSelection}>Undo</button>
+        <PlanningPopover open={statusOpen} onClose={() => setStatusOpen(false)} label="Include by status"
+            trigger={<button type="button" className="planning-action-button" aria-label="Include by status" onClick={() => setStatusOpen(open => !open)}>Status <span aria-hidden="true">▾</span></button>}>
+            <div className="planning-actions">
+                {statusGroups.map(group => {
+                    const full = group.total > 0 && group.included === group.total;
+                    const count = `${group.included}/${group.total}`;
+                    return <button type="button" key={group.label} className={`planning-action-button${full ? ' active' : ''}`} aria-pressed={full}
+                        aria-label={`${full ? 'Remove' : 'Include'} all ${group.label}, ${count} included`} aria-describedby={scopeId}
+                        disabled={!enabled || group.total === 0} onClick={() => (full ? onRemoveStatus : onIncludeStatus)(group.statuses)}>{`${group.label} · ${count}`}</button>;
+                })}
+            </div>
+        </PlanningPopover>
+        <button type="button" className="planning-action-button planning-icon-button" onClick={onOpenSelectedInJira} aria-label={`Open planned ${childWords} in Jira`}
+            disabled={selectedVisibleCount === 0 || !jiraUrl} title={`Open planned ${childWords} matching the current Team and filters in Jira`}><JiraMarkIcon className="jira-export-icon" /></button>
+        {feedback && <span className={`planning-status-feedback${statusTransitionErrorCode || statusTransitionError ? ' is-error' : ''}`} role="status" aria-live="polite">{feedback}</span>}
+        {summary}
+        {notice}
+        {panelControl}
+    </div>;
 }

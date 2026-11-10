@@ -5,7 +5,7 @@ import IconButton from '../ui/IconButton.jsx';
 import PersonAvatar from '../ui/PersonAvatar.jsx';
 import PlanningAssigneeAddPicker from './PlanningAssigneeAddPicker.jsx';
 import { resolveEntityNames } from './engWorkModel.js';
-import usePlanningAssigneeCapacity from './usePlanningAssigneeCapacity.js';
+import usePlanningAssigneeCapacity, { createAssigneeRefreshEntry } from './usePlanningAssigneeCapacity.js';
 export { getAssigneeCapacityController } from './usePlanningAssigneeCapacity.js';
 import { projectPlanningOriginals } from './engIssueEditState.js';
 import { createStripRowModeSync } from './planningRowModeChannel.js';
@@ -71,7 +71,8 @@ function CapacityInput({ field, label, value, disabled, maxLength, onCommit, edi
             onKeyDown={event => {
                 // A cell mid-edit keeps Cmd/Ctrl+Z for the input's own native undo; the table's Undo never sees it.
                 if (isUndoShortcut(event) && (latest.current.draft !== latest.current.shown || latest.current.error)) { event.stopPropagation(); return; }
-                if (event.key === 'Enter') { if (commit()) ref.current.blur(); }
+                // Enter leaves focus on the cell's own container (a `tabIndex={-1}` td), still inside the table, so Cmd/Ctrl+Z undoes it.
+                if (event.key === 'Enter') { if (commit()) ref.current.closest('td').focus({ preventScroll: true }); }
                 else if (event.key === 'Escape') { cancelled.current = true; setDraft(shown); setError(''); ref.current.blur(); }
             }} />
         {error && <span className="planning-review-validation" role="alert">{error}</span>}
@@ -151,10 +152,10 @@ function PersonRow({ row, color, avatarUrl, readOnly, onCommit, editors }) {
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" aria-hidden="true"><path d="M4.5 4.5l7 7M11.5 4.5l-7 7" /></svg>
             </IconButton>}
         </div></td>
-        <td className={`planning-review-storyPoints${row.inherited ? ' planning-assignee-inherited' : ''}`}>{input('capacity', 'Capacity', 8)}</td>
+        <td tabIndex={-1} className={`planning-review-storyPoints${row.inherited ? ' planning-assignee-inherited' : ''}`}>{input('capacity', 'Capacity', 8)}</td>
         <EffortCell hundredths={row.selectedHundredths} cue={row.cue} />
-        <td className="planning-review-storyPoints">{input('vacations', 'Vacations', 8)}</td>
-        <td className="planning-assignee-note">
+        <td tabIndex={-1} className="planning-review-storyPoints">{input('vacations', 'Vacations', 8)}</td>
+        <td tabIndex={-1} className="planning-assignee-note">
             <EpicHeaderValueReadout value={row.notes || ''} suppressed={!row.notes} measureSelector="input" nativeSelector="input">
                 {({ discoveryProps }) => <span {...discoveryProps} tabIndex={undefined} className="planning-review-truncated-value">{input('notes', 'Notes', 500)}</span>}
             </EpicHeaderValueReadout>
@@ -217,9 +218,10 @@ function AssigneeTable({ view, avatars, state, readOnly, onCommit, onRestore, on
 }
 
 // Wraps the Planning overview: holds the assignee capacity state for one selected Team and renders the in-flow strip
-// into the host element after the controls stack. Cards, bar and every other slot are untouched.
+// into the host element after the controls stack, and projects the stored number of every displayed Team (`teamIds`).
+// Cards, bar and every other slot are untouched.
 export default function PlanningAssigneeCapacity({
-    children, enabled, selectedTeamIds, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
+    children, enabled, selectedTeamIds, teamIds = null, allTeams, sprintId, sprintClosed, sprints, backendUrl, tasks, originals, selectedTasks,
     getTeamInfo, normalizeStatus, rawCapacity = null, capacitySource = '', selectedKeys = null, automaticRefreshRef = null, entityNames = null,
 }) {
     const names = entityNames || resolveEntityNames();
@@ -232,6 +234,12 @@ export default function PlanningAssigneeCapacity({
     React.useLayoutEffect(() => { setHost(document.getElementById(HOST_ID)); });
     // D6: the document is read whenever one Team is selected (the pinned bar's strip needs it), expanded or not.
     const { state, controller } = usePlanningAssigneeCapacity({ backendUrl, sprintId: sprintId ? String(sprintId) : '', teamId, active: oneTeam });
+    // Every displayed Team's stored number (one owner per Team; one Team derives from its full GET, more use the batch read).
+    const teamIdsKey = JSON.stringify(teamIds ? [...teamIds].map(String) : []);
+    React.useEffect(() => {
+        const ids = JSON.parse(teamIdsKey);
+        controller.setProjectionScope({ sprintId: sprintId ? String(sprintId) : '', teamIds: ids, active: Boolean(enabled && ids.length) });
+    }, [controller, sprintId, teamIdsKey, enabled]);
     const editors = React.useRef(new Set()).current;
     const normalizeRef = React.useRef(normalizeStatus), teamInfoRef = React.useRef(getTeamInfo);
     normalizeRef.current = normalizeStatus; teamInfoRef.current = getTeamInfo;
@@ -281,13 +289,15 @@ export default function PlanningAssigneeCapacity({
     };
     const hiddenSelected = React.useMemo(() => hiddenSelectedCount(teamList, selectedKeys, selectedTasks), [teamList, selectedKeys, selectedTasks]);
     const loaded = Boolean(state.document);
-    // The Planning freshness follow-up and the header Refresh re-read the shown document through this entry (#251).
+    // The Planning freshness follow-up and the header Refresh re-read the displayed Teams' stored numbers through this entry
+    // (#251): one Team its shown document, more Teams the batch read.
+    const registered = oneTeam ? loaded : Boolean(enabled && teamIdsKey !== '[]');
     React.useEffect(() => {
-        if (!automaticRefreshRef || !oneTeam || !loaded) return undefined;
-        const entry = { refresh: options => controller.refresh(options), blocked: () => controller.isBusy() };
+        if (!automaticRefreshRef || !registered) return undefined;
+        const entry = createAssigneeRefreshEntry(controller);
         automaticRefreshRef.assigneeCapacity = entry;
         return () => { if (automaticRefreshRef.assigneeCapacity === entry) automaticRefreshRef.assigneeCapacity = null; };
-    }, [automaticRefreshRef, oneTeam, loaded, controller]);
+    }, [automaticRefreshRef, registered, controller]);
     // The strip sits above the sheet, outside its reading anchor: when an automatic re-read changes its height while it is
     // scrolled away above the sticky stack, scroll by what the content below it actually moved (native scroll anchoring
     // may already have moved it back). The strip's bottom is read when the controller publishes, before React commits.
@@ -308,7 +318,7 @@ export default function PlanningAssigneeCapacity({
     const tinted = Number(rawCapacity) > 0;
     // The stored team number as shown (own, gray inherited or pending), for the team card's editor and reconcile banner.
     const planned = React.useMemo(() => effectivePlanned(effective), [effective]);
-    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller }), [oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller]);
+    const context = React.useMemo(() => ({ oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller, getTeamStatus: controller.getTeamStatus, subscribeTeam: controller.subscribeTeam }), [oneTeam, teamId, view, state, loaded, rawCapacity, capacitySource, planned, controller]);
 
     const readOnly = !state.capabilities.canSave;
     const hidden = state.load === 'ready' && !state.capabilities.canRead;

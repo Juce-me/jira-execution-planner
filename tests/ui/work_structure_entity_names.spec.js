@@ -176,7 +176,7 @@ test('DELIVERY draws each configured Jira type icon in the glyph box, and an una
 });
 
 test('the Planning table names its row kinds and parent column by the captured types', async ({ page }) => {
-    await mockApp(page, { prefs: { showPlanning: true, planningLayout: 'table' } });
+    await mockApp(page, { prefs: { showPlanning: true } });
     const region = page.locator('.planning-review-region');
     await expect(region).toBeVisible();
     const rows = page.getByRole('radiogroup', { name: 'Planning review rows' }).or(page.locator('.planning-review-region .eng-mode-control'));

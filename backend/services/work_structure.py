@@ -71,6 +71,7 @@ LEGACY_FLAT_KEYS = {
 }
 
 _ERROR_STATUS = {
+    'allocation_mapping_department_owned': 400,
     'invalid_work_configurations': 400, 'invalid_quarter': 400, 'invalid_configuration_id': 400,
     'ambiguous_configuration_scope': 400, 'admin_required': 403, 'csrf_required': 403,
     'configuration_incomplete': 409, 'configuration_scope_changed': 409,
@@ -80,6 +81,7 @@ _ERROR_STATUS = {
     'config_storage_unavailable': 503, 'catalog_storage_unavailable': 503,
 }
 _ERROR_MESSAGE = {
+    'allocation_mapping_department_owned': 'Configure Allocation values in Department settings.',
     'invalid_work_configurations': 'The work configuration payload is invalid.',
     'invalid_quarter': 'The quarter is not valid.',
     'invalid_configuration_id': 'The configuration id is not valid.',
@@ -625,7 +627,7 @@ class WorkConfigurationContext:
     hierarchy: object
     fields: object
     legacy: object          # legacy-only compatibility metadata; empty on rnd_2027
-    allocation_types: object = ()  # rnd_2027 Allocation value -> Product/Tech mapping; empty on Legacy
+    allocation_types: object = ()  # Dormant Project history; runtime classification uses Department mappings.
 
     def to_dict(self):
         return {
@@ -1028,7 +1030,7 @@ def _check_transition(stored, incoming):
             )
 
 
-def _save_first(payload, revision, incoming, edits, display_types, env_board_id, catalog):
+def _save_first(payload, revision, incoming, edits, display_types, env_board_id, catalog, kept_allocation_ids=()):
     legacy_in = _check_server_owned(incoming, 0, LEGACY_ID)
     delivery_in = _check_server_owned(incoming, 1, DELIVERY_ID)
     del legacy_in  # echoed Legacy is never authority; only explicit legacyEdits apply
@@ -1039,6 +1041,13 @@ def _save_first(payload, revision, incoming, edits, display_types, env_board_id,
         }
     new_revision = revision + 1
     delivery = deepcopy(delivery_in)
+    # An unpromoted historical seed is dormant, but promotion may not erase it.
+    historical = next((entry for entry in (payload.get(WORK_CONFIGURATIONS_KEY) or {}).get('configurations', [])
+                       if entry.get('model') == MODEL_RND_2027), {})
+    allocation_types = _allocation_types(historical.get('allocationTypes', []), 'allocationTypes')
+    if delivery['id'] not in kept_allocation_ids and delivery['allocationTypes'] != allocation_types:
+        raise WorkConfigError('allocation_mapping_department_owned')
+    delivery['allocationTypes'] = allocation_types
     legacy['revision'] = delivery['revision'] = 1
     bundle = normalize_work_configurations({
         'version': BUNDLE_VERSION, 'promotionRevision': new_revision,
@@ -1063,8 +1072,10 @@ def _save_later(payload, incoming, clear_ids, catalog, kept_allocation_ids=()):
     entries, changed = [], []
     for old, new in zip(stored_entries, incoming_entries):
         if old['id'] in kept_allocation_ids:
-            # A bundle without the key (a stale browser) never erases the stored mapping; an explicit [] does.
+            # Old clients may omit the dormant map; no administrator writer may change it.
             new = dict(new, allocationTypes=old.get('allocationTypes', []))
+        if old['model'] == MODEL_RND_2027 and new['allocationTypes'] != old.get('allocationTypes', []):
+            raise WorkConfigError('allocation_mapping_department_owned')
         _check_transition(old, new)
         if old['scope']['projects'] and not new['scope']['projects'] and old['id'] not in clear_ids:
             _invalid('scope.projects', 'Clearing projects requires an explicit clear.', configuration_id=old['id'])
@@ -1139,6 +1150,7 @@ def save_work_configurations(
                 _invalid('clearProjectsForConfigurationIds', 'Not supported on the first save.')
             new_payload, saved, changed = _save_first(
                 payload, revision, incoming, edits, legacy_display_types, env_board_id, issue_type_catalog,
+                kept_allocation_ids,
             )
         return storage.KeysMutation(new_payload, {'changedConfigurationIds': changed, 'bundle': saved})
 

@@ -10,6 +10,7 @@ import {
     normalizeGroupsConfig,
     removeTeamLabelAlias,
     validateImportedTeamLabels,
+    validateAllocationTypes,
 } from './groupConfigUtils.js';
 import { boardDraftIsDirty } from './groupsConfigConflict.js';
 import { buildTeamAvailability } from './teamAvailability.js';
@@ -280,6 +281,7 @@ export function useTeamGroupSettings({
                 name: 'New Group',
                 teamIds: [],
                 missingInfoComponents: [],
+                allocationTypes: [],
                 excludedCapacityEpics: []
             };
             return {
@@ -890,6 +892,8 @@ export function useTeamGroupSettings({
             if (!importedGroup || typeof importedGroup !== 'object') {
                 throw new Error('Imported JSON must contain one group or a group matching the selected group.');
             }
+            const allocationError = validateAllocationTypes(importedGroup.allocationTypes).error;
+            if (allocationError) throw new Error(allocationError);
             const teamLabelsError = validateImportedTeamLabels(importedGroup.teamLabels);
             if (teamLabelsError) {
                 throw new Error(teamLabelsError);
@@ -906,7 +910,7 @@ export function useTeamGroupSettings({
                 ...prev,
                 groups: (prev.groups || []).map(group => (
                     group.id === selectedGroupId
-                        ? { ...importedSettings, id: group.id, name: group.name }
+                        ? { ...importedSettings, id: group.id, name: group.name, allocationTypes: importedGroup.allocationTypes === undefined ? (group.allocationTypes || []) : importedSettings.allocationTypes }
                         : group
                 )),
             }));

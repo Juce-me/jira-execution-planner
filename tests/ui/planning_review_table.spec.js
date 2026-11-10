@@ -30,7 +30,12 @@ test.beforeAll(() => {
         const groupNames={'group-alpha':'Alpha Department','group-beta':'Beta Department'};
         const sprintNames=options.sprintNames===undefined?{'90':'Sprint 90','100':'Sprint 100','110':'Sprint 110'}:options.sprintNames;
         const requests=[]; let saveCount=0; let setHarnessScope=()=>{};
-        const controller=createPlanningSprintReviewController({fetchSchema:async(_,sprintId,{groupId}={})=>{requests.push({kind:'schema',sprintId,groupId}); return schemas[groupId]},readValues:async(_,sprintId,body)=>{requests.push({kind:'values',sprintId,groupId:body.groupId,rowKind:body.rowKind,issueIds:[...body.issueIds]}); if(window.valuesGate) await window.valuesGate; return {cells:body.issueIds.flatMap(id=>(valueColumns[body.groupId]||[]).map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1})))}},saveReview:async(_,sprintId,payload)=>{saveCount++; requests.push({kind:'save',sprintId,groupId:payload.groupId,payload}); if(window.saveError){const error=new Error('Review request failed.');error.status=400;error.code=window.saveError;throw error;} const current=schemas[payload.groupId]; const layoutSave=payload.schemaChanges.some(change=>change.action==='layout'); schemas[payload.groupId]={...current,schemaRevision:current.schemaRevision+1,columns:controller.getState().columns,layouts:controller.getState().layouts,...(layoutSave?{viewRevision:(current.viewRevision||0)+1,inheritedFrom:null}:{})}; return {...schemas[payload.groupId],cells:payload.cellChanges.map(cell=>({...cell,revision:2}))}}});
+        // Every review read carries the shared plan of its group and Sprint (#331): a saved empty plan unless a test changes it.
+        const plans=new Map(); const proof=(groupId,sprintId)=>'synthetic-plan:'+groupId+':'+sprintId;
+        const planFor=(groupId,sprintId)=>{const key=groupId+':'+sprintId; if(!plans.has(key)) plans.set(key,{exists:true,revision:1,entries:new Map()}); return plans.get(key);};
+        const withPlan=(groupId,sprintId,schema)=>{const plan=planFor(groupId,sprintId); return {...schema,plan:{exists:plan.exists,revision:plan.revision},scopeProof:schema.capabilities.canRead?proof(groupId,sprintId):null,planCapabilities:{canRead:Boolean(schema.capabilities.canRead),canSave:Boolean(schema.capabilities.canSave)}};};
+        const normalized=columns=>columns.map((column,index,all)=>({...column,label:column.label.trim(),aggregation:column.aggregation??(column.type==='number'?'sum':'none'),archived:column.archived??false,after:column.after??null,order:column.order??all.slice(0,index).filter(previous=>previous.rowKind===column.rowKind).length}));
+        const controller=createPlanningSprintReviewController({fetchSchema:async(_,sprintId,{groupId}={})=>{requests.push({kind:'schema',sprintId,groupId}); return withPlan(groupId,sprintId,schemas[groupId])},readValues:async(_,sprintId,body)=>{requests.push({kind:'values',sprintId,groupId:body.groupId,rowKind:body.rowKind,issueIds:[...body.issueIds]}); if(window.valuesGate) await window.valuesGate; const cells=body.issueIds.flatMap(id=>(valueColumns[body.groupId]||[]).map(column=>({issueId:id,rowKind:body.rowKind,columnId:column.id,value:id==='1'?'2.000':'10.000',revision:1}))); if(!body.includePlan) return {cells}; const plan=planFor(body.groupId,sprintId); return {cells,unavailableIssueIds:[],planRevision:plan.revision,scopeProof:proof(body.groupId,sprintId),planEntries:body.issueIds.map(issueId=>({...(plan.entries.get(issueId)||{issueId,included:false,revision:0})}))}},saveReview:async(_,sprintId,payload)=>{saveCount++; requests.push({kind:'save',sprintId,groupId:payload.groupId,payload}); if(window.saveError){const error=new Error('Review request failed.');error.status=400;error.code=window.saveError;throw error;} const current=schemas[payload.groupId]; const layoutSave=payload.schemaChanges.some(change=>change.action==='layout'); schemas[payload.groupId]={...current,schemaRevision:current.schemaRevision+1,columns:normalized(controller.getState().columns),layouts:controller.getState().layouts,...(layoutSave?{viewRevision:(current.viewRevision||0)+1,inheritedFrom:null}:{})}; const plan=planFor(payload.groupId,sprintId); const inclusionChanges=(payload.inclusionChanges||[]).map(change=>{const previous=plan.entries.get(change.issueId)||{included:false,revision:0}; const entry={issueId:change.issueId,included:change.included,revision:previous.revision+Number(previous.included!==change.included)}; plan.entries.set(change.issueId,entry); return entry;}); plan.revision++; plan.exists=true; return {...schemas[payload.groupId],cells:payload.cellChanges.map(cell=>({...cell,revision:2})),operationId:payload.operationId,plan:{exists:true,revision:plan.revision},inclusionChanges}}});
         window.reviewActions=[]; window.holdCalls=[]; window.harness={state:()=>controller.getState(),saveCount:()=>saveCount,reload:()=>controller.refresh(),actions:()=>window.reviewActions,
             requests:()=>requests,setGroup:groupId=>setHarnessScope(scope=>({...scope,groupId})),setSprint:sprintId=>setHarnessScope(scope=>({...scope,sprintId:String(sprintId)})),
             setSchema:(groupId,patch)=>{schemas[groupId]={...schemas[groupId],...patch}},guard:()=>controller.guardScopeChange(()=>{}),save:()=>controller.save(),dismissals:()=>window.hintDismissals||{}};
@@ -46,7 +51,7 @@ test.beforeAll(() => {
             const [scope,setScope]=React.useState({sprintId:String(options.sprintId||'100'),groupId:options.groupId||'group-alpha'});setHarnessScope=setScope;
             // Hint dismissals live in App state, as in the dashboard, so they survive Sprint and group switches.
             const [dismissals,setDismissals]=React.useState({});window.hintDismissals=dismissals;
-            React.useEffect(()=>{controller.setScope({sprintId:scope.sprintId,groupId:scope.groupId,contextKey:'actor',active:options.active!==false,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))]});},[scope.sprintId,scope.groupId]);
+            React.useEffect(()=>{controller.setScope({sprintId:scope.sprintId,groupId:scope.groupId,contextKey:'actor',active:options.active!==false,rows:[...stories.map(task=>({issueId:task.id,rowKind:'story'})),...epics.map(group=>({issueId:group.epic.id,rowKind:'epic'}))],planScope:{workspaceId:'workspace-test',groupId:scope.groupId,sprintId:scope.sprintId,namespaceId:null}});},[scope.sprintId,scope.groupId]);
             // Group and Sprint props for the table; derived columns stay off unless a test opts in.
             const groupProps={groupName:'groupName' in options?options.groupName:groupNames[scope.groupId],resolveSprintName:sprintId=>sprintNames?.[String(sprintId)],derived:options.derived===true,inheritedHintDismissals:dismissals,onDismissInheritedHint:hint=>setDismissals(map=>recordInheritedHintDismissal(map,hint))};
             return <div className="container"><div id="reference">Header reference</div><button id="layout" onClick={()=>setVisible(!visible)}>Layout</button>{visible&&<PlanningReviewTable epicGroups={shownEpics} visibleTasks={shown} pendingOriginals={pending} confirmedEdit={confirmed} onConfirmedEditHandled={handled=>setConfirmed(event=>{const left=(event?.keys||[]).filter(key=>!handled.includes(key));return left.length?{...event,keys:left}:null})} isRowHeld={()=>window.heldRows>0} selectedStoryKeys={selected} onToggleStory={task=>setSelected(previous=>{const next=new Set(previous);if(next.has(task.key))next.delete(task.key);else next.add(task.key);return next})} onSelectStories={(tasks,on)=>setSelected(previous=>{const next=new Set(previous);tasks.forEach(task=>on?next.add(task.key):next.delete(task.key));return next})} jiraUrl="https://jira.example" review={{...state,...controller}} {...groupProps} onReviewAction={action=>window.reviewActions.push(action)} onHoldRow={key=>window.holdCalls.push(key)} admittedTeamCount={2} admittedProjectCount={2} renderFieldEditor={({row,field,value})=>field==='assignee'?<input className="issue-person-editor-trigger" aria-label={'assignee for '+row.key} defaultValue={String(value)} />:field==='team'||field==='inclusion'?<button className={field==='inclusion'?'epic-stat-toggle '+(row.key==='DEMO-2'?'':'active'):'planning-action-button'} aria-label={field+' for '+row.key}>{field==='inclusion'?(row.key==='DEMO-2'?'Excluded':'Included'):row.team?.name||'Unknown Team'}</button>:value}/>}<PlanningReviewScopeDialog review={{...state,...controller}}/></div>
@@ -112,7 +117,7 @@ test('dirty typing survives layout, Escape cancels, sorting waits until blur and
     await cell.fill('99'); await page.locator('#layout').click(); await page.locator('#layout').click();
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await expect(page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true })).toHaveValue('99');
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     expect(await page.evaluate(() => window.harness.saveCount())).toBe(1);
     expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
 });
@@ -244,7 +249,7 @@ for(const width of [390,1280]) test(`column tools open as anchored popups withou
     expect((await headers()).slice(0,4)).toEqual(['Key','Summary','Status','Cost 0']);
     await hideColumn(page,'Assignee');
     await expect(page.getByRole('columnheader',{name:'Assignee',exact:true})).toHaveCount(0);
-    await page.getByRole('button',{name:'Save review',exact:true}).click();
+    await page.getByRole('button',{name:'Save plan',exact:true}).click();
     await page.evaluate(()=>window.harness.reload());
     expect((await headers()).slice(0,4)).toEqual(['Key','Summary','Status','Cost 0']);
     await expect(page.getByRole('columnheader',{name:'Assignee',exact:true})).toHaveCount(0);
@@ -464,10 +469,10 @@ for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default
     await expect(popup.locator('.pop-facet')).toHaveCount(0);
     await page.keyboard.press('Escape');
     for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
-    await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
+    await page.getByRole('button',{name:'Save plan',exact:true}).click();await page.evaluate(()=>window.harness.reload());
     for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(1);
     for(const name of optional) await hideColumn(page,name);
-    await page.getByRole('button',{name:'Save review',exact:true}).click();await page.evaluate(()=>window.harness.reload());
+    await page.getByRole('button',{name:'Save plan',exact:true}).click();await page.evaluate(()=>window.harness.reload());
     for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await page.screenshot({path:path.join(root,`tmp/217-ui/optional-columns-${mode}.png`),fullPage:true});
 });
@@ -524,7 +529,7 @@ test('heading click cycles ascending, descending, off and the index appears only
 
 test('Discard and Save review appear only while the review has changes', async ({page}) => {
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
-    const save=page.getByRole('button',{name:'Save review',exact:true}),discard=page.getByRole('button',{name:'Discard',exact:true});
+    const save=page.getByRole('button',{name:'Save plan',exact:true}),discard=page.getByRole('button',{name:'Discard changes',exact:true});
     await expect(save).toHaveCount(0);await expect(discard).toHaveCount(0);
     await expect(page.getByText('Unsaved',{exact:true})).toHaveCount(0);
     const toolbar=page.locator('.planning-review-controls');
@@ -542,8 +547,8 @@ test('Discard and Save review appear only while the review has changes', async (
 test('Save review sends one save and the review actions disappear', async ({page}) => {
     await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
     await page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true}).fill('99');
-    await page.getByRole('button',{name:'Save review',exact:true}).click();
-    await expect(page.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'Save plan',exact:true}).click();
+    await expect(page.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
     expect(await page.evaluate(()=>window.harness.saveCount())).toBe(1);
     expect(await page.evaluate(()=>window.harness.state().dirty)).toBe(false);
 });
@@ -591,7 +596,7 @@ for(const width of [390,1440]) test(`review toolbar holds only the row switch an
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Drag column handles to reorder.',{exact:false})).toHaveCount(0);
     await expect(page.getByRole('button',{name:'Refresh review',exact:true})).toHaveCount(0);
-    await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
+    await expect(toolbar.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
     await expect(toolbar.getByRole('button',{name:'Review options',exact:true})).toHaveCount(0);
     // Column work lives in the header: no toolbar "+ Column" or "Columns" buttons and no management dialog.
     await expect(toolbar.getByRole('button',{name:'+ Column',exact:true})).toHaveCount(0);
@@ -613,11 +618,11 @@ for(const width of [390,1440]) test(`review toolbar holds only the row switch an
     await corner.click();
     await page.getByLabel('Column name',{exact:true}).fill('Draft field');
     await page.getByRole('button',{name:'Add column',exact:true}).click();
-    await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toBeEnabled();
+    await expect(toolbar.getByRole('button',{name:'Save plan',exact:true})).toBeEnabled();
     await page.screenshot({path:path.join(root,`tmp/217-ui/review-cluster-${width}.png`)});
-    await toolbar.getByRole('button',{name:'Discard',exact:true}).click();
-    await toolbar.getByRole('button',{name:'Discard',exact:true}).click();
-    await expect(toolbar.getByRole('button',{name:'Save review',exact:true})).toHaveCount(0);
+    await toolbar.getByRole('button',{name:'Discard changes',exact:true}).click();
+    await toolbar.getByRole('button',{name:'Discard changes',exact:true}).click();
+    await expect(toolbar.getByRole('button',{name:'Save plan',exact:true})).toHaveCount(0);
     await expect(page.getByRole('columnheader',{name:'Draft field',exact:true})).toHaveCount(0);
 });
 
@@ -767,7 +772,7 @@ test('Hide column hides an optional column, marks the draft and reports it', asy
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await showHiddenColumn(page, 'Component');
     await expect(page.getByRole('columnheader', { name: 'Component', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Save review', exact: true }).click(); expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click(); expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
     await columnMenuButton(page, 'Component').click();
     await columnMenu(page, 'Component').getByRole('button', { name: 'Hide column', exact: true }).click();
     await expect(columnMenu(page, 'Component')).toHaveCount(0);
@@ -1429,10 +1434,10 @@ test('a validation error from one menu does not outlive a header dock flip', asy
     await expect(page.getByRole('alert').filter({ hasText: 'Enter a column name' })).toHaveCount(0);
 });
 
-// Accepted: the points of the Stories the user has ticked, per row, with the sum in the footer.
-test('Accepted shows a Story\'s points only while it is ticked and totals the ticked Stories', async ({ page }) => {
+// Planned SP (formerly Accepted, #331): the points of the Stories the user has ticked, per row, with the sum in the footer.
+test('Planned SP shows a Story\'s points only while it is ticked and totals the ticked Stories', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: 'Planned SP', exact: true })).toBeVisible();
     const cell = key => page.locator('tbody tr', { has: page.getByRole('checkbox', { name: `Select ${key}`, exact: true }) }).locator('td.planning-review-accepted');
     const total = page.locator('tfoot td.planning-review-accepted');
     await expect(cell('DEMO-1')).toHaveText(''); await expect(total).toHaveText('0');
@@ -1449,7 +1454,7 @@ test('Accepted shows a Story\'s points only while it is ticked and totals the ti
     expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
 });
 
-test('in Epics mode an Epic\'s Accepted is the sum of its ticked Stories and the footer is the sum over rows', async ({ page }) => {
+test('in Epics mode an Epic\'s Planned SP is the sum of its ticked Stories and the footer is the sum over rows', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page);
     const epic = page.locator('tbody tr', { has: page.getByRole('checkbox', { name: 'Select DEMO-10', exact: true }) }).locator('td.planning-review-accepted');
     const total = page.locator('tfoot td.planning-review-accepted');
@@ -1460,21 +1465,21 @@ test('in Epics mode an Epic\'s Accepted is the sum of its ticked Stories and the
     await expect(epic).toHaveText(''); await expect(total).toHaveText('0');
 });
 
-test('Accepted hides from its header menu, persists through the shared layout save and comes back via Show hidden', async ({ page }) => {
+test('Planned SP hides from its header menu, persists through the shared layout save and comes back via Show hidden', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 }); await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    await columnMenuButton(page, 'Accepted').click();
-    expect(await menuItems(columnMenu(page, 'Accepted'))).toEqual(['Move left', 'Move right', 'Hide column']);
-    await columnMenu(page, 'Accepted').getByRole('button', { name: 'Hide column', exact: true }).click();
-    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toHaveCount(0);
+    await columnMenuButton(page, 'Planned SP').click();
+    expect(await menuItems(columnMenu(page, 'Planned SP'))).toEqual(['Move left', 'Move right', 'Hide column']);
+    await columnMenu(page, 'Planned SP').getByRole('button', { name: 'Hide column', exact: true }).click();
+    await expect(page.getByRole('columnheader', { name: 'Planned SP', exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => window.harness.state().layouts.story.hidden)).toContain('accepted');
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     expect(await page.evaluate(() => window.harness.saveCount())).toBe(1);
     expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
     await page.evaluate(() => window.harness.reload());
-    await expect(page.getByRole('columnheader', { name: 'Accepted', exact: true })).toHaveCount(0);
-    await showHiddenColumn(page, 'Accepted');
+    await expect(page.getByRole('columnheader', { name: 'Planned SP', exact: true })).toHaveCount(0);
+    await showHiddenColumn(page, 'Planned SP');
     const order = await headings(page);
-    expect(order[order.indexOf('Story Points') + 1]).toBe('Accepted');
+    expect(order[order.indexOf('Story Points') + 1]).toBe('Planned SP');
 });
 
 
@@ -1861,7 +1866,7 @@ test('a derived column menu offers only moves and Hide, and Hide is separate per
     await popup.getByRole('button', { name: 'Move left', exact: true }).click();
     expect((await headings(page)).indexOf(name)).toBe(before - 1);
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.harness.state().dirty)).toBe(false);
     await page.evaluate(() => window.harness.reload());
     expect((await headings(page)).indexOf(name)).toBe(before - 1);
@@ -1901,11 +1906,12 @@ test('derived values stay blank until their sources load and during a manual ref
     await expect(cell).toHaveText(''); await expect(noEpic).toHaveText(''); await expect(total).toHaveText('');
     await release(); await page.evaluate(() => window.refreshing);
     await expect(cell).toHaveText('12'); await expect(noEpic).toHaveText('10'); await expect(total).toHaveText('22');
-    // A scope change reloads every row: nothing shows until the Stories are loaded again.
+    // A scope change reloads every row: nothing shows until the Stories are loaded again. The shared plan (#331) publishes
+    // the new scope's columns together with its plan projection, so the derived column is absent until then.
     await hold();
     await page.evaluate(() => window.harness.setSprint('110'));
     await expect.poll(() => page.evaluate(() => window.harness.requests().filter(item => item.kind === 'values' && item.sprintId === '110').length)).toBeGreaterThan(0);
-    await expect(cell).toHaveText(''); await expect(total).toHaveText('');
+    await expect(cell).toHaveCount(0); await expect(total).toHaveCount(0);
     await release();
     await expect(cell).toHaveText('12'); await expect(total).toHaveText('22');
 });
@@ -1992,7 +1998,7 @@ test('an Epics-mode corner add anchors on the last native column, so the column 
     expect(layout.order[index - 1]).toBe(add.column.after);
     expect(layout.order.slice(index + 1)).toEqual(derivedIds);
     const visible = await headings(page); expect(visible[visible.indexOf('Risk') + 1]).toBe('Cost 0, Story property');
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.harness.state().dirty)).toBe(false);
     const saved = (await page.evaluate(() => window.harness.requests())).filter(request => request.kind === 'save').at(-1);
     expect(saved.payload.schemaChanges.find(change => change.action === 'add').column.after).toBe(add.column.after);
@@ -2035,7 +2041,7 @@ test('the inherited-view hint names its source Sprint in one sentence, after eve
 test('the hint hides while a layout action is pending or another message line shows, and returns after Discard', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 }); await install(page, false, false, false, false, inheritedView);
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    const discard = async () => { await page.getByRole('button', { name: 'Discard', exact: true }).click(); await page.getByRole('button', { name: 'Discard', exact: true }).click(); };
+    const discard = async () => { await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); };
     await hideColumn(page, 'Priority');
     await expect(hintRow(page)).toHaveCount(0);
     await discard(); await expect(hintRow(page)).toHaveCount(1);
@@ -2043,7 +2049,7 @@ test('the hint hides while a layout action is pending or another message line sh
     await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
     await expect(hintRow(page)).toHaveCount(1);
     await page.evaluate(() => { window.saveError = 'review_unexpected'; });
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Review could not be saved. Your draft is preserved.' })).toBeVisible();
     await expect(hintRow(page)).toHaveCount(0);
     await page.evaluate(() => { window.saveError = null; });
@@ -2115,7 +2121,7 @@ for (const [code, message, draft] of [['review_group_unknown', 'This Department 
     await page.evaluate(value => { window.saveError = value; }, code);
     if (draft === 'cell') await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
     else { await page.getByRole('button', { name: '+ Add column', exact: true }).click(); await addDialog(page).getByLabel('Column name', { exact: true }).fill('Risk'); await addDialog(page).getByRole('button', { name: 'Add column', exact: true }).click(); }
-    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    const save = page.getByRole('button', { name: 'Save plan', exact: true });
     await save.click();
     await expect(page.getByRole('alert').filter({ hasText: message })).toBeVisible();
     await expect(save).toBeDisabled();
@@ -2123,7 +2129,7 @@ for (const [code, message, draft] of [['review_group_unknown', 'This Department 
     await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-1280.png`), fullPage: false, animations: 'disabled' });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-390.png`), fullPage: false, animations: 'disabled' });
-    await page.getByRole('button', { name: 'Discard', exact: true }).click(); await page.getByRole('button', { name: 'Discard', exact: true }).click();
+    await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect(save).toHaveCount(0);
     await expect(page.getByRole('alert').filter({ hasText: message })).toHaveCount(0);
     expect(await page.evaluate(() => window.harness.state().groupBlocked)).toBe(false);
@@ -2133,7 +2139,7 @@ for (const [code, message, draft] of [['review_group_unknown', 'This Department 
 test('a group-blocked Save stays disabled until a group change or a successful reload', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 }); await install(page);
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
-    const save = page.getByRole('button', { name: 'Save review', exact: true });
+    const save = page.getByRole('button', { name: 'Save plan', exact: true });
     const block = async () => {
         await page.evaluate(() => { window.saveError = 'review_group_unknown'; });
         await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
@@ -2145,6 +2151,10 @@ test('a group-blocked Save stays disabled until a group change or a successful r
     await expect(save).toBeEnabled(); expect(await page.evaluate(() => window.harness.state().groupBlocked)).toBe(false);
     await save.click(); await expect(save).toHaveCount(0);
     await block();
+    // A shared plan's draft guards the scope (#331): the group change asks first, and discarding the draft lets it through.
+    await page.evaluate(() => { window.groupGuard = window.harness.guard(); });
+    await page.getByRole('dialog').getByRole('button', { name: 'Discard changes', exact: true }).click();
+    expect(await page.evaluate(() => window.groupGuard)).toBe(true);
     await page.evaluate(() => window.harness.setGroup('group-beta'));
     await expect.poll(() => page.evaluate(() => ({ group: window.harness.state().groupId, blocked: window.harness.state().groupBlocked, error: window.harness.state().error }))).toEqual({ group: 'group-beta', blocked: false, error: '' });
 });
@@ -2160,9 +2170,9 @@ test('limit messages say "per group"', async ({ page }) => {
     await page.keyboard.press('Escape');
     await page.evaluate(() => { window.saveError = 'review_schema_limit'; });
     await page.getByRole('textbox', { name: 'Cost 0 for DEMO-1', exact: true }).fill('3');
-    await page.getByRole('button', { name: 'Save review', exact: true }).click();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect(page.getByRole('alert').filter({ hasText: 'Review columns are limited to 240 per group, archived ones included.' })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Save review', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
 });
 
 test.describe('hint by touch', () => {

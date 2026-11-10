@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { buildDashboardBundle } = require('./eng_board_dashboard_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 const { deferred, mockDashboard, openCatchUp, taskCard, taskPayload, installLifecycleControl, buildScenario, revealRefreshButton, refreshButton } = require('./eng_epic_refresh_fixture');
 
 // Current source is bundled independently of dist; the shell and CSS use the rebuilt dist.
@@ -697,25 +698,7 @@ test('automatic ordinary Board preserves non-neutral facets and current scope wh
     expect(ctx.calls.slice(since).filter(call=>call.params.purpose==='epic-refresh')).toHaveLength(0);
 });
 
-test('automatic Planning List owns return and keeps its primary/readiness/dependency ceilings without alerts', async ({ page }, testInfo) => {
-    const { lifecycle, resources, ctx } = await setup(page, { prefs: { planningLayout: 'list' } });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
-    await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).uncheck(); await settle(page);
-    const selection = await page.locator('.task-list .task-item[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input.task-checkbox')).map(row => [row.dataset.issueKey, row.querySelector('input.task-checkbox').checked])));
-    expect(Object.values(selection)).toContain(true); expect(Object.values(selection)).toContain(false);
-    expect(selection['E3-S01']).toBe(true); expect(selection['E2-S01']).toBe(false);
-    const since = ctx.calls.length, resourceSince = resources.length;
-    ctx.scenario.stories.find(story => story.key === 'E3-S01').fields.summary = 'Synthetic Planning List accepted return';
-    await lifecycle.returnAfter(13 * 60000); await expect(taskCard(page, 'E3-S01')).toContainText('Synthetic Planning List accepted return'); await settle(page);
-    const calls = ctx.calls.slice(since), observed = counts(calls, resources.slice(resourceSince));
-    expect(observed).toMatchObject({ primary: 4, scope: 2, readiness: 1, dependencies: 1, alerts: 0, catalog: 0, documents: 0, assets: 0 });
-    expect(calls.filter(call => ['/api/capacity', '/api/missing-info'].includes(call.pathname) || call.pathname.includes('/review'))).toHaveLength(0);
-    const retainedSelection = await page.locator('.task-list .task-item[data-issue-key]').evaluateAll(rows => Object.fromEntries(rows.filter(row => row.querySelector('input.task-checkbox')).map(row => [row.dataset.issueKey, row.querySelector('input.task-checkbox').checked])));
-    for (const [key, checked] of Object.entries(selection)) expect(retainedSelection[key], `surviving List row ${key}`).toBe(checked);
-    expect(calls.filter(call => !['GET', 'POST'].includes(call.method) || call.method === 'POST' && !['/api/auth/refresh', '/api/dependencies'].includes(call.pathname))).toHaveLength(0);
-    await evidence(testInfo, 'planning-list-request-ceilings', observed);
-});
+// The automatic Planning List return was retired with List (#323); Planning Table refreshes are covered below.
 
 const { installDashboardFixture: installEpmFreshnessFixture, enabledEpmOptions } = require('./epm_view_fixture');
 function epmFreshnessRollup(project, remote = false) {
@@ -1058,61 +1041,87 @@ test('automatic due Sprint catalog read retains a removed selection and shows sc
     await expect(taskCard(page, 'E3-S01')).toBeVisible();
 });
 
-async function planningSelectionStorage(page) {
-    return page.evaluate(() => ({
-        planning: JSON.parse(localStorage.getItem('jira_dashboard_planning_state_v1') || '{}')['planning::3001::group-alpha'],
-        teams: JSON.parse(localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}')['team-selection::3001::group-alpha'],
-    }));
+// Planning selection is the shared plan's draft (#331): its Stories need numeric issue ids and the mock serves the review.
+function planningScenario(scenario = buildScenario()) {
+    scenario.stories.forEach((story, index) => { story.id = String(60001 + index); });
+    return scenario;
+}
+function servePlanningReview(ctx) {
+    const review = createPlanningReviewMock();
+    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/, ({ route, json }) => json(review.response(route.request(), { capabilities: { canRead: true, canSave: true } })));
+    ctx.respond(/\/assignee-capacity\/planned\/read$/, ({ json }) => json({ sprintId: '3001', capabilities: { canRead: true, canSave: true }, teams: [] }));
+}
+const planBox = (page, key) => page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
+const planRow = (page, key) => page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+const plannedSummary = page => page.locator('.planning-panel.open .planning-stats.compact').first();
+async function openPlanningStories(page) {
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+}
+// A dirty plan draft defers automatic refreshes like any edit, so the selection is saved before the absence.
+async function savePlan(page) {
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0); await settle(page);
+}
+async function teamSelectionStorage(page) {
+    return page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}')['team-selection::3001::group-alpha']);
 }
 
 test('automatic Planning keeps a selected Story that left the Sprint until a manual Refresh reconciles it', async ({ page }, testInfo) => {
-    const { ctx, lifecycle } = await setup(page, { prefs: { planningLayout: 'list' } });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
-    await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).check(); await settle(page);
-    const before = await planningSelectionStorage(page);
-    expect(before.planning.selectedTaskKeys).toContain('E3-S01');
-    await taskCard(page, 'E1-S01').scrollIntoViewIfNeeded(); await settle(page);
+    const { ctx, lifecycle } = await setup(page, { scenario: planningScenario(), prefs: {}, configure: servePlanningReview });
+    await openPlanningStories(page);
+    await planBox(page, 'E3-S01').check();
+    await planBox(page, 'E2-S01').check(); await settle(page);
+    await savePlan(page);
+    const before = await plannedSummary(page).innerText();
+    expect(before).toContain('2 stories');
+    await planRow(page, 'E1-S01').scrollIntoViewIfNeeded(); await settle(page);
     const since = ctx.calls.length;
     ctx.scenario.stories = ctx.scenario.stories.filter(story => story.key !== 'E3-S01');
     ctx.scenario.stories.find(story => story.key === 'E2-S01').fields.summary = 'Synthetic accepted disappearance witness';
     await lifecycle.returnAfter(13 * 60000);
-    await expect(taskCard(page, 'E2-S01')).toContainText('Synthetic accepted disappearance witness'); await settle(page);
+    await expect(planRow(page, 'E2-S01')).toContainText('Synthetic accepted disappearance witness'); await settle(page);
     // Ordinary automatic reads cannot prove complete Sprint membership, so a Story absent from the answer is held, not removed.
-    await expect(taskCard(page, 'E3-S01')).toHaveCount(1);
-    await expect(page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true })).toBeChecked();
-    await expect(page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true })).toBeChecked();
-    expect(await planningSelectionStorage(page)).toEqual(before);
+    await expect(planRow(page, 'E3-S01')).toHaveCount(1);
+    await expect(planBox(page, 'E3-S01')).toBeChecked();
+    await expect(planBox(page, 'E2-S01')).toBeChecked();
+    expect(await plannedSummary(page).innerText()).toBe(before);
     expect(ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
     await task9Screenshot(page, 'planning-disappearing-selected-story');
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click(); await settle(page);
-    await expect(taskCard(page, 'E3-S01')).toHaveCount(0);
-    const manual = await planningSelectionStorage(page);
-    expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
-    expect(manual.planning.selectedTaskKeys).toContain('E2-S01');
+    // The manual Refresh reloads the review and reopens the Table on its Epic rows.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(planRow(page, 'E3-S01')).toHaveCount(0);
+    await expect(planBox(page, 'E2-S01')).toBeChecked();
+    const manual = await plannedSummary(page).innerText();
+    expect(manual).toMatch(/^1 story · 2\.0 SP/);
     await evidence(testInfo, 'automatic-disappearing-story-selection', { before, automatic: before, manual });
 });
 
 test('automatic Planning preserves a selected Team after its last Story leaves and manual Refresh keeps normal reconciliation', async ({ page }, testInfo) => {
     const { groupsConfigPayload } = require('./eng_epic_refresh_fixture');
-    const scenario = buildScenario();
+    const scenario = planningScenario();
     Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
-    const { ctx, lifecycle } = await setup(page, { scenario, prefs: { planningLayout: 'list' }, configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
-        ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
-    })) });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
+    const { ctx, lifecycle } = await setup(page, { scenario, prefs: {}, configure: fixture => {
+        fixture.respond('/api/groups-config', ({ json }) => json({
+            ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
+        }));
+        servePlanningReview(fixture);
+    } });
+    await openPlanningStories(page);
     await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
     await page.locator('.team-dropdown-panel:visible').getByRole('checkbox', { name: 'Beta Team', exact: true }).check();
     await page.locator('.view-selector .controls-label').click(); await settle(page);
     await expect(page.locator('.team-dropdown-selection-label:visible')).toHaveText('Beta Team');
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check(); await settle(page);
-    const before = await planningSelectionStorage(page);
-    expect(before.teams.selectedTeams).toEqual(['team-beta']);
+    await planBox(page, 'E3-S01').check(); await settle(page);
+    await savePlan(page);
+    const before = await teamSelectionStorage(page);
+    expect(before.selectedTeams).toEqual(['team-beta']);
     Object.assign(ctx.scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-alpha', teamName: 'Alpha Team', summary: 'Synthetic remotely changed Team' });
     const since = ctx.calls.length;
     await lifecycle.returnAfter(13 * 60000); await settle(page);
     await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
-    expect(await planningSelectionStorage(page)).toEqual(before);
+    expect(await teamSelectionStorage(page)).toEqual(before);
     await expect(page.locator('.team-dropdown-toggle:visible')).toHaveClass(/active-filter/);
     await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
     await expect(page.locator('.team-dropdown-panel:visible').getByRole('checkbox', { name: 'Beta Team', exact: true })).toBeChecked();
@@ -1120,10 +1129,12 @@ test('automatic Planning preserves a selected Team after its last Story leaves a
     await task9Screenshot(page, 'planning-disappearing-selected-team');
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click(); await settle(page);
     await expect(page.locator('.team-dropdown-selection-label:visible')).toHaveText('Beta Team');
-    const manual = await planningSelectionStorage(page);
-    expect(manual.teams.selectedTeams).toEqual(['team-beta']);
-    expect(manual.planning.selectedTeams).toEqual(['team-beta']);
-    expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
+    const manual = await teamSelectionStorage(page);
+    expect(manual.selectedTeams).toEqual(['team-beta']);
+    // The Story now belongs to Alpha Team: the Beta Team's projection of the shared plan no longer lists or counts it.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(planRow(page, 'E3-S01')).toHaveCount(0);
+    await expect(plannedSummary(page)).toContainText('0 stories · 0.0 SP');
     await evidence(testInfo, 'automatic-disappearing-team-selection', { before, automatic: before, manual });
 });
 
@@ -1132,7 +1143,7 @@ for (const kind of ['Stories', 'Epics']) test(`Planning Table ${kind} refreshes 
     const scenario = buildScenario();
     Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
     const { ctx, lifecycle } = await setup(page, { scenario,
-        prefs: { planningLayout: 'table' },
+        prefs: {},
         configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
             ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
         })),
@@ -1239,4 +1250,60 @@ for (const dismissed of [false, true]) for (const native of ['auto', 'none']) te
     expect(after.strip.height - before.strip.height, 'the strip grew').toBeGreaterThan(100);
     expect(Math.abs(after.top - before.top)).toBeLessThanOrEqual(2);
     await evidence(testInfo, 'assignee-strip-reading-metrics', { dismissed, native, before, after });
+});
+
+// #323 Task 8 Step 1, the EPM residual of a312bae3: an ENG read aborted by the switch to EPM settles while EPM is active, so its
+// result guard retires it and useEngSprintData leaves its loading flags set. Back on ENG the long-absence return must still read.
+function enableEpmOnEngFixture(ctx) {
+    const { epmProject } = require('./epm_view_fixture');
+    const epm = { version: 2, labelPrefix: 'rnd_project_', scope: { rootGoalKey: 'ROOT-100', subGoalKeys: ['CHILD-200'] },
+        issueTypes: { initiative: ['Initiative'], epic: ['Epic'], leaf: ['Story', 'Task'] },
+        projects: { 'home-1': { id: 'home-1', homeProjectId: 'home-1', name: 'Connected Home Project', label: 'rnd_project_connected' } } };
+    ctx.respond('/api/config', ({ json }) => json({ jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', projectsConfigured: true,
+        userCanEditSettings: true, userCanEditEpmConfig: true, environmentConfigExists: true, epm, epmViewEnabled: true, epmHomeReadAvailable: true,
+        viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm } } }));
+    ctx.respond(call => call.pathname.startsWith('/api/epm/'), ({ call, json }) => {
+        const project = epmProject('active');
+        if (call.pathname === '/api/epm/config') return json(epm);
+        if (call.pathname === '/api/epm/scope') return json({ cloudId: 'synthetic-cloud', error: '' });
+        if (call.pathname === '/api/epm/access') return json({ epmHomeReadAvailable: true, state: 'available' });
+        if (call.pathname === '/api/epm/goals') return json({ goals: [{ id: 'root', key: 'ROOT-100', name: 'Connected Root Goal' }], error: '' });
+        if (call.pathname === '/api/epm/projects' || call.pathname === '/api/epm/projects/configuration') return json({ projects: [project], cacheHit: false });
+        if (call.pathname === '/api/epm/projects/rollup/all') return json(epmFreshnessRollup(project));
+        return json({});
+    });
+}
+test('ENG return refresh starts after an aborted ENG read retired while EPM was active', async ({ page }, testInfo) => {
+    const { catchUpPrefs, appBaseUrl } = require('./eng_epic_refresh_fixture');
+    const lifecycle = await installLifecycleControl(page);
+    const ctx = await mockDashboard(page);
+    enableEpmOnEngFixture(ctx);
+    const gate = deferred(), held = [];
+    const scopeRead = call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose;
+    const release = ctx.respond(call => scopeRead(call) && held.length < 2, async ({ call, json }) => {
+        held.push(call.params.project);
+        await gate.promise;
+        await json(taskPayload(call.params, ctx.scenario)).catch(() => {}); // The read was aborted; its late answer has no taker.
+        return null;
+    });
+    await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardBundle }));
+    await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), catchUpPrefs({ groupByInitiativeChoice: false }));
+    await page.goto(appBaseUrl);
+    await expect.poll(() => held.length).toBe(2);
+    await page.getByRole('radio', { name: 'EPM', exact: true }).click();
+    await expect(page.locator('.epm-project-board-name')).toBeVisible();
+    gate.resolve(); release();
+    await settle(page);
+    await page.getByRole('radio', { name: 'ENG', exact: true }).click();
+    await expect(page.locator('.epic-block[data-epic-key="EPIC-1"]')).toBeVisible();
+    await settle(page);
+    await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
+    const since = ctx.calls.length;
+    await lifecycle.returnAfter(13 * 60 * 1000);
+    await expect.poll(() => ctx.calls.slice(since).filter(scopeRead).length, 'the return refresh reads both ENG lanes').toBeGreaterThanOrEqual(2);
+    await settle(page);
+    const calls = ctx.calls.slice(since);
+    await evidence(testInfo, 'eng-return-after-epm-retired-read', { held, reads: calls.map(call => ({ method: call.method, pathname: call.pathname, purpose: call.params.purpose, project: call.params.project })) });
+    expect(calls.filter(scopeRead).every(call => call.params.refresh === 'true')).toBe(true);
+    expect(calls.filter(call => call.method !== 'GET' && !['/api/auth/refresh', '/api/dependencies'].includes(call.pathname))).toEqual([]);
 });

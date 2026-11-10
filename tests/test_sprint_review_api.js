@@ -97,3 +97,95 @@ test('review timeout also bounds an unresponsive CSRF preflight without dispatch
         assert.equal(writes, 0);
     } finally { global.fetch = oldFetch; }
 });
+
+test('v2 operations freeze their stamped payload and use namespace-only outcome lookup', async () => {
+    const api = await load();
+    const id = api.createPlanningOperationId();
+    assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const input = { version: 2, operationId: id, groupId: 'g', inclusionChanges: [{ issueId: '1', included: true, baseRevision: 0 }] };
+    const frozen = api.freezePlanningSavePayload(input);
+    input.inclusionChanges[0].included = false;
+    assert.equal(frozen.inclusionChanges[0].included, true);
+    assert.ok(Object.isFrozen(frozen.inclusionChanges[0]));
+    const oldFetch = global.fetch, calls = [];
+    global.fetch = async (url, options) => { calls.push({ url, options }); return Response.json({ operationId: id, status: 'unknown' }); };
+    try {
+        await api.fetchPlanningSaveOperation('', '17', id, { groupId: 'g /', configurationId: 'namespace' });
+        const parsed = new URL(calls[0].url, 'https://synthetic.example');
+        assert.deepEqual([...parsed.searchParams], [['groupId', 'g /'], ['configurationId', 'namespace']]);
+        assert.equal(calls[0].options.method, 'GET');
+        assert.equal(calls[0].options.headers['X-CSRF-Token'], undefined);
+    } finally { global.fetch = oldFetch; }
+});
+
+test('v2 treats malformed acknowledgements and unproven server failures as unconfirmed', async () => {
+    const api = await load(), oldFetch = global.fetch;
+    const payload = { version: 2, operationId: '019a413c-0000-7000-8000-000000000001', inclusionChanges: [{ issueId: '1', included: true, baseRevision: 0 }] };
+    try {
+        for (const response of [Response.json({}), Response.json({ error: 'internal' }, { status: 500 }), Response.json({ error: 'busy' }, { status: 503 })]) {
+            global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : response;
+            await assert.rejects(api.saveSprintReview('', '17', payload), error => error.unconfirmed === true);
+        }
+        global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : Response.json({ error: 'planning_deadline_exceeded', noCommit: true }, { status: 503 });
+        await assert.rejects(api.saveSprintReview('', '17', payload), error => error.noCommit === true && !error.unconfirmed);
+    } finally { global.fetch = oldFetch; }
+});
+
+test('v2 acknowledgement confirms exactly submitted IDs and revisioned values', async () => {
+    const api = await load(), oldFetch = global.fetch;
+    const payload = api.freezePlanningSavePayload({ version: 2, operationId: api.createPlanningOperationId(), groupId: 'g', inclusionChanges: [{ issueId: '1', included: true, baseRevision: 0 }], cellChanges: [] });
+    const ack = { operationId: payload.operationId, plan: { exists: true, revision: 1 }, schemaRevision: 0, columns: [], cells: [], inclusionChanges: [{ issueId: '1', included: true, revision: 1 }] };
+    try {
+        global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : Response.json(ack);
+        assert.deepEqual(await api.saveSprintReview('', '17', payload), ack);
+        for (const changes of [[], [{ issueId: '2', included: true, revision: 1 }], [{ issueId: '1', included: false, revision: 1 }], [{ issueId: '1', included: true, revision: -1 }]]) {
+            global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : Response.json({ ...ack, inclusionChanges: changes });
+            await assert.rejects(api.saveSprintReview('', '17', payload), error => error.unconfirmed === true);
+        }
+    } finally { global.fetch = oldFetch; }
+});
+
+test('v2 deliberate replay never restamps a frozen configuration after context changes', async () => {
+    const api = await load(), context = await import('../frontend/src/workStructure/requestContext.js');
+    const oldFetch = global.fetch, calls = [];
+    const original = { id: 'config-original', model: 'delivery', quarter: '2027Q1', revision: 1, digest: 'original' };
+    context.setActiveWorkContext(original);
+    const payload = api.freezePlanningSavePayload({ version: 2, operationId: api.createPlanningOperationId(), groupId: 'g', inclusionChanges: [], cellChanges: [] });
+    context.setActiveWorkContext({ ...original, id: 'config-next', revision: 2, digest: 'next' });
+    global.fetch = async (url, options = {}) => {
+        if (url.endsWith('/api/auth/csrf')) return Response.json({ csrfToken: 'synthetic' });
+        calls.push(JSON.parse(options.body));
+        return Response.json({ operationId: payload.operationId, plan: { exists: true, revision: 1 }, schemaRevision: 0, columns: [], cells: [], inclusionChanges: [] });
+    };
+    try {
+        await api.saveSprintReview('', '17', payload);
+        await api.saveSprintReview('', '17', payload);
+        assert.deepEqual(calls, [payload, payload]);
+        assert.equal(calls[0].configuration.id, 'config-original');
+    } finally { global.fetch = oldFetch; context.setActiveWorkContext(null); }
+});
+
+test('v2 cell acknowledgement requires exact text and equivalent decimal values', async () => {
+    const api = await load(), oldFetch = global.fetch;
+    try {
+        for (const [type, submitted, acknowledged, valid] of [['text', 'expected', 'WRONG', false], ['text', '01', '1', false], ['number', '1.2', '1.200', true], ['number', '1.2', '1.201', false], ['text', null, '', false]]) {
+            const payload = { version: 2, operationId: api.createPlanningOperationId(), inclusionChanges: [], cellChanges: [{ issueId: '1', rowKind: 'story', columnId: 'cost', value: submitted, baseRevision: 0 }] };
+            const ack = { operationId: payload.operationId, plan: { exists: true, revision: 1 }, schemaRevision: 1, columns: [{ id: 'cost', rowKind: 'story', type }], cells: [{ issueId: '1', rowKind: 'story', columnId: 'cost', value: acknowledged, revision: 1 }], inclusionChanges: [] };
+            global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : Response.json(ack);
+            if (valid) assert.deepEqual(await api.saveSprintReview('', '17', payload), ack);
+            else await assert.rejects(api.saveSprintReview('', '17', payload), error => error.unconfirmed === true);
+        }
+    } finally { global.fetch = oldFetch; }
+});
+
+test('v2 rejects impossible stored inclusion and unchanged review-cell revisions', async () => {
+    const api = await load(), oldFetch = global.fetch;
+    try {
+        for (const cellCase of [false, true]) {
+            const payload = { version: 2, operationId: api.createPlanningOperationId(), inclusionChanges: cellCase ? [] : [{ issueId: '1', included: true, baseRevision: 0 }], cellChanges: cellCase ? [{ issueId: '1', rowKind: 'story', columnId: 'note', value: 'same', baseRevision: 2 }] : [] };
+            const ack = { operationId: payload.operationId, plan: { exists: true, revision: 1 }, schemaRevision: 1, columns: [{ id: 'note', rowKind: 'story', type: 'text' }], cells: cellCase ? [{ issueId: '1', rowKind: 'story', columnId: 'note', value: 'same', revision: 2 }] : [], inclusionChanges: cellCase ? [] : [{ issueId: '1', included: true, revision: 0 }] };
+            global.fetch = async url => url.endsWith('/api/auth/csrf') ? Response.json({ csrfToken: 'synthetic' }) : Response.json(ack);
+            await assert.rejects(api.saveSprintReview('', '17', payload), error => error.unconfirmed === true);
+        }
+    } finally { global.fetch = oldFetch; }
+});

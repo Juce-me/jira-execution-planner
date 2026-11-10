@@ -3,12 +3,11 @@ import { buildJiraBrowseLinkAnalytics } from '../analytics/externalLinks.js';
 import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
+import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import { capacityAxis, parseCapacityDraft, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
 import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
-import { formatHundredths, plannedWireValue, roundHalfUpHundredths, samePlannedValue, validateNumberDraft } from './planningAssigneeCapacityModel.js';
+import { formatHundredths, plannedNumber, plannedWireValue, roundHalfUpHundredths, samePlannedValue, validateNumberDraft } from './planningAssigneeCapacityModel.js';
 
-// "Not now" on the reconcile banner, per (Sprint, Team) until either number changes (page session).
-const reconcileDismissed = new Map();
 const formatSp = value => formatHundredths(roundHalfUpHundredths(value) ?? 0);
 
 const CAPACITY_ERROR_MESSAGES = {
@@ -59,6 +58,43 @@ function CheckIcon() {
         <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M20 6 9 17l-5-5" />
         </svg>
+    );
+}
+
+// The rail icons for a mismatch (push) and a failed save (retry), in the pencil's icon style.
+function ArrowRightIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M5 12h14" />
+            <path d="m13 6 6 6-6 6" />
+        </svg>
+    );
+}
+
+function RetryIcon() {
+    return (
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
+            <path d="M3 3v5h5" />
+        </svg>
+    );
+}
+
+// A rail icon with the pencil's size, frame and hover, and the portaled in-app readout (hover, focus or tap). An
+// unavailable icon is `aria-disabled` (not `disabled`), so its readout still opens and tells why.
+function RailIcon({ readout, label, onClick, unavailable = false, buttonProps = null, children }) {
+    return (
+        <EpicHeaderValueReadout value={readout} alwaysOn transient pointerTransparent>
+            {({ triggerRef, pointerProps, focusProps, pinProps }) => (
+                <IconButton ref={triggerRef} {...pointerProps} {...focusProps} {...pinProps} {...buttonProps} variant="secondary compact" className="team-capacity-action team-capacity-edit-action" size="sm"
+                    onClick={event => {
+                        pinProps.onClick?.(event);
+                        if (!unavailable) onClick?.(event);
+                    }} aria-disabled={unavailable || undefined} aria-label={label}>
+                    {children}
+                </IconButton>
+            )}
+        </EpicHeaderValueReadout>
     );
 }
 
@@ -119,8 +155,71 @@ function conflictMessage(currentCapacity) {
     return `Capacity changed in Jira to ${displayCapacity(currentCapacity)}. Review and save again, or cancel.`;
 }
 
+// A push conflict: Jira's current value, and no claim about whether anything was written.
+function pushConflictMessage(currentCapacity, stored) {
+    const again = `Apply ${formatSp(stored)} SP again to replace it.`;
+    return currentCapacity === null ? `Capacity is now blank in Jira. ${again}` : `Capacity changed in Jira to ${displayCapacity(currentCapacity)}. ${again}`;
+}
+
 function editorDomId(value) {
     return String(value || 'capacity').replace(/[^a-z0-9_-]+/gi, '-');
+}
+
+const noSubscription = () => () => {};
+const noNumbers = () => null;
+const NO_STATUSES = new Map();
+const isFailedSave = save => save === 'failed' || save === 'rejected';
+// The stored-number save state a card shows: the Team's stored-number slot only (a person-row failure belongs to the strip).
+const plannedSaveOf = status => (status && status.plannedSave && status.plannedSave !== 'idle' ? status.plannedSave : '');
+const teamsText = count => `${count} Team${count === 1 ? '' : 's'}`;
+
+// The cards' Jira pushes in flight, failed and in conflict, for the overview row's state note.
+function pushSummaryText(pushes) {
+    const states = [...pushes.values()].map(push => push.state);
+    const count = state => states.filter(value => value === state).length;
+    const [failed, review, pending] = [count('failed'), count('conflict'), count('pending')];
+    const pushWord = n => `${n} Jira push${n === 1 ? '' : 'es'}`;
+    return [failed ? `${pushWord(failed)} failed` : '', review ? `${pushWord(review)} need${review === 1 ? 's' : ''} review` : '',
+        pending ? `Applying ${teamsText(pending)} to Jira…` : ''].filter(Boolean).join(' · ');
+}
+
+// Every card Team's status, through its own Team subscription; the map keeps its identity until one status changes.
+function useTeamStatuses(controller, idsKey) {
+    const cache = React.useRef(null);
+    const subscribe = React.useCallback(listener => {
+        if (!controller || !idsKey) return () => {};
+        const unsubscribes = idsKey.split('\n').map(id => controller.subscribeTeam(id, listener));
+        return () => unsubscribes.forEach(unsubscribe => unsubscribe());
+    }, [controller, idsKey]);
+    const getSnapshot = () => {
+        if (!controller || !idsKey) return NO_STATUSES;
+        const ids = idsKey.split('\n');
+        const list = ids.map(id => controller.getTeamStatus(id));
+        const previous = cache.current;
+        if (previous && previous.key === idsKey && previous.list.every((status, index) => status === list[index])) return previous.map;
+        cache.current = { key: idsKey, list, map: new Map(ids.map((id, index) => [id, list[index]])) };
+        return cache.current.map;
+    };
+    return React.useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+// The overview row's state note, compact and expanded: a failed stored-number read (#323 Task 7: its pencils stay
+// disabled until a read succeeds), then stored-number saves failed and in flight (the cards stay unchanged; a failed
+// card's Retry and Discard are in its hover rail).
+export function usePlanningTeamCapacitySaveStatus() {
+    const context = usePlanningAssigneeCapacityView();
+    const controller = context?.controller || null;
+    const getSnapshot = () => {
+        const byTeam = controller?.getPlannedNumbers()?.byTeam;
+        if (!byTeam) return '';
+        const statuses = Object.keys(byTeam).map(teamId => controller.getTeamStatus(teamId));
+        const readFailed = statuses.some(status => status.load === 'error' && status.canSave !== true);
+        const saves = statuses.map(plannedSaveOf);
+        const failed = saves.filter(isFailedSave).length, saving = saves.filter(save => save === 'saving').length;
+        const count = n => `${n} Team save${n === 1 ? '' : 's'}`;
+        return [readFailed ? CAPACITY_ERROR_MESSAGES.capacity_read_failed : '', failed ? `${count(failed)} failed: hover a card to retry` : '', saving ? `Saving ${teamsText(saving)}…` : ''].filter(Boolean).join(' · ');
+    };
+    return React.useSyncExternalStore(controller ? controller.subscribe : noSubscription, getSnapshot, getSnapshot);
 }
 
 export default function PlanningTeamCapacityCards({
@@ -144,17 +243,24 @@ export default function PlanningTeamCapacityCards({
     onInteractionChange,
     resolveTeamColor,
     getTeamCapacityMeta,
+    // The overview panel's push note (pending, failed and conflicted pushes), passed by the panel to its `teams` element.
+    onPushSummaryChange,
 }) {
     const [editor, updateEditor] = React.useState(null);
     const [invalidTargets, setInvalidTargets] = React.useState(() => new Set());
     const [configEditingSuppressed, setConfigEditingSuppressed] = React.useState(false);
-    const [, setReconcileDismissals] = React.useState(0);
-    // The stored team number ("Team capacity (not in Jira)") of the one selected Team, when the assignee strip holds it.
+    // Every displayed Team's stored number ("Team capacity (not in Jira)") and its own read and save status (#323).
     const assignee = usePlanningAssigneeCapacityView();
     const assigneeRef = React.useRef(assignee);
     assigneeRef.current = assignee;
-    const plannedFor = entry => Boolean(assignee?.oneTeam && assignee.loaded && String(assignee.teamId) === String(entry.id));
-    const canSavePlanned = assignee?.state?.capabilities?.canSave === true;
+    const capacityController = assignee?.controller || null;
+    const numbers = React.useSyncExternalStore(capacityController ? capacityController.subscribe : noSubscription,
+        capacityController ? capacityController.getPlannedNumbers : noNumbers, capacityController ? capacityController.getPlannedNumbers : noNumbers);
+    const numbersRef = React.useRef(numbers);
+    numbersRef.current = numbers;
+    const plannedOf = entry => numbers?.byTeam?.[String(entry.id)] || null;
+    // Commits waiting for the Team's document, which a click asked for (`ensureTeamDocument`); dropped on a scope change.
+    const pendingCommitsRef = React.useRef(new Map());
     const inputRef = React.useRef(null);
     const editorCardRef = React.useRef(null);
     const pencilRefs = React.useRef(new Map());
@@ -169,12 +275,39 @@ export default function PlanningTeamCapacityCards({
     const invalidTargetsRef = React.useRef(invalidTargets);
     const configSuppressedRef = React.useRef(configEditingSuppressed);
     const editorRef = React.useRef(editor);
+    // One-click pushes of a mismatched Team's stored number to its own matched ticket: one per Team, each with its own
+    // abort controller (by Team id), and its state ({state: pending|conflict|failed, stored, ticket, message}).
+    const [pushes, updatePushes] = React.useState(() => new Map());
+    const pushesRef = React.useRef(pushes);
+    const pushAbortRefs = React.useRef(new Map());
 
+    // Freshness is held while any editor or push is open: a count, so closing one keeps the others' hold. After unmount
+    // nothing reports again (a late push settlement must not re-take the hold the unmount released).
+    const mountedRef = React.useRef(true);
+    const syncInteraction = () => { if (mountedRef.current) onInteractionChange?.((editorRef.current ? 1 : 0) + pushAbortRefs.current.size > 0); };
     const setEditor = value => {
         const next = typeof value === 'function' ? value(editorRef.current) : value;
-        editorRef.current = next; onInteractionChange?.(Boolean(next)); updateEditor(next);
+        editorRef.current = next; syncInteraction(); updateEditor(next);
     };
-    React.useEffect(() => () => onInteractionChange?.(false), []);
+    const setPush = (teamId, value) => {
+        const next = new Map(pushesRef.current);
+        if (value) next.set(teamId, value); else next.delete(teamId);
+        replacePushes(next);
+    };
+    const replacePushes = next => {
+        if (!mountedRef.current) return;
+        pushesRef.current = next; onPushSummaryChange?.(pushSummaryText(next)); updatePushes(next);
+    };
+    React.useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            pushAbortRefs.current.forEach(controller => controller.abort());
+            pushAbortRefs.current.clear();
+            onPushSummaryChange?.('');
+            onInteractionChange?.(false);
+        };
+    }, []);
 
     latestScopeRef.current = scopeSignature;
     latestEntriesRef.current = entries;
@@ -189,6 +322,10 @@ export default function PlanningTeamCapacityCards({
         String(left.name || '').localeCompare(String(right.name || ''))
         || String(left.id || '').localeCompare(String(right.id || ''))
     )), [entries]);
+    const teamStatuses = useTeamStatuses(capacityController, sortedTeams.map(entry => String(entry.id)).join('\n'));
+    const statusOf = entry => teamStatuses.get(String(entry.id)) || null;
+    // The Team is in the numbers map of the current Sprint and its status can save (null, unknown, is not yet true).
+    const plannedFor = entry => Boolean(plannedOf(entry) && statusOf(entry)?.canSave === true);
 
     const getSubmitBlockedReason = React.useCallback((candidate) => {
         if (!candidate || candidate.scopeSignature !== latestScopeRef.current) {
@@ -213,6 +350,14 @@ export default function PlanningTeamCapacityCards({
     }, []);
 
     React.useLayoutEffect(() => {
+        pendingCommitsRef.current.clear();
+        // A scope change ends every push: an in-flight one is aborted (never retargeted) and a failed one is dropped.
+        if ([...pushesRef.current.values()].some(push => push.scopeSignature !== scopeSignature)) {
+            pushAbortRefs.current.forEach(controller => controller.abort());
+            pushAbortRefs.current.clear();
+            replacePushes(new Map());
+            syncInteraction();
+        }
         if (!editorRef.current || editorRef.current.scopeSignature === scopeSignature) return;
         requestAbortRef.current?.abort();
         requestAbortRef.current = null;
@@ -230,6 +375,10 @@ export default function PlanningTeamCapacityCards({
         configSuppressedRef.current = false;
         setInvalidTargets(clearedTargets);
         setConfigEditingSuppressed(false);
+        // A new read brings the tickets' values: failed pushes are dropped (one in flight keeps its state).
+        if ([...pushesRef.current.values()].some(push => push.state !== 'pending')) {
+            replacePushes(new Map([...pushesRef.current].filter(([, push]) => push.state === 'pending')));
+        }
         setEditor(current => {
             if (!current || !RELOAD_RESET_CODES.has(current.errorCode)) return current;
             return { ...current, errorCode: '', errorMessage: '' };
@@ -268,20 +417,43 @@ export default function PlanningTeamCapacityCards({
         return () => document.removeEventListener('pointerdown', handlePointerDown);
     }, [activeEditor?.id]);
 
-    // Silent database-only mirror of the Jira ticket value: on the end of a user-initiated capacity read of the same scope
-    // (`capacityLoading` true to false; automatic reads never set it), with the assignee document loaded for this Team.
-    // The controller decides the rest (own document only, differs after rounding, queue idle, can save).
+    // Silent database-only mirror of each matched Jira ticket value: on the end of a user-initiated capacity read of the
+    // same scope (`capacityLoading` true to false; automatic reads never set it). The controller decides the rest per Team
+    // (an existing own document only, never a new one; differs after rounding; owner idle; can save).
     const previousLoadRef = React.useRef({ loading: capacityLoading, scope: scopeSignature });
     React.useEffect(() => {
         const previous = previousLoadRef.current;
         previousLoadRef.current = { loading: capacityLoading, scope: scopeSignature };
         if (!previous.loading || capacityLoading || previous.scope !== scopeSignature || capacityReadError || capacityDataStale) return;
-        const context = assigneeRef.current;
-        if (!context?.oneTeam || !context.loaded || context.state?.capabilities?.canSave !== true) return;
-        const entry = entries.find(candidate => String(candidate.id) === String(context.teamId));
-        if (entry?.capacityTargetState !== 'matched' || typeof entry.capacityTargetCapacity !== 'number') return;
-        context.controller?.mirrorPlanned(entry.capacityTargetCapacity);
+        const control = assigneeRef.current?.controller;
+        if (!control) return;
+        entries.forEach(entry => {
+            if (entry.capacityTargetState !== 'matched' || typeof entry.capacityTargetCapacity !== 'number') return;
+            control.mirrorTeamPlanned(String(entry.id), entry.capacityTargetCapacity);
+        });
     }, [capacityLoading, scopeSignature]);
+
+    // A commit that waited for its Team's document is sent once that read settles, in the scope it was asked in.
+    React.useEffect(() => {
+        const pending = pendingCommitsRef.current;
+        pending.forEach((intent, teamId) => {
+            if (teamStatuses.get(teamId)?.load === 'loading') return;
+            pending.delete(teamId);
+            if (intent.scopeSignature !== latestScopeRef.current || intent.sprintId !== numbersRef.current?.sprintId) return;
+            assigneeRef.current?.controller?.commitTeamPlanned(teamId, intent.value, intent.source);
+        });
+    }, [teamStatuses]);
+
+    // Commits a Team's stored number, loading its document first when no card has loaded it yet (a user action).
+    const commitTeamNumber = (teamId, value, source, scope) => {
+        const control = assigneeRef.current?.controller;
+        if (!control || scope.scopeSignature !== latestScopeRef.current || scope.sprintId !== numbersRef.current?.sprintId) return false;
+        if (control.commitTeamPlanned(teamId, value, source)) return true;
+        control.ensureTeamDocument(teamId);
+        if (control.getTeamStatus(teamId).load !== 'loading') return false;
+        pendingCommitsRef.current.set(teamId, { value, source, ...scope });
+        return true;
+    };
 
     React.useEffect(() => () => {
         requestAbortRef.current?.abort();
@@ -289,13 +461,30 @@ export default function PlanningTeamCapacityCards({
         submissionRef.current = null;
     }, []);
 
-    const openEditor = (entry, { draft } = {}) => {
+    // A push conflict still describes this ticket only while the read value is the one that push saw; a changed read value
+    // (the user's own Jira save, a new read) ends the override at once.
+    const conflictOf = entry => {
+        const push = pushesRef.current.get(String(entry.id));
+        return push?.state === 'conflict' && push.readTicket === entry.capacityTargetCapacity ? push : null;
+    };
+    // The matched ticket's value as shown: Jira's current value after a push conflict (display only, never stored),
+    // else the last read.
+    const conflictTicketOf = entry => (conflictOf(entry) ? pushesRef.current.get(String(entry.id)).ticket : entry.capacityTargetCapacity);
+
+    // Pushes remain owned by Team, but the frozen Jira issue key excludes every card pointing to that ticket.
+    const isTicketPushing = issueKey => Boolean(issueKey && [...pushesRef.current].some(([teamId, push]) => (
+        push.issueKey === issueKey && pushAbortRefs.current.has(teamId)
+    )));
+
+    const openEditor = (entry) => {
         if (
-            activeEditor || !canEditCapacity || capacityReadError || capacityDataStale
+            activeEditor || pushAbortRefs.current.has(String(entry.id)) || isTicketPushing(entry.capacityIssueKey) || !canEditCapacity || capacityReadError || capacityDataStale
             || configEditingSuppressed || invalidTargets.has(entry.capacityIssueKey)
             || entry.capacityTargetState !== 'matched' || !entry.capacityIssueKey
             || !entry.capacityTargetTeamName
         ) return;
+        // After a push conflict the ticket holds Jira's current value: the editor expects that one, not the last read.
+        const ticket = conflictTicketOf(entry);
         const nextEditor = {
             mode: 'jira',
             id: `jira:${entry.id}`,
@@ -303,27 +492,28 @@ export default function PlanningTeamCapacityCards({
             displayedTeamName: entry.name,
             issueKey: entry.capacityIssueKey,
             targetTeamName: entry.capacityTargetTeamName,
-            expectedCapacity: entry.capacityTargetCapacity,
-            // Write to ticket prefills the stored number; the user still saves through this one Jira call site.
-            draft: draft !== undefined ? String(draft) : typeof entry.capacityTargetCapacity === 'number'
-                ? String(entry.capacityTargetCapacity)
-                : '',
+            expectedCapacity: ticket,
+            draft: typeof ticket === 'number' ? String(ticket) : '',
             sprintName,
+            sprintId: numbers?.sprintId || '',
             scopeSignature,
             submitting: false,
             errorCode: '',
             errorMessage: '',
         };
+        // A typed stored number settles to the ticket value after this save: load the Team's document now.
+        if (plannedOf(entry)?.source === 'user' && statusOf(entry)?.canSave === true) assignee?.controller?.ensureTeamDocument(String(entry.id));
         editorRef.current = nextEditor;
         setEditor(nextEditor);
         onAnalyticsAction?.('capacity_edit_open');
     };
 
-    // The stored team number's editor: no Jira ticket and no Jira number (the "no ticket" predicate), the assignee
-    // document loaded and savable. It writes through the assignee save queue and never emits a capacity_* event.
+    // The stored team number's editor: no Jira ticket and no Jira number (the "no ticket" predicate) and the Team can
+    // save. Opening it loads the Team's document; it writes through that Team's save queue and emits no capacity_* event.
     const openPlannedEditor = (entry) => {
-        if (activeEditor || !entry.plannedEditable || !plannedFor(entry) || !canSavePlanned || !assignee.state.document) return;
-        const stored = assignee.planned?.value ?? '';
+        if (activeEditor || pushAbortRefs.current.has(String(entry.id)) || !entry.plannedEditable || !plannedFor(entry)) return;
+        assignee.controller.ensureTeamDocument(String(entry.id));
+        const stored = plannedOf(entry).value ?? '';
         const nextEditor = {
             mode: 'planned',
             id: `planned:${entry.id}`,
@@ -333,6 +523,7 @@ export default function PlanningTeamCapacityCards({
             expectedCapacity: stored,
             draft: String(stored),
             sprintName,
+            sprintId: numbers.sprintId,
             scopeSignature,
             submitting: false,
             errorCode: '',
@@ -357,8 +548,7 @@ export default function PlanningTeamCapacityCards({
             setEditor(current => current ? { ...current, errorMessage: parsed.error } : current);
             return;
         }
-        if (candidate.scopeSignature !== latestScopeRef.current || !context?.controller
-            || !context.controller.commitPlanned(parsed.value, 'user')) {
+        if (!context?.controller || !commitTeamNumber(candidate.displayedTeamId, parsed.value, 'user', candidate)) {
             setEditor(current => current ? { ...current, errorMessage: 'Team capacity cannot be saved here. Refresh Planning.' } : current);
             return;
         }
@@ -418,12 +608,14 @@ export default function PlanningTeamCapacityCards({
                 sprintName: candidate.sprintName,
                 scopeSignature: candidate.scopeSignature,
             });
+            // The user's own save replaces whatever a failed or conflicted push said about this ticket.
+            if (pushesRef.current.has(candidate.displayedTeamId) && !pushAbortRefs.current.has(candidate.displayedTeamId)) setPush(candidate.displayedTeamId, null);
             onAnalyticsAction?.('capacity_change_result', { result: 'success' });
-            // The user's own Jira save also settles a number they typed: a stored `user` number becomes {ticket value, jira}.
-            const context = assigneeRef.current;
+            // The user's own Jira save also settles a number they typed, in any scope: that Team's stored `user` number
+            // becomes {ticket value, jira}.
             const savedWire = plannedWireValue(savedCapacity);
-            if (savedWire != null && context?.oneTeam && String(context.teamId) === candidate.displayedTeamId && context.planned?.source === 'user') {
-                context.controller?.commitPlanned(savedWire, 'jira');
+            if (savedWire != null && numbersRef.current?.byTeam?.[candidate.displayedTeamId]?.source === 'user') {
+                commitTeamNumber(candidate.displayedTeamId, savedWire, 'jira', candidate);
             }
             restoreFocusIssueRef.current = candidate.id;
             editorCardRef.current = null;
@@ -473,6 +665,79 @@ export default function PlanningTeamCapacityCards({
         }
     };
 
+    // One explicit click writes this Team's stored number to its own matched ticket (never automatic, never batched),
+    // with the ticket value it was read with as `expectedCapacity`. Nothing is sent while that Team's editor or push is open.
+    // The ticket holds the number: the card shows it, and the stored `user` number settles to {ticket value, jira}.
+    const settlePush = (row, capacity, result) => {
+        onCapacitySaved?.({
+            issueKey: row.candidate.issueKey,
+            teamName: row.candidate.targetTeamName,
+            capacity,
+            result,
+            sprintName: row.candidate.sprintName,
+            scopeSignature: row.candidate.scopeSignature,
+        });
+        const savedWire = plannedWireValue(capacity);
+        if (savedWire != null && numbersRef.current?.byTeam?.[row.teamId]?.source === 'user') commitTeamNumber(row.teamId, savedWire, 'jira', row.candidate);
+        setPush(row.teamId, null);
+    };
+
+    const pushTeam = async (entry, offer) => {
+        const teamId = String(entry.id);
+        if (editorRef.current || pushAbortRefs.current.has(teamId) || isTicketPushing(entry.capacityIssueKey)) return;
+        const row = {
+            teamId,
+            candidate: {
+                displayedTeamId: teamId, issueKey: entry.capacityIssueKey, targetTeamName: entry.capacityTargetTeamName,
+                sprintName, sprintId: numbersRef.current?.sprintId || '', scopeSignature,
+                expectedCapacity: offer.ticket, capacity: plannedNumber({ value: offer.stored }),
+            },
+        };
+        if (row.candidate.capacity == null || getSubmitBlockedReason(row.candidate)) return;
+        const controller = new AbortController();
+        pushAbortRefs.current.set(teamId, controller);
+        const base = { issueKey: row.candidate.issueKey, stored: offer.stored, ticket: offer.ticket, readTicket: entry.capacityTargetCapacity, scopeSignature };
+        setPush(teamId, { ...base, state: 'pending', message: '' });
+        syncInteraction();
+        try {
+            const result = await updateCapacityRequest(row.candidate.issueKey, {
+                sprintName: row.candidate.sprintName,
+                teamName: row.candidate.targetTeamName,
+                expectedCapacity: row.candidate.expectedCapacity,
+                capacity: row.candidate.capacity,
+            }, { signal: controller.signal });
+            if (controller.signal.aborted) return;
+            const savedCapacity = typeof result?.capacity === 'number' && Number.isFinite(result.capacity) && result.capacity >= 0
+                ? result.capacity
+                : row.candidate.capacity;
+            settlePush(row, savedCapacity, result?.result === 'already_current' ? 'already_current' : 'success');
+            onAnalyticsAction?.('capacity_reconcile_push', { result: 'success' });
+        } catch (error) {
+            if (error?.name === 'AbortError' || controller.signal.aborted) return;
+            const code = typeof error?.code === 'string' && error.code ? error.code : 'jira_capacity_update_failed';
+            // A 401 locks the app behind the sign-in screen: nothing is retried or replayed.
+            if (error?.name === 'AuthenticationRequiredError' || code === 'auth_required') { setPush(teamId, null); return; }
+            if (CONFIG_FAILURE_CODES.has(code)) { configSuppressedRef.current = true; setConfigEditingSuppressed(true); }
+            if (TARGET_FAILURE_CODES.has(code)) {
+                const nextTargets = new Set(invalidTargetsRef.current);
+                nextTargets.add(row.candidate.issueKey);
+                invalidTargetsRef.current = nextTargets;
+                setInvalidTargets(nextTargets);
+            }
+            const isConflict = code === 'capacity_conflict';
+            const current = isConflict && (error.currentCapacity === null || typeof error.currentCapacity === 'number') ? error.currentCapacity : undefined;
+            // Jira already holds the stored number: nothing is left to push, and the card shows that value.
+            if (typeof current === 'number' && samePlannedValue({ value: offer.stored }, { value: current })) settlePush(row, current, 'already_current');
+            else setPush(teamId, current !== undefined
+                ? { ...base, ticket: current, state: 'conflict', message: pushConflictMessage(current, offer.stored) }
+                : { ...base, state: 'failed', message: fixedErrorMessage(error) });
+            onAnalyticsAction?.('capacity_reconcile_push', { result: isConflict ? 'conflict' : 'failure' });
+        } finally {
+            if (pushAbortRefs.current.get(teamId) === controller) pushAbortRefs.current.delete(teamId);
+            syncInteraction();
+        }
+    };
+
     if (sortedTeams.length === 0) return null;
     const teamCount = sortedTeams.length;
     const rows = teamCount === 6 ? 2 : Math.ceil(teamCount / 6);
@@ -482,33 +747,28 @@ export default function PlanningTeamCapacityCards({
         ? 'Capacity could not be refreshed. Showing last loaded values.'
         : 'Capacity is unavailable. Retry.';
     const showFutureSprintEmptyStatus = futureSprintCapacityIssuesMissing && !capacityReadError;
-    // The one Team whose stored number the assignee strip holds (one Team selected, Table layout).
-    const plannedEntry = sortedTeams.find(plannedFor) || null;
-    const storedPlanned = plannedEntry ? assignee.planned : null;
-    // Reconcile banner: a matched, writable ticket and a number the user typed that differs from it (after rounding).
-    // Read-only users see none; without Jira edit rights only Write to ticket is hidden; a blank ticket offers no Use.
-    const reconcile = (() => {
-        if (!plannedEntry || !canSavePlanned || activeEditor || capacityLoading || capacityReadError || capacityDataStale) return null;
-        if (storedPlanned?.source !== 'user' || storedPlanned.value == null) return null;
-        if (plannedEntry.capacityTargetState !== 'matched' || !plannedEntry.capacityIssueKey || invalidTargets.has(plannedEntry.capacityIssueKey)) return null;
-        const ticket = typeof plannedEntry.capacityTargetCapacity === 'number' ? plannedEntry.capacityTargetCapacity : null;
-        if (samePlannedValue(storedPlanned, ticket == null ? null : { value: ticket })) return null;
-        const key = `${assignee.state.sprintId}|${assignee.teamId}`;
-        const signature = `${storedPlanned.value}|${ticket}`;
-        if (reconcileDismissed.get(key) === signature) return null;
-        const canWrite = canEditCapacity && !configEditingSuppressed && Boolean(plannedEntry.capacityTargetTeamName);
-        const ticketWire = plannedWireValue(ticket);
-        if (!canWrite && ticketWire == null) return null;
-        return { entry: plannedEntry, stored: storedPlanned.value, ticket, ticketWire, key, signature, canWrite };
-    })();
-    // A future Sprint with no capacity tickets yet: say so, and that the card shows the stored number meanwhile.
-    const futureSprintUsesPlanned = Boolean(plannedEntry?.capacitySource === 'planned');
+    // A mismatch: a matched ticket the user may write and a number the user typed that differs from it (after rounding).
+    // It marks the card, and its push icon (→) joins the hover rail when the card has the Jira capacity writer.
+    const mismatchOf = (entry) => {
+        if (!numbers || capacityLoading || capacityReadError || capacityDataStale || !plannedFor(entry)) return null;
+        const stored = plannedOf(entry);
+        if (stored.source !== 'user' || stored.value == null) return null;
+        if (entry.capacityTargetState !== 'matched' || !entry.capacityIssueKey || invalidTargets.has(entry.capacityIssueKey)) return null;
+        if (!canEditCapacity || configEditingSuppressed || !entry.capacityTargetTeamName) return null;
+        // After a push conflict the ticket's current value (from Jira's answer) is the one to compare and to expect.
+        const current = conflictTicketOf(entry);
+        const ticket = typeof current === 'number' ? current : null;
+        if (samePlannedValue(stored, ticket == null ? null : { value: ticket })) return null;
+        return { stored: stored.value, ticket };
+    };
+    // A future Sprint with no capacity tickets yet: say so, and that the cards show stored numbers meanwhile.
+    const futureSprintUsesPlanned = sortedTeams.some(entry => entry.capacitySource === 'planned');
 
     return (
-        <section className="planning-team-capacity-cards" aria-label="Selected story points by team">
+        <section className="planning-team-capacity-cards" aria-label="Planned story points by team">
             <div className="planning-stats compact planning-team-capacity-heading">
                 <div className="planning-stat">
-                    <span className="planning-stat-label">Selected SP by Team:</span>
+                    <span className="planning-stat-label">Planned SP by Team:</span>
                 </div>
             </div>
             {capacityReadError && (
@@ -543,45 +803,55 @@ export default function PlanningTeamCapacityCards({
                     </button>
                 </div>
             )}
-            {reconcile && (
-                <div className="team-capacity-read-status" role="status" data-capacity-reconcile>
-                    <span>
-                        {`${reconcile.entry.name}: Team capacity (not in Jira) is ${formatSp(reconcile.stored)} SP; the Jira ticket ${reconcile.ticket == null ? 'has no value' : `says ${formatSp(reconcile.ticket)} SP`}.`}
-                    </span>
-                    <span>
-                        {reconcile.canWrite && (
-                            <button type="button" className="secondary compact" onClick={() => openEditor(reconcile.entry, { draft: reconcile.stored })}>Write to ticket</button>
-                        )}
-                        {reconcile.ticketWire != null && <>{' '}
-                            <button type="button" className="secondary compact" onClick={() => assignee.controller.commitPlanned(reconcile.ticketWire, 'jira')}>Use ticket value</button>
-                        </>}{' '}
-                        <button type="button" className="secondary compact" onClick={() => { reconcileDismissed.set(reconcile.key, reconcile.signature); setReconcileDismissals(count => count + 1); }}>Not now</button>
-                    </span>
-                </div>
-            )}
             <div
                 className="team-stats-grid"
                 style={{ '--planning-team-columns': columns }}
             >
                 {sortedTeams.map((entry) => {
+                    // After a push conflict the card's Cap line shows Jira's current value (display only, never stored;
+                    // scaled like the read value).
+                    const conflict = conflictOf(entry);
+                    const multiplier = typeof entry.capacityMultiplier === 'number' ? entry.capacityMultiplier : 1;
+                    const shownCapacity = conflict
+                        ? { hasCapacityValue: conflict.ticket != null, teamCapacity: conflict.ticket == null ? null : conflict.ticket * multiplier }
+                        : entry;
                     const isEditing = Boolean(activeEditor && activeEditor.displayedTeamId === String(entry.id));
                     const targetMatched = entry.capacityTargetState === 'matched' && Boolean(entry.capacityIssueKey);
                     const targetSuppressed = invalidTargets.has(entry.capacityIssueKey);
                     const jiraIssueUrl = buildJiraIssueUrl(jiraUrl, entry.capacityIssueKey);
-                    const showJira = !actionsGloballySuppressed && targetMatched && !targetSuppressed
+                    const teamStatus = statusOf(entry);
+                    const storedPlanned = plannedOf(entry);
+                    const plannedSave = storedPlanned ? plannedSaveOf(teamStatus) : '';
+                    // At most three rail icons: a failed save's Retry and Discard take the place of the Jira link and the push.
+                    const showFailedIcons = !actionsGloballySuppressed && !isEditing && isFailedSave(plannedSave);
+                    const showJira = !actionsGloballySuppressed && !showFailedIcons && targetMatched && !targetSuppressed
                         && canOpenCapacityJira && Boolean(jiraIssueUrl);
                     const showPencil = !actionsGloballySuppressed && targetMatched && !targetSuppressed
                         && canEditCapacity && !configEditingSuppressed;
-                    // No ticket: the stored number's own pencil, disabled until the assignee document is loaded.
+                    // No ticket: the stored number's own pencil, shown while the Team's save right is unknown or granted and
+                    // enabled once it is granted.
                     const showPlannedPencil = !actionsGloballySuppressed && !targetMatched && entry.plannedEditable === true
-                        && plannedFor(entry) && canSavePlanned;
+                        && Boolean(storedPlanned && teamStatus) && teamStatus.canSave !== false;
                     const plannedEditing = isEditing && activeEditor.mode === 'planned';
                     const plannedShown = entry.capacitySource === 'planned';
-                    const plannedSave = plannedFor(entry) ? assignee.state.plannedSave : '';
-                    const hasActionRail = showJira || showPencil || showPlannedPencil;
-                    const capacityValuePresent = capacityEnabled && entry.hasCapacityValue;
-                    const adjustedCapacity = capacityValuePresent && typeof entry.teamCapacity === 'number'
-                        ? entry.teamCapacity
+                    const mismatch = mismatchOf(entry);
+                    // The → offers a mismatch, and keeps showing a push in flight or failed (its readout says why); it needs the
+                    // current mutation right, and is unavailable while pending or when no mismatch is left to push (a blocked target).
+                    // A conflict compares with Jira's current value, so an equal value removes it.
+                    // A conflict that no longer describes the read value is no longer this card's state.
+                    const ownPush = pushes.get(String(entry.id)) || null;
+                    const push = ownPush?.state === 'conflict' ? conflict : ownPush;
+                    const showPush = !actionsGloballySuppressed && !showFailedIcons && canEditCapacity && typeof updateCapacityRequest === 'function'
+                        && Boolean(mismatch || push?.state === 'pending' || push?.state === 'failed');
+                    const ticketPushing = isTicketPushing(entry.capacityIssueKey);
+                    const pushUnavailable = push?.state === 'pending' || ticketPushing || !mismatch;
+                    const pushReadout = push?.state === 'pending' ? 'Applying…' : ticketPushing ? 'Applying this ticket…' : push ? push.message
+                        : mismatch ? `Apply ${formatSp(mismatch.stored)} SP to Jira (ticket ${mismatch.ticket == null ? 'blank' : `${formatSp(mismatch.ticket)} SP`})` : '';
+                    const hasActionRail = showJira || showPencil || showPlannedPencil || showPush || showFailedIcons;
+                    const railIcons = [showJira, showPush, showFailedIcons, showFailedIcons, showPencil, showPlannedPencil].filter(Boolean).length;
+                    const capacityValuePresent = capacityEnabled && shownCapacity.hasCapacityValue;
+                    const adjustedCapacity = capacityValuePresent && typeof shownCapacity.teamCapacity === 'number'
+                        ? shownCapacity.teamCapacity
                         : 0;
                     const capMeta = capacityValuePresent && adjustedCapacity > 0
                         ? getTeamCapacityMeta(entry.storyPoints, adjustedCapacity)
@@ -601,7 +871,7 @@ export default function PlanningTeamCapacityCards({
                         : null;
                     const errorId = `capacity-editor-${editorDomId(entry.capacityIssueKey || entry.id)}-error`;
                     const contextId = `capacity-editor-${editorDomId(entry.capacityIssueKey || entry.id)}-context`;
-                    const plannedBlockedReason = plannedEditing && (activeEditor.scopeSignature !== scopeSignature || !entry.plannedEditable || !plannedFor(entry) || !canSavePlanned)
+                    const plannedBlockedReason = plannedEditing && (activeEditor.scopeSignature !== scopeSignature || activeEditor.sprintId !== numbers?.sprintId || !entry.plannedEditable || !plannedFor(entry))
                         ? 'Team capacity cannot be saved here. Refresh Planning.'
                         : '';
                     const editorBlockedReason = plannedEditing ? plannedBlockedReason : isEditing ? getSubmitBlockedReason(activeEditor) : '';
@@ -615,25 +885,30 @@ export default function PlanningTeamCapacityCards({
                             ? samePlannedValue(parsedDraft.value == null ? null : { value: parsedDraft.value }, activeEditor.expectedCapacity === '' ? null : { value: activeEditor.expectedCapacity })
                             : parsedDraft.value === activeEditor.expectedCapacity),
                     );
-                    // The stored number's save state shows on the card because the assignee strip may be collapsed.
-                    const plannedStatus = !isEditing && plannedSave === 'failed' ? 'Team capacity not saved.' : !isEditing && plannedSave === 'saving' ? 'Saving team capacity…' : '';
+                    // The stored number's save state shows on the card because the assignee strip may be collapsed; its
+                    // Retry and Discard are the strip's actions (Discard keeps the strip's name and fits the narrow card).
+                    // A failed save is the rail's ↻ Retry and × Discard (readout: the error), so the card never grows.
+                    const failedText = plannedSave === 'rejected' ? 'Team capacity not saved: the server refused it.' : plannedSave === 'failed' ? 'Team capacity not saved.' : '';
                     const statusMessage = isEditing
                         ? (editorBlockedReason || activeEditor.errorMessage || (plannedDraft && !plannedDraft.ok ? plannedDraft.error : ''))
-                        : plannedStatus;
+                        : '';
                     const compactCapacityShareLabel = capacityShareLabel
                         .replace(/^Planning\s+/, '')
                         .replace(/\s+share\s+/, ' ');
                     const editorContext = plannedEditing ? `Team capacity (not in Jira)${capacityShareLabel ? ` · ${capacityShareLabel}` : ''}` : capacityShareLabel;
                     const compactEditorContext = plannedEditing ? 'Team capacity (not in Jira)' : compactCapacityShareLabel;
-                    const editorDescription = [editorContext ? contextId : '', statusMessage ? errorId : ''].filter(Boolean).join(' ');
+                    // A status takes the context slot while it shows (#323), so the input is described by whichever is rendered.
+                    const editorDescription = statusMessage ? errorId : editorContext ? contextId : '';
 
                     return (
                         <article
                             key={entry.id}
-                            className={`team-stat-card team-card${isEditing ? ' is-capacity-editing' : ''}${hasActionRail ? ' has-capacity-actions' : ''}${isEditing && editorContext ? ' has-capacity-share' : ''}${statusMessage ? ' has-capacity-status' : ''}`}
+                            className={`team-stat-card team-card${isEditing ? ' is-capacity-editing' : ''}${hasActionRail ? ' has-capacity-actions' : ''}${isEditing && (editorContext || statusMessage) ? ' has-capacity-share' : ''}${statusMessage ? ' has-capacity-status' : ''}`}
                             data-tooltip={isEditing || statusMessage ? undefined : tooltipText}
                             data-capacity-team={entry.id}
                             data-capacity-source={entry.capacitySource || undefined}
+                            data-capacity-attention={showFailedIcons ? 'failed' : mismatch ? 'mismatch' : undefined}
+                            data-capacity-rail-icons={railIcons > 2 ? railIcons : undefined}
                             data-planned-source={plannedShown ? storedPlanned?.source || undefined : undefined}
                             ref={node => {
                                 if (isEditing) editorCardRef.current = node;
@@ -641,8 +916,14 @@ export default function PlanningTeamCapacityCards({
                         >
                             <div className="team-capacity-label-row">
                                 <div className="team-stat-label">{entry.name}</div>
-                                {isEditing && editorContext && (
+                                {/* While editing, a status message takes the label row's one-line context slot (ellipsized; the node keeps the
+                                    whole message as its text), so it never grows the card and the editor row cannot cover it (#323). Distinct keys mount
+                                    the live region fresh instead of re-roling the note's node. */}
+                                {isEditing && statusMessage ? (
+                                    <span key="status" id={errorId} className="team-capacity-editor-context" role="status" aria-live="polite">{statusMessage}</span>
+                                ) : isEditing && editorContext && (
                                     <span
+                                        key="note"
                                         id={contextId}
                                         className="team-capacity-editor-context"
                                         role="note"
@@ -669,6 +950,23 @@ export default function PlanningTeamCapacityCards({
                                                 <JiraMarkIcon className="team-capacity-jira-icon" />
                                             </TrackedExternalLink>
                                         )}
+                                        {showPush && (
+                                            <RailIcon readout={pushReadout} label={`Apply ${entry.name} team capacity to Jira`} unavailable={pushUnavailable}
+                                                buttonProps={{ 'aria-busy': push?.state === 'pending' || undefined, 'data-push-state': push?.state || undefined }}
+                                                onClick={() => pushTeam(entry, mismatch)}>
+                                                <ArrowRightIcon />
+                                            </RailIcon>
+                                        )}
+                                        {showFailedIcons && (
+                                            <>
+                                                <RailIcon readout={`Retry · ${failedText}`} label="Retry" onClick={() => assignee.controller.retryTeam(String(entry.id))}>
+                                                    <RetryIcon />
+                                                </RailIcon>
+                                                <RailIcon readout={`Discard changes · ${failedText}`} label="Discard changes" onClick={() => assignee.controller.discardTeamPlanned(String(entry.id))}>
+                                                    <CloseIcon />
+                                                </RailIcon>
+                                            </>
+                                        )}
                                         {showPencil && (
                                             <IconButton
                                                 variant="secondary compact"
@@ -679,6 +977,7 @@ export default function PlanningTeamCapacityCards({
                                                     else pencilRefs.current.delete(`jira:${entry.id}`);
                                                 }}
                                                 onClick={() => openEditor(entry)}
+                                                disabled={push?.state === 'pending' || ticketPushing}
                                                 aria-label={`Edit ${entry.name} capacity`}
                                                 title="Edit capacity"
                                             >
@@ -695,7 +994,7 @@ export default function PlanningTeamCapacityCards({
                                                     else pencilRefs.current.delete(`planned:${entry.id}`);
                                                 }}
                                                 onClick={() => openPlannedEditor(entry)}
-                                                disabled={!assignee.state.document}
+                                                disabled={teamStatus.canSave !== true}
                                                 aria-label={`Edit ${entry.name} team capacity`}
                                                 title="Edit team capacity (not in Jira)"
                                             >
@@ -764,11 +1063,10 @@ export default function PlanningTeamCapacityCards({
                                             </IconButton>
                                         </div>
                                     </form>
-                                    {statusMessage && (
-                                        <div id={errorId} className="team-capacity-status" role="status" aria-live="polite">
-                                            <span>{statusMessage}</span>
-                                        </div>
-                                    )}
+                                    {/* Sizers: the idle bar and meta line keep their layout space (invisible, aria-hidden) and the editor row
+                                        overlays them from its static position, so the card never grows (#323). */}
+                                    <div className="microbar" aria-hidden="true" />
+                                    <div className="microbar-meta" aria-hidden="true">{deltaLabel || '\u00a0'}</div>
                                 </>
                             ) : (
                                 <>
@@ -790,16 +1088,10 @@ export default function PlanningTeamCapacityCards({
                                         )}
                                         <span className="microbar-label">{entry.storyPoints.toFixed(1)} SP</span>
                                     </div>
-                                    {deltaLabel && (
-                                        <div className={`microbar-meta ${capMeta?.status || ''}`}>{deltaLabel}</div>
-                                    )}
-                                    {plannedStatus && (
-                                        <div id={errorId} className="team-capacity-status" role="status" aria-live="polite" data-planned-save={plannedSave}>
-                                            <span>{plannedStatus}{plannedSave === 'failed' && <>{' '}
-                                                <button type="button" className="secondary compact" onClick={() => assignee.controller.retry()}>Retry</button>
-                                            </>}</span>
-                                        </div>
-                                    )}
+                                    {/* A card without a delta keeps a blank meta line, so idle, editing and the first save share one height (#323). */}
+                                    {deltaLabel
+                                        ? <div className={`microbar-meta ${capMeta?.status || ''}`}>{deltaLabel}</div>
+                                        : <div className="microbar-meta" aria-hidden="true">{' '}</div>}
                                 </>
                             )}
                         </article>

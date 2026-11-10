@@ -12,19 +12,23 @@ transaction does not reject disjoint cell revisions, and it makes the cross-name
 first-create races safe.
 """
 from copy import deepcopy
+from contextlib import ExitStack, nullcontext
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
+import time
 from decimal import Decimal, InvalidOperation
 import re
 import unicodedata
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import event, func, select
 from sqlalchemy.dialects.postgresql import insert as postgres_insert
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.db import engine as db_engine, models
-from backend.services import shared_group_config
+from backend.services import shared_group_config, planning_inclusion, workspace_dashboard_config
 from backend.services.eng_board_stream import EngBoardRequestBudget, EngBoardRequestDeadline, EngBoardRequestTransport
 
 MAX_ACTIVE_COLUMNS = 30
@@ -491,7 +495,9 @@ def _cell(cell):
             'value': cell.value, 'revision': cell.revision}
 
 
-def read_values(context, sprint_id, payload, database_url=None, search=None, configuration_id=None, type_map=None):
+def read_values(context, sprint_id, payload, database_url=None, search=None, configuration_id=None, type_map=None, *, planning_admission=None, deadline=None):
+    if isinstance(payload, dict) and payload.get("includePlan") is True:
+        return _read_planning_values(context, sprint_id, payload, database_url, search, planning_admission, deadline)
     require_review_context(context)
     sprint_identity(sprint_id)
     configuration_id, _ordinal = namespace_identity(configuration_id)
@@ -513,12 +519,10 @@ def read_values(context, sprint_id, payload, database_url=None, search=None, con
 
 
 def _ensure_schema_row(session, context, group_id, configuration_id):
-    dialect = session.bind.dialect.name
-    insert = postgres_insert if dialect == 'postgresql' else sqlite_insert if dialect == 'sqlite' else None
-    if insert is None:
+    if session.bind.dialect.name != 'postgresql':
         raise ReviewError('review_storage_unavailable', 503)
     # No conflict target: the unique arbiters are partial indexes (NULL Legacy and non-null configuration).
-    session.execute(insert(models.WorkspaceGroupReviewSchema).values(
+    session.execute(postgres_insert(models.WorkspaceGroupReviewSchema).values(
         id=str(uuid.uuid4()), workspace_id=context.workspace_id, group_id=group_id, configuration_id=configuration_id,
         schema_revision=0, columns=[]).on_conflict_do_nothing())
     return session.scalar(_schema_query(context, group_id, configuration_id).with_for_update())
@@ -538,7 +542,11 @@ def _conflict(row, schema_conflict, view_conflict, cell_conflicts):
 
 
 def save_review(context, sprint_id, payload, database_url=None, search=None, configuration_id=None,
-                quarter_ordinal=None, type_map=None):
+                quarter_ordinal=None, type_map=None, *, planning_admission=None, prepare_response=None, deadline=None,
+                _session=None, _row=None):
+    if isinstance(payload, dict) and payload.get("version") == 2:
+        return _save_planning_review(context, sprint_id, payload, database_url, search,
+                                     planning_admission, prepare_response, deadline)
     require_review_context(context)
     sprint_identity(sprint_id)
     configuration_id, quarter_ordinal = namespace_identity(configuration_id, quarter_ordinal)
@@ -571,18 +579,19 @@ def save_review(context, sprint_id, payload, database_url=None, search=None, con
     if layout_actions and configuration_id is not None and quarter_ordinal is None:
         # A saved configuration view carries its authoritative ordinal; without one nothing is stamped.
         raise ReviewError('review_quarter_unresolved')
-    ensure_group_configured(context, group_id, database_url)
+    if _session is None:
+        ensure_group_configured(context, group_id, database_url)
     requested_kinds = {identity: {c['rowKind'] for c in changes if c['issueId'] == identity} for identity in ids}
-    allowed = authorize_issues(context, ids, search, requested_kinds, type_map)
+    allowed = authorize_issues(context, ids, search, requested_kinds, type_map) if _session is None else set(ids)
     if len(allowed) != len(ids):
         raise ReviewError('review_issues_unavailable', 403, unavailableIssueIds=[i for i in ids if i not in allowed])
-    with db_engine.session_scope(database_url) as session:
+    with (db_engine.session_scope(database_url) if _session is None else nullcontext(_session)) as session:
         if not schema_changes and not changes:
             # An empty request creates no row and takes no lock.
             return {**_base(session.scalar(_schema_query(context, group_id, configuration_id)), sprint_id, group_id,
                             configuration_id, quarter_ordinal), 'cells': []}
         # (1) lock the fence row then the namespace row; (2) select the Sprint's view row for a layout action.
-        row = _locked_schema(session, context, group_id, configuration_id)
+        row = _row if _row is not None else _locked_schema(session, context, group_id, configuration_id)
         view = session.scalar(select(models.GroupSprintReviewView).where(
             *_views(context.workspace_id, group_id, configuration_id),
             models.GroupSprintReviewView.sprint_id == sprint_id)) if layout_actions else None
@@ -649,3 +658,337 @@ def save_review(context, sprint_id, payload, database_url=None, search=None, con
         if layout_actions:
             result.update(layouts=deepcopy(layouts), viewRevision=view.view_revision, inheritedFrom=None)
         return result
+
+
+@dataclass(frozen=True)
+class PlanningAdmission:
+    """Captured authority; revalidate uses the caller's fenced transaction, never Jira."""
+    scope_proof: str
+    candidate_jql: str
+    child_kind: str
+    configuration_id: object
+    quarter_ordinal: object
+    type_map: object
+    group_revision: int
+    group_payload: dict
+    revalidate: object
+    source_proof: object = None
+    review_story_types: tuple = ('story',)
+
+
+class PlanningDeadline:
+    def __init__(self, seconds=30, clock=time.monotonic):
+        self.clock, self.expires = clock, clock() + seconds
+
+    def remaining(self, *_args):
+        remaining = self.expires - self.clock()
+        if remaining <= 0:
+            raise ReviewError('planning_deadline_exceeded', 503, noCommit=True)
+        return remaining
+
+    def bind(self, session, stack):
+        """Refresh driver limits for every execution, including flush and commit work."""
+        connection = session.connection()
+        def before(_conn, cursor, _statement, _parameters, _context, _many):
+            remaining = self.remaining()
+            lock_ms = max(1, int(min(5, remaining) * 1000))
+            statement_ms = max(1, int(min(10, remaining) * 1000))
+            cursor.execute("SET LOCAL lock_timeout = '" + str(lock_ms) + "ms'")
+            cursor.execute("SET LOCAL statement_timeout = '" + str(statement_ms) + "ms'")
+        event.listen(connection, 'before_cursor_execute', before)
+        stack.callback(event.remove, connection, 'before_cursor_execute', before)
+        self.remaining()
+
+
+def _encode_acknowledgement(payload):
+    try:
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(',', ':')).encode('utf-8')
+    except (TypeError, ValueError, UnicodeError):
+        raise ReviewError('review_response_unavailable', 503, noCommit=True) from None
+    if len(encoded) > MAX_RESPONSE_BYTES:
+        raise ReviewError('review_response_limit', 413, noCommit=True)
+    return encoded
+
+
+def _operation_scope(context, sprint_id, group_id, configuration_id):
+    return {'workspaceId': context.workspace_id, 'groupId': group_id,
+            'configurationId': configuration_id, 'sprintId': sprint_id}
+
+
+def _syntactic_namespace(payload):
+    stamp = payload.get('configuration')
+    if 'configuration' not in payload:
+        return None
+    from backend.services import work_write_scope, work_structure
+    parsed = work_write_scope.parse_stamp(stamp)
+    return None if parsed['id'] == work_structure.LEGACY_ID else parsed['id']
+
+
+def load_save_operation(context, sprint_id, group_id, operation_id, namespace=None, database_url=None):
+    require_review_context(context)
+    sprint_identity(sprint_id)
+    group_identity(group_id)
+    namespace_identity(namespace)
+    identity = planning_inclusion.operation_identity(operation_id, datetime.now(timezone.utc))
+    scope = _operation_scope(context, sprint_id, group_id, namespace)
+    with db_engine.session_scope(database_url) as session:
+        receipt = planning_inclusion.find_operation(session, context.workspace_id, context.user_id,
+            identity.operation_id, scope=scope)
+        return planning_inclusion.operation_metadata(receipt) if receipt else {
+            'operationId': operation_id, 'status': 'unknown',
+            'expired': identity.expires_at <= datetime.now(timezone.utc)}
+
+
+def _authorization_batches(ids):
+    batch, size = [], 0
+    for identity in ids:
+        if batch and (len(batch) == 100 or size + len(identity) + 1 > 3000):
+            yield batch
+            batch, size = [], 0
+        batch.append(identity)
+        size += len(identity) + 1
+    if batch:
+        yield batch
+
+
+def _authorize_planning(context, ids, review_changes, inclusion_changes, admission, search, deadline, *, projection=False):
+    """One union budget; visibility is distinct from the two role policies."""
+    from backend.services.planning_scope import planning_candidate_intersection_jql
+    if search is None:
+        from backend.routes import get_jira_server
+        search = get_jira_server().current_jira_search
+    review_kinds = {i: {c['rowKind'] for c in review_changes if c['issueId'] == i} for i in ids}
+    additions = {c['issueId'] for c in inclusion_changes if c['included']}
+    found, review_allowed, candidates, pages = set(), set(), set(), 0
+    budget = EngBoardRequestBudget.start(min(15, deadline.remaining()))
+    transport = EngBoardRequestTransport(budget=budget)
+    def collect(batch, candidate=False):
+        nonlocal pages
+        token, seen = None, set()
+        while True:
+            deadline.remaining()
+            budget.check()
+            if pages >= 10:
+                raise ReviewError('review_authorization_incomplete', 503)
+            try:
+                jql = planning_candidate_intersection_jql(batch, admission.candidate_jql) if candidate else 'id in (' + ','.join(batch) + ')'
+            except ValueError:
+                raise ReviewError('planning_scope_unavailable', 503, noCommit=True) from None
+            payload = {'jql': jql, 'fields': ['issuetype'], 'maxResults': 100}
+            if token:
+                payload['nextPageToken'] = token
+            response = search(payload, context=context, timeout=min(budget.remaining(), deadline.remaining()), diagnostic_transport=transport)
+            pages += 1
+            budget.check()
+            deadline.remaining()
+            if response.status_code == 401:
+                raise AuthError('auth_required')
+            if response.status_code != 200:
+                raise ReviewError('review_authorization_unavailable', 503)
+            data = response.json()
+            if not isinstance(data, dict) or not isinstance(data.get('issues'), list) or type(data.get('isLast')) is not bool:
+                raise ReviewError('review_authorization_incomplete', 503)
+            for issue in data['issues']:
+                identity = str(issue.get('id', '')) if isinstance(issue, dict) else ''
+                if identity not in batch:
+                    raise ReviewError('review_authorization_incomplete', 503)
+                rule = (issue.get('fields') or {}).get('issuetype') or {}
+                if not isinstance(rule, dict):
+                    raise ReviewError('review_authorization_incomplete', 503)
+                if candidate:
+                    # Legacy JQL owns its unrestricted/custom-name semantics. Mapped roles additionally
+                    # require the exact configured planning type and hierarchy, independently of cells.
+                    mapping = (admission.type_map or {}).get(admission.child_kind)
+                    if mapping is None or (str(rule.get('id') or '') == mapping[0]
+                            and rule.get('hierarchyLevel') == mapping[1] and not rule.get('subtask', False)):
+                        candidates.add(identity)
+                    continue
+                found.add(identity)
+                level = rule.get('hierarchyLevel')
+                if admission.type_map:
+                    kind = next((k for k, (t, h) in admission.type_map.items()
+                                 if str(rule.get('id') or '') == t and level == h), None)
+                else:
+                    types = {str(n).casefold() for n in admission.review_story_types} - {'epic'}
+                    name = str(rule.get('name') or '').casefold()
+                    kind = 'epic' if name == 'epic' else 'story' if name in types else None
+                    if level is not None and level != (1 if kind == 'epic' else 0):
+                        kind = None
+                if kind and not rule.get('subtask', False) and review_kinds.get(identity) == {kind}:
+                    review_allowed.add(identity)
+            if data['isLast']:
+                break
+            token = data.get('nextPageToken')
+            if not isinstance(token, str) or not token or token in seen:
+                raise ReviewError('review_authorization_incomplete', 503)
+            seen.add(token)
+    try:
+        for batch in _authorization_batches(ids):
+            collect(batch)
+        for batch in _authorization_batches(sorted(additions)):
+            collect(batch, True)
+    except EngBoardRequestDeadline:
+        raise ReviewError('review_authorization_incomplete', 503) from None
+    unavailable = (set(ids) - found) | ({c['issueId'] for c in review_changes} - review_allowed) | (additions - candidates)
+    if projection:
+        return found, review_allowed, candidates
+    if unavailable:
+        raise ReviewError('review_issues_unavailable', 403, unavailableIssueIds=sorted(unavailable))
+    return candidates
+
+
+def _replay_acknowledgement(receipt, context, search, deadline):
+    ack = deepcopy(receipt.acknowledgement)
+    ids = sorted({c['issueId'] for key in ('cells', 'inclusionChanges') for c in ack.get(key, [])})
+    if ids:
+        admission = PlanningAdmission('', '', 'story', None, None, None, 0, {}, lambda session: None)
+        try:
+            _authorize_planning(context, ids, [], [], admission, search, deadline)
+        except ReviewError:
+            return {**planning_inclusion.operation_metadata(receipt), 'reloadRequired': True}
+    return {**ack, 'status': 'committed'}
+
+
+def _save_planning_review(context, sprint_id, payload, database_url, search, admission_loader, prepare_response, deadline):
+    require_review_context(context)
+    deadline = deadline or PlanningDeadline()
+    sprint_identity(sprint_id)
+    group_id = group_identity(payload.get('groupId'))
+    configuration_id = _syntactic_namespace(payload)
+    scope = _operation_scope(context, sprint_id, group_id, configuration_id)
+    identity = planning_inclusion.operation_identity(payload.get('operationId'), datetime.now(timezone.utc))
+    digest = planning_inclusion.canonical_request_hash(payload, scope)
+    # Outcome proof survives configuration/source/visibility changes.
+    with ExitStack() as lookup_stack, db_engine.session_scope(database_url) as session:
+        deadline.bind(session, lookup_stack)
+        receipt = planning_inclusion.find_operation(session, context.workspace_id, context.user_id,
+            identity.operation_id, scope=scope, request_hash=digest)
+        if receipt:
+            result = _replay_acknowledgement(receipt, context, search, deadline)
+            if prepare_response:
+                return prepare_response(result)
+            return result
+    planning_inclusion.require_unexpired_operation(identity, datetime.now(timezone.utc))
+    if admission_loader is None:
+        raise ReviewError('planning_admission_unavailable', 503, noCommit=True)
+    admission = admission_loader()
+    deadline.remaining()
+    if admission.configuration_id != configuration_id or admission.scope_proof != payload['baseScopeProof']:
+        raise ReviewError('configuration_scope_changed', 409, noCommit=True)
+    legacy_payload = {k: payload[k] for k in ('groupId', 'baseSchemaRevision', 'baseViewRevision', 'schemaChanges', 'cellChanges') if k in payload}
+    validate_schema_changes(legacy_payload.get('schemaChanges', []), configuration_id)
+    changes = legacy_payload.get('cellChanges', [])
+    if not isinstance(changes, list) or len(changes) > MAX_CHANGED_CELLS:
+        raise ReviewError()
+    # Stateless cell validation happens before any Jira call.
+    identities = set()
+    for change in changes:
+        _keys(change, ('issueId', 'rowKind', 'columnId', 'value', 'baseRevision'))
+        issue_ids([change.get('issueId')])
+        row_kind(change.get('rowKind'), namespace_kinds(configuration_id))
+        _column_id(change.get('columnId'))
+        revision(change.get('baseRevision'))
+        key = (change['issueId'], change['rowKind'], change['columnId'])
+        if key in identities or 'value' not in change:
+            raise ReviewError()
+        identities.add(key)
+    inclusion_changes = planning_inclusion.normalize_inclusion_changes(payload.get('inclusionChanges', []))
+    ids = sorted({c['issueId'] for c in changes + inclusion_changes})
+    issue_ids(ids)
+    _authorize_planning(context, ids, changes, inclusion_changes, admission, search, deadline)
+    with ExitStack() as stack:
+        with db_engine.session_scope(database_url) as session:
+            deadline.bind(session, stack)
+            workspace_dashboard_config.acquire_workspace_config_fence(session, context.workspace_id, budget=deadline)
+            group = session.scalar(select(models.WorkspaceGroupConfig).where(
+                models.WorkspaceGroupConfig.workspace_id == context.workspace_id).with_for_update().execution_options(populate_existing=True))
+            row = _locked_schema(session, context, group_id, configuration_id)
+            receipt = planning_inclusion.find_operation(session, context.workspace_id, context.user_id,
+                identity.operation_id, scope=scope, request_hash=digest)
+            if receipt:
+                result = {**deepcopy(receipt.acknowledgement), 'status': 'committed'}
+                return prepare_response(result) if prepare_response else result
+            if group is None or group.config_revision != admission.group_revision or group.payload != admission.group_payload:
+                raise ReviewError('configuration_scope_changed', 409, noCommit=True)
+            planning_inclusion.require_unexpired_operation(identity, datetime.now(timezone.utc))
+            deadline.remaining()
+            admission.revalidate(session)
+            plan, created = planning_inclusion.initialize_plan(session, row.id, sprint_id, payload['initializePlan'])
+            session.flush()
+            # Acquire all row locks before entering the process catalog guard.
+            entries = {entry.issue_id: entry for entry in session.scalars(select(models.GroupSprintPlanEntry).where(
+                models.GroupSprintPlanEntry.plan_id == plan.id,
+                models.GroupSprintPlanEntry.issue_id.in_([c['issueId'] for c in inclusion_changes]))
+                .with_for_update().execution_options(populate_existing=True)).all()}
+            missing_removals = [c['issueId'] for c in inclusion_changes if not c['included'] and c['issueId'] not in entries]
+            if missing_removals:
+                raise ReviewError('review_issues_unavailable', 403, unavailableIssueIds=missing_removals)
+            planning_inclusion.require_operation_capacity(session, plan.id, context.workspace_id, context.user_id, datetime.now(timezone.utc))
+            if admission.source_proof is not None:
+                from backend.services.workspace_catalog_cache import SCOPED_SPRINT_CATALOGS, ScopedSprintCatalogBusy
+                try:
+                    matches = stack.enter_context(SCOPED_SPRINT_CATALOGS.proof_guard(
+                        admission.source_proof, timeout=min(5, deadline.remaining())))
+                except ScopedSprintCatalogBusy:
+                    raise ReviewError('planning_catalog_busy', 503, noCommit=True) from None
+                if not matches:
+                    raise ReviewError('configuration_scope_changed', 409, noCommit=True)
+            result = save_review(context, sprint_id, legacy_payload, database_url, search,
+                configuration_id=configuration_id, quarter_ordinal=admission.quarter_ordinal,
+                type_map=admission.type_map, _session=session, _row=row)
+            confirmed = planning_inclusion.apply_inclusion_changes(session, plan, inclusion_changes,
+                newly_initialized=created, locked_entries=entries)
+            result.update(operationId=identity.operation_id, plan={'exists': True, 'revision': plan.revision}, inclusionChanges=confirmed)
+            deadline.remaining()
+            prepared = prepare_response(result) if prepare_response else result
+            _encode_acknowledgement(result)
+            planning_inclusion.record_operation(session, plan, context.workspace_id, context.user_id,
+                identity, digest, result, datetime.now(timezone.utc))
+            session.flush()
+            deadline.remaining()
+            return prepared
+
+
+def load_planning_metadata(context, sprint_id, group_id, admission, database_url=None):
+    with db_engine.session_scope(database_url) as session:
+        schema = session.scalar(_schema_query(context, group_id, admission.configuration_id))
+        projection = planning_inclusion.load_inclusion_projection(session, schema.id, sprint_id, []) if schema else {'plan': {'exists': False, 'revision': 0}}
+        return {'plan': projection['plan'], 'scopeProof': admission.scope_proof,
+                'planCapabilities': {'canRead': True, 'canSave': True, 'reason': None}}
+
+
+def _read_planning_values(context, sprint_id, payload, database_url, search, admission_loader, deadline):
+    require_review_context(context)
+    deadline = deadline or PlanningDeadline()
+    sprint_identity(sprint_id)
+    _keys(payload, ('groupId', 'issueIds', 'rowKind', 'includePlan', 'expectedPlanRevision', 'expectedScopeProof', 'configuration'))
+    group_id = group_identity(payload.get('groupId'))
+    ids = issue_ids(payload.get('issueIds'))
+    expected = revision(payload.get('expectedPlanRevision'))
+    if not isinstance(payload.get('expectedScopeProof'), str) or admission_loader is None:
+        raise ReviewError()
+    admission = admission_loader()
+    kind = row_kind(payload.get('rowKind'), namespace_kinds(admission.configuration_id))
+    if payload['expectedScopeProof'] != admission.scope_proof:
+        raise ReviewError('plan_projection_changed', 409)
+    _visible, cell_allowed, candidates = _authorize_planning(context, ids,
+        [{'issueId': i, 'rowKind': kind} for i in ids],
+        [{'issueId': i, 'included': True} for i in ids], admission, search, deadline, projection=True)
+    allowed = [i for i in ids if i in candidates]
+    with db_engine.session_scope(database_url) as session:
+        schema = session.scalar(_schema_query(context, group_id, admission.configuration_id))
+        projection = planning_inclusion.load_inclusion_projection(session, schema.id, sprint_id, allowed, expected) if schema else {
+            'plan': {'exists': False, 'revision': 0},
+            'planEntries': [{'issueId': i, 'included': False, 'revision': 0} for i in allowed]}
+        if projection['plan']['revision'] != expected:
+            raise ReviewError('plan_projection_changed', 409)
+        active = [c['id'] for c in schema.columns if c['rowKind'] == kind and not c['archived']] if schema else []
+        cells = session.scalars(select(models.GroupReviewCell).where(
+            models.GroupReviewCell.schema_id == schema.id, models.GroupReviewCell.row_kind == kind,
+            models.GroupReviewCell.column_id.in_(active), models.GroupReviewCell.issue_id.in_(cell_allowed))
+            .limit(MAX_RESPONSE_BYTES // 100 + 1)).all() if active and cell_allowed else []
+        if len(cells) > MAX_RESPONSE_BYTES // 100:
+            raise ReviewError('review_response_limit', 413)
+        return {'cells': [_cell(c) for c in cells], 'planEntries': projection['planEntries'],
+                'planRevision': projection['plan']['revision'], 'scopeProof': admission.scope_proof,
+                'unavailableIssueIds': [i for i in ids if i not in candidates]}

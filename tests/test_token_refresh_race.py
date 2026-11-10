@@ -1,18 +1,15 @@
 import base64
 import inspect
 import os
-import tempfile
 import threading
 import time
 import unittest
 import uuid
 from contextlib import contextmanager
-from types import SimpleNamespace
 from unittest.mock import patch
 from urllib.parse import quote
 
 from sqlalchemy import event as sqlalchemy_event, text
-from sqlalchemy.engine import make_url
 
 from backend.auth import db_tokens as db_tokens_module
 from backend.auth.db_browser_sessions import (
@@ -30,6 +27,7 @@ from backend.auth.key_provider import key_provider_from_env
 from backend.auth.token_crypto import decrypt_token
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 class FakeResponse:
@@ -101,8 +99,7 @@ def _postgres_schema(prefix):
 
 class TokenRefreshRaceTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'refresh.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -135,7 +132,6 @@ class TokenRefreshRaceTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def test_refresh_replaces_tokens_and_increments_token_version(self):
         calls = []
@@ -277,10 +273,6 @@ class TokenRefreshRaceTests(unittest.TestCase):
         self.assertEqual(data['access_token'], 'new-access')
         self.assertEqual(data['db_token_version'], '2')
 
-    def test_sqlite_cannot_prove_refresh_race_locking(self):
-        with self.assertRaisesRegex(db_engine.DatabaseConfigurationError, 'SQLite cannot prove'):
-            db_engine.require_postgresql_refresh_locking(self.database_url)
-
     def test_callback_advisory_lock_keys_are_stable_signed_sha256_values(self):
         """Callback advisory lock keys are stable signed SHA-256-derived values."""
         self.assertEqual(
@@ -295,17 +287,13 @@ class TokenRefreshRaceTests(unittest.TestCase):
     def test_callback_advisory_locks_use_sorted_postgresql_transaction_keys(self):
         """PostgreSQL callback advisory locks acquire sorted transaction keys."""
         class RecordingSession:
-            def __init__(self, dialect_name):
-                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect_name))
+            def __init__(self):
                 self.calls = []
-
-            def get_bind(self):
-                return self.bind
 
             def execute(self, statement, params):
                 self.calls.append((str(statement), params))
 
-        postgresql_session = RecordingSession('postgresql')
+        postgresql_session = RecordingSession()
         db_tokens_module._lock_callback_natural_keys(
             postgresql_session,
             user_profile={'account_id': 'account-123', 'email': 'ignored@example.com'},
@@ -319,30 +307,17 @@ class TokenRefreshRaceTests(unittest.TestCase):
             ('SELECT pg_advisory_xact_lock(:lock_key)', {'lock_key': -4270788642796614953}),
             ('SELECT pg_advisory_xact_lock(:lock_key)', {'lock_key': 5873179604012975869}),
         ])
-        sqlite_session = RecordingSession('sqlite')
-        db_tokens_module._lock_callback_natural_keys(
-            sqlite_session,
-            user_profile={'account_id': 'account-123'},
-            environment_key='local',
-            resource={'id': 'cloud-123'},
-            configured_jira_url='https://example.atlassian.net',
-        )
-        self.assertEqual(sqlite_session.calls, [])
 
-    def test_refresh_row_lock_uses_remaining_budget_and_skips_timeout_on_sqlite(self):
+    def test_refresh_row_lock_uses_remaining_budget(self):
         class RecordingBudget:
             def remaining(self, phase):
                 self.phase = phase
                 return 0.25
 
         class RecordingSession:
-            def __init__(self, dialect_name):
-                self.bind = SimpleNamespace(dialect=SimpleNamespace(name=dialect_name))
+            def __init__(self):
                 self.calls = []
                 self.result = object()
-
-            def get_bind(self):
-                return self.bind
 
             def execute(self, statement, params=None):
                 self.calls.append((str(statement), params))
@@ -355,7 +330,7 @@ class TokenRefreshRaceTests(unittest.TestCase):
                 return self.result
 
         budget = RecordingBudget()
-        postgresql_session = RecordingSession('postgresql')
+        postgresql_session = RecordingSession()
         result = db_tokens_module._connection_for_update(
             postgresql_session,
             'connection-1',
@@ -369,15 +344,6 @@ class TokenRefreshRaceTests(unittest.TestCase):
             postgresql_session.calls[0],
         )
         self.assertIn('FOR UPDATE', postgresql_session.calls[1][0])
-
-        sqlite_session = RecordingSession('sqlite')
-        db_tokens_module._connection_for_update(
-            sqlite_session,
-            'connection-1',
-            cooperative_budget=budget,
-        )
-        self.assertEqual(1, len(sqlite_session.calls))
-        self.assertIn('FOR UPDATE', sqlite_session.calls[0][0])
 
     def test_callback_storage_locks_natural_keys_before_locked_connection_upsert(self):
         """Callback storage locks natural keys before performing its connection upsert."""
@@ -411,13 +377,9 @@ class TokenRefreshRaceTests(unittest.TestCase):
         self.assertLess(previous_delete_index, create_index)
         self.assertNotIn('else:', source[target_delete_index:previous_delete_index])
 
-    @unittest.skipUnless(
-        os.getenv('TEST_DATABASE_URL') and make_url(os.getenv('TEST_DATABASE_URL')).get_backend_name() == 'postgresql',
-        'PostgreSQL TEST_DATABASE_URL is required to prove first-ever callback serialization.',
-    )
     def test_concurrent_first_callbacks_serialize_before_upsert_and_keep_two_browser_rows(self):
         """Concurrent first callbacks serialize and retain one row per browser."""
-        with _postgres_schema('jep_first_callback') as (factory, key_provider, engine):
+        with _postgres_schema('review_race') as (factory, key_provider, engine):
             first_reached_upsert = threading.Event()
             second_reached_advisory_lock = threading.Event()
             release_first = threading.Event()
@@ -506,13 +468,9 @@ class TokenRefreshRaceTests(unittest.TestCase):
             self.assertEqual({token.token_kind for token in tokens}, {'access_token', 'refresh_token'})
             self.assertEqual(connection.status, 'active')
 
-    @unittest.skipUnless(
-        os.getenv('TEST_DATABASE_URL') and make_url(os.getenv('TEST_DATABASE_URL')).get_backend_name() == 'postgresql',
-        'PostgreSQL TEST_DATABASE_URL is required to prove reconnect callback serialization.',
-    )
     def test_concurrent_revoked_reconnects_keep_both_new_rows_and_delete_old_rows(self):
         """Concurrent revoked reconnects retain new rows while deleting all old rows."""
-        with _postgres_schema('jep_reconnect_callback') as (factory, key_provider, engine):
+        with _postgres_schema('review_race') as (factory, key_provider, engine):
             with factory() as session:
                 stored = store_oauth_callback_tokens(
                     session,
@@ -626,13 +584,9 @@ class TokenRefreshRaceTests(unittest.TestCase):
             self.assertEqual({row.id for row in rows}, new_ids)
             self.assertEqual(connection.status, 'active')
 
-    @unittest.skipUnless(
-        os.getenv('TEST_DATABASE_URL') and make_url(os.getenv('TEST_DATABASE_URL')).get_backend_name() == 'postgresql',
-        'PostgreSQL TEST_DATABASE_URL is required to prove concurrent refresh serialization.',
-    )
     def test_concurrent_refresh_serializes_against_postgresql(self):
         base_url = os.getenv('TEST_DATABASE_URL')
-        schema = f"jep_refresh_{uuid.uuid4().hex}"
+        schema = f"review_race_{uuid.uuid4().hex}"
         separator = '&' if '?' in base_url else '?'
         schema_url = f"{base_url}{separator}options={quote(f'-csearch_path={schema}', safe='')}"
         base_engine = db_engine.get_engine(base_url)

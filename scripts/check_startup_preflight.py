@@ -20,11 +20,11 @@ except ImportError:  # pragma: no cover - dependency install failure path
 
 from backend.auth.jira_auth import (  # noqa: E402
     AUTH_MODE_ATLASSIAN_OAUTH,
-    AUTH_MODE_BASIC,
     AuthConfig,
     AuthError,
     validate_auth_config,
 )
+from backend.auth.runtime_profile import RuntimeProfileError, normalize_runtime_profile, validate_supported_runtime_profile
 from backend.auth.key_provider import KeyProviderConfigurationError, key_provider_from_env  # noqa: E402
 from backend.config.repository import ConfigStorageError, selected_config_storage_backend, validate_config_storage_startup  # noqa: E402
 from backend.db import engine as db_engine  # noqa: E402
@@ -32,7 +32,6 @@ from backend.frontend_build import frontend_build_missing, frontend_build_stale 
 
 
 TRUE_VALUES = {"1", "true", "yes"}
-OAUTH_TOKEN_STORE_MIN_TTL_SECONDS = 900
 
 
 class PreflightError(RuntimeError):
@@ -45,10 +44,8 @@ def _env_flag(env: dict[str, str], name: str) -> bool:
 
 def _auth_config_from_env(env: dict[str, str]) -> AuthConfig:
     return AuthConfig(
-        auth_mode=str(env.get("JIRA_AUTH_MODE") or AUTH_MODE_BASIC).strip() or AUTH_MODE_BASIC,
+        auth_mode=normalize_runtime_profile(env.get("JIRA_AUTH_MODE"), env.get("CONFIG_STORAGE_BACKEND"))[0],
         jira_url=str(env.get("JIRA_URL") or "").strip(),
-        jira_email=str(env.get("JIRA_EMAIL") or "").strip(),
-        jira_token=str(env.get("JIRA_TOKEN") or "").strip(),
         client_id=str(env.get("ATLASSIAN_CLIENT_ID") or "").strip(),
         client_secret=str(env.get("ATLASSIAN_CLIENT_SECRET") or "").strip(),
         redirect_uri=str(env.get("ATLASSIAN_REDIRECT_URI") or "").strip(),
@@ -77,32 +74,24 @@ def _check_auth_config(env: dict[str, str]) -> str:
     return config.auth_mode
 
 
-def _check_oauth_local_token_store(env: dict[str, str]) -> str:
-    config = _auth_config_from_env(env)
-    if config.auth_mode != AUTH_MODE_ATLASSIAN_OAUTH:
-        return "not required for basic auth"
-    if db_engine.database_storage_enabled(env):
-        if _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
-            host = str(env.get("APP_BIND_HOST") or "127.0.0.1").strip() or "127.0.0.1"
-            environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
-            if host not in {"127.0.0.1", "localhost", "::1"} or environment not in {"local", "dev"}:
-                raise PreflightError("DB/OAuth hosted mode must not enable OAUTH_LOCAL_TOKEN_STORE_ALLOWED.")
-        return "not required for db oauth"
-    environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
-    if environment not in {"local", "dev"} or not _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
-        raise PreflightError(
-            "Atlassian OAuth local testing requires APP_ENVIRONMENT_KEY=local or dev and "
-            "OAUTH_LOCAL_TOKEN_STORE_ALLOWED=true."
-        )
+def _check_supported_profile(env: dict[str, str]) -> str:
     try:
-        ttl_seconds = int(str(env.get("OAUTH_TOKEN_STORE_TTL_SECONDS") or "2592000").strip())
-    except ValueError as exc:
-        raise PreflightError("OAUTH_TOKEN_STORE_TTL_SECONDS must be an integer.") from exc
-    if ttl_seconds < OAUTH_TOKEN_STORE_MIN_TTL_SECONDS:
-        raise PreflightError(
-            f"OAUTH_TOKEN_STORE_TTL_SECONDS must be at least {OAUTH_TOKEN_STORE_MIN_TTL_SECONDS} seconds."
-        )
-    return "local OAuth token store allowed"
+        validate_supported_runtime_profile(env.get("JIRA_AUTH_MODE"), env.get("CONFIG_STORAGE_BACKEND"))
+    except RuntimeProfileError as error:
+        raise PreflightError(error.message) from error
+    return "db oauth"
+
+
+def _check_oauth_local_token_store(env: dict[str, str]) -> str:
+    # Old keys are inert in an existing local DB profile; do not parse paths/TTL
+    # or open any retired token file. Keep the existing hosted opt-in rejection.
+    _check_supported_profile(env)
+    if _env_flag(env, "OAUTH_LOCAL_TOKEN_STORE_ALLOWED"):
+        host = str(env.get("APP_BIND_HOST") or "127.0.0.1").strip() or "127.0.0.1"
+        environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
+        if host not in {"127.0.0.1", "localhost", "::1"} or environment not in {"local", "dev"}:
+            raise PreflightError("DB/OAuth hosted mode must not enable OAUTH_LOCAL_TOKEN_STORE_ALLOWED.")
+    return "not required for db oauth"
 
 
 def _check_config_storage(env: dict[str, str]) -> str:
@@ -157,12 +146,6 @@ def _check_network_bind(env: dict[str, str]) -> str:
     auth_mode = _auth_config_from_env(env).auth_mode
     if not _env_flag(env, "ALLOW_NETWORK_BIND"):
         raise PreflightError("Network bind requires ALLOW_NETWORK_BIND=true.")
-    if auth_mode == AUTH_MODE_BASIC:
-        environment = str(env.get("APP_ENVIRONMENT_KEY") or "local").strip().lower()
-        if not _env_flag(env, "ALLOW_BASIC_AUTH_ON_NETWORK") or environment != "local":
-            raise PreflightError(
-                "Basic auth network bind requires ALLOW_BASIC_AUTH_ON_NETWORK=true and APP_ENVIRONMENT_KEY=local."
-            )
     if auth_mode == AUTH_MODE_ATLASSIAN_OAUTH:
         if not _env_flag(env, "SESSION_COOKIE_SECURE"):
             raise PreflightError("OAuth network bind requires SESSION_COOKIE_SECURE=true.")
@@ -198,6 +181,12 @@ CHECKS = (
 
 
 def run_preflight(env: dict[str, str]) -> int:
+    # An unsupported profile must never reach credential, DB or migration checks.
+    try:
+        _check_supported_profile(env)
+    except PreflightError as error:
+        print(f"FAIL runtime_profile: {error}")
+        return 1
     failed = False
     for name, check in CHECKS:
         try:

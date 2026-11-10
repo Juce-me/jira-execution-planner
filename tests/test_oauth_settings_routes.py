@@ -1,19 +1,10 @@
-import base64
 import unittest
 from unittest.mock import patch
 
 import jira_server
-from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
+from backend.db import engine as db_engine, models
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
-
-def _verified_context():
-    return jira_server.RequestAuthContext(
-        auth_mode='atlassian_oauth', user_id='synthetic-user', stable_subject='synthetic-subject',
-        atlassian_account_id='synthetic-account', workspace_id='synthetic-workspace',
-        auth_connection_id='local-oauth-connection:session-1', cloud_id='cloud-123',
-        site_url='https://oauth-site.atlassian.net', token_version='1', account_status='active',
-        is_admin=False, granted_scopes=tuple(FULL_OAUTH_SCOPE.split()), granted_scopes_verified=True,
-    )
 
 
 class FakeResponse:
@@ -28,111 +19,78 @@ class FakeResponse:
 
 class OAuthSettingsRouteTests(unittest.TestCase):
     def setUp(self):
-        self._config_storage_patcher = patch.object(jira_server, 'config_storage_db_enabled', return_value=False)
-        self._config_storage_patcher.start()
+        set_up_db_oauth(self)
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
         self.client = jira_server.app.test_client()
-        install_oauth_session(self.client, site_url="https://oauth-site.atlassian.net")
+        self.session_payload = install_oauth_session(self.client, site_url="https://oauth-site.atlassian.net")
 
     def tearDown(self):
-        self._config_storage_patcher.stop()
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.PROJECTS_CACHE.update({"data": None, "timestamp": 0})
         jira_server.COMPONENTS_CACHE.update({"data": None, "timestamp": 0})
         jira_server.EPICS_SEARCH_CACHE.clear()
         jira_server.LABELS_CACHE.update({"data": None, "timestamp": 0})
         jira_server.ISSUE_TYPES_CACHE.update({"data": None, "timestamp": 0})
 
+    def db_identity(self, db):
+        browser = db.get(models.BrowserSession, self.session_payload['db_browser_session_id'])
+        return browser.user_id, browser.workspace_id
+
+    def save_workspace_config(self, payload):
+        with db_engine.session_scope() as db:
+            user_id, workspace_id = self.db_identity(db)
+            db.add(models.WorkspaceDashboardConfig(workspace_id=workspace_id, payload=payload,
+                                                   created_by=user_id, updated_by=user_id))
+
     def test_config_is_oauth_ready_and_uses_session_site_url(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "JIRA_URL", "https://basic-site.atlassian.net"), \
-             patch.object(jira_server, "get_board_config", return_value={}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}):
-            response = self.client.get("/api/config")
-
+        with patch.object(jira_server, 'JIRA_URL', 'https://other-site.atlassian.net'):
+            response = self.client.get('/api/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["jiraUrl"], "https://oauth-site.atlassian.net")
-        self.assertEqual(response.get_json()["authMode"], "atlassian_oauth")
+        self.assertEqual(response.get_json()['jiraUrl'], 'https://oauth-site.atlassian.net')
+        self.assertEqual(response.get_json()['authMode'], 'atlassian_oauth')
 
-    def test_config_reports_basic_auth_mode(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "JIRA_URL", "https://basic-site.atlassian.net"), \
-             patch.object(jira_server, "JIRA_EMAIL", "basic@example.com"), \
-             patch.object(jira_server, "JIRA_TOKEN", "api-token"), \
-             patch.object(jira_server, "get_board_config", return_value={}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value=""), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}):
-            response = self.client.get("/api/config")
+    def test_config_rejects_retired_basic_auth_profile(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'load_dashboard_config', side_effect=AssertionError('route reached')):
+            response = self.client.get('/api/config')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
+    def test_config_non_admin_cannot_gain_settings_access_from_obsolete_environment_grant(self):
+        with patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True), \
+             patch.dict('os.environ', {'TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS': 'account-123'}, clear=False):
+            response = self.client.get('/api/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["authMode"], "basic")
-        self.assertFalse(response.get_json()["adminUserManagementAvailable"])
+        self.assertFalse(response.get_json()['userCanEditSettings'])
 
-    def test_config_reports_authenticated_oauth_settings_access_before_db_roles(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "get_board_config", return_value={}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}):
-            response = self.client.get("/api/config")
-
+    def test_config_reports_environment_config_exists_from_workspace_db(self):
+        self.save_workspace_config({'projects': {'selected': [{'key': 'PROD', 'type': 'product'}]},
+                                    'board': {'boardId': '7', 'boardName': 'Product'}})
+        response = self.client.get('/api/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertTrue(response.get_json()["userCanEditSettings"])
+        self.assertTrue(response.get_json()['environmentConfigExists'])
 
-    def test_config_reports_environment_config_exists_from_dashboard_json(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "get_board_config", return_value={"boardId": "7", "boardName": "Product", "source": "config"}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=["PROD"]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={"projects": {"selected": [{"key": "PROD", "type": "product"}]}}):
-            response = self.client.get("/api/config")
-
+    def test_config_reports_environment_config_missing_for_private_view_and_groups_only(self):
+        with db_engine.session_scope() as db:
+            user_id, workspace_id = self.db_identity(db)
+            db.add(models.ViewConfig(workspace_id=workspace_id, owner_user_id=user_id,
+                                     name='Private view', view_type='mixed', is_default=True,
+                                     payload={'epm': {'viewEnabled': False}}))
+            db.add(models.WorkspaceGroupConfig(workspace_id=workspace_id,
+                payload={'version': 2, 'groups': [{'id': 'g1', 'name': 'Group 1', 'teamIds': []}],
+                         'defaultGroupId': 'g1'}))
+        response = self.client.get('/api/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertTrue(response.get_json()["environmentConfigExists"])
+        self.assertFalse(response.get_json()['environmentConfigExists'])
 
-    def test_config_reports_environment_config_missing_for_user_only_json(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "get_board_config", return_value={}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={"teamGroups": {"groups": [{"id": "g1", "name": "Group 1"}]}}):
-            response = self.client.get("/api/config")
-
+    def test_config_reports_tool_admin_settings_access_from_db_role(self):
+        self.session_payload = install_oauth_session(self.client, account_id='tool-admin-account',
+            site_url='https://oauth-site.atlassian.net', roles=('admin',))
+        with patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True):
+            response = self.client.get('/api/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertFalse(response.get_json()["environmentConfigExists"])
-
-    def test_config_reports_tool_admin_settings_access(self):
-        install_oauth_session(self.client, account_id="tool-admin-account", site_url="https://oauth-site.atlassian.net")
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
-             patch.object(jira_server, "SETTINGS_ADMIN_ONLY", True), \
-             patch.dict("os.environ", {"TOOL_ADMIN_ATLASSIAN_ACCOUNT_IDS": "tool-admin-account"}, clear=False), \
-             patch.object(jira_server, "get_board_config", return_value={}), \
-             patch.object(jira_server, "get_effective_capacity_project", return_value="CAP"), \
-             patch.object(jira_server, "resolve_groups_config_path", return_value="team-groups.json"), \
-             patch.object(jira_server, "get_selected_projects", return_value=[]), \
-             patch.object(jira_server, "get_epm_config", return_value={"version": 2}), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}):
-            response = self.client.get("/api/config")
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertTrue(response.get_json()["userCanEditSettings"])
+        self.assertTrue(response.get_json()['userCanEditSettings'])
+        self.assertTrue(response.get_json()['adminUserManagementAvailable'])
 
     def test_obsolete_version_route_is_removed(self):
         self.assertNotIn('/api/version', {rule.rule for rule in jira_server.app.url_map.iter_rules()})
@@ -152,19 +110,10 @@ class OAuthSettingsRouteTests(unittest.TestCase):
             "/api/issue-types/config",
             "/api/epm/config",
         ]
-        patches = [
-            patch.object(jira_server, "load_dashboard_config", return_value={}),
-            patch.object(jira_server, "load_team_catalog", return_value={"catalog": {}, "meta": {}}),
-            patch.object(jira_server, "migrate_team_catalog_from_config"),
-        ]
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"):
-            for active_patch in patches:
-                active_patch.start()
-                self.addCleanup(active_patch.stop)
-            for route in routes:
-                with self.subTest(route=route):
-                    response = self.client.get(route)
-                    self.assertNotEqual(response.status_code, 501, response.get_data(as_text=True))
+        for route in routes:
+            with self.subTest(route=route):
+                response = self.client.get(route)
+                self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
 
     def test_projects_route_uses_oauth_client(self):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
@@ -274,7 +223,6 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         mock_get.assert_called_once_with("/rest/api/3/field", timeout=15)
 
     def test_board_statuses_route_reads_epic_workflows_from_selected_projects(self):
-        sentinel_context = _verified_context()
         calls = []
         responses = [
             FakeResponse(200, [
@@ -301,16 +249,21 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
              patch.object(jira_server, "get_board_config", return_value={"boardId": "7", "boardName": "Delivery", "source": "config"}), \
              patch.object(jira_server, "get_selected_projects", return_value=["PROJ", "TECH"]), \
-             patch.object(jira_server, "current_request_auth_context", return_value=sentinel_context), \
              patch.object(jira_server, "current_jira_get", side_effect=fake_get), \
              patch.object(jira_server, "current_jira_request", side_effect=AssertionError("must not load the global status catalog")):
             response = self.client.get("/api/board-config/statuses?boardId=999")
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(calls, [
-            ("/rest/api/3/project/PROJ/statuses", sentinel_context),
-            ("/rest/api/3/project/TECH/statuses", sentinel_context),
+        self.assertEqual([path for path, _context in calls], [
+            '/rest/api/3/project/PROJ/statuses', '/rest/api/3/project/TECH/statuses',
         ])
+        with db_engine.session_scope() as db:
+            user_id, workspace_id = self.db_identity(db)
+        for _path, context in calls:
+            self.assertEqual(context.user_id, user_id)
+            self.assertEqual(context.workspace_id, workspace_id)
+            self.assertEqual(context.browser_session_id, self.session_payload['db_browser_session_id'])
+            self.assertEqual(context.site_url, 'https://oauth-site.atlassian.net')
         self.assertEqual(response.get_json(), {
             "boardId": "7",
             "projectKeys": ["PROJ", "TECH"],
@@ -421,43 +374,22 @@ class OAuthSettingsRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "csrf_required")
 
 
-class BasicSettingsRouteTests(unittest.TestCase):
+class RetiredBasicSettingsRouteTests(unittest.TestCase):
     def setUp(self):
-        self._config_storage_patcher = patch.object(jira_server, 'config_storage_db_enabled', return_value=False)
-        self._config_storage_patcher.start()
-        jira_server.app.config["TESTING"] = True
-        jira_server.app.secret_key = "test-secret"
+        set_up_db_oauth(self)
+        jira_server.app.config['TESTING'] = True
         self.client = jira_server.app.test_client()
 
-    def tearDown(self):
-        self._config_storage_patcher.stop()
-        jira_server.PROJECTS_CACHE.update({"data": None, "timestamp": 0})
+    def test_projects_basic_profile_is_rejected_before_jira_io(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'current_jira_get', side_effect=AssertionError('Jira reached')):
+            response = self.client.get('/api/projects?refresh=true')
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')
 
-    def test_projects_basic_uses_jira_url_basic_auth_without_csrf_header(self):
-        calls = []
-
-        def fake_get(url, **kwargs):
-            calls.append((url, kwargs))
-            return FakeResponse(200, {"values": [], "isLast": True})
-
-        expected_token = base64.b64encode(b"basic@example.com:api-token").decode("ascii")
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "JIRA_URL", "https://basic.atlassian.net"), \
-             patch.object(jira_server, "JIRA_EMAIL", "basic@example.com"), \
-             patch.object(jira_server, "JIRA_TOKEN", "api-token"), \
-             patch.object(jira_server, "resilient_jira_get", side_effect=fake_get):
-            response = self.client.get("/api/projects?refresh=true")
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(calls[0][0], "https://basic.atlassian.net/rest/api/3/project/search")
-        self.assertEqual(calls[0][1]["headers"]["Authorization"], f"Basic {expected_token}")
-        self.assertNotIn("X-Requested-With", calls[0][1]["headers"])
-
-    def test_local_config_post_basic_mode_does_not_require_csrf_header(self):
-        with patch.object(jira_server, "JIRA_AUTH_MODE", "basic"), \
-             patch.object(jira_server, "load_dashboard_config", return_value={}), \
-             patch.object(jira_server, "save_dashboard_config"):
-            response = self.client.post("/api/board-config", json={"boardId": "7", "boardName": "Product"})
-
-        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-        self.assertEqual(response.get_json()["boardId"], "7")
+    def test_board_post_basic_profile_is_rejected_before_config_io(self):
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'), \
+             patch.object(jira_server, 'save_dashboard_config', side_effect=AssertionError('config reached')):
+            response = self.client.post('/api/board-config', json={'boardId': '7', 'boardName': 'Product'})
+        self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
+        self.assertEqual(response.get_json()['error'], 'runtime_auth_unsupported')

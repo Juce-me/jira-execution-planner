@@ -17,7 +17,7 @@ export function useSettingsPermissions({
     const [userCanEditEpmConfig, setUserCanEditEpmConfig] = useState(false);
     const [adminUserManagementAvailable, setAdminUserManagementAvailable] = useState(false);
     const [userIsToolAdmin, setUserIsToolAdmin] = useState(false);
-    const adminAccessAvailable = !adminUserManagementAvailable || userIsToolAdmin; // DB user directory: tool admins only
+    const adminAccessAvailable = adminUserManagementAvailable && userIsToolAdmin;
     const [environmentConfigExists, setEnvironmentConfigExists] = useState(false);
     const [scenarioPlannerForEveryone, setScenarioPlannerForEveryone] = useState(null);
     const adminAccess = useAdminAccessSettings({

@@ -1,39 +1,24 @@
-import base64
+"""Pure Home shaping and strict OAuth provider-boundary contracts; all data is synthetic."""
 import json
-import unittest
-import threading
 import time
+import unittest
+from unittest.mock import patch
 from urllib.error import HTTPError
-from unittest.mock import Mock, patch
 
+from flask import session as flask_session
+
+import jira_server
+from backend.auth.db_context import revalidate_db_request_auth_context
+from backend.auth.jira_auth import AuthError
 from backend.epm import home as epm_home
-
 from backend.epm.home import (
-    HomeGraphQLClient,
-    bucket_epm_state,
-    build_home_project_record,
-    extract_latest_update,
-    extract_tag_names,
-    fetch_epm_home_projects,
-    fetch_home_site_cloud_id,
-    fetch_latest_project_update,
-    fetch_project_tags,
-    fetch_projects_for_goal,
-    fetch_sub_goals_for_root_key,
-    resolve_goal_by_key,
-    _container_id_from_cloud,
+    bucket_epm_state, build_home_project_record, extract_latest_update,
+    extract_tag_names, _container_id_from_cloud,
 )
+from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session, FULL_OAUTH_SCOPE
 
 
-class TestEpmHomeApi(unittest.TestCase):
-    def setUp(self):
-        cache = getattr(epm_home, '_CLOUD_ID_CACHE', None)
-        if cache is not None:
-            cache.clear()
-        goal_cache = getattr(epm_home, '_GOAL_BY_KEY_CACHE', None)
-        if goal_cache is not None:
-            goal_cache.clear()
-
+class TestEpmHomeShaping(unittest.TestCase):
     def test_bucket_pending_as_active(self):
         self.assertEqual(bucket_epm_state('PENDING'), 'active')
 
@@ -126,57 +111,6 @@ class TestEpmHomeApi(unittest.TestCase):
             '<p><strong>Bold</strong> and <em>italic</em> <a href="https://example.test/update" target="_blank" rel="noopener noreferrer">link</a></p><p>Second paragraph</p>',
         )
 
-    def test_resolve_goal_by_key_matches_goal_key_case_insensitively(self):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute_paginated = Mock(
-            return_value=[
-                {'id': 'goal-1', 'key': '  child-200 ', 'name': 'Synthetic Child Goal'},
-                {'id': 'goal-2', 'key': 'OTHER-1', 'name': 'Other'},
-            ]
-        )
-
-        result = resolve_goal_by_key(client, 'child-200', 'ati:cloud:townsquare::site/cloud-123')
-
-        self.assertEqual(result, {'id': 'goal-1', 'key': '  child-200 ', 'name': 'Synthetic Child Goal'})
-
-    def test_resolve_goal_by_key_uses_direct_goals_by_key_before_paginated_search(self):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute = Mock(return_value={
-            'data': {
-                'goals_byKey': {
-                    'id': 'goal-root',
-                    'key': 'ROOT-100',
-                    'name': 'Synthetic Root Goal',
-                    'url': 'https://home/goal/root-100',
-                },
-            },
-        })
-        client.execute_paginated = Mock(side_effect=AssertionError('goals_search should not run when goals_byKey resolves'))
-
-        result = resolve_goal_by_key(client, 'root-100', 'ari:cloud:townsquare::site/cloud-123')
-
-        self.assertEqual(result['id'], 'goal-root')
-        client.execute.assert_called_once()
-        query, variables = client.execute.call_args.args
-        self.assertIn('goals_byKey', query)
-        self.assertEqual(variables, {
-            'containerId': 'ari:cloud:townsquare::site/cloud-123',
-            'goalKey': 'ROOT-100',
-        })
-        client.execute_paginated.assert_not_called()
-
-    def test_resolve_goal_by_key_falls_back_to_paginated_search_when_direct_lookup_fails(self):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute = Mock(side_effect=epm_home.HomeGraphQLError('goals_byKey unavailable'))
-        client.execute_paginated = Mock(return_value=[
-            {'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal'},
-        ])
-
-        result = resolve_goal_by_key(client, 'ROOT-100', 'ari:cloud:townsquare::site/cloud-123')
-
-        self.assertEqual(result['id'], 'goal-root')
-        client.execute_paginated.assert_called_once()
-
     def test_container_id_uses_ari_prefix(self):
         self.assertEqual(
             _container_id_from_cloud('cloud-123'),
@@ -244,850 +178,276 @@ class TestEpmHomeApi(unittest.TestCase):
             'rnd_project_delta',
         ])
 
-    def test_fetch_project_tags_reads_direct_home_project_tags(self):
-        client = Mock()
-        client.execute.return_value = {
-            'data': {
-                'projects_byId': {
-                    'tags': {
-                        'edges': [
-                            {'node': {'name': 'rnd_project_alpha'}},
-                            {'node': {'name': 'epm'}},
-                        ],
-                    },
-                },
-            },
-        }
 
-        result = fetch_project_tags(client, {'id': 'proj-1'})
+class ProviderResponse:
+    status = 200
 
-        self.assertEqual(result, ['rnd_project_alpha', 'epm'])
-        client.execute.assert_called_once_with(epm_home.QUERY_PROJECT_TAGS, {'projectId': 'proj-1'})
+    def __init__(self, document):
+        self.document = document
 
-    @patch('backend.epm.home.fetch_home_site_cloud_id', return_value='cloud-123')
-    @patch('backend.epm.home.build_teamwork_graph_client')
-    def test_fetch_project_tags_falls_back_to_teamwork_graph_when_direct_tags_are_empty(self, mock_build_twg_client, mock_cloud_id):
-        home_client = Mock()
-        home_client.execute.return_value = {
-            'data': {
-                'projects_byId': {
-                    'tags': {
-                        'edges': [],
-                    },
-                },
-            },
-        }
-        twg_client = Mock()
-        twg_client.execute.return_value = {
-            'data': {
-                'cypherQuery': {
-                    'edges': [
-                        {
-                            'node': {
-                                'columns': [
-                                    {
-                                        'value': {
-                                            'nodes': [
-                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_pubcid_lastimp'}},
-                                            ],
-                                        },
-                                    },
-                                ],
-                            },
-                        },
-                    ],
-                },
-            },
-        }
-        mock_build_twg_client.return_value = twg_client
+    def __enter__(self):
+        return self
 
-        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+    def __exit__(self, *_args):
+        return False
 
-        self.assertEqual(result, ['rnd_project_pubcid_lastimp'])
-        mock_cloud_id.assert_called_once_with()
-        mock_build_twg_client.assert_called_once_with()
+    def read(self):
+        return json.dumps(self.document).encode()
 
-    @patch('backend.epm.home.fetch_home_site_cloud_id', return_value='cloud-123')
-    @patch('backend.epm.home.build_teamwork_graph_client')
-    def test_fetch_project_tags_falls_back_to_teamwork_graph_relationship(self, mock_build_twg_client, mock_cloud_id):
-        home_client = Mock()
-        home_client.execute.side_effect = epm_home.HomeGraphQLError('unknown field tags')
-        twg_client = Mock()
-        twg_client.execute.return_value = {
-            'data': {
-                'cypherQuery': {
-                    'edges': [
-                        {
-                            'node': {
-                                'columns': [
-                                    {
-                                        'value': {
-                                            'nodes': [
-                                                {'data': {'__typename': 'AtlassianHomeTag', 'name': 'rnd_project_alpha'}},
-                                            ],
-                                        },
-                                    },
-                                ],
-                            },
-                        },
-                    ],
-                },
-            },
-        }
-        mock_build_twg_client.return_value = twg_client
 
-        result = fetch_project_tags(home_client, {'id': 'proj-1', 'url': 'https://home/project/proj-1'})
+class TestEpmHomeOAuthContracts(unittest.TestCase):
+    def setUp(self):
+        set_up_db_oauth(self)
+        jira_server.app.config['TESTING'] = True
+        jira_server.app.secret_key = 'synthetic-home-secret'
+        self.browser = jira_server.app.test_client()
+        cookie = install_oauth_session(self.browser, account_id='home-reader',
+            cloudid='cloud-123', site_url='https://example.atlassian.net',
+            scope=FULL_OAUTH_SCOPE + ' ' + ' '.join(epm_home.EPM_HOME_READ_SCOPES))
+        with jira_server.app.test_request_context('/'):
+            flask_session['db_oauth_session'] = cookie
+            self.context = jira_server.current_request_auth_context()
+        self.auth = epm_home.HomeReadAuth(epm_home.HOME_READ_PROFILE_PUBLIC_READ_V1, self.context,
+            revalidate=lambda context: revalidate_db_request_auth_context(
+                context, required_scopes=' '.join(epm_home.EPM_HOME_READ_SCOPES)),
+            load_session=jira_server.db_oauth_session_data_for_auth_context)
+        self.client = self.auth.client()
+        epm_home._STRICT_GOAL_LOOKUP_CACHE.clear()
+        self.addCleanup(epm_home._STRICT_GOAL_LOOKUP_CACHE.clear)
+        self.calls = []
 
-        self.assertEqual(result, ['rnd_project_alpha'])
-        mock_cloud_id.assert_called_once_with()
-        mock_build_twg_client.assert_called_once_with()
-        self.assertIn('atlassian_project_has_atlassian_home_tag', twg_client.execute.call_args.args[1]['cypherQuery'])
+    def provider(self, responder):
+        def transport(request, timeout):
+            self.assertEqual(request.full_url, epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT)
+            self.assertEqual(request.get_method(), 'POST')
+            self.assertTrue(request.get_header('Authorization').startswith('Bearer '))
+            document = json.loads(request.data)
+            self.calls.append(document)
+            return ProviderResponse(responder(document['operationName'], document.get('variables', {})))
+        return patch.object(epm_home, 'urlopen', side_effect=transport)
 
-    def test_fetch_epm_home_projects_requires_scope_argument(self):
+    @staticmethod
+    def connection(nodes, *, after=None, more=False):
+        return {'pageInfo': {'hasNextPage': more, 'endCursor': after},
+                'edges': [{'node': node} for node in nodes]}
+
+    @staticmethod
+    def project(index, *, paused=False):
+        return {'id': f'project-{index}', 'key': f'PROJECT-{index}', 'name': f'Project {index}',
+            'url': f'https://home.example.test/project/{index}',
+            'state': {'label': 'Paused' if paused else 'On track', 'value': 'PAUSED' if paused else 'ON_TRACK'},
+            'tags': {'edges': [{'node': {'name': f'rnd_project_{index}'}}]},
+            'updates': {'edges': [{'node': {'creationDate': '2026-04-12T10:00:00Z', 'summary': f'Latest {index}'}}]}}
+
+    def test_cloud_id_comes_from_validated_actor_without_tenant_info_or_env_fallback(self):
+        with patch.dict('os.environ', {'JIRA_URL': 'https://ignored.example.test/'}), \
+             patch.object(epm_home, 'urlopen', side_effect=AssertionError('tenant_info HTTP')) as transport:
+            self.assertEqual(epm_home.fetch_home_site_cloud_id(self.context, self.auth), 'cloud-123')
+            self.assertEqual(epm_home.fetch_home_site_cloud_id(self.context, self.auth), 'cloud-123')
+            transport.assert_not_called()
+
+    def test_unbound_home_reads_reject_without_service_credentials_or_network(self):
+        with patch.dict('os.environ', {'JIRA_AUTH_MODE': 'basic', 'JIRA_EMAIL': 'synthetic@example.test',
+                    'JIRA_TOKEN': 'synthetic-token', 'ATLASSIAN_EMAIL': 'service@example.test',
+                    'ATLASSIAN_API_TOKEN': 'synthetic-service-token'}), \
+             patch.object(epm_home, 'urlopen', side_effect=AssertionError('retired transport')) as transport:
+            for invoke in (lambda: epm_home.fetch_home_site_cloud_id(),
+                           lambda: epm_home.fetch_epm_home_projects({'subGoalKey': 'CHILD-200'})):
+                with self.assertRaises(AuthError):
+                    invoke()
+            transport.assert_not_called()
+        self.assertFalse(hasattr(epm_home, 'HomeGraphQLClient'))
+        self.assertFalse(hasattr(epm_home, 'build_home_graphql_client'))
+        self.assertFalse(hasattr(epm_home, 'build_teamwork_graph_client'))
+
+    def test_home_projects_requires_scope_argument(self):
         with self.assertRaises(TypeError):
-            fetch_epm_home_projects()
+            epm_home.fetch_epm_home_projects()
 
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_epm_home_projects_returns_empty_when_scope_missing(self, mock_warning):
-        self.assertEqual(fetch_epm_home_projects({}), [])
-        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKeys is required')
+    def test_missing_and_malformed_scope_returns_empty_before_auth_or_provider(self):
+        for scope in ({}, 'bad-scope', {'subGoalKey': ['CHILD-200']}, {'subGoalKeys': [42]}):
+            with self.subTest(scope=scope), patch.object(epm_home, 'urlopen') as transport, \
+                 patch.object(epm_home.logger, 'warning') as warning:
+                self.assertEqual(epm_home.fetch_epm_home_projects(scope), [])
+                warning.assert_called_once_with('EPM home fetch skipped: subGoalKeys is required')
+                transport.assert_not_called()
 
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_epm_home_projects_returns_empty_when_scope_is_malformed_truthy_value(self, mock_warning):
-        self.assertEqual(fetch_epm_home_projects('bad-scope'), [])
-        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKeys is required')
+    def test_goal_by_key_is_case_insensitive_and_precedes_search(self):
+        goal = {'id': 'goal-root', 'key': '  ROOT-100 ', 'name': 'Root'}
+        with self.provider(lambda operation, variables: {'data': {'goals_byKey': goal}}):
+            found = epm_home.resolve_goal_by_key(self.client, 'root-100', 'container-1')
+        self.assertEqual(found, goal)
+        self.assertEqual([call['operationName'] for call in self.calls], ['GoalByKey'])
+        self.assertEqual(self.calls[0]['variables'], {'containerId': 'container-1', 'goalKey': 'ROOT-100'})
 
-    @patch('backend.epm.home.build_home_graphql_client')
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_epm_home_projects_returns_empty_when_scope_values_are_non_string(self, mock_warning, mock_build_client):
-        scope = {'subGoalKey': ['CHILD-200']}
+    def test_goal_lookup_falls_back_to_registered_paginated_search_for_missing_key(self):
+        goal = {'id': 'goal-child', 'key': ' child-200 ', 'name': 'Child'}
+        def responder(operation, variables):
+            if operation == 'GoalByKey':
+                return {'data': {'goals_byKey': None}}
+            self.assertEqual(operation, 'GoalsSearch')
+            return {'data': {'goals_search': self.connection([goal])}}
+        with self.provider(responder):
+            self.assertEqual(epm_home.resolve_goal_by_key(self.client, 'CHILD-200', 'container-1'), goal)
+        self.assertEqual(len(self.calls), 2)
 
-        self.assertEqual(fetch_epm_home_projects(scope), [])
-
-        mock_warning.assert_called_once_with('EPM home fetch skipped: subGoalKeys is required')
-        mock_build_client.assert_not_called()
-
-    @patch.dict('os.environ', {'JIRA_URL': 'https://example.atlassian.net'}, clear=False)
-    @patch('backend.epm.home.urlopen')
-    def test_fetch_home_site_cloud_id_uses_jira_tenant_info(self, mock_urlopen):
-        response = Mock()
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        response.read.return_value = b'{"cloudId":"cloud-123"}'
-        mock_urlopen.return_value = response
-
-        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-123')
-        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://example.atlassian.net/_edge/tenant_info')
-
-    @patch.dict('os.environ', {'JIRA_URL': 'https://cached.atlassian.net'}, clear=False)
-    @patch('backend.epm.home.urlopen')
-    def test_fetch_home_site_cloud_id_is_cached_per_jira_url(self, mock_urlopen):
-        response = Mock()
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        response.read.return_value = b'{"cloudId":"cloud-cached"}'
-        mock_urlopen.return_value = response
-
-        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-cached')
-        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-cached')
-
-        self.assertEqual(mock_urlopen.call_count, 1)
-
-    @patch.dict('os.environ', {'JIRA_URL': 'https://env-override.atlassian.net/'}, clear=False)
-    @patch('backend.epm.home.urlopen')
-    def test_fetch_home_site_cloud_id_strips_trailing_slash(self, mock_urlopen):
-        response = Mock()
-        response.__enter__ = Mock(return_value=response)
-        response.__exit__ = Mock(return_value=False)
-        response.read.return_value = b'{"cloudId":"cloud-456"}'
-        mock_urlopen.return_value = response
-
-        self.assertEqual(fetch_home_site_cloud_id(), 'cloud-456')
-        self.assertEqual(mock_urlopen.call_args[0][0].full_url, 'https://env-override.atlassian.net/_edge/tenant_info')
-
-    @patch.dict('os.environ', {
-        'JIRA_AUTH_MODE': 'atlassian_oauth',
-        'JIRA_EMAIL': 'jira@example.com',
-        'JIRA_TOKEN': 'jira-token',
-    }, clear=True)
-    def test_home_graphql_client_oauth_requires_explicit_home_credentials(self):
-        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
-            epm_home.build_home_graphql_client()
-
-    @patch.dict('os.environ', {
-        'JIRA_AUTH_MODE': 'atlassian_oauth',
-        'JIRA_URL': 'https://example.atlassian.net',
-        'JIRA_EMAIL': 'jira@example.com',
-        'JIRA_TOKEN': 'jira-token',
-    }, clear=True)
-    def test_teamwork_graph_client_oauth_requires_explicit_home_credentials(self):
-        with self.assertRaisesRegex(RuntimeError, 'ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set'):
-            epm_home.build_teamwork_graph_client()
-
-    @patch.dict('os.environ', {
-        'JIRA_AUTH_MODE': 'basic',
-        'JIRA_EMAIL': 'jira@example.com',
-        'JIRA_TOKEN': 'jira-token',
-    }, clear=True)
-    def test_home_graphql_client_basic_keeps_jira_credential_fallback(self):
-        client = epm_home.build_home_graphql_client()
-
-        expected = base64.b64encode(b'jira@example.com:jira-token').decode('ascii')
-        self.assertEqual(client.headers['Authorization'], f'Basic {expected}')
-
-    @patch('backend.epm.home.resolve_goal_by_key')
-    def test_fetch_sub_goals_for_root_key_returns_non_archived_children(self, mock_resolve_goal):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute_paginated = Mock(
-            return_value=[
-                {'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False},
-                {'id': 'goal-old', 'key': 'ARCHIVE-999', 'name': 'Old', 'url': 'https://home/goal/archive-999', 'isArchived': True},
-            ]
-        )
-        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'ROOT-100'}
-
-        result = fetch_sub_goals_for_root_key(client, 'ROOT-100', 'ari:cloud:townsquare::site/cloud-123')
-
-        self.assertEqual(result, [{'id': 'goal-child', 'key': 'CHILD-200', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False}])
-
-    @patch('backend.epm.home.resolve_goal_by_key')
-    def test_fetch_sub_goals_for_root_key_requests_owner_metadata_and_unarchived_goals(self, mock_resolve_goal):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute_paginated = Mock(return_value=[])
-        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'ROOT-100'}
-
-        fetch_sub_goals_for_root_key(client, 'ROOT-100', 'ari:cloud:townsquare::site/cloud-123')
-
-        query, variables, path = client.execute_paginated.call_args.args
-        self.assertEqual(path, 'goals_byId.subGoals')
-        self.assertEqual(variables['goalId'], 'goal-root')
+    def test_sub_goals_exclude_archived_and_keep_documented_public_identity_omission(self):
+        def responder(operation, variables):
+            if operation == 'GoalByKey':
+                return {'data': {'goals_byKey': {'id': 'root', 'key': 'ROOT-100'}}}
+            self.assertEqual(operation, 'SubGoals')
+            return {'data': {'goals_byId': {'subGoals': self.connection([
+                {'id': 'child', 'key': 'CHILD-200'},
+                {'id': 'archived', 'key': 'OLD-999', 'isArchived': True}])}}}
+        with self.provider(responder):
+            found = epm_home.fetch_sub_goals_for_root_key(self.client, 'ROOT-100', 'container-1')
+        self.assertEqual([row['id'] for row in found], ['child'])
+        query = self.calls[-1]['query']
+        self.assertNotIn('owner', query)
         self.assertIn('archived: false', query)
-        self.assertIn('owner { id accountId name }', query)
 
-    @patch('backend.epm.home.fetch_projects_for_goal')
-    @patch('backend.epm.home.resolve_goal_by_key')
-    @patch('backend.epm.home.fetch_home_site_cloud_id')
-    @patch('backend.epm.home.build_home_graphql_client')
-    def test_fetch_epm_home_projects_fetches_multiple_sub_goals_and_dedupes_memberships(
-        self,
-        mock_build_client,
-        mock_fetch_cloud_id,
-        mock_resolve_goal,
-        mock_fetch_projects,
-    ):
-        client = Mock()
-        mock_build_client.return_value = client
-        mock_fetch_cloud_id.return_value = 'cloud-123'
-        goals = {
-            'ROOT-100': {'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Root'},
-            'CHILD-A': {'id': 'goal-a', 'key': 'CHILD-A', 'name': 'Child A'},
-            'CHILD-B': {'id': 'goal-b', 'key': 'CHILD-B', 'name': 'Child B'},
-        }
-        mock_resolve_goal.side_effect = lambda _client, key, _container_id: goals[key]
+    def test_projects_discover_descendants_dedupe_memberships_and_preserve_scope_order(self):
+        goals = {'ROOT-100': {'id': 'root', 'key': 'ROOT-100'},
+                 'CHILD-A': {'id': 'a', 'key': 'CHILD-A', 'name': 'Child A'},
+                 'CHILD-B': {'id': 'b', 'key': 'CHILD-B', 'name': 'Child B'}}
+        def responder(operation, variables):
+            if operation == 'GoalByKey':
+                return {'data': {'goals_byKey': goals[variables['goalKey']]}}
+            if operation == 'SubGoals':
+                children = {'root': [goals['CHILD-A'], goals['CHILD-B']],
+                            'a': [{'id': 'grandchild', 'key': 'GRANDCHILD'}]}.get(variables['goalId'], [])
+                return {'data': {'goals_byId': {'subGoals': self.connection(children)}}}
+            self.assertEqual(operation, 'GoalProjects')
+            projects = {'a': [self.project('shared')], 'b': [self.project('shared')],
+                        'grandchild': [self.project('nested', paused=True)]}.get(variables['goalId'], [])
+            return {'data': {'goals_byId': {'projects': self.connection(projects)}}}
+        with self.provider(responder):
+            found = epm_home.fetch_epm_home_projects(
+                {'rootGoalKey': 'root-100', 'subGoalKeys': ['child-a', 'child-b', 'child-a']},
+                context=self.context, home_auth=self.auth)
+        self.assertEqual([row['homeProjectId'] for row in found], ['project-shared', 'project-nested'])
+        self.assertEqual(found[0]['subGoalKeys'], ['CHILD-A', 'CHILD-B'])
+        self.assertEqual(found[0]['subGoals'], [{'key': 'CHILD-A', 'name': 'Child A'}, {'key': 'CHILD-B', 'name': 'Child B'}])
+        self.assertEqual(found[1]['subGoalKeys'], ['CHILD-A'])
+        self.assertEqual(found[1]['tabBucket'], 'backlog')
+        self.assertEqual(found[0]['homeTags'], ['rnd_project_shared'])
+        self.assertEqual(found[0]['latestUpdateSnippet'], 'Latest shared')
+        self.assertEqual({call['operationName'] for call in self.calls}, {'GoalByKey', 'SubGoals', 'GoalProjects'})
 
-        def execute_paginated(_query, variables, path):
-            self.assertEqual(path, 'goals_byId.subGoals')
-            if variables['goalId'] == 'goal-root':
-                return [
-                    {'id': 'goal-a', 'key': 'CHILD-A', 'name': 'Child A', 'isArchived': False},
-                    {'id': 'goal-b', 'key': 'CHILD-B', 'name': 'Child B', 'isArchived': False},
-                ]
-            if variables['goalId'] in {'goal-a', 'goal-b'}:
-                return []
-            raise AssertionError(f'unexpected goal id: {variables["goalId"]}')
+    def test_single_sub_goal_scope_without_root_uses_validated_cloud_and_enriched_rows(self):
+        def responder(operation, variables):
+            if operation == 'GoalByKey':
+                self.assertEqual(variables['containerId'], 'ari:cloud:townsquare::site/cloud-123')
+                return {'data': {'goals_byKey': {'id': 'child', 'key': 'CHILD-200'}}}
+            if operation == 'SubGoals':
+                return {'data': {'goals_byId': {'subGoals': self.connection([])}}}
+            self.assertEqual(operation, 'GoalProjects')
+            return {'data': {'goals_byId': {'projects': self.connection([self.project('single')])}}}
+        with self.provider(responder):
+            found = epm_home.fetch_epm_home_projects({'subGoalKey': 'child-200'}, home_auth=self.auth)
+        self.assertEqual([row['homeProjectId'] for row in found], ['project-single'])
+        self.assertEqual(found[0]['subGoalKeys'], ['CHILD-200'])
+        self.assertEqual(len(self.calls), 3)
 
-        client.execute_paginated.side_effect = execute_paginated
-        mock_fetch_projects.side_effect = [
-            [
-                {
-                    'homeProjectId': 'proj-1',
-                    'name': 'Project One',
-                    'homeUrl': 'https://home/project/1',
-                    'stateValue': 'ON_TRACK',
-                    'stateLabel': 'On track',
-                    'tabBucket': 'active',
-                    'latestUpdateDate': '',
-                    'latestUpdateSnippet': '',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                },
-                {
-                    'homeProjectId': 'shared',
-                    'name': 'Shared Project',
-                    'homeUrl': 'https://home/project/shared',
-                    'stateValue': 'PAUSED',
-                    'stateLabel': 'Paused',
-                    'tabBucket': 'backlog',
-                    'latestUpdateDate': '',
-                    'latestUpdateSnippet': '',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                },
-            ],
-            [
-                {
-                    'homeProjectId': 'shared',
-                    'name': 'Shared Project',
-                    'homeUrl': 'https://home/project/shared',
-                    'stateValue': 'PAUSED',
-                    'stateLabel': 'Paused',
-                    'tabBucket': 'backlog',
-                    'latestUpdateDate': '',
-                    'latestUpdateSnippet': '',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                },
-                {
-                    'homeProjectId': 'proj-2',
-                    'name': 'Project Two',
-                    'homeUrl': 'https://home/project/2',
-                    'stateValue': 'ON_TRACK',
-                    'stateLabel': 'On track',
-                    'tabBucket': 'active',
-                    'latestUpdateDate': '',
-                    'latestUpdateSnippet': '',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                },
-            ],
-        ]
+    def test_goal_project_pages_preserve_enrichment_and_order_without_per_project_fanout(self):
+        nodes = [self.project('slow'), self.project('fast'), self.project('medium', paused=True)]
+        build = epm_home._build_home_project_record_from_goal_row
+        def delayed_build(row):
+            if row['id'] == 'project-slow':
+                time.sleep(0.03)
+            return build(row)
+        with self.provider(lambda operation, variables: {'data': {'goals_byId': {'projects': self.connection(nodes)}}}), \
+             patch.object(epm_home, '_build_home_project_record_from_goal_row', side_effect=delayed_build):
+            found = epm_home.fetch_projects_for_goal(self.client, 'goal-1')
+        self.assertEqual([row['homeProjectId'] for row in found], [row['id'] for row in nodes])
+        self.assertEqual(found[0]['latestUpdateSnippet'], 'Latest slow')
+        self.assertEqual(found[0]['ownerName'], '')
+        self.assertEqual(found[0]['latestUpdateAuthor'], '')
+        self.assertEqual(found[2]['tabBucket'], 'backlog')
+        self.assertEqual(len(self.calls), 1)
+        self.assertEqual(self.calls[0]['operationName'], 'GoalProjects')
+        for field in ('state', 'tags', 'updates'):
+            self.assertIn(field, self.calls[0]['query'])
+        for omitted in ('owner', 'creator'):
+            self.assertNotIn(omitted, self.calls[0]['query'])
 
-        result = fetch_epm_home_projects({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-A', 'CHILD-B']})
+    def test_incomplete_goal_project_page_rejects_without_per_project_fallback(self):
+        with self.provider(lambda operation, variables: {'data': {'goals_byId': {'projects': self.connection([{'id': 'incomplete'}])}}}):
+            with self.assertRaises(epm_home.HomeReadError) as raised:
+                epm_home.fetch_projects_for_goal(self.client, 'goal-1')
+        self.assertEqual(raised.exception.category, 'invalid_response')
+        self.assertEqual(len(self.calls), 1)
 
-        self.assertEqual([project['homeProjectId'] for project in result], ['proj-1', 'shared', 'proj-2'])
-        self.assertEqual(result[0]['subGoalKeys'], ['CHILD-A'])
-        self.assertEqual(result[1]['subGoalKeys'], ['CHILD-A', 'CHILD-B'])
-        self.assertEqual(result[2]['subGoals'], [{'key': 'CHILD-B', 'name': 'Child B'}])
-        self.assertEqual([call.args[1] for call in mock_fetch_projects.call_args_list], ['goal-a', 'goal-b'])
+    def test_goal_project_pagination_reads_250_and_caps_500(self):
+        for total, expected in ((250, 250), (550, 500)):
+            self.calls.clear()
+            def responder(operation, variables):
+                self.assertEqual(operation, 'GoalProjects')
+                start = int(variables['after'] or 0)
+                end = min(total, start + 50)
+                return {'data': {'goals_byId': {'projects': self.connection(
+                    [self.project(index) for index in range(start, end)], after=str(end), more=end < total)}}}
+            with self.subTest(total=total), self.provider(responder), patch.object(epm_home.logger, 'warning') as warning:
+                found = epm_home.fetch_goal_project_links(self.client, 'goal-1')
+                self.assertEqual(len(found), expected)
+                self.assertEqual(found[-1]['id'], f'project-{expected-1}')
+                self.assertEqual(len(self.calls), expected // 50)
+                if total > expected:
+                    warning.assert_called_once()
+                    self.assertIn('truncated', warning.call_args.args[0])
+                else:
+                    warning.assert_not_called()
+            for index, call in enumerate(self.calls):
+                self.assertEqual(call['variables'], {'goalId': 'goal-1', 'first': 50, 'after': str(index*50) if index else None})
 
-    @patch('backend.epm.home.fetch_projects_for_goal')
-    @patch('backend.epm.home.resolve_goal_by_key')
-    @patch('backend.epm.home.fetch_home_site_cloud_id')
-    @patch('backend.epm.home.build_home_graphql_client')
-    def test_fetch_epm_home_projects_includes_projects_under_child_goals(
-        self,
-        mock_build_client,
-        mock_fetch_cloud_id,
-        mock_resolve_goal,
-        mock_fetch_projects,
-    ):
-        client = Mock()
-        mock_build_client.return_value = client
-        mock_fetch_cloud_id.return_value = 'cloud-123'
-        mock_resolve_goal.return_value = {'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Root'}
+    def test_registered_pagination_stops_when_cursor_missing_or_unchanged(self):
+        for cursor in (None, 'same'):
+            self.calls.clear()
+            def responder(operation, variables):
+                return {'data': {'goals_search': self.connection([{'id': 'goal-1'}], after=cursor, more=True)}}
+            with self.subTest(cursor=cursor), self.provider(responder):
+                found = self.client.execute_paginated(epm_home.PUBLIC_READ_V1_REGISTRY['goals_search']['query'],
+                    {'first': 1}, 'goals_search')
+            self.assertEqual([row['id'] for row in found], ['goal-1'] * (2 if cursor else 1))
+            self.assertEqual(len(self.calls), 2 if cursor else 1)
 
-        def execute_paginated(_query, variables, path):
-            self.assertEqual(path, 'goals_byId.subGoals')
-            goal_id = variables['goalId']
-            if goal_id == 'goal-root':
-                return [
-                    {'id': 'goal-34', 'key': 'CRITE-34', 'name': 'BidSwitch', 'isArchived': False},
-                ]
-            if goal_id == 'goal-34':
-                return [
-                    {'id': 'goal-456', 'key': 'CRITE-456', 'name': 'Bidline SSP', 'isArchived': False},
-                    {'id': 'goal-495', 'key': 'CRITE-495', 'name': 'Enriched Deals', 'isArchived': False},
-                ]
-            if goal_id in {'goal-456', 'goal-495'}:
-                return []
-            raise AssertionError(f'unexpected goal id: {goal_id}')
+    def test_latest_update_fetch_requests_five_and_keeps_placeholder_rows_for_shaping(self):
+        updates = [{'id': 'empty', 'summary': ''}, {'id': 'real', 'summary': 'Real update'}]
+        with self.provider(lambda operation, variables: {'data': {'projects_byId': {'updates': self.connection(updates)}}}):
+            found = epm_home.fetch_latest_project_update(self.client, 'project-1')
+        self.assertEqual(found, updates)
+        self.assertEqual(self.calls[0]['operationName'], 'ProjectUpdates')
+        self.assertEqual(self.calls[0]['variables'], {'projectId': 'project-1', 'first': 5})
 
-        def projects_for_goal(_client, goal_id):
-            project = {
-                'homeProjectId': f'project-{goal_id}',
-                'name': f'Project {goal_id}',
-                'homeUrl': f'https://home/project/{goal_id}',
-                'stateValue': 'ON_TRACK',
-                'stateLabel': 'On track',
-                'tabBucket': 'active',
-                'latestUpdateDate': '',
-                'latestUpdateSnippet': '',
-                'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                'matchState': 'metadata-only',
-            }
-            return [project]
+    def test_tags_use_direct_registered_read_and_never_teamwork_fallback(self):
+        for tags in ([], [{'node': {'name': 'rnd_project_alpha'}}]):
+            self.calls.clear()
+            with self.subTest(tags=tags), self.provider(lambda operation, variables: {'data': {'projects_byId': {'tags': {'edges': tags}}}}):
+                found = epm_home.fetch_project_tags(self.client, {'id': 'project-1'})
+            self.assertEqual(found, ['rnd_project_alpha'] if tags else [])
+            self.assertEqual(len(self.calls), 1)
+            self.assertEqual(self.calls[0]['operationName'], 'ProjectTags')
 
-        client.execute_paginated.side_effect = execute_paginated
-        mock_fetch_projects.side_effect = projects_for_goal
+    def test_provider_auth_failure_propagates_instead_of_empty_metadata_fallback(self):
+        with patch.object(epm_home, 'urlopen', side_effect=HTTPError(
+                epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT, 403, 'Forbidden', {}, None)) as transport:
+            with self.assertRaises(epm_home.HomeReadError) as raised:
+                epm_home.fetch_epm_home_projects({'subGoalKey': 'CHILD-200'}, home_auth=self.auth)
+        self.assertEqual(raised.exception.category, 'access_denied')
+        self.assertEqual(transport.call_count, 1)
 
-        result = fetch_epm_home_projects({'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CRITE-34']})
+    def test_execute_retries_429_using_retry_after_before_success(self):
+        with patch.object(epm_home, 'time') as clock, patch.object(epm_home, 'urlopen', side_effect=[
+                HTTPError(epm_home.HOME_OAUTH_GRAPHQL_ENDPOINT, 429, 'Too Many Requests', {'Retry-After': '3'}, None),
+                ProviderResponse({'data': {'goals_byKey': {'id': 'goal-1'}}})]) as transport:
+            result = self.client.execute_operation('goals_byKey', {'containerId': 'container', 'goalKey': 'GOAL-1'})
+        self.assertEqual(result.data['goals_byKey']['id'], 'goal-1')
+        self.assertEqual(transport.call_count, 2)
+        clock.sleep.assert_called_once_with(3)
 
-        self.assertEqual(
-            [project['homeProjectId'] for project in result],
-            ['project-goal-34', 'project-goal-456', 'project-goal-495'],
-        )
-        self.assertEqual(
-            [call.args[1] for call in mock_fetch_projects.call_args_list],
-            ['goal-34', 'goal-456', 'goal-495'],
-        )
-        self.assertEqual(
-            [project['subGoalKeys'] for project in result],
-            [['CRITE-34'], ['CRITE-34'], ['CRITE-34']],
-        )
-        self.assertEqual(
-            result[1]['subGoals'],
-            [{'key': 'CRITE-34', 'name': 'BidSwitch'}],
-        )
-
-    @patch('backend.epm.home.extract_home_jira_linkage')
-    @patch('backend.epm.home.fetch_latest_project_update')
-    @patch('backend.epm.home.fetch_projects_for_goal')
-    @patch('backend.epm.home.fetch_home_site_cloud_id')
-    @patch('backend.epm.home.build_home_graphql_client')
-    def test_fetch_epm_home_projects_resolves_child_sub_goal_from_root_children(
-        self,
-        mock_build_client,
-        mock_fetch_cloud_id,
-        mock_fetch_projects,
-        mock_fetch_updates,
-        mock_extract_linkage,
-    ):
-        client = Mock()
-
-        def execute_paginated(_query, variables, path):
-            if path == 'goals_search':
-                return [{'id': 'goal-root', 'key': 'ROOT-100', 'name': 'Synthetic Root Goal'}]
-            if path == 'goals_byId.subGoals':
-                if variables['goalId'] == 'goal-child':
-                    return []
-                self.assertEqual(variables['goalId'], 'goal-root')
-                return [
-                    {'id': 'goal-child', 'key': ' CHILD-200 ', 'name': 'Synthetic Child Goal', 'url': 'https://home/goal/child-200', 'isArchived': False},
-                ]
-            raise AssertionError(f'unexpected path: {path}')
-
-        client.execute_paginated = Mock(side_effect=execute_paginated)
-        mock_build_client.return_value = client
-        mock_fetch_cloud_id.return_value = 'cloud-123'
-        mock_fetch_projects.return_value = [
-            {
-                'homeProjectId': 'proj-1',
-                'name': 'Synthetic Launch',
-                'homeUrl': 'https://home.atlassian.com/projects/proj-1',
-                'stateValue': 'ON_TRACK',
-                'stateLabel': 'On track',
-                'tabBucket': 'active',
-                'latestUpdateDate': '',
-                'latestUpdateSnippet': '',
-                'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                'matchState': 'metadata-only',
-            }
-        ]
-        mock_fetch_updates.return_value = []
-        mock_extract_linkage.return_value = {'labels': [], 'epicKeys': []}
-
-        result = fetch_epm_home_projects({'rootGoalKey': 'root-100', 'subGoalKey': 'child-200'})
-
-        mock_fetch_projects.assert_called_once_with(client, 'goal-child')
-        self.assertEqual(result[0]['name'], 'Synthetic Launch')
-
-    @patch('backend.epm.home.extract_home_jira_linkage')
-    @patch('backend.epm.home.fetch_latest_project_update')
-    @patch('backend.epm.home.fetch_projects_for_goal')
-    @patch('backend.epm.home.resolve_goal_by_key')
-    @patch('backend.epm.home.fetch_home_site_cloud_id')
-    @patch('backend.epm.home.build_home_graphql_client')
-    def test_fetch_epm_home_projects_resolves_sub_goal_scope(
-        self,
-        mock_build_client,
-        mock_fetch_cloud_id,
-        mock_resolve_goal,
-        mock_fetch_projects,
-        mock_fetch_updates,
-        mock_extract_linkage,
-    ):
-        client = Mock()
-        mock_build_client.return_value = client
-        client.execute_paginated.return_value = []
-        mock_fetch_cloud_id.return_value = 'cloud-123'
-        mock_resolve_goal.return_value = {'id': 'goal-child', 'key': 'CHILD-200'}
-        mock_fetch_projects.return_value = [
-            {
-                'homeProjectId': 'proj-1',
-                'name': 'Synthetic Launch',
-                'homeUrl': 'https://home.atlassian.com/projects/proj-1',
-                'stateValue': 'ON_TRACK',
-                'stateLabel': 'On track',
-                'tabBucket': 'active',
-                'latestUpdateDate': '',
-                'latestUpdateSnippet': '',
-                'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                'matchState': 'metadata-only',
-            }
-        ]
-        mock_fetch_updates.return_value = []
-        mock_extract_linkage.return_value = {'labels': [], 'epicKeys': []}
-
-        result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
-
-        mock_resolve_goal.assert_called_once_with(client, 'CHILD-200', 'ari:cloud:townsquare::site/cloud-123')
-        mock_fetch_projects.assert_called_once_with(client, 'goal-child')
-        self.assertEqual(
-            result,
-            [
-                {
-                    'homeProjectId': 'proj-1',
-                    'name': 'Synthetic Launch',
-                    'homeUrl': 'https://home.atlassian.com/projects/proj-1',
-                    'stateValue': 'ON_TRACK',
-                    'stateLabel': 'On track',
-                    'tabBucket': 'active',
-                    'latestUpdateDate': '',
-                    'latestUpdateSnippet': '',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                    'subGoalKeys': ['CHILD-200'],
-                    'subGoals': [{'key': 'CHILD-200', 'name': ''}],
-                }
-            ],
-        )
-
-    def test_fetch_latest_project_update_requests_recent_updates(self):
-        client = Mock()
-        client.execute.return_value = {
-            'data': {
-                'projects_byId': {
-                    'updates': {
-                        'pageInfo': {'hasNextPage': True, 'endCursor': 'cursor-1'},
-                        'edges': [
-                            {
-                                'node': {
-                                    'id': 'update-1',
-                                    'creationDate': '2026-05-10T10:00:00.000Z',
-                                    'summary': '',
-                                }
-                            },
-                            {
-                                'node': {
-                                    'id': 'update-2',
-                                    'creationDate': '2026-04-29T10:00:00.000Z',
-                                    'summary': 'Real status update',
-                                }
-                            }
-                        ],
-                    }
-                }
-            }
-        }
-
-        result = fetch_latest_project_update(client, 'proj-1')
-
-        client.execute.assert_called_once_with(
-            epm_home.QUERY_PROJECT_UPDATES,
-            {'projectId': 'proj-1', 'first': 5},
-        )
-        self.assertEqual([
-            row['id'] for row in result
-        ], ['update-1', 'update-2'])
-
-    @patch('backend.epm.home.fetch_latest_project_update')
-    @patch('backend.epm.home.fetch_goal_project_links')
-    def test_fetch_projects_for_goal_preserves_link_order_after_parallel_enrichment(self, mock_project_links, mock_fetch_update):
-        client = Mock()
-        mock_project_links.return_value = [
-            {'id': 'proj-slow'},
-            {'id': 'proj-fast'},
-            {'id': 'proj-medium'},
-        ]
-
-        def execute(_query, variables):
-            project_id = variables['projectId']
-            if project_id == 'proj-slow':
-                time.sleep(0.05)
-            return {
-                'data': {
-                    'projects_byId': {
-                        'id': project_id,
-                        'key': project_id.upper(),
-                        'name': f'Project {project_id}',
-                        'url': f'https://home/{project_id}',
-                        'state': {'label': 'On track', 'value': 'ON_TRACK'},
-                    }
-                }
-            }
-
-        client.execute.side_effect = execute
-        mock_fetch_update.return_value = []
-
-        with patch('backend.epm.home.fetch_project_tags', return_value=[]):
-            result = fetch_projects_for_goal(client, 'goal-1')
-
-        self.assertEqual([row['homeProjectId'] for row in result], ['proj-slow', 'proj-fast', 'proj-medium'])
-
-    @patch('backend.epm.home.fetch_goal_project_links')
-    def test_fetch_projects_for_goal_uses_enriched_goal_project_rows_without_per_project_fetches(self, mock_project_links):
-        client = Mock()
-        client.execute.side_effect = AssertionError('enriched goal project rows should not need per-project Home calls')
-        mock_project_links.return_value = [
-            {
-                'id': 'proj-a',
-                'key': 'PROJA',
-                'name': 'Project A',
-                'url': 'https://home/proj-a',
-                'state': {'label': 'On track', 'value': 'ON_TRACK'},
-                'updates': {
-                    'edges': [
-                        {'node': {'creationDate': '2026-04-12T10:00:00.000Z', 'summary': 'Latest A'}},
-                    ],
-                },
-                'tags': {
-                    'edges': [
-                        {'node': {'name': 'rnd_project_alpha'}},
-                    ],
-                },
-            },
-            {
-                'id': 'proj-b',
-                'key': 'PROJB',
-                'name': 'Project B',
-                'url': 'https://home/proj-b',
-                'state': {'label': 'Paused', 'value': 'PAUSED'},
-                'updates': {'edges': []},
-                'tags': {'edges': [{'node': {'name': 'rnd_project_beta'}}]},
-            },
-        ]
-
-        with patch('backend.epm.home.fetch_latest_project_update') as mock_fetch_update, patch(
-            'backend.epm.home.fetch_project_tags',
-        ) as mock_fetch_tags:
-            result = fetch_projects_for_goal(client, 'goal-1')
-
-        mock_fetch_update.assert_not_called()
-        mock_fetch_tags.assert_not_called()
-        self.assertEqual([row['homeProjectId'] for row in result], ['proj-a', 'proj-b'])
-        self.assertEqual(result[0]['latestUpdateSnippet'], 'Latest A')
-        self.assertEqual(result[0]['homeTags'], ['rnd_project_alpha'])
-        self.assertEqual(result[1]['tabBucket'], 'backlog')
-
-    def test_fetch_goal_project_links_requests_project_enrichment_fields(self):
-        client = Mock()
-        client.execute.return_value = {
-            'data': {
-                'goals_byId': {
-                    'projects': {
-                        'pageInfo': {'hasNextPage': False, 'endCursor': None},
-                        'edges': [],
-                    },
-                },
-            },
-        }
-
-        epm_home.fetch_goal_project_links(client, 'goal-1')
-
-        query = client.execute.call_args.args[0]
-        self.assertIn('state { label value }', query)
-        self.assertIn('owner { id accountId name }', query)
-        self.assertIn('tags @optIn(to: "Townsquare")', query)
-        self.assertIn('updates(first: 5)', query)
-        self.assertIn('creator { accountId name }', query)
-
-    @patch('backend.epm.home.fetch_goal_project_links')
-    @patch('backend.epm.home.resolve_sub_goals_for_scope')
-    @patch('backend.epm.home.fetch_home_site_cloud_id')
-    @patch('backend.epm.home.build_home_graphql_client')
-    def test_latest_update_fetches_share_bounded_fanout_and_home_projects_consumes_enriched_rows(
-        self,
-        mock_build_client,
-        mock_fetch_cloud_id,
-        mock_resolve_goal,
-        mock_project_links,
-    ):
-        client = Mock()
-        mock_build_client.return_value = client
-        client.execute_paginated.return_value = []
-        mock_fetch_cloud_id.return_value = 'cloud-123'
-        mock_resolve_goal.return_value = [{'id': 'goal-1', 'key': 'CHILD-200'}]
-        mock_project_links.return_value = [{'id': 'proj-a'}, {'id': 'proj-b'}]
-
-        def execute(_query, variables):
-            project_id = variables['projectId']
-            return {
-                'data': {
-                    'projects_byId': {
-                        'id': project_id,
-                        'key': project_id.upper(),
-                        'name': f'Project {project_id}',
-                        'url': f'https://home/{project_id}',
-                        'state': {'label': 'On track', 'value': 'ON_TRACK'},
-                    }
-                }
-            }
-
-        client.execute.side_effect = execute
-        first_update_started = threading.Event()
-        release_updates = threading.Event()
-        update_calls = []
-        update_lock = threading.Lock()
-
-        def fetch_update(_client, project_id):
-            with update_lock:
-                update_calls.append(project_id)
-                if len(update_calls) == 1:
-                    first_update_started.set()
-            if project_id == 'proj-a':
-                self.assertTrue(release_updates.wait(1), 'second update fetch did not overlap the first')
-            else:
-                self.assertTrue(first_update_started.wait(1), 'first update fetch never started')
-                release_updates.set()
-            return [{'creationDate': '2026-04-12T10:00:00.000Z', 'summary': f'Update {project_id}'}]
-
-        with patch('backend.epm.home.fetch_latest_project_update', side_effect=fetch_update) as mock_fetch_update, patch(
-            'backend.epm.home.fetch_project_tags',
-            return_value=[],
-        ):
-            result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
-
-        self.assertEqual(mock_fetch_update.call_count, 2)
-        self.assertCountEqual(update_calls, ['proj-a', 'proj-b'])
-        self.assertEqual([row['homeProjectId'] for row in result], ['proj-a', 'proj-b'])
-        self.assertEqual([row['latestUpdateSnippet'] for row in result], ['Update proj-a', 'Update proj-b'])
-
-        with patch('backend.epm.home.fetch_projects_for_goal') as mock_fetch_projects, patch(
-            'backend.epm.home.fetch_latest_project_update',
-            side_effect=AssertionError('fetch_epm_home_projects must not fetch updates sequentially'),
-        ) as mock_late_update:
-            mock_fetch_projects.return_value = [
-                {
-                    'homeProjectId': 'proj-enriched',
-                    'name': 'Already Enriched',
-                    'homeUrl': 'https://home/proj-enriched',
-                    'stateValue': 'ON_TRACK',
-                    'stateLabel': 'On track',
-                    'tabBucket': 'active',
-                    'latestUpdateDate': '2026-04-12',
-                    'latestUpdateSnippet': 'Already fetched',
-                    'resolvedLinkage': {'labels': [], 'epicKeys': []},
-                    'matchState': 'metadata-only',
-                }
-            ]
-
-            result = fetch_epm_home_projects({'subGoalKey': 'child-200'})
-
-        mock_fetch_projects.assert_called_once_with(client, 'goal-1')
-        mock_late_update.assert_not_called()
-        self.assertEqual(result[0]['homeProjectId'], 'proj-enriched')
-
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_goal_project_links_reads_more_than_200_projects(self, mock_warning):
-        client = Mock()
-
-        def page(cursor, start, has_next=True):
-            return {
-                'data': {
-                    'goals_byId': {
-                        'projects': {
-                            'pageInfo': {'hasNextPage': has_next, 'endCursor': cursor},
-                            'edges': [{'node': {'id': f'proj-{index}'}} for index in range(start, start + 50)],
-                        }
-                    }
-                }
-            }
-
-        client.execute.side_effect = [
-            page('cursor-1', 0),
-            page('cursor-2', 50),
-            page('cursor-3', 100),
-            page('cursor-4', 150),
-            page('cursor-5', 200, has_next=False),
-        ]
-
-        result = epm_home.fetch_goal_project_links(client, 'goal-1')
-
-        self.assertEqual(len(result), 250)
-        self.assertEqual(result[0]['id'], 'proj-0')
-        self.assertEqual(result[-1]['id'], 'proj-249')
-        self.assertEqual(client.execute.call_count, 5)
-        for call_index, call in enumerate(client.execute.call_args_list):
-            variables = call.args[1]
-            self.assertEqual(variables['first'], 50)
-            self.assertEqual(variables['goalId'], 'goal-1')
-            if call_index == 0:
-                self.assertIsNone(variables['after'])
-            else:
-                self.assertEqual(variables['after'], f'cursor-{call_index}')
-        mock_warning.assert_not_called()
-
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_goal_project_links_caps_large_goal_fetches(self, mock_warning):
-        client = Mock()
-
-        def page(cursor, start):
-            return {
-                'data': {
-                    'goals_byId': {
-                        'projects': {
-                            'pageInfo': {'hasNextPage': True, 'endCursor': cursor},
-                            'edges': [{'node': {'id': f'proj-{index}'}} for index in range(start, start + 50)],
-                        }
-                    }
-                }
-            }
-
-        client.execute.side_effect = [
-            page(f'cursor-{page_index + 1}', page_index * 50)
-            for page_index in range(11)
-        ]
-
-        result = epm_home.fetch_goal_project_links(client, 'goal-1')
-
-        self.assertEqual(len(result), 500)
-        self.assertEqual(result[-1]['id'], 'proj-499')
-        self.assertEqual(client.execute.call_count, 10)
-        mock_warning.assert_called_once()
-        self.assertIn('truncated', mock_warning.call_args.args[0])
-
-    @patch('backend.epm.home.fetch_home_site_cloud_id', side_effect=RuntimeError('Jira tenant_info did not return cloudId'))
-    @patch('backend.epm.home.build_home_graphql_client', return_value=Mock())
-    @patch('backend.epm.home.logger.warning')
-    def test_fetch_epm_home_projects_returns_empty_when_tenant_info_lookup_fails(self, mock_warning, mock_build_client, mock_fetch_cloud_id):
-        self.assertEqual(fetch_epm_home_projects({'subGoalKey': 'child-200'}), [])
-        mock_build_client.assert_called_once_with()
-        mock_fetch_cloud_id.assert_called_once_with()
-        mock_warning.assert_called_once()
-        self.assertEqual(mock_warning.call_args[0][0], 'EPM home fetch failed: %s')
-        self.assertIsInstance(mock_warning.call_args[0][1], RuntimeError)
-        self.assertEqual(str(mock_warning.call_args[0][1]), 'Jira tenant_info did not return cloudId')
-
-    @patch('backend.epm.home.time.sleep')
-    @patch('backend.epm.home.urlopen')
-    def test_execute_retries_429_after_retry_after_before_success(self, mock_urlopen, mock_sleep):
-        transient_error = HTTPError(
-            'https://team.atlassian.com/gateway/api/graphql',
-            429,
-            'Too Many Requests',
-            {'Retry-After': '3'},
-            None,
-        )
-        successful_response = Mock()
-        successful_response.__enter__ = Mock(return_value=successful_response)
-        successful_response.__exit__ = Mock(return_value=False)
-        successful_response.read.return_value = b'{"data":{"ok":true}}'
-        mock_urlopen.side_effect = [transient_error, successful_response]
-
-        client = HomeGraphQLClient('user@example.com', 'token')
-        result = client.execute('query Test { ok }')
-
-        self.assertEqual(result['data']['ok'], True)
-        self.assertEqual(mock_urlopen.call_count, 2)
-        mock_sleep.assert_called_once_with(3)
-
-    def test_execute_paginated_stops_when_cursor_missing(self):
-        client = HomeGraphQLClient('user@example.com', 'token')
-        client.execute = Mock(
-            side_effect=[
-                {
-                    'data': {
-                        'goals_search': {
-                            'pageInfo': {'hasNextPage': True},
-                            'edges': [{'node': {'id': 'goal-1'}}],
-                        }
-                    }
-                },
-                AssertionError('pagination should stop when endCursor is missing'),
-            ]
-        )
-
-        result = client.execute_paginated('query Test', {'first': 1}, 'goals_search')
-
-        self.assertEqual(result, [{'id': 'goal-1'}])
-        self.assertEqual(client.execute.call_count, 1)
+    def test_unregistered_graphql_cannot_reach_provider(self):
+        with patch.object(epm_home, 'urlopen') as transport:
+            with self.assertRaises(epm_home.HomeReadError) as raised:
+                self.client.execute('query Arbitrary { forbidden }')
+        self.assertEqual(raised.exception.category, 'unregistered_operation')
+        transport.assert_not_called()

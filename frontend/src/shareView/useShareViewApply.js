@@ -68,7 +68,9 @@ export function useShareViewApply(options) {
         controller.noteCommit();
         controller.evaluate();
         controller.flushTrack(options.trackShareViewAction, options.analyticsReady);
-        setShareDisabled(isShareDisabled(options, selectApplyTerminal()));
+        // This effect runs after every commit; a same-value setState would still queue an update that costs a render (#323).
+        const nextShareDisabled = isShareDisabled(options, selectApplyTerminal());
+        if (nextShareDisabled !== shareDisabled) setShareDisabled(nextShareDisabled);
     });
 
     React.useEffect(() => {
@@ -90,7 +92,7 @@ export function useShareViewApply(options) {
         const rowsMode = readPlanningRowsMode(document);
         const state = buildShareViewState({
             mode: o.activeEngMode, groupId: o.activeGroupId, sprintId: o.selectedSprint, snapshot: o.buildGroupStateSnapshot(),
-            searchQuery: o.searchQuery, sort: o.engEpicSort, layout: o.planningLayout, rowsMode, boardStrictScope: o.boardStrictScope,
+            searchQuery: o.searchQuery, sort: o.engEpicSort, rowsMode, boardStrictScope: o.boardStrictScope,
             sprintRange: { start: o.excludedCapacityStartSprintId, end: o.excludedCapacityEndSprintId },
             alertFlags: o.alertFlags, alertCounts: o.alertCounts, combinedWorkModel: Boolean(o.combinedWorkModel),
             focus,

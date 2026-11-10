@@ -14,6 +14,7 @@ import jira_server
 from backend.routes import work_structure_routes as work_routes
 from backend.services import planning_work
 from tests.test_work_structure_routes import WorkStructureRouteBase, jira_response
+from tests.test_work_reader_routes import seed_department
 
 PLANNING, PARENT, ANCESTOR = '6', '11700', '12723'
 SPRINT_FIELD, POINTS_FIELD, TEAM_FIELD = 'customfield_26', 'customfield_211', 'customfield_24'
@@ -85,13 +86,15 @@ class WorkTypesRouteTests(WorkStructureRouteBase):
     def setUp(self):
         super().setUp()
         self.seed(mutate=partial(seed_types, ancestor=self.ancestor))
+        seed_department(self)
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=jira_response(200, {})))
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(
             work_routes, 'admit_sprint_source', return_value=(Mock(), {'id': 5, 'name': '2027Q1'})))
 
     def run_tasks(self, params, search):
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            response = self.client.get('/api/tasks', query_string=params)
+            response = self.client.get('/api/tasks', query_string={'groupId': 'dept', **params})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json()
 

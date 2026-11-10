@@ -1356,7 +1356,7 @@ def get_groups_config():
     auth_context = _shared_group_db_auth_context()
     config = shared_group_config.load_effective_groups(
         auth_context,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        fallback_loader=None,
         validate_groups_config_fn=validate_groups_config,
         dashboard_loader=load_dashboard_config,
         groups_file_loader=lambda: load_groups_config_file(resolve_groups_config_path()),
@@ -1390,7 +1390,7 @@ def save_groups_config():
             return jsonify({'error': 'invalid_groups_config', 'errors': comma_scalar_errors}), 400
         current = shared_group_config.load_shared_groups(
             auth_context,
-            fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+            fallback_loader=None,
             validate_groups_config_fn=validate_groups_config,
         )
         if not payload.get('clearGroups') and not payload.get('groups') and _has_dashboard_config_value(current.get('groups')):
@@ -1463,7 +1463,7 @@ def save_groups_preferences():
 
     groups_config = shared_group_config.load_shared_groups(
         auth_context,
-        fallback_loader=lambda: load_dashboard_config(source='jsonfile'),
+        fallback_loader=None,
         validate_groups_config_fn=validate_groups_config,
     )
     try:
@@ -2186,7 +2186,7 @@ def save_capacity_config_endpoint():
                     {key: payload.get(key) for key in ('project', 'fieldId', 'fieldName')},
                     payload.get('baseRevision'),
                     field_catalog=fields,
-                    fallback_loader=_load_dashboard_config_json,
+                    fallback_loader=None,
                     legacy_site_url=JIRA_URL or '',
                 )
             except shared_capacity_config.CapacityConfigConflict as error:

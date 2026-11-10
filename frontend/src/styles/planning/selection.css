@@ -39,8 +39,3 @@
             font-weight: bold;
             line-height: 1;
         }
-
-        .task-list:not(.epm-issue-board) > .epic-block > .task-item.is-planning-selectable .task-header-right .task-checkbox:focus-visible {
-            outline: 2px solid rgba(82, 196, 26, 0.45);
-            outline-offset: 2px;
-        }

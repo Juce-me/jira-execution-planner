@@ -11,7 +11,7 @@ from backend.services.eng_subtasks import (
     fetch_subtask_issues_by_jql,
 )
 import jira_server
-from tests.oauth_test_helpers import install_oauth_session
+from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session
 
 
 class FakeResponse:
@@ -108,24 +108,16 @@ class EngSubtasksRouteTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
 
     def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         try:
             from backend.routes import eng_routes
             if hasattr(eng_routes, "SUBTASKS_CACHE"):
                 eng_routes.SUBTASKS_CACHE.clear()
         except Exception:
             pass
-        self._env_patcher.stop()
 
     def _install_oauth_session(self):
         install_oauth_session(self.client, stored_at=time.time())
@@ -287,20 +279,12 @@ class EngSubtasksTaskPayloadTests(unittest.TestCase):
     def setUp(self):
         jira_server.app.config["TESTING"] = True
         jira_server.app.secret_key = "test-secret"
-        self._env_patcher = patch.dict(os.environ, {
-            "CONFIG_STORAGE_BACKEND": "jsonfile",
-            "DATABASE_URL": "",
-            "TEST_DATABASE_URL": "",
-        }, clear=False)
-        self._env_patcher.start()
+        set_up_db_oauth(self)
         self.client = jira_server.app.test_client()
         install_oauth_session(self.client, stored_at=time.time())
 
     def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
         jira_server.TASKS_CACHE.clear()
-        self._env_patcher.stop()
 
     def test_tasks_with_team_name_includes_embedded_subtask_summary_without_extra_fetch(self):
         issue = _story_issue_with_embedded_subtasks()

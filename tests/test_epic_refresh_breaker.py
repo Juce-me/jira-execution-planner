@@ -2,7 +2,7 @@ import unittest
 from contextlib import ExitStack
 from unittest.mock import Mock, patch
 
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -34,7 +34,7 @@ class EpicRefreshBreakerIsolationTests(unittest.TestCase):
     def setUp(self):
         from backend.routes import eng_routes
         from backend.services import epic_refresh
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         jira_server.app.testing = True
         self.client = jira_server.app.test_client()
         jira_server.TASKS_CACHE.clear()

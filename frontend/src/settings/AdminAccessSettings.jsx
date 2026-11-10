@@ -131,29 +131,7 @@ export default function AdminAccessSettings(props) {
     } = props;
     const scenarioCard = <ScenarioPlannerAccessCard scenarioPlannerAccess={scenarioPlannerAccess} canEdit={canEditScenarioPlannerAccess} />;
 
-    if (authMode !== 'atlassian_oauth') {
-        return (
-            <div className="admin-access-settings">
-                <div className="admin-access-card">
-                    <h2 className="group-pane-title">App administrators</h2>
-                    <div className="group-field-helper">Basic authentication gives every user administrator access.</div>
-                </div>
-                {scenarioCard}
-            </div>
-        );
-    }
-
-    if (!adminUserManagementAvailable) {
-        return (
-            <div className="admin-access-settings">
-                <div className="admin-access-card">
-                    <h2 className="group-pane-title">App administrators</h2>
-                    <div className="group-field-helper">This OAuth setup gives every signed-in user administrator access.</div>
-                </div>
-                {scenarioCard}
-            </div>
-        );
-    }
+    if (authMode !== 'atlassian_oauth' || !adminUserManagementAvailable) return null;
 
     const selectedIds = new Set(selectedAdminUserIds || []);
     return (

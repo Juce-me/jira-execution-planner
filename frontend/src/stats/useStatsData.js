@@ -683,10 +683,11 @@ export function useStatsDerivedB({
             .filter(team => team.id && team.id !== 'all')
             .map(team => ({ id: team.id, name: team.name || team.id }));
     }, [excludedCapacityScopedTeamIds, teamNameById, teamOptions]);
+    const departmentAllocationKey = JSON.stringify([activeGroupId, activeGroup?.allocationTypes || []]);
     const excludedCapacityQueryKey = React.useMemo(() => {
         if (!excludedCapacitySprintIds.length) return '';
-        return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
-    }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature, statsWorkCatalogKey]);
+        return `${excludedCapacitySprintIdsSignature}::${excludedCapacityScopedTeamSignature || 'all'}::department:${departmentAllocationKey}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
+    }, [excludedCapacitySprintIds.length, excludedCapacitySprintIdsSignature, excludedCapacityScopedTeamSignature, statsWorkCatalogKey, departmentAllocationKey]);
     useEffect(() => {
         if (!showStats || (statsView !== 'excludedCapacity' && statsView !== 'monoCrossShare' && statsView !== 'projectTrack')) return;
         const automatic = automaticRefreshRef?.current;
@@ -695,9 +696,9 @@ export function useStatsDerivedB({
             if (groupPreferences.onboardingRequired || adminSettingsGate.status !== 'clear' || (statsView === 'excludedCapacity' && !excludedCapacityEpicOptions.length && adHocEpicSet.size === 0) || (activeGroupId && activeGroupTeamIds.length === 0)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'ignored', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; }
             const sprintId = String(selectedSprint || '');
             if (!excludedCapacitySprintIds.includes(sprintId)) { automatic.settle([{ source: 'stats_excluded_capacity', status: 'denied', checkKind: 'unknown', coverage: 'unknown', requestStartedAtMs: 0 }]); return; } // Outside-range Sprint: deferred by policy; no read, no check, source settles quietly.
-            const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
+            const sprintKey = id => `sprint::${id}::${excludedCapacityScopedTeamSignature || 'all'}::department:${departmentAllocationKey}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
             return runAutomaticStatsRead(automatic, 'stats_excluded_capacity', issueEditStateRef,
-                signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, refresh: true, signal, scoped: sprintScoped(sprintId) }),
+                signal => requestExcludedCapacityStatsSource(BACKEND_URL, { sprintIds: [sprintId], teamIds: excludedCapacityScopedTeamIds, groupId: activeGroupId, refresh: true, signal, scoped: sprintScoped(sprintId) }),
                 chunk => {
                     const chunks = excludedCapacitySprintIds.map(id => id === sprintId ? chunk : excludedCapacityCacheRef.current[sprintKey(id)]);
                     // A missing untouched chunk is not permission to shrink the held chart.
@@ -747,7 +748,7 @@ export function useStatsDerivedB({
         let cancelled = false, readToken;
         const chunkKinds = [];
         const controllers = new Set();
-        const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
+        const sprintCacheKeyFor = (sprintId) => `sprint::${String(sprintId || '').trim()}::${excludedCapacityScopedTeamSignature || 'all'}::department:${departmentAllocationKey}${statsWorkCatalogKey ? `::cfg:${statsWorkCatalogKey}` : ''}`;
         const fetchSprintChunk = async (sprintId) => {
             const sprintCacheKey = sprintCacheKeyFor(sprintId);
             const cachedSprint = excludedCapacityCacheRef.current[sprintCacheKey];
@@ -767,6 +768,7 @@ export function useStatsDerivedB({
                 const response = await requestExcludedCapacityStatsSource(BACKEND_URL, {
                     sprintIds: [sprintId],
                     teamIds: excludedCapacityScopedTeamIds,
+                    groupId: activeGroupId,
                     refresh: forceRefresh,
                     signal: controller.signal,
                     scoped: sprintScoped(sprintId)

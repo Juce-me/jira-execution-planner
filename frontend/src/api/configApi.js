@@ -1,7 +1,8 @@
+import { fetchCsrfToken } from './authApi.js';
 import { apiFetch, getJson, jsonOrStructuredError, trackedFetch } from './http.js';
 
 const postJsonWithCsrf = (backendUrl, path, payload, analytics) =>
-    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' }).then(({ csrfToken }) =>
+    fetchCsrfToken(backendUrl).then(({ csrfToken }) =>
         trackedFetch(analytics?.apiSurface || 'settings_save', `${backendUrl}${path}`, {
             method: 'POST',
             headers: {

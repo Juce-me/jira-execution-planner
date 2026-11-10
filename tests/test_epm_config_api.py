@@ -1,16 +1,15 @@
-import json
-import os
-import tempfile
+from copy import deepcopy
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import patch
 
-from flask import has_request_context
-from backend.auth.context import RequestAuthContext
+from flask import has_request_context, session as flask_session
+from backend.epm.home import EPM_HOME_READ_SCOPES
+from tests.db_oauth_test_helpers import seed_db_actor, FULL_OAUTH_SCOPE
 from backend.db import engine as db_engine
 from backend.db import models
-from backend.services.user_view_config import save_user_epm_config
-from tests.auth_mode_test_utils import force_basic_auth_mode
+from backend.services.user_view_config import UserViewConfigStorageError
+from tests.auth_mode_test_utils import force_db_oauth_mode
 
 try:
     import jira_server
@@ -29,24 +28,52 @@ class TestEpmConfigApi(unittest.TestCase):
     }
 
     def setUp(self):
-        force_basic_auth_mode(self, jira_server)
+        force_db_oauth_mode(self, jira_server)
         self.app = jira_server.app
         self.app.testing = True
         self.client = self.app.test_client()
-        self._tmpdir = tempfile.mkdtemp()
-        self._dashboard_path = os.path.join(self._tmpdir, 'dashboard-config.json')
-        self._dashboard_patcher = patch.object(
-            jira_server,
-            'resolve_dashboard_config_path',
-            return_value=self._dashboard_path,
-        )
-        self._dashboard_patcher.start()
+        self.context = jira_server.current_request_auth_context()
+        self.addCleanup(self.clear_fixture_caches)
 
-    def tearDown(self):
-        self._dashboard_patcher.stop()
-        if os.path.exists(self._dashboard_path):
-            os.unlink(self._dashboard_path)
-        os.rmdir(self._tmpdir)
+    def clear_fixture_caches(self):
+        for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
+            cache.clear()
+
+    def seed_private_epm(self, settings, context=None):
+        context = context or self.context
+        with db_engine.session_scope() as db:
+            row = db.query(models.ViewConfig).filter_by(workspace_id=context.workspace_id,
+                owner_user_id=context.user_id, is_default=True).one_or_none()
+            payload = deepcopy(row.payload) if row is not None else {}
+            payload['epm'] = {**settings, 'viewEnabled': True}
+            if row is None:
+                db.add(models.ViewConfig(workspace_id=context.workspace_id, owner_user_id=context.user_id,
+                    name='Synthetic private view', view_type='mixed', is_default=True, payload=payload))
+            else:
+                row.payload = payload
+
+    def real_actors(self):
+        actors = []
+        with db_engine.session_scope() as db:
+            for account, cloud in (('private-user-0', 'private-cloud-0'),
+                                   ('private-user-1', 'private-cloud-0'),
+                                   ('private-user-0', 'private-cloud-1')):
+                actors.append(seed_db_actor(db, account_identity=account,
+                    workspace={'environment_key': 'local', 'cloud_id': cloud,
+                               'site_url': f'https://{cloud}.example.net'},
+                    token_data={'scope': FULL_OAUTH_SCOPE + ' ' + ' '.join(EPM_HOME_READ_SCOPES)}))
+        return actors
+
+    def real_context(self, actor):
+        with self.app.test_request_context('/'):
+            flask_session['db_oauth_session'] = actor.session_payload
+            return jira_server.current_request_auth_context()
+
+    def actor_client(self, actor):
+        client = self.app.test_client()
+        with client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = actor.session_payload
+        return client
 
     def test_get_epm_config_returns_empty_default(self):
         response = self.client.get('/api/epm/config')
@@ -98,210 +125,86 @@ class TestEpmConfigApi(unittest.TestCase):
                 jira_server.get_epm_config()
 
     def test_db_epm_resolver_loads_current_users_private_default(self):
-        context = object()
-        repository = unittest.mock.Mock()
-        repository.load_user_epm_config.return_value = {
-            'version': 2,
-            'labelPrefix': 'private_*',
+        self.seed_private_epm({'version': 2, 'labelPrefix': 'private_*',
             'scope': {'rootGoalKey': 'ROOT-1', 'subGoalKeys': []},
-            'issueTypes': self.DEFAULT_ISSUE_TYPES,
-            'projects': {},
-        }
-        with patch.object(jira_server, 'config_storage_db_enabled', return_value=True), \
-             patch.object(jira_server, 'build_db_config_repository', return_value=repository):
-            payload = jira_server.get_epm_config(context=context)
-
+            'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}})
+        payload = jira_server.get_epm_config(context=self.context)
         self.assertEqual(payload['labelPrefix'], 'private_*')
-        repository.load_user_epm_config.assert_called_once_with(context)
 
     def test_db_epm_resolver_reads_seeded_private_defaults_by_user_and_workspace(self):
-        database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir, 'private-defaults.db')}"
-        engine = db_engine.get_engine(database_url)
-        models.Base.metadata.create_all(engine)
-        factory = db_engine.session_factory(database_url)
-        with factory() as session:
-            workspaces = [
-                models.Workspace(
-                    environment_key=f'private-{index}', name=f'Private {index}',
-                    jira_site_url=f'https://private-{index}.example.net', jira_cloud_id=f'cloud-{index}',
-                    created_by='test',
-                ) for index in range(2)
-            ]
-            users = [
-                models.User(
-                    external_provider='atlassian', external_subject=f'private-user-{index}',
-                    account_type='user', status='active', created_by='test',
-                ) for index in range(2)
-            ]
-            session.add_all(workspaces + users)
-            session.flush()
-            workspace_ids = [row.id for row in workspaces]
-            user_ids = [row.id for row in users]
-            session.commit()
-
-        def context(user_index, workspace_index):
-            return RequestAuthContext(
-                auth_mode='atlassian_oauth', user_id=user_ids[user_index],
-                stable_subject=f'subject-{user_index}', atlassian_account_id=f'account-{user_index}',
-                workspace_id=workspace_ids[workspace_index], auth_connection_id=f'connection-{user_index}-{workspace_index}',
-                cloud_id=f'cloud-{workspace_index}', site_url=f'https://private-{workspace_index}.example.net',
-                token_version='1', account_status='active', is_admin=False,
-            )
-
-        contexts = (context(0, 0), context(1, 0), context(0, 1))
-        for index, request_context in enumerate(contexts):
-            save_user_epm_config(request_context, {
-                'version': 2, 'labelPrefix': f'private_{index}_*',
+        actors = self.real_actors()
+        contexts = [self.real_context(actor) for actor in actors]
+        for index, context in enumerate(contexts):
+            self.seed_private_epm({'version': 2, 'labelPrefix': f'private_{index}_*',
                 'scope': {'rootGoalKey': f'ROOT-{index}', 'subGoalKeys': [f'GOAL-{index}']},
-                'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {},
-            }, database_url=database_url)
+                'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}}, context)
+        loaded = [jira_server.get_epm_config(context=context) for context in contexts]
+        with self.app.test_request_context('/api/epm/projects/rollup/all'):
+            flask_session['db_oauth_session'] = actors[0].session_payload
+            projects_dependencies = jira_server.build_epm_projects_dependencies()
+            rollup_dependencies = jira_server.build_epm_rollup_dependencies()
 
-        with patch.dict(os.environ, {
-            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': database_url,
-        }, clear=False), patch.object(jira_server, 'config_storage_db_enabled', return_value=True):
-            loaded = [jira_server.get_epm_config(context=request_context) for request_context in contexts]
-            with self.app.test_request_context('/api/epm/projects/rollup/all'), patch.object(
-                jira_server, 'current_request_auth_context', return_value=contexts[0],
-            ), patch.object(jira_server, 'fetch_epm_home_projects', return_value=[]):
-                projects_dependencies = jira_server.build_epm_projects_dependencies()
-                rollup_dependencies = jira_server.build_epm_rollup_dependencies()
+        def inspect_captured_worker_dependencies():
+            return {'hasRequestContext': has_request_context(),
+                'projectsConfig': projects_dependencies.get_epm_config(),
+                'projectsDigest': projects_dependencies.config_generation,
+                'rollupConfig': rollup_dependencies.get_epm_config(),
+                'rollupDigest': rollup_dependencies.config_generation}
 
-            def inspect_captured_worker_dependencies():
-                return {
-                    'hasRequestContext': has_request_context(),
-                    'projectsConfig': projects_dependencies.get_epm_config(),
-                    'projectsDigest': projects_dependencies.config_generation,
-                    'rollupConfig': rollup_dependencies.get_epm_config(),
-                    'rollupDigest': rollup_dependencies.config_generation,
-                }
-
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                captured = executor.submit(inspect_captured_worker_dependencies).result()
-            with patch.object(jira_server, 'has_request_context', return_value=False):
-                with self.assertRaises(jira_server.ConfigStorageError):
-                    jira_server.get_epm_config()
-
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            captured = executor.submit(inspect_captured_worker_dependencies).result()
+        with patch.object(jira_server, 'has_request_context', return_value=False):
+            with self.assertRaises(jira_server.ConfigStorageError):
+                jira_server.get_epm_config()
         self.assertEqual([item['labelPrefix'] for item in loaded], [
-            'private_0_*', 'private_1_*', 'private_2_*',
-        ])
+            'private_0_*', 'private_1_*', 'private_2_*'])
         self.assertFalse(captured['hasRequestContext'])
         self.assertEqual(captured['projectsConfig']['labelPrefix'], 'private_0_*')
         self.assertEqual(captured['rollupConfig']['labelPrefix'], 'private_0_*')
-        expected_digest = jira_server.build_epm_config_generation(loaded[0])
-        self.assertEqual(captured['projectsDigest'], expected_digest)
-        self.assertEqual(captured['rollupDigest'], expected_digest)
-        db_engine.dispose_engines()
-        os.unlink(os.path.join(self._tmpdir, 'private-defaults.db'))
+        digest = jira_server.build_epm_config_generation(loaded[0])
+        self.assertEqual(captured['projectsDigest'], digest)
+        self.assertEqual(captured['rollupDigest'], digest)
 
     def test_runtime_routes_isolate_real_private_defaults_by_user_and_workspace(self):
         from backend.routes import auth_routes
-
-        database_path = os.path.join(self._tmpdir, 'route-private-defaults.db')
-        database_url = f'sqlite+pysqlite:///{database_path}'
-        engine = db_engine.get_engine(database_url)
-        models.Base.metadata.create_all(engine)
-        factory = db_engine.session_factory(database_url)
-        with factory() as session:
-            workspaces = [
-                models.Workspace(
-                    environment_key=f'route-private-{index}', name=f'Route Private {index}',
-                    jira_site_url=f'https://route-private-{index}.example.net', jira_cloud_id=f'cloud-{index}',
-                    created_by='test',
-                ) for index in range(2)
-            ]
-            users = [
-                models.User(
-                    external_provider='atlassian', external_subject=f'route-private-user-{index}',
-                    account_type='user', status='active', created_by='test',
-                ) for index in range(2)
-            ]
-            session.add_all(workspaces + users)
-            session.flush()
-            workspace_ids = [row.id for row in workspaces]
-            user_ids = [row.id for row in users]
-            session.commit()
-
-        def context(user_index, workspace_index):
-            return RequestAuthContext(
-                auth_mode='atlassian_oauth', user_id=user_ids[user_index],
-                stable_subject=f'route-subject-{user_index}', atlassian_account_id=f'route-account-{user_index}',
-                workspace_id=workspace_ids[workspace_index],
-                auth_connection_id=f'route-connection-{user_index}-{workspace_index}',
-                cloud_id=f'cloud-{workspace_index}', site_url=f'https://route-private-{workspace_index}.example.net',
-                token_version='1', account_status='active', is_admin=False,
-                browser_session_id=f'route-browser-{user_index}-{workspace_index}',
-                granted_scopes=tuple(jira_server.ATLASSIAN_SCOPES.split()), granted_scopes_verified=True,
-            )
-
-        contexts = (context(0, 0), context(1, 0), context(0, 1))
-        for index, request_context in enumerate(contexts):
-            save_user_epm_config(request_context, {
-                'version': 2, 'labelPrefix': f'route_private_{index}_*',
+        actors = self.real_actors()
+        contexts = [self.real_context(actor) for actor in actors]
+        for index, context in enumerate(contexts):
+            self.seed_private_epm({'version': 2, 'labelPrefix': f'route_private_{index}_*',
                 'scope': {'rootGoalKey': f'ROOT-{index}', 'subGoalKeys': [f'GOAL-{index}']},
                 'issueTypes': self.DEFAULT_ISSUE_TYPES,
-                'projects': {f'custom-{index}': {
-                    'id': f'custom-{index}', 'name': f'Private Project {index}', 'label': f'private_label_{index}',
-                }},
-            }, database_url=database_url)
-
-        env = {
-            'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': database_url,
-            'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true',
-        }
-        try:
-            with patch.dict(os.environ, env, clear=False), \
-                 patch.object(jira_server, 'config_storage_db_enabled', return_value=True), \
-                 patch.object(jira_server, 'fetch_epm_home_projects', return_value=[]), \
-                 patch.object(jira_server, 'fetch_home_site_cloud_id', return_value='detected-cloud'), \
-                 patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]), \
-                 patch.object(jira_server, 'fetch_epm_rollup_query', return_value=[]), \
-                 patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
-                 patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
-                 patch.object(jira_server, 'filter_epm_projects_for_tab', side_effect=lambda projects, _tab: projects), \
-                 patch('backend.epm.projects.filter_epm_projects_for_tab', side_effect=lambda projects, _tab, **_kwargs: projects):
-                for index, request_context in enumerate(contexts):
-                    marker = f'Private Project {index}'
-                    project_id = f'custom-{index}'
-                    jira_server.clear_epm_caches(request_context)
-                    with self.subTest(index=index), patch.object(
-                        jira_server, 'current_request_auth_context', return_value=request_context,
-                    ):
-                        scope = self.client.get('/api/epm/scope')
-                        projects = self.client.get('/api/epm/projects')
-                        issues = self.client.get(f'/api/epm/projects/{project_id}/issues?tab=backlog')
-                        rollup = self.client.get(f'/api/epm/projects/{project_id}/rollup?tab=backlog')
-                        aggregate = self.client.get('/api/epm/projects/rollup/all?tab=backlog')
-
+                'projects': {f'custom-{index}': {'id': f'custom-{index}',
+                    'name': f'Private Project {index}', 'label': f'private_label_{index}'}}}, context)
+        with patch.dict('os.environ', {'ALLOW_DEV_DIAGNOSTIC_ENDPOINTS': 'true'}, clear=False), \
+             patch.object(jira_server, 'fetch_epm_home_projects', return_value=[]), \
+             patch.object(jira_server, 'fetch_home_site_cloud_id', return_value='detected-cloud'), \
+             patch.object(jira_server, 'fetch_issues_by_jql', return_value=[]), \
+             patch.object(jira_server, 'fetch_epm_rollup_query', return_value=[]), \
+             patch.object(jira_server, 'resolve_epic_link_field_id', return_value=None), \
+             patch.object(jira_server, 'resolve_team_field_id', return_value=None), \
+             patch.object(jira_server, 'filter_epm_projects_for_tab', side_effect=lambda projects, _tab: projects), \
+             patch('backend.epm.projects.filter_epm_projects_for_tab', side_effect=lambda projects, _tab, **_kwargs: projects):
+            for index, actor in enumerate(actors):
+                client = self.actor_client(actor)
+                project_id = f'custom-{index}'
+                with self.subTest(index=index):
+                    scope = client.get('/api/epm/scope')
                     self.assertEqual(scope.status_code, 200, scope.get_data(as_text=True))
                     self.assertEqual(scope.get_json()['scope']['rootGoalKey'], f'ROOT-{index}')
-                    for response in (projects, issues, rollup, aggregate):
+                    for path in ('/api/epm/projects',
+                        f'/api/epm/projects/{project_id}/issues?tab=backlog',
+                        f'/api/epm/projects/{project_id}/rollup?tab=backlog',
+                        '/api/epm/projects/rollup/all?tab=backlog'):
+                        response = client.get(path)
                         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-                        self.assertIn(marker, response.get_data(as_text=True))
-
-                    with patch.object(jira_server, 'APP_ENVIRONMENT_KEY', 'local'), \
-                         patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
-                         patch.object(jira_server, 'database_storage_enabled', return_value=True), \
-                         patch.object(jira_server, 'db_oauth_browser_session_data', return_value={'db_browser_session_id': 'browser-session'}), \
-                         patch.object(jira_server, 'strict_db_oauth_browser_session_data', return_value={'db_browser_session_id': 'browser-session'}), \
-                         patch.object(jira_server, 'current_request_auth_context', return_value=request_context), \
-                         patch.object(jira_server, 'current_jira_session_data', return_value={
-                             'access_token': f'access-{index}', 'cloudid': f'cloud-{index}',
-                         }), \
-                         patch.object(auth_routes.epm_home, 'run_home_graphql_oauth_probe', return_value={
-                             'ok': True,
-                         }) as home_probe:
-                        probe = self.client.get('/api/auth/dev/home-graphql-oauth-probe')
-
-                    self.assertEqual(probe.status_code, 200, probe.get_data(as_text=True))
-                    home_probe.assert_called_once()
-                    self.assertEqual(home_probe.call_args.kwargs['root_goal_key'], f'ROOT-{index}')
-                    self.assertEqual(home_probe.call_args.kwargs['sub_goal_key'], f'GOAL-{index}')
-        finally:
-            for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
-                cache.clear()
-            db_engine.dispose_engines()
-            if os.path.exists(database_path):
-                os.unlink(database_path)
+                        self.assertIn(f'Private Project {index}', response.get_data(as_text=True))
+                    with patch.object(auth_routes.epm_home, 'run_home_graphql_oauth_probe', return_value={'ok': True}) as probe:
+                        response = client.get('/api/auth/dev/home-graphql-oauth-probe')
+                    self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+                    probe.assert_called_once()
+                    self.assertEqual(probe.call_args.kwargs['root_goal_key'], f'ROOT-{index}')
+                    self.assertEqual(probe.call_args.kwargs['sub_goal_key'], f'GOAL-{index}')
+                    self.assertEqual(probe.call_args.args[0], 'synthetic-access-' + ('private-user-1' if index == 1 else 'private-user-0'))
 
     def test_runtime_epm_routes_return_fixed_storage_error(self):
         routes = (
@@ -324,41 +227,29 @@ class TestEpmConfigApi(unittest.TestCase):
                 'message': 'EPM configuration storage is unavailable.',
             })
 
-    def test_json_epm_read_failure_returns_fixed_storage_error(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            handle.write('{ malformed')
-
-        response = self.client.get('/api/epm/config')
-
+    def test_private_db_epm_read_failure_returns_fixed_storage_error(self):
+        with patch('backend.services.user_view_config.load_user_epm_config',
+                   side_effect=UserViewConfigStorageError('sensitive DB detail')):
+            response = self.client.get('/api/epm/config')
         self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'config_storage_unavailable',
-            'message': 'EPM configuration storage is unavailable.',
-        })
-        self.assertNotIn('malformed', response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.'})
+        self.assertNotIn('sensitive', response.get_data(as_text=True))
 
-    def test_json_epm_write_failure_returns_fixed_storage_error(self):
-        payload = {
-            'version': 2,
-            'labelPrefix': 'rnd_project_',
+    def test_private_db_epm_write_failure_returns_fixed_storage_error(self):
+        payload = {'version': 2, 'labelPrefix': 'rnd_project_',
             'scope': {'rootGoalKey': '', 'subGoalKeys': []},
-            'issueTypes': self.DEFAULT_ISSUE_TYPES,
-            'projects': {},
-        }
-        with patch.object(jira_server, 'save_dashboard_config', side_effect=OSError('sensitive path')):
+            'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}}
+        with patch('backend.services.user_view_config.save_user_epm_config',
+                   side_effect=UserViewConfigStorageError('sensitive DB detail')):
             response = self.client.post('/api/epm/config', json=payload)
-
         self.assertEqual(response.status_code, 503, response.get_data(as_text=True))
-        self.assertEqual(response.get_json(), {
-            'error': 'config_storage_unavailable',
-            'message': 'EPM configuration storage is unavailable.',
-        })
-        self.assertNotIn('sensitive path', response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {'error': 'config_storage_unavailable',
+            'message': 'EPM configuration storage is unavailable.'})
+        self.assertNotIn('sensitive', response.get_data(as_text=True))
 
     def test_get_epm_config_ignores_legacy_cloud_id_scope(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
+        self.seed_private_epm(({
                     'version': 1,
                     'epm': {
                         'version': 1,
@@ -368,9 +259,7 @@ class TestEpmConfigApi(unittest.TestCase):
                         },
                         'projects': {},
                     },
-                },
-                handle,
-            )
+                })['epm'])
 
         response = self.client.get('/api/epm/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -389,9 +278,7 @@ class TestEpmConfigApi(unittest.TestCase):
         )
 
     def test_main_config_includes_saved_epm_config(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
+        self.seed_private_epm(({
                     'version': 1,
                     'epm': {
                         'version': 2,
@@ -409,9 +296,7 @@ class TestEpmConfigApi(unittest.TestCase):
                             },
                         },
                     },
-                },
-                handle,
-            )
+                })['epm'])
 
         response = self.client.get('/api/config')
 
@@ -437,7 +322,7 @@ class TestEpmConfigApi(unittest.TestCase):
             },
         )
 
-    def test_json_main_config_include_view_config_preserves_saved_epm(self):
+    def test_db_main_config_include_view_config_preserves_saved_epm(self):
         saved_epm = {
             'version': 2,
             'labelPrefix': 'private_json_*',
@@ -445,14 +330,13 @@ class TestEpmConfigApi(unittest.TestCase):
             'issueTypes': self.DEFAULT_ISSUE_TYPES,
             'projects': {},
         }
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump({'version': 1, 'epm': saved_epm}, handle)
+        self.seed_private_epm(({'version': 1, 'epm': saved_epm})['epm'])
 
         response = self.client.get('/api/config?includeViewConfig=true')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['epm'], saved_epm)
-        self.assertNotIn('viewConfig', response.get_json())
+        self.assertEqual(response.get_json()['viewConfig']['view']['epm']['labelPrefix'], saved_epm['labelPrefix'])
 
     def test_strict_epm_posts_reject_wrong_content_type_and_malformed_json(self):
         for path in (
@@ -636,9 +520,7 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(payload['projects']['custom-1']['label'], '')
 
     def test_get_epm_config_returns_v2_shape_for_saved_v1_config(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
+        self.seed_private_epm(({
                     'version': 1,
                     'epm': {
                         'version': 1,
@@ -656,9 +538,7 @@ class TestEpmConfigApi(unittest.TestCase):
                             'bad-row': 'skip-me',
                         },
                     },
-                },
-                handle,
-            )
+                })['epm'])
 
         response = self.client.get('/api/epm/config')
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -791,141 +671,76 @@ class TestEpmConfigApi(unittest.TestCase):
         self.assertEqual(first['projects']['']['id'], '')
         self.assertEqual(second['projects']['']['id'], '')
 
-    def test_post_epm_config_persists_projects_without_overwriting_team_groups(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
-                    'version': 1,
-                    'projects': {'selected': []},
-                    'teamGroups': {'version': 1, 'groups': []},
-                    'epm': {
-                        'version': 2,
-                        'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKey': 'CHILD-200'},
-                        'labelPrefix': 'rnd_project_',
-                        'projects': {},
-                    },
-                },
-                handle,
-            )
-
-        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'dummy': {'value': 1}}), \
-             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'dummy': {'value': 2}}), \
-             patch.object(jira_server, 'TASKS_CACHE', {'dummy': {'value': 3}}):
-            response = self.client.post(
-                '/api/epm/config',
-                json={
-                    'version': 2,
-                    'labelPrefix': 'rnd_project_',
-                    'scope': {
-                        'rootGoalKey': ' root-100 ',
-                        'subGoalKeys': [' child-200 '],
-                    },
-                    'issueTypes': self.DEFAULT_ISSUE_TYPES,
-                    'projects': {
-                        'tsq-1': {
-                            'id': 'tsq-1',
-                            'homeProjectId': ' tsq-1 ',
-                            'name': ' Synthetic Launch ',
-                            'label': ' synthetic_label_alpha ',
-                        }
-                    }
-                },
-            )
+    def post_and_assert_actor_cache_eviction(self, payload):
+        with db_engine.session_scope() as db:
+            other_actor = seed_db_actor(db, workspace=db.get(models.Workspace, self.context.workspace_id),
+                                       account_identity='other-cache-user')
+        other = self.real_context(other_actor)
+        self.seed_private_epm({'version': 2, 'labelPrefix': 'other_user_*',
+            'scope': {'rootGoalKey': 'ROOT-OTHER', 'subGoalKeys': []},
+            'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}}, other)
+        other_settings = jira_server.get_epm_config(context=other)
+        own_keys = [jira_server.build_jira_home_process_cache_key(self.context, name)
+                    for name in ('old-scope', 'old-other-scope')]
+        other_key = jira_server.build_jira_home_process_cache_key(other, 'other-user-scope')
+        caches = {key: {'value': index} for index, key in enumerate(own_keys + [other_key])}
+        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', deepcopy(caches)), \
+             patch.object(jira_server, 'EPM_ISSUES_CACHE', deepcopy(caches)), \
+             patch.object(jira_server, 'EPM_ROLLUP_CACHE', deepcopy(caches)), \
+             patch.object(jira_server, 'TASKS_CACHE', {'unrelated-task': {'value': 3}}):
+            response = self.client.post('/api/epm/config', json=payload)
             self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            payload = response.get_json()
-            self.assertEqual(payload['version'], 2)
-            self.assertEqual(payload['labelPrefix'], 'rnd_project_')
-            self.assertEqual(payload['scope']['rootGoalKey'], 'ROOT-100')
-            self.assertEqual(payload['scope']['subGoalKeys'], ['CHILD-200'])
-            self.assertEqual(payload['issueTypes'], self.DEFAULT_ISSUE_TYPES)
-            self.assertEqual(payload['projects']['tsq-1']['id'], 'tsq-1')
-            self.assertEqual(payload['projects']['tsq-1']['homeProjectId'], 'tsq-1')
-            self.assertEqual(payload['projects']['tsq-1']['name'], 'Synthetic Launch')
-            self.assertEqual(payload['projects']['tsq-1']['label'], 'synthetic_label_alpha')
+            for cache in (jira_server.EPM_PROJECTS_CACHE, jira_server.EPM_ISSUES_CACHE, jira_server.EPM_ROLLUP_CACHE):
+                self.assertEqual(cache, {other_key: caches[other_key]})
+            self.assertEqual(jira_server.TASKS_CACHE, {'unrelated-task': {'value': 3}})
+        self.assertEqual(jira_server.get_epm_config(context=other), other_settings)
+        return response.get_json()
 
-            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
-            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
-            self.assertEqual(jira_server.TASKS_CACHE, {'dummy': {'value': 3}})
+    def test_post_epm_config_persists_projects_without_overwriting_shared_or_private_state(self):
+        self.seed_private_epm({'version': 2, 'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']}, 'projects': {},
+            'tab': 'backlog', 'selectedSprint': '2027Q1'})
+        groups_payload = {'version': 2, 'groups': [{'id': 'group-a', 'name': 'Group A', 'teamIds': ['team-a']}],
+                          'defaultGroupId': 'group-a'}
+        with db_engine.session_scope() as db:
+            db.add(models.WorkspaceGroupConfig(workspace_id=self.context.workspace_id, payload=groups_payload))
+            shared_before = deepcopy(db.query(models.WorkspaceDashboardConfig).one().payload)
+        payload = self.post_and_assert_actor_cache_eviction({
+            'version': 2, 'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': ' root-100 ', 'subGoalKeys': [' child-200 ']},
+            'issueTypes': self.DEFAULT_ISSUE_TYPES,
+            'projects': {'tsq-1': {'id': 'tsq-1', 'homeProjectId': ' tsq-1 ',
+                'name': ' Synthetic Launch ', 'label': ' synthetic_label_alpha '}}})
+        self.assertEqual(payload['version'], 2)
+        self.assertEqual(payload['labelPrefix'], 'rnd_project_')
+        self.assertEqual(payload['scope'], {'rootGoalKey': 'ROOT-100', 'subGoalKeys': ['CHILD-200']})
+        self.assertEqual(payload['issueTypes'], self.DEFAULT_ISSUE_TYPES)
+        self.assertEqual(payload['projects']['tsq-1'], {'id': 'tsq-1', 'homeProjectId': 'tsq-1',
+            'name': 'Synthetic Launch', 'label': 'synthetic_label_alpha'})
+        with db_engine.session_scope() as db:
+            self.assertEqual(db.query(models.WorkspaceDashboardConfig).one().payload, shared_before)
+            self.assertEqual(db.query(models.WorkspaceGroupConfig).one().payload, groups_payload)
+            private_view = db.query(models.ViewConfig).filter_by(owner_user_id=self.context.user_id,
+                workspace_id=self.context.workspace_id, is_default=True).one()
+            private = private_view.payload['epm']
+            self.assertEqual(payload['viewConfigId'], private_view.id)
+            settings = {key: payload[key] for key in ('version', 'labelPrefix', 'scope', 'issueTypes', 'projects')}
+            self.assertEqual(private, {**settings, 'viewEnabled': True,
+                                      'tab': 'backlog', 'selectedSprint': '2027Q1'})
+            self.assertNotIn('jiraEpicKey', private['projects']['tsq-1'])
 
-        with open(self._dashboard_path, 'r', encoding='utf-8') as handle:
-            saved = json.load(handle)
+    def test_post_epm_config_clears_only_actors_project_cache_when_scope_is_added(self):
+        self.post_and_assert_actor_cache_eviction({'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKeys': ['CHILD-NEW']},
+            'labelPrefix': 'rnd_project_', 'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}})
 
-        self.assertIn('teamGroups', saved)
-        self.assertEqual(saved['teamGroups']['version'], 1)
-        self.assertEqual(saved['epm']['version'], 2)
-        self.assertEqual(saved['epm']['labelPrefix'], 'rnd_project_')
-        self.assertEqual(saved['epm']['scope']['rootGoalKey'], 'ROOT-100')
-        self.assertEqual(saved['epm']['scope']['subGoalKeys'], ['CHILD-200'])
-        self.assertNotIn('jiraEpicKey', saved['epm']['projects']['tsq-1'])
-        self.assertEqual(saved['epm']['projects']['tsq-1']['id'], 'tsq-1')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['label'], 'synthetic_label_alpha')
-        self.assertEqual(saved['epm']['projects']['tsq-1']['name'], 'Synthetic Launch')
-
-    def test_post_epm_config_clears_project_cache_when_scope_is_added(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
-                    'version': 1,
-                    'projects': {'selected': []},
-                    'teamGroups': {'version': 1, 'groups': []},
-                },
-                handle,
-            )
-
-        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'old-empty-scope': {'value': 1}}), \
-             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'old-issues': {'value': 2}}), \
-             patch.object(jira_server, 'EPM_ROLLUP_CACHE', {'old-rollup': {'value': 3}}):
-            response = self.client.post(
-                '/api/epm/config',
-                json={
-                    'version': 2,
-                    'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKeys': ['CHILD-NEW']},
-                    'labelPrefix': 'rnd_project_',
-                    'issueTypes': self.DEFAULT_ISSUE_TYPES,
-                    'projects': {},
-                },
-            )
-
-            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
-            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
-            self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})
-
-    def test_post_epm_config_clears_project_cache_when_scope_changes(self):
-        with open(self._dashboard_path, 'w', encoding='utf-8') as handle:
-            json.dump(
-                {
-                    'version': 1,
-                    'projects': {'selected': []},
-                    'teamGroups': {'version': 1, 'groups': []},
-                    'epm': {
-                        'version': 2,
-                        'scope': {'rootGoalKey': 'ROOT-OLD', 'subGoalKey': 'CHILD-OLD'},
-                        'labelPrefix': 'rnd_project_',
-                        'projects': {},
-                    },
-                },
-                handle,
-            )
-
-        with patch.object(jira_server, 'EPM_PROJECTS_CACHE', {'old-scope': {'value': 1}}), \
-             patch.object(jira_server, 'EPM_ISSUES_CACHE', {'old-issues': {'value': 2}}), \
-             patch.object(jira_server, 'EPM_ROLLUP_CACHE', {'old-rollup': {'value': 3}}):
-            response = self.client.post(
-                '/api/epm/config',
-                json={
-                    'version': 2,
-                    'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKeys': ['CHILD-NEW']},
-                    'labelPrefix': 'rnd_project_',
-                    'issueTypes': self.DEFAULT_ISSUE_TYPES,
-                    'projects': {},
-                },
-            )
-
-            self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
-            self.assertEqual(jira_server.EPM_PROJECTS_CACHE, {})
-            self.assertEqual(jira_server.EPM_ISSUES_CACHE, {})
-            self.assertEqual(jira_server.EPM_ROLLUP_CACHE, {})
+    def test_post_epm_config_clears_only_actors_project_cache_when_scope_changes(self):
+        self.seed_private_epm({'version': 2, 'labelPrefix': 'rnd_project_',
+            'scope': {'rootGoalKey': 'ROOT-OLD', 'subGoalKeys': ['CHILD-OLD']},
+            'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}})
+        self.post_and_assert_actor_cache_eviction({'version': 2,
+            'scope': {'rootGoalKey': 'ROOT-NEW', 'subGoalKeys': ['CHILD-NEW']},
+            'labelPrefix': 'rnd_project_', 'issueTypes': self.DEFAULT_ISSUE_TYPES, 'projects': {}})
 
     def test_jira_labels_prefix_filters_case_insensitive_startswith(self):
         labels = [
@@ -935,11 +750,19 @@ class TestEpmConfigApi(unittest.TestCase):
             'rnd_other_delta',
         ]
 
-        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
+        with patch.object(jira_server, 'current_jira_get', return_value=self._label_catalog_response(labels)):
             response = self.client.get('/api/jira/labels?prefix=rnd_project_')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         self.assertEqual(response.get_json()['labels'], ['rnd_project_alpha', 'RND_PROJECT_BETA'])
+
+    def _label_catalog_response(self, values):
+        class Response:
+            status_code = 200
+
+            def json(self):
+                return {'values': values, 'isLast': True}
+        return Response()
 
     def _label_suggestions_response(self, values, status_code=200):
         class _Response:
@@ -985,7 +808,7 @@ class TestEpmConfigApi(unittest.TestCase):
     def test_jira_labels_limit_cap_applies_after_prefix_filtering(self):
         labels = [f'rnd_project_{index:03d}' for index in range(250)]
 
-        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
+        with patch.object(jira_server, 'current_jira_get', return_value=self._label_catalog_response(labels)):
             response = self.client.get('/api/jira/labels?prefix=rnd_project_&limit=250')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
@@ -1000,7 +823,7 @@ class TestEpmConfigApi(unittest.TestCase):
             'other_label',
         ]
 
-        with patch.object(jira_server, 'LABELS_CACHE', {'data': labels, 'timestamp': 9999999999}):
+        with patch.object(jira_server, 'current_jira_get', return_value=self._label_catalog_response(labels)):
             response = self.client.get('/api/jira/labels?prefix=rnd_project_*')
 
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))

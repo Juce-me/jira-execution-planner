@@ -11,9 +11,8 @@ Output carries counts and column, Sprint and group ids only.
 group: legacy columns claim a group column by id, then by kind, label and type; live cells and views win; a column the
 group archived stays archived. The dry run plans read-only; --apply (with its digest) then locks each written group's schema
 row, the lock every app save takes first, re-reads everything, re-plans, and writes only if the re-plan's digest equals
-the reviewed one. On PostgreSQL it can run while the app serves (SQLite has no row locks, so only the digest re-check
-guards it). A second run is a no-op, except that it adds a column again after a label-matched column was renamed in the
-group and a Sprint view again after the view row was purged.
+the reviewed one. It can run while the app serves. A second run is a no-op, except that it adds a column again after a
+label-matched column was renamed in the group and a Sprint view again after the view row was purged.
 """
 
 from __future__ import annotations
@@ -57,21 +56,13 @@ class AdoptionLockTimeout(Exception):
 _fingerprint = review_adoption.fingerprint
 
 
-def _postgresql(session):
-    return session.bind.dialect.name == 'postgresql'
-
-
 def _set_timeouts(session):
-    if not _postgresql(session):
-        return
     session.execute(text("SELECT set_config('lock_timeout', :value, true)"), {'value': LOCK_TIMEOUT})
     session.execute(text("SELECT set_config('statement_timeout', :value, true)"), {'value': STATEMENT_TIMEOUT})
 
 
 def _lock_tables(session):
     """Group schema table first (every app writer enters through it), then the other new tables, then legacy."""
-    if not _postgresql(session):
-        return
     try:
         for table in GROUP_TABLES:
             session.execute(text(f'LOCK TABLE {table} IN EXCLUSIVE MODE'))
@@ -89,9 +80,8 @@ def _lock_merge(session, workspace_id, groups):
     Returns the locked schema rows by group. The merge takes no table-level lock on the group tables."""
     rows = {}
     try:
-        if _postgresql(session):
-            for table in LEGACY_TABLES:
-                session.execute(text(f'LOCK TABLE {table} IN SHARE MODE'))
+        for table in LEGACY_TABLES:
+            session.execute(text(f'LOCK TABLE {table} IN SHARE MODE'))
         for group in sorted(groups):
             rows[group] = sprint_review._locked_schema(session, SimpleNamespace(workspace_id=workspace_id), group)
     except DBAPIError as error:

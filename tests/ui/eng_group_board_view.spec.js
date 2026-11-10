@@ -523,6 +523,7 @@ async function expectOneStatsSprintReload(requestLog, sprintId, countBefore, { r
     const newRequests = statsSourceRequests(requestLog).slice(countBefore);
     expect(newRequests).toHaveLength(1);
     expect(newRequests[0].body).toEqual({
+        groupId: 'grp-default',
         sprintIds: [String(sprintId)],
         teamIds: ['team-alpha'],
         ...(refresh ? { refresh: true } : {}),
@@ -1342,7 +1343,7 @@ test('selector compact surface: remount closes stale panel and preserves geometr
     await compactTrigger.click();
     const listbox = page.getByRole('listbox', { name: 'Sprint options', exact: true });
     await expect(listbox).toBeVisible();
-    await expect(listbox.getByRole('option')).toHaveCount(5);
+    await expect(listbox.getByRole('option')).toHaveCount(6);
     expect(await listbox.getByRole('option').evaluateAll(options => options.every(option => (
         option.id.startsWith('sprint-compact-option-')
     )))).toBe(true);
@@ -1929,7 +1930,9 @@ test('Board adds Component and All work to the existing Sprint selector without 
     const scopeOptions = page.locator('.sprint-dropdown-panel .sprint-dropdown-option');
     await expect(scopeOptions.nth(0)).toHaveAccessibleName('All work');
     await expect(scopeOptions.nth(1)).toHaveAccessibleName('Component');
-    await expect(scopeOptions.nth(2)).toContainText('2026Q2 Sprint 41');
+    await expect(scopeOptions.nth(2)).toHaveAccessibleName('Allocation');
+    await expect(scopeOptions.nth(2)).toHaveAttribute('aria-disabled', 'true');
+    await expect(scopeOptions.nth(3)).toContainText('2026Q2 Sprint 41');
     await page.screenshot({ path: path.join(screenshotDir, 'three-scope-sprint-selector.png'), animations: 'disabled' });
     await scopeOptions.nth(1).click();
     await expect.poll(() => requests.some((path) => path.includes('scope=component'))).toBe(true);

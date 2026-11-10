@@ -278,7 +278,7 @@ async function setPrefs(page, prefs) {
 }
 
 function catchUpPrefs(extra = {}) {
-    return { selectedView: 'eng', planningLayout: 'list', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showStats: false, showScenario: false, ...extra };
+    return { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showStats: false, showScenario: false, ...extra };
 }
 
 function priorityTrigger(page, kind, key) {
@@ -609,7 +609,6 @@ function unexpectedCallsSince(calls, index) {
 async function openPlanningTable(page) {
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
 }
@@ -620,27 +619,6 @@ const failedPriorityWrite = body => ({
     failed: 1,
     targetPriority: { id: body.targetPriorityId, name: 'Major' },
     results: [{ key: body.issueKeys[0], result: 'failure', error: 'priority_conflict' }],
-});
-
-test('Planning List priority change shows at once, sends one key and makes no other read', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
-    const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 800 });
-    await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    const mark = calls.length;
-
-    await priorityTrigger(page, 'story', 'PROD-1').click();
-    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
-    await expect.poll(() => priorityState.inFlight).toBe(1);
-    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await page.waitForLoadState('networkidle');
-
-    expect(priorityWriteCalls(calls)).toHaveLength(1);
-    expect(priorityWriteCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
-    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
-    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
 });
 
 test('Planning Table priority change shows at once, sends one key and makes no other read', async ({ page }) => {
@@ -663,28 +641,6 @@ test('Planning Table priority change shows at once, sends one key and makes no o
     expect(priorityWriteCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
     expect(unexpectedCallsSince(calls, mark)).toEqual([]);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-});
-
-test('Planning List rolls back a rejected priority change without any other read', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
-    const { calls, priorityState } = await installEngPriorityFixture(page, {
-        priorityDelayMs: 500,
-        priorityWrite: failedPriorityWrite,
-    });
-    await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    const mark = calls.length;
-
-    await priorityTrigger(page, 'story', 'PROD-1').click();
-    await priorityMenu(page, 'PROD-1').getByRole('menuitem', { name: 'Major' }).click();
-    await expect.poll(() => priorityState.inFlight).toBe(1);
-    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(priorityMenu(page, 'PROD-1')).toHaveCount(0);
-    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Medium');
-    await page.waitForLoadState('networkidle');
-    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
 });
 
 test('Planning Table rolls back a rejected priority change without any other read', async ({ page }) => {
@@ -713,7 +669,9 @@ test('Planning applies rapid independent Story priority changes without refetchi
     await setPrefs(page, catchUpPrefs({ showPlanning: true }));
     const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 1000 });
     await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    // Planning is the Table only (#323): its Story rows carry the priority triggers.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
     await page.waitForLoadState('networkidle');
     const mark = calls.length;
 
@@ -742,132 +700,42 @@ test('Planning applies rapid independent Story priority changes without refetchi
 const planningStoryOrder = page => page.locator('[data-priority-transition-trigger][data-issue-kind="story"]')
     .evaluateAll(triggers => triggers.map(trigger => trigger.dataset.issueKey));
 
-for (const layout of ['List', 'Table']) {
-    for (const outcome of ['confirmed', 'rejected']) {
-        test(`Planning ${layout} keeps a Story in place while its priority is pending and ${outcome === 'confirmed' ? 'moves it to its sorted place once Jira confirms' : 'never moves it when Jira rejects'}`, async ({ page }) => {
-            await setPrefs(page, catchUpPrefs(layout === 'List' ? { showPlanning: true } : {}));
-            const { calls, priorityState } = await installEngPriorityFixture(page, {
-                priorityDelayMs: 900,
-                priorityWrite: outcome === 'rejected' ? failedPriorityWrite : priorityWriteResponse,
-                stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
-            });
-            await page.goto(appBaseUrl);
-            await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-            if (layout === 'Table') {
-                await openPlanningTable(page);
-                // The Table orders rows by the reviewer's sort; without one it is key order, which a priority edit never changes.
-                await page.locator('.planning-review-heading').filter({ hasText: 'Priority' }).first().click();
-            }
-            await page.waitForLoadState('networkidle');
-            expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
-            const mark = calls.length;
-
-            // PROD-3 goes from Medium to Major, which sorts above its Medium siblings.
-            await priorityTrigger(page, 'story', 'PROD-3').click();
-            await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).click();
-            await expect.poll(() => priorityState.inFlight).toBe(1);
-            await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
-            expect(await planningStoryOrder(page), 'the Story shows the new priority at once but stays where it is').toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
-
-            await expect.poll(() => priorityState.inFlight).toBe(0);
-            await page.waitForLoadState('networkidle');
-            if (outcome === 'confirmed') {
-                await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
-                await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
-            } else {
-                await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Medium');
-                expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
-            }
-            expect(unexpectedCallsSince(calls, mark)).toEqual([]);
+for (const outcome of ['confirmed', 'rejected']) {
+    test(`Planning Table keeps a Story in place while its priority is pending and ${outcome === 'confirmed' ? 'moves it to its sorted place once Jira confirms' : 'never moves it when Jira rejects'}`, async ({ page }) => {
+        await setPrefs(page, catchUpPrefs());
+        const { calls, priorityState } = await installEngPriorityFixture(page, {
+            priorityDelayMs: 900,
+            priorityWrite: outcome === 'rejected' ? failedPriorityWrite : priorityWriteResponse,
+            stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
         });
-    }
-}
+        await page.goto(appBaseUrl);
+        await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+        await openPlanningTable(page);
+        // The Table orders rows by the reviewer's sort; without one it is key order, which a priority edit never changes.
+        await page.locator('.planning-review-heading').filter({ hasText: 'Priority' }).first().click();
+        await page.waitForLoadState('networkidle');
+        expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+        const mark = calls.length;
 
-test('Planning List holds the order while an editor is open and settles it when the editor closes', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
-    const { calls, priorityState } = await installEngPriorityFixture(page, {
-        priorityDelayMs: 1200,
-        stories: ['PROD-1', 'PROD-2', 'PROD-3'].map(key => makeStory(key, activeSprintId, activeSprintName)),
-    });
-    await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    const points = page.locator('.task-item[data-task-key="PROD-1"]').getByRole('textbox', { name: 'Story Points' });
-    const mark = calls.length;
-
-    await priorityTrigger(page, 'story', 'PROD-3').click();
-    await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).click();
-    await expect.poll(() => priorityState.inFlight).toBe(1);
-    // A sibling's editor opens while PROD-3's priority is still on the wire.
-    await points.click();
-    await expect(points).toBeEditable();
-    await points.fill('7');
-
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await page.waitForLoadState('networkidle');
-    await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
-    expect(await planningStoryOrder(page), 'a confirmed edit never re-sorts under an open editor').toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
-    await expect(points).toBeFocused();
-    await expect(points).toHaveValue('7');
-
-    await points.press('Escape');
-    await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
-    expect(calls.slice(mark).filter(call => !PLANNING_EDIT_CALLS.has(call.pathname) && !EDITOR_CALL.test(call.pathname)).map(call => `${call.method} ${call.pathname}`)).toEqual([]);
-});
-
-const epicsCss = fs.readFileSync(path.join(repoRoot, 'frontend', 'src', 'styles', 'eng', 'epics.css'), 'utf8');
-
-test('Planning List blinks a confirmed Story and scrolls to it only when it moved out of view and the user has not scrolled', async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 1100 });
-    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
-    const stories = Array.from({ length: 40 }, (_, index) => makeStory(`PROD-${index + 1}`, activeSprintId, activeSprintName));
-    const { priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 600, stories });
-    await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.addStyleTag({ content: epicsCss });
-    await page.waitForLoadState('networkidle');
-    const card = key => page.locator(`.task-item[data-task-key="${key}"]`);
-    const inView = key => card(key).evaluate((element) => { const rect = element.getBoundingClientRect(); return rect.top >= 0 && rect.bottom <= window.innerHeight + 1; });
-    const edit = async (key) => {
-        await priorityTrigger(page, 'story', key).click();
-        await priorityMenu(page, key).getByRole('menuitem', { name: 'Major' }).click();
+        // PROD-3 goes from Medium to Major, which sorts above its Medium siblings.
+        await priorityTrigger(page, 'story', 'PROD-3').click();
+        await priorityMenu(page, 'PROD-3').getByRole('menuitem', { name: 'Major' }).click();
         await expect.poll(() => priorityState.inFlight).toBe(1);
-    };
+        await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
+        expect(await planningStoryOrder(page), 'the Story shows the new priority at once but stays where it is').toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
 
-    // Moving within view: the card blinks with the shared tint and the page stays put.
-    await edit('PROD-2');
-    const resting = await page.evaluate(() => window.scrollY);
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(card('PROD-2')).toHaveClass(/epic-flash/);
-    expect(await page.evaluate(() => document.getAnimations().some(animation => animation.animationName === 'epicFlash'))).toBe(true);
-    expect(await page.evaluate(() => window.scrollY), 'a card that stays in view does not move the page').toBe(resting);
-    await expect(card('PROD-2')).not.toHaveClass(/epic-flash/);
-
-    // At the bottom, the card jumps to the top: the page follows it.
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await expect(card('PROD-40')).toBeVisible();
-    const bottom = await page.evaluate(() => window.scrollY);
-    await edit('PROD-40');
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect.poll(() => inView('PROD-40')).toBe(true);
-    expect(await page.evaluate(() => window.scrollY)).toBeLessThan(bottom);
-
-    // The reader scrolls away after the click: the card blinks, the page stays where the reader left it.
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await expect(card('PROD-39')).toBeVisible();
-    await edit('PROD-39');
-    await page.evaluate(() => window.scrollBy(0, -300));
-    // The card the reader is looking at: it must stay exactly where it is on screen, whatever moves above it.
-    const watched = await page.evaluate(() => {
-        const element = Array.from(document.querySelectorAll('.task-item[data-task-key]')).find(candidate => candidate.getBoundingClientRect().top > 200);
-        return { key: element.dataset.taskKey, top: element.getBoundingClientRect().top };
+        await expect.poll(() => priorityState.inFlight).toBe(0);
+        await page.waitForLoadState('networkidle');
+        if (outcome === 'confirmed') {
+            await expect.poll(() => planningStoryOrder(page)).toEqual(['PROD-3', 'PROD-1', 'PROD-2']);
+            await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Major');
+        } else {
+            await expect(priorityTrigger(page, 'story', 'PROD-3')).toHaveAttribute('data-priority', 'Medium');
+            expect(await planningStoryOrder(page)).toEqual(['PROD-1', 'PROD-2', 'PROD-3']);
+        }
+        expect(unexpectedCallsSince(calls, mark)).toEqual([]);
     });
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await expect(card('PROD-39')).toHaveClass(/epic-flash/);
-    await page.waitForTimeout(500);
-    // One moved card is ~85px tall; the few pixels left are the edited card's own menu settling above, not a reorder shift.
-    expect(Math.abs(await card(watched.key).evaluate(element => element.getBoundingClientRect().top) - watched.top)).toBeLessThanOrEqual(8);
-});
+}
 
 test.describe('touch', () => {
     test.use({ hasTouch: true });
@@ -899,13 +767,17 @@ test('Planning keeps a pending priority edit through a Sprint switch away and ba
     await setPrefs(page, catchUpPrefs({ showPlanning: true }));
     const { calls, priorityState } = await installEngPriorityFixture(page, { priorityDelayMs: 2000, otherSprint, statefulWrites: true });
     await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    // Planning is the Table only (#323): its Story rows carry the priority triggers.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
     await page.waitForLoadState('networkidle');
     const choose = async (name) => {
         const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
         await expect(toggle).toHaveAttribute('aria-disabled', 'false');
         await toggle.click();
         await page.locator('.sprint-dropdown-option', { hasText: name }).click();
+        // The Table remounts for the other Sprint on its Epics rows.
+        await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     };
 
     await priorityTrigger(page, 'story', 'PROD-1').click();
@@ -916,9 +788,9 @@ test('Planning keeps a pending priority edit through a Sprint switch away and ba
 
     // A -> B -> A while the write is still on the wire.
     await choose(otherSprint.name);
-    await expect(page.locator('.task-item[data-task-key="PROD-B-1"]')).toBeVisible();
+    await expect(priorityTrigger(page, 'story', 'PROD-B-1')).toBeVisible();
     await choose(activeSprintName);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
     await expect(priorityTrigger(page, 'story', 'PROD-1'), 'the pending value is still shown after returning').toHaveAttribute('data-priority', 'Major');
     expect(priorityWriteCalls(calls)).toHaveLength(1);
 
@@ -930,40 +802,9 @@ test('Planning keeps a pending priority edit through a Sprint switch away and ba
 
     // Away and back once more: the cached Sprint shows the confirmed value, never the stale Medium.
     await choose(otherSprint.name);
-    await expect(page.locator('.task-item[data-task-key="PROD-B-1"]')).toBeVisible();
+    await expect(priorityTrigger(page, 'story', 'PROD-B-1')).toBeVisible();
     await choose(activeSprintName);
     await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveAttribute('data-priority', 'Major');
-});
-
-test('Planning List moves an Epic to its sorted place only once a Story priority edit is confirmed', async ({ page }) => {
-    await setPrefs(page, catchUpPrefs({ showPlanning: true }));
-    // Neither Epic has its own priority, so each sorts by its most urgent child: both Medium, ordered by load order.
-    const { calls, priorityState } = await installEngPriorityFixture(page, {
-        priorityDelayMs: 900,
-        epicPriority: null,
-        extraEpicKeys: ['PROD-EPIC-2'],
-        stories: [
-            makeStory('PROD-1', activeSprintId, activeSprintName, 'PROD-EPIC'),
-            makeStory('PROD-2', activeSprintId, activeSprintName, 'PROD-EPIC-2'),
-        ],
-    });
-    await page.goto(appBaseUrl);
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-    await page.waitForLoadState('networkidle');
-    const epicOrder = () => page.locator('[data-epic-key]').evaluateAll(blocks => blocks.map(block => block.dataset.epicKey));
-    expect(await epicOrder()).toEqual(['PROD-EPIC', 'PROD-EPIC-2']);
-    const mark = calls.length;
-
-    await priorityTrigger(page, 'story', 'PROD-2').click();
-    await priorityMenu(page, 'PROD-2').getByRole('menuitem', { name: 'Major' }).click();
-    await expect.poll(() => priorityState.inFlight).toBe(1);
-    await expect(priorityTrigger(page, 'story', 'PROD-2')).toHaveAttribute('data-priority', 'Major');
-    expect(await epicOrder(), 'the Epic stays put while the edit is pending').toEqual(['PROD-EPIC', 'PROD-EPIC-2']);
-
-    await expect.poll(() => priorityState.inFlight).toBe(0);
-    await page.waitForLoadState('networkidle');
-    await expect.poll(epicOrder).toEqual(['PROD-EPIC-2', 'PROD-EPIC']);
-    expect(unexpectedCallsSince(calls, mark)).toEqual([]);
 });
 
 test('Planning priority edit keeps a configured single-team filter, and an explicit Refresh that omits that team preserves it too', async ({ page }) => {
@@ -981,11 +822,13 @@ test('Planning priority edit keeps a configured single-team filter, and an expli
         omitSelectedTeamAfterPriority: true,
     });
     await page.goto(appBaseUrl);
+    // Planning is the Table only (#323): its Story rows carry the priority triggers.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
 
     const teamToggle = page.locator('.view-selector .team-dropdown-toggle').first();
     const teamLabel = teamToggle.locator('.team-dropdown-selection-label');
     await expect(teamLabel).toHaveText('Alpha Team');
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotDir, 'before-refresh.png'), fullPage: false });
 
     const initialTaskRequestCount = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
@@ -1005,7 +848,7 @@ test('Planning priority edit keeps a configured single-team filter, and an expli
         .toBeGreaterThan(initialTaskRequestCount);
     // The refreshed payload drops PROD-1 (Alpha) and returns only a Beta story, so proving the
     // Alpha row is gone confirms the following assertions run against post-refresh state.
-    await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toHaveCount(0);
+    await expect(priorityTrigger(page, 'story', 'PROD-1')).toHaveCount(0);
     // Alpha's display name survives via in-session retention of task-derived names (the pre-refresh
     // payload named it); Beta's name comes from the refreshed tasks. teamLabels never name teams.
     await expect(teamLabel).toHaveText('Alpha Team');

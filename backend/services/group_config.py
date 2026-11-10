@@ -3,6 +3,7 @@
 import json
 
 from backend.services.alert_epics import quote_jql_value
+from backend.services.allocation_classification import department_allocation_types
 from backend.services.team_catalog import flatten_group_team_labels, normalize_group_team_labels
 
 
@@ -138,6 +139,11 @@ def validate_groups_config(
             errors.append(f'Group "{name}" {board_error}')
         for board_warning in board_warnings:
             warnings.append(f'Group "{name}" {board_warning}')
+        try:
+            allocation_types = department_allocation_types(group)
+        except ValueError as error:
+            errors.append(f'Group "{name}" allocationTypes {error}')
+            allocation_types = []
         normalized_group = {
             'id': group_id,
             'name': name,
@@ -146,6 +152,7 @@ def validate_groups_config(
             'excludedCapacityEpics': excluded_capacity_epics,
             'adHocCapacityEpics': ad_hoc_capacity_epics,
             'teamLabels': team_labels,
+            'allocationTypes': allocation_types,
         }
         if board is not None:
             normalized_group['board'] = board
@@ -189,7 +196,8 @@ def build_default_groups_config(
             'teamIds': team_ids,
             'missingInfoComponents': [missing_info_component] if missing_info_component else [],
             'excludedCapacityEpics': [],
-            'adHocCapacityEpics': []
+            'adHocCapacityEpics': [],
+            'allocationTypes': [],
             # No 'board' key: matches normalize_group_board_fn's None (no
             # configured board), not {'columns': []} (see group_board.py).
         }],

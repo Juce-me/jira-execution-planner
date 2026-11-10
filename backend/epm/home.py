@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import concurrent.futures
 import hashlib
 import html as html_module
@@ -23,16 +22,14 @@ from backend.auth.cache_policy import (
     build_jira_home_process_cache_key,
     jira_home_partitioned_process_cache_enabled,
 )
-from backend.auth.home_credentials import HomeCredential
 from backend.auth.jira_auth import AuthError, is_oauth_token_expired, oauth_scope_set
 from backend.security.avatar_urls import sanitize_avatar_url
-from backend.db.engine import database_storage_enabled
 
 logger = logging.getLogger(__name__)
 
 HOME_GRAPHQL_ENDPOINT = "https://team.atlassian.com/gateway/api/graphql"
 # Single audience for the bounded public-read-v1 OAuth contract. The strict client and
-# the public probe accept exactly this URL; Basic keeps HOME_GRAPHQL_ENDPOINT above.
+# the public probe accept exactly this URL.
 HOME_OAUTH_GRAPHQL_ENDPOINT = "https://api.atlassian.com/graphql"
 HOME_MAX_RETRY_WAIT_SECONDS = 30
 PUBLIC_READ_V1_PROFILE = "public-read-v1"
@@ -185,87 +182,6 @@ def _strict_retry_wait(header_value, attempt: int) -> int:
     return int(max(1, min(HOME_MAX_RETRY_WAIT_SECONDS, math.ceil(wait))))
 
 
-class HomeGraphQLClient:
-    def __init__(self, email: str, api_token: str, endpoint: str = HOME_GRAPHQL_ENDPOINT):
-        credentials = base64.b64encode(f"{email}:{api_token}".encode()).decode()
-        self.endpoint = endpoint
-        self.headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Basic {credentials}",
-            "X-ExperimentalApi": "Townsquare",
-        }
-
-    def execute(self, query: str, variables: dict | None = None) -> dict:
-        payload: dict[str, Any] = {"query": query}
-        if variables:
-            payload["variables"] = variables
-        for attempt in range(HOME_MAX_RETRIES + 1):
-            try:
-                request = Request(
-                    self.endpoint,
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=self.headers,
-                    method="POST",
-                )
-                with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
-                    data = json.loads(response.read().decode("utf-8"))
-            except HTTPError as exc:
-                if exc.code == 401:
-                    raise HomeAuthenticationError(
-                        "Atlassian Home authentication failed; check ATLASSIAN_EMAIL / ATLASSIAN_API_TOKEN."
-                    ) from exc
-                if exc.code == 429 and attempt < HOME_MAX_RETRIES:
-                    wait = 2 ** attempt
-                    wait_value = exc.headers.get("Retry-After")
-                    try:
-                        wait = int(wait_value) if wait_value else wait
-                    except (TypeError, ValueError):
-                        wait = wait
-                    time.sleep(wait)
-                    continue
-                if exc.code == 429:
-                    raise HomeRateLimitError("Atlassian Home rate-limited after retries.") from exc
-                raise HomeGraphQLError(f"Atlassian Home request failed: {exc}") from exc
-            except OSError as exc:
-                raise HomeGraphQLError(f"Atlassian Home request failed: {exc}") from exc
-            except ValueError as exc:
-                raise HomeGraphQLError("Atlassian Home returned invalid JSON.") from exc
-            errors = data.get("errors") or []
-            if errors:
-                messages = "; ".join(str(error.get("message", error)) for error in errors)
-                raise HomeGraphQLError(f"GraphQL errors: {messages}")
-            return data
-        raise HomeRateLimitError("Atlassian Home retries exhausted.")
-
-    def execute_paginated(self, query: str, variables: dict, path_to_connection: str) -> list[dict]:
-        all_nodes: list[dict] = []
-        page_variables = dict(variables)
-        page_variables["after"] = None
-        while True:
-            response = self.execute(query, page_variables)
-            connection: Any = response.get("data", {})
-            for key in path_to_connection.split("."):
-                if not isinstance(connection, dict):
-                    connection = {}
-                    break
-                connection = connection.get(key, {})
-            if not isinstance(connection, dict):
-                return all_nodes
-            for edge in connection.get("edges", []) or []:
-                node = edge.get("node")
-                if node is not None:
-                    all_nodes.append(node)
-            page_info = connection.get("pageInfo", {}) or {}
-            if page_info.get("hasNextPage"):
-                next_cursor = page_info.get("endCursor")
-                if not next_cursor or next_cursor == page_variables.get("after"):
-                    logger.warning("Pagination stopped for %s because the cursor did not advance.", path_to_connection)
-                    return all_nodes
-                page_variables["after"] = next_cursor
-                continue
-            return all_nodes
-
-
 def _bearer_headers(access_token: str) -> dict:
     return {
         "Accept": "application/json",
@@ -406,8 +322,7 @@ GOAL_LOOKUP_CACHE_TTL_SECONDS = 300
 
 def select_epm_home_read_profile(context, *, view_enabled) -> str:
     """Home OAuth reads only for a DB OAuth actor who enabled the EPM view AND whose provider-confirmed
-    grant has every Home read scope. An enabled actor without the full grant gets the fail-closed
-    profile (never the API-token path); a disabled actor, Basic and local-store contexts stay legacy."""
+    grant has every Home read scope. Other actors receive a non-serving profile or scope recovery."""
     if not view_enabled or getattr(context, "auth_mode", "") != AUTH_MODE_ATLASSIAN_OAUTH:
         return HOME_READ_PROFILE_LEGACY
     connection_id = str(getattr(context, "auth_connection_id", "") or "")
@@ -563,38 +478,21 @@ def _is_strict_client(client) -> bool:
     return getattr(client, "strict_public_read", False) is True
 
 
+def _require_strict_client(client):
+    if not _is_strict_client(client):
+        raise AuthError("auth_required", "DB-backed Atlassian OAuth is required for Home reads.")
+
+
 def _op_query(client, public_key: str, legacy_query: str) -> str:
-    """Strict clients send the registered public document; Basic keeps its legacy constant."""
-    return PUBLIC_READ_V1_REGISTRY[public_key]["query"] if _is_strict_client(client) else legacy_query
+    _require_strict_client(client)
+    return PUBLIC_READ_V1_REGISTRY[public_key]["query"]
 
 
 def _execute_data(client, public_key: str, legacy_query: str, variables: dict) -> dict:
-    """Run one operation and return its `data`; strict clients reject any GraphQL error."""
-    if _is_strict_client(client):
-        result = client.execute_operation(public_key, variables)
-        result.raise_for_errors()
-        return result.data
-    return client.execute(legacy_query, variables).get("data") or {}
-
-
-def _home_basic_credentials() -> tuple[str, str]:
-    home_email = os.environ.get("ATLASSIAN_EMAIL") or ""
-    home_token = os.environ.get("ATLASSIAN_API_TOKEN") or ""
-    if home_email and home_token:
-        return home_email, home_token
-
-    if (os.environ.get("JIRA_AUTH_MODE") or "basic").strip().lower() == AUTH_MODE_ATLASSIAN_OAUTH:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN must be set to use Home/Townsquare in OAuth mode"
-        )
-
-    email = home_email or os.environ.get("JIRA_EMAIL") or ""
-    token = home_token or os.environ.get("JIRA_TOKEN") or ""
-    if not email or not token:
-        raise RuntimeError(
-            "ATLASSIAN_EMAIL and ATLASSIAN_API_TOKEN (or JIRA_EMAIL/JIRA_TOKEN in basic auth mode) must be set to use the EPM view"
-        )
-    return email, token
+    _require_strict_client(client)
+    result = client.execute_operation(public_key, variables)
+    result.raise_for_errors()
+    return result.data
 
 
 QUERY_GOALS_SEARCH = """
@@ -1719,32 +1617,6 @@ def normalize_project_tag_names(values: Any) -> list[str]:
     return names
 
 
-def _require_home_credential_descriptor(credential: HomeCredential | None) -> None:
-    if credential is None and database_storage_enabled():
-        raise RuntimeError("Home credential descriptor is required in DB mode")
-
-
-def _read_metadata_credential(context=None) -> HomeCredential | None:
-    """Basic/JSON mode keeps its service credentials (None here). DB mode never resolves a Home credential:
-    reaching this path means the actor is on the legacy profile (EPM view not enabled), which fails closed."""
-    if context is None or not database_storage_enabled():
-        return None
-    raise AuthError("epm_view_disabled", "Enable the EPM view in your settings to load EPM Home data.")
-
-
-def build_teamwork_graph_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
-    _require_home_credential_descriptor(credential)
-    if credential is not None:
-        email, token = credential.email, credential.api_token
-        jira_url = str(credential.site_url or "").rstrip("/")
-    else:
-        email, token = _home_basic_credentials()
-        jira_url = get_configured_jira_url()
-    if not jira_url:
-        raise RuntimeError("JIRA_URL must be set to query Atlassian project tags")
-    return HomeGraphQLClient(email, token, f"{jira_url}/gateway/api/graphql/twg")
-
-
 def _project_tag_cypher(project_ari: str | None = None, project_url: str | None = None) -> tuple[str, dict] | None:
     if project_ari:
         return (
@@ -1757,33 +1629,6 @@ def _project_tag_cypher(project_ari: str | None = None, project_url: str | None 
             {"url": project_url},
         )
     return None
-
-
-def _project_ari_candidates(project: dict, context=None) -> list[str]:
-    project_id = str((project or {}).get("id") or "").strip()
-    if not project_id:
-        return []
-    if project_id.startswith("ari:"):
-        return [project_id]
-    candidates: list[str] = []
-    try:
-        cloud_id = fetch_home_site_cloud_id(context=context) if context is not None else fetch_home_site_cloud_id()
-    except RuntimeError:
-        cloud_id = ""
-    if cloud_id:
-        candidates.append(f"ari:cloud:townsquare:{cloud_id}:project/{project_id}")
-    candidates.append(f"ari:cloud:townsquare::project/{project_id}")
-    return candidates
-
-
-def _extract_project_tags_from_home_response(response: dict) -> list[str]:
-    project = ((response.get("data") or {}).get("projects_byId") or {})
-    return extract_tag_names(project.get("tags"))
-
-
-def _extract_project_tags_from_twg_response(response: dict) -> list[str]:
-    connection = ((response.get("data") or {}).get("cypherQuery") or {})
-    return extract_tag_names(connection.get("edges"))
 
 
 def _fetch_project_tags_strict(client, project_id: str) -> list[str] | None:
@@ -1804,53 +1649,10 @@ def _fetch_project_tags_strict(client, project_id: str) -> list[str] | None:
     return extract_tag_names(project.get("tags"))
 
 
-def fetch_project_tags(client: HomeGraphQLClient, project: dict, context=None) -> list[str] | None:
+def fetch_project_tags(client: HomeOAuthGraphQLClient, project: dict, context=None) -> list[str] | None:
+    _require_strict_client(client)
     project_id = str((project or {}).get("id") or "").strip()
-    if not project_id:
-        return []
-    if _is_strict_client(client):
-        return _fetch_project_tags_strict(client, project_id)
-    direct_tags: list[str] | None = None
-    try:
-        response = client.execute(QUERY_PROJECT_TAGS, {"projectId": project_id})
-        direct_tags = _extract_project_tags_from_home_response(response)
-        if direct_tags:
-            return direct_tags
-    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
-        logger.warning("Direct Home project tag fetch failed for %s: %s", project_id, exc)
-
-    try:
-        credential = _read_metadata_credential(context)
-        teamwork_graph_client = (
-            build_teamwork_graph_client(credential)
-            if credential is not None
-            else build_teamwork_graph_client()
-        )
-        for project_ari in _project_ari_candidates(project, context=context):
-            cypher = _project_tag_cypher(project_ari=project_ari)
-            if not cypher:
-                continue
-            query, params = cypher
-            response = teamwork_graph_client.execute(
-                QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
-                {"cypherQuery": query, "params": params},
-            )
-            tags = _extract_project_tags_from_twg_response(response)
-            if tags:
-                return tags
-        project_url = str((project or {}).get("url") or "").strip()
-        cypher = _project_tag_cypher(project_url=project_url)
-        if cypher:
-            query, params = cypher
-            response = teamwork_graph_client.execute(
-                QUERY_TEAMWORK_GRAPH_PROJECT_TAGS,
-                {"cypherQuery": query, "params": params},
-            )
-            return _extract_project_tags_from_twg_response(response)
-    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError, AuthError) as exc:
-        logger.warning("Teamwork Graph project tag fetch failed for %s: %s", project_id, exc)
-        return direct_tags if direct_tags is not None else None
-    return direct_tags if direct_tags is not None else []
+    return _fetch_project_tags_strict(client, project_id) if project_id else []
 
 
 def build_home_project_record(project, updates, linkage, home_tags=None, tags_unavailable=False):
@@ -1957,15 +1759,6 @@ def _extract_project_target_date(project: dict) -> dict:
     return {"label": label, "value": value, "start": "", "end": ""}
 
 
-def build_home_graphql_client(credential: HomeCredential | None = None) -> HomeGraphQLClient:
-    _require_home_credential_descriptor(credential)
-    if credential is not None:
-        email, token = credential.email, credential.api_token
-    else:
-        email, token = _home_basic_credentials()
-    return HomeGraphQLClient(email, token, HOME_GRAPHQL_ENDPOINT)
-
-
 def _container_id_from_cloud(cloud_id: str) -> str:
     return f"ari:cloud:townsquare::site/{cloud_id}"
 
@@ -1979,25 +1772,7 @@ def get_configured_jira_url(context=None) -> str:
 def fetch_home_site_cloud_id(context=None, home_auth=None) -> str:
     if home_auth is not None and home_auth.strict:
         return home_auth.cloud_id()  # context cloud id; no tenant_info HTTP, no cache entry
-    jira_url = get_configured_jira_url(context)
-    if not jira_url:
-        raise RuntimeError("JIRA_URL must be set to detect the Atlassian site cloud ID")
-    cache_enabled = jira_home_partitioned_process_cache_enabled(context)
-    cache_key = build_jira_home_process_cache_key(context, jira_url)
-    if cache_enabled and cache_key in _CLOUD_ID_CACHE:
-        return _CLOUD_ID_CACHE[cache_key]
-    request = Request(f"{jira_url}/_edge/tenant_info", headers={"Accept": "application/json"}, method="GET")
-    try:
-        with urlopen(request, timeout=HOME_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, ValueError, OSError) as exc:
-        raise RuntimeError("Failed to detect Atlassian site cloud ID") from exc
-    cloud_id = str(payload.get("cloudId") or "").strip()
-    if not cloud_id:
-        raise RuntimeError("Jira tenant_info did not return cloudId")
-    if cache_enabled:
-        _CLOUD_ID_CACHE[cache_key] = cloud_id
-    return cloud_id
+    raise AuthError("auth_required", "DB-backed Atlassian OAuth is required for Home reads.")
 
 
 def _normalize_goal_key(goal_key: str) -> str:
@@ -2044,40 +1819,23 @@ def _strict_goal_lookup_put(cache_key, goal):
         _STRICT_GOAL_LOOKUP_CACHE[cache_key] = (now + GOAL_LOOKUP_CACHE_TTL_SECONDS, dict(goal))
 
 
-def resolve_goal_by_key(client: HomeGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
+def resolve_goal_by_key(client: HomeOAuthGraphQLClient, goal_key: str, container_id: str, context=None) -> dict | None:
+    _require_strict_client(client)
     expected_key = _normalize_goal_key(goal_key)
     if not expected_key:
         return None
-    cache_key = _goal_cache_key(container_id, expected_key)
+    cache_key = build_jira_home_process_cache_key(context, _goal_cache_key(container_id, expected_key))
     cache_enabled = jira_home_partitioned_process_cache_enabled(context)
-    cache_key = build_jira_home_process_cache_key(context, cache_key)
-    strict = _is_strict_client(client)
-    if strict:
-        # Only identity/version-partitioned (tuple) keys are ever cached for the public profile.
-        cache_enabled = cache_enabled and isinstance(cache_key, tuple)
-        cached = _strict_goal_lookup_get(cache_key) if cache_enabled else None
-    else:
-        cached = _GOAL_BY_KEY_CACHE.get(cache_key) if cache_enabled else None
-    if cache_enabled and cached:
+    cached = _strict_goal_lookup_get(cache_key) if cache_enabled else None
+    if cached:
         return dict(cached)
 
     def remember(goal_value):
-        if not cache_enabled:
-            return
-        if strict:
+        if cache_enabled:
             _strict_goal_lookup_put(cache_key, goal_value)
-        else:
-            _GOAL_BY_KEY_CACHE[cache_key] = dict(goal_value)
     try:
-        if _is_strict_client(client):
-            data = _execute_data(client, "goals_byKey", QUERY_GOAL_BY_KEY, {"containerId": container_id, "goalKey": expected_key})
-            goal = data.get("goals_byKey") or {}
-        else:
-            response = client.execute(
-                QUERY_GOAL_BY_KEY,
-                {"containerId": container_id, "goalKey": expected_key},
-            )
-            goal = ((response.get("data") or {}).get("goals_byKey") or {})
+        data = _execute_data(client, "goals_byKey", QUERY_GOAL_BY_KEY, {"containerId": container_id, "goalKey": expected_key})
+        goal = data.get("goals_byKey") or {}
         if goal and _normalize_goal_key(goal.get("key")) == expected_key:
             remember(goal)
             return goal
@@ -2109,7 +1867,8 @@ def remember_strict_goal(goal: dict, container_id: str, goal_key: str, context) 
         _strict_goal_lookup_put(cache_key, goal)
 
 
-def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
+def fetch_sub_goals(client: HomeOAuthGraphQLClient, root_goal_id: str) -> list[dict]:
+    _require_strict_client(client)
     try:
         nodes = client.execute_paginated(
             _op_query(client, "subGoals", QUERY_SUB_GOALS),
@@ -2122,7 +1881,7 @@ def fetch_sub_goals(client: HomeGraphQLClient, root_goal_id: str) -> list[dict]:
     return [goal for goal in nodes if not goal.get("isArchived")]
 
 
-def fetch_sub_goals_for_root_key(client: HomeGraphQLClient, root_goal_key: str, container_id: str, context=None) -> list[dict]:
+def fetch_sub_goals_for_root_key(client: HomeOAuthGraphQLClient, root_goal_key: str, container_id: str, context=None) -> list[dict]:
     root_goal = (
         resolve_goal_by_key(client, root_goal_key, container_id, context=context)
         if context is not None
@@ -2152,7 +1911,7 @@ def _epm_scope_sub_goal_keys(scope: dict) -> list[str]:
     return normalized
 
 
-def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> list[dict]:
+def resolve_sub_goals_for_scope(client: HomeOAuthGraphQLClient, epm_scope: dict, container_id: str, context=None) -> list[dict]:
     scope = epm_scope if isinstance(epm_scope, dict) else {}
     sub_goal_keys = _epm_scope_sub_goal_keys(scope)
     if not sub_goal_keys:
@@ -2185,7 +1944,7 @@ def resolve_sub_goals_for_scope(client: HomeGraphQLClient, epm_scope: dict, cont
     return resolved
 
 
-def resolve_sub_goal_for_scope(client: HomeGraphQLClient, epm_scope: dict, container_id: str, context=None) -> dict | None:
+def resolve_sub_goal_for_scope(client: HomeOAuthGraphQLClient, epm_scope: dict, container_id: str, context=None) -> dict | None:
     goals = (
         resolve_sub_goals_for_scope(client, epm_scope, container_id, context=context)
         if context is not None
@@ -2268,58 +2027,9 @@ def _fetch_goal_project_links_strict(client, goal_id: str) -> list[dict]:
     return projects
 
 
-def fetch_goal_project_links(client: HomeGraphQLClient, goal_id: str) -> list[dict]:
-    if _is_strict_client(client):
-        return _fetch_goal_project_links_strict(client, goal_id)
-    projects: list[dict] = []
-    after = None
-    while len(projects) < HOME_MAX_PROJECTS_PER_GOAL:
-        response = client.execute(
-            QUERY_GOAL_PROJECTS,
-            {"goalId": goal_id, "first": HOME_PAGE_SIZE, "after": after},
-        )
-        connection = (((response.get("data") or {}).get("goals_byId") or {}).get("projects") or {})
-        for edge in connection.get("edges", []) or []:
-            node = edge.get("node")
-            if node is not None:
-                projects.append(node)
-                if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
-                    break
-        page_info = connection.get("pageInfo", {}) or {}
-        has_next_page = page_info.get("hasNextPage")
-        if len(projects) >= HOME_MAX_PROJECTS_PER_GOAL:
-            if has_next_page:
-                logger.warning(
-                    "Home goal %s project list truncated at %d projects.",
-                    goal_id,
-                    HOME_MAX_PROJECTS_PER_GOAL,
-                )
-            return projects
-        if not has_next_page:
-            return projects
-        next_cursor = page_info.get("endCursor")
-        if not next_cursor or next_cursor == after:
-            logger.warning("Pagination stopped for goals_byId.projects because the cursor did not advance.")
-            return projects
-        after = next_cursor
-    return projects
-
-
-def _fetch_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
-    project_id = row.get("id")
-    if not project_id:
-        return None
-    try:
-        detail = _execute_data(client, "projectDetails", QUERY_PROJECT_DETAILS, {"projectId": project_id})
-        payload = detail.get("projects_byId") or {}
-        project = _shape_project_detail(project_id, payload)
-        updates = fetch_latest_project_update(client, project_id)
-        home_tags = fetch_project_tags(client, project, context=context)
-        linkage = extract_home_jira_linkage(project)
-        return build_home_project_record(project, updates, linkage, home_tags, tags_unavailable=home_tags is None)
-    except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
-        logger.warning("Project detail fetch failed for %s: %s", project_id, exc)
-        return None
+def fetch_goal_project_links(client: HomeOAuthGraphQLClient, goal_id: str) -> list[dict]:
+    _require_strict_client(client)
+    return _fetch_goal_project_links_strict(client, goal_id)
 
 
 def _extract_project_updates(row: dict) -> list[dict]:
@@ -2344,16 +2054,14 @@ def _build_home_project_record_from_goal_row(row: dict) -> dict | None:
     )
 
 
-def _fetch_or_build_home_project_record(client: HomeGraphQLClient, row: dict, context=None) -> dict | None:
+def _fetch_or_build_home_project_record(client: HomeOAuthGraphQLClient, row: dict, context=None) -> dict | None:
     if _has_enriched_goal_project_fields(row):
         return _build_home_project_record_from_goal_row(row)
-    if _is_strict_client(client):
-        # public-read-v1 reads project core/tags/updates in the goalProjects page; no per-project fan-out.
-        raise HomeReadError("invalid_response")
-    return _fetch_home_project_record(client, row, context=context)
+    # public-read-v1 reads core/tags/updates in the page; never per-project fallback.
+    raise HomeReadError("invalid_response")
 
 
-def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=None) -> list[dict]:
+def fetch_projects_for_goal(client: HomeOAuthGraphQLClient, goal_id: str, context=None) -> list[dict]:
     try:
         linked_projects = fetch_goal_project_links(client, goal_id)
     except (HomeGraphQLError, HomeRateLimitError, HomeAuthenticationError, KeyError, RuntimeError) as exc:
@@ -2367,7 +2075,7 @@ def fetch_projects_for_goal(client: HomeGraphQLClient, goal_id: str, context=Non
     return [record for record in records if record is not None]
 
 
-def fetch_project_goals_for_sub_goal(client: HomeGraphQLClient, sub_goal: dict) -> list[dict]:
+def fetch_project_goals_for_sub_goal(client: HomeOAuthGraphQLClient, sub_goal: dict) -> list[dict]:
     project_goals: list[dict] = []
     queue: list[dict] = [sub_goal]
     seen_goal_ids: set[str] = set()
@@ -2391,7 +2099,7 @@ def fetch_project_goals_for_sub_goal(client: HomeGraphQLClient, sub_goal: dict) 
     return project_goals
 
 
-def fetch_latest_project_update(client: HomeGraphQLClient, project_id: str) -> list[dict]:
+def fetch_latest_project_update(client: HomeOAuthGraphQLClient, project_id: str) -> list[dict]:
     try:
         data = _execute_data(
             client,
@@ -2433,24 +2141,12 @@ def fetch_epm_home_projects(epm_scope, context=None, home_auth=None):
         logger.warning("EPM home fetch skipped: subGoalKeys is required")
         return []
 
-    if home_auth is not None and home_auth.strict:
-        # public-read-v1: typed failures (HomeReadError, AuthError) propagate; never an empty list.
-        client = home_auth.client()
-        cloud_id = home_auth.cloud_id()
-        context = home_auth.context
-    else:
-        try:
-            credential = _read_metadata_credential(context)
-            client = build_home_graphql_client(credential) if credential is not None else build_home_graphql_client()
-            if credential is not None and credential.cloud_id:
-                cloud_id = credential.cloud_id
-            elif context is not None:
-                cloud_id = fetch_home_site_cloud_id(context=context)
-            else:
-                cloud_id = fetch_home_site_cloud_id()
-        except RuntimeError as exc:
-            logger.warning("EPM home fetch failed: %s", exc)
-            return []
+    if home_auth is None or not home_auth.strict:
+        raise AuthError("epm_view_disabled", "Enable the EPM view in your settings to load EPM Home data.")
+    # Strict public-read-v1 failures propagate; no service credential or metadata fallback.
+    client = home_auth.client()
+    cloud_id = home_auth.cloud_id()
+    context = home_auth.context
 
     container_id = _container_id_from_cloud(cloud_id)
     sub_goals = (

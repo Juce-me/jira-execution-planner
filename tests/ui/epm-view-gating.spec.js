@@ -58,19 +58,15 @@ test('OAuth user with the checkbox off hides EPM and makes no EPM, access or Hom
     expect(epmAccessCalls(fixture.calls)).toEqual([]);
 });
 
-test('basic auth mode shows EPM without an access read or the checkbox gate', async ({ page }) => {
+test('a retired Basic profile cannot bypass private EPM readiness or access checks', async ({ page }) => {
     await seedEpmView(page);
     const fixture = await installDashboardFixture(page, {
-        authMode: 'basic',
+        authMode: 'basic', epmViewEnabled: true, epmHomeReadAvailable: true,
     });
-
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-
-    const viewSwitch = page.getByRole('radiogroup', { name: 'Dashboard view' });
-    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toBeVisible();
-    await expect(viewSwitch.getByRole('radio', { name: 'EPM' })).toBeChecked();
-    await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toBeVisible();
-    expect(epmMetadataCalls(fixture.calls).map(call => call.pathname)).toContain('/api/epm/projects');
+    await expect(page.getByRole('radiogroup', { name: 'Dashboard view' }).getByRole('radio', { name: 'EPM' })).toHaveCount(0);
+    await expect(page.locator('.epm-project-board-name', { hasText: 'Connected Home Project' })).toHaveCount(0);
+    expect(epmMetadataCalls(fixture.calls)).toEqual([]);
     expect(epmAccessCalls(fixture.calls)).toEqual([]);
     expect(connectionCalls(fixture.calls)).toEqual([]);
 });

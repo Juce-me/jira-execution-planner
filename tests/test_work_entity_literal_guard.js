@@ -82,7 +82,7 @@ const DASHBOARD_RANGES = [
 // {file, snippet, reason}: a finding in `file` whose whole literal equals `snippet` is not a display name.
 const ALLOWLIST = [
     { file: 'frontend/src/eng/PlanningProjectSplitBar.jsx',
-        snippet: 'Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.',
+        snippet: 'Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Planned effort excludes excluded epics.',
         reason: 'Legacy-only branch: the new model renders CombinedWorkBar instead' },
     { file: 'frontend/src/stats/StatsPanel.jsx', snippet: 'Approximate, story-point based',
         reason: 'Story Points: the Jira estimate field, not a work entity' },

@@ -1,5 +1,3 @@
-import os
-import tempfile
 import time
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -12,6 +10,7 @@ from backend.auth.db_context import (
 )
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 FULL_SCOPE = (
@@ -23,8 +22,7 @@ FULL_SCOPE = (
 
 class DbAuthContextTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'auth-context.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -33,7 +31,6 @@ class DbAuthContextTests(unittest.TestCase):
     def tearDown(self):
         invalidate_auth_status_cache()
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_connection(
         self,

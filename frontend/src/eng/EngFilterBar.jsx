@@ -10,6 +10,7 @@ import { resolveEngFilterOptionVisual } from './engFilterOptionVisuals.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import StatusPill from '../ui/StatusPill.jsx';
 import { getProjectTrackEmoji } from './engTaskUtils.js';
+import { withoutReadout } from '../issues/PriorityIcon.jsx';
 
 // The compact ENG filter bar: a Filters trigger with its facet popover, the readout, the chips
 // lane and a slot for the consumer's own view controls. Presentational — it owns no data, no
@@ -247,7 +248,7 @@ export default function EngFilterBar({
                                                                     {visual && (
                                                                         <span className="pop-opt-visual" aria-hidden="true">
                                                                             {visual.kind === 'priority' && typeof renderPriorityIcon === 'function'
-                                                                                ? renderPriorityIcon(visual.value, prioritySeed)
+                                                                                ? withoutReadout(renderPriorityIcon(visual.value, prioritySeed))
                                                                                 : null}
                                                                             {visual.kind === 'project_track' ? getProjectTrackEmoji(visual.value) : null}
                                                                         </span>

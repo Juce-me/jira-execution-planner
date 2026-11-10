@@ -12,7 +12,7 @@ const THIS_QUARTER = `${NOW.getFullYear()}Q${Math.floor(NOW.getMonth() / 3) + 1}
 // DOM reveal is a double. One bundle serves every rig; each rig evaluates it afresh, so each rig owns its store.
 const BUNDLE = esbuild.buildSync({
     stdin: {
-        contents: "export * from './applyController.js'; export * as store from './store.js'; export { encodeShareView } from './codec.js';",
+        contents: "export * from './applyController.js'; export * as store from './store.js'; export { encodeShareView } from './codec.js'; export { resolveEngSprintSelectorState } from '../eng/engSprintSelectorState.js';",
         resolveDir: SHARE_VIEW, sourcefile: 'apply-controller-test-entry.js',
     },
     bundle: true, write: false, format: 'cjs', platform: 'browser', external: ['./focusReveal.js'],
@@ -83,7 +83,7 @@ function createRig({ link, search, options = {} } = {}) {
         commitSprintSelection: spy('commitSprintSelection'), persistTeamSelection: spy('persistTeamSelection'),
         setShowPlanning: spy('setShowPlanning'), setShowStats: spy('setShowStats'), setShowScenario: spy('setShowScenario'), setShowBoard: spy('setShowBoard'),
         setSearchInput: spy('setSearchInput'), setSearchQuery: spy('setSearchQuery'), setShowProduct: spy('setShowProduct'), setShowTech: spy('setShowTech'),
-        setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'), setPlanningLayout: spy('setPlanningLayout'),
+        setGroupByInitiativeChoice: spy('setGroupByInitiativeChoice'), setEngEpicSort: spy('setEngEpicSort'),
         setStatsView: spy('setStatsView'), setCohortStartQuarter: spy('setCohortStartQuarter'), setCohortEndQuarter: spy('setCohortEndQuarter'),
         setCohortMode: spy('setCohortMode'), setCohortClosedStartQuarter: spy('setCohortClosedStartQuarter'), setCohortClosedEndQuarter: spy('setCohortClosedEndQuarter'), setCohortLastN: spy('setCohortLastN'),
         setCohortProjectFilter: spy('setCohortProjectFilter'), setCohortExcludeAdHoc: spy('setCohortExcludeAdHoc'), setCohortExcludeCapacity: spy('setCohortExcludeCapacity'),
@@ -109,8 +109,9 @@ function createRig({ link, search, options = {} } = {}) {
     const flush = (analyticsReady = true) => controller.flushTrack(payload => tracked.push(payload), analyticsReady);
     const take = () => log.splice(0);
     return {
-        o, log, take, controller, tick, flush, tracked, revealLog, readFacetOptionIds,
-        store: { log: storeLog, module: store, snapshot: () => store.getShareViewSnapshot() },
+        o, log, take, controller, tick, flush, tracked, revealLog, readFacetOptionIds, resolveEngSprintSelectorState: loaded.exports.resolveEngSprintSelectorState,
+        store: { log: storeLog, module: store, snapshot: () => store.getShareViewSnapshot(),
+            replaceLink: nextLink => store.initShareViewFromLocation({ location: { search: `?${encodeShareView(nextLink).query}`, pathname: '/', hash: '' }, history: { state: null, replaceState() {} } }) },
     };
 }
 
@@ -259,9 +260,12 @@ test('the Planning rows are seeded once, when Stage C begins after the scope has
     rig.tick();
     assert.equal(store.takeInitialPlanningRowMode(), null, 'later Stage C parts and Stage D do not seed again');
 
-    const list = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'list' } });
-    for (let step = 0; step < 4; step += 1) { finishLoad(list, { group: 'grp-a', sprint: 41 }); list.tick(); }
-    assert.equal(list.store.module.takeInitialPlanningRowMode(), null, 'the List layout has no rows to seed');
+    // Planning List is retired (#323): an old List link seeds the table rows of its focus kind and sets no layout.
+    const list = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'list', focus: { kind: 'story', key: 'PROJ-34' } } });
+    let seeded = null;
+    for (let step = 0; step < 4 && seeded === null; step += 1) { finishLoad(list, { group: 'grp-a', sprint: 41 }); list.tick(); seeded = list.store.module.takeInitialPlanningRowMode(); }
+    assert.equal(seeded, 'story', 'an old List link opens the table on the rows of its focus');
+    assert.equal(list.log.some(([name]) => /layout/i.test(name)), false, 'no layout setter is reached');
 
     const cancelled = createRig({ link: { ...LINK, mode: 'planning', group: 'grp-a', sprint: '41', layout: 'table', rows: 'story' } });
     cancelled.tick();
@@ -712,5 +716,154 @@ test('cold alignment stops on trusted input or a changed scope', () => {
         // Replace the actual options fields between controller ticks: the live predicate must see them.
         change(previous);
         assert.equal(handle.options.isCancelled(), true);
+    }
+});
+
+function deferredPlanningGuard() {
+    const requests = [];
+    return { requests, guard: callback => new Promise(resolve => requests.push({ respond(allowed) { if (allowed) callback(); resolve(allowed); } })) };
+}
+const settlePlanningGuard = async () => { await Promise.resolve(); await Promise.resolve(); };
+
+test('a scope-changing link waits for Planning permission without starting stages or timing out', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    assert.equal(guard.requests.length, 1);
+    assert.deepEqual(rig.take(), []);
+    assert.deepEqual(rig.store.log, []);
+    assert.equal(rig.controller.isPaused(), true);
+    rig.o.planningReviewBusy = true; // Save chosen inside the scope dialog is still pending.
+    rig.tick(120000);
+    assert.deepEqual(rig.take(), []);
+    assert.equal(rig.store.snapshot().phase, 'pending');
+    guard.requests[0].respond(true);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), [], 'the permission result waits for pending Save state to settle');
+    assert.equal(rig.controller.isPaused(), true, 'dialog/save settlement is still protected from interaction cancellation');
+    rig.o.planningReviewBusy = false;
+    rig.tick();
+    assert.deepEqual(rig.take().map(([name]) => name), ['setSelectedView', 'setActiveGroupId', 'commitSprintSelection']);
+    assert.equal(rig.controller.isPaused(), false);
+    rig.tick();
+    assert.equal(guard.requests.length, 1);
+    assert.deepEqual(rig.take(), [], 'scope is committed once');
+});
+
+test('Stay cancels a scope-changing link without changing the mounted Planning scope', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    guard.requests[0].respond(false);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), []);
+    assert.equal(rig.store.snapshot().phase, 'cancelled');
+    assert.equal(rig.o.activeGroupId, 'grp-a');
+    assert.equal(rig.o.selectedSprint, 41);
+    assert.equal(rig.controller.isPaused(), false);
+});
+
+test('same-scope mode and filter changes do not prompt for the Planning draft', () => {
+    let guards = 0;
+    const rig = createRig({ link: { ...LINK, group: 'grp-a', sprint: '41' }, options: { guardPlanningScopeChange() { guards++; throw new Error('same-scope guard'); } } });
+    rig.tick(); rig.take(); rig.tick();
+    assert.equal(guards, 0);
+    assert.ok(rig.take().some(([name, value]) => name === 'setSearchQuery' && value === 'login'));
+});
+
+test('a superseded link or terminal auth lock cannot use a late Planning permission', async () => {
+    for (const supersede of [true, false]) {
+        const guard = deferredPlanningGuard();
+        const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+        rig.tick();
+        const priorWindow = globalThis.window;
+        try {
+            if (supersede) rig.store.module.finishShareView('cancelled');
+            else { globalThis.window = { __JEP_AUTH_REQUIRED__: { locked: true } }; rig.tick(); }
+            guard.requests[0].respond(true);
+            await settlePlanningGuard();
+            assert.deepEqual(rig.take(), []);
+            assert.equal(rig.store.snapshot().phase, supersede ? 'cancelled' : 'dropped');
+        } finally { globalThis.window = priorWindow; }
+    }
+});
+
+test('permission for a replaced link never authorizes its replacement', async () => {
+    const guard = deferredPlanningGuard();
+    const rig = createRig({ link: LINK, options: { guardPlanningScopeChange: guard.guard } });
+    rig.tick();
+    rig.store.replaceLink({ ...LINK, group: 'grp-b', sprint: '41' });
+    guard.requests[0].respond(true);
+    await settlePlanningGuard();
+    assert.deepEqual(rig.take(), []);
+    rig.tick();
+    assert.equal(guard.requests.length, 2, 'the new entry obtains its own scope decision');
+    assert.deepEqual(rig.take(), []);
+    guard.requests[1].respond(false);
+    await settlePlanningGuard();
+    assert.equal(rig.store.snapshot().phase, 'cancelled');
+    assert.deepEqual(rig.take(), []);
+});
+
+test('a scope guard rejection or exception fails closed without scope writes', async () => {
+    for (const guardPlanningScopeChange of [() => { throw new Error('guard unavailable'); }, () => Promise.reject(new Error('guard unavailable'))]) {
+        const rig = createRig({ link: LINK, options: { guardPlanningScopeChange } });
+        rig.tick(); await settlePlanningGuard();
+        assert.deepEqual(rig.take(), []);
+        assert.equal(rig.store.snapshot().phase, 'cancelled');
+    }
+});
+
+test('wrong-era Board links clear the prior strict scope and report the unavailable mode', () => {
+    for (const [scope, readiness] of [['component', { componentReadiness: 'scope_model_mismatch', allocationReadiness: 'ready', allWorkReadiness: 'ready' }], ['allocation', { componentReadiness: 'ready', allocationReadiness: 'scope_model_mismatch', allWorkReadiness: 'ready' }]]) {
+        const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope }, options: { engSprintSelectorState: readiness } });
+        rig.tick(); rig.take(); rig.tick();
+        assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+        for (let step = 0; step < 4; step++) rig.tick();
+        assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+    }
+});
+
+test('real Board readiness clears a prior All work scope for wrong-era links with incomplete setup', () => {
+    for (const [workModel, scope] of [['rnd_2027', 'component'], ['legacy', 'allocation']]) {
+        for (const setup of [
+            { group: { board: { columns: [] }, teamIds: ['t1'] }, savedProjects: ['PROJECT'] },
+            { group: { board: { columns: [{ id: 'todo' }] }, teamIds: ['t1'] }, savedProjects: [] },
+        ]) {
+            const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope } });
+            let strictScope = 'all_work';
+            rig.o.setBoardStrictScope = value => { strictScope = value; rig.log.push(['setBoardStrictScope', value]); };
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState({
+                boardMode: true, catalogReady: true, bootstrapStatus: 'ready', capability: true,
+                groupsLoading: false, groupsFailed: false, savedBoardId: '', workModel, ...setup,
+            });
+            rig.tick(); rig.take(); rig.tick();
+            assert.equal(strictScope, '', `${workModel}: wrong-era link falls back to Sprint despite incomplete setup`);
+            assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+            for (let step = 0; step < 4; step++) rig.tick();
+            assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+        }
+    }
+});
+
+test('real Board readiness holds wrong-era links until catalog and configuration metadata settle', () => {
+    for (const [workModel, scope] of [['rnd_2027', 'component'], ['legacy', 'allocation']]) {
+        for (const pending of [{ catalogReady: false }, { bootstrapStatus: 'loading' }, { groupsLoading: true }]) {
+            const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope } });
+            const input = {
+                boardMode: true, catalogReady: true, bootstrapStatus: 'ready', capability: true,
+                groupsLoading: false, groupsFailed: false, savedBoardId: '', savedProjects: ['PROJECT'],
+                group: { board: { columns: [] }, teamIds: ['t1'] }, workModel,
+            };
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState({ ...input, ...pending });
+            rig.tick(); rig.take(); rig.tick();
+            assert.deepEqual(rig.take(), [], 'unresolved metadata cannot apply or drop the link scope');
+            assert.equal(rig.store.snapshot().phase, 'running');
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState(input);
+            rig.tick();
+            assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+            for (let step = 0; step < 4; step++) rig.tick();
+            assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+        }
     }
 });

@@ -62,22 +62,12 @@ export function useScenarioDraft({
         setScenarioEditMode,
         scenarioUndoStackRef,
         setScenarioUndoVersion,
-        scenarioRealtimeCsrfRef,
     } = scenarioState;
     const fetchScenarioCsrfToken = () =>
         fetchCsrfToken(BACKEND_URL).then(({ csrfToken }) => csrfToken || '');
 
     const fetchScenarioDraft = (scopeKey, signal) =>
         requestScenarioDraft(BACKEND_URL, scopeKey, { signal });
-
-    const fetchScenarioRealtimeCsrfToken = async (forceRefresh = false) => {
-        if (!forceRefresh && scenarioRealtimeCsrfRef.current) {
-            return scenarioRealtimeCsrfRef.current;
-        }
-        const token = await fetchScenarioCsrfToken();
-        scenarioRealtimeCsrfRef.current = token;
-        return token;
-    };
 
     const pauseScenarioRealtime = (message) => {
         setScenarioDraftRealtimeStatus({
@@ -92,11 +82,11 @@ export function useScenarioDraft({
             return requestScenarioRealtimeJson(BACKEND_URL, draftId, path, payload, { csrfToken });
         };
         try {
-            return await postWithToken(await fetchScenarioRealtimeCsrfToken(false));
+            return await postWithToken(await fetchScenarioCsrfToken());
         } catch (err) {
             if (err.status === 403 && err.payload?.error === 'csrf_required') {
                 try {
-                    return await postWithToken(await fetchScenarioRealtimeCsrfToken(true));
+                    return await postWithToken(await fetchScenarioCsrfToken());
                 } catch (retryErr) {
                     if (isAuthenticationRequiredError(retryErr)) throw retryErr;
                     pauseScenarioRealtime('Realtime paused; session security expired. Keep editing local-only, then refresh or sign in again.');
@@ -277,13 +267,13 @@ export function useScenarioDraft({
                     if (recovery?.scenario) {
                         applyScenarioConnectionRecovery({
                             activeDraft, idleActionState: scenarioDraftIdleActionState(), recovery,
+                            pendingRecoveryRef: pendingConnectionRecoveryRef,
                             releaseOwnership: releaseConnectionRecoveryOwnership,
                             scenarioScopeKey, scopePayload, setConnectionRecoveryNotice,
                             setScenarioDraftMeta, setScenarioEditMode,
                             setScenarioOverrides, setScenarioUndoVersion, scenarioTimelineRef,
                             scenarioUndoStackRef, settingsDiscardedNotice: settingsDiscardedRecoveryNotice(), versions,
                         });
-                        pendingConnectionRecoveryRef.current = null;
                     } else if (activeDraft) {
                         const overrides = normalizeScenarioDraftOverrides(activeDraft.overrides || {});
                         setScenarioOverrides(overrides);

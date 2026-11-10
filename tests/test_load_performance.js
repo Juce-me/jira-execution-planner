@@ -78,7 +78,7 @@ test('first lane render is separate from complete group render', async () => {
     assert.equal(samples[0].durationMs, 500);
 });
 
-for (const scopeType of ['all_work', 'component']) {
+for (const scopeType of ['all_work', 'component', 'allocation']) {
     test(`Board ${scopeType} measurement emits one closed global observation after paint`, async () => {
         let now = 0;
         const paints = [];

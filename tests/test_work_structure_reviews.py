@@ -1,12 +1,11 @@
-"""Isolated review namespaces for the quarterly work-structure model (Task 5B/5C/5E, SQLite part).
+"""Isolated review namespaces for the quarterly work-structure model (Task 5B/5C/5E).
 
-SQLite evidence only: it proves constraints, migration retention, isolation and cap arithmetic, not
-PostgreSQL row-lock concurrency (see tests/test_sprint_review_postgresql.py, opt-in). All data is synthetic.
+Runs on per-test PostgreSQL databases: it proves constraints, migration retention, isolation and cap
+arithmetic, not row-lock concurrency (see tests/test_sprint_review_postgresql.py, opt-in). All data is synthetic.
 """
 from copy import deepcopy
 import os
 from pathlib import Path
-import tempfile
 import unittest
 import uuid
 from unittest.mock import Mock, patch
@@ -18,6 +17,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.db import engine as db_engine, models
 from backend.services import sprint_review as review
+from tests.postgres_test_db import fresh_database_url
 from tests.test_sprint_review import ReviewFixture
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -185,7 +185,7 @@ class NamespaceIsolationTests(NamespaceFixture, unittest.TestCase):
         writes = [s for s in statements if s.lstrip().upper().startswith(('INSERT', 'SELECT')) and 'workspace_group_review_schemas' in s
                   and 'workspace_group_configs' not in s]
         shape = [('INSERT' if s.lstrip().upper().startswith('INSERT') else 'SELECT',
-                  'configuration_id IS NULL' in s, 'configuration_id = ?' in s) for s in writes]
+                  'configuration_id IS NULL' in s, 'configuration_id = %(' in s) for s in writes]
         self.assertEqual(shape[:4], [('INSERT', False, False), ('SELECT', True, False),
                                      ('INSERT', False, False), ('SELECT', False, True)], statements)
         self.assertEqual(self.schema_rows(), [('', 0, 0), (CFG, 1, 1)])
@@ -358,10 +358,15 @@ class MigrationTests(unittest.TestCase):
     VIEW_OLD = 'SELECT id, workspace_id, group_id, sprint_id, sprint_order, layouts, view_revision FROM group_sprint_review_views ORDER BY id'
     LEGACY_ALL = ('SELECT id, workspace_id, sprint_id, schema_revision, columns, layouts FROM workspace_sprint_reviews ORDER BY id',
                   'SELECT id, review_id, issue_id, row_kind, column_id, value, revision FROM sprint_review_cells ORDER BY id')
+    REVIEW_TABLES = "('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views')"
+    SHAPE = ("SELECT table_name, concat_ws(' ', ordinal_position, column_name, data_type, is_nullable, column_default) "
+             f"FROM information_schema.columns WHERE table_name IN {REVIEW_TABLES} "
+             f"UNION ALL SELECT tablename, indexdef FROM pg_indexes WHERE tablename IN {REVIEW_TABLES} "
+             "UNION ALL SELECT conrelid::regclass::text, conname || ' ' || pg_get_constraintdef(oid) FROM pg_constraint "
+             f"WHERE conrelid::regclass::text IN {REVIEW_TABLES} ORDER BY 1, 2")
 
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory(dir='tests')
-        self.url = 'sqlite+pysqlite:///' + str(Path(self.temp.name).resolve() / 'migrate.db')
+        self.url = fresh_database_url(self.addCleanup)
         self.env = patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.url, 'DATABASE_CONNECTION_MODE': 'url'})
         self.env.start()
         self.config = Config(str(ROOT / 'backend' / 'db' / 'alembic.ini'))
@@ -371,7 +376,6 @@ class MigrationTests(unittest.TestCase):
     def tearDown(self):
         self.env.stop()
         db_engine.dispose_engines()
-        self.temp.cleanup()
 
     def sql(self, statement, **params):
         with db_engine.session_scope(self.url) as session:
@@ -429,17 +433,18 @@ class MigrationTests(unittest.TestCase):
         self.assertEqual({c['name'] for c in inspector.get_unique_constraints('workspace_group_review_schemas')}, set())
         self.assertEqual({c['name'] for c in inspector.get_unique_constraints('group_sprint_review_views')}, set())
         # The migrated database behaves like a fresh one: NULL uniqueness, an Initiative cell and a new namespace row.
+        cfg_row = uuid.uuid4()
         with self.assertRaises(IntegrityError):
             self.sql("INSERT INTO workspace_group_review_schemas (id, workspace_id, group_id, schema_revision, columns) "
-                     "VALUES ('dup', :w, 'group-x', 0, '[]')", w=workspace)
+                     "VALUES (:i, :w, 'group-x', 0, '[]')", i=str(uuid.uuid4()), w=workspace)
         self.sql("INSERT INTO workspace_group_review_schemas (id, workspace_id, group_id, configuration_id, schema_revision, columns) "
-                 "VALUES ('cfg-row', :w, 'group-x', 'cfg-1', 0, '[]')", w=workspace)
+                 "VALUES (:i, :w, 'group-x', 'cfg-1', 0, '[]')", i=str(cfg_row), w=workspace)
         self.sql("INSERT INTO group_review_cells (id, schema_id, issue_id, row_kind, column_id, value, revision) "
-                 "VALUES ('cell-i', 'cfg-row', '900', 'initiative', 'c9', 'v', 1)")
+                 "VALUES (:i, :s, '900', 'initiative', 'c9', 'v', 1)", i=str(uuid.uuid4()), s=str(cfg_row))
         with self.assertRaises(IntegrityError):
             self.sql("INSERT INTO workspace_group_review_schemas (id, workspace_id, group_id, configuration_id, schema_revision, columns) "
-                     "VALUES ('cfg-dup', :w, 'group-x', 'cfg-1', 0, '[]')", w=workspace)
-        self.assertEqual([row for row in self.snapshot()['schema'] if row[0] != 'cfg-row'], before['schema'])
+                     "VALUES (:i, :w, 'group-x', 'cfg-1', 0, '[]')", i=str(uuid.uuid4()), w=workspace)
+        self.assertEqual([row for row in self.snapshot()['schema'] if row[0] != cfg_row], before['schema'])
 
     def test_downgrade_without_new_data_restores_the_previous_shape_and_keeps_legacy_data(self):
         command.upgrade(self.config, PREVIOUS_HEAD)
@@ -456,26 +461,28 @@ class MigrationTests(unittest.TestCase):
     def test_downgrade_refuses_every_kind_of_new_data_before_changing_anything(self):
         for label, statement in (
                 ('schema', "INSERT INTO workspace_group_review_schemas (id, workspace_id, group_id, configuration_id, schema_revision, columns) "
-                           "VALUES ('n1', :w, 'group-z', 'cfg-1', 0, '[]')"),
+                           "VALUES ('00000000-0000-0000-0000-0000000000a1', :w, 'group-z', 'cfg-1', 0, '[]')"),
                 ('view', "INSERT INTO group_sprint_review_views (id, workspace_id, group_id, sprint_id, sprint_order, configuration_id, quarter_ordinal, layouts, view_revision) "
-                         "VALUES ('n2', :w, 'group-x', '77', :o, 'cfg-1', 8104, '{}', 1)"),
+                         "VALUES ('00000000-0000-0000-0000-0000000000a2', :w, 'group-x', '77', :o, 'cfg-1', 8104, '{}', 1)"),
                 ('ordinal only', "UPDATE group_sprint_review_views SET quarter_ordinal = 8104 WHERE sprint_id = '17'"),
                 ('initiative cell', "INSERT INTO group_review_cells (id, schema_id, issue_id, row_kind, column_id, value, revision) "
-                                    "SELECT 'n3', id, '900', 'initiative', 'c', 'v', 1 FROM workspace_group_review_schemas LIMIT 1")):
+                                    "SELECT '00000000-0000-0000-0000-0000000000a3', id, '900', 'initiative', 'c', 'v', 1 FROM workspace_group_review_schemas LIMIT 1")):
             with self.subTest(label=label):
                 command.upgrade(self.config, PREVIOUS_HEAD)
                 workspace = self.populate()
                 command.upgrade(self.config, HEAD)
                 self.sql(statement, w=workspace, o=review.sprint_order('77'))
-                shape = self.sql("SELECT sql FROM sqlite_master WHERE tbl_name IN ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views') ORDER BY name")
+                shape = self.sql(self.SHAPE)
                 rows = self.sql(self.CELL_ALL), self.sql(self.SCHEMA_OLD), self.sql(self.VIEW_OLD)
                 with self.assertRaisesRegex(RuntimeError, 'Refusing to downgrade'):
                     command.downgrade(self.config, PREVIOUS_HEAD)
                 self.assertEqual(self.sql('SELECT version_num FROM alembic_version'), [(HEAD,)])
-                self.assertEqual(self.sql("SELECT sql FROM sqlite_master WHERE tbl_name IN ('workspace_group_review_schemas', 'group_review_cells', 'group_sprint_review_views') ORDER BY name"), shape)
+                self.assertEqual(self.sql(self.SHAPE), shape)
                 self.assertEqual((self.sql(self.CELL_ALL), self.sql(self.SCHEMA_OLD), self.sql(self.VIEW_OLD)), rows)
                 db_engine.dispose_engines()
-                os.remove(Path(self.temp.name) / 'migrate.db')
+                # Each kind starts from an empty database.
+                self.url = os.environ['DATABASE_URL'] = fresh_database_url(self.addCleanup)
+                self.config.set_main_option('sqlalchemy.url', self.url)
 
     def test_migrated_database_serves_both_namespaces_through_the_service(self):
         command.upgrade(self.config, HEAD)
@@ -494,7 +501,7 @@ class MigrationTests(unittest.TestCase):
         child = column('epic', 'Child')
         fixture.add_columns(child)
         fixture.nsave([{'issueId': '101', 'rowKind': 'epic', 'columnId': child['id'], 'value': '2', 'baseRevision': 0}], base=1)
-        self.assertEqual(self.sql('SELECT configuration_id, schema_revision FROM workspace_group_review_schemas ORDER BY configuration_id'),
+        self.assertEqual(self.sql('SELECT configuration_id, schema_revision FROM workspace_group_review_schemas ORDER BY configuration_id NULLS FIRST'),
                          [(None, 0), (CFG, 1)])
 
 

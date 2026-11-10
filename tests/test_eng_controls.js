@@ -34,6 +34,17 @@ function props(surface) {
         setTeamDropdownQuery: noop, setShowTeamDropdown: noop, selectedTeamsLabel: 'Synthetic team', longestTeamOptionLabel: 'Longest synthetic team',
         filteredTeamOptions: [{ id: 'one', name: 'Synthetic team' }], selectedTeamSet: new Set(['one']), toggleTeamSelection: noop };
 }
+test('DELIVERY Board selection keeps its Allocation label while option search is filtered', () => {
+    const kit = load('EngControls.jsx');
+    for (const [componentScopeLabel, expected] of [['Allocation', 'Allocation'], ['Component', 'Component']]) {
+        const html = renderToString(React.createElement(kit.SprintControl, {
+            ...props('main'), showBoard: true, boardStrictScope: expected === 'Allocation' ? 'allocation' : 'component',
+            componentScopeLabel, sprintSearch: 'no matching option', getSprintSelectorOptions: () => [],
+        }));
+        assert.match(html, new RegExp(`>${expected}<`));
+    }
+});
+
 for (const surface of ['main', 'compact']) {
     for (const [name, label, className] of [['SearchControl', 'Find', 'control-search active-filter applied-filter'], ['SprintControl', 'Sprint', 'sprint-dropdown sprint-selector-control'],
         ['GroupControl', 'Group', 'group-control'], ['TeamControl', 'Teams', 'team-dropdown header-filter-dropdown']]) {
@@ -65,7 +76,7 @@ function epicProps() {
         statusTransitions: { activeSingleIssueTarget: null }, priorityTransitions: { activePriorityTarget: null }, projectTrackTransitions: { activeProjectTrackTarget: null }, issueFieldEdits: { activeEditor: null },
         issueFieldEditsEnabled: false, jiraUrl: 'https://jira.example', excludedEpicSet: new Set(), normalizeEpicKey: String, stickyEpicFocusKey: null, epicRefMap: { current: new Map() },
         statusTransitionEnabled: false, renderPriorityIcon: () => null,
-        showStats: false, showPlanning: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() }, selectedTasks: {}, getTeamInfo: () => ({}),
+        showStats: false, isEpicRefreshMode: false, epicRefresh: { epicStates: {}, leavingKeys: new Set() }, getTeamInfo: () => ({}),
         shouldRenderIssueDependencies: false, storySubtasksByKey: {}, onboardingPreviewSession: false,
         entityNames: { model: 'legacy', child: 'Story', childPlural: 'Stories', parent: 'Epic', parentPlural: 'Epics', childLevel: 0, parentLevel: 1 } };
 }
@@ -76,7 +87,7 @@ test('EpicBlock SSR preserves keyed root status/person metadata and fallback bra
     for (const token of ['data-epic-key="SYN-1"', 'epic-header', 'Synthetic epic', 'Synthetic Person', 'SP: 5.0', 'epic-status-value', 'In Progress']) assert.ok(html.includes(token), token);
     const fallback = renderToString(React.createElement(EpicBlock, { ...values, epicGroup: { key: 'NO_EPIC', tasks: [] } }));
     assert.ok(fallback.includes('No Epic Linked')); assert.ok(fallback.includes('Unassigned')); assert.equal(fallback.includes('epic-status-value'), false);
-    const included = renderToString(React.createElement(EpicBlock, { ...values, showPlanning: true, canToggleSharedGroupExcludedCapacity: false, canEditSharedConfiguration: false }));
+    const included = renderToString(React.createElement(EpicBlock, { ...values, showStats: true, canToggleSharedGroupExcludedCapacity: false, canEditSharedConfiguration: false }));
     assert.match(included, /epic-stat-toggle active/); assert.match(included, /disabled=""/); assert.ok(included.includes('Included'));
 });
 test('App returns sibling-keyed EpicBlock and keeps the explicit props bag after refresh initialization', () => {
@@ -208,10 +219,8 @@ const expectedProps = {
         "renderEpicShareControl",
         "renderPriorityIcon",
         "retryStorySubtasks",
-        "selectedTasks",
         "shouldRenderIssueDependencies",
         "showGroupManage",
-        "showPlanning",
         "showStats",
         "statusTransitionEnabled",
         "statusTransitionSourceSurface",
@@ -219,8 +228,7 @@ const expectedProps = {
         "stickyEpicFocusKey",
         "storySubtasksByKey",
         "toggleSharedGroupExcludedCapacityEpic",
-        "toggleStorySubtasks",
-        "toggleTaskSelection"
+        "toggleStorySubtasks"
     ]
 };
 test('all six component signatures preserve every explicit closure binding', () => {

@@ -1,5 +1,4 @@
 import os
-import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +12,7 @@ from backend.config.repository import (
     selected_config_storage_backend,
     validate_config_storage_startup,
 )
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -27,8 +27,13 @@ def migration_config(database_url):
 
 
 class ConfigStorageSelectorTests(unittest.TestCase):
-    def test_default_storage_backend_is_jsonfile(self):
-        self.assertEqual(selected_config_storage_backend({}), 'jsonfile')
+    def test_new_default_storage_backend_is_db(self):
+        self.assertEqual(selected_config_storage_backend({}), 'db')
+
+    def test_explicit_jsonfile_serving_profile_is_rejected(self):
+        with patch('backend.config.repository._migrations_at_head', side_effect=AssertionError('No database I/O')):
+            with self.assertRaises(ConfigStorageError):
+                validate_config_storage_startup({'JIRA_AUTH_MODE': 'atlassian_oauth', 'CONFIG_STORAGE_BACKEND': 'jsonfile'})
 
     def test_invalid_storage_backend_is_rejected(self):
         with self.assertRaises(ConfigStorageError):
@@ -59,7 +64,7 @@ class ConfigStorageSelectorTests(unittest.TestCase):
     def test_db_storage_passes_environment_to_migration_check(self):
         env = {
             'CONFIG_STORAGE_BACKEND': 'db',
-            'DATABASE_URL': 'sqlite+pysqlite:///:memory:',
+            'DATABASE_URL': 'postgresql+psycopg://fixture@localhost/fixture',
         }
 
         with patch('backend.config.repository._migrations_at_head', return_value=True) as migrations:
@@ -67,18 +72,29 @@ class ConfigStorageSelectorTests(unittest.TestCase):
 
         migrations.assert_called_once_with(env['DATABASE_URL'], environ=env)
 
-    def test_db_storage_requires_migrations_at_head(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'config-storage.db')}"
-            env = {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': database_url}
-            config = migration_config(database_url)
+    def test_db_storage_rejects_a_non_postgresql_url_before_the_migration_check(self):
+        env = {
+            'CONFIG_STORAGE_BACKEND': 'db',
+            'DATABASE_URL': 'mysql+pymysql://fixture@localhost/fixture',
+        }
 
-            command.upgrade(config, '20260511_0002')
-            with self.assertRaises(ConfigStorageError):
+        with patch('backend.config.repository._migrations_at_head') as migrations:
+            with self.assertRaisesRegex(ConfigStorageError, 'PostgreSQL is the only supported database'):
                 validate_config_storage_startup(env)
 
-            command.upgrade(config, 'head')
+        migrations.assert_not_called()
+
+    def test_db_storage_requires_migrations_at_head(self):
+        database_url = fresh_database_url(self.addCleanup)
+        env = {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': database_url}
+        config = migration_config(database_url)
+
+        command.upgrade(config, '20260511_0002')
+        with self.assertRaises(ConfigStorageError):
             validate_config_storage_startup(env)
+
+        command.upgrade(config, 'head')
+        validate_config_storage_startup(env)
 
     def test_dashboard_config_requires_explicit_json_source_without_request_context_in_db_mode(self):
         with patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db'}, clear=False), \

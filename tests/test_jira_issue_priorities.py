@@ -305,42 +305,21 @@ class NoRequestContextRealAuthWrapperTests(unittest.TestCase):
     """
 
     def setUp(self):
-        self.session_id = "session-priorities"
-        jira_server.OAUTH_TOKEN_STORE[self.session_id] = {
-            "access_token": "access-123",
-            "refresh_token": "refresh-123",
-            "expires_at": 9999999999,
-            "cloudid": "cloud-123",
-            "site_url": "https://example.atlassian.net",
-            "account_id": "account-123",
-            "stored_at": 9999999999,
-        }
-        jira_server.OAUTH_REFRESH_LOCKS.setdefault(self.session_id, threading.Lock())
-
-    def tearDown(self):
-        jira_server.OAUTH_TOKEN_STORE.clear()
-        jira_server.OAUTH_REFRESH_LOCKS.clear()
+        from tests.oauth_test_helpers import set_up_db_oauth, install_oauth_session
+        from backend.auth.db_context import resolve_db_request_auth_context
+        set_up_db_oauth(self)
+        client = jira_server.app.test_client()
+        payload = install_oauth_session(client)
+        self.auth_context = resolve_db_request_auth_context(payload)
 
     def _context(self):
-        return RequestAuthContext(
-            auth_mode="atlassian_oauth",
-            user_id="local-oauth-user:account-123",
-            stable_subject="account-123",
-            atlassian_account_id="account-123",
-            workspace_id="workspace-1",
-            auth_connection_id=f"local-oauth-connection:{self.session_id}",
-            cloud_id="cloud-123",
-            site_url="https://example.atlassian.net",
-            token_version="1",
-            account_status="active",
-            is_admin=True,
-        )
+        return self.auth_context
 
     def _assert_bearer_only(self, header_sets):
         self.assertTrue(header_sets)
         for headers in header_sets:
-            self.assertEqual(headers.get("Authorization"), "Bearer access-123")
-            self.assertFalse(str(headers.get("Authorization", "")).startswith("Basic "))
+            self.assertEqual(headers.get('Authorization'), 'Bearer access-123')
+            self.assertFalse(str(headers.get('Authorization', '')).startswith('Basic '))
 
     def test_options_flow_uses_oauth_bearer_from_context(self):
         request_headers = []

@@ -6,8 +6,12 @@ export const fetchAuthStatus = (backendUrl) =>
         analytics: { apiSurface: 'auth_status', featureName: 'auth' },
     });
 
+// Each token is single-use: fetch a fresh one for every write and never share or cache it.
 export const fetchCsrfToken = (backendUrl) =>
-    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', { cache: 'no-cache' });
+    getJson(`${backendUrl}/api/auth/csrf`, 'CSRF token', {
+        cache: 'no-cache',
+        headers: { 'X-Requested-With': 'jira-execution-planner' },
+    });
 
 export const refreshAuthSession = (backendUrl) =>
     apiFetch(`${backendUrl}/api/auth/refresh`, {

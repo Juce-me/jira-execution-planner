@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
@@ -11,6 +9,7 @@ from sqlalchemy.exc import IntegrityError
 
 from backend.db import engine as db_engine
 from backend.db import models
+from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -26,84 +25,81 @@ def migration_config(database_url):
 
 class ViewConfigMigrationTests(unittest.TestCase):
     def test_user_config_migration_adds_tables_and_default_constraint(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            database_url = f"sqlite+pysqlite:///{os.path.join(tmpdir, 'view-config-migration.db')}"
-            config = migration_config(database_url)
+        database_url = fresh_database_url(self.addCleanup)
+        config = migration_config(database_url)
 
-            command.upgrade(config, '20260511_0002')
-            engine = create_engine(database_url, future=True)
-            try:
-                self.assertNotIn('view_configs', inspect(engine).get_table_names())
-            finally:
-                engine.dispose()
+        command.upgrade(config, '20260511_0002')
+        engine = create_engine(database_url, future=True)
+        try:
+            self.assertNotIn('view_configs', inspect(engine).get_table_names())
+        finally:
+            engine.dispose()
 
-            command.upgrade(config, 'head')
-            engine = create_engine(database_url, future=True)
-            try:
-                inspector = inspect(engine)
-                tables = set(inspector.get_table_names())
-                self.assertIn('view_configs', tables)
-                self.assertIn('view_config_versions', tables)
-                view_columns = {column['name'] for column in inspector.get_columns('view_configs')}
-                version_columns = {column['name'] for column in inspector.get_columns('view_config_versions')}
-                indexes = {index['name']: index for index in inspector.get_indexes('view_configs')}
-                self.assertTrue({
-                    'workspace_id',
-                    'owner_user_id',
-                    'view_type',
-                    'payload',
-                    'is_default',
-                    'source_path',
-                    'source_hash',
-                    'archived_at',
-                }.issubset(view_columns))
-                self.assertTrue({'view_config_id', 'version_number', 'payload', 'created_by'}.issubset(version_columns))
-                self.assertIn('uq_view_configs_active_default', indexes)
-                self.assertTrue(indexes['uq_view_configs_active_default']['unique'])
+        command.upgrade(config, 'head')
+        engine = create_engine(database_url, future=True)
+        try:
+            inspector = inspect(engine)
+            tables = set(inspector.get_table_names())
+            self.assertIn('view_configs', tables)
+            self.assertIn('view_config_versions', tables)
+            view_columns = {column['name'] for column in inspector.get_columns('view_configs')}
+            version_columns = {column['name'] for column in inspector.get_columns('view_config_versions')}
+            indexes = {index['name']: index for index in inspector.get_indexes('view_configs')}
+            self.assertTrue({
+                'workspace_id',
+                'owner_user_id',
+                'view_type',
+                'payload',
+                'is_default',
+                'source_path',
+                'source_hash',
+                'archived_at',
+            }.issubset(view_columns))
+            self.assertTrue({'view_config_id', 'version_number', 'payload', 'created_by'}.issubset(version_columns))
+            self.assertIn('uq_view_configs_active_default', indexes)
+            self.assertTrue(indexes['uq_view_configs_active_default']['unique'])
 
-                with engine.begin() as connection:
-                    connection.execute(text(
-                        "insert into users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
-                        "values ('user-1', 'atlassian', 'account-1', 'user', 'active', 'test', '2026-05-11', '2026-05-11')"
-                    ))
-                    connection.execute(text(
-                        "insert into workspaces (id, environment_key, name, jira_site_url, jira_cloud_id, created_by, created_at, updated_at) "
-                        "values ('workspace-1', 'local', 'Local', 'https://example.atlassian.net', 'cloud-1', 'test', '2026-05-11', '2026-05-11')"
-                    ))
+            with engine.begin() as connection:
+                connection.execute(text(
+                    "insert into users (id, external_provider, external_subject, account_type, status, created_by, created_at, updated_at) "
+                    "values ('user-1', 'atlassian', 'account-1', 'user', 'active', 'test', '2026-05-11', '2026-05-11')"
+                ))
+                connection.execute(text(
+                    "insert into workspaces (id, environment_key, name, jira_site_url, jira_cloud_id, created_by, created_at, updated_at) "
+                    "values ('workspace-1', 'local', 'Local', 'https://example.atlassian.net', 'cloud-1', 'test', '2026-05-11', '2026-05-11')"
+                ))
+                connection.execute(text(
+                    "insert into view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
+                    "values ('view-1', 'workspace-1', 'user-1', 'Default', 'epm', 'configuration', 1, '{}', 'private', true, '2026-05-11', '2026-05-11')"
+                ))
+                with self.assertRaises(IntegrityError):
                     connection.execute(text(
                         "insert into view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
-                        "values ('view-1', 'workspace-1', 'user-1', 'Default', 'epm', 'configuration', 1, '{}', 'private', 1, '2026-05-11', '2026-05-11')"
+                        "values ('view-2', 'workspace-1', 'user-1', 'Duplicate', 'eng', 'configuration', 1, '{}', 'private', true, '2026-05-11', '2026-05-11')"
                     ))
-                    with self.assertRaises(IntegrityError):
-                        connection.execute(text(
-                            "insert into view_configs (id, workspace_id, owner_user_id, name, view_type, mode_policy, payload_version, payload, visibility, is_default, created_at, updated_at) "
-                            "values ('view-2', 'workspace-1', 'user-1', 'Duplicate', 'eng', 'configuration', 1, '{}', 'private', 1, '2026-05-11', '2026-05-11')"
-                        ))
-            finally:
-                engine.dispose()
+        finally:
+            engine.dispose()
 
-            command.downgrade(config, '20260511_0002')
-            engine = create_engine(database_url, future=True)
-            try:
-                tables = set(inspect(engine).get_table_names())
-                self.assertNotIn('view_configs', tables)
-                self.assertNotIn('view_config_versions', tables)
-                self.assertIn('auth_connections', tables)
-            finally:
-                engine.dispose()
+        command.downgrade(config, '20260511_0002')
+        engine = create_engine(database_url, future=True)
+        try:
+            tables = set(inspect(engine).get_table_names())
+            self.assertNotIn('view_configs', tables)
+            self.assertNotIn('view_config_versions', tables)
+            self.assertIn('auth_connections', tables)
+        finally:
+            engine.dispose()
 
 
 class ViewConfigModelTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'view-configs.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed_user_workspace(self):
         with self.factory() as session:

@@ -7,6 +7,7 @@ export default function PlanningProjectSplitBar({
     // Ad Hoc SP per side ({ PRODUCT, TECH, NONE }); DELIVERY Ad Hoc follows its Allocation side.
     adHocStats = {},
     compact = false,
+    childPlural = 'stories',
 }) {
     const projectTotal = selectedProjectEntries.reduce((sum, e) => sum + e.storyPoints, 0);
     const productEntry = selectedProjectEntries.find(e => e.id === 'PRODUCT');
@@ -40,12 +41,12 @@ export default function PlanningProjectSplitBar({
         <>
             {!compact && <div className="planning-stats compact" style={{ marginTop: '0.35rem' }}>
                 <div className="planning-stat">
-                    <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Selected effort excludes excluded epics.">Selected SP by Project:</span>
+                    <span className="planning-stat-label" data-tooltip="Planning capacity split: 70% Product / 30% Tech (tech-heavy teams may aim for 10% / 90%). Planned effort excludes excluded epics.">Planned SP by Project:</span>
                 </div>
             </div>}
             {projectTotal === 0 && excludedTotal === 0 ? (
                 <div className="planning-stat" style={{ marginTop: '0.3rem' }}>
-                    <span className="planning-stat-value">No tasks selected</span>
+                    <span className="planning-stat-value">No planned {childPlural.toLowerCase()}</span>
                 </div>
             ) : (
                 <div className="project-bar-graph">

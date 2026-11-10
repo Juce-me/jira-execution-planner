@@ -2,6 +2,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const esbuild = require('esbuild');
+const runtime = { exports: {} };
+new Function('module', esbuild.buildSync({
+    entryPoints: [path.join(__dirname, '..', 'frontend', 'src', 'dashboardRuntime.js')],
+    bundle: true, write: false, format: 'cjs', platform: 'browser',
+}).outputFiles[0].text)(runtime);
 
 // Characterizes two App() closures by running their real source with stubbed dependencies, the
 // same technique as tests/test_dashboard_freshness_interactions.js. The first block pins the
@@ -24,7 +30,8 @@ const CLOSURES = ['normalizeSelectedTeams', 'persistTeamSelection', 'commitSprin
 function loadClosures(deps) {
     const present = CLOSURES.filter(name => appClosure(name));
     const body = present.map(appClosure).join('\n');
-    return new Function(...Object.keys(deps), `${body}\nreturn { ${present.join(', ')} };`)(...Object.values(deps));
+    const bindings = { getLocalStorage: () => runtime.exports.getLocalStorage(deps.window), ...deps };
+    return new Function(...Object.keys(bindings), `${body}\nreturn { ${present.join(', ')} };`)(...Object.values(bindings));
 }
 
 let persistence;

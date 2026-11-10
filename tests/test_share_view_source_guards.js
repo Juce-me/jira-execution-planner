@@ -116,7 +116,8 @@ test('the alert flag pairs cover the ten alert categories, each with its own val
 });
 
 test('the ENG task-load effect holds for a pending link, with the Planning recovery capsule as the only exception', () => {
-    const head = between(dashboard, "if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;", 'const pendingPlanningResume = pendingPlanningAuthResumeRef.current;');
+    const head = between(dashboard, 'const recoveringPlan = Boolean(pendingPlanningAuthResumeRef.current);', 'const pendingPlanningResume = pendingPlanningAuthResumeRef.current;');
+    assert.ok(head.includes("if (!recoveringPlan && (selectedView !== 'eng' || isStatsSourceOnlyStatsView || boardScopeRequested)) return;"));
     assert.ok(head.includes('if (groupPreferences.onboardingRequired) {'));
     assert.ok(head.includes('if (shareViewHold && !pendingPlanningAuthResumeRef.current) {'));
     assert.ok(head.indexOf('if (groupsLoading) {') < head.indexOf('if (shareViewHold'));
@@ -124,13 +125,14 @@ test('the ENG task-load effect holds for a pending link, with the Planning recov
 });
 
 test('the Planning review read holds with the link, so it never reads the review of the recipient saved Sprint', () => {
-    const call = between(dashboard, 'const planningReview = usePlanningSprintReview({', '\n            });');
-    assert.ok(call.includes("active: selectedView === 'eng' && showPlanning && planningLayout === 'table' && engWorkspaceConfigured && !shareViewHold && reviewGroupReady, groupId: reviewGroupId,"));
-    assert.ok(dashboard.indexOf('const shareViewHold = useShareViewHold();') < dashboard.indexOf('const planningReview = usePlanningSprintReview({'));
+    const call = between(dashboard, 'const planningReviewOwner = usePlanningSprintReview({', '\n            });');
+    assert.ok(call.includes('(!shareViewHold || Boolean(pendingPlanningAuthResumeRef.current)) && reviewGroupReady'));
+    assert.ok(!call.includes("planningLayout === 'table'"), 'one inclusion owner serves the Planning table');
+    assert.ok(dashboard.indexOf('const shareViewHold = useShareViewHold();') < dashboard.indexOf('const planningReviewOwner = usePlanningSprintReview({'));
     // The review scope comes from the resolved group (#267), derived before the review hook runs.
     const scope = dashboard.indexOf('} = usePlanningGroupScope({ planningReviewGuardRef, activeGroup, groupsLoading,');
     assert.ok(scope > dashboard.indexOf('const activeGroup = React.useMemo(() => {'));
-    assert.ok(scope < dashboard.indexOf('const planningReview = usePlanningSprintReview({'));
+    assert.ok(scope < dashboard.indexOf('const planningReviewOwner = usePlanningSprintReview({'));
 });
 
 // Every setActiveGroupId writer, pinned by its code (#267). User-initiated changes go through the review guard;
@@ -219,7 +221,7 @@ test('the early link hooks precede both of their consumers and the Catch Up tour
     assert.ok(dashboard.indexOf('const shareViewTerminal = useShareViewApplyTerminal();') > early);
     assert.ok(dashboard.indexOf('const shareViewPlanningTableKey = useShareViewPlanningTableKey();') > early);
     assert.ok(early < dashboard.indexOf('const onboarding = useOnboardingController({'));
-    assert.ok(early < dashboard.indexOf("if (selectedView !== 'eng' || isStatsSourceOnlyStatsView) return;"));
+    assert.ok(early < dashboard.indexOf('const recoveringPlan = Boolean(pendingPlanningAuthResumeRef.current);'));
     assert.ok(between(dashboard, 'const onboarding = useOnboardingController({', 'trackSettingsAction,').includes('applyTerminal: shareViewTerminal,'));
     // The Planning table reads the link's Epics/Stories seed once, when it mounts, so the link remounts a table that is already open.
     assert.ok(dashboard.includes('<PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost}'));

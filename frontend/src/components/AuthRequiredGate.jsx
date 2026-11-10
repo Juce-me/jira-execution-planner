@@ -7,19 +7,25 @@ import {
 } from '../api/authRequired.js';
 import {
     claimAuthRecovery,
+    captureAuthResumeBeforeNavigation,
     consumeAuthRecoverySuccess,
     getAuthRecoveryStores,
     readLiveAuthRecoveryLease,
+    readPendingAuthRecoverySuccess,
 } from '../api/authRecoveryCoordinator.js';
 
 export default function AuthRequiredGate({ children }) {
     const recoveryLinkRef = React.useRef(null);
     const navigationStartedRef = React.useRef(false);
     const claimPendingRef = React.useRef(false);
+    const discardAcceptedRef = React.useRef(false);
+    const pendingDestinationRef = React.useRef(null);
+    const dialogRef = React.useRef(null);
     const initialAuthRequiredRef = React.useRef(readPendingAuthenticationRequired());
     const previousLockedRef = React.useRef(Boolean(initialAuthRequiredRef.current));
     const [claimPending, setClaimPending] = React.useState(false);
     const [recoveryRole, setRecoveryRole] = React.useState('');
+    const [preservationFailed, setPreservationFailed] = React.useState(false);
     const authRequired = React.useSyncExternalStore(
         React.useCallback((notify) => {
             window.addEventListener(AUTH_REQUIRED_EVENT, notify);
@@ -36,10 +42,23 @@ export default function AuthRequiredGate({ children }) {
         previousLockedRef.current = Boolean(authRequired);
     }, [authRequired]);
 
+    const preserveBeforeLeaving = React.useCallback((destination = null) => {
+        if (discardAcceptedRef.current || captureAuthResumeBeforeNavigation()) {
+            pendingDestinationRef.current = null;
+            setPreservationFailed(false);
+            return true;
+        }
+        pendingDestinationRef.current = destination;
+        setPreservationFailed(true);
+        return false;
+    }, []);
+
     const reconcilePersistedState = React.useCallback((stores) => {
         if (!authRequired || claimPendingRef.current || navigationStartedRef.current) return false;
         const liveLease = readLiveAuthRecoveryLease(stores.sharedStorage);
         setRecoveryRole(liveLease ? 'follower' : '');
+        const candidate = readPendingAuthRecoverySuccess(stores.sharedStorage, stores.tabStorage, { requestStartedAt: authRequired.requestStartedAt });
+        if (!candidate || !preserveBeforeLeaving('/')) return false;
         const success = consumeAuthRecoverySuccess(
             stores.sharedStorage,
             stores.tabStorage,
@@ -49,7 +68,7 @@ export default function AuthRequiredGate({ children }) {
         navigationStartedRef.current = true;
         window.location.assign('/');
         return true;
-    }, [authRequired]);
+    }, [authRequired, preserveBeforeLeaving]);
 
     React.useEffect(() => {
         if (!authRequired) return undefined;
@@ -67,6 +86,13 @@ export default function AuthRequiredGate({ children }) {
         const blockKeyboard = (event) => {
             const recoveryLink = event.target?.closest?.('.auth-required-action');
             if (recoveryLink && event.key === 'Enter') return;
+            if (event.key === 'Tab') {
+                const actions = [...(dialogRef.current?.querySelectorAll('.auth-required-action') || [])];
+                if (actions.length) {
+                    const current = actions.indexOf(document.activeElement);
+                    actions[(current + (event.shiftKey ? -1 : 1) + actions.length) % actions.length].focus();
+                }
+            }
             event.preventDefault();
             event.stopImmediatePropagation();
         };
@@ -82,6 +108,7 @@ export default function AuthRequiredGate({ children }) {
     const handleRecoveryClick = async (event) => {
         event.preventDefault();
         if (navigationStartedRef.current || claimPendingRef.current) return;
+        if (!preserveBeforeLeaving()) return;
         claimPendingRef.current = true;
         setClaimPending(true);
         const stores = getAuthRecoveryStores(window);
@@ -105,6 +132,20 @@ export default function AuthRequiredGate({ children }) {
         navigationStartedRef.current = true;
         window.location.assign(result.role === 'resume' ? '/' : loginUrl);
     };
+    const continueWithoutPreserving = async (event) => {
+        event.preventDefault();
+        if (navigationStartedRef.current || claimPendingRef.current) return;
+        discardAcceptedRef.current = true;
+        setPreservationFailed(false);
+        if (pendingDestinationRef.current === '/') {
+            const stores = getAuthRecoveryStores(window);
+            if (stores && reconcilePersistedState(stores)) return;
+            navigationStartedRef.current = true;
+            window.location.assign('/');
+            return;
+        }
+        await handleRecoveryClick(event);
+    };
     return (
         <>
             <div inert={authRequired ? '' : undefined} aria-hidden={authRequired ? 'true' : undefined}>
@@ -113,6 +154,7 @@ export default function AuthRequiredGate({ children }) {
             {authRequired && (
                 <div className="auth-required-backdrop">
                     <section
+                        ref={dialogRef}
                         className="auth-required-dialog"
                         role="alertdialog"
                         aria-modal="true"
@@ -125,6 +167,7 @@ export default function AuthRequiredGate({ children }) {
                                 ? 'Sign-in is continuing in another tab. This tab will resume automatically.'
                                 : 'Your session can no longer access this application. Sign in again to continue.'}
                         </p>
+                        {preservationFailed && <p role="alert">Your unsaved Planning changes could not be preserved in this tab. Stay here to retain them, or continue without preserving changes.</p>}
                         <a
                             className="auth-required-action"
                             href={loginUrl}
@@ -134,6 +177,7 @@ export default function AuthRequiredGate({ children }) {
                         >
                             Sign in again
                         </a>
+                        {preservationFailed && <a className="auth-required-action" href={pendingDestinationRef.current || loginUrl} onClick={continueWithoutPreserving}>Continue without preserving changes</a>}
                     </section>
                 </div>
             )}

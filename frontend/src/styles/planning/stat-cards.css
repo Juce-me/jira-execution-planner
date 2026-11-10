@@ -133,7 +133,8 @@
             font-size: 0.54rem;
             color: var(--text-secondary);
             margin-top: 0.08rem;
-            line-height: 1.05;
+            /* A whole-pixel line box that holds the font: Firefox rounds a fractional box's scrollHeight up (10 > 9). */
+            line-height: round(up, 1.2em, 1px);
         }
 
         .microbar-meta.over {
@@ -153,9 +154,18 @@
             min-width: 0;
         }
 
-        .team-stat-card.team-card.is-capacity-editing {
-            /* Task 0's original label/microbar/meta stack is 58.64px at the 16px root. */
-            min-height: 58.64px;
+        /* While editing, the bar and meta line are invisible sizers and the editor row overlays them from its static
+           position, so an open editor never changes the card's height (#323). */
+        .team-stat-card.team-card.is-capacity-editing .team-capacity-editor {
+            position: absolute;
+            /* Vertically the static position (right below the label row); across, the card's own content width. */
+            left: 0;
+            right: 0;
+            padding-inline: inherit;
+        }
+
+        .team-stat-card.team-card.is-capacity-editing > :is(.microbar, .microbar-meta) {
+            visibility: hidden;
         }
 
         .team-capacity-label-row {
@@ -181,8 +191,19 @@
             padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
         }
 
+        /* Three rail icons: a mismatch push or a failed save's Retry and Discard beside the pencil (#323). */
+        .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing):hover .team-capacity-label-row,
+        .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing):focus-within .team-capacity-label-row {
+            padding-right: calc(72px + 0.44rem + 0.55rem + 0.4rem);
+        }
+
         .team-stat-card.team-card.is-capacity-editing.has-capacity-share .team-stat-label {
             width: auto;
+        }
+
+        /* A status in the context slot gives way to the Team name, which keeps its whole width up to the row (#323). */
+        .team-stat-card.team-card.is-capacity-editing.has-capacity-status .team-stat-label {
+            flex-shrink: 0;
         }
 
         .team-capacity-action-rail {
@@ -326,26 +347,18 @@
             white-space: nowrap;
         }
 
-        .team-capacity-status {
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            max-width: 100%;
-            margin-top: 0.28rem;
-            padding: 0.3rem 0.38rem;
-            border-left: 3px solid var(--accent);
-            border-radius: 0 5px 5px 0;
-            background: #fff2eb;
-            color: #7f2d12;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.52rem;
+        /* A status shown while editing takes this slot (#323): one line, ellipsized like the Team name beside it, in the ink of
+           the in-card status block it replaces; it takes the pointer although the label row does not, and keeps the whole
+           message as its text. */
+        .team-capacity-editor-context[role="status"] {
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            /* The removed status block's line height: with the slot's 1, Firefox clips the glyphs' last pixel. */
             line-height: 1.35;
-            overflow-wrap: anywhere;
-        }
-
-        .team-capacity-status a {
-            color: inherit;
-            text-decoration: underline;
+            color: #7f2d12;
+            pointer-events: auto;
         }
 
         .team-capacity-read-status {
@@ -378,6 +391,10 @@
             .team-stat-card.team-card.has-capacity-actions:not(.is-capacity-editing) .team-capacity-label-row {
                 padding-right: calc(48px + 0.22rem + 0.55rem + 0.4rem);
             }
+
+            .team-stat-card.team-card.has-capacity-actions[data-capacity-rail-icons="3"]:not(.is-capacity-editing) .team-capacity-label-row {
+                padding-right: calc(72px + 0.44rem + 0.55rem + 0.4rem);
+            }
         }
 
         .team-stat-card[data-tooltip] {
@@ -404,6 +421,11 @@
             letter-spacing: normal;
             pointer-events: none;
             box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        /* A hovered or focused rail control shows its own readout instead (#323 Task 6): one readout at a time. */
+        .team-stat-card[data-tooltip]:hover:has(.team-capacity-action-rail :is(:hover, :focus-visible))::after {
+            content: none;
         }
 
         /* SplitBar (project) */

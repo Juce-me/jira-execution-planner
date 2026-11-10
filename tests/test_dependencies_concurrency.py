@@ -15,11 +15,10 @@ from flask import has_request_context, session
 import jira_server
 from backend import jira_client
 from backend.auth.cache_policy import build_jira_home_process_cache_key
-from backend.auth.context import RequestAuthContext
 from backend.routes import eng_routes
 from backend.services import jira_batches
 from backend.services.jira_batches import JIRA_BATCH_CONCURRENCY, JiraBatchIncomplete
-from tests.oauth_test_helpers import oauth_session_payload
+from tests.oauth_test_helpers import install_oauth_session, set_up_db_oauth
 
 KEY_IN_JQL = re.compile(r'"([A-Z][A-Z0-9_]*-\d+)"')
 BLOCKS = {'name': 'Blocks', 'inward': 'is blocked by', 'outward': 'blocks'}
@@ -154,30 +153,13 @@ class FakeJira:
         return {key for call in self.calls for key in KEY_IN_JQL.findall(call['payload']['jql'])}
 
 
-def auth_context(connection_id='connection-1'):
-    return RequestAuthContext(
-        auth_mode='atlassian_oauth', user_id='user-1', stable_subject='subject-1',
-        atlassian_account_id='account-1', workspace_id='workspace-1',
-        auth_connection_id=connection_id, cloud_id='cloud-1',
-        site_url='https://example.atlassian.net', token_version='1',
-        account_status='active', is_admin=False,
-    )
-
-
-def local_basic_context():
-    return RequestAuthContext(
-        auth_mode='basic', user_id='local-basic-user', stable_subject='local-basic',
-        atlassian_account_id='', workspace_id='local-workspace-synthetic',
-        auth_connection_id='local-basic-connection', cloud_id='',
-        site_url='https://example.atlassian.net', token_version='1',
-        account_status='active', is_admin=True,
-    )
-
-
-def _no_database(stack):
-    """Any database access fails loudly instead of reaching a local database."""
-    stack.enter_context(patch.dict('os.environ', {
-        'CONFIG_STORAGE_BACKEND': 'jsonfile', 'DATABASE_URL': '', 'TEST_DATABASE_URL': ''}, clear=False))
+def _set_up_actor(testcase):
+    set_up_db_oauth(testcase)
+    testcase.client = jira_server.app.test_client()
+    testcase.cookie = install_oauth_session(testcase.client)
+    with jira_server.app.test_request_context('/'):
+        session['db_oauth_session'] = testcase.cookie
+        testcase.ctx = jira_server.current_request_auth_context()
 
 
 def _field_patches(stack):
@@ -191,7 +173,7 @@ class DependenciesConcurrencyTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(jira_batches, '_ADMISSION', jira_batches._ProcessAdmission()))
-        _no_database(self.stack)
+        _set_up_actor(self)
         _field_patches(self.stack)
         self.dataset_keys = [f'DS-{n}' for n in range(1000)]
         self.issues, self.semantic = build_dataset(self.dataset_keys)
@@ -202,7 +184,7 @@ class DependenciesConcurrencyTests(unittest.TestCase):
             return jira_server.collect_dependencies(keys, **kwargs)
 
     def strict(self, cap=JIRA_BATCH_CONCURRENCY, context=None):
-        return {'context': context or auth_context(), 'max_concurrency': cap, 'strict': True,
+        return {'context': context or self.ctx, 'max_concurrency': cap, 'strict': True,
                 'deadline': time.monotonic() + 25}
 
     def test_default_collect_dependencies_stays_serial_and_non_strict(self):
@@ -323,7 +305,7 @@ class DependenciesConcurrencyTests(unittest.TestCase):
         self.assertEqual(after.peak, 1)
 
     def test_worker_calls_carry_the_explicit_auth_context_without_request_context(self):
-        ctx = auth_context()
+        ctx = self.ctx
         fake = FakeJira(self.issues, page_size=50, latency=0.002)
         outcome = {}
 
@@ -370,38 +352,22 @@ class DependenciesConcurrencyTests(unittest.TestCase):
                             keys, max_concurrency=4, strict=True, deadline=time.monotonic() + 25)
             return seen
 
-        with self.subTest('local OAuth session'), ExitStack() as stack:
-            stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
-            stack.enter_context(patch.object(jira_server, 'database_storage_enabled', return_value=False))
-            stack.enter_context(patch.dict(jira_server.app.config, {'SECRET_KEY': 'test-secret'}))
-            stack.enter_context(patch.dict(jira_server.OAUTH_TOKEN_STORE, {
-                'session-1': oauth_session_payload(access_token='local-token')}, clear=True))
-            stack.enter_context(patch.dict(jira_server.OAUTH_REFRESH_LOCKS, {'session-1': threading.Lock()}, clear=True))
-            stack.enter_context(jira_server.app.test_request_context('/api/dependencies', method='POST'))
-            session['atlassian_oauth_session_id'] = 'session-1'
-            seen = run_both(stack)
-            self.assertGreaterEqual(len(seen[1]), 2)
-            self.assertEqual(len(seen[4]), len(seen[1]))
-            local_context = seen[1][0][0]
-            self.assertTrue(local_context.auth_connection_id.startswith('local-oauth-connection:'))
-            self.assertTrue(all(entry == (local_context, 'local-token') for entry in seen[1] + seen[4]))
-
-        with self.subTest('DB OAuth connection'), ExitStack() as stack:
-            db_context = auth_context('connection-db-1')
-            stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
-            stack.enter_context(patch.object(jira_server, 'current_request_auth_context', return_value=db_context))
-            stack.enter_context(patch.object(
-                jira_server, 'db_oauth_session_data_for_auth_context',
-                side_effect=lambda context, **_kw: {'access_token': f'db-token:{context.auth_connection_id}',
-                                                    'expires_at': time.time() + 3600}))
-            stack.enter_context(patch.object(
-                jira_server, 'oauth_session_data_for_auth_context', side_effect=AssertionError('local store forbidden')))
-            stack.enter_context(jira_server.app.test_request_context('/api/dependencies', method='POST'))
-            seen = run_both(stack)
-            self.assertGreaterEqual(len(seen[1]), 2)
-            self.assertEqual(len(seen[4]), len(seen[1]))
-            self.assertTrue(all(entry == (db_context, 'db-token:connection-db-1') for entry in seen[1] + seen[4]))
-            self.assertTrue(all(entry[0] is db_context for entry in seen[4]))
+        for browser_profile in ('first', 'second'):
+            with self.subTest(browser_profile=browser_profile), ExitStack() as stack:
+                # Two actual opaque browser sessions resolve the same encrypted DB connection.
+                cookie = install_oauth_session(self.client, access_token='db-fixture-token')
+                stack.enter_context(patch.object(jira_server, 'oauth_session_data_for_auth_context',
+                    side_effect=AssertionError('retired local store forbidden')))
+                stack.enter_context(jira_server.app.test_request_context('/api/dependencies', method='POST'))
+                session['db_oauth_session'] = cookie
+                seen = run_both(stack)
+                self.assertGreaterEqual(len(seen[1]), 2)
+                self.assertEqual(len(seen[4]), len(seen[1]))
+                db_context = seen[1][0][0]
+                self.assertFalse(db_context.auth_connection_id.startswith('local-'))
+                self.assertTrue(db_context.browser_session_id)
+                self.assertTrue(all(entry == (db_context, 'db-fixture-token') for entry in seen[1] + seen[4]))
+                self.assertTrue(all(entry[0] is seen[4][0][0] for entry in seen[4]))
 
     def test_batches_complete_when_the_db_session_pool_is_smaller_than_the_cap(self):
         pool = threading.BoundedSemaphore(2)
@@ -439,19 +405,19 @@ class DependenciesRouteTests(unittest.TestCase):
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.object(jira_batches, '_ADMISSION', jira_batches._ProcessAdmission()))
-        _no_database(self.stack)
+        _set_up_actor(self)
         _field_patches(self.stack)
-        self.stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'basic'))
-        self.ctx = local_basic_context()
-        self.stack.enter_context(patch.object(jira_server, 'current_request_auth_context', return_value=self.ctx))
-        self.stack.enter_context(patch.object(jira_server, 'jira_home_partitioned_process_cache_enabled', return_value=True))
         self.stack.enter_context(patch.dict(jira_server.DEPENDENCIES_CACHE, {}, clear=True))
         jira_server.app.testing = True
         self.dataset_keys = [f'DS-{n}' for n in range(1000)]
         self.issues, self.semantic = build_dataset(self.dataset_keys)
 
     def post(self, keys):
-        return jira_server.app.test_client().post('/api/dependencies', json={'keys': keys})
+        client = jira_server.app.test_client()
+        with client.session_transaction() as cookie:
+            cookie['db_oauth_session'] = self.cookie
+        return client.post('/api/dependencies', json={'keys': keys},
+                           headers={'X-Requested-With': 'jira-execution-planner'})
 
     def cache_key(self, keys):
         return build_jira_home_process_cache_key(self.ctx, 'dependencies', ','.join(sorted(keys)))
@@ -593,7 +559,7 @@ class DependenciesRouteTests(unittest.TestCase):
         fake = FakeJira(self.issues, page_size=20, respond=lambda payload: (
             FakeResponse(500, {'error': 'upstream'}) if f'"{first_batch[0]}"' in payload['jql'] else None))
         with patch.object(jira_server, 'current_jira_search', side_effect=fake.search):
-            lookup = jira_server.app.test_client().get('/api/issues/lookup?keys=' + ','.join(keys))
+            lookup = self.client.get('/api/issues/lookup?keys=' + ','.join(keys))
         self.assertEqual(lookup.status_code, 200, lookup.get_data(as_text=True))
         # Today's non-strict contract, pinned: a failed batch is skipped and a continuation token is not followed.
         self.assertEqual(len(fake.calls), 2)
@@ -602,6 +568,8 @@ class DependenciesRouteTests(unittest.TestCase):
         returned = [issue['key'] for issue in lookup.get_json()['issues']]
         self.assertEqual(returned, sorted(keys)[100:120])
 
+        # Scenario retains its tool-admin admission; use a real DB role grant.
+        install_oauth_session(self.client, roles=('admin',))
         collect = MagicMock(return_value={})
         rows = [{'key': key, 'fields': copy.deepcopy(self.issues[key]['fields'])} for key in keys[:3]]
         unresolved_capacity = {'project': '', 'fieldId': '', 'requiresResolution': True, 'mutationEnabled': False}
@@ -610,8 +578,9 @@ class DependenciesRouteTests(unittest.TestCase):
                 patch.object(jira_server, 'load_sprints_cache', return_value={}), \
                 patch.object(jira_server, 'load_request_capacity_config', return_value=unresolved_capacity), \
                 patch.object(jira_server, 'fetch_capacity_team_sizes', return_value=({}, {})):
-            scenario = jira_server.app.test_client().post(
-                '/api/scenario', json={'filters': {'sprint': '2026Q2'}, 'config': {}})
+            scenario = self.client.post(
+                '/api/scenario', json={'filters': {'sprint': '2026Q2'}, 'config': {}},
+                headers={'X-Requested-With': 'jira-execution-planner'})
         self.assertEqual(scenario.status_code, 200, scenario.get_data(as_text=True))
         collect.assert_called_once()
         self.assertEqual(collect.call_args.kwargs, {})
@@ -667,7 +636,7 @@ class DependenciesRouteTests(unittest.TestCase):
             stack.enter_context(patch.object(jira_server, 'fetch_epics_for_empty_alert', Mock(return_value=[])))
             stack.enter_context(patch.object(jira_client, 'fetch_issues_by_keys', side_effect=spy))
             fetch_calls.clear()
-            lane = jira_server.app.test_client().get('/api/tasks-with-team-name?project=product&sprint=123&refresh=true')
+            lane = self.client.get('/api/tasks-with-team-name?project=product&sprint=123&refresh=true')
         jira_server.TASKS_CACHE.clear()
         self.assertEqual(lane.status_code, 200, lane.get_data(as_text=True))
         self.assertEqual(len(lane.get_json()['issues']), 250)

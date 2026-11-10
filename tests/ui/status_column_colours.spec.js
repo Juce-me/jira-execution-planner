@@ -16,21 +16,14 @@ async function openCatchUp(page, options = {}) {
     return fixture;
 }
 
-async function openPlanningList(page, options = {}) {
+// Planning is the Table only (#323).
+async function openPlanningTable(page, options = {}) {
     const fixture = await installStatusColourFixture(page, {
         ...options, prefs: { selectedSprint: futureSprintId, sprintName: futureSprintName },
     });
     await page.goto(appBaseUrl);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-list .task-item').first()).toBeVisible();
-    await waitForVisualSettled(page);
-    return fixture;
-}
-
-async function openPlanningTable(page, options = {}) {
-    const fixture = await openPlanningList(page, options);
-    await page.getByRole('button', { name: 'Show Planning table', exact: true }).click();
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     await expect(page.locator('table.planning-review-table tbody tr').first()).toBeVisible();
     await waitForVisualSettled(page);
@@ -76,16 +69,10 @@ for (const flag of [true, false]) {
         expectPillColours(pills, { flag });
     });
 
-    test(`basic-auth profile follows the same colours (flag ${label})`, async ({ page }) => {
-        await openCatchUp(page, { flag, authMode: 'basic' });
+    test(`non-admin OAuth profile follows the same colours (flag ${label})`, async ({ page }) => {
+        await openCatchUp(page, { flag, authMode: 'atlassian_oauth', userCanEditSettings: false, settingsAdminOnly: true });
         const pills = await collectPills(page, '.task-list');
         expect(pills.length).toBeGreaterThan(0);
-        expectPillColours(pills, { flag });
-    });
-
-    test(`Planning list pills (flag ${label})`, async ({ page }) => {
-        await openPlanningList(page, { flag });
-        const pills = await collectPills(page, '.task-list');
         expectPillColours(pills, { flag });
     });
 
@@ -99,8 +86,10 @@ for (const flag of [true, false]) {
         expectPillColours(await collectPills(page, 'table.planning-review-table'), { flag });
     });
 
-    test(`Planning Table passive status pills with a non-OAuth profile (flag ${label})`, async ({ page }) => {
-        await openPlanningTable(page, { flag, authMode: 'basic' });
+    test(`Planning Table passive OAuth status pills while Settings is open (flag ${label})`, async ({ page }) => {
+        await openPlanningTable(page, { flag });
+        await page.getByRole('button', { name: /manage team groups/i }).click();
+        await expect(page.getByRole('dialog').first()).toBeVisible();
         const pills = await collectPills(page, 'table.planning-review-table');
         expect(pills.length).toBeGreaterThan(0);
         expect(pills.every((pill) => pill.tag === 'SPAN'), 'passive profile renders spans').toBe(true);
@@ -175,6 +164,8 @@ test('the status menu option markers take the column tint as background only', a
     await trigger(page, 'story', 'PLAT-1-a').click();
     const menu = page.locator('.status-transition-menu[data-issue-key="PLAT-1-a"]');
     await expect(menu).toBeVisible();
+    // The options load after the menu opens: wait for them before reading their markers.
+    await expect(menu.locator('.status-transition-option').first()).toBeVisible();
     const markers = await menu.locator('.status-transition-option').evaluateAll((options) => options.map((option) => {
         const marker = option.querySelector('.status-transition-option-marker');
         return { label: option.querySelector('.status-transition-option-label').textContent.trim(), inline: marker.getAttribute('style'), background: getComputedStyle(marker).backgroundColor };

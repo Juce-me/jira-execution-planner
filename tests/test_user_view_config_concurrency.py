@@ -1,6 +1,4 @@
 import os
-import sqlite3
-import tempfile
 import threading
 import time
 import unittest
@@ -10,6 +8,7 @@ from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import psycopg.errors
 from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import DBAPIError, IntegrityError, OperationalError
 from sqlalchemy.engine import make_url
@@ -28,6 +27,7 @@ from backend.services.user_view_config import (
     save_imported_user_view,
 )
 from backend.services import user_view_config
+from tests.postgres_test_db import fresh_database_url
 
 
 def epm_payload(label):
@@ -44,8 +44,7 @@ def epm_payload(label):
 
 class UserViewConcurrencyTests(unittest.TestCase):
     def setUp(self):
-        self._tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self._tmpdir.name, 'views.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
         models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
@@ -54,7 +53,6 @@ class UserViewConcurrencyTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self._tmpdir.cleanup()
 
     def _seed(self):
         with self.factory() as session:
@@ -264,12 +262,6 @@ class UserViewConcurrencyTests(unittest.TestCase):
                 self.diag = SimpleNamespace(constraint_name=constraint_name)
 
         retryable_errors = (
-            IntegrityError('insert', {}, sqlite3.IntegrityError(
-                'UNIQUE constraint failed: view_configs.workspace_id, view_configs.owner_user_id'
-            )),
-            IntegrityError('insert', {}, sqlite3.IntegrityError(
-                'UNIQUE constraint failed: view_config_versions.view_config_id, view_config_versions.version_number'
-            )),
             IntegrityError('insert', {}, PostgresUniqueViolation('uq_view_configs_active_default')),
             IntegrityError('insert', {}, PostgresUniqueViolation('uq_view_config_versions_number')),
         )
@@ -295,12 +287,14 @@ class UserViewConcurrencyTests(unittest.TestCase):
     def test_nonretryable_storage_failures_translate_once_and_suppress_callback(self):
         callbacks = []
         failures = (
-            IntegrityError('insert', {}, sqlite3.IntegrityError('FOREIGN KEY constraint failed')),
-            OperationalError('select', {}, sqlite3.OperationalError('disk I/O error')),
-            DBAPIError('select', {}, sqlite3.DatabaseError('database error')),
+            IntegrityError('insert', {}, psycopg.errors.ForeignKeyViolation('violates foreign key constraint')),
+            # Only the two named unique constraints are retried; a unique violation without one is not.
+            IntegrityError('insert', {}, psycopg.errors.UniqueViolation('duplicate key value violates unique constraint')),
+            OperationalError('select', {}, psycopg.errors.OperationalError('server closed the connection')),
+            DBAPIError('select', {}, psycopg.errors.DatabaseError('database error')),
         )
         for failure in failures:
-            with self.subTest(failure=type(failure).__name__), \
+            with self.subTest(failure=f'{type(failure).__name__}:{type(failure.orig).__name__}'), \
                  patch.object(user_view_config, '_run_mutation_once', side_effect=failure) as run_once:
                 with self.assertRaises(UserViewConfigStorageError):
                     save_user_epm_config(

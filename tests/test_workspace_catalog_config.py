@@ -1,5 +1,3 @@
-import os
-import tempfile
 import unittest
 
 from backend.auth.context import RequestAuthContext
@@ -9,6 +7,7 @@ from backend.services.workspace_catalog_config import (
     normalize_catalog_base_jql,
     resolve_effective_catalog_config,
 )
+from tests.postgres_test_db import fresh_database_url
 
 
 def _context(workspace_id, user_id='user-1'):
@@ -23,8 +22,7 @@ def _context(workspace_id, user_id='user-1'):
 
 class WorkspaceCatalogConfigTests(unittest.TestCase):
     def setUp(self):
-        self.tmpdir = tempfile.TemporaryDirectory()
-        self.database_url = f"sqlite+pysqlite:///{os.path.join(self.tmpdir.name, 'config.db')}"
+        self.database_url = fresh_database_url(self.addCleanup)
         models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
@@ -45,7 +43,6 @@ class WorkspaceCatalogConfigTests(unittest.TestCase):
 
     def tearDown(self):
         db_engine.dispose_engines()
-        self.tmpdir.cleanup()
 
     def _resolve(self, payload=None, **runtime):
         if payload is not None:

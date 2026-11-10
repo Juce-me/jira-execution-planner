@@ -677,7 +677,7 @@ test('Planning follow-up starts the assignee capacity re-read before the review 
     const { createPlanningFreshnessAdapter } = await import('../frontend/src/dashboardFreshnessAdapters.js');
     const order = [];
     let release;
-    const input = { activeGroupId: 'synthetic', selectedSprint: 1, loadEpochRef: { current: 1 }, groupLoadVersionRef: { current: 1 }, planningAutomaticReadRef: { current: 0 }, planningLayout: 'table',
+    const input = { activeGroupId: 'synthetic', selectedSprint: 1, loadEpochRef: { current: 1 }, groupLoadVersionRef: { current: 1 }, planningAutomaticReadRef: { current: 0 },
         planningReview: { getState: () => ({}), refresh: async () => { order.push('review'); } }, refreshCapacity: async () => { order.push('capacity'); },
         epicRefresh: { readState: () => ({ loadedProductTasks: [], loadedTechTasks: [], epicDetails: {} }), applyScopeSnapshot: () => null }, collectGroupRefresh: async () => ({ release() {} }) };
     let busy = false;

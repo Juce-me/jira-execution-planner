@@ -6,6 +6,7 @@ const CAPACITY_WORKFLOW_ACTIONS = new Set([
     'capacity_edit_open',
     'capacity_change_submit',
     'capacity_change_result',
+    'capacity_reconcile_push',
 ]);
 const ISSUE_FIELD_EDIT_WORKFLOW_ACTIONS = new Set(['open', 'submit', 'result']);
 const ISSUE_FIELD_EDIT_FIELDS = new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team']);
@@ -85,12 +86,12 @@ export function buildIssueFieldEditAnalyticsParams(workflowAction, {
     };
 }
 
-const REVIEW_ACTIONS = new Set(['panel_expanded', 'panel_collapsed', 'layout_table', 'layout_list', 'mode_epic', 'mode_story', 'column_add', 'column_rename', 'column_archive', 'column_reorder', 'column_aggregation', 'columns_open', 'column_visibility', 'save_submit', 'save_result', 'refresh', 'discard', 'load_current', 'reapply', 'scope_stay', 'row_mode_changed', 'add_column_opened', 'column_added', 'columns_opened', 'columns_reordered', 'column_archived', 'column_renamed', 'column_aggregation_changed', 'column_visibility_changed', 'save_review', 'discard_review', 'load_current_review', 'reapply_review']);
+const REVIEW_ACTIONS = new Set(['panel_expanded', 'panel_collapsed', 'mode_epic', 'mode_story', 'column_add', 'column_rename', 'column_archive', 'column_reorder', 'column_aggregation', 'columns_open', 'column_visibility', 'save_submit', 'save_result', 'refresh', 'discard', 'load_current', 'reapply', 'scope_stay', 'row_mode_changed', 'add_column_opened', 'column_added', 'columns_opened', 'columns_reordered', 'column_archived', 'column_renamed', 'column_aggregation_changed', 'column_visibility_changed', 'save_review', 'discard_review', 'load_current_review', 'reapply_review']);
 export function buildPlanningReviewAnalyticsParams(action, { result } = {}) {
     if (!REVIEW_ACTIONS.has(action)) return null;
     return {
         feature_name: 'planning_review', source_surface: 'planning', workflow_action: action,
-        ...(action === 'save_result' && ['success', 'failure', 'conflict', 'unknown'].includes(result) ? { result } : {}),
+        ...(['save_review', 'save_result'].includes(action) && ['success', 'failure', 'conflict', 'unknown'].includes(result) ? { result } : {}),
     };
 }
 
@@ -163,7 +164,6 @@ export function useDashboardAnalytics(React, {
     showScenario,
     showBoard,
     statsView,
-    planningLayout,
     serverConnectionError,
 }) {
     const { useCallback, useEffect, useRef, useState } = React;
@@ -187,7 +187,7 @@ export function useDashboardAnalytics(React, {
         if (!analyticsReady || !authMode) return;
         const engMode = showScenario ? 'scenario' : showStats ? 'statistics' : showPlanning ? 'planning' : showBoard ? 'board' : 'catch_up';
         const subview = engMode === 'statistics' ? STATS_PAGE_SUBVIEWS.get(statsView) || 'teams'
-            : engMode === 'planning' ? (planningLayout === 'list' ? 'list' : 'table') : '';
+            : engMode === 'planning' ? 'table' : '';
         const pageName = selectedView === 'eng' ? `eng/${engMode}${subview ? `/${subview}` : ''}` : 'epm';
         const pageParams = {
             page_name: pageName,
@@ -200,7 +200,7 @@ export function useDashboardAnalytics(React, {
         if (analyticsPageviewRef.current === signature) return;
         analyticsPageviewRef.current = signature;
         JepAnalytics.trackPageview(pageName, pageParams);
-    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, planningLayout, currentDashboardView]);
+    }, [analyticsReady, authMode, selectedView, showPlanning, showStats, showScenario, showBoard, statsView, currentDashboardView]);
 
     const trackProductEvent = useCallback(safeTrackEvent, []);
     const trackApiResult = useCallback(safeTrackApiResult, []);
@@ -354,7 +354,7 @@ export function useDashboardAnalytics(React, {
             workflow_action: workflowAction,
             source_surface: 'planning',
         };
-        if (workflowAction === 'capacity_change_result' && ['success', 'failure', 'conflict'].includes(result)) {
+        if ((workflowAction === 'capacity_change_result' || workflowAction === 'capacity_reconcile_push') && ['success', 'failure', 'conflict'].includes(result)) {
             payload.result = result;
         }
         trackProductEvent('planning_action', payload);

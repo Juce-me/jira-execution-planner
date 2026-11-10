@@ -146,7 +146,7 @@ async function installLinkFixture(page, {
         window.localStorage.setItem(prefsKey, JSON.stringify(savedPrefs));
         if (savedTeams) window.localStorage.setItem(teamKey, JSON.stringify(savedTeams));
         Object.entries(savedCapsules || {}).forEach(([key, value]) => window.sessionStorage.setItem(key, JSON.stringify(value)));
-    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', planningLayout: 'list', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules, strictScope, statsRefresh });
+    }, { prefsKey: PREFS_KEY, teamKey: TEAM_SELECTION_KEY, savedPrefs: { selectedView: 'eng', selectedSprint: 41, sprintName: 'Sprint 41', activeGroupId: 'grp-a', ...prefs }, savedTeams: teamSelection, savedCapsules: capsules, strictScope, statsRefresh });
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
     await page.route('**/api/**', async (route) => {
         const request = route.request();
@@ -257,7 +257,9 @@ async function installLinkFixture(page, {
 
 // Reads that use POST, plus the session refresh every load sends; none of them writes a view.
 const READ_ONLY_POSTS = new Set(['/api/dependencies', '/api/performance/loads', '/api/auth/refresh']);
-const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname);
+// The batch planned-number read (#323) is a read-only projection: one query, nothing written.
+const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname)
+    || /\/assignee-capacity\/planned\/read$/.test(call.pathname);
 const mutatingCalls = calls => calls.filter(call => call.method !== 'GET' && !isReadOnlyPost(call));
 const signature = call => `${call.method} ${call.pathname}?${[...new URL(call.url).searchParams.keys()].sort().join('&')}${call.aborted ? ' aborted' : ''}`;
 const apiSignatures = calls => calls.map(signature).sort();
@@ -378,7 +380,7 @@ for (const [title, entry, manualFlags] of [
     ['a Catch Up link', '/?v=1&mode=catch-up&group=grp-b&sprint=42', { showPlanning: false }],
 ]) {
     test(`${title} for a recipient with a saved Planning table issues the requests of a manual run and never reads the review of the saved Sprint (V6)`, async ({ browser }) => {
-        const saved = { showPlanning: true, planningLayout: 'table' };
+        const saved = { showPlanning: true };
         const link = await loadRun(browser, { prefs: saved }, entry);
         const manual = await loadRun(browser, { ...MANUAL_DEPARTMENT_B, prefs: { ...MANUAL_SCOPE_B42, ...saved, ...manualFlags } }, '/');
         for (const run of [link, manual]) expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
@@ -420,7 +422,7 @@ test('the link overrides the staged auth and connection recovery capsules (V7)',
 
 test('a same-scope Planning recovery capsule reuses its completed load and applies Teams facets and rows (V7, RF3)', async ({ page }) => {
     const calls = await installLinkFixture(page, {
-        analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true, planningLayout: 'table', selectedTeams: ['team-a2'] },
+        analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true, selectedTeams: ['team-a2'] },
         capsules: { jira_dashboard_auth_resume_v1: {
             version: 1, capturedAt: Date.now(), principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
             view: { selectedView: 'eng', activeGroupId: 'grp-a', selectedSprint: '41', engMode: 'planning', settingsOpen: false, settingsTab: 'teams' },
@@ -500,28 +502,20 @@ test('opening a link performs no mutating request outside the read-only allowlis
     expect(values).not.toContain('42');
 });
 
-test('the link Department becomes the local favorite in JSON mode and never writes the server favorite in DB mode (V19)', async ({ browser }) => {
-    const jsonPage = await browser.newPage();
-    const jsonCalls = await installLinkFixture(jsonPage, { groupsSource: 'jsonfile', analytics: ANALYTICS_ENABLED });
-    await jsonPage.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => applyEvents(jsonPage).then(events => events.length)).toBe(1);
-    await expect.poll(async () => (await readPrefs(jsonPage)).groupVisibilityPreferences?.activeGroupId).toBe('grp-b');
-    expect(jsonCalls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
-
-    const dbPage = await browser.newPage();
-    const dbCalls = await installLinkFixture(dbPage, { groupsSource: 'workspace_db', analytics: ANALYTICS_ENABLED });
-    await dbPage.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
-    await expect.poll(() => applyEvents(dbPage).then(events => events.length)).toBe(1);
-    await expect(groupToggle(dbPage)).toContainText('Beta');
-    await dbPage.waitForLoadState('networkidle');
-    expect(dbCalls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
-    expect((await readPrefs(dbPage)).groupVisibilityPreferences?.activeGroupId).toBe('grp-a');
-    await jsonPage.close();
-    await dbPage.close();
+test('a shared link selects its Department without changing the private DB favorite (V19)', async ({ browser }) => {
+    const page = await browser.newPage();
+    const calls = await installLinkFixture(page, { groupsSource: 'workspace_db', analytics: ANALYTICS_ENABLED });
+    await page.goto(`${appBaseUrl}${FULL_LINK}`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.length)).toBe(1);
+    await expect(groupToggle(page)).toContainText('Beta');
+    await page.waitForLoadState('networkidle');
+    expect(calls.filter(call => call.pathname === '/api/groups-preferences')).toEqual([]);
+    expect((await readPrefs(page)).groupVisibilityPreferences?.activeGroupId).toBe('grp-a');
+    await page.close();
 });
 
 for (const [mode, query, radio, flags] of [
-    ['planning', 'mode=planning&group=grp-b&sprint=42&layout=table', 'Planning', { showPlanning: true, planningLayout: 'table' }],
+    ['planning', 'mode=planning&group=grp-b&sprint=42&layout=table', 'Planning', { showPlanning: true }],
     ['board', 'mode=board&group=grp-a&sprint=41&find=story', 'Board', { showBoard: true, searchQuery: 'story' }],
     ['statistics', `mode=statistics&group=grp-a&sprint=41&stats=cohort&from=${quarterLabel(-1)}&to=${quarterLabel(0)}`, 'Statistics', { showStats: true, statsView: 'cohort', cohortMode: 'created', cohortStartQuarter: quarterLabel(-1), cohortEndQuarter: quarterLabel(0) }],
     ['statistics Lead Times Closed', `mode=statistics&group=grp-a&sprint=41&stats=cohort&lead=closed&from=${quarterLabel(-2)}&to=${quarterLabel(-1)}`, 'Statistics', { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1), cohortStartQuarter: quarterLabel(0), cohortEndQuarter: quarterLabel(0), cohortLastN: 30 }],
@@ -629,13 +623,28 @@ test('a focus target that exists is revealed and one that does not is reported a
 });
 
 test('a Planning link switches a Planning table that is already open to the rows of the link', async ({ page }) => {
-    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true, planningLayout: 'table' } });
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED, prefs: { showPlanning: true } });
     await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=grp-a&sprint=41&rows=stories`, { waitUntil: 'domcontentloaded' });
     const rows = page.locator('[aria-label="Planning review rows"]');
     await expect(rows).toBeVisible();
     await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
     await expect(rows.getByRole('radio', { name: 'Stories' })).toHaveAttribute('aria-checked', 'true');
     await expect(rows.getByRole('radio', { name: 'Epics' })).toHaveAttribute('aria-checked', 'false');
+});
+
+// Planning List is retired (#323, G2 2026-11-06): an old List link opens the table on the rows of its focus and reveals that focus.
+test('an old Planning List link with Sprint, Team and Story focus opens Table on Story rows and reveals the Story', async ({ page }) => {
+    await installLinkFixture(page, { analytics: ANALYTICS_ENABLED });
+    await page.goto(`${appBaseUrl}/?v=1&mode=planning&group=grp-a&sprint=42&teams=team-a1&initiatives=0&sort=status&layout=list&story=ALP-11`, { waitUntil: 'domcontentloaded' });
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 25000 }).toEqual(['success']);
+    await expect(engMode(page, 'Planning')).toHaveAttribute('aria-checked', 'true');
+    await expect(page.locator('.task-list')).toHaveCount(0);
+    await expect(page.locator('[aria-label="Planning review rows"]').getByRole('radio', { name: 'Stories' })).toHaveAttribute('aria-checked', 'true');
+    const target = page.locator('tr[data-row-kind="story"][data-issue-key="ALP-11"]');
+    await expect(target).toBeInViewport();
+    await expect(teamLabel(page)).toHaveText('Alpha One');
+    expect(await readPrefs(page)).toMatchObject({ activeGroupId: 'grp-a', selectedSprint: 42, selectedTeams: ['team-a1'], showPlanning: true });
+    expect(await page.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
 });
 
 test('a source-only Statistics link for another Department loads no Catch Up tasks for any scope', async ({ page }) => {
@@ -696,7 +705,7 @@ test('Share is enabled in a source-only Statistics view, which loads no task lis
 const MATRIX_SOURCE = { backend: 'postgresql', identity: 'sc1:synthetic-share', boardId: '42', browserContextId: 'bc1:synthetic-share' };
 const MATRIX_CASES = [
     { name: 'Catch Up', mode: 'catch-up', flags: {}, endpoint: '/api/tasks-with-team-name' },
-    { name: 'Planning', mode: 'planning', flags: { showPlanning: true, planningLayout: 'table' }, endpoint: '/api/tasks-with-team-name' },
+    { name: 'Planning', mode: 'planning', flags: { showPlanning: true }, endpoint: '/api/tasks-with-team-name' },
     { name: 'ordinary Board', mode: 'board', flags: { showBoard: true }, endpoint: '/api/tasks-with-team-name' },
     ...['component', 'all_work'].map(scope => ({ name: `strict Board ${scope}`, mode: 'board', query: `&scope=${scope}`,
         flags: { showBoard: true }, endpoint: '/api/eng/board', strict: scope })),
@@ -779,7 +788,7 @@ for (const scenario of MATRIX_CASES) {
                 } else if (scenario.sourceOnly) {
                     expect(taskCalls(run.calls)).toEqual([]);
                     expect(scoped.every(call => call.cacheBypassed && !call.cacheHit)).toBe(true);
-                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], refresh: true }]);
+                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], groupId: 'grp-b', refresh: true }]);
                     await expect(run.page.getByText('Excluded capacity fetch failed', { exact: false })).toHaveCount(0);
                 } else {
                     expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);
@@ -831,8 +840,7 @@ test('AC4 logger counts two real aborted requests to the same URL separately', a
 
 
 for (const [name, prefs] of [
-    ['Catch Up', {}], ['Planning List', { showPlanning: true, planningLayout: 'list' }],
-    ['Planning Table', { showPlanning: true, planningLayout: 'table' }],
+    ['Catch Up', {}], ['Planning Table', { showPlanning: true }],
 ]) {
     test(`an explicit Epic copy opens and reveals the same Epic in ${name}`, async ({ browser }) => {
         const source = await browser.newPage();
@@ -1038,8 +1046,8 @@ for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode'
         await expectColdLanding(page);
         await expect.poll(() => calls.some(call => call.pathname === '/api/missing-info')).toBe(true);
         const readAppliedState = () => page.evaluate(() => {
-            const { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort, planningLayout } = window.__shareViewOptions;
-            return { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort, planningLayout };
+            const { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort } = window.__shareViewOptions;
+            return { selectedView, activeEngMode, activeGroupId, selectedSprint, selectedTeams, searchQuery, engEpicSort };
         });
         const applied = await readAppliedState();
         expect(await shareState(page)).toMatchObject({ terminal: false });

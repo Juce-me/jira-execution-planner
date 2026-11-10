@@ -3,18 +3,17 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-test('planning action row includes postponed and awaiting validation bulk actions', () => {
+test('planning status menu uses complete status-set labels and explicit Include and Remove commands', () => {
     const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
     const componentPath = path.resolve(__dirname, '../frontend/src/eng/PlanningActionBar.jsx');
     const source = fs.readFileSync(sourcePath, 'utf8');
     const componentSource = fs.readFileSync(componentPath, 'utf8');
 
-    assert.match(source, /toggleIncludeByStatus\(\['Postponed'\]\)/);
-    assert.match(source, /toggleIncludeByStatus\(\['Awaiting Validation'\]\)/);
-    assert.match(componentSource, />\s*Postponed\s*</);
-    assert.match(componentSource, />\s*Awaiting Val\.\s*</);
-    assert.match(componentSource, /onTogglePostponed/);
-    assert.match(componentSource, /onToggleAwaitingValidation/);
+    for (const label of ['Accepted + In Progress', 'To Do / Pending', 'Postponed', 'Awaiting validation']) assert.ok(source.includes(label));
+    assert.match(componentSource, /Include by status/);
+    assert.match(componentSource, /onIncludeStatus/);
+    assert.match(componentSource, /onRemoveStatus/);
+    assert.doesNotMatch(componentSource, /onToggleAccepted|onToggleTodo|onTogglePostponed|onToggleAwaitingValidation/);
 });
 
 test('planning action row includes select all for currently visible planning tasks', () => {
@@ -26,11 +25,11 @@ test('planning action row includes select all for currently visible planning tas
     const componentSource = fs.readFileSync(componentPath, 'utf8');
 
     assert.match(helperSource, /selectAllVisiblePlanningTasks\(\) \{/);
-    assert.match(helperSource, /selectAllVisiblePlanningTasksMap\(visibleTasksForList\)/);
-    assert.match(helperSource, /next\[task\.key\] = true;/);
-    assert.match(source, /hasVisiblePlanningTasks=\{visibleTasksForList\.length > 0\}/);
+    assert.match(helperSource, /controller\.includeShown/);
+    assert.match(source, /hasVisiblePlanningTasks=\{matchingPlanningTasks\.length > 0\}/);
     assert.match(componentSource, /onSelectAllVisible/);
-    assert.match(componentSource, /disabled=\{!hasVisiblePlanningTasks\}/);
+    assert.match(componentSource, /areAllVisiblePlanningTasksSelected/);
+    assert.match(componentSource, /planningScopeHelp = \(childWords = 'stories'\) =>\s*`Applies to all \$\{childWords\} matching the current Team and filters, including rows below\.`/);
     assert.match(componentSource, />\s*Select All\s*</);
 });
 
@@ -45,10 +44,11 @@ test('planning action row exposes undo for bulk selection changes', () => {
     assert.match(helperSource, /undoPlanningSelectionChange\(\) \{/);
     assert.match(source, /canUndoPlanningSelection=\{canUndoPlanningSelection\}/);
     assert.match(source, /onUndoPlanningSelection=\{undoPlanningSelectionChange\}/);
-    assert.match(helperSource, /trackPlanningSelection\('undo_selection'/);
+    assert.match(helperSource, /controller\.undoInclusion/);
+    assert.match(helperSource, /'undo_selection'/);
     assert.match(componentSource, /canUndoPlanningSelection/);
     assert.match(componentSource, /onUndoPlanningSelection/);
-    assert.match(componentSource, /disabled=\{!canUndoPlanningSelection\}/);
+    assert.match(componentSource, /!canUndoPlanningSelection/);
     assert.match(componentSource, />\s*Undo\s*</);
 });
 
@@ -74,7 +74,7 @@ test('planning action bar shows status result feedback but adds no status-change
     // Existing selection controls stay intact.
     assert.match(componentSource, />\s*Select All\s*</);
     assert.match(componentSource, />\s*Undo\s*</);
-    assert.match(componentSource, />\s*Clear Selected\s*</);
+    assert.match(componentSource, />\s*Clear Selection\s*</);
 });
 
 test('planning panel no longer renders capacity bar footer rows', () => {
@@ -84,22 +84,14 @@ test('planning panel no longer renders capacity bar footer rows', () => {
     assert.doesNotMatch(source, /capacity-bar-footer/);
 });
 
-test('planning selection persistence effect is declared after selectionTasks', () => {
-    const sourcePath = path.resolve(__dirname, '../frontend/src/dashboard.jsx');
-    const source = fs.readFileSync(sourcePath, 'utf8');
-    // The effect lives in usePlanningSelectionSync, which App calls at the original effect's site.
-    const hookSource = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/usePlanningSelectionSync.js'), 'utf8');
-    const selectionTasksIndex = source.indexOf('const selectionTasks = baseFilteredTasks;');
-    const effectIndex = source.indexOf('usePlanningSelectionSync({');
-
-    assert.notEqual(selectionTasksIndex, -1);
-    assert.notEqual(effectIndex, -1);
-    assert.ok(
-        effectIndex > selectionTasksIndex,
-        'savePlanningState effect should appear after selectionTasks is declared'
-    );
-    assert.match(hookSource, /persistPlanningSelectionState\(\{ storage: window\.localStorage, scopeKey: planningScopeKey/);
-    assert.match(source, /usePlanningSelectionSync\(\{[^}]*\bselectionTasks\b[^}]*\}\)/);
+test('shared Planning never reads or writes the legacy browser selection records', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../frontend/src/dashboard.jsx'), 'utf8');
+    const actions = fs.readFileSync(path.resolve(__dirname, '../frontend/src/eng/planningSelectionActions.js'), 'utf8');
+    const scope = fs.readFileSync(path.resolve(__dirname, '../frontend/src/planningSelectionState.mjs'), 'utf8');
+    for (const text of [source, actions, scope]) {
+        assert.doesNotMatch(text, /persistPlanningSelectionState|loadPlanningState|savePlanningState|hasPlanningState|default_all|usePlanningSelectionSync/);
+    }
+    assert.doesNotMatch(source, /setSelectedTasks\(/, 'the compatibility key map has no independent writer');
 });
 
 test('sprint dropdown keeps selected option visible without using document scrollIntoView', () => {
@@ -125,9 +117,9 @@ test('dashboard hydrates scoped team selection from group and sprint storage', (
     const source = fs.readFileSync(sourcePath, 'utf8');
 
     assert.match(source, /buildTeamSelectionScopeKey/);
-    assert.match(source, /loadTeamSelectionState\(window\.localStorage, teamSelectionScopeKey\)/);
+    assert.match(source, /loadTeamSelectionState\(getLocalStorage\(\), teamSelectionScopeKey\)/);
     assert.match(source, /reconcileTeamSelectionState\(/);
-    assert.match(source, /saveTeamSelectionState\(window\.localStorage, teamSelectionScopeKey,/);
+    assert.match(source, /saveTeamSelectionState\(getLocalStorage\(\), teamSelectionScopeKey,/);
 });
 
 test('selected sp by team forces six teams onto multiple rows', () => {
@@ -353,9 +345,8 @@ test('dashboard delegates planning action row to ENG component', () => {
     assert.match(source, /<PlanningActionBar/);
     assert.doesNotMatch(source, /className="planning-actions"/);
     assert.match(componentSource, /className="planning-actions"/);
-    assert.match(componentSource, />\s*Accepted\s*</);
-    assert.match(componentSource, />\s*To Do\s*</);
-    assert.match(componentSource, />\s*Clear Selected\s*</);
+    assert.match(componentSource, /Include by status/);
+    assert.match(componentSource, />\s*Clear Selection\s*</);
     assert.match(componentSource, /onOpenSelectedInJira/);
 });
 
@@ -372,7 +363,7 @@ test('dashboard delegates planning capacity bar to ENG component', () => {
     assert.match(componentSource, /capacity-bar-excluded-zone/);
     assert.match(componentSource, /capacity-bar-variance-zone/);
     assert.match(componentSource, /capacity-bar-marker teamcap/);
-    assert.match(componentSource, /Selected:/);
+    assert.match(componentSource, /Planned \{childPlural\.toLowerCase\(\)\} \/ Planned SP:/);
     assert.match(componentSource, /\{selectedCount\} · \{selectedSP\.toFixed\(1\)\} SP/);
 });
 
@@ -386,12 +377,12 @@ test('dashboard delegates planning project split bar to ENG component', () => {
     assert.match(source, /<PlanningProjectSplitBar/);
     assert.doesNotMatch(source, /className="project-bar-graph"/);
     assert.doesNotMatch(source, /className="project-bar-fill product"/);
-    assert.match(componentSource, /Selected SP by Project:/);
+    assert.match(componentSource, /Planned SP by Project:/);
     assert.match(componentSource, /className="project-bar-graph"/);
     assert.match(componentSource, /className="project-bar-fill product"/);
     assert.match(componentSource, /className="project-bar-fill tech"/);
     assert.match(componentSource, /Target<br\/>/);
-    assert.match(componentSource, /No tasks selected/);
+    assert.match(componentSource, /No planned \{childPlural\.toLowerCase\(\)\}/);
 });
 
 test('ENG status transition hook imports the transition API and typed global auth contract', () => {

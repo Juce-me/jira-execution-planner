@@ -24,8 +24,6 @@ def project_access_status(context, project_type: str) -> str:
     project_type = str(project_type or '').strip().lower()
     if project_type not in PROJECT_VIEW_TYPES:
         return 'accessible'
-    if getattr(context, 'auth_mode', 'basic') == 'basic':
-        return 'accessible'
     snapshots = _snapshots_for_project_type(context, project_type)
     if not snapshots:
         return 'unknown'
@@ -39,7 +37,7 @@ def project_access_status(context, project_type: str) -> str:
 def project_access_denied_response(context, project_type: str):
     if (
         str(project_type or '').strip().lower() in PROJECT_VIEW_TYPES
-        and getattr(context, 'auth_mode', 'basic') != 'basic'
+        and getattr(context, 'auth_mode', '') == 'atlassian_oauth'
         and not _snapshots_for_project_type(context, project_type)
     ):
         return None, None

@@ -4,8 +4,8 @@ import { trackedFetch } from './http.js';
 export const ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS = 20000;
 const url = (backendUrl, sprintId, query = '') => `${backendUrl}/api/eng/sprints/${encodeURIComponent(String(sprintId))}/assignee-capacity${query}`;
 
-// `csrf` is a caller-owned { token } cache so one save queue fetches the CSRF token once.
-async function request(backendUrl, sprintId, query, method, payload, { signal, csrf = null, timeoutMs = ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS } = {}) {
+// Every write fetches its own single-use CSRF token; tokens are never cached or shared.
+async function request(backendUrl, sprintId, query, method, payload, { signal, timeoutMs = ASSIGNEE_CAPACITY_REQUEST_TIMEOUT_MS } = {}) {
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     signal?.addEventListener('abort', abort, { once: true });
@@ -13,8 +13,8 @@ async function request(backendUrl, sprintId, query, method, payload, { signal, c
     let timedOut = false, dispatched = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     try {
-        const csrfToken = method === 'GET' ? null : csrf?.token || await Promise.race([
-            fetchCsrfToken(backendUrl).then(result => { const token = result?.csrfToken; if (csrf && token) csrf.token = token; return token; }),
+        const csrfToken = method === 'GET' ? null : await Promise.race([
+            fetchCsrfToken(backendUrl).then(result => result?.csrfToken),
             new Promise((resolve, reject) => {
                 if (controller.signal.aborted) reject(new DOMException('Aborted', 'AbortError'));
                 else controller.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')), { once: true });
@@ -51,6 +51,51 @@ async function request(backendUrl, sprintId, query, method, payload, { signal, c
 
 export const fetchAssigneeCapacity = (backendUrl, sprintId, teamId, options) => request(backendUrl, sprintId, `?teamId=${encodeURIComponent(teamId)}`, 'GET', null, options);
 export const saveAssigneeCapacity = (backendUrl, sprintId, payload, options) => request(backendUrl, sprintId, '', 'PATCH', payload, options);
+
+// Batch read of stored Team numbers: sequential chunks of at most 500 ids and 128 KiB of UTF-8 JSON, one in flight.
+// A 413 halves its chunk; a single id that still gets 413 is returned in failedTeamIds. Each chunk fetches its own CSRF token
+// (request() does), and a 403 csrf_required is retried once with a fresh one. A 401 locks auth in apiFetch, so it rejects and no further chunk is sent.
+const BATCH_MAX_IDS = 500;
+const BATCH_MAX_BYTES = 128 * 1024;
+const utf8 = new TextEncoder();
+
+function planChunks(teamIds) {
+    const chunks = []; let current = []; let bytes = utf8.encode('{"teamIds":[]}').length;
+    for (const id of teamIds) {
+        const cost = utf8.encode(JSON.stringify(id)).length + 1;
+        if (current.length && (current.length >= BATCH_MAX_IDS || bytes + cost > BATCH_MAX_BYTES)) { chunks.push(current); current = []; bytes = utf8.encode('{"teamIds":[]}').length; }
+        current.push(id); bytes += cost;
+    }
+    if (current.length) chunks.push(current);
+    return chunks;
+}
+
+export async function readPlannedNumbers(backendUrl, sprintId, teamIds, { signal } = {}) {
+    const queue = planChunks([...new Set((teamIds || []).map(String))]);
+    const result = { sprintId: String(sprintId), capabilities: null, byTeam: {}, failedTeamIds: [] };
+    while (queue.length) {
+        if (signal?.aborted) throw signal.reason instanceof Error ? signal.reason : new DOMException('Aborted', 'AbortError');
+        const chunk = queue.shift();
+        let data;
+        for (let attempt = 0; ; attempt += 1) {
+            try { data = await request(backendUrl, sprintId, '/planned/read', 'POST', { teamIds: chunk }, { signal }); break; }
+            catch (error) {
+                if (error.status === 413) {
+                    if (chunk.length === 1) result.failedTeamIds.push(chunk[0]);
+                    else { const mid = Math.ceil(chunk.length / 2); queue.unshift(chunk.slice(0, mid), chunk.slice(mid)); }
+                    data = null; break;
+                }
+                if (error.status === 403 && error.code === 'csrf_required' && attempt === 0) continue;
+                throw error;
+            }
+        }
+        if (!data) continue;
+        if (data.sprintId !== undefined && data.sprintId !== null) result.sprintId = String(data.sprintId);
+        if (data.capabilities) result.capabilities = data.capabilities;
+        for (const team of data.teams || []) result.byTeam[team.teamId] = { revision: team.revision, planned: team.planned, inherited: team.inherited };
+    }
+    return result;
+}
 
 // Add assignee: active people assignable in the workspace's selected Product and Tech projects (no email).
 // Resolves to { users: [{ accountId, displayName }], reason }; `reason` is 'no_selected_projects' when there is nothing to search.

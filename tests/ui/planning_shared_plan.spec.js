@@ -60,7 +60,10 @@ test.describe('real shared Planning persistence', () => {
         const options = page.locator('.team-dropdown-panel .team-dropdown-option');
         await options.filter({ hasText: /^All Teams$/ }).getByRole('checkbox').check();
         await options.filter({ hasText: name }).getByRole('checkbox').check();
+        // The Team panel closes on Escape from its filter field (as in design_system_hover_eng), not from a checkbox.
+        await page.getByRole('textbox', { name: 'Filter teams', exact: true }).focus();
         await page.keyboard.press('Escape');
+        await expect(page.locator('.team-dropdown-panel')).toHaveCount(0);
     }
     const rowCheckbox = (page, key) => page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`).getByRole('checkbox');
 
@@ -191,9 +194,8 @@ test.describe('real shared Planning persistence', () => {
         try {
             await openPlanning(pageA);
             const initial = await metadata(a);
-            // Intentional Task1 red boundary: the real table/auth/catalog smoke
-            // passes first; these fields arrive with the shared-plan contract.
-            expect(initial.plan, 'v2 plan metadata is absent before shared-plan implementation').toEqual({ exists: false, revision: 0 });
+            // A fresh Sprint has no saved plan yet: the shared-plan metadata reports it (#331).
+            expect(initial.plan, 'a fresh Sprint has no saved plan yet').toEqual({ exists: false, revision: 0 });
             expect(initial.scopeProof).toEqual(expect.any(String));
             await expect(rowCheckbox(pageA, 'SYN-8101')).not.toBeChecked();
             await expect(rowCheckbox(pageA, 'SYN-8102')).not.toBeChecked();
@@ -225,6 +227,8 @@ test.describe('real shared Planning persistence', () => {
                 await expect(rowCheckbox(page, 'SYN-8102')).toBeChecked();
             }
             await selectSprint(pageB, '2027Q2');
+            // The Sprint switch remounts the Table on its Epic rows.
+            await pageB.getByRole('radio', { name: 'Stories', exact: true }).check();
             await expect(rowCheckbox(pageB, 'SYN-8101')).not.toBeChecked();
             expect((await metadata(b, 102)).plan).toEqual({ exists: false, revision: 0 });
             expect((await server.inspect()).mutations).toEqual([]);

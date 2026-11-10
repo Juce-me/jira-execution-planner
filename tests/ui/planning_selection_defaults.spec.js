@@ -295,7 +295,6 @@ async function installPlanningFixture(page, {
 
 async function seedPlanningAuthResume(page, {
     selectedTaskKeys = ['PLAN-2'],
-    localSelectedTaskKeys = ['PLAN-1'],
     sprintId = futureSprintId,
     engMode = 'planning',
     selectionMode = 'manual',
@@ -310,7 +309,7 @@ async function seedPlanningAuthResume(page, {
 } = {}) {
     const sharedDraft = draft && { inclusionChanges: draft.map(({ key, included, baseRevision }) => ({ issueId: storyId(key), included, baseRevision })),
         initializePlan: false, basePlanRevision: 1, baseScopeProof: `synthetic-plan:group-alpha:${sprintId}`, baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] };
-    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft }) => {
+    await page.addInitScript(({ sprintId, selectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft }) => {
         const seedMarker = 'planning_auth_resume_fixture_seeded';
         if (window.sessionStorage.getItem(seedMarker)) return;
         window.sessionStorage.setItem(seedMarker, 'true');
@@ -338,14 +337,6 @@ async function seedPlanningAuthResume(page, {
                 selectionMode,
             },
         }));
-        window.localStorage.setItem('jira_dashboard_planning_state_v1', JSON.stringify({
-            [scopeKey]: {
-                selectedTaskKeys: localSelectedTaskKeys,
-                selectedTeams: ['team-alpha'],
-                selectedTeamId: 'team-alpha',
-                selectionMode: 'manual',
-            },
-        }));
         if (seedRecoveryAttempt) {
             const attemptId = 'attempt-planning-hydration';
             window.localStorage.setItem('jira_dashboard_auth_recovery_lease_v1', JSON.stringify({
@@ -365,7 +356,7 @@ async function seedPlanningAuthResume(page, {
                 showPlanning: false,
             }));
         }
-    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft });
+    }, { sprintId, selectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft });
 }
 
 async function openFuturePlanning(page) {
@@ -391,8 +382,7 @@ async function selectSprint(page, sprintName) {
 function selectedStat(page) {
     return page.locator('.planning-panel.open .planning-stats.compact').first();
 }
-// The summary uses the configured child word for every count, so match the count and points rather than the plural.
-const planned = (count, sp) => new RegExp(`^${count} stor(y|ies) · ${sp} SP`);
+const planned = (count, sp) => new RegExp(`^${count} ${count === 1 ? 'story' : 'stories'} · ${sp.replace('.', '\\.')} SP`);
 
 function storyCheckbox(page, key) {
     return page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
@@ -902,23 +892,23 @@ test('typed auth during a shell dependency keeps the capsule for the next docume
     });
 });
 
+// A version-2 draft for a completed Sprint is not restored (#331): the shell falls back to Catch Up and the saved plan is untouched.
 test('completed recovered Planning sprint falls back without overwriting persisted selection', async ({ page }) => {
-    await seedPlanningAuthResume(page, { sprintId: completedSprintId });
-    await installPlanningFixture(page);
+    await seedPlanningAuthResume(page, { sprintId: completedSprintId, draft: swapDraft });
+    const fixture = await installPlanningFixture(page, { plans: { [completedSprintId]: ['PLAN-1'] } });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' })).toBeChecked();
     await expect(page.locator('.planning-panel.open')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
-    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
-        window.localStorage.getItem('jira_dashboard_planning_state_v1')
-    )[scopeKey].selectedTaskKeys, `planning::${completedSprintId}::group-alpha`);
-    expect(storedKeys).toEqual(['PLAN-1']);
+    await page.waitForLoadState('networkidle');
+    expect(fixture.calls.filter(call => call.method === 'PATCH' && /\/review$/.test(call.pathname))).toEqual([]);
 });
 
+// Onboarding skips Sprint discovery, so a staged shell recovery is dropped without any plan write.
 test('onboarding terminalizes staged recovery when sprint discovery is skipped', async ({ page }) => {
     await seedPlanningAuthResume(page);
-    const fixture = await installPlanningFixture(page, { delayConfig: true, onboardingRequired: true });
+    const fixture = await installPlanningFixture(page, { delayConfig: true, onboardingRequired: true, plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.getByRole('dialog', { name: 'Choose your Department' })).toBeVisible();
@@ -926,10 +916,8 @@ test('onboarding terminalizes staged recovery when sprint discovery is skipped',
     fixture.releaseConfig();
 
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
-    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
-        window.localStorage.getItem('jira_dashboard_planning_state_v1')
-    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`);
-    expect(storedKeys).toEqual(['PLAN-1']);
+    await page.waitForLoadState('networkidle');
+    expect(fixture.calls.filter(call => call.method === 'PATCH' && /\/review$/.test(call.pathname))).toEqual([]);
 });
 
 test('onboarding waits for delayed config and Home auth before deciding capsule abandonment', async ({ page }) => {

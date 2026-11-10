@@ -45,9 +45,12 @@ function requestBody(request) {
     }
 }
 
+// Planning plans real Jira issues by numeric id (#331): PLAN-n is issue 900n.
+const storyId = key => String(9000 + Number(key.split('-').pop()));
+
 function makeStory(key, status, sprintId = futureSprintId, sprintName = futureSprintName, epicKey = 'PLAN-EPIC') {
     return {
-        id: key,
+        id: storyId(key),
         key,
         fields: {
             summary: `${key} synthetic future planning story`,
@@ -100,8 +103,14 @@ async function installPlanningFixture(page, {
     delayConfig = false,
     shellAuthDependency = '',
     onboardingRequired = false,
+    // Saved shared plans by Sprint id (#331): { [sprintId]: ['PLAN-1', ...] }. No Sprint has a plan unless named.
+    plans = {},
+    // Stories the server reports as unavailable to this user (for example, no longer in the Sprint).
+    unavailableKeys = [],
 } = {}) {
     const calls = [];
+    const review = createPlanningReviewMock({ initialPlans: Object.fromEntries(Object.entries(plans)
+        .map(([sprintId, keys]) => [`group-alpha:${sprintId}`, { includedIssueIds: keys.map(storyId) }])) });
     let futureProductTaskAttempts = 0;
     let releaseConfig;
     const configRelease = delayConfig
@@ -145,7 +154,7 @@ async function installPlanningFixture(page, {
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
-        const body = request.method() === 'POST' ? requestBody(request) : null;
+        const body = request.method() === 'GET' ? null : requestBody(request);
         calls.push({
             method: request.method(),
             pathname: url.pathname,
@@ -262,6 +271,17 @@ async function installPlanningFixture(page, {
         if (url.pathname === '/api/backlog-epics') return json(route, { epics: [] });
         if (url.pathname === '/api/dependencies') return json(route, { dependencies: {} });
         if (url.pathname === '/api/analytics/context') return json(route, { enabled: false });
+        if (url.pathname === '/api/capacity') return json(route, { enabled: false, capacity: [], teams: [], totalCapacity: 0 });
+        // One Team's stored capacity document (#323): none is saved yet.
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity$/.test(url.pathname)) {
+            return json(route, { teamId: url.searchParams.get('teamId') || 'team-alpha', sprintId: url.pathname.split('/')[4], revision: 0, rows: [], inherited: null, capabilities: { canRead: true, canSave: true } });
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) {
+            return json(route, review.response(request, { capabilities: { canRead: true, canSave: true }, unavailableIssueIds: unavailableKeys.map(storyId) }));
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) {
+            return json(route, { sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
+        }
         return json(route, { error: `Unexpected ${request.method()} ${url.pathname}` }, 404);
     });
     return {
@@ -284,32 +304,22 @@ async function seedPlanningAuthResume(page, {
     settingsOpen = false,
     settingsTab = 'teams',
     seedUiPrefs = false,
-    throwPlanningPersistence = false,
-    capturePlanningWrites = false,
     seedRecoveryAttempt = false,
+    // A shared-plan draft (#331) turns the capsule into version 2: [{ key, included, baseRevision }] over the saved plan.
+    draft = null,
 } = {}) {
-    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites, seedRecoveryAttempt }) => {
-        const installPlanningPersistenceProbe = () => {
-            if (!throwPlanningPersistence && !capturePlanningWrites) return;
-            window.__planningPersistenceWrites = [];
-            const originalSetItem = Storage.prototype.setItem;
-            Storage.prototype.setItem = function setItem(key, value) {
-                if (key === 'jira_dashboard_planning_state_v1') {
-                    if (capturePlanningWrites) window.__planningPersistenceWrites.push(JSON.parse(String(value)));
-                    if (throwPlanningPersistence) throw new DOMException('quota', 'QuotaExceededError');
-                }
-                return originalSetItem.call(this, key, value);
-            };
-        };
+    const sharedDraft = draft && { inclusionChanges: draft.map(({ key, included, baseRevision }) => ({ issueId: storyId(key), included, baseRevision })),
+        initializePlan: false, basePlanRevision: 1, baseScopeProof: `synthetic-plan:group-alpha:${sprintId}`, baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] };
+    await page.addInitScript(({ sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft }) => {
         const seedMarker = 'planning_auth_resume_fixture_seeded';
-        if (window.sessionStorage.getItem(seedMarker)) {
-            installPlanningPersistenceProbe();
-            return;
-        }
+        if (window.sessionStorage.getItem(seedMarker)) return;
         window.sessionStorage.setItem(seedMarker, 'true');
         const scopeKey = `planning::${sprintId}::group-alpha`;
         const capturedAt = Date.now() + capturedAtOffsetMs;
-        window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
+        const view = { selectedView: 'eng', activeGroupId: 'group-alpha', selectedSprint: String(sprintId), engMode, settingsOpen, settingsTab };
+        if (sharedDraft) window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({ version: 2, capturedAt, principal, view,
+            planning: { scope: { workspaceId: 'workspace-test', groupId: 'group-alpha', sprintId: String(sprintId), namespaceId: null }, selectedTeams: ['team-alpha'], draft: sharedDraft, submission: null } }));
+        else window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
             version: 1,
             capturedAt,
             principal,
@@ -355,8 +365,7 @@ async function seedPlanningAuthResume(page, {
                 showPlanning: false,
             }));
         }
-        installPlanningPersistenceProbe();
-    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, throwPlanningPersistence, capturePlanningWrites, seedRecoveryAttempt });
+    }, { sprintId, selectedTaskKeys, localSelectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft });
 }
 
 async function openFuturePlanning(page) {
@@ -378,73 +387,50 @@ async function selectSprint(page, sprintName) {
     await page.locator('.sprint-dropdown-option', { hasText: sprintName }).click();
 }
 
+// The overview summary ("N stories · X SP · ...") holds the counts the List's selected stat held (#323).
 function selectedStat(page) {
-    return page.locator('.planning-panel.open .planning-stat-value').first();
+    return page.locator('.planning-panel.open .planning-stats.compact').first();
 }
+// The summary uses the configured child word for every count, so match the count and points rather than the plural.
+const planned = (count, sp) => new RegExp(`^${count} stor(y|ies) · ${sp} SP`);
 
 function storyCheckbox(page, key) {
-    return page.locator('.task-item', { hasText: key }).locator('input.task-checkbox');
+    return page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
 }
+const storyRow = (page, key) => page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+async function showStoryRows(page) {
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(page.locator('.planning-review-table tbody tr[data-row-kind="story"]').first()).toBeVisible();
+}
+const planNote = page => page.locator('.planning-panel .planning-actions > .planning-review-state-note');
+async function savePlan(page) {
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+}
+const allFuture = { [futureSprintId]: ['PLAN-1', 'PLAN-2', 'PLAN-3'] };
+const firstFuture = { [futureSprintId]: ['PLAN-1'] };
 
-async function planningCardLayout(page, key) {
-    return page.locator(`.task-item[data-task-key="${key}"]`).evaluate((card) => {
-        const rectFor = (selector) => {
-            const node = card.querySelector(selector);
-            if (!node) return null;
-            const rect = node.getBoundingClientRect();
-            return {
-                x: rect.x,
-                y: rect.y,
-                right: rect.right,
-                bottom: rect.bottom,
-                width: rect.width,
-                height: rect.height,
-                centerY: rect.y + rect.height / 2,
-            };
-        };
-        const headerMeta = card.querySelector('.task-header-right .task-inline-meta');
-        const checkbox = card.querySelector('.task-header-right .task-checkbox');
-        const storyPoints = card.querySelector('.task-header-right .task-inline-sp');
-        const keyLink = card.querySelector('.task-header-right .task-key-link');
-        const cardStyle = getComputedStyle(card);
-        const titleAnchor = card.querySelector('.task-title a');
-        const titleRange = card.ownerDocument.createRange();
-        titleRange.selectNodeContents(titleAnchor);
-        const titleTextRect = titleRange.getBoundingClientRect();
-        const titleAnchorRect = titleAnchor.getBoundingClientRect();
-        const cardRect = card.getBoundingClientRect();
+// The Table row of a Story: its selection checkbox, Story Points cell and row treatment.
+async function planningRowLayout(page, key) {
+    return storyRow(page, key).evaluate((row) => {
+        const box = node => { const rect = node.getBoundingClientRect(); return { x: rect.x, right: rect.right, width: rect.width, height: rect.height, centerY: rect.y + rect.height / 2 }; };
+        const cell = row.querySelector('td.planning-review-selection');
+        const checkbox = cell?.querySelector('input[type=checkbox]');
+        const points = row.querySelector('td.planning-review-storyPoints');
+        const style = getComputedStyle(row);
         return {
-            cardClassName: card.className,
-            checkboxInHeadline: Boolean(card.querySelector('.task-headline > .task-checkbox')),
-            storyPointsInHeadline: Boolean(card.querySelector('.task-headline > .task-inline-sp')),
-            headerRightInlineMeta: Boolean(card.querySelector('.task-header-right .task-inline-meta')),
-            headerMetaChildClasses: Array.from(headerMeta?.children || []).map((node) => node.className || node.tagName.toLowerCase()),
-            planningMetaInTaskMeta: Boolean(card.querySelector('.task-meta .planning-selection-meta')),
-            taskMetaHasCheckbox: Boolean(card.querySelector('.task-meta .task-checkbox')),
-            taskMetaHasStoryPoints: Boolean(card.querySelector('.task-meta .task-inline-sp')),
-            headerMetaWidth: headerMeta ? headerMeta.getBoundingClientRect().width : 0,
+            className: row.className,
+            checkboxInSelectionCell: Boolean(checkbox),
             checkboxAriaLabel: checkbox?.getAttribute('aria-label') || '',
             checkboxChecked: Boolean(checkbox?.checked),
-            checkboxBorderRadius: checkbox ? getComputedStyle(checkbox).borderRadius : '',
-            checkboxBackgroundColor: checkbox ? getComputedStyle(checkbox).backgroundColor : '',
-            checkboxBoxShadow: checkbox ? getComputedStyle(checkbox).boxShadow : '',
-            selectedBoxShadow: cardStyle.boxShadow,
-            selectedBackgroundImage: cardStyle.backgroundImage,
-            borderLeftColor: cardStyle.borderLeftColor,
-            cardClientWidth: card.clientWidth,
-            cardScrollWidth: card.scrollWidth,
-            documentClientWidth: card.ownerDocument.documentElement.clientWidth,
-            documentScrollWidth: card.ownerDocument.documentElement.scrollWidth,
-            storyPoints: rectFor('.task-header-right .task-inline-sp'),
-            checkbox: rectFor('.task-header-right .task-checkbox'),
-            keyLink: rectFor('.task-header-right .task-key-link'),
-            remove: rectFor('.task-remove'),
-            card: {
-                x: cardRect.x,
-                right: cardRect.right,
-                width: cardRect.width,
-            },
-            titleAnchorExtraWidth: titleAnchorRect.width - titleTextRect.width,
+            checkbox: checkbox ? box(checkbox) : null,
+            cell: cell ? box(cell) : null,
+            row: box(row),
+            points: points ? box(points) : null,
+            backgroundColor: style.backgroundColor,
+            boxShadow: style.boxShadow,
+            documentClientWidth: document.documentElement.clientWidth,
+            documentScrollWidth: document.documentElement.scrollWidth,
         };
     });
 }
@@ -532,30 +518,35 @@ test('Team selector retains task-derived names when the directory contains only 
     await expect(label).toHaveText('Alpha Team');
 });
 
-test('new future planning sprint defaults to all selected stories', async ({ page }) => {
+// The old default selection is gone (#331): a future Sprint starts with no saved plan, nothing included and Select All ready.
+test('new future planning sprint starts without a saved plan and nothing selected', async ({ page }) => {
     await installPlanningFixture(page);
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
 
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
-    await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
+    await expect(planNote(page)).toHaveText('No saved plan yet. Include stories to preview capacity, then save your plan.');
+    for (const key of ['PLAN-1', 'PLAN-2', 'PLAN-3']) await expect(storyCheckbox(page, key)).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Select All' })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Select All' })).not.toHaveClass(/active/);
 });
 
 test('Planning Jira export intersects selected stories with the active filters', async ({ page }) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
     await page.evaluate(() => {
         window.openedPlanningJiraUrls = [];
         window.open = url => window.openedPlanningJiraUrls.push(String(url));
     });
-    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    const exportButton = page.getByRole('button', { name: 'Open planned stories in Jira', exact: true });
     await page.getByRole('button', { name: 'Filters', exact: true }).click();
     const statusOptions = page.getByRole('group', { name: 'Status', exact: true });
     await statusOptions.getByRole('button', { name: /to do/i }).click();
     await statusOptions.getByRole('button', { name: /pending/i }).click();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.task-item[data-task-key="PLAN-1"]')).toHaveCount(0);
+    await expect(storyRow(page, 'PLAN-1')).toHaveCount(0);
     await exportButton.click();
     const jql = await page.evaluate(() => new URL(window.openedPlanningJiraUrls.at(-1)).searchParams.get('jql'));
     expect(jql).toBe('key in (PLAN-3)');
@@ -572,51 +563,57 @@ test('Planning Jira export follows Team, search, priority and Sprint scope witho
     await installPlanningFixture(page, {
         futureIssues: [...futureStories, betaStory, minorStory],
         configuredTeamIds: ['team-alpha', 'team-beta'],
+        plans: { [futureSprintId]: ['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-6', 'PLAN-7'], [secondFutureSprintId]: ['PLAN-4', 'PLAN-5'] },
     });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
     await page.evaluate(() => {
         window.openedPlanningJiraUrls = [];
         window.open = url => window.openedPlanningJiraUrls.push(String(url));
     });
-    const exportButton = page.getByRole('button', { name: 'Open selected stories in Jira', exact: true });
+    const storyRows = page.locator('.planning-review-table tbody tr[data-row-kind="story"]');
+    const exportButton = page.getByRole('button', { name: 'Open planned stories in Jira', exact: true });
     const expectExport = async keys => {
         await exportButton.click();
         expect(await page.evaluate(() => new URL(window.openedPlanningJiraUrls.at(-1)).searchParams.get('jql')))
             .toBe(`key in (${keys.join(', ')})`);
     };
     await searchInput(page).fill('PLAN-1');
-    await expect(page.locator('.task-item')).toHaveCount(1);
+    await expect(storyRows).toHaveCount(1);
     await expectExport(['PLAN-1']);
     await searchInput(page).fill('no-matching-story');
     await expect(exportButton).toBeDisabled();
     await searchInput(page).fill('');
-    await expect(page.locator('.task-item')).toHaveCount(5);
+    await expect(storyRows).toHaveCount(5);
     await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-6', 'PLAN-7']);
 
     const teams = page.locator('.team-dropdown').first();
     await teams.locator('.team-dropdown-toggle').click();
     await teams.locator('.team-dropdown-option', { hasText: 'Alpha Team' }).locator('input').check();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.task-item[data-task-key="PLAN-6"]')).toHaveCount(0);
+    await expect(storyRow(page, 'PLAN-6')).toHaveCount(0);
     await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3', 'PLAN-7']);
     await page.getByRole('button', { name: 'Filters', exact: true }).click();
     await page.getByRole('group', { name: 'Priority', exact: true }).getByRole('button', { name: /minor/i }).click();
     await page.keyboard.press('Escape');
-    await expect(page.locator('.task-item[data-task-key="PLAN-7"]')).toHaveCount(0);
+    await expect(storyRow(page, 'PLAN-7')).toHaveCount(0);
     await expectExport(['PLAN-1', 'PLAN-2', 'PLAN-3']);
     await storyCheckbox(page, 'PLAN-2').uncheck();
     await expectExport(['PLAN-1', 'PLAN-3']);
+    // A plan draft guards the scope (#331): save it before the Sprint changes.
+    await savePlan(page);
 
     await page.evaluate(() => window.scrollTo(0, 0));
     await expect(page.locator('.compact-sticky-header')).not.toHaveClass(/is-visible/);
     await selectSprint(page, secondFutureSprintName);
-    await expect(page.locator('.task-item[data-task-key="PLAN-4"]')).toBeVisible();
+    await showStoryRows(page);
+    await expect(storyRow(page, 'PLAN-4')).toBeVisible();
     await expectExport(['PLAN-4', 'PLAN-5']);
 });
 
 test('Planning Jira export uses filtered Story keys in Table layout', async ({ page }, testInfo) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     // Planning has no List toggle (2026-11-06): the Table layout comes from the saved preference.
     await page.addInitScript(() => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({})));
     await page.goto(appBaseUrl);
@@ -639,12 +636,14 @@ test('Planning Jira export uses filtered Story keys in Table layout', async ({ p
     await page.locator('.planning-panel.open').screenshot({ path: testInfo.outputPath('filtered-export-disabled.png'), animations: 'disabled' });
 });
 
+// The capsule is version 2 (#331): it carries the scope and the plan draft over the saved plan, never Story keys or payloads.
 test('auth lock captures only the latest safe dashboard and Planning snapshot', async ({ page }) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
     await storyCheckbox(page, 'PLAN-2').click();
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(2, '2.0'));
 
     await page.evaluate(() => {
         window.dispatchEvent(new CustomEvent('jep:authentication-required'));
@@ -654,6 +653,7 @@ test('auth lock captures only the latest safe dashboard and Planning snapshot', 
         const raw = window.sessionStorage.getItem('jira_dashboard_auth_resume_v1');
         return raw ? JSON.parse(raw) : null;
     })).toMatchObject({
+        version: 2,
         principal: { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
         view: {
             selectedView: 'eng',
@@ -664,10 +664,10 @@ test('auth lock captures only the latest safe dashboard and Planning snapshot', 
             settingsTab: 'scope',
         },
         planning: {
-            scopeKey: `planning::${futureSprintId}::group-alpha`,
-            selectedTaskKeys: ['PLAN-1', 'PLAN-3'],
+            scope: { workspaceId: 'workspace-test', groupId: 'group-alpha', sprintId: String(futureSprintId), namespaceId: null },
+            draft: { inclusionChanges: [{ issueId: storyId('PLAN-2'), included: false, baseRevision: 1 }], basePlanRevision: 1 },
+            submission: null,
             selectedTeams: ['all'],
-            selectionMode: 'manual',
         },
     });
     const storedKeys = await page.evaluate(() => {
@@ -683,20 +683,24 @@ test('auth lock captures only the latest safe dashboard and Planning snapshot', 
     expect(storedKeys.top).toEqual(['capturedAt', 'planning', 'principal', 'version', 'view']);
     expect(storedKeys.principal).toEqual(['viewConfigId', 'workspaceId']);
     expect(storedKeys.view).toEqual(['activeGroupId', 'engMode', 'selectedSprint', 'selectedView', 'settingsOpen', 'settingsTab']);
-    expect(storedKeys.planning).toEqual(['scopeKey', 'selectedTaskKeys', 'selectedTeams', 'selectionMode']);
+    expect(storedKeys.planning).toEqual(['draft', 'scope', 'selectedTeams', 'submission']);
     expect(storedKeys.raw).not.toContain('summary');
     expect(storedKeys.raw).not.toContain('response');
     expect(storedKeys.raw).not.toContain('token');
 });
 
+// The saved plan includes PLAN-1; the capsule's draft removes it and includes PLAN-2.
+const swapDraft = [{ key: 'PLAN-1', included: false, baseRevision: 1 }, { key: 'PLAN-2', included: true, baseRevision: 0 }];
+
 test('matching auth resume overrides shared Planning state after exact-scope hydration', async ({ page }) => {
-    await seedPlanningAuthResume(page);
-    await installPlanningFixture(page);
+    await seedPlanningAuthResume(page, { draft: swapDraft });
+    await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
     await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(futureSprintName);
-    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(1, '1.0'));
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
@@ -704,43 +708,47 @@ test('matching auth resume overrides shared Planning state after exact-scope hyd
 
 test('a principal-mismatched capsule is rejected before shell or Planning restore', async ({ page }) => {
     await seedPlanningAuthResume(page, {
-        principal: { workspaceId: 'workspace-other', viewConfigId: 'view-other' },
+        principal: { workspaceId: 'workspace-other', viewConfigId: 'view-other' }, draft: swapDraft,
     });
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
     await openFuturePlanning(page);
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
 });
 
 test('an expired capsule is pruned before shell or Planning restore', async ({ page }) => {
-    await seedPlanningAuthResume(page, { capturedAtOffsetMs: -(30 * 60 * 1000 + 1) });
-    await installPlanningFixture(page);
+    await seedPlanningAuthResume(page, { capturedAtOffsetMs: -(30 * 60 * 1000 + 1), draft: swapDraft });
+    await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
     await openFuturePlanning(page);
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
 });
 
-test('missing recovered task keys are pruned after exact-scope hydration', async ({ page }) => {
-    await seedPlanningAuthResume(page, { selectedTaskKeys: ['PLAN-2', 'PLAN-999'] });
-    await installPlanningFixture(page);
+// A recovered draft can name a Story the server no longer admits (#331): the draft is kept and the tab asks for a recovery choice.
+test('a recovered draft naming an unavailable Story keeps the draft and blocks Save until recovery', async ({ page }) => {
+    await seedPlanningAuthResume(page, { draft: [...swapDraft, { key: 'PLAN-999', included: true, baseRevision: 0 }] });
+    await installPlanningFixture(page, { plans: firstFuture, unavailableKeys: ['PLAN-999'] });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
-    await expect(page.locator('.task-item[data-task-key="PLAN-999"]')).toHaveCount(0);
-    await expect.poll(() => page.evaluate((scopeKey) => JSON.parse(
-        window.localStorage.getItem('jira_dashboard_planning_state_v1')
-    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`)).toEqual(['PLAN-2']);
+    await expect(storyRow(page, 'PLAN-999')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await expect(page.getByRole('alert').filter({ hasText: 'Shared values changed or are no longer available after recovery. Your draft is preserved.' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeDisabled();
+    await expect(page.getByRole('button', { name: 'Load current and discard draft', exact: true })).toBeEnabled();
 });
 
 test('Connections Settings reopens after recovery on the Connections tab', async ({ page }) => {
@@ -772,58 +780,52 @@ test('Connections Settings reopens after recovery on the Connections tab', async
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
-test('failed Planning recovery persistence keeps the capsule retryable without freezing Undo baseline', async ({ page }) => {
-    await seedPlanningAuthResume(page, { throwPlanningPersistence: true });
-    await installPlanningFixture(page);
+// The local Planning persistence is gone (#331); what remains is that a restore is not an Undo step.
+test('a restored Planning draft is not an Undo step and later gestures still undo', async ({ page }) => {
+    await seedPlanningAuthResume(page, { draft: swapDraft });
+    await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
-    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
-    const storedKeys = await page.evaluate((scopeKey) => JSON.parse(
-        window.localStorage.getItem('jira_dashboard_planning_state_v1')
-    )[scopeKey].selectedTaskKeys, `planning::${futureSprintId}::group-alpha`);
-    expect(storedKeys).toEqual(['PLAN-1']);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
 
-    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await page.getByRole('button', { name: 'Include by status' }).click();
+    await page.getByRole('button', { name: /^Include all Accepted \+ In Progress/ }).click();
+    await page.keyboard.press('Escape');
+    await expect(selectedStat(page)).toHaveText(planned(2, '2.0'));
     await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
+    await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
+    await page.getByRole('button', { name: 'Undo' }).click();
+    await expect(selectedStat(page)).toHaveText(planned(1, '1.0'));
+    await expect(storyCheckbox(page, 'PLAN-3')).not.toBeChecked();
     await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
 });
 
-test('default-all recovery includes newly loaded tasks and freezes the full Undo baseline', async ({ page }) => {
-    await seedPlanningAuthResume(page, {
-        selectedTaskKeys: ['PLAN-1'],
-        selectionMode: 'default_all',
-        capturePlanningWrites: true,
-    });
-    await installPlanningFixture(page);
+// Default-all selection is gone (#331): a historical version-1 capsule resumes the shell and Teams, never a Story selection.
+test('a version-1 default-all capsule resumes the shell but leaves the saved plan as it is', async ({ page }) => {
+    await seedPlanningAuthResume(page, { selectedTaskKeys: ['PLAN-2', 'PLAN-3'], selectionMode: 'default_all' });
+    await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(page.locator('.sprint-dropdown-toggle').first()).toContainText(futureSprintName);
+    await expect(selectedStat(page)).toHaveText(planned(1, '1.0'));
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
-    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
-    await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
-    await expect.poll(() => page.evaluate((scopeKey) => (
-        window.__planningPersistenceWrites?.[0]?.[scopeKey]?.selectedTaskKeys || []
-    ), `planning::${futureSprintId}::group-alpha`)).toEqual(['PLAN-1', 'PLAN-2', 'PLAN-3']);
-
-    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
-    await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
-    await page.getByRole('button', { name: 'Undo' }).click();
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
-    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
-    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
-    await expect(storyCheckbox(page, 'PLAN-3')).toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-3')).not.toBeChecked();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
 });
 
-test('non-auth Planning hydration failure abandons recovery without resurrecting it on reload', async ({ page }) => {
-    await seedPlanningAuthResume(page, { seedRecoveryAttempt: true });
-    const fixture = await installPlanningFixture(page, { taskFailureMode: 'non-auth-once' });
+// A shared-plan draft is retained when its Stories cannot load (#331): the tab says so, and the next document restores it.
+test('non-auth Planning hydration failure retains the recovered draft and restores it on reload', async ({ page }) => {
+    await seedPlanningAuthResume(page, { seedRecoveryAttempt: true, draft: swapDraft });
+    const fixture = await installPlanningFixture(page, { taskFailureMode: 'non-auth-once', plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect.poll(() => page.evaluate(() => {
@@ -831,33 +833,36 @@ test('non-auth Planning hydration failure abandons recovery without resurrecting
         return raw ? JSON.parse(raw) : null;
     })).toMatchObject({ attemptId: 'attempt-planning-hydration' });
     await expect(page.getByText(/Failed to load tasks:/)).toBeVisible();
-    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await expect(page.getByText('Plan recovery could not load its stories. Your changes are retained in this tab.')).toBeVisible();
+    expect(await page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
     expect(fixture.getFutureProductTaskAttempts()).toBe(1);
 
     await page.reload();
-    await openFuturePlanning(page);
-    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
-    await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();
-    await expect(storyCheckbox(page, 'PLAN-2')).not.toBeChecked();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expect(selectedStat(page)).toHaveText(planned(1, '1.0'));
+    await showStoryRows(page);
+    await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
+    await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
     expect(fixture.getFutureProductTaskAttempts()).toBeGreaterThan(1);
 });
 
 test('a new typed auth interruption retains the staged Planning capsule', async ({ page }) => {
-    await seedPlanningAuthResume(page);
-    await installPlanningFixture(page, { taskFailureMode: 'auth-required' });
+    await seedPlanningAuthResume(page, { draft: swapDraft });
+    await installPlanningFixture(page, { taskFailureMode: 'auth-required', plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expect(page.getByRole('alertdialog', { name: 'Sign in required' })).toBeVisible();
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).not.toBe(null);
-    const stagedKeys = await page.evaluate(() => JSON.parse(
+    const staged = await page.evaluate(() => JSON.parse(
         window.sessionStorage.getItem('jira_dashboard_auth_resume_v1')
-    ).planning.selectedTaskKeys);
-    expect(stagedKeys).toEqual(['PLAN-2']);
+    ).planning.draft.inclusionChanges);
+    expect(staged).toEqual(swapDraft.map(({ key, included, baseRevision }) => ({ issueId: storyId(key), included, baseRevision })));
 });
 
 test('late authenticated config staging holds Jira work, then resumes shell and exact-scope Planning on release', async ({ page }) => {
-    await seedPlanningAuthResume(page, { seedUiPrefs: true });
-    const fixture = await installPlanningFixture(page, { delayConfig: true });
+    await seedPlanningAuthResume(page, { seedUiPrefs: true, draft: swapDraft });
+    const fixture = await installPlanningFixture(page, { delayConfig: true, plans: firstFuture });
     await page.goto(appBaseUrl);
 
     await expectConfigBootstrapHoldsJiraWork(page, () => fixture.calls.map(call => call.pathname));
@@ -865,7 +870,8 @@ test('late authenticated config staging holds Jira work, then resumes shell and 
     fixture.releaseConfig();
 
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(selectedStat(page)).toContainText('1 · 1.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(1, '1.0'));
+    await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).not.toBeChecked();
     await expect(storyCheckbox(page, 'PLAN-2')).toBeChecked();
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
@@ -957,134 +963,109 @@ test('onboarding waits for delayed config and Home auth before deciding capsule 
     });
 });
 
+// Planning is the Table only (#323): the Story row's selection checkbox sits in its own first column, level with the row.
 test('planning story selection controls align with story-point metadata', async ({ page }) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
 
-    const layout = await planningCardLayout(page, 'PLAN-1');
-    expect(layout.cardClassName).toContain('is-planning-selectable');
-    expect(layout.cardClassName).toContain('is-planning-selected');
-    expect(layout.checkboxInHeadline).toBe(false);
-    expect(layout.storyPointsInHeadline).toBe(false);
-    expect(layout.headerRightInlineMeta).toBe(true);
-    expect(layout.headerMetaChildClasses).toEqual(['task-key-link', 'task-inline-sp', 'task-checkbox']);
-    expect(layout.planningMetaInTaskMeta).toBe(false);
-    expect(layout.taskMetaHasCheckbox).toBe(false);
-    expect(layout.taskMetaHasStoryPoints).toBe(false);
-    expect(layout.checkboxAriaLabel).toBe('Select PLAN-1 for sprint planning');
+    const layout = await planningRowLayout(page, 'PLAN-1');
+    expect(layout.checkboxInSelectionCell).toBe(true);
+    expect(layout.checkboxAriaLabel).toBe('Select PLAN-1');
     expect(layout.checkboxChecked).toBe(true);
-    expect(layout.storyPoints).toBeTruthy();
-    expect(layout.checkbox).toBeTruthy();
-    expect(layout.keyLink).toBeTruthy();
-    expect(layout.storyPoints.x).toBeGreaterThanOrEqual(layout.keyLink.right);
-    expect(layout.storyPoints.x - layout.keyLink.right).toBeLessThanOrEqual(12);
-    expect(layout.checkbox.x).toBeGreaterThanOrEqual(layout.storyPoints.right);
-    expect(layout.checkbox.x - layout.storyPoints.right).toBeLessThanOrEqual(12);
-    expect(Math.abs(layout.checkbox.centerY - layout.storyPoints.centerY)).toBeLessThanOrEqual(4);
-    expect(Math.abs(layout.keyLink.centerY - layout.storyPoints.centerY)).toBeLessThanOrEqual(4);
-    expect(layout.titleAnchorExtraWidth).toBeLessThanOrEqual(3);
-    expect(layout.checkbox.width).toBeLessThanOrEqual(14);
-    expect(layout.checkbox.height).toBeLessThanOrEqual(14);
-    expect(layout.remove.x - layout.checkbox.right).toBeGreaterThanOrEqual(10);
-    expect(layout.card.right - layout.remove.right).toBeLessThanOrEqual(18);
-    expect(Number.parseFloat(layout.checkboxBorderRadius)).toBeLessThanOrEqual(3);
-    expect(layout.checkboxBackgroundColor).toBe('rgb(82, 196, 26)');
-    expect(layout.selectedBackgroundImage).toBe('none');
+    expect(layout.points).toBeTruthy();
+    expect(layout.checkbox.right).toBeLessThanOrEqual(layout.points.x);
+    expect(Math.abs(layout.checkbox.centerY - layout.points.centerY)).toBeLessThanOrEqual(4);
+    expect(Math.abs(layout.checkbox.centerY - layout.row.centerY)).toBeLessThanOrEqual(4);
+    expect(layout.checkbox.x).toBeGreaterThanOrEqual(layout.cell.x);
+    expect(layout.checkbox.right).toBeLessThanOrEqual(layout.cell.right);
+    expect(layout.checkbox.height).toBeLessThanOrEqual(layout.cell.height);
+    expect(layout.documentScrollWidth).toBeLessThanOrEqual(layout.documentClientWidth);
 });
 
-test('planning story checkbox toggles state without changing card treatment', async ({ page }) => {
-    await installPlanningFixture(page);
+test('planning story checkbox toggles state without changing row treatment', async ({ page }) => {
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
 
     await storyCheckbox(page, 'PLAN-2').click();
     await page.waitForTimeout(250);
-    const unselected = await planningCardLayout(page, 'PLAN-2');
-    expect(unselected.cardClassName).not.toContain('is-planning-selected');
+    const unselected = await planningRowLayout(page, 'PLAN-2');
     expect(unselected.checkboxChecked).toBe(false);
 
     await storyCheckbox(page, 'PLAN-2').click();
     await page.waitForTimeout(250);
-    const selected = await planningCardLayout(page, 'PLAN-2');
-    expect(selected.cardClassName).toContain('is-planning-selected');
+    const selected = await planningRowLayout(page, 'PLAN-2');
     expect(selected.checkboxChecked).toBe(true);
-    expect(selected.selectedBoxShadow).toBe(unselected.selectedBoxShadow);
-    expect(selected.selectedBackgroundImage).toBe(unselected.selectedBackgroundImage);
-    expect(selected.borderLeftColor).toBe(unselected.borderLeftColor);
+    expect(selected.className).toBe(unselected.className);
+    expect(selected.backgroundColor).toBe(unselected.backgroundColor);
+    expect(selected.boxShadow).toBe(unselected.boxShadow);
+    expect(selected.row.height).toBe(unselected.row.height);
 });
 
+// Selection is saved with the shared plan (#331), not in the browser: a saved edit survives reloads until Select All replaces it.
 test('manual future planning checkbox edits persist until Select All is clicked', async ({ page }) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
+    await showStoryRows(page);
 
     await storyCheckbox(page, 'PLAN-2').click();
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
-    await expect.poll(async () => page.evaluate(({ sprintId }) => {
-        const payload = JSON.parse(window.localStorage.getItem('jira_dashboard_planning_state_v1') || '{}');
-        const state = payload[`planning::${sprintId}::group-alpha`] || {};
-        return {
-            selectedTaskKeys: state.selectedTaskKeys || [],
-            selectionMode: state.selectionMode || '',
-        };
-    }, { sprintId: futureSprintId })).toEqual({
-        selectedTaskKeys: ['PLAN-1', 'PLAN-3'],
-        selectionMode: 'manual',
-    });
+    await expect(selectedStat(page)).toHaveText(planned(2, '2.0'));
+    await savePlan(page);
     await page.reload();
     await openFuturePlanning(page);
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(2, '2.0'));
 
     await page.getByRole('button', { name: 'Select All' }).click();
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
+    await savePlan(page);
     await page.reload();
     await openFuturePlanning(page);
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
 });
 
 test('planning undo restores loaded selection after a bulk status action', async ({ page }) => {
-    await installPlanningFixture(page);
+    await installPlanningFixture(page, { plans: allFuture });
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
 
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
-    // Scope to the action bar: in Planning, story status pills are now buttons too, so a
-    // story at "Accepted" would otherwise collide with the bulk-include action button.
-    await page.locator('.planning-actions').getByRole('button', { name: 'Accepted', exact: true }).click();
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
+    // The bulk status action lives in the Include by status popover; Accepted is grouped with In Progress.
+    await page.getByRole('button', { name: 'Include by status' }).click();
+    await page.getByRole('button', { name: /^Remove all Accepted \+ In Progress/ }).click();
+    await page.keyboard.press('Escape');
+    await expect(selectedStat(page)).toHaveText(planned(2, '2.0'));
     await expect(page.getByRole('button', { name: 'Undo' })).toBeEnabled();
     await page.getByRole('button', { name: 'Undo' }).click();
-    await expect(selectedStat(page)).toContainText('3 · 3.0 SP');
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
     await expect(page.getByRole('button', { name: 'Undo' })).toBeDisabled();
 });
 
+// Each future Sprint has its own shared plan (#331): Select All saved in one Sprint never includes another Sprint's Stories.
 test('select all remains scoped when switching future planning sprints', async ({ page }) => {
-    await installPlanningFixture(page);
+    const fixture = await installPlanningFixture(page);
     await page.goto(appBaseUrl);
     await openFuturePlanning(page);
 
     await page.getByRole('button', { name: 'Select All' }).click();
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
+    await savePlan(page);
     await selectSprint(page, secondFutureSprintName);
-    await expect(page.locator('.task-list .epic-block', { hasText: 'PLAN-EPIC-2' })).toBeVisible();
-    await expect(selectedStat(page)).toContainText('2 · 2.0 SP');
+    await expect(page.locator('.planning-review-table tbody tr').filter({ has: page.getByRole('link', { name: 'PLAN-EPIC-2', exact: true }) })).toBeVisible();
+    await expect(planNote(page)).toHaveText('No saved plan yet. Include stories to preview capacity, then save your plan.');
+    await showStoryRows(page);
+    await expect(storyCheckbox(page, 'PLAN-4')).not.toBeChecked();
+    await expect(storyCheckbox(page, 'PLAN-5')).not.toBeChecked();
 
-    await expect.poll(async () => page.evaluate(({ firstSprintId, secondSprintId }) => {
-        const payload = JSON.parse(window.localStorage.getItem('jira_dashboard_planning_state_v1') || '{}');
-        const first = payload[`planning::${firstSprintId}::group-alpha`] || {};
-        const second = payload[`planning::${secondSprintId}::group-alpha`] || {};
-        return {
-            firstTaskKeys: first.selectedTaskKeys || [],
-            firstMode: first.selectionMode || '',
-            secondTaskKeys: second.selectedTaskKeys || [],
-            secondMode: second.selectionMode || '',
-        };
-    }, { firstSprintId: futureSprintId, secondSprintId: secondFutureSprintId })).toEqual({
-        firstTaskKeys: ['PLAN-1', 'PLAN-2', 'PLAN-3'],
-        firstMode: 'default_all',
-        secondTaskKeys: ['PLAN-4', 'PLAN-5'],
-        secondMode: 'default_all',
-    });
+    const saves = fixture.calls.filter(call => call.method === 'PATCH' && /\/review$/.test(call.pathname));
+    expect(saves.map(call => call.pathname)).toEqual([`/api/eng/sprints/${futureSprintId}/review`]);
+    expect(saves[0].body.inclusionChanges.map(change => change.issueId).sort()).toEqual(['PLAN-1', 'PLAN-2', 'PLAN-3'].map(storyId));
+
+    await selectSprint(page, futureSprintName);
+    await expect(selectedStat(page)).toHaveText(planned(3, '3.0'));
 });
 
 // Planning is the Table only (#323): the Epic capacity control is the optional Capacity column (hidden by default); its hover

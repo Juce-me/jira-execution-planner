@@ -280,18 +280,26 @@ test('a group switch keeps the stored Team selection when it differs from the ca
     await page.evaluate(() => {
         const seen = window.__teamSwitchTrace = { labels: [], saves: [] };
         const read = () => document.querySelectorAll('.view-selector .team-dropdown-selection-label').forEach(node => seen.labels.push(node.textContent));
-        new MutationObserver(read).observe(document.body, { subtree: true, childList: true, characterData: true });
-        const setItem = Storage.prototype.setItem;
+        (seen.observer = new MutationObserver(read)).observe(document.body, { subtree: true, childList: true, characterData: true });
+        const setItem = seen.setItem = Storage.prototype.setItem;
         Storage.prototype.setItem = function (key, value) {
             if (key === 'jira_dashboard_team_selection_state_v1' || key === 'jira_dashboard_ui_prefs_v1') seen.saves.push(String(value));
             return setItem.call(this, key, value);
         };
     });
     const requests = [];
-    page.on('request', request => requests.push(request.url()));
+    const onRequest = request => requests.push(request.url());
+    page.on('request', onRequest);
     await toA(page);
+    // The measured window ends here: the storage patch, the observer and the request listener are removed.
+    page.off('request', onRequest);
+    const trace = await page.evaluate(() => {
+        const seen = window.__teamSwitchTrace;
+        Storage.prototype.setItem = seen.setItem;
+        seen.observer.disconnect();
+        return { labels: seen.labels, saves: seen.saves };
+    });
     // No render, saved selection or request in between uses Default's cached Beta: the stored selection wins at once (#323 R5).
-    const trace = await page.evaluate(() => window.__teamSwitchTrace);
     expect(trace.labels.filter(text => text.includes('team-beta')), 'labels rendered during the switch').toEqual([]);
     expect(trace.saves.filter(value => value.includes('team-beta') && !value.includes('"team-selection::')), 'UI preferences saved with the cached selection').toEqual([]);
     expect(trace.saves.filter(value => JSON.parse(value)[`team-selection::${sprintId}::grp-default`]?.selectedTeams?.includes('team-beta')), 'Default scope saved with the cached selection').toEqual([]);

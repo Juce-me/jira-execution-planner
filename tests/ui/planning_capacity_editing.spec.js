@@ -763,7 +763,8 @@ test('a row of Teams with no capacity keeps its card and panel height idle, whil
 
 test('a status shown while editing sits on the label row\'s one-line context slot and keeps the card height', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
-    const fixture = await openPlanning(page);
+    // Product only, so the slot first holds the share note and the status replaces it.
+    const fixture = await openPlanning(page, { prefs: { showProduct: true, showTech: false } });
     const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
     const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
     const height = () => card.evaluate(node => getComputedStyle(node).height);
@@ -773,11 +774,16 @@ test('a status shown while editing sits on the label row\'s one-line context slo
     await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
     const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
     await input.fill('6.5');
+    const note = await card.locator('.team-capacity-editor-context[role="note"]').elementHandle();
     fixture.state.patchStatus = 409;
     fixture.state.patchResponse = { error: 'capacity_conflict', currentCapacity: 7 };
     await input.press('Enter');
     const message = 'Capacity changed in Jira to 7.0. Review and save again, or cancel.';
     const status = card.getByRole('status');
+    // The live region mounts as a new element; the note's node is gone, not re-roled in place.
+    await expect(status).toHaveText(message);
+    expect(await note.evaluate(node => node.isConnected), 'the note node left the document').toBe(false);
+    expect(await status.evaluate((node, old) => node !== old, note), 'the status is a new element').toBe(true);
     // The accessible text is the whole message, though the line is ellipsized; no native title carries it.
     await expect(status).toHaveText(message);
     await expect(status).toHaveClass('team-capacity-editor-context');
@@ -1959,6 +1965,7 @@ for (const teamCount of [1, 6, 7]) {
         expectGridGeometry('success', successGeometry, 'visible');
         compareToDefault('success', successGeometry);
 
+        const idleHeight = await firstCard.evaluate(node => getComputedStyle(node).height);
         await firstCard.hover();
         fixture.state.patchStatus = 409;
         fixture.state.patchResponse = { error: 'capacity_conflict', currentCapacity: 7 };
@@ -1968,7 +1975,9 @@ for (const teamCount of [1, 6, 7]) {
         await expect(firstCard.getByRole('status')).toContainText('Capacity changed in Jira to 7');
         const conflictGeometry = await measureGrid();
         expectGridGeometry('conflict', conflictGeometry, 'absent');
-        compareToDefault('conflict', conflictGeometry, { rowGrowth: 120 });
+        compareToDefault('conflict', conflictGeometry);
+        // The conflict sits in the context slot (#323 Task 8 R5): the card keeps its exact idle height.
+        expect(await firstCard.evaluate(node => getComputedStyle(node).height), 'conflict card height').toBe(idleHeight);
         await captureCapacityScreenshot(page, testInfo, `capacity-geometry-${teamCount}-desktop-conflict`);
 
         await page.setViewportSize({ width: 375, height: 720 });

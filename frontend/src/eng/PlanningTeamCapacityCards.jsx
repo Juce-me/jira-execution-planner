@@ -908,11 +908,13 @@ export default function PlanningTeamCapacityCards({
                             <div className="team-capacity-label-row">
                                 <div className="team-stat-label">{entry.name}</div>
                                 {/* While editing, a status message takes the label row's one-line context slot (ellipsized; the node keeps the
-                                    whole message as its text), so it never grows the card and the editor row cannot cover it (#323). */}
+                                    whole message as its text), so it never grows the card and the editor row cannot cover it (#323). Distinct keys mount
+                                    the live region fresh instead of re-roling the note's node. */}
                                 {isEditing && statusMessage ? (
-                                    <span id={errorId} className="team-capacity-editor-context" role="status" aria-live="polite">{statusMessage}</span>
+                                    <span key="status" id={errorId} className="team-capacity-editor-context" role="status" aria-live="polite">{statusMessage}</span>
                                 ) : isEditing && editorContext && (
                                     <span
+                                        key="note"
                                         id={contextId}
                                         className="team-capacity-editor-context"
                                         role="note"

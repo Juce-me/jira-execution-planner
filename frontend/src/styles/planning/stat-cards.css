@@ -354,6 +354,8 @@
             min-width: 0;
             overflow: hidden;
             text-overflow: ellipsis;
+            /* The removed status block's line height: with the slot's 1, Firefox clips the glyphs' last pixel. */
+            line-height: 1.35;
             color: #7f2d12;
             pointer-events: auto;
         }

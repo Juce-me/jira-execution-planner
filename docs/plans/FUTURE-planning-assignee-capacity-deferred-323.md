@@ -1,12 +1,12 @@
 # Planning Assignee Capacity: Deferred Scope (#323)
 
-> **Status:** Deferred follow-up. Spun out of `DONE-planning-assignee-capacity-table-323.md`. Do not execute without renaming to `EXEC-*` after review. Shrunk on 2026-11-10 to what stays deferred: the "Team capacity for every selected Team" scope, the one-click push and the verification-gate items were promoted on 2026-11-06 to [EXEC-planning-team-capacity-every-team-323.md](EXEC-planning-team-capacity-every-team-323.md), which records their design, decisions and execution evidence. The original design text is in this file's git history.
+> **Status:** Deferred follow-up. Spun out of `DONE-planning-assignee-capacity-table-323.md`. Do not execute without renaming to `EXEC-*` after review. Shrunk on 2026-11-10 to what stays deferred: the "Team capacity for every selected Team" scope, the one-click push and the verification-gate items were promoted on 2026-11-06 to [DONE-planning-team-capacity-every-team-323.md](DONE-planning-team-capacity-every-team-323.md), which records their design, decisions and execution evidence. The original design text is in this file's git history.
 
 ## Delivered by the every-Team plan
 
 - Every displayed Team's card edits its own stored "Team capacity (not in Jira)" for the selected Sprint, read through the batch route `POST /api/eng/sprints/<sprint_id>/assignee-capacity/planned/read` and saved by one owner per Sprint and Team.
 - The card's → writes the stored number to the Team's own matched ticket in one click (`capacityReconcilePush`, analytics `capacity_reconcile_push`).
-- Task 8 records implemented checks for EPM automatic refresh, toggle-to-paint p50/p95, the App render measurement, Cmd/Ctrl+Z after Enter, Undo semantics, and headed Firefox/WebKit glyph and hover runs. Final gates remain open: accepted headed failures and the manual signoff (DoD 14), the operator toggle-paint signoff (DoD 15), and the extraction-lint debt and publication naming hold (DoD 18 and 20); see the execution plan's finalization review.
+- Task 8 records implemented checks for EPM automatic refresh, toggle-to-paint p50/p95, the App render measurement, Cmd/Ctrl+Z after Enter, Undo semantics, and headed Firefox/WebKit glyph and hover runs. Current synthetic manual visual inspection is recorded. The operator authorized closure/publication; remaining browser fixes, lint debt, resting-height/performance disposition and installation acceptance are separated into [the finalization follow-up](FUTURE-planning-finalization-follow-ups.md), [#337](https://github.com/Juce-me/jira-execution-planner/issues/337) and [#338](https://github.com/Juce-me/jira-execution-planner/issues/338).
 
 The current behaviour is described in [docs/features/planning-sprint-review.md](../features/planning-sprint-review.md).
 

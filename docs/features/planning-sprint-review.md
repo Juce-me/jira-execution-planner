@@ -493,3 +493,9 @@ are not verified against Jira. Undo covers the strip's Team only (see Undo above
 Concurrent edits of one Team's number by two users resolve last-write-wins with no warning. With All Teams, a Team whose
 Sprint Stories are all unpointed joins the cards only once the Sprint's work is known, so the Jira capacity read runs
 twice on load (the pointed Teams, then every card Team); when every Team is pointed it runs once.
+
+Browser reliability follow-ups are tracked in [#337](https://github.com/Juce-me/jira-execution-planner/issues/337).
+Runtime hardening and operator installation/performance acceptance are tracked in
+[#338](https://github.com/Juce-me/jira-execution-planner/issues/338) and the
+[separate follow-up record](../plans/FUTURE-planning-finalization-follow-ups.md). Completing the implementation does not
+attest a live installation cutover or resolve the recorded browser/lint exceptions.

@@ -1,7 +1,7 @@
 """Raw-boundary parity oracle for the EPM Home/Jira read path.
 
 Frozen behavior from docs/plans/DONE-home-oauth-public-reads.md, retained through
-Task0 auth retirement in EXEC-planning-shared-plan-331.md via the REAL route ->
+Task0 auth retirement in DONE-planning-shared-plan-331.md via the REAL route ->
 discovery -> normalization -> exact-label -> Jira hierarchy path. Only external
 I/O is stubbed: the Home GraphQL transport (`urlopen` in backend.epm.home) and
 the Jira search transport (`jira_server.jira_search_request`). Every value in

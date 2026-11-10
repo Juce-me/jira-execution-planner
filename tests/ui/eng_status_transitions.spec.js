@@ -7,6 +7,7 @@ const {
     installDashboardShell,
     installDashboardFixture,
 } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const repoRoot = path.join(__dirname, '..', '..');
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
@@ -53,9 +54,12 @@ function requestBody(request) {
     }
 }
 
+// Planning plans real Jira issues by numeric id (#331): PROD-n is issue 700n.
+const storyId = key => String(7000 + Number(key.split('-').pop()));
+
 function makeStory(key, status, sprintId, sprintName, epicKey = 'PROD-EPIC') {
     return {
-        id: key,
+        id: storyId(key),
         key,
         fields: {
             summary: `${key} synthetic story`,
@@ -166,6 +170,8 @@ async function installEngStatusFixture(page, {
     // Applied statuses recorded from successful mutations so a subsequent subtask
     // re-fetch returns the new status (simulates the backend after cache invalidation).
     const appliedStatus = {};
+    // The future Sprint's shared plan includes both Stories (#331), as the old default selection did.
+    const review = createPlanningReviewMock({ initialPlans: { [futureSprintId]: { includedIssueIds: ['PROD-1', 'PROD-2'].map(storyId) } } });
     const groupsConfigPayload = {
         version: 1,
         configRevision: 1,
@@ -219,6 +225,12 @@ async function installEngStatusFixture(page, {
                     { id: futureSprintId, name: futureSprintName, state: 'future', startDate: '2026-07-01' },
                 ],
             });
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) {
+            return json(route, review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        }
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) {
+            return json(route, { sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
             const project = url.searchParams.get('project');
@@ -317,13 +329,17 @@ function transitionCalls(calls) {
     return calls.filter(call => call.method === 'POST' && call.pathname === '/api/issues/transitions');
 }
 
-async function openPlanning(page) {
+// Planning is the Table only (#323); its Story rows hold the pills the List cards held. The saved plan includes both Stories.
+const plannedSummary = page => page.locator('.planning-panel.open .planning-stats.compact').first();
+const planningRow = (page, key) => page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+
+async function openPlanning(page, { allPlanned = true } = {}) {
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-list .epic-block', { hasText: 'PROD-EPIC' })).toBeVisible();
-    // Deterministically select both stories so the composed status-target count is stable.
-    await page.getByRole('button', { name: 'Select All' }).click();
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(trigger(page, 'story', 'PROD-1')).toBeVisible();
+    if (allPlanned) await expect(page.getByRole('button', { name: 'Select All' })).toHaveClass(/active/);
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
 }
 
 test('Catch Up epic, story, and subtask status pills are real button triggers with no separate change-status button', async ({ page }) => {
@@ -792,7 +808,7 @@ test('Planning Story pill changes only that Story even when every Story is selec
     expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
     await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Accepted/);
     await expect(trigger(page, 'story', 'PROD-2')).toHaveText(/To Do/);
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
 });
 
 const killedFailure = body => ({
@@ -805,7 +821,7 @@ const killedFailure = body => ({
 
 // Killed is hidden from the Planning pool by default, so it is the status whose confirmation must prune the selection like a reload.
 for (const outcome of ['confirmed', 'rejected']) {
-    test(`Planning keeps a selected Story selected and listed while its move to Killed is pending, then ${outcome === 'confirmed' ? 'drops it like a reload once Jira confirms' : 'keeps it when Jira rejects'}`, async ({ page }) => {
+    test(`Planning keeps a selected Story selected and listed while its move to Killed is pending, then ${outcome === 'confirmed' ? 'hides it like a reload once Jira confirms' : 'keeps it when Jira rejects'}`, async ({ page }) => {
         await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
         const { calls, transitionState } = await installEngStatusFixture(page, {
             transitionDelayMs: 1200,
@@ -814,30 +830,32 @@ for (const outcome of ['confirmed', 'rejected']) {
         });
         await page.goto(appBaseUrl);
         await openPlanning(page); // PROD-1 and PROD-2 both selected
-        const selectedStat = page.locator('.planning-panel.open .planning-stat-value').first();
+        const selectedStat = plannedSummary(page);
         const mark = calls.length;
 
         await trigger(page, 'story', 'PROD-1').click();
         await menu(page, 'PROD-1').getByRole('menuitem', { name: 'Killed' }).click();
         await expect.poll(() => transitionState.inFlight).toBe(1);
         await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Killed/);
-        await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toBeVisible();
-        await expect(selectedStat, 'a pending optimistic Killed never prunes the selection').toContainText('2 · 2.0 SP');
+        await expect(planningRow(page, 'PROD-1')).toBeVisible();
+        await expect(selectedStat, 'a pending optimistic Killed never prunes the selection').toContainText('2 stories · 2.0 SP');
 
         await expect.poll(() => transitionState.inFlight).toBe(0);
         await page.waitForLoadState('networkidle');
         if (outcome === 'confirmed') {
-            await expect(page.locator('.task-item[data-task-key="PROD-1"]')).toHaveCount(0);
-            await expect(selectedStat).toContainText('1 · 1.0 SP');
+            // The shared plan keeps the Story (#331): the default filters hide Killed, so it counts as a hidden planned Story.
+            await expect(planningRow(page, 'PROD-1')).toHaveCount(0);
+            await expect(selectedStat).toContainText('2 stories · 2.0 SP');
+            await expect(selectedStat).toContainText('1 hidden');
         } else {
             await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/To Do/);
-            await expect(selectedStat).toContainText('2 · 2.0 SP');
+            await expect(selectedStat).toContainText('2 stories · 2.0 SP');
         }
         expect(calls.slice(mark).filter(call => call.pathname === '/api/tasks-with-team-name'), 'one status edit never refetches the board').toEqual([]);
     });
 }
 
-test('Planning keeps a Story mounted under its open editor after a confirmed status leaves the pool, then drops it when the editor closes', async ({ page }) => {
+test('Planning keeps a Story mounted under its open editor after a confirmed status leaves the pool, then hides it when the editor closes', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { transitionState } = await installEngStatusFixture(page, {
         transitionDelayMs: 1200,
@@ -845,7 +863,7 @@ test('Planning keeps a Story mounted under its open editor after a confirmed sta
     });
     await page.goto(appBaseUrl);
     await openPlanning(page); // PROD-1 and PROD-2 both selected
-    const story = page.locator('.task-item[data-task-key="PROD-1"]');
+    const story = planningRow(page, 'PROD-1');
     const points = story.getByRole('textbox', { name: 'Story Points' });
 
     await trigger(page, 'story', 'PROD-1').click();
@@ -861,11 +879,13 @@ test('Planning keeps a Story mounted under its open editor after a confirmed sta
     await expect(trigger(page, 'story', 'PROD-1')).toHaveText(/Killed/);
     await expect(points).toBeFocused();
     await expect(points).toHaveValue('7');
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('2 · 2.0 SP');
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
 
     await points.press('Escape');
     await expect(story).toHaveCount(0);
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('1 · 1.0 SP');
+    // The shared plan keeps the Story (#331); the default filters hide Killed, so it counts as hidden.
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
+    await expect(plannedSummary(page)).toContainText('1 hidden');
 });
 
 test('Planning Epic pill changes only that Epic and offers no batch controls', async ({ page }) => {
@@ -873,8 +893,13 @@ test('Planning Epic pill changes only that Epic and offers no batch controls', a
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
-
-    const epicBlock = page.locator('.task-list .epic-block', { hasText: 'PROD-EPIC' }).first();
+    // The Epic row and its Capacity chip (an optional column, hidden by default) carry the List block's pill and toggle.
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
+    await page.getByRole('button', { name: '+ Add column', exact: true }).click();
+    await page.getByRole('dialog', { name: 'Add review column', exact: true }).getByRole('button', { name: 'Capacity', exact: true }).click();
+    await page.keyboard.press('Escape');
+    const capacityChip = planningRow(page, 'PROD-EPIC').getByRole('button', { name: /Included/ });
+    await expect(capacityChip).toContainText('Included');
     await trigger(page, 'epic', 'PROD-EPIC').click();
     const epicMenu = menu(page, 'PROD-EPIC');
     await expect(epicMenu).toBeVisible();
@@ -890,19 +915,19 @@ test('Planning Epic pill changes only that Epic and offers no batch controls', a
     expect(mutation.body.targetStatus).toBe('Done');
     // The selected Stories are untouched and excluded capacity is not flipped or persisted.
     await expect(page.locator('.planning-actions .planning-status-feedback')).toContainText('Status updated for 1 issue');
-    await expect(epicBlock.getByRole('button', { name: /Included/ })).toBeVisible();
+    await expect(capacityChip).toContainText('Included');
     expect(calls.filter(c => c.method === 'POST' && c.pathname === '/api/groups-config')).toHaveLength(0);
 });
 
-test('Planning Subtask pill changes only that Subtask and leaves selected story points alone', async ({ page }) => {
+// The Planning Table has no Subtask rows (#323): a Subtask pill changes in Catch Up, and the planned Story Points stay as they were.
+test('a Subtask pill changes only that Subtask and leaves the planned story points alone', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
 
-    const selectedStat = page.locator('.planning-panel.open .planning-stat-value').first();
-    await expect(selectedStat).toContainText('2 · 2.0 SP');
-
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
     await page.locator('.task-item[data-task-key="PROD-1"] .story-subtasks-toggle').click();
     await trigger(page, 'subtask', 'PROD-1-A').click();
     const subtaskMenu = menu(page, 'PROD-1-A');
@@ -914,7 +939,8 @@ test('Planning Subtask pill changes only that Subtask and leaves selected story 
 
     await expect.poll(() => transitionCalls(calls).length).toBe(1);
     expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1-A']);
-    await expect(selectedStat).toContainText('2 · 2.0 SP');
+    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
+    await expect(plannedSummary(page)).toContainText('2 stories · 2.0 SP');
 });
 
 test('Planning Epic pill stays usable when no Story is selected', async ({ page }) => {
@@ -922,11 +948,12 @@ test('Planning Epic pill stays usable when no Story is selected', async ({ page 
     const { calls } = await installEngStatusFixture(page);
     await page.goto(appBaseUrl);
     await openPlanning(page);
-    await page.getByRole('button', { name: 'Clear Selected' }).click();
-    await expect(page.locator('.planning-panel.open .planning-stat-value').first()).toContainText('0 ·');
+    await page.getByRole('button', { name: 'Clear Selection' }).click();
+    await expect(plannedSummary(page)).toContainText('0 stories');
     await expect(page.locator('.planning-actions').getByText('status targets selected')).toHaveCount(0);
 
     // The batch needs at least one selected Story, but an Epic pill no longer depends on it.
+    await page.getByRole('radio', { name: 'Epics', exact: true }).click();
     await trigger(page, 'epic', 'PROD-EPIC').click();
     const epicOption = menu(page, 'PROD-EPIC').getByRole('menuitem', { name: 'Done' });
     await expect(epicOption).toBeEnabled();
@@ -1024,35 +1051,46 @@ test('EPM project boards render inert status pills, no triggers, and never call 
     expect(calls.filter(c => c.pathname.startsWith('/api/issues/transitions'))).toHaveLength(0);
 });
 
-test('sticky order keeps planning-panel above the epic header while a status menu is open', async ({ page }) => {
+// Planning is the Table only (#323): the Filters-and-overview stack is sticky and the column header docks below it.
+test('sticky order keeps the Planning stack above the docked table header while a status menu is open', async ({ page }) => {
     await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
-    await installEngStatusFixture(page);
+    // Enough Story rows for the page to scroll the header into its docked position.
+    const stories = Array.from({ length: 30 }, (_, index) => makeStory(`PROD-${index + 1}`, 'To Do', futureSprintId, futureSprintName));
+    await installEngStatusFixture(page, { stories });
     await page.goto(appBaseUrl);
-    await openPlanning(page);
+    await openPlanning(page, { allPlanned: false });
+    await page.locator('.planning-review-table thead').first().evaluate((head) => {
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        window.scrollTo(0, window.scrollY + head.getBoundingClientRect().top - stack.offsetHeight + 120);
+    });
+    await expect(page.locator('.planning-review-docked-header')).toBeVisible();
 
     const readLayering = () => page.evaluate(() => {
-        const panel = document.querySelector('.planning-panel.open');
-        const epicHeader = document.querySelector('.epic-header');
+        const stack = document.querySelector('.planning-review-sticky-stack');
+        const header = document.querySelector('.planning-review-docked-header');
         const zOf = (el) => (el ? Number.parseInt(getComputedStyle(el).zIndex, 10) : NaN);
         return {
-            panelPosition: panel ? getComputedStyle(panel).position : '',
-            epicPosition: epicHeader ? getComputedStyle(epicHeader).position : '',
-            panelZ: zOf(panel),
-            epicZ: zOf(epicHeader),
+            stackPosition: stack ? getComputedStyle(stack).position : '',
+            headerPosition: header ? getComputedStyle(header).position : '',
+            stackZ: zOf(stack),
+            headerZ: zOf(header),
+            headerBelowStack: Boolean(stack && header) && header.getBoundingClientRect().top >= stack.getBoundingClientRect().bottom - 1,
         };
     });
 
     const before = await readLayering();
-    expect(before.panelPosition).toBe('sticky');
-    expect(before.epicPosition).toBe('sticky');
-    expect(before.panelZ).toBeGreaterThan(before.epicZ);
+    expect(before).toEqual({ stackPosition: 'sticky', headerPosition: 'fixed', stackZ: before.stackZ, headerZ: before.headerZ, headerBelowStack: true });
+    expect(before.stackZ).toBeGreaterThan(before.headerZ);
 
-    await trigger(page, 'story', 'PROD-1').click();
-    await expect(menu(page, 'PROD-1')).toBeVisible();
-    const during = await readLayering();
-    expect(during.panelPosition).toBe('sticky');
-    expect(during.epicPosition).toBe('sticky');
-    expect(during.panelZ).toBeGreaterThan(during.epicZ);
+    const visibleKey = await page.evaluate(() => {
+        const header = document.querySelector('.planning-review-docked-header').getBoundingClientRect();
+        const row = [...document.querySelectorAll('.planning-review-table:not(.planning-review-docked-table) tbody tr[data-issue-key]')]
+            .find(node => node.getBoundingClientRect().top > header.bottom + 4 && node.getBoundingClientRect().bottom < window.innerHeight - 80);
+        return row?.dataset.issueKey;
+    });
+    await trigger(page, 'story', visibleKey).click();
+    await expect(menu(page, visibleKey)).toBeVisible();
+    expect(await readLayering()).toEqual(before);
 });
 
 async function openPlanningTable(page, { selectAll = false } = {}) {
@@ -1195,27 +1233,28 @@ function unexpectedCallsSince(calls, index) {
     return calls.slice(index).filter(call => !PLANNING_STATUS_EDIT_CALLS.has(call.pathname)).map(call => `${call.method} ${call.pathname}`);
 }
 
-for (const layout of ['List', 'Table']) {
-    test(`Planning ${layout} Story status change shows at once and makes no other read`, async ({ page }) => {
+// Planning has no List (#323): the old List variant becomes the Table's Epic rows, whose pill has the same contract.
+for (const variant of [{ rows: 'Stories', kind: 'story', key: 'PROD-1', target: 'In Progress' }, { rows: 'Epics', kind: 'epic', key: 'PROD-EPIC', target: 'Done' }]) {
+    test(`Planning Table ${variant.rows} row status change shows at once and makes no other read`, async ({ page }) => {
         await setPrefs(page, catchUpPrefs({ selectedSprint: futureSprintId, sprintName: futureSprintName }));
         const { calls, transitionState } = await installEngStatusFixture(page, { transitionDelayMs: 800 });
         await page.goto(appBaseUrl);
-        if (layout === 'Table') await openPlanningTable(page);
-        else await openPlanning(page);
+        await openPlanningTable(page);
+        if (variant.rows === 'Epics') await page.getByRole('radio', { name: 'Epics', exact: true }).click();
         await page.waitForLoadState('networkidle');
         const mark = calls.length;
 
-        await trigger(page, 'story', 'PROD-1').click();
-        await menu(page, 'PROD-1').getByRole('menuitem', { name: 'In Progress' }).click();
+        await trigger(page, variant.kind, variant.key).click();
+        await menu(page, variant.key).getByRole('menuitem', { name: variant.target }).click();
         await expect.poll(() => transitionState.inFlight).toBe(1);
         // Table pills render in capitals, so innerText carries the transformed case.
-        expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
+        expect((await trigger(page, variant.kind, variant.key).innerText()).toLowerCase()).toContain(variant.target.toLowerCase());
         await expect.poll(() => transitionState.inFlight).toBe(0);
         await page.waitForLoadState('networkidle');
 
         expect(transitionCalls(calls)).toHaveLength(1);
-        expect(transitionCalls(calls)[0].body.issueKeys).toEqual(['PROD-1']);
+        expect(transitionCalls(calls)[0].body.issueKeys).toEqual([variant.key]);
         expect(unexpectedCallsSince(calls, mark)).toEqual([]);
-        expect((await trigger(page, 'story', 'PROD-1').innerText()).toLowerCase()).toContain('in progress');
+        expect((await trigger(page, variant.kind, variant.key).innerText()).toLowerCase()).toContain(variant.target.toLowerCase());
     });
 }

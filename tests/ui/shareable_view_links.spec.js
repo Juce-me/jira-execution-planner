@@ -788,7 +788,7 @@ for (const scenario of MATRIX_CASES) {
                 } else if (scenario.sourceOnly) {
                     expect(taskCalls(run.calls)).toEqual([]);
                     expect(scoped.every(call => call.cacheBypassed && !call.cacheHit)).toBe(true);
-                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], refresh: true }]);
+                    expect(scoped.map(call => JSON.parse(call.body))).toEqual([{ sprintIds: ['42'], teamIds: ['team-b1', 'team-b2'], groupId: 'grp-b', refresh: true }]);
                     await expect(run.page.getByText('Excluded capacity fetch failed', { exact: false })).toHaveCount(0);
                 } else {
                     expect(taskCalls(run.calls).every(call => call.params.groupId === 'grp-b' && call.params.sprint === '42')).toBe(true);

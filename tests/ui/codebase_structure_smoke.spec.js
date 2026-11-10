@@ -5496,6 +5496,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],
@@ -5564,6 +5565,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],
@@ -5645,6 +5647,7 @@ const coldModeRequestContracts = {
         },
         {
             "body": {
+                "groupId": "grp-default",
                 "sprintIds": [
                     "34625"
                 ],

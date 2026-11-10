@@ -523,6 +523,7 @@ async function expectOneStatsSprintReload(requestLog, sprintId, countBefore, { r
     const newRequests = statsSourceRequests(requestLog).slice(countBefore);
     expect(newRequests).toHaveLength(1);
     expect(newRequests[0].body).toEqual({
+        groupId: 'grp-default',
         sprintIds: [String(sprintId)],
         teamIds: ['team-alpha'],
         ...(refresh ? { refresh: true } : {}),

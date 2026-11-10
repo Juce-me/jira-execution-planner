@@ -6118,7 +6118,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     );
                 } else {
                     content = (
-                        <EmptyState title={`Add Teams or ${componentScopeLabel} values to this Department to use All work.`}>
+                        <EmptyState title={combinedWorkModel ? 'Add Teams or Allocation values to this Department to use All work.' : 'Add Teams or Components to this Department to use All work.'}>
                             <button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Configure Department membership</button>
                         </EmptyState>
                     );

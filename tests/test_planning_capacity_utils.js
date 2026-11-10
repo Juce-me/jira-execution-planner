@@ -983,3 +983,35 @@ test('#323 D2: zero-effort Teams with capacity count in totals, multiplier and p
     assert.equal(isCapacityTotalAvailable([entry(false, false)]), false, 'nothing to judge');
     assert.equal(isCapacityTotalAvailable([]), false);
 });
+
+
+test('#323 duplicate normalized Team names cannot regain stored capacity or pencil eligibility after mapping', async () => {
+    const { buildPlannedCapacityByTeam, resolvePlannedCapacity, normalizeCapacityKey } = await loadUtils();
+    const displayedTeamOptions = [
+        { id: 't-a', name: 'Alpha' }, { id: 't-b', name: 'Product - Alpha' },
+        { id: 't-c', name: 'Beta' }, { id: 't-d', name: 'Gamma' },
+    ];
+    for (const duplicateValues of [[14, 6], [null, null]]) {
+        const plannedCapacityByTeam = buildPlannedCapacityByTeam({
+            sprintId: 'q1', displayedTeamOptions,
+            plannedCapacity: { sprintId: 'q1', byTeam: {
+                't-a': { value: duplicateValues[0] }, 't-b': { value: duplicateValues[1] },
+                't-c': { value: 0 }, 't-d': { value: 9 },
+            } },
+        });
+        assert.deepEqual(plannedCapacityByTeam, { beta: 0, gamma: 9 });
+        for (const alphaTarget of [{}, { alpha: { state: 'matched', issueKey: 'CAP-1', teamName: 'Alpha', capacity: null } }]) {
+            const result = resolvePlannedCapacity({
+                capacityEnabled: true, plannedCapacityByTeam,
+                teamNames: displayedTeamOptions.map(team => team.name),
+                capacityState: { capacityByTeam: { gamma: 20 }, capacityTargetsByTeam: {
+                    ...alphaTarget, gamma: { state: 'matched', issueKey: 'CAP-2', teamName: 'Gamma', capacity: 20 },
+                }, capacityIssueCount: Object.keys(alphaTarget).length + 1 },
+            });
+            assert.deepEqual(displayedTeamOptions.map(team => result.noTicketKeys.has(normalizeCapacityKey(team.name))),
+                [false, false, true, false], 'both colliding names stay ineligible; the valid no-ticket Team remains editable');
+            assert.deepEqual([...result.fallbackKeys], ['beta']);
+            assert.deepEqual(result.capacityByTeam, { beta: 0 }, 'zero survives and Jira takes precedence over the stored Gamma number');
+        }
+    }
+});

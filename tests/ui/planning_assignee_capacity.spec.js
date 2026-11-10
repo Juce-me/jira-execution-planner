@@ -3371,6 +3371,36 @@ test('an unresolved Team name gets a card with no stored number and is not sent 
     for (const read of jiraReads(calls)) expect(read.teams.split(',')).not.toContain('team-raw');
 });
 
+test('duplicate normalized Team names keep their cards but never offer a stored-number pencil', async ({ page }) => {
+    const teamIds = ['team-alpha', 'team-duplicate', 'team-beta'];
+    const server = teamsServer({ planned: { 'team-alpha': '14', 'team-duplicate': '6', 'team-beta': '0' } });
+    const issues = [namedStory('PLAN-1', 'team-alpha', 'Alpha', 3),
+        namedStory('PLAN-2', 'team-duplicate', 'Product - Alpha', 2), namedStory('PLAN-3', 'team-beta', 'Beta', 0)];
+    const { calls } = await install(page, { server, selectedTeams: teamIds, scopeTeamIds: teamIds,
+        issues, epics: [], capacityProject: 'CAP', capacity: noTicket });
+    await openPlanning(page);
+    await showCards(page);
+    await storedOn(page, 'team-beta', '0.0');
+    await teamCard(page, 'team-beta').hover();
+    await expect(teamPencil(page, 'team-beta', 'Beta'), 'the batch save right is known and a valid Team remains editable').toBeEnabled();
+    await teamCard(page, 'team-alpha').hover();
+    const capturePhase = await teamPencil(page, 'team-alpha', 'Alpha').count() ? 'before' : 'after';
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/capacity-review/duplicate-${capturePhase}.png`, animations: 'disabled' });
+    for (const [teamId, name] of [['team-alpha', 'Alpha'], ['team-duplicate', 'Product - Alpha']]) {
+        await expect(teamCard(page, teamId)).toBeVisible();
+        await expect(teamCard(page, teamId).locator('.team-stat-label')).toHaveText(name);
+        await expect(teamCard(page, teamId)).not.toHaveAttribute('data-capacity-source', /./);
+        await expect(teamCard(page, teamId).locator('.microbar')).not.toHaveAttribute('aria-label', /against/);
+        await teamCard(page, teamId).hover();
+        await expect(teamPencil(page, teamId, name)).toHaveCount(0);
+    }
+    await typeTeamNumber(page, 'team-beta', 'Beta', '5');
+    await storedOn(page, 'team-beta', '5.0');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches.map(patch => patch.body.teamId), 'the valid Team saves only itself').toEqual(['team-beta']);
+    expect(jiraWrites(calls)).toEqual([]);
+});
+
 test('request ledger: an All Teams startup has no per-Team fan-out: one batch read, no document GET, one Jira capacity read', async ({ page }) => {
     const startup = numbersServer({ 'team-alpha': '14' });
     const first = await install(page, { server: startup, selectedTeams: ['all'], scopeTeamIds: ['team-alpha', 'team-beta', 'team-gamma'], capacityProject: 'CAP', capacity: noTicket, issues: gammaStories });
@@ -4623,5 +4653,9 @@ test('each new choice, Stories then Epics, is the one a data reload restores', a
     await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
     await expectStoriesRows(page);
     await rowsButton(page, 'Epics').click();
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+    await refreshHeader(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
 });

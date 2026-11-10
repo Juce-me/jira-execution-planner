@@ -121,9 +121,12 @@ export function resolvePlannedCapacity({
     if (!capacityEnabled || capacityLoading || capacityReadError || capacityDataStale || capacityState?.capacityIssueCount == null) {
         return { noTicketKeys, fallbackKeys, capacityByTeam };
     }
+    const keyCounts = new Map();
+    teamNames.forEach(name => { const key = normalizeCapacityKey(name); if (key) keyCounts.set(key, (keyCounts.get(key) || 0) + 1); });
     for (const teamName of teamNames) {
         const key = normalizeCapacityKey(teamName);
-        if (!key) continue;
+        // A dropped stored mapping is not proof that either of two Teams sharing this key has no ticket.
+        if (!key || keyCounts.get(key) !== 1) continue;
         const target = resolveUniqueCapacityTarget(capacityState.capacityTargetsByTeam, teamName, matchOptions(teamName));
         const numeric = resolveUniqueCapacityValue(capacityState.capacityByTeam, teamName, matchOptions(teamName));
         if (numeric.matched) continue;

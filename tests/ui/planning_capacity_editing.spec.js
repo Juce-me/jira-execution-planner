@@ -2240,6 +2240,107 @@ test('a push in flight: the → is unavailable with "Applying…", a second clic
     expect((await card.boundingBox()).height).toBeCloseTo(idle.height, 2);
 });
 
+test.describe('capacity push readouts on a hoverless touch screen', () => {
+    test.use({ hasTouch: true });
+
+    // Tap the real hit area: locator.tap() waits for aria-disabled controls to become enabled.
+    async function tapPush(page, button) {
+        const box = await button.boundingBox();
+        await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    }
+
+    test('an explicit tap writes once; pending taps reveal and dismiss Applying without another write', async ({ page }) => {
+        await mountPushHarness(page);
+        expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+        const button = pushButton(page);
+        await expect(button).toBeVisible();
+        await tapPush(page, button);
+        await expect(button).toHaveAttribute('aria-disabled', 'true');
+        expect(await pushRequests(page)).toEqual([{ issueKey: 'CAP-1', payload: { sprintName: '2026Q3', teamName: 'Alpha Team', expectedCapacity: 20, capacity: 14 }, aborted: false }]);
+        // Dismiss the initial tap's readout, then reopen it from the unavailable icon.
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await page.screenshot({ path: 'tmp/capacity-review/touch-pending-before-tap.png', animations: 'disabled' });
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        await page.screenshot({ path: 'tmp/capacity-review/touch-pending-readout.png', animations: 'disabled' });
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        expect((await pushRequests(page)).length, 'unavailable taps never retry').toBe(1);
+    });
+
+    for (const [code, status, copy] of [
+        ['capacity_issue_mismatch', 409, knownCopy.capacity_issue_mismatch],
+        ['capacity_config_missing', 409, 'Capacity editing is no longer configured. Refresh Planning.'],
+        ['capacity_config_unverified', 409, 'Capacity editing needs an Admin to verify the Jira Capacity field. Refresh after it is saved.'],
+        ['capacity_config_conflict', 409, 'Capacity configuration needs Admin resolution. Refresh after it is resolved.'],
+    ]) {
+        test(`${code}: tapping the unavailable push exposes its reason without retry`, async ({ page }) => {
+            await mountPushHarness(page);
+            const button = pushButton(page);
+            await tapPush(page, button);
+            await settlePush(page, 0, 'reject', { code, status });
+            await expect(button).toHaveAttribute('aria-disabled', 'true');
+            await page.touchscreen.tap(5, 700);
+            await expect(pushReadout(page)).toHaveCount(0);
+            await tapPush(page, button);
+            await expect(pushReadout(page)).toHaveText(copy);
+            await page.touchscreen.tap(5, 700);
+            await expect(pushReadout(page)).toHaveCount(0);
+            expect((await pushRequests(page)).length, 'the reason readout writes nothing').toBe(1);
+        });
+    }
+
+    test('a failed push keeps its reason visible until outside tap; an explicit retry tap writes once', async ({ page }) => {
+        await mountPushHarness(page);
+        const button = pushButton(page);
+        await tapPush(page, button);
+        await settlePush(page, 0, 'reject', { code: 'jira_capacity_update_failed', status: 502 });
+        await expect(pushReadout(page)).toHaveText(knownCopy.jira_capacity_update_failed);
+        expect((await pushRequests(page)).length).toBe(1);
+        await page.touchscreen.tap(5, 700);
+        await expect(pushReadout(page)).toHaveCount(0);
+        await tapPush(page, button);
+        await expect(pushReadout(page)).toHaveText('Applying…');
+        expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1', 'CAP-1']);
+    });
+});
+
+test('two Team cards sharing one ticket exclude a second push and Jira editor until the first push settles', async ({ page }) => {
+    await mountPushHarness(page);
+    await page.evaluate(() => window.__patchEntry('team-c', { capacityIssueKey: 'CAP-1', capacityTargetTeamName: 'Alpha Team', capacityTargetCapacity: 20, rawCapacity: 20, teamCapacity: 20 }));
+    const sibling = pushCard(page, 'team-c');
+    await sibling.hover();
+    const push = pushButton(page, 'team-c', 'Gamma Team');
+    const pencil = sibling.getByRole('button', { name: 'Edit Gamma Team capacity' });
+    const idle = [await push.boundingBox(), await pencil.boundingBox()];
+    await (await hoverPush(page)).click();
+    await sibling.hover();
+    await expect(push).toHaveAttribute('aria-disabled', 'true');
+    await push.hover();
+    await expect(pushReadout(page)).toHaveCount(1);
+    await expect(pushReadout(page)).toHaveText('Applying this ticket…');
+    expect([await push.boundingBox(), await pencil.boundingBox()], 'unavailable controls keep their settled boxes').toEqual(idle);
+    await page.screenshot({ path: 'tmp/capacity-review/shared-ticket-unavailable.png', animations: 'disabled' });
+    await pointerClick(page, push);
+    await expect(pencil).toBeDisabled();
+    await pencil.click({ force: true });
+    await expect(sibling.locator('.team-capacity-editor')).toHaveCount(0);
+    expect((await pushRequests(page)).map(call => call.issueKey)).toEqual(['CAP-1']);
+    await settlePush(page, 0, 'resolve', { issueKey: 'CAP-1', capacity: 14, result: 'success' });
+    await expect(push).not.toHaveAttribute('aria-disabled', 'true');
+    await expect(pencil).toBeEnabled();
+    await pencil.click();
+    await expect(sibling.locator('.team-capacity-editor')).toHaveCount(1);
+    await sibling.getByRole('button', { name: 'Cancel Gamma Team capacity edit' }).click();
+    await (await hoverPush(page, 'team-c', 'Gamma Team')).click();
+    expect((await pushRequests(page)).map(call => [call.issueKey, call.payload.expectedCapacity])).toEqual([['CAP-1', 20], ['CAP-1', 14]]);
+});
+
 test('success and already_current update the ticket value, settle the stored number to jira and remove the →; analytics says success', async ({ page }) => {
     await mountPushHarness(page);
     await (await hoverPush(page)).click();
@@ -2397,4 +2498,3 @@ test('after a conflict the card scales Jira\'s value by the card\'s capacity mul
     await hoverPush(page, 'team-c', 'Gamma Team');
     await expect(pushReadout(page)).toHaveText('Apply 5 SP to Jira (ticket 12 SP)');
 });
-

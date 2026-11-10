@@ -389,16 +389,18 @@ Story's current name, so a person with no Stories (including one deactivated in 
 "Removed from this Sprint and later ones:", where each underlined name restores the person with one tap; values are kept.
 
 **Saving.** Enter or blur commits, Escape cancels; an invalid draft stays in its cell with its error. One serial queue per
-Sprint and Team coalesces commits within about 200 ms into one PATCH, keeps one request in flight and reuses the CSRF token;
-across Teams at most 4 assignee-capacity PATCHes run at once.
+Sprint and Team coalesces commits within about 200 ms into one PATCH and keeps one request in flight; each dispatched
+PATCH fetches its own fresh, single-use CSRF token, with one retry using a fresh token only when `csrf_required` rejects
+the request before dispatch. Across Teams at most 4 assignee-capacity PATCHes run at once.
 An unconfirmed write is read back and only the differing fields are resent (last write wins per field, so retries are
 idempotent). A failed save shows "Not saved" with Retry and Discard changes, in the table and in the collapsed header; a
 change the server refuses waits for Retry or Discard so it cannot fail later batches. Changing Team or Sprint sends the old
 scope's commits in the background; a scope left with drafts, a save in flight or a failed save is never evicted and keeps
 its drafts for the page session (only clean, idle scopes beyond the last five are dropped, keeping their number), and shows
-Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. Without database
-storage or save rights the read reports `capabilities` and the strip is read-only (no Remove, Restore or Add assignee) or
-hidden.
+Not saved with Retry on return. A `401` keeps the drafts behind the global sign-in lock. The supported runtime is
+database-backed Atlassian OAuth; unsupported auth or storage profiles are rejected. In that runtime the read reports
+`capabilities`; when `canSave` is false the strip is read-only (no Remove, Restore or Add assignee), and when `canRead` is
+false it is hidden.
 
 **Undo.** The last 20 edits of the shown Sprint and Team (Capacity, Vacations, Notes, Remove, Restore, Add assignee and the
 stored team number, which shares the queue) can be undone with the Undo button at the right end of the expanded strip header
@@ -475,14 +477,16 @@ Teams until the Sprint's work is known. Every card shows its Team's stored numbe
 (one Team from its document, more Teams through one batch read); a zero-effort Team with capacity counts in the totals and
 the project split, and the compact "Capacity:" total judges only Teams with effort or a capacity value. A Team whose name
 is unresolved (its id) or contains a comma keeps its card but shows no stored number and is not sent to the Jira read, and
-a Team never borrows another configured Team's ticket or stored number by name containment. Each card edits its own
+a Team never borrows another configured Team's ticket or stored number by name containment. Teams sharing a normalized
+capacity name keep their cards but have no stored-number fallback or pencil. Each card edits its own
 Team's stored number with its own pencil, for its own Team and Sprint only; saves of different Teams run independently (at
 most 4 at once) and a scope change never retargets one. A failed save shows ↻ Retry and × Discard changes (that Team's
 stored-number draft only) in the card's hover rail, its message in the rail's readout and "N Team save(s) failed: hover a card to
 retry" (or "Saving N Team(s)…") in the overview's state note. When the workspace holds `MAX_DOCUMENTS_PER_WORKSPACE` (2,000)
 documents, a Team's first save is that Team's visible rejection, "Team capacity not saved: the server refused it." (D4).
 Between users the last write wins: the stored number carries no revision precondition, so the later save replaces an
-earlier one without a conflict, and the other member sees it on the next read.
+earlier one without a conflict, and the other member sees it on the next read. Within this page, cards sharing a matched
+Jira ticket cannot push or open its Jira editor while that ticket's push is pending; different tickets remain independent.
 
 **Limitations.** Sprint id orders inheritance (as for review views). Account ids and the stored team number's source
 are not verified against Jira. Undo covers the strip's Team only (see Undo above); a card edit of another Team has no Undo.

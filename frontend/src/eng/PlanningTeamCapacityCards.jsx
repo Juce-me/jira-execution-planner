@@ -85,9 +85,12 @@ function RetryIcon() {
 function RailIcon({ readout, label, onClick, unavailable = false, buttonProps = null, children }) {
     return (
         <EpicHeaderValueReadout value={readout} alwaysOn transient pointerTransparent>
-            {({ triggerRef, pointerProps, focusProps }) => (
-                <IconButton ref={triggerRef} {...pointerProps} {...focusProps} {...buttonProps} variant="secondary compact" className="team-capacity-action team-capacity-edit-action" size="sm"
-                    onClick={unavailable ? undefined : onClick} aria-disabled={unavailable || undefined} aria-label={label}>
+            {({ triggerRef, pointerProps, focusProps, pinProps }) => (
+                <IconButton ref={triggerRef} {...pointerProps} {...focusProps} {...pinProps} {...buttonProps} variant="secondary compact" className="team-capacity-action team-capacity-edit-action" size="sm"
+                    onClick={event => {
+                        pinProps.onClick?.(event);
+                        if (!unavailable) onClick?.(event);
+                    }} aria-disabled={unavailable || undefined} aria-label={label}>
                     {children}
                 </IconButton>
             )}
@@ -468,9 +471,14 @@ export default function PlanningTeamCapacityCards({
     // else the last read.
     const conflictTicketOf = entry => (conflictOf(entry) ? pushesRef.current.get(String(entry.id)).ticket : entry.capacityTargetCapacity);
 
+    // Pushes remain owned by Team, but the frozen Jira issue key excludes every card pointing to that ticket.
+    const isTicketPushing = issueKey => Boolean(issueKey && [...pushesRef.current].some(([teamId, push]) => (
+        push.issueKey === issueKey && pushAbortRefs.current.has(teamId)
+    )));
+
     const openEditor = (entry) => {
         if (
-            activeEditor || pushAbortRefs.current.has(String(entry.id)) || !canEditCapacity || capacityReadError || capacityDataStale
+            activeEditor || pushAbortRefs.current.has(String(entry.id)) || isTicketPushing(entry.capacityIssueKey) || !canEditCapacity || capacityReadError || capacityDataStale
             || configEditingSuppressed || invalidTargets.has(entry.capacityIssueKey)
             || entry.capacityTargetState !== 'matched' || !entry.capacityIssueKey
             || !entry.capacityTargetTeamName
@@ -676,7 +684,7 @@ export default function PlanningTeamCapacityCards({
 
     const pushTeam = async (entry, offer) => {
         const teamId = String(entry.id);
-        if (editorRef.current || pushAbortRefs.current.has(teamId)) return;
+        if (editorRef.current || pushAbortRefs.current.has(teamId) || isTicketPushing(entry.capacityIssueKey)) return;
         const row = {
             teamId,
             candidate: {
@@ -688,7 +696,7 @@ export default function PlanningTeamCapacityCards({
         if (row.candidate.capacity == null || getSubmitBlockedReason(row.candidate)) return;
         const controller = new AbortController();
         pushAbortRefs.current.set(teamId, controller);
-        const base = { stored: offer.stored, ticket: offer.ticket, readTicket: entry.capacityTargetCapacity, scopeSignature };
+        const base = { issueKey: row.candidate.issueKey, stored: offer.stored, ticket: offer.ticket, readTicket: entry.capacityTargetCapacity, scopeSignature };
         setPush(teamId, { ...base, state: 'pending', message: '' });
         syncInteraction();
         try {
@@ -835,8 +843,9 @@ export default function PlanningTeamCapacityCards({
                     const push = ownPush?.state === 'conflict' ? conflict : ownPush;
                     const showPush = !actionsGloballySuppressed && !showFailedIcons && canEditCapacity && typeof updateCapacityRequest === 'function'
                         && Boolean(mismatch || push?.state === 'pending' || push?.state === 'failed');
-                    const pushUnavailable = push?.state === 'pending' || !mismatch;
-                    const pushReadout = push?.state === 'pending' ? 'Applying…' : push ? push.message
+                    const ticketPushing = isTicketPushing(entry.capacityIssueKey);
+                    const pushUnavailable = push?.state === 'pending' || ticketPushing || !mismatch;
+                    const pushReadout = push?.state === 'pending' ? 'Applying…' : ticketPushing ? 'Applying this ticket…' : push ? push.message
                         : mismatch ? `Apply ${formatSp(mismatch.stored)} SP to Jira (ticket ${mismatch.ticket == null ? 'blank' : `${formatSp(mismatch.ticket)} SP`})` : '';
                     const hasActionRail = showJira || showPencil || showPlannedPencil || showPush || showFailedIcons;
                     const railIcons = [showJira, showPush, showFailedIcons, showFailedIcons, showPencil, showPlannedPencil].filter(Boolean).length;
@@ -968,7 +977,7 @@ export default function PlanningTeamCapacityCards({
                                                     else pencilRefs.current.delete(`jira:${entry.id}`);
                                                 }}
                                                 onClick={() => openEditor(entry)}
-                                                disabled={push?.state === 'pending'}
+                                                disabled={push?.state === 'pending' || ticketPushing}
                                                 aria-label={`Edit ${entry.name} capacity`}
                                                 title="Edit capacity"
                                             >

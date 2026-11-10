@@ -995,7 +995,7 @@ test('owner pins: dashboard.jsx literals that have no exported constant (Stats v
 
 // The row mode as the table declares it: a plain initial value today, and the lazy initializer Task 8
 // puts there so a link can seed it. Either way the value after `||` is the default.
-const PLANNING_ROW_MODE = /const \[mode, setMode\] = React\.useState\((?:\(\) => takeInitialPlanningRowMode\(\) \|\| )?'([^']+)'\);/;
+const PLANNING_ROW_MODE = /const \[mode, setMode\] = React\.useState\((?:\(\) => takeInitialPlanningRowMode\(\) \|\| (?:getRememberedPlanningRowMode\(\) \|\| )?)?'([^']+)'\);/;
 
 test('owner pins: the Planning table row mode defaults to epic and has a story mode', () => {
     const mode = PLANNING_ROW_MODE.exec(readSource('eng/PlanningReviewTable.jsx'));

@@ -4560,3 +4560,68 @@ for (const rows of ['Epics', 'Stories']) test(`an automatic stored-number refres
     expect(await read(), `${rows}: pinned stack, docked header and reading position`).toEqual(before);
     await page.screenshot({ path: `tmp/planning-323-every-team/task7/reading-position-${rows.toLowerCase()}-1280x720.png`, animations: 'disabled' });
 });
+
+// Task R (#323): the Epics/Stories choice survives data reloads (the table unmounts while ENG loads); a page reload starts over.
+const refreshHeader = page => page.locator('[aria-label="Refresh tasks and sprints from Jira"]').click();
+async function expectStoriesRows(page) {
+    await expect(rowsButton(page, 'Stories')).toHaveAttribute('aria-checked', 'true');
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'false');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['story']);
+}
+
+test('a chosen Stories view survives the header Refresh and a Sprint switch and back, with no row-mode event from the restore', async ({ page }) => {
+    const server = capacityServer();
+    await install(page, { server, analytics: true });
+    await openPlanning(page);
+    await rowsButton(page, 'Stories').click();
+    await expectStoriesRows(page);
+    await expect.poll(() => rowModeEvents(page)).toBe(1);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await refreshHeader(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expectStoriesRows(page);
+    expect(await rowModeEvents(page), 'the restore after Refresh emits nothing').toBe(1);
+    const toggle = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await toggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: activeSprintName }).click();
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await toggle.click();
+    await page.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
+    await expect(page.locator('.planning-panel.open')).toBeVisible();
+    await expectStoriesRows(page);
+    expect(await rowModeEvents(page), 'the restore after a Sprint switch emits nothing').toBe(1);
+});
+
+test('a chosen Epics view with the strip collapsed stays Epics after a reload; no choice stays the Epics default', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    await install(page, { server, analytics: true });
+    await openPlanning(page);
+    // No choice made: Epics after a data reload.
+    await refreshHeader(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+    // Open the strip (Stories), then choose Epics: the strip collapses and the choice is Epics.
+    await expand(page);
+    await expectStoriesRows(page);
+    await rowsButton(page, 'Epics').click();
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+    await refreshHeader(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+    await expect(strip(page)).toHaveClass(/capacity-panel-collapsed/);
+});
+
+test('each new choice, Stories then Epics, is the one a data reload restores', async ({ page }) => {
+    const server = capacityServer({ rows: [{ assigneeKey: 'acc-ann', displayName: 'Ann Synthetic', capacity: '8', vacations: null, notes: null, removed: false }] });
+    await install(page, { server, analytics: true });
+    await openPlanning(page);
+    await rowsButton(page, 'Stories').click();
+    await expectStoriesRows(page);
+    await refreshHeader(page);
+    await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
+    await expectStoriesRows(page);
+    await rowsButton(page, 'Epics').click();
+    await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+});

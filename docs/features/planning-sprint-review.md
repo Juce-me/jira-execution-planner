@@ -332,8 +332,12 @@ Points)", below the controls stack (portaled into `#planning-assignee-capacity-h
 and All Teams keep the Selected SP by Team cards unchanged. The expanded state is a private browser preference
 (`jira_dashboard_planning_assignee_capacity_v1`). All numbers are Story Points. The strip and the table's Epics/Stories
 control follow each other: expanding the strip from its header selects Stories, and choosing Epics (a click or a link's rows)
-while it is expanded collapses it; the Epics a table mount starts with (reload, Sprint switch) yields to an expanded strip by
+while it is expanded collapses it; the Epics a table mount starts with (page reload) yields to an expanded strip by
 selecting Stories. Neither direction emits analytics or adds a request.
+The Epics/Stories choice (a click or a link's rows) is kept in session memory while the page lives: a header Refresh or a
+Sprint switch, which unmounts the table while ENG loads, reopens it on the chosen rows (and a chosen Epics keeps the strip
+collapsed) without an analytics event or request. A page reload starts from the Epics default, or from a link's rows. The strip's
+quiet switch to Stories forgets a differing choice.
 
 **Columns.** Assignee, Planned capacity, Estimated effort, Vacations, Notes, with a Totals row summing the three numeric
 columns. Planned capacity, Vacations and Notes are typed in (0 to 10,000 with at most two decimals; Notes up to 500

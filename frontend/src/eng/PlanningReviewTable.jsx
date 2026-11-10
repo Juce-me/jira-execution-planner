@@ -21,7 +21,7 @@ import PlanningReviewDerivedCell from './PlanningReviewDerivedCell.jsx';
 import { usePlanningRowMotion } from './usePlanningRowMotion.js';
 import { takeInitialPlanningRowMode } from '../shareView/store.js';
 import { peekInitialPlanningRowMode } from '../shareView/store.js';
-import { publishPlanningRowMode } from './planningRowModeChannel.js';
+import { publishPlanningRowMode, getRememberedPlanningRowMode, syncRememberedPlanningRowMode } from './planningRowModeChannel.js';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { reviewLabels, reviewRowIssueKind } from './planningReviewKinds.js';
 import { resolveEntityNames } from './engWorkModel.js';
@@ -109,9 +109,10 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const names = React.useMemo(() => entityNames || resolveEntityNames(workModel), [entityNames, workModel]);
     const labels = React.useMemo(() => reviewLabels(names), [names]);
     const kindOf = role => reviewRowIssueKind(role, names); // analytics kind of a row role
-    // A link's rows count as chosen, like a click on the control; the Epics a mount starts with does not (#323).
-    const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode()));
-    const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');
+    // A link's rows and a remembered choice (it survives a data reload's remount) count as chosen, like a click on the
+    // control; the Epics a mount starts with does not (#323).
+    const chosenMode = React.useRef(Boolean(peekInitialPlanningRowMode() || getRememberedPlanningRowMode()));
+    const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || getRememberedPlanningRowMode() || 'epic');
     const [details, setDetails] = React.useState(null);
     React.useEffect(() => { setDetails(null); }, [mode, review.groupId, review.sprintId, review.contextKey]);
     const hidden = new Set(review.layouts?.[mode]?.hidden ?? DEFAULT_REVIEW_HIDDEN_COLUMNS);
@@ -239,7 +240,7 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
     const switchMode = React.useRef(null);
     switchMode.current = (next, chosen = false) => { releaseEngReadingContext(); if (editing) document.activeElement?.blur(); setEditing(null); chosenMode.current = chosen; setMode(next); setNewColumnId(''); };
     const changeMode = next => { switchMode.current(next, true); trackedAction('row_mode_changed', { mode: next }); };
-    React.useLayoutEffect(() => { publishPlanningRowMode(mode, { setter: next => switchMode.current(next), chosen: chosenMode.current }); }, [mode]);
+    React.useLayoutEffect(() => { syncRememberedPlanningRowMode(mode, chosenMode.current); publishPlanningRowMode(mode, { setter: next => switchMode.current(next), chosen: chosenMode.current }); }, [mode]);
     React.useLayoutEffect(() => () => publishPlanningRowMode(null), []);
     const changeSort = (column, additive) => {
         const current = sort.find(item => item.columnId === column.id);

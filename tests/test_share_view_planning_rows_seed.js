@@ -79,7 +79,7 @@ test('a link seed is consumed by the first table mount only; the next mount rese
 test('source: the seed is read lazily inside the table, and the app mounts without StrictMode, which would run the initializer twice', () => {
     const tableSource = fs.readFileSync(path.join(SOURCE_ROOT, 'eng', 'PlanningReviewTable.jsx'), 'utf8');
     assert.ok(tableSource.includes("import { takeInitialPlanningRowMode } from '../shareView/store.js';"));
-    assert.ok(tableSource.includes("const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || 'epic');"));
+    assert.ok(tableSource.includes("const [mode, setMode] = React.useState(() => takeInitialPlanningRowMode() || getRememberedPlanningRowMode() || 'epic');"));
     assert.equal(tableSource.match(/takeInitialPlanningRowMode\(/g).length, 1, 'the seed is taken in one place');
     assert.equal(fs.readFileSync(path.join(SOURCE_ROOT, 'dashboard.jsx'), 'utf8').includes('StrictMode'), false,
         'StrictMode runs a state initializer twice: the second call would find the one-shot seed already taken');

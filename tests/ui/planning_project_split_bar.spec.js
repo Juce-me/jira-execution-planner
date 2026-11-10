@@ -46,21 +46,24 @@ async function paintedReadout(page, fill) {
     expect(await darkPixels(page, box), 'readout background actually paints above the panel').toBeGreaterThan(50);
 }
 
-test('compact narrow touch bar retains its target and readable summary', async ({ browser }, testInfo) => {
+// The compact overview hides its details (2026-11-06), so the project split shows only in the expanded details:
+// at a narrow touch width the expanded bar keeps its target and readable labels.
+test('narrow touch bar in the expanded details retains its target and readable labels', async ({ browser }, testInfo) => {
     const context = await browser.newContext({ viewport: { width: 390, height: 400 }, hasTouch: true });
     const page = await context.newPage();
     await page.setContent('<div style="margin:100px 20px" id="root"></div>');
     await page.addStyleTag({ content: css }); await page.addScriptTag({ content: script });
-    await page.evaluate(() => window.renderBar({ selectedProjectEntries: [{ id: 'PRODUCT', storyPoints: 65 }, { id: 'TECH', storyPoints: 35 }], excludedProjectStats: {}, compact: true }));
-    await expect(page.locator('.planning-compact-readout')).toHaveText('Product 65.0 · Tech 35.0 SP');
+    await page.evaluate(() => window.renderBar({ selectedProjectEntries: [{ id: 'PRODUCT', storyPoints: 65 }, { id: 'TECH', storyPoints: 35 }], excludedProjectStats: {}, compact: false }));
+    await expect(page.locator('.project-bar-fill.product .capacity-bar-fill-label')).toHaveText('Product 65% · 65.0 SP');
+    await expect(page.locator('.project-bar-fill.tech .capacity-bar-fill-label')).toHaveText('Tech 35% · 35.0 SP');
     await page.locator('.project-bar-fill.tech').tap();
     expect(await paintedMarker(page), 'touch inspection retains the target dash').toBeGreaterThanOrEqual(2);
-    const summary = await measure(page.locator('.planning-compact-readout'));
     for (const selector of ['.product', '.tech']) {
+        const label = await measure(page.locator('.project-bar-fill' + selector + ' .capacity-bar-fill-label'));
         const paint = await measure(page.locator('.project-bar-fill' + selector));
-        expect(contrast(summary.text, paint.fill), `compact text over ${selector}`).toBeGreaterThanOrEqual(4.5);
+        expect(contrast(label.text, paint.fill), `label text over ${selector}`).toBeGreaterThanOrEqual(4.5);
     }
-    await page.screenshot({ path: testInfo.outputPath('compact-touch.png'), animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('narrow-touch.png'), animations: 'disabled' });
     await context.close();
 });
 

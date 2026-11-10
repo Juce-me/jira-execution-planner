@@ -164,6 +164,8 @@ test('the status menu option markers take the column tint as background only', a
     await trigger(page, 'story', 'PLAT-1-a').click();
     const menu = page.locator('.status-transition-menu[data-issue-key="PLAT-1-a"]');
     await expect(menu).toBeVisible();
+    // The options load after the menu opens: wait for them before reading their markers.
+    await expect(menu.locator('.status-transition-option').first()).toBeVisible();
     const markers = await menu.locator('.status-transition-option').evaluateAll((options) => options.map((option) => {
         const marker = option.querySelector('.status-transition-option-marker');
         return { label: option.querySelector('.status-transition-option-label').textContent.trim(), inline: marker.getAttribute('style'), background: getComputedStyle(marker).backgroundColor };

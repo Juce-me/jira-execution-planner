@@ -764,11 +764,10 @@ def _frame_stream(server, snapshot, transport, *, generation_id=None,
         elif snapshot.components:
             epics = []
             if leaf_cohort is not None:
-                # New model: Components live on the Epic leaves. Membership is decided there, before
-                # any Initiative is admitted; Team leaves join the same cohort for Component-backed all-work.
-                component_batches = eng_board.iter_leaf_cohort_batches(
+                # DELIVERY scope values match Initiative Allocation; All work also admits Team leaves.
+                component_batches = eng_board.iter_allocation_cohort_batches(
                     search_page, projects=snapshot.projects, planning_type_ids=snapshot.issue_type_ids,
-                    components=snapshot.components,
+                    components=snapshot.components, allocation_field_id=work_roles.allocation_field_id,
                     team_ids=snapshot.teams if snapshot.query.scope == 'all_work' else (),
                     team_field_id=snapshot.team_field_id, parent_clause=snapshot.parent_clause,
                     parent_fields=epic_fields, terminal_statuses=terminal_statuses,

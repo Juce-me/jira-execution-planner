@@ -76,6 +76,7 @@ export function SprintControl({
     showBoard,
     engSprintSelectorState,
     boardStrictScope,
+    componentScopeLabel = 'Component',
     sprintName,
     selectedSprint,
     sprintsLoading,
@@ -100,7 +101,7 @@ export function SprintControl({
     const boardScopeControl = selectedView === 'eng' && showBoard;
     const canOpen = engSprintSelectorState.ordinarySelectable;
     const displayedSprint = boardScopeControl && boardStrictScope
-        ? (boardStrictScope === 'component' ? 'Component' : 'All work')
+        ? (boardStrictScope === 'component' ? componentScopeLabel : 'All work')
         : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : 'Sprint'));
     const options = getSprintSelectorOptions(boardScopeControl);
     const activeIndex = options.length

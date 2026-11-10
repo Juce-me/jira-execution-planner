@@ -34,6 +34,17 @@ function props(surface) {
         setTeamDropdownQuery: noop, setShowTeamDropdown: noop, selectedTeamsLabel: 'Synthetic team', longestTeamOptionLabel: 'Longest synthetic team',
         filteredTeamOptions: [{ id: 'one', name: 'Synthetic team' }], selectedTeamSet: new Set(['one']), toggleTeamSelection: noop };
 }
+test('DELIVERY Board selection keeps its Allocation label while option search is filtered', () => {
+    const kit = load('EngControls.jsx');
+    for (const [componentScopeLabel, expected] of [['Allocation', 'Allocation'], ['Component', 'Component']]) {
+        const html = renderToString(React.createElement(kit.SprintControl, {
+            ...props('main'), showBoard: true, boardStrictScope: 'component',
+            componentScopeLabel, sprintSearch: 'no matching option', getSprintSelectorOptions: () => [],
+        }));
+        assert.match(html, new RegExp(`>${expected}<`));
+    }
+});
+
 for (const surface of ['main', 'compact']) {
     for (const [name, label, className] of [['SearchControl', 'Find', 'control-search active-filter applied-filter'], ['SprintControl', 'Sprint', 'sprint-dropdown sprint-selector-control'],
         ['GroupControl', 'Group', 'group-control'], ['TeamControl', 'Teams', 'team-dropdown header-filter-dropdown']]) {
@@ -123,6 +134,7 @@ const expectedProps = {
         "boardStrictScope",
         "closeSprintSelector",
         "commitSprintSelectorOption",
+        "componentScopeLabel",
         "engSprintSelectorState",
         "engWorkspaceConfigured",
         "getSprintSelectorOptions",

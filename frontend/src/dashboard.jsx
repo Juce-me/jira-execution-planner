@@ -1487,6 +1487,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return `sprint-${surface}-option-${suffix}`;
             };
 
+            const componentScopeLabel = combinedWorkModel ? 'Allocation' : 'Component';
             const getSprintSelectorOptions = (boardScopeControl) => {
                 const normalizedSearch = sprintSearch.trim().toLowerCase();
                 const options = [];
@@ -1496,9 +1497,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         readiness: engSprintSelectorState.allWorkReadiness,
                     });
                 }
-                if (boardScopeControl && (!normalizedSearch || 'component'.includes(normalizedSearch))) {
+                if (boardScopeControl && (!normalizedSearch || componentScopeLabel.toLowerCase().includes(normalizedSearch))) {
                     options.push({
-                        kind: 'scope', scope: 'component', label: 'Component',
+                        kind: 'scope', scope: 'component', label: componentScopeLabel,
                         readiness: engSprintSelectorState.componentReadiness,
                     });
                 }
@@ -5729,6 +5730,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     showBoard={showBoard}
                     engSprintSelectorState={engSprintSelectorState}
                     boardStrictScope={boardStrictScope}
+                    componentScopeLabel={componentScopeLabel}
                     sprintName={sprintName}
                     selectedSprint={selectedSprint}
                     sprintsLoading={sprintsLoading}

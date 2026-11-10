@@ -257,7 +257,9 @@ async function installLinkFixture(page, {
 
 // Reads that use POST, plus the session refresh every load sends; none of them writes a view.
 const READ_ONLY_POSTS = new Set(['/api/dependencies', '/api/performance/loads', '/api/auth/refresh']);
-const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname);
+// The batch planned-number read (#323) is a read-only projection: one query, nothing written.
+const isReadOnlyPost = call => READ_ONLY_POSTS.has(call.pathname) || call.pathname.startsWith('/api/stats/') || /\/values\/read$/.test(call.pathname)
+    || /\/assignee-capacity\/planned\/read$/.test(call.pathname);
 const mutatingCalls = calls => calls.filter(call => call.method !== 'GET' && !isReadOnlyPost(call));
 const signature = call => `${call.method} ${call.pathname}?${[...new URL(call.url).searchParams.keys()].sort().join('&')}${call.aborted ? ' aborted' : ''}`;
 const apiSignatures = calls => calls.map(signature).sort();

@@ -18,7 +18,8 @@ export function resolveEngSprintSelectorState({
         : capability !== true ? 'error'
         : !group ? 'department_required'
         : !group.board?.columns?.length ? 'columns_required'
-        : !(Array.isArray(savedProjects) && savedProjects.length)
+        // A promoted quarter's Projects and Board live in its configuration; a ready one has both.
+        : !configurationReady && !(Array.isArray(savedProjects) && savedProjects.length)
             && !String(savedBoardId ?? '').trim() ? 'projects_required'
         : 'ready';
     const delivery = isCombinedWorkModel(workModel);

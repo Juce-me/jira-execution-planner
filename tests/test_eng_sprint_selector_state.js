@@ -128,3 +128,14 @@ test('wrong-era scopes stay mismatched despite settled Board setup errors and wa
         }
     }
 });
+
+test('a promoted quarter whose configuration is complete does not need workspace-level saved Projects', async () => {
+    const { resolveEngSprintSelectorState } = await loadModule();
+    const promoted = { ...readyInput, savedProjects: [], savedBoardId: '', quarterMode: true };
+    const ready = resolveEngSprintSelectorState({ ...promoted, quarterConfigurationReady: true });
+    assert.equal(ready.componentReadiness, 'ready');
+    assert.equal(ready.allWorkReadiness, 'ready');
+    const setup = resolveEngSprintSelectorState({ ...promoted, quarterConfigurationReady: false });
+    assert.equal(setup.componentReadiness, 'projects_required');
+    assert.equal(setup.allWorkReadiness, 'projects_required');
+});

@@ -22,6 +22,10 @@ SPRINT_FIELD = 'customfield_10020'
 TEAM_FIELD = 'customfield_10021'
 POINTS_FIELD = 'customfield_10022'
 EPIC_FIELD = 'customfield_10023'
+CAPACITY_PROJECT = 'SYNCAP'
+CAPACITY_FIELD = 'customfield_10030'
+CAPACITY_SITE_URL = 'https://example.atlassian.net'
+CAPACITY_CLOUD_ID = 'synthetic-cloud'
 SPRINTS = [
     {'id': 101, 'name': '2027Q1', 'state': 'active', 'originBoardId': 701,
      'startDate': '2027-01-01T00:00:00.000Z', 'endDate': '2027-03-31T00:00:00.000Z'},
@@ -56,6 +60,18 @@ def _issue(identity, kind, team, points=0, parent=None, sprints=(101,)):
         fields['parent'] = {'id': parent, 'key': 'SYN-' + parent}
         fields[EPIC_FIELD] = 'SYN-' + parent
     return {'id': identity, 'key': key, 'fields': fields}
+
+
+def _capacity_issue(identity, sprint_name, team_name, capacity):
+    """A synthetic "Team info" ticket; searched only through its own `summary ~` pool."""
+    issue = _issue(identity, 'Story', TEAM_A, sprints=())
+    issue['key'] = CAPACITY_PROJECT + '-' + identity
+    issue['fields'].update({
+        'summary': 'Team info ' + sprint_name + ' - ' + team_name,
+        'project': {'id': '790', 'key': CAPACITY_PROJECT, 'name': 'Synthetic capacity'},
+        'labels': [], CAPACITY_FIELD: capacity,
+    })
+    return issue
 
 
 def _split(expression, keyword):
@@ -109,7 +125,7 @@ def matches_jql(issue, expression):
         if len(parts) > 1:
             # Evaluate every predicate even if another predicate determines the result.
             return combine([matches_jql(issue, part) for part in parts])
-    found = re.fullmatch(r'(.+?)\s+(NOT IN|IN|IS NOT|IS|!=|=)\s*(.+)', expression, re.I)
+    found = re.fullmatch(r'(.+?)\s+(NOT IN|IN|IS NOT|IS|!=|=|~)\s*(.+)', expression, re.I)
     if not found:
         raise AssertionError('Unsupported synthetic JQL predicate.')
     name, operator, raw = found.groups()
@@ -131,9 +147,16 @@ def matches_jql(issue, expression):
         'epic link': [fields.get(EPIC_FIELD, '')], EPIC_FIELD.casefold(): [fields.get(EPIC_FIELD, '')],
         'status': [fields['status']['name'], fields['status']['id']],
         'statuscategory': [fields['status']['statusCategory']['name'], fields['status']['statusCategory']['key']],
+        'summary': [fields['summary']],
     }
     if name not in aliases:
         raise AssertionError('Unsupported synthetic JQL field.')
+    if operator == '~':
+        # Jira text search on a quoted phrase: `summary ~ "\"Team info <Sprint> - <Team>\""`.
+        if name != 'summary' or not re.fullmatch(r'"\\".*\\""', raw.strip()):
+            raise AssertionError('Unsupported synthetic JQL text predicate.')
+        phrase = raw.strip()[3:-3].replace('\\"', '"').casefold()
+        return phrase in fields['summary'].casefold()
     values = [value.casefold() for value in aliases[name] if value]
     if operator in {'IS', 'IS NOT'}:
         if raw.upper() != 'EMPTY':
@@ -173,6 +196,10 @@ class PlanningFixture:
         self.pause_armed = False
         self.patches = []
         self.issues = []
+        # Jira capacity PUTs are refused (and recorded as mutations) unless a test opts in.
+        self.capacity_put_allowed = False
+        self.capacity_puts = []
+        self.capacity_issues = []
         self.prepare(reset=False)
 
     def prepare(self, promoted=False, *, reset=True):
@@ -202,6 +229,10 @@ class PlanningFixture:
             'outwardIssue': {key: deepcopy(self.issues[3][key]) for key in ('id', 'key', 'fields')},
         }]
         self.issues[2]['fields']['subtasks'] = [deepcopy(self.issues[5])]
+        # 2027Q1: Team A has a "Team info" ticket; Team B has none (the no-ticket path). 2027Q2 has no tickets.
+        self.capacity_issues = [_capacity_issue('9001', SPRINTS[0]['name'], 'Synthetic Team A', 20)]
+        self.capacity_put_allowed = False
+        self.capacity_puts = []
         if restore:
             # Restart restores only provider data. Config/catalog revisions,
             # private views and encrypted auth rows are already durable.
@@ -228,6 +259,7 @@ class PlanningFixture:
             for name, identity in (('sprint', SPRINT_FIELD), ('storyPoints', POINTS_FIELD)):
                 delivery['fields'][name] = {'fieldId': identity, 'fieldName': name}
             payload = {'version': 1, 'workConfigurations': work_structure.normalize_work_configurations(bundle)}
+        payload['capacity'] = {'project': CAPACITY_PROJECT, 'fieldId': CAPACITY_FIELD, 'fieldName': 'Team capacity'}
         now = datetime.now(timezone.utc)
         with self.factory() as db:
             row = db.query(models.WorkspaceDashboardConfig).filter_by(workspace_id=workspace_id).one_or_none()
@@ -235,6 +267,9 @@ class PlanningFixture:
                 row = models.WorkspaceDashboardConfig(workspace_id=workspace_id)
                 db.add(row)
             row.payload, row.config_revision = payload, 1
+            # A verified numeric capacity field for this synthetic site, so mutation is enabled.
+            row.capacity_jira_site_url, row.capacity_jira_cloud_id = CAPACITY_SITE_URL, CAPACITY_CLOUD_ID
+            row.capacity_field_schema_type, row.capacity_field_verified_at = 'number', now
             group = db.query(models.WorkspaceGroupConfig).filter_by(workspace_id=workspace_id).one_or_none()
             if group is None:
                 group = models.WorkspaceGroupConfig(workspace_id=workspace_id)
@@ -372,9 +407,23 @@ class PlanningFixture:
         params = options.get('params') or options.get('json') or {}
         call = {'actor': actor, 'method': method, 'path': path}
         self.calls.append(call)
+        capacity = next((issue for issue in self.capacity_issues if path == '/rest/api/3/issue/' + issue['key']), None)
+        if method == 'PUT' and capacity is not None and self.capacity_put_allowed:
+            body = options.get('json') or {}
+            value = (body.get('fields') or {}).get(CAPACITY_FIELD) if set(body) == {'fields'} else None
+            if set(body.get('fields') or {}) != {CAPACITY_FIELD} or isinstance(value, bool) \
+                    or not isinstance(value, (int, float)):
+                raise AssertionError('A capacity PUT writes only the numeric capacity field.')
+            self.capacity_puts.append({'actor': actor, 'key': capacity['key'], 'fields': deepcopy(body['fields'])})
+            capacity['fields'][CAPACITY_FIELD] = value
+            return self.Response({}, 204)
         if method not in {'GET', 'POST'} or (method == 'POST' and path != '/rest/api/3/search/jql'):
             self.mutations.append({'actor': actor, 'method': method, 'path': path})
             raise AssertionError('Planning must never mutate Jira or Home.')
+        if method == 'GET' and capacity is not None:
+            requested = str(params.get('fields') or '').split(',')
+            return self.Response({'id': capacity['id'], 'key': capacity['key'], 'fields': {
+                key: deepcopy(value) for key, value in capacity['fields'].items() if key in requested}})
         if path == '/rest/api/3/myself':
             return self.Response({'accountId': actor, 'displayName': 'Synthetic ' + actor})
         if path == '/rest/api/3/issuetype':
@@ -401,7 +450,8 @@ class PlanningFixture:
             jql = str(params.get('jql', ''))
             call['jql'] = jql
             predicate = re.split(r'\s+ORDER BY\s+', jql, flags=re.I)[0]
-            rows = [deepcopy(issue) for issue in self.issues
+            pool = self.capacity_issues if re.search(r'\bsummary\s*~', predicate, re.I) else self.issues
+            rows = [deepcopy(issue) for issue in pool
                     if (issue['id'] != '8999' or actor == 'actor-b') and matches_jql(issue, predicate)]
             requested = params.get('fields') or []
             requested = requested.split(',') if isinstance(requested, str) else requested
@@ -435,6 +485,8 @@ class PlanningFixture:
                     'role': db.get(models.User, actor.user_id).account_type} for name, actor in self.actors.items()}
                 return {'actors': actors, 'calls': deepcopy(self.calls), 'failures': list(self.failures),
                         'mutations': deepcopy(self.mutations), 'groupId': GROUP_ID,
+                        'capacityPuts': deepcopy(self.capacity_puts),
+                        'capacityTickets': {issue['key']: issue['fields'][CAPACITY_FIELD] for issue in self.capacity_issues},
                         'sourceProof': {
                             'configRevision': db.query(models.WorkspaceDashboardConfig).one().config_revision,
                             'boardCatalogVersion': db.query(models.WorkspaceSprintCatalog).one().catalog_version,
@@ -451,6 +503,15 @@ class PlanningFixture:
         elif operation == 'planningReleaseSave':
             self.pause.set()
             self.pause_armed = False
+        elif operation == 'planningStoryPoints':
+            # Provider data only: a Story's points, so a Team can be unpointed in a Sprint. `prepare` restores them.
+            issue = next((row for row in self.issues if row['id'] == str(message.get('issueId'))), None)
+            points = message.get('points')
+            if issue is None or isinstance(points, bool) or not isinstance(points, (int, float)):
+                raise ValueError('Synthetic Story Points must be a number.')
+            issue['fields'][POINTS_FIELD] = points
+        elif operation == 'planningCapacityPut':
+            self.capacity_put_allowed = message.get('enabled', True) is True
         elif operation == 'planningDropAck':
             self.drop_ack = True
         elif operation == 'planningSaveState':

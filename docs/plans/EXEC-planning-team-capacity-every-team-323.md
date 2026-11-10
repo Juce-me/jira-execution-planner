@@ -1,6 +1,6 @@
 # Planning Team Capacity for Every Selected Team (#323) Implementation Plan
 
-> **Status:** Ready for execution. Decisions D1–D4 and the G1 count were recorded on 2026-11-06; implementation not started; Task 9 remains gated by G2. Revision 3 (2026-11-06) incorporates two independent reviews of revision 1 and one re-validation of revision 2. Decisions D1–D4 and gates G1–G3 below must be answered before the tasks that name them. Branch: `feature/331-shared-planning`, on top of #331 Task 0.1 (PostgreSQL-only, single-use DB CSRF tokens).
+> **Status:** In execution. Tasks 0–9 and Task 10 Steps 1–3 are done on `feature/331-shared-planning` (see Execution evidence); Task 10 Step 4 (full gates) and Step 5 (publication naming) remain. Decisions D1–D4 and the G1 count were recorded on 2026-11-06; G2 opened on 2026-11-06. Revision 3 (2026-11-06) incorporates two independent reviews of revision 1 and one re-validation of revision 2. Decisions D1–D4 and gates G1–G3 below must be answered before the tasks that name them. Branch: `feature/331-shared-planning`, on top of #331 Task 0.1 (PostgreSQL-only, single-use DB CSRF tokens).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Commit steps run only after the operator authorizes commits for this work.
 
@@ -18,7 +18,7 @@
 
 **Tech Stack:** Flask, SQLAlchemy on PostgreSQL, React 19, esbuild, Node 20 `node:test`, Playwright (Chromium; headed Firefox and WebKit for glyph checks).
 
-**Spec:** [FUTURE-planning-assignee-capacity-deferred-323.md](FUTURE-planning-assignee-capacity-deferred-323.md) ("Team capacity for every selected Team", "One-click push", "Open items"). The shipped contract is in [DONE-planning-assignee-capacity-table-323.md](DONE-planning-assignee-capacity-table-323.md) and [docs/features/planning-sprint-review.md](../features/planning-sprint-review.md). Planning List retirement follows [#331 Task 7](EXEC-planning-shared-plan-331.md).
+**Spec:** [FUTURE-planning-assignee-capacity-deferred-323.md](FUTURE-planning-assignee-capacity-deferred-323.md) ("Team capacity for every selected Team", "One-click push", "Open items"; those sections are in that file's git history, since Task 10 shrank it to what stays deferred). The shipped contract is in [DONE-planning-assignee-capacity-table-323.md](DONE-planning-assignee-capacity-table-323.md) and [docs/features/planning-sprint-review.md](../features/planning-sprint-review.md). Planning List retirement follows [#331 Task 7](EXEC-planning-shared-plan-331.md).
 
 ## Review of the deferred design (source-checked 2026-11-06)
 
@@ -455,14 +455,14 @@
   - `tests/fixtures/db_oauth_server.py`, `tests/ui/planning_shared_plan_fixture.js`;
 - the docs from the File map; this plan; `FUTURE-…-323.md`; `DONE-…-323.md` (status note and Current Accuracy only); `docs/plans/README.md`.
 
-- [ ] **Step 1: Write the real-server spec** (owned PostgreSQL cluster, actors A and B in one workspace; workspace isolation is proven at route level in Task 1):
+- [x] **Step 1: Write the real-server spec** (owned PostgreSQL cluster, actors A and B in one workspace; workspace isolation is proven at route level in Task 1):
   - two Teams saved concurrently both persist and B reads them back;
   - A and B editing the same Team resolve last-write-wins, as documented;
   - zero CSRF 403 responses;
   - sign-in expiry mid-save: hold the PATCH with `page.route`, call `expireSession`, release; the result is terminal recovery with no replay;
   - after D1 (a) or (b), one push reaches the fake Jira PUT.
-- [ ] **Step 2:** Run it serially. Expected: PASS.
-- [ ] **Step 3: Update documentation:**
+- [x] **Step 2:** Run it serially. Expected: PASS.
+- [x] **Step 3: Update documentation:**
   - the feature doc: Freshness, Limitations, card coverage, D2–D4 outcomes, Undo and last-write-wins;
   - the ownership doc and ontology: the batch route;
   - the analytics doc: no-event reasons for batch reads, hydration, mirroring and List normalization;
@@ -478,6 +478,13 @@
   6. headed Firefox and WebKit for the capacity specs, plus the manual glyph and hover check (DoD 14).
   Record exact summaries.
 - [ ] **Step 5: Publication naming** follows root AGENTS.md §10. If Task 6 or 9 is still gated, either the operator declares the PR partial (keep `EXEC-*`), or the gated items move to the `DONE-*` status note and `docs/TODO.md`. Commit `Record #323 every-Team capacity delivery`.
+
+**Interfaces added during execution** (recorded in Task 10; the task sections above keep their planned text):
+- `buildPlanningCardTeamIds({ teamOptions, tasks, getTeamInfo, readinessEpics, workKnown, selectedTeamIds, isAllTeamsSelected })` in `planningCapacityUtils.js` (Task 4, D3): the card Teams; before work is known, the pointed Teams (All Teams) or the selected Teams; after, the Teams selector's set (`buildTeamDropdownOptions`). App memoises it as `planningCardTeamIds` and passes it as `scope.cardTeamIds` and as the provider's `teamIds`.
+- `getTeamStatus(teamId).plannedSave` (Task 5 fix round): `'idle'|'saving'|'failed'|'rejected'`, the stored-number slot only, so a person-row failure never shows the card's ↻ and ×.
+- `capacityMultiplier` on each `buildSelectedTeamEntries` entry (Task 6 fix round 2): the factor between a Jira ticket value and the card's Cap, used to scale a push conflict's current value.
+- Write contract `capacityReconcilePush` in `docs/design-system.md` (Task 6): pin `updateCapacityRequest(row.candidate.issueKey,`, one call site in `PlanningTeamCapacityCards.jsx`.
+- Analytics `workflow_action=capacity_reconcile_push` with `result` `success|failure|conflict` on `planning_action` (Task 6), documented in `docs/README_ANALYTICS.md`.
 
 ## Definition of Done
 
@@ -717,6 +724,13 @@ Operator decisions (2026-11-06): the recommended options were accepted.
 - **Task 8 fix round R5 (2026-11-10), FIX_BASE `345ea736`, controller rulings on R4's open points.**
   - Finding 7, option (a): a status shown while editing takes the label row's one-line `.team-capacity-editor-context` slot (`role="status"`, the whole message as its text and the input's description; no title, no new class), ellipsized, in the old status block's ink, taking the pointer although the label row does not; the Team name keeps its width first (`.is-capacity-editing.has-capacity-status .team-stat-label { flex-shrink: 0 }`). The in-flow `.team-capacity-status` block and its rules are removed, and the stale `0 5px 5px 0` radius leaves `tests/design_system_baseline.json` (generator, stale removal only). New case "a status shown while editing sits on the label row's one-line context slot and keeps the card height" (RED first; GREEN in Chromium and headed Firefox and WebKit): computed card height equal, `elementFromPoint` at the first glyph is the status node, no editor control overlaps it, one ellipsized line, whole name and full accessible text. **Replaced assertions:** the grid-cells and reference-states cases required the whole message to fit; they now require ellipsis and `nowrap` when it is truncated, and the full text. Capture `tmp/planning-323-every-team/task8/r5-long-status-1440x900.png`.
   - Finding 3: the hydration same-value guard is skipped while `restoringGroupRef.current` is true, so the updater runs after the restore's queued selection. The group-switch case now records every rendered Team label, every saved Team selection and every request's `team` parameter during the switch: RED without the fix (the cached `team-beta` label rendered), GREEN with it.
+- **Task 10 Steps 1–3: real-server acceptance and documentation (2026-11-10), BASE `55124812`.** Step 4 (full gates) moves to the next task; Step 5 is the operator's.
+  - Fixtures: `planning_shared_plan_server.py` seeds a verified numeric capacity config (project `SYNCAP`, field `customfield_10030`, this synthetic site), one "Team info 2027Q1 - Synthetic Team A" ticket (20) and none for Team B or 2027Q2 (the no-ticket path), searched as its own pool through new `summary ~` phrase support in `matches_jql`; capacity-issue GETs read the current value before and after an update; a capacity PUT of only the numeric field is accepted only after the `planningCapacityPut` opt-in (otherwise the existing guard records a mutation and fails), and `planningStoryPoints` changes one Story's points (provider data only, reset by `prepare`). `planningInspect` adds `capacityPuts` and `capacityTickets`. `planning_shared_plan_fixture.js` adds `allowCapacityPut` and `setStoryPoints`; `db_oauth_server.py` lists the new spec in `NEW_SOURCES`.
+  - Spec `tests/ui/planning_capacity_real_server.spec.js` (actors A and B, both non-admin members of one workspace, owned PostgreSQL cluster): two Teams' stored numbers held in flight together then released both persist (revision 1 each) and B reads them through the full GET, the batch read and its own cards; A and B save the same Team from the same loaded 14 and the later 12 wins with no conflict (revision 3); one click on → sends one `PATCH /api/capacity/SYNCAP-9001` (`expectedCapacity` 20, `capacity` 14), the fake Jira sees GET then one PUT of only the capacity field, the stored number settles to `jira`, and B reads 14 from Jira; a PATCH held by `page.route` while every A session is expired returns 401, the terminal "Sign in again" dialog shows, exactly one PATCH is sent and nothing is stored; every response of both contexts across the file is checked for 403 (none), and `afterAll` asserts no provider failure, no Jira mutation and no external request.
+  - RED: against the HEAD fixtures (no capacity config) `1 failed, 5 did not run` (no Team-capacity cards); with the opt-in switched off in a throwaway copy, the push returns 502 and `afterAll` reports the recorded mutation (`1 failed, 1 passed`). GREEN, serially (Node 20, after `npm run build`, `JEP_TEST_PYTHON=tmp/ui-triage/py.sh` for the Homebrew PostgreSQL path): `JEP_TEST_PYTHON=tmp/ui-triage/py.sh npx playwright test tests/ui/planning_capacity_real_server.spec.js --browser=chromium --workers=1`: `6 passed` in two runs.
+  - Late-readiness double read (parked from Task 4), counted on the real server: with every Team pointed, one `GET /api/capacity` and one Team-info search, also with `story-readiness` delayed 2.5 s. With Team B's only 2027Q1 Story unpointed, All Teams reads twice, with or without the delay: first `teams=Synthetic Team A` (the pointed set), then `Synthetic Team A,Synthetic Team B` once work is known (the D3 set), two different searches. No search repeats an identical scope. Not fixed (app code); recorded in the feature doc's Limitations and the FUTURE plan.
+  - Existing real-server specs with the changed fixture: `planning_shared_plan.spec.js` and `planning_shared_plan_http.spec.js` `--workers=1` give `1 failed, 6 passed`, the same as `planning_shared_plan.spec.js` at BASE (`1 failed, 4 passed`): the pre-existing v2 journey timeout (`:181`). `node --test tests/test_*.js`: `# tests 3645`, `# pass 3645`, `# fail 0`. Isolated backend `tests.test_codebase_structure_budgets tests.test_postgresql_only_source_guard tests.test_db_oauth_test_helpers`: `Ran 15 tests`, `OK`; `tests.test_agents_md_learnings tests.test_codebase_structure_budgets`: `Ran 21 tests`, `OK`. No `frontend/src` or backend source change, so the extraction lint is unaffected.
+  - Docs: the feature doc (card editing, the → push and its states, multi-Team freshness, D4, last-write-wins, Limitations including the double read), the ownership row and ontology entries for the batch route (store and planned team capacity sections reverified), the analytics no-event row for batch reads, hydration, mirroring and List normalization, the DONE #323 status and Current Accuracy (PR #328, DoD 10, open items moved here), the FUTURE plan shrunk to what stays deferred, the index entry, and this plan's Interfaces added during execution.
 - **D1 (a):** "Write to ticket" writes immediately, with in-row pending, success and conflict states. This supersedes spec decision 9.
 - **D2:** zero-effort Teams count in totals and the project split; "Capacity:" availability is judged only over Teams with effort or a capacity value.
 - **D3:** the Team-selector set; today's set until work is known; no stored-number pencil and no Jira read for unresolved or comma-containing names.

@@ -33,6 +33,7 @@ NEW_SOURCES = (
     'tests/fixtures/planning_shared_plan_server.py',
     'tests/ui/planning_shared_plan_fixture.js', 'tests/ui/planning_shared_plan.spec.js',
     'tests/ui/planning_shared_plan_http.spec.js',
+    'tests/ui/planning_capacity_real_server.spec.js',
 )
 PHASE = 'launcher'
 PHASE_STARTED = time.monotonic()

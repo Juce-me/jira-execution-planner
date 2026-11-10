@@ -20,6 +20,9 @@ async function startPlanningSharedPlanServer({ python, databaseUrl } = {}) {
         pauseSave: () => server.control('planningPauseSave'),
         releaseSave: () => server.control('planningReleaseSave'),
         dropNextAckAfterCommit: () => server.control('planningDropAck'),
+        // Opt in to the fake Jira capacity PUT; any other Jira mutation still fails the provider guard.
+        allowCapacityPut: (enabled = true) => server.control('planningCapacityPut', { enabled }),
+        setStoryPoints: (issueId, points) => server.control('planningStoryPoints', { issueId, points }),
         allowProviderReauth: (page, actor) => server.login(page, actor),
         readOperation: (operationId, actor = 'actor-a') => server.control('planningReadOperation', { operationId, actor })
             .then(result => result.planning),

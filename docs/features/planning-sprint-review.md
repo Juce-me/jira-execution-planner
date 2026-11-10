@@ -436,10 +436,18 @@ the stored number as a fallback while its pencil keeps editing Jira. The stored 
 Jira value (multiplier and excluded capacity apply), so the amber bar and the underbar appear for a Team without a ticket.
 Jira wins on screen whenever it has a value. A Sprint without its own document shows the nearest earlier number gray
 (source `inherited`). After a user-initiated capacity read, a Jira value that differs is mirrored silently into an existing
-own document (database only; never into a typed number, never while the queue is busy, failures dropped). A typed number
-that differs from the ticket shows a banner above the cards with Write to ticket (opens the existing Jira editor prefilled;
-the user saves there), Use ticket value and Not now (hidden per Sprint and Team until either number changes). Nothing is
-written to Jira except through that editor's Save; a successful Jira save turns a typed number into the ticket value.
+own document (database only; never into a typed number, never while the queue is busy, never creating a document,
+failures dropped). A typed number that differs from the ticket marks its card (`data-capacity-attention="mismatch"`); there
+is no banner, Use ticket value or Not now. With the capacity mutation right the card's hover rail then reads Jira · → ·
+pencil: one click on → writes the stored number to that Team's own matched ticket (`PATCH /api/capacity/<issue_key>` with a
+numeric `capacity` and the read `expectedCapacity`; write contract `capacityReconcilePush` in
+[design-system.md](../design-system.md)). While it runs the → is unavailable with "Applying…" and that Team's Jira pencil is
+disabled; on success the → disappears and the stored number settles to `jira`. A `409 capacity_conflict` shows Jira's
+current value on the card and "Capacity changed in Jira to N. Apply M SP again to replace it." (it never claims nothing was
+written), and the next click expects that value; other errors keep the editor's copy. The overview's state note adds
+"Applying N Teams to Jira…", "N Jira push(es) failed" or "N Jira push(es) need(s) review". Each push has its own abort; a
+scope change aborts pushes in flight and never retargets them. Nothing is written to Jira except by an explicit click on a
+card's Jira pencil Save or its →; a successful Jira save turns a typed number into the ticket value in any scope.
 
 **Add assignee.** Under the table and in the empty state, a person picker searches the active users assignable in the
 workspace's selected Product and Tech Jira projects through `POST /api/eng/assignee-capacity/user-options` (the signed-in
@@ -450,6 +458,12 @@ removed person restores them; picking a listed person focuses their row.
 for the page session. The Planning automatic follow-up and the header Refresh re-read it, never while it loads or holds
 unsaved changes; an unchanged document is not republished, a failure keeps the held document, and an automatic height
 change of the strip above the viewport keeps the reading position. A new auth session clears the cache and re-reads.
+With several Teams the same refresh re-reads every card's stored number through one batch read (one Team through its full
+GET): a clean Team takes the new number, while a Team with a draft, a save in flight or a failed save keeps its own value,
+and an open card editor keeps its text and focus. The automatic follow-up waits while a card editor or a push is open; an
+unchanged projection keeps its identity (App does not re-render); answers that arrive after a scope change, a new auth
+session or a sign-in stop are dropped. A failed batch read keeps the held numbers, disables the stored-number pencils and
+shows "Capacity could not be refreshed. Retry before editing."; the next successful read recovers without sending a PATCH.
 
 **Every displayed Team.** The cards are the Teams the Teams selector shows for the current selection (explicitly
 selected Teams always; with All Teams, configured Teams with Sprint work or awaited Stories), or the pointed and selected
@@ -457,8 +471,17 @@ Teams until the Sprint's work is known. Every card shows its Team's stored numbe
 (one Team from its document, more Teams through one batch read); a zero-effort Team with capacity counts in the totals and
 the project split, and the compact "Capacity:" total judges only Teams with effort or a capacity value. A Team whose name
 is unresolved (its id) or contains a comma keeps its card but shows no stored number and is not sent to the Jira read, and
-a Team never borrows another configured Team's ticket or stored number by name containment.
+a Team never borrows another configured Team's ticket or stored number by name containment. Each card edits its own
+Team's stored number with its own pencil, for its own Team and Sprint only; saves of different Teams run independently (at
+most 4 at once) and a scope change never retargets one. A failed save shows ↻ Retry and × Discard changes (that Team's
+stored-number draft only) in the card's hover rail, its message in the rail's readout and "N Team save(s) failed: hover a card to
+retry" (or "Saving N Team(s)…") in the overview's state note. When the workspace holds `MAX_DOCUMENTS_PER_WORKSPACE` (2,000)
+documents, a Team's first save is that Team's visible rejection, "Team capacity not saved: the server refused it." (D4).
+Between users the last write wins: the stored number carries no revision precondition, so the later save replaces an
+earlier one without a conflict, and the other member sees it on the next read.
 
-**Limitations.** The stored team number is typed only with one Team selected; several Teams show it read-only.
-Sprint id orders inheritance (as for review views). Account ids and the stored team number's source are not verified
-against Jira. Undo covers the strip's Team only (see Undo above).
+**Limitations.** Sprint id orders inheritance (as for review views). Account ids and the stored team number's source
+are not verified against Jira. Undo covers the strip's Team only (see Undo above); a card edit of another Team has no Undo.
+Concurrent edits of one Team's number by two users resolve last-write-wins with no warning. With All Teams, a Team whose
+Sprint Stories are all unpointed joins the cards only once the Sprint's work is known, so the Jira capacity read runs
+twice on load (the pointed Teams, then every card Team); when every Team is pointed it runs once.

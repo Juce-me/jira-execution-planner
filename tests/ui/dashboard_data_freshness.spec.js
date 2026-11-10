@@ -1094,7 +1094,7 @@ test('automatic Planning keeps a selected Story that left the Sprint until a man
     await expect(planRow(page, 'E3-S01')).toHaveCount(0);
     await expect(planBox(page, 'E2-S01')).toBeChecked();
     const manual = await plannedSummary(page).innerText();
-    expect(manual).toMatch(/^1 stor(y|ies) · 2\.0 SP/);
+    expect(manual).toMatch(/^1 story · 2\.0 SP/);
     await evidence(testInfo, 'automatic-disappearing-story-selection', { before, automatic: before, manual });
 });
 

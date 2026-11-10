@@ -2,9 +2,9 @@ import * as React from 'react';
 import { usePlanningTeamCapacitySaveStatus } from './PlanningTeamCapacityCards.jsx';
 
 // The Table summary in the overview row: short parts joined by " · ", warnings only when above zero (2026-11-09).
-export function PlanningOverviewSummary({ childPlural = 'stories', planned = false, count = 0, sp = 0, capacity = null, unestimated = 0, hidden = 0 }) {
+export function PlanningOverviewSummary({ childSingular = 'story', childPlural = 'stories', planned = false, count = 0, sp = 0, capacity = null, unestimated = 0, hidden = 0 }) {
     const parts = [
-        ...(planned ? [`${count} ${childPlural}`, `${sp.toFixed(1)} SP`] : []),
+        ...(planned ? [`${count} ${count === 1 ? childSingular : childPlural}`, `${sp.toFixed(1)} SP`] : []),
         capacity == null ? 'Cap unavailable' : `Cap ${capacity.toFixed(1)} SP`,
         ...(unestimated > 0 ? [`${unestimated} unestimated`] : []),
         ...(hidden > 0 ? [`${hidden} hidden`] : []),

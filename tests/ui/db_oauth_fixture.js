@@ -1,9 +1,20 @@
+const fs = require('node:fs');
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const readline = require('node:readline');
 
 // Source isolation and DB migrations have a separate budget from browser assertions.
 const DB_OAUTH_SETUP_TIMEOUT_MS = 90000;
+
+// The owned cluster needs initdb/pg_ctl/createdb: pass JEP_TEST_PG_BIN through, or
+// the directory of the initdb on PATH, as tests/postgres_cluster.py resolves them.
+function postgresBinDir() {
+    if (process.env.JEP_TEST_PG_BIN) return process.env.JEP_TEST_PG_BIN;
+    for (const dir of (process.env.PATH || '').split(path.delimiter)) {
+        if (dir && fs.existsSync(path.join(dir, 'initdb'))) return dir;
+    }
+    return '';
+}
 
 // Every app import happens in the Python launcher's fresh synthetic checkout.
 // Only explicitly selected executable paths are inherited; never process.env.
@@ -16,8 +27,11 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
     if (historical) args.push('--historical');
     if (forceStartupFailure) args.push('--force-startup-failure');
     const startupStarted = performance.now();
+    const env = { PATH: '/usr/bin:/bin', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' };
+    const pgBin = postgresBinDir();
+    if (pgBin) env.JEP_TEST_PG_BIN = pgBin;
     const child = spawn(executable, args, {
-        cwd: root, env: { PATH: '/usr/bin:/bin', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' },
+        cwd: root, env,
         stdio: ['pipe', 'pipe', 'pipe'],
     });
     let sequence = 0;

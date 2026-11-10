@@ -209,18 +209,26 @@ test('A to B to A restores alert toggles, dismissed alerts, ENG filters, Tech/Pr
     }
 });
 
+// Planning selection is the group's shared plan (#331): A's saved plan comes back after B, and B never shows it.
 test('A to B to A restores selected Planning tasks', async ({ page }) => {
     test.setTimeout(60000);
     await openDashboard(page, { prefs: { showPlanning: true } });
-    const box = key => page.getByRole('checkbox', { name: `Select ${key} for sprint planning`, exact: true });
+    const showStories = () => page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    const box = key => page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
+    const planned = page.locator('.planning-review-table tbody input[type=checkbox]:checked');
+    await showStories();
     await box('PIN-1').check();
     await box('PIN-3').check();
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0);
     await settle(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(2);
+    await expect(planned).toHaveCount(2);
     await toB(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(0);
+    await showStories();
+    await expect(planned).toHaveCount(0);
     await toA(page);
-    await expect(page.locator('.task-item.is-planning-selected')).toHaveCount(2);
+    await showStories();
+    await expect(planned).toHaveCount(2);
     await expect(box('PIN-1')).toBeChecked();
     await expect(box('PIN-3')).toBeChecked();
     await expect(box('PIN-2')).not.toBeChecked();

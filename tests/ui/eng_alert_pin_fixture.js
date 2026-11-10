@@ -4,6 +4,7 @@
 // labels (those three exist only for a future Sprint, Empty and Waiting only for a current one).
 const { expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprintId = 34625;
@@ -17,9 +18,13 @@ function deferred() {
     return { promise, resolve };
 }
 
+// Planning plans real Jira issues by numeric id (#331): each synthetic key keeps one stable id for the run.
+const storyIds = new Map();
+const storyId = key => { if (!storyIds.has(key)) storyIds.set(key, String(50001 + storyIds.size)); return storyIds.get(key); };
+
 function story(key, status, summary, { epicKey = 'PIN-EPIC', storyPoints = 3, sprintState = 'active', teamId = 'team-alpha', fields = {} } = {}) {
     return {
-        id: key,
+        id: storyId(key),
         key,
         fields: {
             summary,
@@ -215,6 +220,8 @@ async function installPinFixture(page, {
     });
     // Mocked API requests still being answered (a gated alert source counts until it is released).
     state.inflight = 0;
+    // The shared Planning review (#331): no saved plan yet; plans are kept per Department group and Sprint.
+    const review = createPlanningReviewMock();
     const handle = async (route) => {
         const request = route.request();
         const url = new URL(request.url());
@@ -308,6 +315,8 @@ async function installPinFixture(page, {
         if (url.pathname === '/api/backlog-epics') return json({ epics: url.searchParams.get('project') === 'product' && !otherSprintRequested ? state.backlogEpics : [] });
         if (url.pathname === '/api/capacity') return json({ enabled: false, capacity: [], teams: [], totalCapacity: 0 });
         if (url.pathname === '/api/dependencies') return json({ dependencies: {} });
+        if (/^\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?$/.test(url.pathname)) return json(review.response(request, { capabilities: { canRead: true, canSave: true } }));
+        if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return json({ sprintId: url.pathname.split('/')[4], capabilities: { canRead: true, canSave: true }, teams: [] });
         return json({});
     };
     await page.route('**/api/**', async (route) => {

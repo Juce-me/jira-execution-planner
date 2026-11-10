@@ -2,6 +2,7 @@ const path = require('node:path');
 const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { enabledEpmOptions, installDashboardFixture } = require('./epm_view_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const repoRoot = path.join(__dirname, '..', '..');
@@ -94,8 +95,9 @@ function groupsPayload() {
 }
 
 function planningStories() {
+    // Planning plans real Jira issues by numeric id (#331): PLAN-n is issue 910n.
     return ['PLAN-1', 'PLAN-2', 'PLAN-3'].map((key, index) => ({
-        id: key,
+        id: String(9101 + index),
         key,
         fields: {
             summary: `${key} synthetic planning story`,
@@ -182,6 +184,10 @@ async function installPlanningRecoveryPage(page, label, shared) {
         return json(route, configPayload());
     });
     await page.route('**/api/groups-config', route => json(route, groupsPayload()));
+    // Both tabs read one shared Planning plan (#331): the future Sprint's saved plan includes every Story.
+    shared.review ||= createPlanningReviewMock({ initialPlans: { [futureSprintId]: { includedIssueIds: ['9101', '9102', '9103'] } } });
+    await page.route(/\/api\/eng\/sprints\/[^/]+\/review(?:\/values\/read)?(?:\?.*)?$/, route => json(route, shared.review.response(route.request(), { capabilities: { canRead: true, canSave: true } })));
+    await page.route(/\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/, route => json(route, { sprintId: String(futureSprintId), capabilities: { canRead: true, canSave: true }, teams: [] }));
     await page.route('**/api/sprints**', route => json(route, {
         sprints: [
             { id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' },
@@ -258,11 +264,17 @@ async function openFuturePlanning(page) {
     await sprintDropdown.locator('.sprint-dropdown-option', { hasText: futureSprintName }).click();
     await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Planning' }).click();
     await expect(page.locator('.planning-panel.open')).toBeVisible();
-    await expect(page.locator('.task-item[data-task-key="PLAN-1"]')).toBeVisible();
+    // Planning is the Table only (#323): its Story rows hold the plan checkboxes.
+    await showStoryRows(page);
+    await expect(storyCheckbox(page, 'PLAN-1')).toBeEnabled();
+}
+
+async function showStoryRows(page) {
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
 }
 
 function storyCheckbox(page, key) {
-    return page.locator(`.task-item[data-task-key="${key}"] input.task-checkbox`);
+    return page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
 }
 
 async function triggerAuth401(page, state) {
@@ -559,11 +571,14 @@ test('same-profile Planning tabs elect one OAuth leader and reload independently
     const publishedSuccess = JSON.parse(await follower.evaluate(key => localStorage.getItem(key), recoverySuccessKey));
     expect(publishedSuccess.attemptId).toBe(liveLease.attemptId);
 
+    // A reloaded document opens the Table on its Epic rows; the restored draft is read on the Story rows.
+    await showStoryRows(follower);
     await expect(storyCheckbox(follower, follower === pageA ? 'PLAN-1' : 'PLAN-2')).toBeChecked();
     await expect(storyCheckbox(follower, follower === pageA ? 'PLAN-2' : 'PLAN-1')).not.toBeChecked();
     expect(shared.oauthRequests).toBe(1);
 
     shared.releaseLeaderHydration.resolve();
+    await showStoryRows(leader);
     await expect(storyCheckbox(pageA, 'PLAN-1')).toBeChecked();
     await expect(storyCheckbox(pageA, 'PLAN-2')).not.toBeChecked();
     await expect(storyCheckbox(pageA, 'PLAN-3')).toBeChecked();

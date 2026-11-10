@@ -4041,11 +4041,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1280, height: 720
     await teamCard(page, 'team-01').hover();
     await teamCard(page, 'team-01').getByRole('button', { name: 'Edit Synthetic Team 01 capacity' }).click();
     await expect(teamCard(page, 'team-01').locator('.team-capacity-editor')).toHaveCount(1);
-    // Pre-existing at ed255bda (measured 58.59 idle → 59.39 editing on the edited row): the editor row is 0.8px taller than
-    // the idle microbar stack; the other row is unchanged.
-    const editing = await cardHeights(page);
-    editing.forEach((height, index) => (index < 6 ? expect(height, `editor row, card ${index + 1}`).toBeCloseTo(59.39, 1) : expect(height, `card ${index + 1}`).toBe(baseline[index])));
-    expect(baseline.slice(0, 6).every(height => Math.abs(height - 58.59) < 0.05), 'idle edited row').toBe(true);
+    // Team cards never grow (#323 Task 8 R3): an open editor keeps every card, its own included, at the idle height.
+    expect(await cardHeights(page), 'editing').toEqual(baseline);
     await page.keyboard.press('Escape');
     await typeTeamNumber(page, 'team-12', 'Synthetic Team 12', '7');
     await expect(teamCard(page, 'team-12')).toHaveAttribute('data-capacity-attention', 'failed');

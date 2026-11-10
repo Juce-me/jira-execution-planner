@@ -1047,6 +1047,10 @@ export default function PlanningTeamCapacityCards({
                                             </IconButton>
                                         </div>
                                     </form>
+                                    {/* Sizers: the idle bar and meta line keep their layout space (invisible, aria-hidden) and the editor row
+                                        overlays them from its static position, so the card never grows (#323). */}
+                                    <div className="microbar" aria-hidden="true" />
+                                    <div className="microbar-meta" aria-hidden="true">{deltaLabel || '\u00a0'}</div>
                                     {statusMessage && (
                                         <div id={errorId} className="team-capacity-status" role="status" aria-live="polite">
                                             <span>{statusMessage}</span>

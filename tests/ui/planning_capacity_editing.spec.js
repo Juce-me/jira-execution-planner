@@ -656,6 +656,66 @@ test('capacity Jira pencil Save and Cancel expose solid accent keyboard focus', 
     expect(Math.round(editorGeometry[0].top)).toBe(Math.round(editorGeometry[1].top));
 });
 
+// Team cards never grow (#323, operator rule): an open capacity editor keeps its card at the idle card's exact height.
+test('a Team card keeps its idle height while its capacity editor is open, at rest and with the panel stuck', async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openPlanning(page);
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    // The used height (computed `height`; padding and border are unchanged), exact in every engine. Firefox's DOMRect height of
+    // the stuck card differs in the fifth decimal between two equal layouts (58.649994 vs 58.650009), so it is not the measure.
+    const height = () => card.evaluate(node => getComputedStyle(node).height);
+    for (const state of ['at rest', 'stuck']) {
+        if (state === 'stuck') {
+            // The short synthetic table cannot scroll the panel into its stuck state, so the page gets room to scroll.
+            await page.addStyleTag({ content: 'body{min-height:2400px}' });
+            await page.evaluate(() => window.scrollTo(0, 600));
+            await expect(page.locator('.planning-panel.stuck')).toHaveCount(1);
+        }
+        await settled();
+        const idle = await height();
+        await card.hover();
+        const pencil = card.getByRole('button', { name: 'Edit Alpha capacity' });
+        const pencilBefore = await pencil.boundingBox();
+        await pencil.click();
+        await expect(card.locator('form.team-capacity-editor')).toHaveCount(1);
+        await settled();
+        expect(await height(), `editing card height, ${state}`).toBe(idle);
+        // The overlay sits where the bar and meta were: below the label row, inside the card, and it takes the pointer.
+        const overlay = await card.evaluate(node => {
+            const rect = element => element.getBoundingClientRect().toJSON();
+            const input = node.querySelector('.team-capacity-input'), inputBox = input.getBoundingClientRect();
+            const hit = document.elementFromPoint(inputBox.left + inputBox.width / 2, inputBox.top + inputBox.height / 2);
+            return { card: rect(node), label: rect(node.querySelector('.team-capacity-label-row')), row: rect(node.querySelector('.team-capacity-editor-row')),
+                inputHeight: inputBox.height, hitIsInput: hit === input, controls: [...node.querySelectorAll('.team-capacity-editor-row > *')].map(rect) };
+        });
+        expect(overlay.inputHeight, `28px editor, ${state}`).toBe(28);
+        expect(overlay.hitIsInput, `the input takes the pointer, ${state}`).toBe(true);
+        expect(overlay.row.top, `below the label row, ${state}`).toBeGreaterThanOrEqual(overlay.label.bottom);
+        for (const box of overlay.controls) {
+            expect(box.left, `inside the card, ${state}`).toBeGreaterThanOrEqual(overlay.card.left);
+            expect(box.right, `inside the card, ${state}`).toBeLessThanOrEqual(overlay.card.right);
+            expect(box.bottom, `inside the card, ${state}`).toBeLessThanOrEqual(overlay.card.bottom);
+        }
+        if (state === 'at rest') {
+            await page.mouse.move(5, 890);
+            await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r3-cards-editing-1440x900.png', animations: 'disabled' });
+        }
+        await card.getByRole('button', { name: 'Cancel Alpha capacity edit' }).click();
+        await expect(card.locator('form.team-capacity-editor')).toHaveCount(0);
+        await settled();
+        expect(await height(), `card height after cancel, ${state}`).toBe(idle);
+        await card.hover();
+        await settled();
+        expect(await pencil.boundingBox(), `the pencil keeps its position, ${state}`).toEqual(pencilBefore);
+        if (state === 'at rest') {
+            await page.mouse.move(5, 890);
+            await page.waitForTimeout(150);
+            await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r3-cards-idle-1440x900.png', animations: 'disabled' });
+        }
+    }
+});
+
 test('capacity edit and cancel keep one accessible 28px editor and restore focus', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const { calls } = await openPlanning(page);
@@ -668,8 +728,17 @@ test('capacity edit and cancel keep one accessible 28px editor and restore focus
     await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
     await expect(page.locator('form.team-capacity-editor')).toHaveCount(1);
     await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
-    await expect(card.locator('.microbar')).toHaveCount(0);
-    await expect(page.locator('.microbar')).toHaveCount(2);
+    // The bar and meta line stay in the editing card only as invisible, aria-hidden sizers (#323 Task 8 R3, replacing "no
+    // .microbar in the editing card"): none is visible, and neither reaches the accessibility tree.
+    await expect(card.locator('.microbar:visible, .microbar-meta:visible')).toHaveCount(0);
+    await expect(page.locator('.microbar:visible')).toHaveCount(2);
+    for (const sizer of [card.locator('.microbar'), card.locator('.microbar-meta')]) {
+        await expect(sizer).toHaveCount(1);
+        await expect(sizer).toHaveAttribute('aria-hidden', 'true');
+        await expect(sizer).toHaveCSS('visibility', 'hidden');
+    }
+    const editingTree = await card.ariaSnapshot();
+    expect(editingTree, 'the sizers are absent from the accessibility tree').not.toMatch(/story points selected|SP ·|-5\.5/);
 
     const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
     await expect(input).toBeFocused();

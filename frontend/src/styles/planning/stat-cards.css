@@ -153,9 +153,18 @@
             min-width: 0;
         }
 
-        .team-stat-card.team-card.is-capacity-editing {
-            /* Task 0's original label/microbar/meta stack is 58.64px at the 16px root. */
-            min-height: 58.64px;
+        /* While editing, the bar and meta line are invisible sizers and the editor row overlays them from its static
+           position, so an open editor never changes the card's height (#323). */
+        .team-stat-card.team-card.is-capacity-editing .team-capacity-editor {
+            position: absolute;
+            /* Vertically the static position (right below the label row); across, the card's own content width. */
+            left: 0;
+            right: 0;
+            padding-inline: inherit;
+        }
+
+        .team-stat-card.team-card.is-capacity-editing > :is(.microbar, .microbar-meta) {
+            visibility: hidden;
         }
 
         .team-capacity-label-row {

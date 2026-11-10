@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { test, expect } = require('@playwright/test');
 const { buildDashboardBundle } = require('./eng_board_dashboard_fixture');
+const { createPlanningReviewMock } = require('./planning_review_mock');
 const { deferred, mockDashboard, openCatchUp, taskCard, taskPayload, installLifecycleControl, buildScenario, revealRefreshButton, refreshButton } = require('./eng_epic_refresh_fixture');
 
 // Current source is bundled independently of dist; the shell and CSS use the rebuilt dist.
@@ -1040,61 +1041,87 @@ test('automatic due Sprint catalog read retains a removed selection and shows sc
     await expect(taskCard(page, 'E3-S01')).toBeVisible();
 });
 
-async function planningSelectionStorage(page) {
-    return page.evaluate(() => ({
-        planning: JSON.parse(localStorage.getItem('jira_dashboard_planning_state_v1') || '{}')['planning::3001::group-alpha'],
-        teams: JSON.parse(localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}')['team-selection::3001::group-alpha'],
-    }));
+// Planning selection is the shared plan's draft (#331): its Stories need numeric issue ids and the mock serves the review.
+function planningScenario(scenario = buildScenario()) {
+    scenario.stories.forEach((story, index) => { story.id = String(60001 + index); });
+    return scenario;
+}
+function servePlanningReview(ctx) {
+    const review = createPlanningReviewMock();
+    ctx.respond(/\/api\/eng\/sprints\/[^/]+\/review/, ({ route, json }) => json(review.response(route.request(), { capabilities: { canRead: true, canSave: true } })));
+    ctx.respond(/\/assignee-capacity\/planned\/read$/, ({ json }) => json({ sprintId: '3001', capabilities: { canRead: true, canSave: true }, teams: [] }));
+}
+const planBox = (page, key) => page.getByRole('checkbox', { name: `Select ${key}`, exact: true });
+const planRow = (page, key) => page.locator(`.planning-review-table tbody tr[data-issue-key="${key}"]`);
+const plannedSummary = page => page.locator('.planning-panel.open .planning-stats.compact').first();
+async function openPlanningStories(page) {
+    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+}
+// A dirty plan draft defers automatic refreshes like any edit, so the selection is saved before the absence.
+async function savePlan(page) {
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toHaveCount(0); await settle(page);
+}
+async function teamSelectionStorage(page) {
+    return page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_team_selection_state_v1') || '{}')['team-selection::3001::group-alpha']);
 }
 
 test('automatic Planning keeps a selected Story that left the Sprint until a manual Refresh reconciles it', async ({ page }, testInfo) => {
-    const { ctx, lifecycle } = await setup(page, { prefs: {} });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check();
-    await page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true }).check(); await settle(page);
-    const before = await planningSelectionStorage(page);
-    expect(before.planning.selectedTaskKeys).toContain('E3-S01');
-    await taskCard(page, 'E1-S01').scrollIntoViewIfNeeded(); await settle(page);
+    const { ctx, lifecycle } = await setup(page, { scenario: planningScenario(), prefs: {}, configure: servePlanningReview });
+    await openPlanningStories(page);
+    await planBox(page, 'E3-S01').check();
+    await planBox(page, 'E2-S01').check(); await settle(page);
+    await savePlan(page);
+    const before = await plannedSummary(page).innerText();
+    expect(before).toContain('2 stories');
+    await planRow(page, 'E1-S01').scrollIntoViewIfNeeded(); await settle(page);
     const since = ctx.calls.length;
     ctx.scenario.stories = ctx.scenario.stories.filter(story => story.key !== 'E3-S01');
     ctx.scenario.stories.find(story => story.key === 'E2-S01').fields.summary = 'Synthetic accepted disappearance witness';
     await lifecycle.returnAfter(13 * 60000);
-    await expect(taskCard(page, 'E2-S01')).toContainText('Synthetic accepted disappearance witness'); await settle(page);
+    await expect(planRow(page, 'E2-S01')).toContainText('Synthetic accepted disappearance witness'); await settle(page);
     // Ordinary automatic reads cannot prove complete Sprint membership, so a Story absent from the answer is held, not removed.
-    await expect(taskCard(page, 'E3-S01')).toHaveCount(1);
-    await expect(page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true })).toBeChecked();
-    await expect(page.getByRole('checkbox', { name: 'Select E2-S01 for sprint planning', exact: true })).toBeChecked();
-    expect(await planningSelectionStorage(page)).toEqual(before);
+    await expect(planRow(page, 'E3-S01')).toHaveCount(1);
+    await expect(planBox(page, 'E3-S01')).toBeChecked();
+    await expect(planBox(page, 'E2-S01')).toBeChecked();
+    expect(await plannedSummary(page).innerText()).toBe(before);
     expect(ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
     await task9Screenshot(page, 'planning-disappearing-selected-story');
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click(); await settle(page);
-    await expect(taskCard(page, 'E3-S01')).toHaveCount(0);
-    const manual = await planningSelectionStorage(page);
-    expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
-    expect(manual.planning.selectedTaskKeys).toContain('E2-S01');
+    // The manual Refresh reloads the review and reopens the Table on its Epic rows.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(planRow(page, 'E3-S01')).toHaveCount(0);
+    await expect(planBox(page, 'E2-S01')).toBeChecked();
+    const manual = await plannedSummary(page).innerText();
+    expect(manual).toMatch(/^1 stor(y|ies) · 2\.0 SP/);
     await evidence(testInfo, 'automatic-disappearing-story-selection', { before, automatic: before, manual });
 });
 
 test('automatic Planning preserves a selected Team after its last Story leaves and manual Refresh keeps normal reconciliation', async ({ page }, testInfo) => {
     const { groupsConfigPayload } = require('./eng_epic_refresh_fixture');
-    const scenario = buildScenario();
+    const scenario = planningScenario();
     Object.assign(scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-beta', teamName: 'Beta Team' });
-    const { ctx, lifecycle } = await setup(page, { scenario, prefs: {}, configure: fixture => fixture.respond('/api/groups-config', ({ json }) => json({
-        ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
-    })) });
-    await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning', exact: true }).click(); await settle(page);
+    const { ctx, lifecycle } = await setup(page, { scenario, prefs: {}, configure: fixture => {
+        fixture.respond('/api/groups-config', ({ json }) => json({
+            ...groupsConfigPayload, groups: groupsConfigPayload.groups.map(group => ({ ...group, teamIds: ['team-alpha', 'team-beta'] })),
+        }));
+        servePlanningReview(fixture);
+    } });
+    await openPlanningStories(page);
     await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
     await page.locator('.team-dropdown-panel:visible').getByRole('checkbox', { name: 'Beta Team', exact: true }).check();
     await page.locator('.view-selector .controls-label').click(); await settle(page);
     await expect(page.locator('.team-dropdown-selection-label:visible')).toHaveText('Beta Team');
-    await page.getByRole('checkbox', { name: 'Select E3-S01 for sprint planning', exact: true }).check(); await settle(page);
-    const before = await planningSelectionStorage(page);
-    expect(before.teams.selectedTeams).toEqual(['team-beta']);
+    await planBox(page, 'E3-S01').check(); await settle(page);
+    await savePlan(page);
+    const before = await teamSelectionStorage(page);
+    expect(before.selectedTeams).toEqual(['team-beta']);
     Object.assign(ctx.scenario.stories.find(story => story.key === 'E3-S01').fields, { teamId: 'team-alpha', teamName: 'Alpha Team', summary: 'Synthetic remotely changed Team' });
     const since = ctx.calls.length;
     await lifecycle.returnAfter(13 * 60000); await settle(page);
     await expect.poll(() => ctx.calls.slice(since).filter(call => call.pathname === '/api/tasks-with-team-name' && !call.params.purpose)).toHaveLength(2);
-    expect(await planningSelectionStorage(page)).toEqual(before);
+    expect(await teamSelectionStorage(page)).toEqual(before);
     await expect(page.locator('.team-dropdown-toggle:visible')).toHaveClass(/active-filter/);
     await page.getByRole('button', { name: 'Filter teams', exact: true }).click();
     await expect(page.locator('.team-dropdown-panel:visible').getByRole('checkbox', { name: 'Beta Team', exact: true })).toBeChecked();
@@ -1102,10 +1129,12 @@ test('automatic Planning preserves a selected Team after its last Story leaves a
     await task9Screenshot(page, 'planning-disappearing-selected-team');
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira', exact: true }).click(); await settle(page);
     await expect(page.locator('.team-dropdown-selection-label:visible')).toHaveText('Beta Team');
-    const manual = await planningSelectionStorage(page);
-    expect(manual.teams.selectedTeams).toEqual(['team-beta']);
-    expect(manual.planning.selectedTeams).toEqual(['team-beta']);
-    expect(manual.planning.selectedTaskKeys).not.toContain('E3-S01');
+    const manual = await teamSelectionStorage(page);
+    expect(manual.selectedTeams).toEqual(['team-beta']);
+    // The Story now belongs to Alpha Team: the Beta Team's projection of the shared plan no longer lists or counts it.
+    await page.getByRole('radio', { name: 'Stories', exact: true }).click();
+    await expect(planRow(page, 'E3-S01')).toHaveCount(0);
+    await expect(plannedSummary(page)).toContainText('0 stories · 0.0 SP');
     await evidence(testInfo, 'automatic-disappearing-team-selection', { before, automatic: before, manual });
 });
 

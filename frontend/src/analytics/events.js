@@ -144,7 +144,7 @@ const EVENT_PARAM_VALUE_ALLOWLISTS = {
     page_title: new Set(PAGE_TITLES.values()),
     page_path: PAGE_PATHS,
     module_id: new Set(['catch-up', 'configuration', 'planning', 'board', 'statistics']),
-    scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'sprint']),
+    scope_type: new Set(['eng', 'epm', 'board', 'all_work', 'component', 'allocation', 'sprint']),
     reason: new Set(['short', 'narrow', 'touch']),
 };
 

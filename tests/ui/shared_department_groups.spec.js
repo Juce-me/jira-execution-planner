@@ -1030,7 +1030,7 @@ test('first-run department selection blocks group-scoped task loads until prefer
     await expect(dialog).toContainText('Next: dashboard');
     await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await expect(dialog.getByRole('radio', { name: /Empty/ })).toBeDisabled();
-    await expect(page.getByText('Add at least one team or component before choosing this Department')).toBeVisible();
+    await expect(page.getByText('Add at least one team, component or Allocation before choosing this Department')).toBeVisible();
     await captureDomParity(page, 'first-run-selection', '[role="dialog"]');
     await dialog.getByRole('radio', { name: /Platform/ }).check();
     await expect(dialog.getByRole('radio', { name: /Platform/ })).toBeChecked();

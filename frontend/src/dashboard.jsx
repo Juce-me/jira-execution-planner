@@ -954,9 +954,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const isStatsSourceOnlyStatsView = showStats && (statsView === 'excludedCapacity' || statsView === 'monoCrossShare' || statsView === 'projectTrack');
             const isCatchUpMode = selectedView === 'eng' && !showPlanning && !showStats && !showScenario && !showBoard;
             const isEpicRefreshMode = selectedView === 'eng' && !showStats && !showScenario && !showBoard;
-            const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'all_work'].includes(boardStrictScope)
+            const boardScopeRequested = selectedView === 'eng' && showBoard && ['component', 'allocation', 'all_work'].includes(boardStrictScope)
                 && adminSettingsGate.status !== 'missing';
-            useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); }, [selectedView, showBoard]);
+            useEffect(() => { if (selectedView !== 'eng' || !showBoard) setBoardStrictScope(''); else if ((boardStrictScope === 'component' && combinedWorkModel) || (boardStrictScope === 'allocation' && !combinedWorkModel)) { setBoardStrictScope(''); setSprintError('This Board scope is unavailable for the viewed quarter. Choose a Sprint or the available Board scope.'); } }, [selectedView, showBoard, combinedWorkModel, boardStrictScope]);
             const [showTeamDropdown, setShowTeamDropdown] = useState(false);
             const [teamDropdownQuery, setTeamDropdownQuery] = useState('');
             const teamDropdownRefs = useRef({ main: null, compact: null });
@@ -1499,8 +1499,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 }
                 if (boardScopeControl && (!normalizedSearch || componentScopeLabel.toLowerCase().includes(normalizedSearch))) {
                     options.push({
-                        kind: 'scope', scope: 'component', label: componentScopeLabel,
-                        readiness: engSprintSelectorState.componentReadiness,
+                        kind: 'scope', scope: combinedWorkModel ? 'allocation' : 'component', label: componentScopeLabel,
+                        readiness: combinedWorkModel ? engSprintSelectorState.allocationReadiness : engSprintSelectorState.componentReadiness,
                     });
                 }
                 filteredSprints.forEach(sprint => options.push({
@@ -2493,6 +2493,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return activeGroup?.teamLabels || {};
             }, [activeGroup]);
 
+            const activeGroupAllocationSignature = JSON.stringify(activeGroup?.allocationTypes || []);
+            const loadedAllocationSignatureRef = useRef(null);
             const activeGroupTeamIds = React.useMemo(() => {
                 const seen = new Set();
                 const ids = [];
@@ -2518,7 +2520,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 && ['setup_required', 'not_observed', 'no_configuration'].includes(quarterAdmission.status);
             const engSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
                 boardMode: selectedView === 'eng' && showBoard,
-                quarterMode, quarterConfigurationReady,
+                quarterMode, quarterConfigurationReady, workModel,
                 catalogReady: sprintCatalogReady,
                 bootstrapStatus: boardBootstrapStatus,
                 capability: boardAllWorkAvailable,
@@ -2528,11 +2530,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 savedProjects: savedSelectedProjects,
                 savedBoardId,
             }), [
-                selectedView, showBoard, sprintCatalogReady, boardBootstrapStatus, quarterMode, quarterConfigurationReady,
+                selectedView, showBoard, sprintCatalogReady, boardBootstrapStatus, quarterMode, quarterConfigurationReady, workModel,
                 boardAllWorkAvailable, groupsLoading, boardGroupsReadFailed, activeGroup,
                 savedSelectedProjects, savedBoardId,
             ]);
-            const selectedScopeReadiness = boardStrictScope === 'component'
+            const selectedScopeReadiness = boardStrictScope === 'allocation' ? engSprintSelectorState.allocationReadiness : boardStrictScope === 'component'
                 ? engSprintSelectorState.componentReadiness
                 : boardStrictScope === 'all_work'
                     ? engSprintSelectorState.allWorkReadiness
@@ -2540,7 +2542,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const strictBoardActive = boardScopeRequested && selectedScopeReadiness === 'ready';
             const acceptedEngSprintSelectorState = React.useMemo(() => resolveEngSprintSelectorState({
                 boardMode: selectedView === 'eng' && showBoard,
-                quarterMode, quarterConfigurationReady,
+                quarterMode, quarterConfigurationReady, workModel,
                 catalogReady: sprintCatalogReady || ((sprintCatalogState.authority === 'auth_locked' || sprintCatalogState.selectionPreserved) && [...availableSprints, ...(sprintCatalogState.displaySnapshot?.sprints || [])].some(sprint => String(sprint.id) === String(selectedSprint))),
                 bootstrapStatus: acceptedBoardConfigRef.current ? 'ready' : boardBootstrapStatus,
                 capability: boardAllWorkAvailable,
@@ -2550,11 +2552,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 savedProjects: savedSelectedProjects,
                 savedBoardId,
             }), [
-                selectedView, showBoard, sprintCatalogReady, sprintCatalogState.authority, sprintCatalogState.selectionPreserved, sprintCatalogState.displaySnapshot, availableSprints, selectedSprint, boardBootstrapStatus, quarterMode, quarterConfigurationReady,
+                selectedView, showBoard, sprintCatalogReady, sprintCatalogState.authority, sprintCatalogState.selectionPreserved, sprintCatalogState.displaySnapshot, availableSprints, selectedSprint, boardBootstrapStatus, quarterMode, quarterConfigurationReady, workModel,
                 boardAllWorkAvailable, groupsLoading, boardGroupsReadFailed, activeGroup,
                 savedSelectedProjects, savedBoardId,
             ]);
-            const acceptedSelectedScopeReadiness = boardStrictScope === 'component'
+            const acceptedSelectedScopeReadiness = boardStrictScope === 'allocation' ? acceptedEngSprintSelectorState.allocationReadiness : boardStrictScope === 'component'
                 ? acceptedEngSprintSelectorState.componentReadiness
                 : boardStrictScope === 'all_work'
                     ? acceptedEngSprintSelectorState.allWorkReadiness
@@ -2568,7 +2570,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     boardColumns: activeGroup.board?.columns || [],
                     components: [...new Set((activeGroup.missingInfoComponents || [])
                         .map(value => String(value || '').trim()).filter(Boolean))].sort(),
-                    teams: [...activeGroupTeamIds].sort(),
+                    teams: [...activeGroupTeamIds].sort(), allocationTypes: activeGroup.allocationTypes || [],
                 } : null,
                 jiraAuthority: {
                     projects: (savedSelectedProjects || [])
@@ -2714,7 +2716,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 return {
                     sprintId: selectedSprint,
                     planningScopeKey,
-                    teamIdsSignature: activeGroupTeamIds.join('|'),
+                    teamIdsSignature: activeGroupTeamIds.join('|'), allocationSignature: activeGroupAllocationSignature,
                     productTasks: [],
                     techTasks: [],
                     loadedProductTasks: [],
@@ -2769,7 +2771,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const buildGroupStateSnapshot = () => ({
                 sprintId: selectedSprint,
                 planningScopeKey,
-                teamIdsSignature: activeGroupTeamIds.join('|'),
+                teamIdsSignature: activeGroupTeamIds.join('|'), allocationSignature: activeGroupAllocationSignature,
                 productTasks,
                 techTasks,
                 loadedProductTasks,
@@ -2884,7 +2886,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const groupStateSnapshot = React.useMemo(() => buildGroupStateSnapshot(), [
                 selectedSprint, missingInfoEpics, backlogProductEpics, backlogTechEpics,
                 planningScopeKey,
-                activeGroupTeamIds.join('|'),
+                activeGroupTeamIds.join('|'), activeGroupAllocationSignature,
                 productTasks,
                 techTasks,
                 loadedProductTasks,
@@ -2972,7 +2974,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 const matchesScope = cached &&
                     cached.planningScopeKey === planningScopeKey &&
                     cached.sprintId === selectedSprint &&
-                    cached.teamIdsSignature === activeGroupTeamIds.join('|');
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|') && cached.allocationSignature === activeGroupAllocationSignature;
                 if (matchesScope) {
                     applyGroupState(overlaySnapshot(issueEditStateRef.current.reconcileSnapshot(cached), issueEditStateRef.current.planningEntries()));
                 } else {
@@ -2990,7 +2992,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 if (cached &&
                     cached.planningScopeKey === planningScopeKey &&
                     cached.sprintId === selectedSprint &&
-                    cached.teamIdsSignature === activeGroupTeamIds.join('|')) {
+                    cached.teamIdsSignature === activeGroupTeamIds.join('|') && cached.allocationSignature === activeGroupAllocationSignature) {
                     planningHydratedScopeRef.current = planningScopeKey;
                     return;
                 }
@@ -3576,11 +3578,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     pendingConfigRefreshRef.current === configRefreshNonce;
 
                 // Only skip loading if we have actual cached data
-                const shouldSkipLoad = !recoveryScopeKey && !forceConfigRefresh && activeGroupId && (() => {
+                const shouldSkipLoad = loadedAllocationSignatureRef.current === activeGroupAllocationSignature && !recoveryScopeKey && !forceConfigRefresh && activeGroupId && (() => {
                     const cached = groupStateRef.current.get(activeGroupId);
                     return cached &&
                         cached.sprintId === selectedSprint &&
-                        cached.teamIdsSignature === activeGroupTeamIds.join('|') &&
+                        cached.teamIdsSignature === activeGroupTeamIds.join('|') && cached.allocationSignature === activeGroupAllocationSignature &&
                         cached.tasksFetched &&
                         lastLoadedSprintRef.current === selectedSprint;
                 })();
@@ -3608,6 +3610,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 setTechEpicsInScope([]);
                 setMissingPlanningInfoTasks([]);
                 setMissingInfoEpics([]);
+                loadedAllocationSignatureRef.current = activeGroupAllocationSignature; setTasksFetched(false);
                 const measuredLoad = loadMeasuredGroupTasks({ shouldApplyResult: shouldApplyGroupLoadResult });
                 const productLoadResult = measuredLoad.product;
                 const techLoadResult = measuredLoad.tech;
@@ -3636,7 +3639,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     groupLoadVersionRef.current += 1;
                     abortSprintFetches();
                 };
-            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision, shareViewHold]);
+            }, [selectedView, isStatsSourceOnlyStatsView, boardScopeRequested, sprintCatalogReady || (sprintCatalogState.selectionPreserved && Boolean(selectedSprintInfo)), sprintsLoading, selectedSprint, selectedSprintInfo?.id, activeGroupId, activeGroupTeamIds.join('|'), activeGroupAllocationSignature, groupsLoading, groupPreferences.onboardingRequired, configRefreshNonce, authResumeStagedRevision, shareViewHold]);
 
             useEffect(() => {
                 if (groupsLoading || !groupPreferences.onboardingRequired) return;
@@ -5640,8 +5643,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     scenarioAvailable={scenarioPlannerAvailable === true}
                     onChange={(nextMode) => {
                         applyEngMode(nextMode);
-                        if (nextMode === 'board' && activeEngMode !== 'board' && engSprintSelectorState.componentReadiness === 'ready') {
-                            setBoardStrictScope('component');
+                        if (nextMode === 'board' && activeEngMode !== 'board' && (combinedWorkModel ? engSprintSelectorState.allocationReadiness : engSprintSelectorState.componentReadiness) === 'ready') {
+                            setBoardStrictScope(combinedWorkModel ? 'allocation' : 'component');
                         }
                         if (onboardingBootstrapReady && isEngOnboardingModuleSurface(nextMode)) {
                             onboarding.requestModule(nextMode);
@@ -5730,7 +5733,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     showBoard={showBoard}
                     engSprintSelectorState={engSprintSelectorState}
                     boardStrictScope={boardStrictScope}
-                    componentScopeLabel={componentScopeLabel}
                     sprintName={sprintName}
                     selectedSprint={selectedSprint}
                     sprintsLoading={sprintsLoading}
@@ -6106,6 +6108,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             )}
                         </EmptyState>
                     );
+                } else if (readiness === 'allocations_required') {
+                    content = <EmptyState title="Add Allocation values to this Department to use Allocation scope."><button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Add Allocation values</button></EmptyState>;
                 } else if (readiness === 'components_required') {
                     content = (
                         <EmptyState title="Add Components to this Department to use Component scope.">
@@ -6114,7 +6118,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     );
                 } else {
                     content = (
-                        <EmptyState title="Add Teams or Components to this Department to use All work.">
+                        <EmptyState title={`Add Teams or ${componentScopeLabel} values to this Department to use All work.`}>
                             <button type="button" onClick={() => openBoardDepartmentSettings('teams')}>Configure Department membership</button>
                         </EmptyState>
                     );
@@ -7314,6 +7318,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                                 {DEPARTMENT_SETTINGS_TAB_IDS.has(groupManageTab) && (
                                 <DepartmentsSettingsTab
                                     workModel={workModel}
+                                    savedWorkConfigurations={workConfig.baseline}
+                                    setGroupDraft={setGroupDraft}
                                     BACKEND_URL={BACKEND_URL}
                                     activeGroupDraft={activeGroupDraft}
                                     activeTeamIndex={activeTeamIndex}

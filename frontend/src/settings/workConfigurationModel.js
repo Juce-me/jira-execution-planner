@@ -321,16 +321,18 @@ export const clearedProjectIds = (baselineBundle, draftBundle, explicitClears) =
     .map(entry => entry.id);
 
 export function buildSaveRequest({ baseline, draft, promoted, baseRevision, explicitClears = new Set() }) {
+    // Classification is Department-owned. Omission preserves dormant administrator history.
+    const workConfigurations = { ...draft, configurations: (draft?.configurations || []).map(({ allocationTypes, ...entry }) => entry) };
     if (!promoted) {
         return {
             baseRevision,
-            workConfigurations: draft,
+            workConfigurations,
             legacyEdits: deriveLegacyEdits(entryById(baseline, 'legacy'), entryById(draft, 'legacy')),
         };
     }
     return {
         baseRevision,
-        workConfigurations: draft,
+        workConfigurations,
         clearProjectsForConfigurationIds: clearedProjectIds(baseline, draft, explicitClears),
     };
 }

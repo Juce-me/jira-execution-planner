@@ -1265,6 +1265,7 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
         await engApi.fetchExcludedCapacityStatsSource('http://backend', {
             sprintIds: ['101'],
             teamIds: ['team-1'],
+            groupId: 'department-a',
             refresh: true,
         });
 
@@ -1272,6 +1273,7 @@ test('excluded capacity stats source wrapper can request a backend refresh', asy
         assert.deepEqual(JSON.parse(calls[0].options.body), {
             sprintIds: ['101'],
             teamIds: ['team-1'],
+            groupId: 'department-a',
             refresh: true,
         });
         assertJsonHeader(calls[0].options);

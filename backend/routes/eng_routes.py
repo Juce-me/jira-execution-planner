@@ -247,6 +247,7 @@ def _story_readiness_group_snapshot(groups, group_id, catalog):
         'id': group_id,
         'revision': int(groups.get('configRevision') or 0),
         'teams': teams,
+        'allocationTypes': allocation_classification.department_allocation_types(match),
     }
 
 
@@ -576,7 +577,7 @@ def _story_readiness_compute(context, requested, group_snapshot, projects, confi
                 'projectTrack': _story_readiness_project_track(fields.get(track_field)),
                 'projectKey': project_key,
                 'projectClass': allocation_classification.classify_initiative(
-                    fields.get(allocation_field) if allocation_field else None, roles.allocation_types,
+                    fields.get(allocation_field) if allocation_field else None, group_snapshot.get('allocationTypes') or (),
                 ) if new_model else project_map.get(project_key, ''),
                 'initiative': initiative,
             })

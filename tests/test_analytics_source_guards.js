@@ -70,9 +70,9 @@ test('ENG Board analytics and Work items export keep bounded low-cardinality con
     const workflowDoc = read('docs/features/eng-workflows.md');
 
     assert.ok(jsSetValues(analyticsSource, 'API_SURFACES').has('eng_board'));
-    assert.match(eventsSource, /scope_type:\s*new Set\(\['eng', 'epm', 'board', 'all_work', 'component', 'sprint'\]\)/);
+    assert.match(eventsSource, /scope_type:\s*new Set\(\['eng', 'epm', 'board', 'all_work', 'component', 'allocation', 'sprint'\]\)/);
     assert.ok(analyticsDoc.includes('`api_surface=eng_board`'));
-    assert.ok(analyticsDoc.includes('`scope_type=all_work|component|sprint`'));
+    assert.ok(analyticsDoc.includes('`scope_type=all_work|component|allocation|sprint`'));
     assert.ok(analyticsDoc.includes('Strict Board Work items use `issue_kind=mixed`'));
     assert.ok(workflowDoc.includes('**Open work items**'));
     assert.ok(workflowDoc.includes('complete and authoritative'));

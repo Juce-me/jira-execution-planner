@@ -145,6 +145,7 @@ const DECODE_VECTORS = [
     // scope
     ['?v=1&scope=all_work', ok({ scope: 'all_work' })],
     ['?v=1&scope=component', ok({ scope: 'component' })],
+    ['?v=1&scope=allocation', ok({ scope: 'allocation' })],
     ...drops('mode', ['?v=1&scope=all-work', '?v=1&scope=']),
     // teams
     ['?v=1&teams=all', ok({ teams: ['all'] })],

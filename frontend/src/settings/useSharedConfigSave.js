@@ -14,7 +14,7 @@ import {
     validateFirstRunPendingGroup,
     verifyFirstRunGroupsSaveSnapshot,
 } from './FirstRunGroupConfigurationGuide.jsx';
-import { normalizeGroupsConfig } from './groupConfigUtils.js';
+import { groupClassificationSignature, normalizeGroupsConfig, validateAllocationTypes } from './groupConfigUtils.js';
 import { validatePresentGroupBoards } from './groupBoardModel.js';
 import { committedSectionLabels, rebaseSharedGroupsPayload } from './groupsConfigConflict.js';
 import { committedWorkspaceSectionLabels } from './workspaceConfigConflict.js';
@@ -274,6 +274,8 @@ export function useSharedConfigSave({
             }
         }
         (groupDraft?.groups || []).forEach(group => {
+            const allocationError = validateAllocationTypes(group?.allocationTypes).error;
+            if (allocationError) errors.push(allocationError);
             const excluded = new Set((group?.excludedCapacityEpics || [])
                 .map(key => String(key || '').trim().toUpperCase())
                 .filter(Boolean));
@@ -473,10 +475,6 @@ export function useSharedConfigSave({
                 }
             }
 
-            // Capture the current active group's team IDs before saving
-            const currentActiveGroup = activeGroupId ? (groupsConfig.groups || []).find(g => g.id === activeGroupId) : null;
-            const currentTeamSignature = currentActiveGroup ? (currentActiveGroup.teamIds || []).join('|') : null;
-
             let normalized = groupsConfig;
             let payload = null;
             if (sharedGroupsChanged) {
@@ -538,17 +536,10 @@ export function useSharedConfigSave({
             });
 
             if (sharedGroupsChanged) {
-                // Check if the active group's team IDs changed
-                if (activeGroupId && currentTeamSignature !== null) {
-                    const updatedActiveGroup = (normalized.groups || []).find(g => g.id === activeGroupId);
-                    const updatedTeamSignature = updatedActiveGroup ? (updatedActiveGroup.teamIds || []).join('|') : null;
-
-                    // If team IDs changed, invalidate the cache for this group to force data reload
-                    if (currentTeamSignature !== updatedTeamSignature) {
-                        groupStateRef.current.delete(activeGroupId);
-                    }
-                }
-
+                (groupsConfig.groups || []).forEach(group => {
+                    const updated = (normalized.groups || []).find(candidate => candidate.id === group.id);
+                    if (!updated || groupClassificationSignature(group) !== groupClassificationSignature(updated)) groupStateRef.current.delete(group.id);
+                });
             }
 
             if (!firstRunConfigurationActive && savingDepartmentSettings && isGroupVisibilityDraftDirty) {

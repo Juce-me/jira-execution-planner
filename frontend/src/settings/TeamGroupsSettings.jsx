@@ -1,10 +1,14 @@
 import * as React from 'react';
+import AllocationTypeSelector from './AllocationTypeSelector.jsx';
 import GroupEpicSelector from './GroupEpicSelector.jsx';
-import { formatGroupBoardSummary } from './groupConfigUtils.js';
+import { formatGroupBoardSummary, groupHasScope } from './groupConfigUtils.js';
 import { workEntityNames } from '../eng/engWorkModel.js';
 
 export default function TeamGroupsSettings(props) {
     const {
+        BACKEND_URL,
+        savedWorkConfigurations,
+        setGroupDraft,
         workModel,
         groupManageTab,
         showGroupListMobile,
@@ -150,8 +154,7 @@ export default function TeamGroupsSettings(props) {
                                                 <div className="group-pane-empty">No groups match this search.</div>
                                             ) : filteredGroupDrafts.map(group => {
                                                 const teamCount = (group.teamIds || []).filter(teamId => String(teamId || '').trim()).length;
-                                                const hasGroupScope = teamCount > 0
-                                                    || (group.missingInfoComponents || []).some(component => String(component || '').trim());
+                                                const hasGroupScope = groupHasScope(group);
                                                 const isActive = activeGroupDraft?.id === group.id;
                                                 const isDefault = personalGroupPreferencesEnabled
                                                     ? favoriteGroupDraftId === group.id
@@ -454,8 +457,9 @@ export default function TeamGroupsSettings(props) {
                                                         </div>
                                                     )}
                                                 </div>
+                                                <AllocationTypeSelector key={activeGroupDraft.id} backendUrl={BACKEND_URL} group={activeGroupDraft} savedWorkConfigurations={savedWorkConfigurations} setGroupDraft={setGroupDraft} />
                                                 <div className="component-selector" data-first-run-guide-target="components" tabIndex={-1}>
-                                                    <label className="component-selector-label">Components for Missing Information and Lead Times</label>
+                                                    <label className="component-selector-label">Legacy Components for Missing Information and Lead Times</label>
                                                     <div className="group-modal-meta">Component is a Jira issue field, usually set on an Epic.</div>
                                                     {(activeGroupDraft?.missingInfoComponents || []).length > 0 && (
                                                         <div className="selected-components-list">

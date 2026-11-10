@@ -145,17 +145,17 @@ def normalize_board(raw_board):
 
 def validate_scope_configuration(scope, raw_board, components, *, team_ids=()):
     """Validate the saved Board/Component contract for one Board scope."""
-    if scope not in {'all_work', 'component', 'sprint'}:
+    if scope not in {'all_work', 'component', 'allocation', 'sprint'}:
         raise EngBoardError('invalid_board_scope')
     board = normalize_board(raw_board)
     normalized_components = tuple(dict.fromkeys(
         str(value).strip() for value in components or () if str(value).strip()
     ))
-    if scope in {'all_work', 'component'}:
+    if scope in {'all_work', 'component', 'allocation'}:
         if not board['configured']:
             raise EngBoardError('board_config_invalid')
         has_teams = any(str(value).strip() for value in team_ids or ())
-        if scope == 'component' and not normalized_components:
+        if scope in {'component', 'allocation'} and not normalized_components:
             raise EngBoardError('board_components_required')
         if scope == 'all_work' and not normalized_components and not has_teams:
             raise EngBoardError('board_components_required')
@@ -181,7 +181,7 @@ def build_scope_cohort_digest(
     for value in (workspace_id, site_id, user_id, department_id):
         if not str(value or '').strip():
             raise EngBoardError('board_config_invalid')
-    if scope not in {'all_work', 'component', 'sprint'}:
+    if scope not in {'all_work', 'component', 'allocation', 'sprint'}:
         raise EngBoardError('invalid_board_scope')
     if scope != 'sprint' and sprint_id is not None:
         raise EngBoardError('board_config_invalid')
@@ -605,12 +605,11 @@ def iter_allocation_cohort_batches(search, *, projects, planning_type_ids, compo
                                    retention_days=28, cohort, counters=None, cancel_check=lambda: None):
     """Admit retained Initiatives by exact Allocation, plus Team leaves for All work.
 
-    Department scope values keep their persisted ``missingInfoComponents`` carrier. Only
-    Legacy interprets those values as Jira Components. Every query uses the existing
+    Values come from the captured Department Allocation map. Every query uses the existing
     continuation-aware byte, page, issue and cancellation limits.
     """
     counters = counters or PagerCounters()
-    allocation_number = _field_number(allocation_field_id)
+    allocation_number = _field_number(allocation_field_id) if components else None
     base_jql = build_epic_index_jql(projects, (), terminal_statuses, retention_days, parent_clause)
     parent_budget = UnionKeyBudget(MAX_EPICS)
     admitted = {}

@@ -61,6 +61,7 @@ test('ENG Sprint selector requires a usable catalog for every selection type', a
         ordinarySelectable: false,
         boardSelectable: false,
         componentReadiness: 'catalog_pending',
+        allocationReadiness: 'catalog_pending',
         allWorkReadiness: 'catalog_pending',
     });
 });
@@ -86,5 +87,44 @@ test('ordinary Sprint eligibility is independent of Board mode and Board readine
             true,
             JSON.stringify(override),
         );
+    }
+});
+
+
+test('DELIVERY Allocation scope uses only the Department mapping and rejects Legacy Component scope', async () => {
+    const { resolveEngSprintSelectorState } = await loadModule();
+    const state = resolveEngSprintSelectorState({ ...readyInput, workModel: 'rnd_2027',
+        group: { ...readyGroup, teamIds: [], allocationTypes: [{ value: 'Platform', type: 'tech' }] } });
+    assert.equal(state.componentReadiness, 'scope_model_mismatch');
+    assert.equal(state.allocationReadiness, 'ready');
+    assert.equal(state.allWorkReadiness, 'ready');
+    const empty = resolveEngSprintSelectorState({ ...readyInput, workModel: 'rnd_2027', group: { ...readyGroup, teamIds: [] } });
+    assert.equal(empty.allocationReadiness, 'allocations_required');
+    assert.equal(empty.allWorkReadiness, 'membership_required');
+    const teamsOnly = resolveEngSprintSelectorState({ ...readyInput, workModel: 'rnd_2027' });
+    assert.equal(teamsOnly.allocationReadiness, 'allocations_required');
+    assert.equal(teamsOnly.allWorkReadiness, 'ready');
+    assert.equal(resolveEngSprintSelectorState(readyInput).allocationReadiness, 'scope_model_mismatch');
+});
+
+test('wrong-era scopes stay mismatched despite settled Board setup errors and wait for metadata loading', async () => {
+    const { resolveEngSprintSelectorState } = await loadModule();
+    for (const [workModel, property] of [['rnd_2027', 'componentReadiness'], ['legacy', 'allocationReadiness']]) {
+        for (const setup of [
+            { group: { ...readyGroup, board: { columns: [] } } },
+            { savedProjects: [], savedBoardId: '' },
+            { group: null },
+            { capability: false },
+        ]) {
+            const input = { ...readyInput, workModel, ...setup };
+            assert.equal(resolveEngSprintSelectorState(input)[property], 'scope_model_mismatch');
+            for (const [pending, expected] of [
+                [{ catalogReady: false }, 'catalog_pending'],
+                [{ bootstrapStatus: 'loading' }, 'loading'],
+                [{ groupsLoading: true }, 'loading'],
+            ]) {
+                assert.equal(resolveEngSprintSelectorState({ ...input, ...pending })[property], expected);
+            }
+        }
     }
 });

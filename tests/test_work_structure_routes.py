@@ -378,6 +378,20 @@ class EditorRouteTests(WorkStructureRouteBase):
             self.assertEqual((unavailable.status_code, unavailable.get_json()['error']), (409, 'configuration_feature_disabled'))
             self.assertTrue(self.client.get('/api/work-structure/config').get_json()['promoted'])
 
+    def test_admin_cannot_change_department_owned_allocation_mapping(self):
+        self.stub_issue_type_catalog()
+        self.promoted_seed()
+        before = self.client.get('/api/work-structure/config').get_json()
+        draft = deepcopy(before['workConfigurations'])
+        draft['configurations'][1]['allocationTypes'] = [{'value': 'Growth', 'type': 'product'}]
+        response = self.client.post('/api/work-structure/config', headers=self.headers(), json={
+            'baseRevision': before['configRevision'], 'workConfigurations': draft})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.get_json(), {
+            'error': 'allocation_mapping_department_owned', 'status': 'error',
+            'message': 'Configure Allocation values in Department settings.'})
+        self.assertEqual(self.client.get('/api/work-structure/config').get_json(), before)
+
     def test_save_error_bodies_are_allowlisted(self):
         self.stub_issue_type_catalog()
         self.promoted_seed()

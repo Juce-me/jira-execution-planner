@@ -100,3 +100,15 @@ test('strict Board owner refresh retains pending patches instead of clearing all
     const source = fs.readFileSync(new URL('../frontend/src/eng/useStrictEngBoardIntegration.js', import.meta.url), 'utf8');
     assert.match(source, /options\?\.source !== 'automatic'\) setIssuePatchesByKey\(previous => retainPendingBoardPatches\(previous, freshnessBridge\?\.current\?\.pendingKeys\?\.\(\) \?\? new Set\(\)\)\);/);
 });
+
+
+test('Department Allocation Board errors give setup guidance without configuration values', () => {
+    for (const [code, expected] of [
+        ['board_scope_model_mismatch', 'This Board scope is unavailable for the viewed quarter. Choose a Sprint or the available Board scope.'],
+        ['board_allocations_required', 'Add Allocation values in Department settings, then retry.'],
+        ['board_allocation_field_required', 'Ask a workspace tool administrator to configure the Initiative Allocation field, then retry.'],
+    ]) {
+        const props = strictEngBoardViewProps({ active: true, owner: { data: { status: 'error', error: { code }, retry() {} } }, model: { columns: [], authoritative: false, stale: false } });
+        assert.equal(props.error, expected);
+    }
+});

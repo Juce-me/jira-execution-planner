@@ -267,7 +267,7 @@ export function trackApiResult(apiSurface, {
     if (!API_SURFACES.has(apiSurface)) {
         throw new Error(`unsupported api surface: ${apiSurface}`);
     }
-    if (apiSurface === 'eng_board' && !['all_work', 'component', 'sprint'].includes(scopeType)) {
+    if (apiSurface === 'eng_board' && !['all_work', 'component', 'allocation', 'sprint'].includes(scopeType)) {
         throw new Error(`unsupported ENG Board scope type: ${scopeType}`);
     }
     const normalizedStatus = Number(status) || 0;

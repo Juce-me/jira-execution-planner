@@ -111,16 +111,17 @@ function normalEngLoadEffect({ cached = true, overrides = {} } = {}) {
         selectedView: 'eng', isStatsSourceOnlyStatsView: false, boardScopeRequested: false,
         sprintCatalogReady: true, sprintCatalogState: { selectionPreserved: false }, sprintsLoading: false,
         selectedSprint: 'sample-sprint', selectedSprintInfo: { id: 'sample-sprint' },
+        activeGroupAllocationSignature: '[]', loadedAllocationSignatureRef: { current: '[]' },
         activeGroupId: 'sample-group', activeGroupTeamIds: ['sample-team'], groupsLoading: false, shareViewHold: false,
         groupPreferences: { onboardingRequired: false }, planningScopeKey: scopeKey,
         pendingPlanningAuthResumeRef: { current: null }, planningAuthResumeLoadRef: { current: null },
         groupLoadVersionRef: { current: 7 }, lastLoadedSprintRef: { current: 'sample-sprint' },
-        groupStateRef: { current: new Map(cached ? [['sample-group', { sprintId: 'sample-sprint', teamIdsSignature: 'sample-team', tasksFetched: true }]] : []) },
+        groupStateRef: { current: new Map(cached ? [['sample-group', { sprintId: 'sample-sprint', teamIdsSignature: 'sample-team', allocationSignature: '[]', tasksFetched: true }]] : []) },
         configRefreshNonce: 0, pendingConfigRefreshRef: { current: 0 }, authResumeStagedRevision: 0,
         activePerformanceLoadRef: { current: null }, ENG_TASK_LOAD_OUTCOME: outcomes,
         setEpicDetails: value => writes.push(value), setProductEpicsInScope: value => writes.push(value),
         setTechEpicsInScope: value => writes.push(value), setMissingPlanningInfoTasks: value => writes.push(value),
-        setMissingInfoEpics: value => writes.push(value), setPlanningAuthResumeLoadRevision: () => {},
+        setMissingInfoEpics: value => writes.push(value), setTasksFetched: value => writes.push(value), setPlanningAuthResumeLoadRevision: () => {},
         abortSprintFetches: () => retired.fetches++,
         loadMeasuredGroupTasks: options => {
             calls.push(options);
@@ -220,7 +221,8 @@ for (const [name, cached, changes] of [
     const h = normalEngLoadEffect({ cached, overrides: changes });
     const effect = h.capture();
     if (!['uncached scope', 'partial lane completion'].includes(name)) {
-        assert.notDeepEqual(effect.dependencies, h.capture({ selectedSprint: 'sample-sprint', selectedSprintInfo: { id: 'sample-sprint' }, activeGroupId: 'sample-group', activeGroupTeamIds: ['sample-team'], configRefreshNonce: 0, authResumeStagedRevision: 0 }).dependencies, 'a real scope/config/auth change must still rerun the owner');
+        assert.notDeepEqual(effect.dependencies, h.capture({ selectedSprint: 'sample-sprint', selectedSprintInfo: { id: 'sample-sprint' }, activeGroupAllocationSignature: '[]', loadedAllocationSignatureRef: { current: '[]' },
+        activeGroupId: 'sample-group', activeGroupTeamIds: ['sample-team'], configRefreshNonce: 0, authResumeStagedRevision: 0 }).dependencies, 'a real scope/config/auth change must still rerun the owner');
     }
     const cleanup = effect.callback();
     assert.equal(h.calls.length, 1); assert.equal(h.inputs.groupLoadVersionRef.current, 8);
@@ -386,4 +388,18 @@ test('an automatic follow-up while an editor is open does not run, and runs afte
     await h.adapter.followUp(job); await settleAll();
     assert.equal(h.ledger.reads.length, reads + 1, 'no read while the editor is open');
     h.controller.dispose();
+});
+
+
+test('a saved Department Allocation edit retires the old classified load even when Teams stay unchanged', () => {
+    const h = normalEngLoadEffect();
+    const before = h.capture();
+    const changed = h.capture({ activeGroupAllocationSignature: '[{"value":"Platform","type":"tech"}]' });
+    assert.notDeepEqual(changed.dependencies, before.dependencies);
+    const cleanup = changed.callback();
+    assert.equal(h.calls.length, 1);
+    assert.ok(h.writes.includes(false), 'held classified data cannot authorize a cache hit during the replacement read');
+    assert.equal(h.calls[0].shouldApplyResult(), true);
+    cleanup();
+    assert.equal(h.calls[0].shouldApplyResult(), false);
 });

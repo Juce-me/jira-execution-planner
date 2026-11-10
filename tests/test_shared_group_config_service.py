@@ -90,6 +90,48 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
             'defaultGroupId': 'default',
         }
 
+    def test_department_mapping_survives_old_client_save_and_explicit_empty_clears(self):
+        mapping = [{'value': 'Platform work', 'type': 'tech'}]
+        payload = self._groups()
+        payload['groups'][1]['allocationTypes'] = mapping
+        loaded = service.load_shared_groups(
+            self.context, fallback_loader=lambda: {'teamGroups': payload},
+            validate_groups_config_fn=validate_groups_config, database_url=self.database_url)
+        self.assertEqual(loaded['groups'][0]['allocationTypes'], [])
+        self.assertEqual(loaded['groups'][1]['allocationTypes'], mapping)
+        saved = service.save_shared_groups(
+            self.other_context, self._groups(), loaded['configRevision'],
+            validate_groups_config, database_url=self.database_url)
+        self.assertEqual(saved['groups'][1]['allocationTypes'], mapping)
+        with self.assertRaises(service.GroupConfigConflict) as raised:
+            service.save_shared_groups(
+                self.context, self._groups(), loaded['configRevision'],
+                validate_groups_config, database_url=self.database_url)
+        self.assertEqual(raised.exception.current['groups'][1]['allocationTypes'], mapping)
+        cleared = self._groups()
+        cleared['groups'][1]['allocationTypes'] = []
+        saved = service.save_shared_groups(
+            self.context, cleared, saved['configRevision'], validate_groups_config,
+            database_url=self.database_url)
+        reloaded = service.load_shared_groups(
+            self.context, fallback_loader=None, validate_groups_config_fn=validate_groups_config,
+            database_url=self.database_url)
+        self.assertEqual(reloaded['groups'][1]['allocationTypes'], [])
+        self.assertEqual(reloaded['version'], 2)
+        self.assertEqual(saved['configRevision'], reloaded['configRevision'])
+
+    def test_allocation_only_department_can_be_selected_as_personal_favorite(self):
+        groups = self._db_groups()
+        groups['groups'][-1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
+        saved = service.save_group_preferences(
+            self.context, {'visibleGroupIds': ['empty'], 'activeGroupId': 'empty'},
+            groups, database_url=self.database_url)
+        self.assertEqual(saved['activeGroupId'], 'empty')
+        self.assertFalse(saved['onboardingRequired'])
+        loaded = service.load_group_preferences(self.context, groups, database_url=self.database_url)
+        self.assertEqual(loaded['activeGroupId'], 'empty')
+        self.assertEqual(loaded['effectiveVisibleGroupIds'], ['empty'])
+
     def test_load_imports_legacy_json_once_for_workspace(self):
         legacy = {
             'version': 1,
@@ -179,6 +221,7 @@ class SharedGroupConfigServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(loaded['version'], 2)
+        self.assertEqual(loaded['groups'][0]['allocationTypes'], [])
         self.assertEqual(loaded['groups'][0]['teamLabels'], {'team-a': ['label_team_a']})
         self.assertEqual(loaded['configRevision'], 1)
 

@@ -111,7 +111,7 @@ test('first save derives legacyEdits only for real Legacy changes and echoes the
     draft = patchBundleEntry(draft, 'delivery', { name: 'DELIVERY Q1', scope: { projects: [{ key: 'PLAN', type: 'other' }] } });
     const request = buildSaveRequest({ baseline, draft, promoted: false, baseRevision: 0 });
     assert.equal(request.baseRevision, 0);
-    assert.equal(request.workConfigurations, draft);
+    assert.deepEqual(request.workConfigurations, draft);
     assert.equal('clearProjectsForConfigurationIds' in request, false);
     assert.deepEqual(request.legacyEdits, [
         { path: 'name', value: 'Legacy 2026' },
@@ -575,4 +575,14 @@ test('typeNamesSignature changes when a capture arrives, Jira renames a type or 
     assert.notEqual(sign(), sign({ catalogTypes: [{ ...types[0], name: 'Deliverable' }, types[1]] }), 'a Jira rename re-arms');
     assert.notEqual(sign(), sign({ ids: ['delivery', 'legacy'] }), 'another listed configuration re-arms');
     assert.equal(sign(), sign({ catalogTypes: [...types, { id: '19099', name: 'Unrelated', hierarchyLevel: 0 }] }), 'unconfigured catalog types do not');
+});
+
+test('administrator saves omit dormant Allocation mappings on first promotion and subsequent saves', async () => {
+    const { buildSaveRequest } = await loadModel();
+    const draft = bundle([legacy(), delivery({ allocationTypes: [{ value: 'Dormant', type: 'tech' }] })]);
+    for (const promoted of [false, true]) {
+        const request = buildSaveRequest({ baseline: draft, draft, promoted, baseRevision: 5 });
+        assert.equal(Object.hasOwn(request.workConfigurations.configurations[1], 'allocationTypes'), false);
+        assert.deepEqual(draft.configurations[1].allocationTypes, [{ value: 'Dormant', type: 'tech' }]);
+    }
 });

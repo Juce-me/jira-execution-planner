@@ -62,7 +62,7 @@ async function mockApp(page, configurationId, { boardScope = false } = {}) {
         if (p === '/api/work-structure/config') return json({ workConfigurations: { version: 1, promotionRevision: 6, configurations: [] }, configRevision: 3, promoted: true, userCanEditSettings: true, featureEnabled: true });
         if (p === '/api/groups-config' && request.method() === 'GET') {
             return json({
-                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: TEAMS.map(team => team.id), teamLabels: {}, ...(boardScope ? { missingInfoComponents: ['Platform'], board: { columns: [{ id: 'todo', name: 'To do', colour: '#597ef7', statuses: ['To Do'] }, { id: 'done', name: 'Done', colour: '#52c41a', statuses: ['Done'] }], doneEpicRetentionDays: 28 } } : {}) }],
+                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: TEAMS.map(team => team.id), teamLabels: {}, ...(boardScope ? { missingInfoComponents: ['Legacy Component'], allocationTypes: [{ value: 'Platform', type: 'tech' }], board: { columns: [{ id: 'todo', name: 'To do', colour: '#597ef7', statuses: ['To Do'] }, { id: 'done', name: 'Done', colour: '#52c41a', statuses: ['Done'] }], doneEpicRetentionDays: 28 } } : {}) }],
                 defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
                 preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true,
                     completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'],
@@ -235,7 +235,7 @@ test('Legacy keeps the Projects facet and never shows No Allocation', async ({ p
 
 test('Board scope uses Allocation for DELIVERY and searches its displayed label', async ({ page }) => {
     await mockApp(page, 'delivery', { boardScope: true });
-    const scopeRequest = page.waitForRequest(req => new URL(req.url()).pathname === '/api/eng/board' && new URL(req.url()).searchParams.get('scope') === 'component');
+    const scopeRequest = page.waitForRequest(req => new URL(req.url()).pathname === '/api/eng/board' && new URL(req.url()).searchParams.get('scope') === 'allocation');
     await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const selector = page.locator('.sprint-dropdown').first();
     const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });

@@ -369,6 +369,38 @@ class StoryReadinessRouteTests(unittest.TestCase):
         self.assertEqual(second.get_json(), payload)
         self.assertEqual(compute.call_count, 1)
 
+    def test_mapping_content_partitions_readiness_cache_and_retires_inflight_result(self):
+        group = {'id': 'dept', 'teamIds': ['team-a'], 'teamLabels': {'team-a': ['team_alpha']},
+                 'allocationTypes': [{'value': 'Platform', 'type': 'tech'}]}
+        groups = {'configRevision': 3, 'groups': [group]}
+        mutate_inflight = False
+        seen = []
+        def compute(_context, _requested, captured, *_args, **_kwargs):
+            mapping = captured['allocationTypes']
+            seen.append(mapping)
+            result = {'epics': [{'projectClass': mapping[0]['type']}]}
+            if mutate_inflight:
+                group['allocationTypes'] = []
+            return result, 'total;dur=1'
+        with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+             patch.object(eng_routes, '_story_readiness_effective_groups', return_value=groups), \
+             patch.object(eng_routes, '_story_readiness_team_catalog', return_value={'team-a': {'name': 'Alpha'}}), \
+             patch.object(jira_server, 'get_jira_issue_cache_generation', return_value=9), \
+             patch.object(eng_routes, '_story_readiness_compute', side_effect=compute):
+            path = '/api/eng/story-readiness?sprint=42&sprintName=Sprint%2042&sprintState=active&groupId=dept'
+            first = self.client.get(path)
+            warm = self.client.get(path)
+            group['allocationTypes'] = [{'value': 'Platform', 'type': 'product'}]
+            changed = self.client.get(path)
+            mutate_inflight = True
+            stale = self.client.get(path + '&refresh=true')
+        self.assertEqual(first.get_json()['epics'][0]['projectClass'], 'tech')
+        self.assertEqual(warm.headers['X-Story-Readiness-Cache'], 'hit')
+        self.assertEqual(changed.get_json()['epics'][0]['projectClass'], 'product')
+        self.assertEqual(changed.headers['X-Story-Readiness-Cache'], 'miss')
+        self.assertEqual((stale.status_code, stale.get_json()['error']), (502, 'story_readiness_unavailable'))
+        self.assertEqual(len(seen), 3)
+
     def test_route_rejects_alias_shared_by_two_teams(self):
         groups = {"configRevision": 3, "groups": [{
             "id": "dept", "teamIds": ["team-a", "team-b"],
@@ -967,7 +999,8 @@ class NewModelStoryReadinessTests(unittest.TestCase):
                     row['fields'][ALLOCATION] = values[key]
                 rows.append(row)
             return _FakeResponse(200, {'issues': rows, 'isLast': True})
-        roles = self.roles([{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}])
+        self.GROUP = {**self.GROUP, 'allocationTypes': [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]}
+        roles = self.roles()
         result, calls = self.compute(search, roles)
         self.assertEqual({item['key']: item['projectClass'] for item in result['epics']},
                          {'PLAN-1': 'tech', 'PLAN-2': 'product', 'PLAN-3': 'none', 'PLAN-4': 'none'})

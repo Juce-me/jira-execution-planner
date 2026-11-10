@@ -29,7 +29,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 import io
 from requests import Session
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError as FuturesTimeoutError
 from backend.services.request_performance import measure_task_load, mark_task_cache_hit, submit_with_performance
 from backend.services.jira_batches import JiraBatchIncomplete
@@ -2727,13 +2727,33 @@ def load_request_effective_groups(context):
     )
 
 
-def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None, sprint_name='', configuration=None):
+def classified_department(context, group_id):
+    """Saved workspace Department authority for DELIVERY Sprint readers; no Jira or writes."""
+    if not isinstance(group_id, str) or not group_id.strip():
+        return None, (jsonify({'error': 'department_required', 'message': 'Choose a Department.'}), 400)
+    try:
+        groups = load_request_effective_groups(context)
+    except (ConfigStorageError, DatabaseConfigurationError, WorkspaceConfigFenceUnavailable, SQLAlchemyError,
+            _shared_group_config_service.InvalidSharedGroupConfig):
+        return None, (jsonify({'error': 'config_storage_unavailable',
+                              'message': 'Configuration storage is temporarily unavailable.'}), 503)
+    group = next((row for row in groups.get('groups') or () if row.get('id') == group_id.strip()), None)
+    if group is None:
+        return None, (jsonify({'error': 'department_not_found', 'message': 'Department was not found.'}), 404)
+    if not normalize_team_ids(group.get('teamIds') or []):
+        return None, (jsonify({'error': 'department_teams_required', 'message': 'Configure Teams for Sprint views.'}), 400)
+    return group, None
+
+
+def build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_labels, include_team_name, use_template, purpose='dashboard', epic_keys=None, sprint_name='', configuration=None, department=None):
     epic_signature = ','.join(sorted({str(k).strip() for k in (epic_keys or []) if str(k).strip()}))
     label_signature = ','.join(sorted({str(v).strip() for v in (team_labels or []) if str(v).strip()}))
     raw = f"{TASKS_CACHE_SCHEMA_VERSION}::{purpose}::{sprint}::{str(sprint_name or '').strip().casefold()}::{group_id}::{project_filter}::{','.join(team_ids)}::{label_signature}::{include_team_name}::{use_template}::{epic_signature}"
     segment = work_configuration_cache_segment(configuration)
     if segment:
         raw = f"{raw}::{segment}"
+    if department is not None:
+        raw += '::' + _allocation.department_allocation_digest(department)
     digest = hashlib.sha1(raw.encode('utf-8')).hexdigest()[:12]
     return f"tasks:{digest}"
 
@@ -2902,10 +2922,10 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
     return epic_details
 
 
-def allocation_stamps(issues, epic_details, roles):
+def allocation_stamps(issues, epic_details, roles, allocation_types=()):
     """DELIVERY: stamp ``allocationClass`` on each Initiative record and return ``{issue key: its Initiative's
     class}``; an issue without a readable Initiative is ``'none'``.  No Jira request."""
-    classes = _allocation.initiative_classes(epic_details, roles.allocation_field_id, roles.allocation_types)
+    classes = _allocation.initiative_classes(epic_details, roles.allocation_field_id, allocation_types)
     for key, record in (epic_details or {}).items():
         record['allocationClass'] = classes[str(key).strip().upper()]
     return _allocation.stamp_issues(issues, classes)
@@ -3437,19 +3457,26 @@ def fetch_tasks(include_team_name=False):
             return work_error
         roles = work_request.roles if work_request is not None else None
         work_context = work_request.context if work_request is not None else None
+        department = None
+        if roles is not None and not roles.is_legacy:
+            department, department_error = classified_department(auth_context, request.args.get('groupId'))
+            if department_error is not None:
+                return department_error
+            team_ids = team_ids or normalize_team_ids(department.get('teamIds') or [])
+            use_template = bool(team_ids and JQL_QUERY_TEMPLATE)
         if project_filter in ('product', 'tech') and (roles is None or roles.is_legacy):
             denied_response, denied_status = project_access_denied_response(auth_context, project_filter)
             if denied_response is not None:
                 return denied_response, denied_status
         groups_started = time.perf_counter()
-        saved_team_labels = (_group_config_service.resolve_group_team_label_values(load_request_effective_groups(auth_context), group_id, team_ids, normalize_team_ids)
+        saved_team_labels = (_group_config_service.resolve_group_team_label_values({'groups': [department]} if department is not None else load_request_effective_groups(auth_context), group_id, team_ids, normalize_team_ids)
                              if request.args.get('groupId', '').strip() and team_ids else [])
         team_label_values = _group_config_service.merge_team_label_values(saved_team_labels, team_label_values)
         record_timing('groups', groups_started)
         raw_cache_key = build_tasks_cache_key(
             sprint, group_id, project_filter, team_ids, team_label_values,
             include_team_name, use_template, request_purpose, epic_keys_filter, sprint_name=sprint_name,
-            configuration=work_context,
+            configuration=work_context, department=department,
         )
         cache_generation = get_jira_issue_cache_generation()
         measurement_campaign = getattr(g, 'measurement_campaign', None)
@@ -3770,7 +3797,7 @@ def fetch_tasks(include_team_name=False):
             for epic in epics_in_scope:
                 mark_child_data_completeness(epic, roles, child_read_failures)
         slim_build_started = time.perf_counter()
-        classifications = allocation_stamps(collected_issues, epic_details, roles) if stamps_allocation else None
+        classifications = allocation_stamps(collected_issues, epic_details, roles, _allocation.department_allocation_types(department)) if stamps_allocation else None
         slim_issues = []
         for issue in collected_issues:
             fields = issue.get('fields', {})
@@ -3850,7 +3877,7 @@ def fetch_tasks(include_team_name=False):
             if cache_enabled and is_epic_refresh:
                 evict_scope_entries(TASKS_CACHE, _cache_lock, lambda purpose: build_jira_home_process_cache_key(
                     auth_context, build_tasks_cache_key(sprint, group_id, project_filter, team_ids, team_label_values,
-                                                        include_team_name, use_template, purpose, None, sprint_name=sprint_name)))
+                                                        include_team_name, use_template, purpose, None, sprint_name=sprint_name, configuration=work_context, department=department)))
             response = jsonify(data)
             response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
             response.headers['Pragma'] = 'no-cache'
@@ -6030,7 +6057,7 @@ def excluded_capacity_epic_summary_cache_key(epic_key, context=None, configurati
     if context is not None:
         return build_auth_cache_key(context, 'excluded-capacity-epic-summary', normalized_key, *extra)
     return ('excluded-capacity-epic-summary', 'basic', normalized_key, *extra)
-def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles=None):
+def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles=None, allocation_types=()):
     cache_generation = get_jira_issue_cache_generation()
     normalized_keys = []
     original_by_normalized = {}
@@ -6098,7 +6125,7 @@ def fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=None, roles
         normalized, {'summary': '', 'projectTrack': None, 'status': None, 'assignee': None})
         for normalized in normalized_keys}
     if delivery:
-        classes = _allocation.initiative_classes(summaries, allocation_field, roles.allocation_types)
+        classes = _allocation.initiative_classes(summaries, allocation_field, allocation_types)
         summaries = {key: {**summary, 'allocationClass': classes[str(key).strip().upper()]}
                      for key, summary in summaries.items()}
     return summaries
@@ -6138,7 +6165,7 @@ def _build_excluded_capacity_stats_source_fields(story_points_field, sprint_fiel
     return fields
 
 
-def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql, fields_list, configuration=None):
+def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql, fields_list, configuration=None, department=None):
     sprint_signature = ','.join(str(item or '').strip() for item in (sprint_ids or []) if str(item or '').strip())
     team_signature = ','.join(normalize_team_ids(team_ids or []))
     source_signature = hashlib.sha256(
@@ -6156,12 +6183,14 @@ def _excluded_capacity_stats_source_cache_key(context, sprint_ids, team_ids, jql
     segment = work_configuration_cache_segment(configuration)
     if segment:
         parts = (*parts, segment)
+    if department is not None:
+        parts = (*parts, _allocation.department_allocation_digest(department))
     if context is not None:
         return build_jira_home_process_cache_key(context, *parts)
     return parts
 
 
-def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None, refresh=False, timings_ms=None, roles=None):
+def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None, refresh=False, timings_ms=None, roles=None, department=None):
     cache_generation = get_jira_issue_cache_generation()
     field_started = time.perf_counter()
     if roles is not None:
@@ -6200,7 +6229,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
 
     cache_enabled = context is not None and jira_home_partitioned_process_cache_enabled(context)
     cache_key = _excluded_capacity_stats_source_cache_key(
-        context, sprint_ids, team_ids, jql, fields_list, configuration=roles.context if roles is not None else None)
+        context, sprint_ids, team_ids, jql, fields_list, configuration=roles.context if roles is not None else None, department=department)
     if cache_enabled and not refresh:
         now = time.time()
         with _cache_lock:
@@ -6259,7 +6288,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
             epic_keys.append(epic_key)
 
     epic_summary_started = time.perf_counter()
-    epic_summary_by_key = fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=context, roles=roles)
+    epic_summary_by_key = fetch_cached_excluded_capacity_epic_summaries(epic_keys, context=context, roles=roles, allocation_types=_allocation.department_allocation_types(department))
     _record_excluded_capacity_timing(timings_ms, 'epic_summaries', epic_summary_started)
 
     build_payload_started = time.perf_counter()
@@ -6268,7 +6297,7 @@ def fetch_excluded_capacity_stats_source(sprint_ids, context=None, team_ids=None
         for issue in collected_issues
     ]
     if roles is not None and not roles.is_legacy:
-        classifications = allocation_stamps(issues_payload, epic_summary_by_key, roles)
+        classifications = allocation_stamps(issues_payload, epic_summary_by_key, roles, _allocation.department_allocation_types(department))
         for item in issues_payload:
             item['fields']['projectClassification'] = classifications.get(item['key'], 'none')
 
@@ -6360,6 +6389,11 @@ def get_excluded_capacity_stats_source():
         groups, work_error = admit_sprint_id_groups(auth_context, sprint_ids, payload)
         if work_error is not None:
             return work_error
+        department = None
+        if groups is not None and any(not item.roles.is_legacy for item, _ids in groups):
+            department, department_error = classified_department(auth_context, payload.get('groupId'))
+            if department_error is not None:
+                return department_error
         timings_ms = {}
         if groups is None:
             stats_payload, error_response = fetch_excluded_capacity_stats_source(
@@ -6375,8 +6409,11 @@ def get_excluded_capacity_stats_source():
             for work_request, group_ids in groups:
                 group_timings = {}
                 part, error_response = fetch_excluded_capacity_stats_source(
-                    group_ids, context=auth_context, team_ids=team_ids, refresh=refresh,
-                    timings_ms=group_timings, roles=work_request.roles)
+                    group_ids, context=auth_context,
+                    team_ids=(team_ids or normalize_team_ids(department.get('teamIds') or []))
+                    if not work_request.roles.is_legacy else team_ids, refresh=refresh,
+                    timings_ms=group_timings, roles=work_request.roles,
+                    department=department if not work_request.roles.is_legacy else None)
                 if error_response is not None:
                     break
                 all_cached = all_cached and 'cache' in group_timings

@@ -396,13 +396,13 @@ for (const retired of [false,true]) test(`Excluded automatic selected chunk ${re
     const effects=[],fakeReact={useMemo:fn=>fn(),useRef:initial=>({current:initial}),useEffect:fn=>effects.push(fn)},hooks=loadHooks({reactRuntime:fakeReact}),value=inputs(),calls=[];let current=true,accepted=null;
     Object.assign(value,{showStats:true,statsView:'excludedCapacity',availableSprints:[{id:'s1',name:'First',startDate:'2026-04-01'},{id:'s2',name:'Selected',startDate:'2026-05-01'}],excludedCapacityStartSprintId:'s1',excludedCapacityEndSprintId:'s2',setExcludedCapacityData:data=>accepted=data,issueEditStateRef:{current:{beginRead:()=>({}),finishRead(){},isCurrentAggregateRead:()=>true}}});
     value.scope.selectedSprint='s2';value.scope.excludedEpicSet=new Set(['DEMO-E1']);const held={issues:[{key:'HELD-1',fields:{epicKey:'DEMO-E1',customfield_10004:5}}],meta:{warnings:[]}},remote={issues:[{key:'REMOTE-2',fields:{epicKey:'DEMO-E1',customfield_10004:11}}],meta:{warnings:[]}};
-    value.excludedCapacityCacheRef.current['sprint::s1::all']=held;
+    value.excludedCapacityCacheRef.current['sprint::s1::all::department:[null,[]]']=held;
     let settleRead;const settled=new Promise(resolve=>settleRead=resolve);value.automaticRefreshRef={current:{source:'stats_excluded_capacity',job:{signal:new AbortController().signal,shouldApply:()=>current},settle:settleRead}};
     const priorFetch=global.fetch,priorWindow=global.window;global.window={setTimeout:(fn,ms)=>setTimeout(fn,ms===120?1:30000),clearTimeout};global.fetch=async(url,options)=>{calls.push(JSON.parse(options.body));if(retired)current=false;return new Response(JSON.stringify({data:remote,cached:false}));};
     try {
         hooks.useStatsDerivedB(value);const cleanup=effects.find(fn=>fn.toString().includes('const automatic')&&fn.toString().includes('stats_excluded_capacity'))();const checks=await settled;
-        assert.deepEqual(calls,[{sprintIds:['s2'],teamIds:[],refresh:true}]);assert.equal(value.excludedCapacityCacheRef.current['sprint::s1::all'],held);
-        if(retired){assert.equal(accepted,null);assert.equal(value.excludedCapacityCacheRef.current['sprint::s2::all'],undefined);assert.equal(checks[0].status,'ignored');}
+        assert.deepEqual(calls,[{sprintIds:['s2'],teamIds:[],refresh:true}]);assert.equal(value.excludedCapacityCacheRef.current['sprint::s1::all::department:[null,[]]'],held);
+        if(retired){assert.equal(accepted,null);assert.equal(value.excludedCapacityCacheRef.current['sprint::s2::all::department:[null,[]]'],undefined);assert.equal(checks[0].status,'ignored');}
         else{assert.deepEqual(accepted.issues.map(issue=>issue.key).sort(),['HELD-1','REMOTE-2']);assert.equal(checks[0].checkKind,'forced');}
         cleanup();
     } finally {global.fetch=priorFetch;global.window=priorWindow;}
@@ -474,7 +474,7 @@ test('partial manual range cannot become a forced automatic check without an acc
         runtime.render(() => hooks.useStatsDerivedB(value)); await nextStatsTick();
         const held = value.excludedCapacityData;
         assert.ok(held, 'manual partial chart exists');
-        assert.equal(value.excludedCapacityCacheRef.current['sprint::s1::synthetic-team'], undefined);
+        assert.equal(value.excludedCapacityCacheRef.current['sprint::s1::synthetic-team::department:[null,[]]'], undefined);
         commits = 0; requests = [];
         const environment = { surface: 'stats', contextKey: 'synthetic-range', sessionEpoch: 0, focused: true, bootstrapReady: true, authReady: true };
         const adapter = createStatsFreshnessAdapter(() => ({ statsView: value.statsView, automaticRefreshRef: value.automaticRefreshRef,
@@ -769,4 +769,29 @@ test('cohort reads reuse a cached mode instead of fetching again and need quarte
     hooks.useStatsDerivedB(value);
     effects.find((fn) => fn.toString().includes('const fetchCohort'))();
     assert.ok(errors.includes('Start and end quarter are required.'), 'Closed still needs its quarters');
+});
+
+test('capacity source caches separate Departments and saved Allocation mappings with identical Teams', async () => {
+    const effects = [], refs = []; let cursor = 0;
+    const hooks = loadHooks({ reactRuntime: { useMemo: fn => fn(), useRef: value => refs[cursor++] || (refs[cursor - 1] = { current: value }), useEffect: fn => effects.push(fn) } });
+    const value = inputs(), requests = []; let resolveData;
+    Object.assign(value, { automaticRefreshRef: { current: null }, showStats: true, statsView: 'projectTrack', activeGroupTeamIds: ['same-team'],
+        availableSprints: [{ id: 's1', name: 'Synthetic Sprint', startDate: '2026-05-01' }], excludedCapacityStartSprintId: 's1', excludedCapacityEndSprintId: 's1',
+        setExcludedCapacityData: data => { if (data?.issues) resolveData?.(data); },
+        issueEditStateRef: { current: { beginRead: () => ({}), finishRead() {}, isCurrentAggregateRead: () => true } } });
+    const priorFetch = global.fetch, priorWindow = global.window;
+    global.window = { setTimeout, clearTimeout };
+    global.fetch = async (_url, options) => { requests.push(JSON.parse(options.body)); return new Response(JSON.stringify({ data: { issues: [{ key: `SYN-${requests.length}`, fields: {} }], meta: { warnings: [] } }, cached: false })); };
+    let cleanup;
+    try {
+        for (const [id, type] of [['department-a', 'product'], ['department-b', 'tech'], ['department-b', 'product']]) {
+            cleanup?.(); value.scope.activeGroupId = id; value.activeGroup = { id, allocationTypes: [{ value: 'Platform', type }] };
+            cursor = 0; effects.length = 0; hooks.useStatsDerivedB(value);
+            const accepted = new Promise(resolve => { resolveData = resolve; });
+            cleanup = effects.find(fn => fn.toString().includes('const automatic') && fn.toString().includes('stats_excluded_capacity'))();
+            await accepted;
+        }
+        assert.deepEqual(requests.map(body => body.groupId), ['department-a', 'department-b', 'department-b']);
+        assert.ok(requests.every(body => body.teamIds.join() === 'same-team'));
+    } finally { cleanup?.(); global.fetch = priorFetch; global.window = priorWindow; }
 });

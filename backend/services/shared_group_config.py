@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 
 from sqlalchemy import select, update
@@ -10,6 +11,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from backend.auth.db_context import is_db_auth_context
 from backend.db import engine as db_engine
 from backend.db import models
+from backend.services.allocation_classification import department_allocation_types
 
 
 GROUPS_SOURCE_DB = 'workspace_db'
@@ -296,6 +298,22 @@ def save_shared_groups(context, payload, base_revision, validate_groups_config_f
 
     normalized, warnings = _normalize_shared_payload(payload, validate_groups_config_fn)
     with db_engine.session_scope(database_url) as session:
+        # Preserve additive fields omitted by old clients from the row protected
+        # by this same CAS transaction, never from a route-level pre-read.
+        row = session.execute(
+            select(models.WorkspaceGroupConfig).where(
+                models.WorkspaceGroupConfig.workspace_id == context.workspace_id,
+            ).with_for_update()
+        ).scalars().first()
+        if row is None or int(row.config_revision or 1) != revision:
+            raise GroupConfigConflict(current_shared_groups_config(session, context, validate_groups_config_fn))
+        current = _row_to_groups_config(row, validate_groups_config_fn)
+        existing = {group['id']: group for group in current['groups']}
+        raw_groups = {str(group.get('id') or '').strip(): group
+                      for group in payload.get('groups', []) if isinstance(group, dict)}
+        for group in normalized['groups']:
+            if 'allocationTypes' not in raw_groups.get(group['id'], {}):
+                group['allocationTypes'] = deepcopy(existing.get(group['id'], {}).get('allocationTypes', []))
         statement = (
             update(models.WorkspaceGroupConfig)
             .where(
@@ -339,8 +357,8 @@ def _uses_personal_preferences(groups_config):
     return str((groups_config or {}).get('source') or '') == GROUPS_SOURCE_DB
 
 
-def _group_has_teams(group):
-    return bool([
+def _group_has_work_scope(group):
+    return bool(department_allocation_types(group) or [
         str(team_id or '').strip()
         for team_id in (group or {}).get('teamIds') or []
         if str(team_id or '').strip()
@@ -377,7 +395,7 @@ def _resolve_active_group_id(groups_config, visible_ids, active_group_id):
     active = str(active_group_id or '').strip()
     if _uses_personal_preferences(groups_config):
         group = _group_by_id(groups_config, active)
-        if active and active in visible_ids and _group_has_teams(group):
+        if active and active in visible_ids and _group_has_work_scope(group):
             return active
         return None
     if active and active in visible_ids:
@@ -485,8 +503,8 @@ def _validate_raw_group_preferences(payload, groups_config, preference_exists):
     favorite_group = _group_by_id(groups_config, normalized_favorite_id)
     if favorite_group is None:
         raise InvalidGroupPreferences('personal favorite group must be a known group')
-    if not _group_has_teams(favorite_group):
-        raise InvalidGroupPreferences('personal favorite group must have at least one configured team')
+    if not _group_has_work_scope(favorite_group):
+        raise InvalidGroupPreferences('personal favorite group must have at least one configured team or Allocation value')
 
     return {
         'visibleGroupIds': normalized_visible_ids,

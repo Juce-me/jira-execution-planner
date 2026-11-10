@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import jira_server
 from backend.services import epic_cohort_closed
-from tests.test_work_reader_routes import FakeSearch
+from tests.test_work_reader_routes import FakeSearch, seed_department
 from tests.test_work_structure_routes import WorkStructureRouteBase
 
 LEGACY_SELECTORS = {'quarter': '2026Q4', 'configurationId': 'legacy', 'configurationRevision': 1}
@@ -26,6 +26,7 @@ class StatsRouteBase(WorkStructureRouteBase):
     def setUp(self):
         super().setUp()
         self.promoted_seed()
+        seed_department(self)
         # Last N is an all-history report: it never admits a physical Sprint.
         self.stack.enter_context(patch.object(
             jira_server, 'resolve_request_catalog_sources', side_effect=AssertionError('Sprint admission')))
@@ -38,7 +39,7 @@ class StatsRouteBase(WorkStructureRouteBase):
 
     def post(self, path, body, client=None):
         client = client or self.client
-        return client.post(path, json=body, headers=self.headers(client))
+        return client.post(path, json=({'groupId': 'dept', **body} if path == '/api/stats/excluded-capacity-source' else body), headers=self.headers(client))
 
     def last_n(self, extra=None, selectors=None, search=None):
         body = {'mode': 'last_n', 'components': ['Comp A'], **(selectors or LEGACY_SELECTORS), **(extra or {})}
@@ -362,6 +363,7 @@ class SprintNamePeriodTests(StatsRouteBase):
 class ExcludedCapacitySourceTests(StatsRouteBase):
     def setUp(self):
         super().setUp()
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=Mock(status_code=200, json=lambda: {})))
         from backend.routes import work_structure_routes as work_routes
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         rows = {'11': ('legacy', '2026Q4'), '22': ('delivery', '2027Q1')}
@@ -393,6 +395,16 @@ class ExcludedCapacitySourceTests(StatsRouteBase):
         self.assertTrue(any('project in ("OLD", "OLDB")' in jql for jql in fake.calls))
         self.assertTrue(any('issuetype = 10002' in jql and 'project in ("PLAN")' in jql for jql in fake.calls))
 
+    def test_department_errors_precede_jira_and_keep_safe_envelopes(self):
+        fake = self.search()
+        for group_id, code, status in ((None, 'department_required', 400), ('unknown', 'department_not_found', 404)):
+            response = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22'], 'groupId': group_id})
+            self.assertEqual((response.status_code, response.get_json()['error']), (status, code))
+        seed_department(self, team_ids=())
+        response = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22']})
+        self.assertEqual((response.status_code, response.get_json()['error']), (400, 'department_teams_required'))
+        self.assertEqual(fake.calls, [])
+
     def test_unadmitted_sprint_is_a_catalog_mismatch_before_jira(self):
         fake = self.search()
         response = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['11', '99']})
@@ -413,6 +425,7 @@ class ExcludedCapacityAllocationStampTests(StatsRouteBase):
 
     def setUp(self):
         super().setUp()
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=Mock(status_code=200, json=lambda: {})))
         import json
         from backend.db import models
         from backend.routes import work_structure_routes as work_routes
@@ -425,6 +438,7 @@ class ExcludedCapacityAllocationStampTests(StatsRouteBase):
             delivery['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
             row.payload = payload
             session.commit()
+        seed_department(self, [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}])
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         rows = {'11': ('legacy', '2026Q4'), '22': ('delivery', '2027Q1')}
 
@@ -469,13 +483,29 @@ class ExcludedCapacityAllocationStampTests(StatsRouteBase):
                                   'OLD-1': None})
         self.assertEqual([jql for jql in fake.calls if 'PLAN-O1' in jql], [])
 
+    def test_same_team_department_maps_do_not_leak_from_raw_summary_cache(self):
+        self.search((r'cf\[26\] in \(22\)', [self.issue('PLAN-1', 'PLAN-I1')]),
+                    (r'key in \("PLAN-I', [self.issue('PLAN-I1', allocation='Platform')]))
+        first = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22']})
+        repeated = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22']})
+        self.assertTrue(repeated.get_json()['cached'])
+        seed_department(self, [{'value': 'Platform', 'type': 'product'}], group_id='second')
+        second = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22'], 'groupId': 'second'})
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        self.assertEqual(first.get_json()['data']['issues'][0]['fields']['projectClassification'], 'tech')
+        self.assertEqual(second.get_json()['data']['issues'][0]['fields']['projectClassification'], 'product')
+        seed_department(self)
+        cleared = self.post('/api/stats/excluded-capacity-source', {'sprintIds': ['22']})
+        self.assertEqual(cleared.get_json()['data']['issues'][0]['fields']['projectClassification'], 'none')
+        self.assertFalse(cleared.get_json()['cached'])
+
     def test_delivery_summaries_carry_the_initiative_class(self):
         roles = Mock(is_legacy=False, allocation_field_id=self.FIELD, project_track_field_id='',
                      allocation_types=[{'value': 'Platform', 'type': 'tech'}], context=None)
         rows = [{'key': 'PLAN-I1', 'fields': {'summary': 'I1', self.FIELD: {'value': 'Platform'}}}]
         with patch.object(jira_server, 'fetch_issues_by_keys', return_value=rows), \
              patch.object(jira_server, 'get_jira_issue_cache_generation', side_effect=object):
-            summaries = jira_server.fetch_cached_excluded_capacity_epic_summaries(['PLAN-I1', 'PLAN-I2'], roles=roles)
+            summaries = jira_server.fetch_cached_excluded_capacity_epic_summaries(['PLAN-I1', 'PLAN-I2'], roles=roles, allocation_types=[{'value': 'Platform', 'type': 'tech'}])
         self.assertEqual({key: value['allocationClass'] for key, value in summaries.items()},
                          {'PLAN-I1': 'tech', 'PLAN-I2': 'none'})
 

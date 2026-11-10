@@ -128,11 +128,6 @@ class WorkRoles:
     def allocation_field_id(self):
         return self.field_id('allocation')
 
-    @property
-    def allocation_types(self):
-        """DELIVERY Allocation value -> Product/Tech mapping (empty on Legacy)."""
-        return [dict(item) for item in getattr(self.context, 'allocation_types', ())]
-
     def flat_admin_settings(self):
         """Old flat key shapes for consumers that still read them (Board capture)."""
         return ws.project_legacy_admin_settings(self.context)

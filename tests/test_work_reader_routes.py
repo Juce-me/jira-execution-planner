@@ -52,6 +52,22 @@ def initiative_row(key, parent=None, labels=(), status='To Do'):
     return {'key': key, 'id': key[-1], 'fields': fields}
 
 
+def seed_department(test, allocation_types=(), team_ids=('t1',), group_id='dept'):
+    from backend.db import models
+    with test.factory() as session:
+        row = session.query(models.WorkspaceGroupConfig).filter_by(workspace_id=test.workspace_id).one_or_none()
+        payload = {'version': 2, 'groups': [{'id': group_id, 'name': f'Department {group_id}', 'teamIds': list(team_ids),
+                    'allocationTypes': list(allocation_types)}], 'defaultGroupId': 'dept'}
+        if row is None:
+            session.add(models.WorkspaceGroupConfig(workspace_id=test.workspace_id, payload_version=2,
+                                                     config_revision=1, payload=payload))
+        else:
+            payload['groups'] = [group for group in row.payload.get('groups', []) if group['id'] != group_id] + payload['groups']
+            row.payload = payload
+            row.config_revision += 1
+        session.commit()
+
+
 class SelectorMatrixTests(WorkStructureRouteBase):
     """Every matrix route returns the exact selector codes before any Jira request."""
 
@@ -134,6 +150,8 @@ class PromotedTasksTests(WorkStructureRouteBase):
     def setUp(self):
         super().setUp()
         self.promoted_seed()
+        seed_department(self)
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=jira_response(200, {})))
         self.sources = self.stack.enter_context(patch.object(
             jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(
@@ -141,7 +159,7 @@ class PromotedTasksTests(WorkStructureRouteBase):
 
     def run_tasks(self, params, search):
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            return self.client.get('/api/tasks', query_string=params)
+            return self.client.get('/api/tasks', query_string={'groupId': 'dept', **params})
 
     def test_delivery_reads_epics_through_parent_with_one_unfiltered_request_lane(self):
         search = FakeSearch(
@@ -292,6 +310,8 @@ class AllocationStampTests(WorkStructureRouteBase):
             delivery['fields']['allocation'] = {'fieldId': ALLOCATION_FIELD, 'fieldName': 'Allocation'}
             delivery['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}]
         self.seed(mutate=mutate)
+        seed_department(self, [{'value': 'Platform', 'type': 'tech'}, {'value': 'Growth', 'type': 'product'}])
+        self.stack.enter_context(patch.object(jira_server, 'current_jira_get', return_value=jira_response(200, {})))
         self.stack.enter_context(patch.object(jira_server, 'resolve_request_catalog_sources', return_value=[Mock()]))
         self.stack.enter_context(patch.object(
             work_routes, 'admit_sprint_source', return_value=(Mock(), {'id': 5, 'name': '2027Q1'})))
@@ -311,7 +331,7 @@ class AllocationStampTests(WorkStructureRouteBase):
                 rows = list(objectives)
             return jira_response(200, {'issues': rows, 'isLast': True})
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            response = self.client.get('/api/tasks', query_string=params)
+            response = self.client.get('/api/tasks', query_string={'groupId': 'dept', **params})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         return response.get_json(), payloads
 
@@ -322,6 +342,36 @@ class AllocationStampTests(WorkStructureRouteBase):
         if objective:
             row['fields']['parent'] = {'key': objective, 'fields': {'issuetype': {'id': '10010', 'name': 'Objective'}}}
         return row
+
+    def test_saved_department_mapping_partitions_same_teams_and_tasks_cache(self):
+        rows = [epic_row('PLAN-1', parent='PLAN-I1', sprint=5)]
+        parents = [self.with_allocation(initiative_row('PLAN-I1'), 'Platform')]
+        first, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5'}, rows, parents)
+        seed_department(self, [{'value': 'Platform', 'type': 'product'}], group_id='second')
+        second, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5', 'groupId': 'second'}, rows, parents)
+        self.assertEqual(first['issues'][0]['fields']['projectClassification'], 'tech')
+        self.assertEqual(second['issues'][0]['fields']['projectClassification'], 'product')
+        seed_department(self)
+        empty, _ = self.tasks({'quarter': '2027Q1', 'sprint': '5'}, rows, parents)
+        self.assertEqual(empty['issues'][0]['fields']['projectClassification'], 'none')
+
+    def test_invalid_or_teamless_department_fails_before_jira(self):
+        fake = FakeSearch()
+        with patch.object(jira_server, 'jira_search_request', side_effect=fake):
+            for group_id, code, status in ((None, 'department_required', 400), ('unknown', 'department_not_found', 404)):
+                params = {'quarter': '2027Q1', 'sprint': '5'}
+                if group_id is not None:
+                    params['groupId'] = group_id
+                response = self.client.get('/api/tasks', query_string=params)
+                self.assertEqual((response.status_code, response.get_json()['error']), (status, code))
+            seed_department(self, team_ids=())
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
+        self.assertEqual((response.status_code, response.get_json()['error']), (400, 'department_teams_required'))
+        with patch.object(jira_server, 'load_request_effective_groups', side_effect=jira_server.ConfigStorageError('private storage details')):
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
+        self.assertEqual((response.status_code, response.get_json()), (503, {
+            'error': 'config_storage_unavailable', 'message': 'Configuration storage is temporarily unavailable.'}))
+        self.assertEqual(fake.calls, [])
 
     def test_stamp_is_the_initiatives_class_and_no_objective_batch(self):
         epics = [self.with_allocation(epic_row('PLAN-1', parent='PLAN-I1', sprint=5), 'Platform'),
@@ -358,7 +408,7 @@ class AllocationStampTests(WorkStructureRouteBase):
             rows = epics if 'issuetype = 10002' in payload['jql'] else []
             return jira_response(200, {'issues': rows, 'isLast': True})
         with patch.object(jira_server, 'jira_search_request', side_effect=search):
-            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5'})
+            response = self.client.get('/api/tasks', query_string={'quarter': '2027Q1', 'sprint': '5', 'groupId': 'dept'})
         self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
         body = response.get_json()
         self.assertEqual(body['issues'][0]['fields']['projectClassification'], 'none')
@@ -503,7 +553,7 @@ def parent_shell(key, status='To Do'):
 
 
 class ComponentBoardStreamTests(unittest.TestCase):
-    """DELIVERY's component wire scope reads Initiative Allocation; Legacy stays Component."""
+    """DELIVERY Allocation scope admits matching Initiatives and eligible leaves."""
 
     def setUp(self):
         set_up_db_oauth(self)
@@ -513,11 +563,12 @@ class ComponentBoardStreamTests(unittest.TestCase):
               'PLAN-E3': leaf('PLAN-E3', 'PLAN-I2', 2, (), team='team-a'),
               'PLAN-E4': leaf('PLAN-E4', 'PLAN-I2', 3, ('Platform',))}
 
-    def snapshot(self, components, teams=(), scope='component', mutate=None):
+    def snapshot(self, components, teams=(), scope='allocation', mutate=None, allocation_types=()):
         roles = planning_work.WorkRoles(profile_context('2027Q1', profile_bundle(mutate)))
         return board_snapshot(
-            query=eng_board_routes.BoardQuery('department-a', scope, None, 'todo', False),
+            query=eng_board_routes.BoardQuery('department-a', scope, 42 if scope == 'sprint' else None, 'todo', False),
             components=components, teams=teams, projects=(('PLAN', 'other'),),
+            group={'id': 'department-a', 'allocationTypes': list(allocation_types)},
             issue_type_ids=('10002',), epic_link_field_id=None,
             work_request=SimpleNamespace(roles=roles, context=roles.context),
             parent_clause=roles.parent_clause())
@@ -542,7 +593,7 @@ class ComponentBoardStreamTests(unittest.TestCase):
                 rows = [row for row in initiatives.values()
                         if allocation_classification.allocation_value(row['fields'].get('customfield_40001')) in wanted]
             elif 'issuetype = 10001' in jql:
-                rows = [initiatives[key] for key in keys if key in initiatives]
+                rows = [initiatives[key] for key in keys if key in initiatives] if keys else list(initiatives.values())
             elif 'issuetype in ("10002")' in jql and 'cf[30101]' in jql:
                 rows = [row for row in self.LEAVES.values() if row['fields']['customfield_30101']]
             elif 'issuetype in ("10002")' in jql and 'parent in' in jql:
@@ -567,6 +618,23 @@ class ComponentBoardStreamTests(unittest.TestCase):
     def points(frames):
         return sum(child['storyPoints'] or 0 for frame in frames if frame['type'] == 'column'
                    for child in frame['children'])
+
+    def test_sprint_membership_uses_teams_not_allocation_or_legacy_components(self):
+        frames, calls = self.stream(self.snapshot(('Platform',), teams=('team-a',), scope='sprint'))
+        self.assertEqual(frames[-1].get('outcome'), 'success', frames)
+        self.assertFalse(any('cf[40001]' in row['jql'] or 'component in' in row['jql'] for row in calls))
+        child_queries = [row['jql'] for row in calls if 'issuetype in ("10002")' in row['jql']]
+        self.assertTrue(child_queries)
+        self.assertTrue(all('cf[10101] = 42' in jql and 'cf[30101] in ("team-a")' in jql
+                            for jql in child_queries), child_queries)
+
+    def test_empty_map_all_work_admits_only_team_leaves_without_allocation_field(self):
+        def missing(bundle):
+            bundle['configurations'][1]['fields']['allocation'] = {'fieldId': '', 'fieldName': ''}
+        frames, calls = self.stream(self.snapshot((), teams=('team-a',), scope='all_work', mutate=missing))
+        self.assertEqual('success', frames[-1].get('outcome'), frames)
+        self.assertEqual(['PLAN-E3'], self.children(frames))
+        self.assertFalse(any('cf[40001]' in row['jql'] for row in calls))
 
     def test_allocation_scope_admits_all_eligible_children_without_any_component_match(self):
         frames, calls = self.stream(self.snapshot(('Platform',)))
@@ -651,7 +719,7 @@ class ComponentBoardStreamTests(unittest.TestCase):
     def test_allocation_only_on_initiative_drives_stream_classes(self):
         def mapped(bundle):
             bundle['configurations'][1]['allocationTypes'] = [{'value': 'Platform', 'type': 'tech'}]
-        frames, calls = self.stream(self.snapshot(('Platform',), mutate=mapped))
+        frames, calls = self.stream(self.snapshot(('Platform',), mutate=mapped, allocation_types=[{'value': 'Platform', 'type': 'tech'}]))
         self.assertEqual('success', frames[-1].get('outcome'), frames)
         self.assertEqual({'tech'}, {child['projectClassification'] for frame in frames if frame['type'] == 'column'
                                    for child in frame['children']})
@@ -668,6 +736,18 @@ class ComponentBoardStreamTests(unittest.TestCase):
                 self.assertEqual('error', frames[-1]['type'])
                 self.assertEqual('scope_too_large', frames[-1]['code'])
                 self.assertFalse(any(f['type'] == 'index' and f.get('membership') == 'authoritative' for f in frames))
+
+    def test_same_allocation_membership_uses_each_department_class(self):
+        for classification in ('product', 'tech'):
+            frames, _calls = self.stream(self.snapshot(('Platform',), allocation_types=[
+                {'value': 'Platform', 'type': classification}]))
+            self.assertEqual(frames[0]['scope'], 'allocation')
+            self.assertEqual(frames[-1].get('outcome'), 'success', frames)
+            cards = [row for frame in frames if frame['type'] == 'column' for row in frame['epics']]
+            self.assertEqual([row['projectClassification'] for row in cards], [classification])
+            children = [row for frame in frames if frame['type'] == 'column' for row in frame['children']]
+            self.assertTrue(children)
+            self.assertEqual({row['projectClassification'] for row in children}, {classification})
 
     def test_cohort_signature_follows_leaf_membership(self):
         a, ab = eng_board.LeafCohort(), eng_board.LeafCohort()
@@ -709,6 +789,31 @@ class BoardSelectorTests(unittest.TestCase):
             result = self.client.get('/api/eng/board', query_string={
                 'departmentId': 'd', 'scope': 'component', 'quarter': '2027Q1'})
         self.assertEqual((result.status_code, result.get_json()['error']), (409, 'configuration_required'))
+
+    def test_wrong_era_and_missing_allocation_fail_before_catalog_jira(self):
+        from tests.oauth_test_helpers import install_oauth_session
+        install_oauth_session(self.client)
+        server = SimpleNamespace(current_jira_get=Mock(side_effect=AssertionError('Jira catalog')))
+        cases = [('component', False, [{'value': 'Platform', 'type': 'tech'}], 'customfield_40001',
+                  'board_scope_model_mismatch', 400),
+                 ('allocation', True, [], '', 'board_scope_model_mismatch', 400),
+                 ('allocation', False, [], 'customfield_40001', 'board_allocations_required', 409),
+                 ('allocation', False, [{'value': 'Platform', 'type': 'tech'}], '',
+                  'board_allocation_field_required', 409)]
+        for scope, legacy, mapping, field, code, status in cases:
+            def capture(_server, query, transport, _secret):
+                group = {'id': 'd', 'allocationTypes': mapping, 'missingInfoComponents': ['Unrelated Legacy']}
+                return eng_board_routes._capture_shape(server, query, transport, {}, group, group,
+                    context=None, roles=SimpleNamespace(is_legacy=legacy, allocation_field_id=field))
+            with self.subTest(scope=scope, code=code), \
+                 patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'), \
+                 patch.object(eng_board_routes, 'database_storage_enabled', return_value=True), \
+                 patch.object(eng_board_routes, '_capture_snapshot', side_effect=capture):
+                response = self.client.get('/api/eng/board', query_string={
+                    'departmentId': 'd', 'scope': scope, 'quarter': '2027Q1'})
+            self.assertEqual((response.status_code, response.get_json()), (status, {
+                'error': code, 'message': 'The ENG Board request could not continue safely.'}))
+        server.current_jira_get.assert_not_called()
 
     def test_selector_keys_are_accepted_by_the_query_parser(self):
         from werkzeug.datastructures import MultiDict

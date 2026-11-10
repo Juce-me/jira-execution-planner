@@ -15,7 +15,7 @@ import {
 
 const MODES = new Set(SHARE_VIEW_MODES);
 const ALERT_ANCHORS = new Set(SHARE_VIEW_ALERT_ANCHORS);
-const BOARD_SCOPES = new Set(['component', 'all_work']);
+const BOARD_SCOPES = new Set(['component', 'allocation', 'all_work']);
 // Statistics views that load tasks and so honor Teams; the other three read the stats source only.
 const TEAM_STATS_VIEWS = new Set(['teams', 'priority', 'burnout', 'cohort']);
 const SPRINT_RANGE_STATS_VIEWS = new Set(['excludedCapacity', 'monoCrossShare', 'projectTrack']);

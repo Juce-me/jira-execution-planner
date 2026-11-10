@@ -244,10 +244,8 @@ test('settings modal shell and tab bodies are extracted while dashboard keeps se
     );
     // The quarterly Project config props are optional: the flat Admin container never passes them
     // (omitted means the unchanged default markup, pinned by test_jira_field_settings_default_markup.js)
-    // and only WorkConfigurationsEditor supplies them (the Allocation ones for DELIVERY only).
-    const OPTIONAL_PROJECT_CONFIG_PROPS = ['hierarchyMappings', 'extraFieldMappings', 'classificationMode', 'mappingPreviewLabels', 'mappingFieldHelpers', 'sourceFieldHelpers',
-        'allocationTypesDraft', 'allocationFieldReady', 'allocationSearchQuery', 'allocationSearchOpen', 'allocationSearchLoading', 'allocationOptionsIncomplete',
-        'allocationSearchResults', 'setAllocationSearchQuery', 'setAllocationSearchOpen', 'handleAllocationSearchKeyDown', 'addAllocationType', 'removeAllocationType'];
+    // and only WorkConfigurationsEditor supplies them. Department Allocation values have their own editor.
+    const OPTIONAL_PROJECT_CONFIG_PROPS = ['hierarchyMappings', 'extraFieldMappings', 'classificationMode', 'mappingPreviewLabels', 'mappingFieldHelpers', 'sourceFieldHelpers'];
     assert.deepStrictEqual(
         extractShorthandSpreadProps(jiraFieldSettingsCallSource),
         extractDestructuredProps(jiraFieldSettingsSource).filter((name) => !OPTIONAL_PROJECT_CONFIG_PROPS.includes(name)),

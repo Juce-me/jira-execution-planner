@@ -926,7 +926,7 @@ test('cross-sprint child frames require authoritative membership while Sprint ke
         ['column', { columnId: 'todo', epics: [epic('E-1')], children: [], authoritative: true }],
         ['column_error', { columnId: 'todo', code: 'jira_unavailable', retryable: true }],
     ];
-    for (const scopeType of ['all_work', 'component']) {
+    for (const scopeType of ['all_work', 'component', 'allocation']) {
         for (const [type, fields] of childFrames) {
             await t.test(`${scopeType} rejects ${type} after only a candidate index`, () => {
                 let state = mod.createEngBoardDataState();

@@ -620,3 +620,13 @@ test('dashboard call sites: state layer before the first Settings section hook, 
     assert.ok(dashboardSource.includes('applySharedConfigBootstrap(config, shouldPreserveSettingsDraft, shouldPreserveEpmDraft);'));
     assert.ok(dashboardSource.includes('const loadConfig = async ({ preserveEpmDraft = false, replaceWorkspaceDrafts = false } = {}) => {'));
 });
+
+test('mapping-only Department saves invalidate each changed group snapshot without retiring Sprint catalogs', async () => {
+    const groupsConfig = { groups: [{ id: 'g1', name: 'G1', teamIds: ['t1'], allocationTypes: [] }, { id: 'g2', name: 'G2', teamIds: ['t1'], allocationTypes: [] }], source: 'workspace_db' };
+    const groupDraft = { groups: groupsConfig.groups.map(group => ({ ...group, allocationTypes: [{ value: 'Growth', type: group.id === 'g1' ? 'tech' : 'product' }] })), defaultGroupId: 'g1', configRevision: 11 };
+    const { hook, log } = await mount({ groupDraft, overrides: { groupsConfig, canEditSharedConfiguration: false, groupManageTab: 'teams' } });
+    assert.equal((await hook.saveAllSettings({})).ok, true);
+    assert.deepEqual(log.filter(entry => entry[0] === 'groupStateRef.delete').map(entry => entry[1]), ['g1', 'g2']);
+    assert.equal(log.some(entry => entry[0] === 'sprintCatalog.invalidate'), false);
+    assert.equal(log.some(entry => entry[0] === 'invalidateTeamMembership'), false);
+});

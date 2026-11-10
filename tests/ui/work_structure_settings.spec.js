@@ -88,9 +88,11 @@ function promotedBundle({ delivery = {}, legacy = {}, promotionRevision = 6 } = 
 async function mockApp(page, {
     featureEnabled = true, promoted = false, revision = 3, bundle = virtualBundle(), typesDelay = 0, typesStatus = 200,
     types = TYPES, failPriorityOnce = false, summaries = [], analyticsEnabled = false,
-    allocationOptions = { options: [], source: null, complete: false }, sprintValues = null,
+    allocationOptions = { options: [], source: null, complete: false }, sprintValues = null, departmentGroups = null, canEditSettings = true,
 } = {}) {
     const state = { summaries: clone(summaries), afterWorkPost: null, promoted, revision, bundle: clone(bundle), calls: [], workPosts: [], priorityPosts: 0, conflictOnce: null, rejectRetired: false, typesStatus, typesRequests: 0 };
+    state.groups = { version: 2, groups: departmentGroups || [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'], allocationTypes: [] }], defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
+        preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: ['platform'], activeGroupId: 'platform', effectiveVisibleGroupIds: ['platform'] } };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
     await page.addInitScript(() => {
@@ -127,7 +129,7 @@ async function mockApp(page, {
             }
             return json({
                 jiraUrl: 'https://jira.example', authMode: 'atlassian_oauth', projectsConfigured: true, settingsAdminOnly: false,
-                userCanEditSettings: true, userCanEditEpmConfig: true, epm: shared.epm,
+                userCanEditSettings: canEditSettings, userCanEditEpmConfig: true, epm: shared.epm,
                 adminUserManagementAvailable: true, userIsToolAdmin: true,
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', view: { epm: shared.epm } },
                 sharedConfig: shared, sharedConfigRevision: state.revision,
@@ -136,7 +138,7 @@ async function mockApp(page, {
             });
         }
         if (p === '/api/work-structure/config' && method === 'GET') {
-            return json({ workConfigurations: state.bundle, configRevision: state.revision, promoted: state.promoted, userCanEditSettings: true, featureEnabled });
+            return json({ workConfigurations: state.bundle, configRevision: state.revision, promoted: state.promoted, userCanEditSettings: canEditSettings, featureEnabled });
         }
         if (p === '/api/work-structure/config' && method === 'POST') {
             state.workPosts.push(body);
@@ -189,15 +191,15 @@ async function mockApp(page, {
             return json({ weights: body.weights, source: 'config', configRevision: state.revision + 1 });
         }
         if (p === '/api/stats/priority-weights-config') return json({ weights: [], source: 'test' });
-        if (p === '/api/groups-config' && method === 'GET') {
-            return json({
-                version: 1, groups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'] }], defaultGroupId: 'platform', configRevision: 2, source: 'workspace_db',
-                preferences: { customized: true, preferenceExists: true, onboardingRequired: false, onboardingDone: true, completedOnboardingModules: ['catch-up', 'configuration', 'planning', 'board', 'statistics'], visibleGroupIds: ['platform'], activeGroupId: 'platform', effectiveVisibleGroupIds: ['platform'] },
-            });
-        }
+        if (p === '/api/groups-config' && method === 'GET') return json(state.groups);
         if (p === '/api/groups-config' && method === 'POST') {
             state.groupPosts = (state.groupPosts || 0) + 1;
-            return json({ ...body, configRevision: 3, source: 'workspace_db' });
+            if (state.groupConflictOnce) {
+                state.groupConflictOnce = false;
+                return json({ error: 'group_config_conflict', message: 'Departments changed.', current: { ...state.groups, configRevision: 3 } }, 409);
+            }
+            state.groups = { ...state.groups, ...body, configRevision: state.groups.configRevision + 1, source: 'workspace_db' };
+            return json(state.groups);
         }
         if (p === '/api/groups-preferences') return json({ preferences: {} });
         if (p === '/api/sprints') return json({ sprints: [{ id: 42, name: '2026Q2 Sprint 42', state: 'active' }] });
@@ -699,8 +701,8 @@ for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 
     });
 }
 
-// DELIVERY classifies Product/Tech by Allocation (plan Task A5): the Scope tab maps Allocation values with the
-// Legacy project picker's controls. Synthetic values only.
+// Departments own DELIVERY Allocation values and classification, using the existing Project picker controls.
+// Project config retains its saved field mapping and dormant historical value map. Synthetic values only.
 const ALLOCATION_OPTIONS = { options: [{ value: 'Growth' }, { value: 'Platform' }], source: 'createmeta', complete: true };
 const allocationBundle = (allocationTypes = []) => promotedBundle({ delivery: {
     fields: { sprint: field('Sprint'), storyPoints: field('Story Points'), parentName: blank(), team: field('Team'), projectTrack: blank(), deliveryOwner: blank(), allocation: field('RnD_allocation_category') },
@@ -754,7 +756,7 @@ test('DELIVERY Field mapping labels the Allocation field "Allocation"', async ({
     await expect(dialog.locator('.team-selector-label', { hasText: 'RnD_allocation_category' })).toHaveCount(0);
 });
 
-test('DELIVERY Scope maps Allocation values to Product and Tech with the project picker controls; Save posts allocationTypes only', async ({ page }) => {
+test('Departments map Allocation with the existing picker; shared Save preserves Project config history', async ({ page }) => {
     await page.setViewportSize({ width: 1180, height: 760 });
     const bundle = allocationBundle();
     const state = await mockApp(page, { promoted: true, revision: 6, bundle, allocationOptions: ALLOCATION_OPTIONS });
@@ -762,11 +764,16 @@ test('DELIVERY Scope maps Allocation values to Product and Tech with the project
     await projectTab(dialog);
     await quiet(page);
     await selectConfiguration(dialog, 'delivery');
+    await expect(allocationPane(dialog)).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
     const pane = allocationPane(dialog);
-    await expect(pane.locator('.team-selector-label').first()).toHaveText('Allocation');
+    await expect(pane.locator('.team-selector-label').first()).toHaveText('DELIVERY Allocation');
+    await expect(dialog.getByText('Legacy Components for Missing Information and Lead Times')).toBeVisible();
+    await dialog.screenshot({ path: path.join(shotDir, 'department-allocation-before.png'), animations: 'disabled' });
     await expect(allocationColumn(dialog, 'Product').locator('.team-selector-empty')).toHaveCount(1);
     await expect(allocationColumn(dialog, 'Tech').locator('.team-selector-empty')).toHaveCount(1);
 
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
     const input = pane.locator('.team-search-input');
     await input.fill('Gro');
     const growth = pane.locator('.team-search-results .team-search-result-item', { hasText: 'Growth' });
@@ -774,18 +781,28 @@ test('DELIVERY Scope maps Allocation values to Product and Tech with the project
     await expect(pane.locator('.team-search-results .team-search-result-item', { hasText: 'Platform' })).toHaveCount(0);
     const request = state.calls.filter(call => call.pathname === '/api/work-structure/allocation-options').pop();
     const params = new URLSearchParams(request.search);
-    expect([params.get('fieldId'), params.get('projectKey'), params.get('issueTypeId'), params.get('query')]).toEqual(['customfield_19907', 'PLAN', '19002', 'Gro']);
+    expect([params.get('fieldId'), params.get('projectKey'), params.get('issueTypeId'), params.get('query')]).toEqual(['customfield_19907', 'PLAN', '19003', 'Gro']);
     await expect(growth.locator('button.project-type-btn.product')).toHaveText('Product');
+    for (const control of [input, growth.locator('button.project-type-btn.product'), growth.locator('button.project-type-btn.tech')]) {
+        const before = await control.boundingBox();
+        await control.hover();
+        const after = await control.boundingBox();
+        expect(after.width).toBeCloseTo(before.width, 1);
+        expect(after.height).toBeCloseTo(before.height, 1);
+        expect(await control.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
+    }
     await growth.locator('button.project-type-btn.tech').click();
-    await expect(input).toHaveValue('');
+    await expect(input).toHaveCount(0);
     const techChip = allocationColumn(dialog, 'Tech').locator('.selected-team-chip.tech-chip', { hasText: 'Growth' });
     await expect(techChip).toHaveCount(1);
 
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
     await input.fill('Plat');
     await pane.locator('.team-search-result-item', { hasText: 'Platform' }).locator('button.project-type-btn.product').click();
     const productChip = allocationColumn(dialog, 'Product').locator('.selected-team-chip.product-chip', { hasText: 'Platform' });
     await expect(productChip).toHaveCount(1);
     // Already-mapped values are not offered again.
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
     await input.fill('Gro');
     await expect(pane.locator('.team-search-results .team-search-result-item', { hasText: 'Growth' })).toHaveCount(0);
     await input.fill('');
@@ -796,25 +813,26 @@ test('DELIVERY Scope maps Allocation values to Product and Tech with the project
         await expect(chip.locator('button.remove-btn')).toHaveCount(1);
     }
     const classes = await dialog.locator('[data-allocation-types], [data-allocation-type]').evaluateAll(nodes => [...new Set(nodes.flatMap(node => [node, ...node.querySelectorAll('*')]).flatMap(node => [...node.classList]))].sort());
-    expect(classes.filter(name => !['group-field-helper', 'group-projects-subsection', 'remove-btn', 'selected-team-chip', 'selected-teams-list', 'team-name', 'team-search-input', 'team-search-wrapper', 'team-selector-empty', 'team-selector-label', 'product-chip', 'tech-chip'].includes(name))).toEqual([]);
+    expect(classes.filter(name => !['secondary', 'compact', 'group-field-helper', 'group-projects-subsection', 'remove-btn', 'selected-team-chip', 'selected-teams-list', 'team-name', 'team-search-input', 'team-search-wrapper', 'team-selector-empty', 'team-selector-label', 'product-chip', 'tech-chip'].includes(name))).toEqual([]);
     await page.mouse.move(0, 0);
     await input.blur();
+    await expect(pane.getByRole('button', { name: 'Add Allocation value' })).toBeVisible();
     const shots = path.join(__dirname, '..', '..', 'tmp', 'screenshots');
     fs.mkdirSync(shots, { recursive: true });
-    await dialog.screenshot({ path: path.join(shots, 'delivery-scope-allocation-after.png'), animations: 'disabled' });
-    await dialog.locator('.work-config-panel').evaluate(node => { node.scrollTop = node.scrollHeight; });
-    await dialog.screenshot({ path: path.join(shots, 'delivery-scope-allocation-after-scrolled.png'), animations: 'disabled' });
+    await dialog.screenshot({ path: path.join(shots, 'department-allocation-after.png'), animations: 'disabled' });
+    await pane.scrollIntoViewIfNeeded();
+    await dialog.screenshot({ path: path.join(shots, 'department-allocation-after-scrolled.png'), animations: 'disabled' });
 
     await productChip.locator('button.remove-btn').click();
     await expect(productChip).toHaveCount(0);
     await saveButton(dialog).click();
-    await expect.poll(() => state.workPosts.length).toBe(1);
-    const posted = state.workPosts[0].workConfigurations.configurations;
-    expect(posted[1].allocationTypes).toEqual([{ value: 'Growth', type: 'tech' }]);
-    const { allocationTypes: _drop, ...restPosted } = posted[1];
-    const { allocationTypes: _base, revision: _rev, ...restBase } = clone(bundle.configurations[1]);
-    expect({ ...restPosted, revision: undefined }).toEqual({ ...restBase, revision: undefined });
-    expect(posted[0]).toEqual(clone(bundle.configurations[0]));
+    await expect.poll(() => state.groupPosts).toBe(1);
+    expect(state.groups.groups[0].allocationTypes).toEqual([{ value: 'Growth', type: 'tech' }]);
+    expect(state.workPosts).toEqual([]);
+    expect(state.bundle).toEqual(bundle);
+    const reopened = await openSettings(page);
+    await reopened.getByRole('button', { name: 'Departments', exact: true }).click();
+    await expect(allocationColumn(reopened, 'Tech').locator('.selected-team-chip', { hasText: 'Growth' })).toHaveCount(1);
 });
 
 test('Legacy Scope shows no Allocation picker', async ({ page }) => {
@@ -828,12 +846,12 @@ test('Legacy Scope shows no Allocation picker', async ({ page }) => {
 });
 
 test('an incomplete Allocation option list says typed values are allowed and offers the typed value', async ({ page }) => {
-    await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle([{ value: 'Growth', type: 'product' }]), allocationOptions: { options: [{ value: 'Growth' }], source: 'autocomplete', complete: false } });
+    await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle([{ value: 'Growth', type: 'product' }]), allocationOptions: { options: [{ value: 'Growth' }], source: 'autocomplete', complete: false }, departmentGroups: [{ id: 'platform', name: 'Platform', teamIds: ['team-platform'], allocationTypes: [{ value: 'Growth', type: 'product' }] }] });
     const dialog = await openSettings(page);
-    await projectTab(dialog);
-    await selectConfiguration(dialog, 'delivery');
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
     const pane = allocationPane(dialog);
     await expect(allocationColumn(dialog, 'Product').locator('.selected-team-chip.product-chip', { hasText: 'Growth' })).toHaveCount(1);
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
     await pane.locator('.team-search-input').fill('Research');
     await expect(pane.locator('.group-field-helper', { hasText: 'type a value' })).toHaveCount(1);
     await pane.locator('.team-search-result-item', { hasText: 'Research' }).locator('button.project-type-btn.tech').click();
@@ -1254,4 +1272,62 @@ test('an unrelated Departments Save carries pending type names without Board sid
         .map(entry => entry.section));
     expect(sections).toContain('departments');
     expect(sections).not.toContain('admin');
+});
+
+test('non-admin Department Allocation drafts are independent and survive conflict until Discard mine', async ({ page }) => {
+    const departmentGroups = [
+        { id: 'platform', name: 'Platform', teamIds: ['team-platform'], allocationTypes: [{ value: 'Growth', type: 'product' }] },
+        { id: 'quality', name: 'Quality', teamIds: ['team-platform'], allocationTypes: [{ value: 'Growth', type: 'tech' }] },
+    ];
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle([{ value: 'Dormant', type: 'product' }]), allocationOptions: ALLOCATION_OPTIONS, departmentGroups, canEditSettings: false });
+    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
+    await page.getByRole('button', { name: 'Manage team groups' }).click();
+    const dialog = page.getByRole('dialog').first();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    await quiet(page);
+    await expect(allocationColumn(dialog, 'Product').getByRole('button', { name: 'Remove product value Growth' })).toBeVisible();
+    await expect(dialog.getByLabel('Search Allocation values')).toHaveCount(0);
+    await dialog.getByRole('button', { name: 'Quality', exact: true }).click();
+    await expect(allocationColumn(dialog, 'Tech').getByRole('button', { name: 'Remove tech value Growth' })).toBeVisible();
+    const pane = allocationPane(dialog);
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
+    await pane.getByLabel('Search Allocation values').fill('Plat');
+    await pane.locator('.team-search-result-item', { hasText: 'Platform' }).getByRole('button', { name: 'Tech', exact: true }).click();
+    state.groupConflictOnce = true;
+    await saveButton(dialog).click();
+    await expect(dialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' })).toBeVisible();
+    await expect(allocationColumn(dialog, 'Tech').getByRole('button', { name: 'Remove tech value Platform' })).toBeVisible();
+    expect(state.groups.groups).toEqual(departmentGroups);
+    await dialog.locator('.group-modal-validation').getByRole('button', { name: 'Discard mine' }).click();
+    await expect(allocationColumn(dialog, 'Tech').getByRole('button', { name: 'Remove tech value Platform' })).toHaveCount(0);
+    await expect(allocationColumn(dialog, 'Tech').getByRole('button', { name: 'Remove tech value Growth' })).toBeVisible();
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
+    await pane.getByLabel('Search Allocation values').fill('Plat');
+    await pane.locator('.team-search-result-item', { hasText: 'Platform' }).getByRole('button', { name: 'Tech', exact: true }).click();
+    await saveButton(dialog).click();
+    await expect(dialog).toHaveCount(0);
+    expect(state.groups.groups[0].allocationTypes).toEqual(departmentGroups[0].allocationTypes);
+    expect(state.groups.groups[1].allocationTypes).toEqual([{ value: 'Growth', type: 'tech' }, { value: 'Platform', type: 'tech' }]);
+    expect(state.workPosts).toEqual([]);
+});
+
+test('Department Allocation search uses saved Initiative metadata while Project field edits remain unsaved', async ({ page }) => {
+    const state = await mockApp(page, { promoted: true, revision: 6, bundle: allocationBundle(), allocationOptions: ALLOCATION_OPTIONS });
+    const dialog = await openSettings(page);
+    await projectTab(dialog);
+    await selectConfiguration(dialog, 'delivery');
+    await nested(dialog, 'Field mapping').click();
+    const mapping = dialog.locator('[data-mapping-key="allocationField"]');
+    await mapping.getByRole('button', { name: /Remove/ }).click();
+    await mapping.locator('.team-search-input').fill('Project Track');
+    await mapping.locator('.team-search-result-item', { hasText: 'Project Track' }).click();
+    await dialog.getByRole('button', { name: 'Departments', exact: true }).click();
+    const pane = allocationPane(dialog);
+    await pane.getByRole('button', { name: 'Add Allocation value' }).click();
+    await pane.getByLabel('Search Allocation values').fill('Gro');
+    await expect(pane.locator('.team-search-result-item', { hasText: 'Growth' })).toBeVisible();
+    const request = state.calls.filter(call => call.pathname === '/api/work-structure/allocation-options').pop();
+    const params = new URLSearchParams(request.search);
+    expect([params.get('fieldId'), params.get('projectKey'), params.get('issueTypeId')]).toEqual(['customfield_19907', 'PLAN', '19003']);
+    expect(state.workPosts).toEqual([]);
 });

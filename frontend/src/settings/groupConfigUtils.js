@@ -163,6 +163,36 @@ const normalizeEpicKeys = (values) => {
     return normalized;
 };
 
+// Allocation values are case-sensitive. Missing lists deliberately start empty; no global seed.
+export function validateAllocationTypes(raw) {
+    if (raw === undefined) return { allocationTypes: [], error: null };
+    if (!Array.isArray(raw) || raw.length > 200) return { allocationTypes: [], error: 'Allocation must contain at most 200 value/type entries.' };
+    const allocationTypes = [];
+    const seen = new Set();
+    for (const entry of raw) {
+        if (!entry || typeof entry !== 'object' || Array.isArray(entry)
+            || Object.keys(entry).length !== 2 || typeof entry.value !== 'string'
+            || !entry.value.trim() || entry.value.trim().length > 255
+            || !['product', 'tech'].includes(entry.type)) {
+            return { allocationTypes: [], error: 'Allocation entries require only a nonempty value and product or tech type.' };
+        }
+        const value = entry.value.trim();
+        if (!seen.has(value)) allocationTypes.push({ value, type: entry.type });
+        seen.add(value);
+    }
+    return { allocationTypes, error: null };
+}
+
+export const groupHasScope = group => Boolean(
+    (group?.teamIds || []).some(value => String(value || '').trim())
+    || (group?.missingInfoComponents || []).some(value => String(value || '').trim())
+    || (group?.allocationTypes || []).some(entry => String(entry?.value || '').trim())
+);
+
+export const groupClassificationSignature = group => JSON.stringify([
+    group?.teamIds || [], group?.allocationTypes || [],
+]);
+
 export function normalizeGroupsConfig(config) {
     const rawGroups = Array.isArray(config?.groups) ? config.groups : [];
     const groups = rawGroups
@@ -175,6 +205,7 @@ export function normalizeGroupsConfig(config) {
             missingInfoComponents: Array.isArray(group?.missingInfoComponents)
                 ? group.missingInfoComponents.map(c => String(c || '').trim()).filter(Boolean)
                 : (group?.missingInfoComponent ? [String(group.missingInfoComponent).trim()] : []),
+            allocationTypes: validateAllocationTypes(group?.allocationTypes).allocationTypes,
             excludedCapacityEpics: normalizeEpicKeys(group?.excludedCapacityEpics),
             adHocCapacityEpics: normalizeEpicKeys(group?.adHocCapacityEpics),
             teamLabels: Object.fromEntries(

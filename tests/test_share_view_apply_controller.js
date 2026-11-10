@@ -12,7 +12,7 @@ const THIS_QUARTER = `${NOW.getFullYear()}Q${Math.floor(NOW.getMonth() / 3) + 1}
 // DOM reveal is a double. One bundle serves every rig; each rig evaluates it afresh, so each rig owns its store.
 const BUNDLE = esbuild.buildSync({
     stdin: {
-        contents: "export * from './applyController.js'; export * as store from './store.js'; export { encodeShareView } from './codec.js';",
+        contents: "export * from './applyController.js'; export * as store from './store.js'; export { encodeShareView } from './codec.js'; export { resolveEngSprintSelectorState } from '../eng/engSprintSelectorState.js';",
         resolveDir: SHARE_VIEW, sourcefile: 'apply-controller-test-entry.js',
     },
     bundle: true, write: false, format: 'cjs', platform: 'browser', external: ['./focusReveal.js'],
@@ -109,7 +109,7 @@ function createRig({ link, search, options = {} } = {}) {
     const flush = (analyticsReady = true) => controller.flushTrack(payload => tracked.push(payload), analyticsReady);
     const take = () => log.splice(0);
     return {
-        o, log, take, controller, tick, flush, tracked, revealLog, readFacetOptionIds,
+        o, log, take, controller, tick, flush, tracked, revealLog, readFacetOptionIds, resolveEngSprintSelectorState: loaded.exports.resolveEngSprintSelectorState,
         store: { log: storeLog, module: store, snapshot: () => store.getShareViewSnapshot(),
             replaceLink: nextLink => store.initShareViewFromLocation({ location: { search: `?${encodeShareView(nextLink).query}`, pathname: '/', hash: '' }, history: { state: null, replaceState() {} } }) },
     };
@@ -811,5 +811,59 @@ test('a scope guard rejection or exception fails closed without scope writes', a
         rig.tick(); await settlePlanningGuard();
         assert.deepEqual(rig.take(), []);
         assert.equal(rig.store.snapshot().phase, 'cancelled');
+    }
+});
+
+test('wrong-era Board links clear the prior strict scope and report the unavailable mode', () => {
+    for (const [scope, readiness] of [['component', { componentReadiness: 'scope_model_mismatch', allocationReadiness: 'ready', allWorkReadiness: 'ready' }], ['allocation', { componentReadiness: 'ready', allocationReadiness: 'scope_model_mismatch', allWorkReadiness: 'ready' }]]) {
+        const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope }, options: { engSprintSelectorState: readiness } });
+        rig.tick(); rig.take(); rig.tick();
+        assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+        for (let step = 0; step < 4; step++) rig.tick();
+        assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+    }
+});
+
+test('real Board readiness clears a prior All work scope for wrong-era links with incomplete setup', () => {
+    for (const [workModel, scope] of [['rnd_2027', 'component'], ['legacy', 'allocation']]) {
+        for (const setup of [
+            { group: { board: { columns: [] }, teamIds: ['t1'] }, savedProjects: ['PROJECT'] },
+            { group: { board: { columns: [{ id: 'todo' }] }, teamIds: ['t1'] }, savedProjects: [] },
+        ]) {
+            const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope } });
+            let strictScope = 'all_work';
+            rig.o.setBoardStrictScope = value => { strictScope = value; rig.log.push(['setBoardStrictScope', value]); };
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState({
+                boardMode: true, catalogReady: true, bootstrapStatus: 'ready', capability: true,
+                groupsLoading: false, groupsFailed: false, savedBoardId: '', workModel, ...setup,
+            });
+            rig.tick(); rig.take(); rig.tick();
+            assert.equal(strictScope, '', `${workModel}: wrong-era link falls back to Sprint despite incomplete setup`);
+            assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+            for (let step = 0; step < 4; step++) rig.tick();
+            assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+        }
+    }
+});
+
+test('real Board readiness holds wrong-era links until catalog and configuration metadata settle', () => {
+    for (const [workModel, scope] of [['rnd_2027', 'component'], ['legacy', 'allocation']]) {
+        for (const pending of [{ catalogReady: false }, { bootstrapStatus: 'loading' }, { groupsLoading: true }]) {
+            const rig = createRig({ link: { version: 1, mode: 'board', group: 'grp-a', sprint: '41', scope } });
+            const input = {
+                boardMode: true, catalogReady: true, bootstrapStatus: 'ready', capability: true,
+                groupsLoading: false, groupsFailed: false, savedBoardId: '', savedProjects: ['PROJECT'],
+                group: { board: { columns: [] }, teamIds: ['t1'] }, workModel,
+            };
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState({ ...input, ...pending });
+            rig.tick(); rig.take(); rig.tick();
+            assert.deepEqual(rig.take(), [], 'unresolved metadata cannot apply or drop the link scope');
+            assert.equal(rig.store.snapshot().phase, 'running');
+            rig.o.engSprintSelectorState = rig.resolveEngSprintSelectorState(input);
+            rig.tick();
+            assert.deepEqual(rig.take().filter(([name]) => name === 'setBoardStrictScope'), [['setBoardStrictScope', '']]);
+            for (let step = 0; step < 4; step++) rig.tick();
+            assert.deepEqual(rig.store.log.at(-1), ['finish', 'partial', ['mode']]);
+        }
     }
 });

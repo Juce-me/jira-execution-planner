@@ -3889,13 +3889,13 @@
               "status",
               "step"
             ],
-            "rationale": "step is a guide-step enum. FirstRunGroupConfigurationGuide.jsx:canAdvanceFirstRunConfigurationGuide consumes group id/name/teamIds/missingInfoComponents and group-array id/name; data only. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "step is a guide-step enum. FirstRunGroupConfigurationGuide.jsx:canAdvanceFirstRunConfigurationGuide consumes group id/name/teamIds/missingInfoComponents and group-array id/name; data only. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-10: Guide validation now admits a nonempty Department allocationTypes list alongside Teams; mapped rows are {value,type} data passed to the existing setup helper."
           },
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
               "symbol": "FirstRunGroupConfigurationGuide",
-              "line": 289,
+              "line": 296,
               "phase": "render"
             }
           ],
@@ -3960,7 +3960,7 @@
             "spread input groups"
           ],
           "inventory": {
-            "sourceDigest": "9b2bce278795510a963c430c4724307f6ec0c8bd781e4762f03ef442e659029d",
+            "sourceDigest": "e1b4e9533bf0e06dfc325a12364190db74db4c56fb98776ab12a0cdff8f483c1",
             "reviewed": true,
             "memberNames": [
               "error",
@@ -3979,7 +3979,7 @@
               "selectedGroupId",
               "setupChoiceOpen"
             ],
-            "rationale": "Spread groups copies an array of group records, not object dependencies; rendering reads id/name/teamIds/missingInfoComponents."
+            "rationale": "Spread groups copies an array of group records, not object dependencies; rendering reads id/name/teamIds/missingInfoComponents. Re-reviewed 2026-11-10: Department choices read allocationTypes rows to recognize Allocation-only scope; no additional callback or authority is carried by these data rows."
           },
           "callers": [
             {
@@ -4352,16 +4352,8 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
-            "addAllocationType",
             "addIssueType",
             "addProjectSelection",
-            "allocationFieldReady",
-            "allocationOptionsIncomplete",
-            "allocationSearchLoading",
-            "allocationSearchOpen",
-            "allocationSearchQuery",
-            "allocationSearchResults",
-            "allocationTypesDraft",
             "boardIdDraft",
             "boardNameDraft",
             "boardSearchIndex",
@@ -4396,7 +4388,6 @@
             "deliveryOwnerFieldSearchResults",
             "extraFieldMappings",
             "groupManageTab",
-            "handleAllocationSearchKeyDown",
             "handleBoardSearchKeyDown",
             "handleCapacityFieldSearchKeyDown",
             "handleCapacityProjectSearchKeyDown",
@@ -4439,15 +4430,12 @@
             "projectSearchQuery",
             "projectSearchRemoteLoading",
             "projectSearchResults",
-            "removeAllocationType",
             "removeIssueType",
             "removeProjectSelection",
             "resetPriorityWeightsDraft",
             "resolveCapacityProjectName",
             "resolveProjectName",
             "selectedProjectsDraft",
-            "setAllocationSearchOpen",
-            "setAllocationSearchQuery",
             "setBoardIdDraft",
             "setBoardNameDraft",
             "setBoardSearchIndex",
@@ -4524,19 +4512,8 @@
             "updatePriorityWeightDraft"
           ],
           "expandedInputNames": [
-            "addAllocationType",
             "addIssueType",
             "addProjectSelection",
-            "allocationFieldReady",
-            "allocationOptionsIncomplete",
-            "allocationSearchLoading",
-            "allocationSearchOpen",
-            "allocationSearchQuery",
-            "allocationSearchQuery.trim",
-            "allocationSearchResults",
-            "allocationSearchResults.length",
-            "allocationSearchResults.map",
-            "allocationTypesDraft",
             "boardIdDraft",
             "boardNameDraft",
             "boardSearchIndex",
@@ -4582,7 +4559,6 @@
             "extraFieldMappings",
             "extraFieldMappings.map",
             "groupManageTab",
-            "handleAllocationSearchKeyDown",
             "handleBoardSearchKeyDown",
             "handleCapacityFieldSearchKeyDown",
             "handleCapacityProjectSearchKeyDown",
@@ -4615,6 +4591,9 @@
             "mappingFieldHelpers",
             "mappingFieldHelpers.deliveryOwner",
             "mappingFieldHelpers.parentName",
+            "mappingFieldHelpers.share",
+            "mappingFieldHelpers.share.team",
+            "mappingFieldHelpers.share.team.locked",
             "mappingFieldHelpers.storyPoints",
             "mappingFieldHelpers.team",
             "mappingHoverKey",
@@ -4655,17 +4634,15 @@
             "projectSearchResults",
             "projectSearchResults.length",
             "projectSearchResults.map",
-            "removeAllocationType",
             "removeIssueType",
             "removeProjectSelection",
             "resetPriorityWeightsDraft",
             "resolveCapacityProjectName",
             "resolveProjectName",
             "selectedProjectsDraft",
+            "selectedProjectsDraft.filter",
             "selectedProjectsDraft.length",
             "selectedProjectsDraft.map",
-            "setAllocationSearchOpen",
-            "setAllocationSearchQuery",
             "setBoardIdDraft",
             "setBoardNameDraft",
             "setBoardSearchIndex",
@@ -4717,6 +4694,10 @@
             "sourceFieldHelpers",
             "sourceFieldHelpers.board",
             "sourceFieldHelpers.board.map",
+            "sourceFieldHelpers.inheritedBoard",
+            "sourceFieldHelpers.inheritedBoard.boardId",
+            "sourceFieldHelpers.inheritedBoard.fromName",
+            "sourceFieldHelpers.inheritedBoard.name",
             "sourceFieldHelpers.sprint",
             "sprintFieldIdDraft",
             "sprintFieldNameDraft",
@@ -4751,9 +4732,9 @@
             "updatePriorityWeightDraft"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 225,
+          "expandedInputCount": 218,
           "returnCount": 0,
-          "propCount": 170,
+          "propCount": 158,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 225,
           "returnCeiling": 0,
@@ -4771,7 +4752,7 @@
             "forwarded input sourceFieldHelpers"
           ],
           "inventory": {
-            "sourceDigest": "99bdd29339ff3187cc2ddbc2322fe62340a6185825c66c1798612acfbe9c4770",
+            "sourceDigest": "0cfcd76ae01f360e73b2d3e434afdcb4af8691c38fbdd5300be3b7e963afcbc6",
             "reviewed": true,
             "memberNames": [
               "addIssueType",
@@ -4853,6 +4834,9 @@
               "mappingFieldHelpers",
               "mappingFieldHelpers.deliveryOwner",
               "mappingFieldHelpers.parentName",
+              "mappingFieldHelpers.share",
+              "mappingFieldHelpers.share.team",
+              "mappingFieldHelpers.share.team.locked",
               "mappingFieldHelpers.storyPoints",
               "mappingFieldHelpers.team",
               "mappingHoverKey",
@@ -4953,6 +4937,10 @@
               "sourceFieldHelpers",
               "sourceFieldHelpers.board",
               "sourceFieldHelpers.board.map",
+              "sourceFieldHelpers.inheritedBoard",
+              "sourceFieldHelpers.inheritedBoard.boardId",
+              "sourceFieldHelpers.inheritedBoard.fromName",
+              "sourceFieldHelpers.inheritedBoard.name",
               "sourceFieldHelpers.sprint",
               "sprintFieldIdDraft",
               "sprintFieldNameDraft",
@@ -4986,19 +4974,19 @@
               "teamFieldSearchResults.map",
               "updatePriorityWeightDraft"
             ],
-            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here."
+            "rationale": "capacityProjectDraft is a project-key string passed to resolveCapacityProjectName, not an object bag. Optional renderer extension: classificationMode selects combined project presentation only; hierarchyMappings and extraFieldMappings forward closed selected/options/callback rows to MappingPickerRow. mappingPreviewLabels and mappingFieldHelpers contain display text, hierarchy level and optional icon URLs only. No configuration model, settings draft, network call or persistence is owned here; omitted props preserve the production render exactly. sourceFieldHelpers.board is an optional display-only Source Board helper; omitting it retains the existing production text. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-10: Product/Tech Allocation search and value-map callbacks moved to the Department selector; the administrator Allocation field mapping stays. Existing inherited-field/Board helper records are data only."
           },
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 220,
+              "line": 224,
               "phase": "render"
             },
             {
               "path": "frontend/src/settings/WorkConfigurationsEditor.jsx",
               "symbol": "JiraFieldSettings",
-              "line": 235,
+              "line": 255,
               "phase": "render"
             }
           ],
@@ -5350,6 +5338,7 @@
           "inputNames": [],
           "returnNames": [],
           "propNames": [
+            "BACKEND_URL",
             "activeGroupDraft",
             "activeTeamIndex",
             "activeTeamQuery",
@@ -5416,11 +5405,13 @@
             "removeGroupMissingInfoComponent",
             "removeTeamFromGroup",
             "resolveTeamName",
+            "savedWorkConfigurations",
             "selectDepartmentSettingsTab",
             "setActiveGroupDraftId",
             "setComponentSearchOpen",
             "setComponentSearchQuery",
             "setFavoriteGroupDraft",
+            "setGroupDraft",
             "setGroupImportText",
             "setGroupSearchQuery",
             "setShowGroupAdvanced",
@@ -5443,6 +5434,7 @@
             "workModel"
           ],
           "expandedInputNames": [
+            "BACKEND_URL",
             "activeGroupDraft",
             "activeGroupDraft.adHocCapacityEpics",
             "activeGroupDraft.board",
@@ -5472,6 +5464,8 @@
             "addGroupMissingInfoComponent",
             "addTeamToGroup",
             "availableTeams",
+            "availableTeams.filter",
+            "availableTeams.find",
             "availableTeams.length",
             "componentSearchIndex",
             "componentSearchLoading",
@@ -5530,11 +5524,13 @@
             "removeGroupMissingInfoComponent",
             "removeTeamFromGroup",
             "resolveTeamName",
+            "savedWorkConfigurations",
             "selectDepartmentSettingsTab",
             "setActiveGroupDraftId",
             "setComponentSearchOpen",
             "setComponentSearchQuery",
             "setFavoriteGroupDraft",
+            "setGroupDraft",
             "setGroupImportText",
             "setGroupSearchQuery",
             "setShowGroupAdvanced",
@@ -5564,13 +5560,13 @@
             "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 119,
+          "expandedInputCount": 124,
           "returnCount": 0,
-          "propCount": 91,
+          "propCount": 94,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 119,
+          "expandedInputCeiling": 124,
           "returnCeiling": 0,
-          "propCeiling": 91,
+          "propCeiling": 94,
           "unresolved": [
             "forwarded input workModel",
             "bag teamChipLastRef dynamic deep member",
@@ -5582,10 +5578,10 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "85fd4f7c9d6a5b86f312483bd0b4058ff02daa89865548cd906816fa4dc78fe7",
+            "sourceDigest": "c3da6ce8120fb4517c0f0b70770a945c9c34a5a0cafd7de9bd609d5c747c55cb",
             "reviewed": true,
-            "rationale": "Ref maps hold DOM nodes indexed by groupId; open map values are booleans, feedback records contain tone/message. activeTeamResultsLimited is Team record data with id/name; arbitrary group IDs do not multiply dependency count. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
+              "BACKEND_URL",
               "activeGroupDraft",
               "activeGroupDraft.adHocCapacityEpics",
               "activeGroupDraft.board",
@@ -5615,6 +5611,8 @@
               "addGroupMissingInfoComponent",
               "addTeamToGroup",
               "availableTeams",
+              "availableTeams.filter",
+              "availableTeams.find",
               "availableTeams.length",
               "componentSearchIndex",
               "componentSearchLoading",
@@ -5673,11 +5671,13 @@
               "removeGroupMissingInfoComponent",
               "removeTeamFromGroup",
               "resolveTeamName",
+              "savedWorkConfigurations",
               "selectDepartmentSettingsTab",
               "setActiveGroupDraftId",
               "setComponentSearchOpen",
               "setComponentSearchQuery",
               "setFavoriteGroupDraft",
+              "setGroupDraft",
               "setGroupImportText",
               "setGroupSearchQuery",
               "setShowGroupAdvanced",
@@ -5705,13 +5705,14 @@
               "updateGroupDraftName",
               "visibleGroupDraftIds",
               "workModel"
-            ]
+            ],
+            "rationale": "Ref maps hold DOM nodes indexed by groupId; open map values are booleans, feedback records contain tone/message. activeTeamResultsLimited is Team record data with id/name; arbitrary group IDs do not multiply dependency count. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers. Re-reviewed 2026-11-10: BACKEND_URL, savedWorkConfigurations and setGroupDraft are forwarded to AllocationTypeSelector. Existing Team result/ref aliases are unchanged. Both Legacy Components and DELIVERY Allocation editors remain available."
           },
           "callers": [
             {
               "path": "frontend/src/settings/DepartmentsSettingsTab.jsx",
               "symbol": "TeamGroupsSettings",
-              "line": 195,
+              "line": 197,
               "phase": "render"
             }
           ],
@@ -6021,12 +6022,15 @@
         "epicMatchesTeamAliases",
         "flattenTeamLabelAliases",
         "formatGroupBoardSummary",
+        "groupClassificationSignature",
+        "groupHasScope",
         "mergeTeamCatalog",
         "normalizeGroupsConfig",
         "normalizeTeamLabelAliases",
         "parseTeamIdList",
         "removeTeamLabelAlias",
         "resolveInitialGroupId",
+        "validateAllocationTypes",
         "validateImportedTeamLabels",
         "validateTeamLabelAliases"
       ],
@@ -6244,7 +6248,7 @@
             "forwarded input activeGroupId"
           ],
           "inventory": {
-            "sourceDigest": "392296d38292e0a9b8bb614de7d946d581b46fcbb1d2d9016bcf169473bef8e3",
+            "sourceDigest": "6dc8f537fdb6da590002998636d981764f7ea79ca11aaca394c1ad3e60348283",
             "reviewed": true,
             "memberNames": [
               "activeGroupId",
@@ -6263,13 +6267,13 @@
               "trackSettingsAction",
               "useBackendPreferences"
             ],
-            "rationale": "backendUrl and activeGroupId are strings. groupVisibilityUtils.js consumes groupsConfig groups[].id/source/defaultGroupId/preferences.activeGroupId and retains the original group records; no callable dependency members forwarded. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group."
+            "rationale": "backendUrl and activeGroupId are strings. groupVisibilityUtils.js consumes groupsConfig groups[].id/source/defaultGroupId/preferences.activeGroupId and retains the original group records; no callable dependency members forwarded. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group. Re-reviewed 2026-11-10: Department eligibility and reconciliation signatures include allocationTypes data via groupHasScope; private visibility/favorite ownership and callback boundaries stay unchanged."
           },
           "callers": [
             {
               "path": "frontend/src/settings/useTeamGroupSettings.js",
               "symbol": "useGroupVisibilityPreferences",
-              "line": 145,
+              "line": 150,
               "phase": "hook execution"
             }
           ],
@@ -10412,13 +10416,13 @@
               "labelSearchDebounceRef.current",
               "setTeamSearchIndex"
             ],
-            "rationale": "activeTeamResultsLimited is the active group's limited Team result list, read by dynamic position inside the label effects, so its member count is data and the checker cannot enumerate it; the other inputs are the label search state and setters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "activeTeamResultsLimited is the active group's limited Team result list, read by dynamic position inside the label effects, so its member count is data and the checker cannot enumerate it; the other inputs are the label search state and setters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-10: Legacy imports preserve the selected Department allocationTypes when omitted, validate explicit maps before draft mutation, and serialize explicit maps on export. No new input or return was introduced by this relocation."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupLabelEffects",
-              "line": 2323,
+              "line": 2467,
               "phase": "hook execution"
             }
           ],
@@ -10534,13 +10538,13 @@
               "workCatalogScope.configurationRevision",
               "workCatalogScope.quarter"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the component, epic and Team search request wrappers; the remaining inputs are query strings, open flags, per-key request-id refs and state setters, none a dependency bag. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the component, epic and Team search request wrappers; the remaining inputs are query strings, open flags, per-key request-id refs and state setters, none a dependency bag. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-10: Legacy imports preserve the selected Department allocationTypes when omitted, validate explicit maps before draft mutation, and serialize explicit maps on export. No new input or return was introduced by this relocation."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSearchEffects",
-              "line": 2265,
+              "line": 2409,
               "phase": "hook execution"
             }
           ],
@@ -10582,7 +10586,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSelectionEffect",
-              "line": 1720,
+              "line": 1862,
               "phase": "hook execution"
             }
           ],
@@ -10608,7 +10612,8 @@
             "showGroupManage",
             "teamCatalogState",
             "teamMembershipState",
-            "trackSettingsAction"
+            "trackSettingsAction",
+            "workModel"
           ],
           "returnNames": [
             "acceptedGroupsConfigRef",
@@ -10796,22 +10801,24 @@
             "teamMembershipState.snapshot",
             "teamMembershipState.status",
             "teamMembershipState.validated",
-            "trackSettingsAction"
+            "trackSettingsAction",
+            "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 25,
+          "expandedInputCount": 26,
           "returnCount": 158,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 25,
+          "expandedInputCeiling": 26,
           "returnCeiling": 158,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
-            "forwarded input selectedSprintInfo"
+            "forwarded input selectedSprintInfo",
+            "forwarded input workModel"
           ],
           "inventory": {
-            "sourceDigest": "f7c34f6bcb97507f664208a7302c4c4acce63eed89ced83c1d1d21b95b0f23cc",
+            "sourceDigest": "7bb0ffb15d6ea177d2e47a2ed24a8d01fd45b4d0bf8708e7d1c87cc0803ecaa4",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -10838,15 +10845,16 @@
               "teamMembershipState.snapshot",
               "teamMembershipState.status",
               "teamMembershipState.validated",
-              "trackSettingsAction"
+              "trackSettingsAction",
+              "workModel"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to the Team group request wrappers and selectedSprintInfo is the selected Sprint record forwarded to the Team availability helper; neither is a dependency bag. The remaining inputs are state cells, refs, setters and callbacks declared before the call, plus the handler-only getTeamOptions getter. #267 C2 adds groupChangeGuardRef, the Planning review guard ref forwarded to the Settings Saves that move the active group. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-11-10: Legacy imports preserve the selected Department allocationTypes when omitted, validate explicit maps before draft mutation, and serialize explicit maps on export. No new input or return was introduced by this relocation."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useTeamGroupSettings",
-              "line": 1133,
+              "line": 1241,
               "phase": "hook execution"
             }
           ],
@@ -10854,1100 +10862,1104 @@
             {
               "name": "groupsConfig",
               "lines": [
-                1412,
-                1444,
-                1792,
-                2146,
-                2267,
-                2544,
-                2563,
-                6210,
-                8080,
-                8082,
-                8085,
-                10795
+                1383,
+                1416,
+                1787,
+                2153,
+                2282,
+                2567,
+                2589,
+                4446,
+                4865,
+                5777,
+                6038,
+                7459
               ]
             },
             {
               "name": "setGroupsConfig",
               "lines": [
-                1461
+                1433
               ]
             },
             {
               "name": "groupsLoading",
               "lines": [
-                1756,
-                1758,
-                1786,
-                1926,
-                1963,
-                2314,
-                2505,
-                2512,
-                2526,
-                2533,
-                2647,
-                2652,
-                3623,
-                3699,
-                3702,
-                3723,
-                3947,
-                4000,
-                4005,
-                4016,
-                4183,
-                4218,
-                5290,
-                8016,
-                8019,
-                8024,
-                8030,
-                8053,
-                8061,
-                8662,
-                8925
+                1769,
+                1771,
+                1781,
+                1921,
+                1957,
+                2337,
+                2491,
+                2527,
+                2534,
+                2549,
+                2556,
+                2688,
+                2693,
+                3559,
+                3642,
+                3645,
+                3670,
+                3902,
+                3957,
+                3962,
+                3973,
+                4155,
+                4189,
+                4318,
+                4477,
+                4488,
+                4492,
+                5616,
+                5765,
+                5976,
+                6039,
+                6297
               ]
             },
             {
               "name": "setGroupsLoading",
               "lines": [
-                2205
+                2215
               ]
             },
             {
               "name": "groupsError",
               "lines": [
-                2315,
-                10712
+                2338,
+                5616,
+                7374
               ]
             },
             {
               "name": "setGroupsError",
               "lines": [
-                2204
+                2214
               ]
             },
             {
               "name": "boardGroupsReadFailed",
               "lines": [
-                2506,
-                2512,
-                2527,
-                2533
+                2528,
+                2534,
+                2550,
+                2556,
+                5616
               ]
             },
             {
               "name": "setBoardGroupsReadFailed",
               "lines": [
-                2187
+                2197
               ]
             },
             {
               "name": "acceptedGroupsConfigRef",
               "lines": [
-                2109,
-                2526,
-                2527
+                2114,
+                2549,
+                2550
               ]
             },
             {
               "name": "groupsReadGenerationRef",
               "lines": [
-                2148
+                2155
               ]
             },
             {
               "name": "groupsSaveReadFenceRef",
               "lines": [
-                2149
+                2156
               ]
             },
             {
               "name": "groupWarnings",
               "lines": [
-                10711
+                7373
               ]
             },
             {
               "name": "groupConfigSource",
               "lines": [
-                1785
+                1780
               ]
             },
             {
               "name": "groupDraft",
               "lines": [
-                1871,
-                2140,
-                2263,
-                10705
+                1866,
+                2147,
+                2278,
+                7367
               ]
             },
             {
               "name": "setGroupDraft",
               "lines": [
-                1458,
-                1801,
-                2197
+                1430,
+                1796,
+                2207,
+                7322
               ]
             },
             {
               "name": "groupsConfigConflict",
               "lines": [
-                1445,
-                2147,
-                10382
+                1417,
+                2154,
+                6036,
+                7023
               ]
             },
             {
               "name": "setGroupsConfigConflict",
               "lines": [
-                2203,
-                2296
+                2213,
+                2311
               ]
             },
             {
               "name": "groupImportText",
               "lines": [
-                10707
+                7369
               ]
             },
             {
               "name": "setGroupImportText",
               "lines": [
-                1816,
-                2292,
-                10757
+                1811,
+                2307,
+                7420
               ]
             },
             {
               "name": "showGroupImport",
               "lines": [
-                10767
+                7430
               ]
             },
             {
               "name": "setShowGroupImport",
               "lines": [
-                1817,
-                2303,
-                10764
+                1812,
+                2318,
+                7427
               ]
             },
             {
               "name": "showGroupAdvanced",
               "lines": [
-                10766
+                7429
               ]
             },
             {
               "name": "setShowGroupAdvanced",
               "lines": [
-                1818,
-                2301,
-                10763
+                1813,
+                2316,
+                7426
               ]
             },
             {
               "name": "setTeamNameInputs",
               "lines": [
-                1838
+                1833
               ]
             },
             {
               "name": "setTeamSearchQuery",
               "lines": [
-                1820
+                1815
               ]
             },
             {
               "name": "teamSearchOpen",
               "lines": [
-                2385,
-                10775
+                2393,
+                7438
               ]
             },
             {
               "name": "setTeamSearchOpen",
               "lines": [
-                1821
+                1816
               ]
             },
             {
               "name": "setTeamSearchIndex",
               "lines": [
-                1822,
-                2463
+                1817,
+                2472
               ]
             },
             {
               "name": "teamSearchFeedback",
               "lines": [
-                10773
+                7436
               ]
             },
             {
               "name": "setTeamSearchFeedback",
               "lines": [
-                1823
+                1818
               ]
             },
             {
               "name": "teamSearchInputRefs",
               "lines": [
-                10774
+                7437
               ]
             },
             {
               "name": "teamChipLastRef",
               "lines": [
-                10772
+                7435
               ]
             },
             {
               "name": "labelSearchQuery",
               "lines": [
-                1398,
-                10623,
-                10735
+                1369,
+                7282,
+                7397
               ]
             },
             {
               "name": "setLabelSearchQuery",
               "lines": [
-                1406,
-                10649,
-                10762
+                1377,
+                7308,
+                7425
               ]
             },
             {
               "name": "labelSearchOpen",
               "lines": [
-                1397,
-                10622,
-                10734
+                1368,
+                7281,
+                7396
               ]
             },
             {
               "name": "setLabelSearchOpen",
               "lines": [
-                1405,
-                10648,
-                10761
+                1376,
+                7307,
+                7424
               ]
             },
             {
               "name": "labelSearchResults",
               "lines": [
-                1400
+                1371
               ]
             },
             {
               "name": "setLabelSearchResults",
               "lines": [
-                1407
+                1378
               ]
             },
             {
               "name": "labelSearchLoading",
               "lines": [
-                10621,
-                10733
+                7280,
+                7395
               ]
             },
             {
               "name": "setLabelSearchLoading",
               "lines": [
-                1404
+                1375
               ]
             },
             {
               "name": "labelSearchIndex",
               "lines": [
-                1396,
-                10620,
-                10732
+                1367,
+                7279,
+                7394
               ]
             },
             {
               "name": "setLabelSearchIndex",
               "lines": [
-                1403,
-                10647,
-                10760
+                1374,
+                7306,
+                7423
               ]
             },
             {
               "name": "labelAddOpen",
               "lines": [
-                10731
+                7393
               ]
             },
             {
               "name": "setLabelAddOpen",
               "lines": [
-                10759
+                7422
               ]
             },
             {
               "name": "labelAddButtonRefs",
               "lines": [
-                10730
+                7392
               ]
             },
             {
               "name": "labelSearchRequestIdRef",
               "lines": [
-                1399
+                1370
               ]
             },
             {
               "name": "labelSearchDebounceRef",
               "lines": [
-                2462
+                2471
               ]
             },
             {
               "name": "groupSearchQuery",
               "lines": [
-                10709
+                7371
               ]
             },
             {
               "name": "setGroupSearchQuery",
               "lines": [
-                1819,
-                10758
+                1814,
+                7421
               ]
             },
             {
               "name": "activeGroupDraftId",
               "lines": [
-                1868
+                1863
               ]
             },
             {
               "name": "setActiveGroupDraftId",
               "lines": [
-                1827,
-                1872,
-                2183,
-                10753
+                1822,
+                1867,
+                2193,
+                7416
               ]
             },
             {
               "name": "groupDraftBaselineRef",
               "lines": [
-                1442,
-                1802,
-                2141
+                1414,
+                1797,
+                2148
               ]
             },
             {
               "name": "componentSearchQuery",
               "lines": [
-                2406,
-                10685
+                2414,
+                7347
               ]
             },
             {
               "name": "setComponentSearchQuery",
               "lines": [
-                2285,
-                10755
+                2300,
+                7418
               ]
             },
             {
               "name": "setComponentSearchResults",
               "lines": [
-                2418
+                2426
               ]
             },
             {
               "name": "componentSearchOpen",
               "lines": [
-                10684
+                7346
               ]
             },
             {
               "name": "setComponentSearchOpen",
               "lines": [
-                2284,
-                10754
+                2299,
+                7417
               ]
             },
             {
               "name": "componentSearchIndex",
               "lines": [
-                2405,
-                10682
+                2413,
+                7344
               ]
             },
             {
               "name": "setComponentSearchIndex",
               "lines": [
-                2283,
-                2416
+                2298,
+                2424
               ]
             },
             {
               "name": "componentSearchLoading",
               "lines": [
-                10683
+                7345
               ]
             },
             {
               "name": "setComponentSearchLoading",
               "lines": [
-                2417
+                2425
               ]
             },
             {
               "name": "excludedEpicSearchQuery",
               "lines": [
-                2408,
-                10693
+                2416,
+                7355
               ]
             },
             {
               "name": "setExcludedEpicSearchQuery",
               "lines": [
-                2290
+                2305
               ]
             },
             {
               "name": "setExcludedEpicSearchResults",
               "lines": [
-                2421
+                2429
               ]
             },
             {
               "name": "excludedEpicSearchOpen",
               "lines": [
-                10692
+                7354
               ]
             },
             {
               "name": "setExcludedEpicSearchOpen",
               "lines": [
-                2289
+                2304
               ]
             },
             {
               "name": "excludedEpicSearchIndex",
               "lines": [
-                2407,
-                10689
+                2415,
+                7351
               ]
             },
             {
               "name": "setExcludedEpicSearchIndex",
               "lines": [
-                2288,
-                2419
+                2303,
+                2427
               ]
             },
             {
               "name": "excludedEpicSearchLoading",
               "lines": [
-                10691
+                7353
               ]
             },
             {
               "name": "setExcludedEpicSearchLoading",
               "lines": [
-                2420
+                2428
               ]
             },
             {
               "name": "excludedEpicSearchInputRef",
               "lines": [
-                10690
+                7352
               ]
             },
             {
               "name": "excludedEpicChipLastRef",
               "lines": [
-                10688
+                7350
               ]
             },
             {
               "name": "adHocEpicSearchQuery",
               "lines": [
-                2404,
-                10671
+                2412,
+                7333
               ]
             },
             {
               "name": "setAdHocEpicSearchResults",
               "lines": [
-                2415
+                2423
               ]
             },
             {
               "name": "adHocEpicSearchOpen",
               "lines": [
-                10670
+                7332
               ]
             },
             {
               "name": "adHocEpicSearchIndex",
               "lines": [
-                2403,
-                10667
+                2411,
+                7329
               ]
             },
             {
               "name": "setAdHocEpicSearchIndex",
               "lines": [
-                2413
+                2421
               ]
             },
             {
               "name": "adHocEpicSearchLoading",
               "lines": [
-                10669
+                7331
               ]
             },
             {
               "name": "setAdHocEpicSearchLoading",
               "lines": [
-                2414
+                2422
               ]
             },
             {
               "name": "adHocEpicSearchInputRef",
               "lines": [
-                10668
+                7330
               ]
             },
             {
               "name": "adHocEpicChipLastRef",
               "lines": [
-                10666
+                7328
               ]
             },
             {
               "name": "personalGroupPreferencesEnabled",
               "lines": [
-                10738
+                7400
               ]
             },
             {
               "name": "groupPreferences",
               "lines": [
-                1443,
-                1756,
-                1758,
-                1805,
-                1806,
-                2265,
-                2318,
-                2326,
-                3393,
-                3446,
-                3626,
-                3699,
-                3702,
-                3723,
-                3948,
-                4000,
-                4006,
-                4023,
-                4430,
-                4528,
-                4565,
-                4643,
-                4825,
-                4972,
-                8081,
-                8594,
-                8662,
-                10785,
-                10794,
-                10804
+                1415,
+                1769,
+                1771,
+                1800,
+                1801,
+                2280,
+                2341,
+                2350,
+                3336,
+                3395,
+                3562,
+                3642,
+                3645,
+                3670,
+                3903,
+                3957,
+                3963,
+                3980,
+                4289,
+                4299,
+                5616,
+                5778,
+                5906,
+                5976,
+                6039,
+                7449,
+                7458,
+                7468
               ]
             },
             {
               "name": "setGroupPreferences",
               "lines": [
-                1460,
-                2200,
-                2327
+                1432,
+                2210,
+                2351
               ]
             },
             {
               "name": "visibleGroupDraftIds",
               "lines": [
-                10780
+                7443
               ]
             },
             {
               "name": "setVisibleGroupDraftIds",
               "lines": [
-                1812
+                1807
               ]
             },
             {
               "name": "favoriteGroupDraftId",
               "lines": [
-                10695
+                7357
               ]
             },
             {
               "name": "setFavoriteGroupDraftId",
               "lines": [
-                1813
+                1808
               ]
             },
             {
               "name": "setFavoriteGroupDraft",
               "lines": [
-                10756
+                7419
               ]
             },
             {
               "name": "favoriteGroupValidationError",
               "lines": [
-                2133
+                2140
               ]
             },
             {
               "name": "setGroupPreferencesSaving",
               "lines": [
-                2201
+                2211
               ]
             },
             {
               "name": "groupVisibilitySaving",
               "lines": [
-                2349,
-                10710
+                2373,
+                6036,
+                7372
               ]
             },
             {
               "name": "isGroupVisibilityDraftDirty",
               "lines": [
-                2156,
-                10386
+                2163,
+                7027
               ]
             },
             {
               "name": "visibleControlGroups",
               "lines": [
-                1618,
-                1619,
-                1622,
-                2480,
-                2481,
-                2649,
-                2652,
-                3062,
-                3098,
-                5298,
-                7678,
-                8063
+                1633,
+                1634,
+                1637,
+                2489,
+                2490,
+                2690,
+                2693,
+                3010,
+                3041,
+                4326,
+                5538,
+                5617,
+                5772
               ]
             },
             {
               "name": "initializeGroupPreferencesDraft",
               "lines": [
-                1803
+                1798
               ]
             },
             {
               "name": "isGroupVisibleInControls",
               "lines": [
-                10729
+                7391
               ]
             },
             {
               "name": "toggleGroupVisibleInControls",
               "lines": [
-                10777
+                7440
               ]
             },
             {
               "name": "firstRunFavoriteGroupId",
               "lines": [
-                10791
+                7455
               ]
             },
             {
               "name": "selectFirstRunFavoriteGroup",
               "lines": [
-                10798
+                7462
               ]
             },
             {
               "name": "saveFirstRunGroupPreferences",
               "lines": [
-                1452,
-                2172,
-                10797
+                1424,
+                2181,
+                7461
               ]
             },
             {
               "name": "firstRunSaving",
               "lines": [
-                10792
+                7456
               ]
             },
             {
               "name": "firstRunError",
               "lines": [
-                10790
+                7454
               ]
             },
             {
               "name": "persistGroupPreferences",
               "lines": [
-                2165
+                2172
               ]
             },
             {
               "name": "loadGroupsConfig",
               "lines": [
-                1751,
-                8618
+                1764,
+                5929
               ]
             },
             {
               "name": "loadTeamsFromCurrentView",
               "lines": [
-                1838
+                1833
               ]
             },
             {
               "name": "groupDraftSignature",
               "lines": [
-                2142
+                2149
               ]
             },
             {
               "name": "isGroupBoardDraftDirty",
               "lines": [
-                10384
+                7025
               ]
             },
             {
               "name": "closeAllTeamSearchDropdowns",
               "lines": [
-                2374
+                2380
               ]
             },
             {
               "name": "addGroupDraftRow",
               "lines": [
-                10673
+                7335
               ]
             },
             {
               "name": "updateGroupDraftName",
               "lines": [
-                10779
+                7442
               ]
             },
             {
               "name": "duplicateGroupDraft",
               "lines": [
-                10686
+                7348
               ]
             },
             {
               "name": "updateGroupDraftBoard",
               "lines": [
-                10778
+                7441
               ]
             },
             {
               "name": "addTeamToGroup",
               "lines": [
-                10676
+                7338
               ]
             },
             {
               "name": "removeTeamFromGroup",
               "lines": [
-                10743
+                7405
               ]
             },
             {
               "name": "removeTeamLabelFromGroup",
               "lines": [
-                10744
+                7406
               ]
             },
             {
               "name": "handleTeamSearchChange",
               "lines": [
-                10725
+                7387
               ]
             },
             {
               "name": "handleTeamSearchFocus",
               "lines": [
-                10726
+                7388
               ]
             },
             {
               "name": "handleTeamSearchBlur",
               "lines": [
-                10724
+                7386
               ]
             },
             {
               "name": "handleTeamSearchKeyDown",
               "lines": [
-                10727
+                7389
               ]
             },
             {
               "name": "removeGroupDraft",
               "lines": [
-                10740
+                7402
               ]
             },
             {
               "name": "toggleDefaultGroupDraft",
               "lines": [
-                10776
+                7439
               ]
             },
             {
               "name": "applySavedGroupsConfig",
               "lines": [
-                2120,
-                6211
+                2126,
+                4866
               ]
             },
             {
               "name": "filteredComponentSearchResults",
               "lines": [
-                2410,
-                10698
+                2418,
+                7360
               ]
             },
             {
               "name": "filteredExcludedEpicSearchResults",
               "lines": [
-                2411,
-                10699
+                2419,
+                7361
               ]
             },
             {
               "name": "filteredAdHocEpicSearchResults",
               "lines": [
-                2409,
-                10697
+                2417,
+                7359
               ]
             },
             {
               "name": "handleComponentSearchKeyDown",
               "lines": [
-                10717
+                7379
               ]
             },
             {
               "name": "addGroupMissingInfoComponent",
               "lines": [
-                10675
+                7337
               ]
             },
             {
               "name": "removeGroupMissingInfoComponent",
               "lines": [
-                10742
+                7404
               ]
             },
             {
               "name": "addGroupExcludedCapacityEpic",
               "lines": [
-                10674
+                7336
               ]
             },
             {
               "name": "removeGroupExcludedCapacityEpic",
               "lines": [
-                10741
+                7403
               ]
             },
             {
               "name": "addGroupAdHocCapacityEpic",
               "lines": [
-                10672
+                7334
               ]
             },
             {
               "name": "removeGroupAdHocCapacityEpic",
               "lines": [
-                10739
+                7401
               ]
             },
             {
               "name": "handleExcludedEpicSearchKeyDown",
               "lines": [
-                10722
+                7384
               ]
             },
             {
               "name": "handleAdHocEpicSearchKeyDown",
               "lines": [
-                10716
+                7378
               ]
             },
             {
               "name": "handleExcludedEpicSearchChange",
               "lines": [
-                10720
+                7382
               ]
             },
             {
               "name": "handleExcludedEpicSearchFocus",
               "lines": [
-                10721
+                7383
               ]
             },
             {
               "name": "handleExcludedEpicSearchBlur",
               "lines": [
-                10719
+                7381
               ]
             },
             {
               "name": "handleAdHocEpicSearchChange",
               "lines": [
-                10714
+                7376
               ]
             },
             {
               "name": "handleAdHocEpicSearchFocus",
               "lines": [
-                10715
+                7377
               ]
             },
             {
               "name": "handleAdHocEpicSearchBlur",
               "lines": [
-                10713
+                7375
               ]
             },
             {
               "name": "exportGroupsConfig",
               "lines": [
-                10694
+                7356
               ]
             },
             {
               "name": "importGroupsConfig",
               "lines": [
-                10728
+                7390
               ]
             },
             {
               "name": "availableTeams",
               "lines": [
-                10678
+                7340
               ]
             },
             {
               "name": "teamNameLookup",
               "lines": [
-                2568,
-                4092,
-                4095
+                2594,
+                4052,
+                4055
               ]
             },
             {
               "name": "resolveTeamName",
               "lines": [
-                2567,
-                7133,
-                7137,
-                10745
+                2593,
+                5339,
+                7407
               ]
             },
             {
               "name": "activeGroupDraft",
               "lines": [
-                1425,
-                2459,
-                10662
+                1396,
+                2468,
+                7324
               ]
             },
             {
               "name": "filteredGroupDrafts",
               "lines": [
-                10700
+                7362
               ]
             },
             {
               "name": "teamCacheLabel",
               "lines": [
-                10769
+                7432
               ]
             },
             {
               "name": "teamCatalogCanRefresh",
               "lines": [
-                10770
+                7433
               ]
             },
             {
               "name": "activeTeamQuery",
               "lines": [
-                10664
+                7326
               ]
             },
             {
               "name": "activeTeamResultsLimited",
               "lines": [
-                2461,
-                10665
+                2470,
+                7327
               ]
             },
             {
               "name": "activeTeamAvailabilityKey",
               "lines": [
-                2460
+                2469
               ]
             },
             {
               "name": "activeTeamIndex",
               "lines": [
-                10663
+                7325
               ]
             },
             {
               "name": "getLabelSearchResults",
               "lines": [
-                10704
+                7366
               ]
             },
             {
               "name": "closeTeamLabelSearch",
               "lines": [
-                10681
+                7343
               ]
             },
             {
               "name": "selectTeamLabel",
               "lines": [
-                10752
+                7415
               ]
             },
             {
               "name": "handleLabelSearchKeyDown",
               "lines": [
-                10723
+                7385
               ]
             },
             {
               "name": "scheduleJiraLabelSearch",
               "lines": [
-                10750
+                7413
               ]
             }
           ],
@@ -11955,7 +11967,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getTeamOptions",
-              "line": 1277,
+              "line": 1247,
               "capturedBindings": [
                 "teamOptions"
               ],
@@ -12071,6 +12083,7 @@
             "returnFromFirstRunConfigurationRecovery",
             "savedBoardId",
             "savedSelectedProjects",
+            "savedWorkConfigurations",
             "scheduleJiraLabelSearch",
             "selectDepartmentSettingsTab",
             "selectTeamLabel",
@@ -12078,6 +12091,7 @@
             "setComponentSearchOpen",
             "setComponentSearchQuery",
             "setFavoriteGroupDraft",
+            "setGroupDraft",
             "setGroupImportText",
             "setGroupSearchQuery",
             "setLabelAddOpen",
@@ -12206,6 +12220,7 @@
             "savedBoardId",
             "savedSelectedProjects",
             "savedSelectedProjects.map",
+            "savedWorkConfigurations",
             "scheduleJiraLabelSearch",
             "selectDepartmentSettingsTab",
             "selectTeamLabel",
@@ -12213,6 +12228,7 @@
             "setComponentSearchOpen",
             "setComponentSearchQuery",
             "setFavoriteGroupDraft",
+            "setGroupDraft",
             "setGroupImportText",
             "setGroupSearchQuery",
             "setLabelAddOpen",
@@ -12241,13 +12257,13 @@
             "workModel"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 133,
+          "expandedInputCount": 135,
           "returnCount": 0,
-          "propCount": 122,
+          "propCount": 124,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 133,
+          "expandedInputCeiling": 135,
           "returnCeiling": 0,
-          "propCeiling": 122,
+          "propCeiling": 124,
           "unresolved": [
             "bag activeGroupDraft dynamic deep member",
             "bag labelAddButtonRefs dynamic deep member",
@@ -12266,9 +12282,8 @@
             "bag teamSearchFeedback dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "f69ef916526551737de86fea169fa635ffef3b0656f058b72a4580861f67256e",
+            "sourceDigest": "d841b31ac5d98d2de2af27ac34f470ad94a9b9ce04551a8aba2d89b9dcfa1956",
             "reviewed": true,
-            "rationale": "labelSearch*, labelAddOpen, labelAddButtonRefs and teamSearchFeedback are the Team label picker's and Team search's per-row state maps (records keyed by group and team row key) and activeGroupDraft is the active draft group; the container reads them by dynamic key or position and forwards them to TeamGroupsSettings and the Labels tab, so their member count is data and the interface checker cannot enumerate it. All 120 props are explicit name={name} attributes, evaluated during App's render after their declarations; the container has no hook. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers.",
             "memberNames": [
               "BACKEND_URL",
               "activeGroupDraft",
@@ -12370,6 +12385,7 @@
               "savedBoardId",
               "savedSelectedProjects",
               "savedSelectedProjects.map",
+              "savedWorkConfigurations",
               "scheduleJiraLabelSearch",
               "selectDepartmentSettingsTab",
               "selectTeamLabel",
@@ -12377,6 +12393,7 @@
               "setComponentSearchOpen",
               "setComponentSearchQuery",
               "setFavoriteGroupDraft",
+              "setGroupDraft",
               "setGroupImportText",
               "setGroupSearchQuery",
               "setLabelAddOpen",
@@ -12403,13 +12420,14 @@
               "visibleGroupDraftIds",
               "workCatalogScope",
               "workModel"
-            ]
+            ],
+            "rationale": "labelSearch*, labelAddOpen, labelAddButtonRefs and teamSearchFeedback are the Team label picker's and Team search's per-row state maps (records keyed by group and team row key) and activeGroupDraft is the active draft group; the container reads them by dynamic key or position and forwards them to TeamGroupsSettings and the Labels tab, so their member count is data and the interface checker cannot enumerate it. All 120 props are explicit name={name} attributes, evaluated during App's render after their declarations; the container has no hook. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext data read by the same consumers. Re-reviewed 2026-11-10: Two explicit props added: savedWorkConfigurations forwards immutable saved metadata; setGroupDraft forwards the existing local shared-draft setter. No hook or persistence is added to the container."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "DepartmentsSettingsTab",
-              "line": 7309,
+              "line": 7319,
               "phase": "render"
             }
           ],
@@ -13468,7 +13486,6 @@
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
-            "forwarded input activeGroupId",
             "bag adminAccess member alias isAdminAccessDirty",
             "forwarded input favoriteGroupValidationError",
             "forwarded input groupDraft",
@@ -13489,7 +13506,7 @@
             "forwarded input workspaceConfigConflict"
           ],
           "inventory": {
-            "sourceDigest": "512c125d605be0fb27f796a3a617ee07ac71c757947e4c05740b4d4e0745ef82",
+            "sourceDigest": "b3cb0c913de1ac348f59f188ac7b406d5446c0f81d82dbe5e1d14acd146a54af",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
@@ -13667,13 +13684,13 @@
               "workspaceConfigConflict.currentRevision",
               "workspaceConfigConflict.workConfigurations"
             ],
-            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-03: workConfig.namesOnly keeps a names-only bundle Save out of Board invalidation and admin analytics; the scenarioPlannerAccess members were already read here and are now registered."
+            "rationale": "BACKEND_URL is the module-constant API base string forwarded to fetchAppConfig and the groups request wrapper; activeGroupId, groupDraft, groupsConfig, groupsConfigConflict, groupManageTab, favoriteGroupValidationError and priorityWeightsValidationError are values read by find, buildSharedGroupsPayload or errors.push and never spread; the ten set*FieldIdDraft/NameDraft inputs are state setters handed to the local restoreField(key, setId, setName) callback; isAdminAccessDirty is a boolean alias of adminAccess.isDirty. None is a dependency bag; the 123 inputs are the section hooks' drafts, dirty flags, setters and savers, the permission outputs, App cells and the later-declared bindings supplied through three getters. Added by the quarterly Project config change: workConfig/workConfigMode/workCatalogScope/catalogScope style inputs are closed read/forward values owned by the new editor hooks; no persistence or API call happens in this module. Re-reviewed 2026-10-31: restoreDraft is now a stable useCallback and the restore callback depends on it; no new members. Re-reviewed 2026-11-03: workConfig.namesOnly keeps a names-only bundle Save out of Board invalidation and admin analytics; the scenarioPlannerAccess members were already read here and are now registered. Re-reviewed 2026-11-10: Shared Department validation and snapshot invalidation include allocationTypes via pure group helpers. CAS errors preserve the draft; no administrator or private payload receives this mapping."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSharedConfigSave",
-              "line": 1968,
+              "line": 2111,
               "phase": "hook execution"
             }
           ],
@@ -13681,76 +13698,76 @@
             {
               "name": "applySharedConfigBootstrap",
               "lines": [
-                3424
+                3494
               ]
             },
             {
               "name": "discardMineOnGroupsConfigConflict",
               "lines": [
-                7198
+                7014
               ]
             },
             {
               "name": "groupConfigValidationErrors",
               "lines": [
-                7202
+                7018
               ]
             },
             {
               "name": "isGroupDraftDirty",
               "lines": [
-                2209,
-                2292,
-                4796,
-                4804,
-                5902,
-                6055,
-                6262,
-                7210
+                2284,
+                2370,
+                4855,
+                4863,
+                5881,
+                6036,
+                6227,
+                7026
               ]
             },
             {
               "name": "keepMineOnGroupsConfigConflict",
               "lines": [
-                7212
+                7028
               ]
             },
             {
               "name": "keepMineOnWorkspaceConfigConflict",
               "lines": [
-                7213
+                7029
               ]
             },
             {
               "name": "returnFromFirstRunConfigurationRecovery",
               "lines": [
-                7582
+                7409
               ]
             },
             {
               "name": "saveAllSettings",
               "lines": [
-                1376,
-                2213,
-                2311
+                1413,
+                2288,
+                2389
               ]
             },
             {
               "name": "saveBlockedReason",
               "lines": [
-                2214
+                2289
               ]
             },
             {
               "name": "unsavedSectionsCount",
               "lines": [
-                7226
+                7044
               ]
             },
             {
               "name": "useLatestWorkspaceConfig",
               "lines": [
-                7227
+                7045
               ]
             }
           ],
@@ -13758,7 +13775,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getActiveDepartmentSettingsTab",
-              "line": 2071,
+              "line": 2143,
               "capturedBindings": [
                 "activeDepartmentSettingsTab"
               ],
@@ -13768,7 +13785,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getCloseGroupManage",
-              "line": 2072,
+              "line": 2144,
               "capturedBindings": [
                 "closeGroupManage"
               ],
@@ -13778,7 +13795,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getLoadConfig",
-              "line": 2073,
+              "line": 2145,
               "capturedBindings": [
                 "loadConfig"
               ],
@@ -13788,7 +13805,7 @@
             {
               "caller": "frontend/src/dashboard.jsx",
               "name": "getLoadSprints",
-              "line": 2074,
+              "line": 2146,
               "capturedBindings": [
                 "loadSprints"
               ],
@@ -13830,7 +13847,7 @@
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useSharedConfigSaveState",
-              "line": 537,
+              "line": 644,
               "phase": "hook execution"
             }
           ],
@@ -13838,118 +13855,118 @@
             {
               "name": "acceptedBoardConfigRef",
               "lines": [
-                827,
-                2041,
-                2455,
-                3426,
-                3458,
-                3464,
-                6056
+                934,
+                2113,
+                2547,
+                3496,
+                3528,
+                3534,
+                6037
               ]
             },
             {
               "name": "boardConfigReadGenerationRef",
               "lines": [
-                661,
-                2056,
-                3318,
-                3319,
-                3320,
-                3323
+                771,
+                2128,
+                3401,
+                3402,
+                3403,
+                3406
               ]
             },
             {
               "name": "boardConfigSaveReadFenceRef",
               "lines": [
-                662,
-                2057,
-                3316,
-                3322
+                772,
+                2129,
+                3399,
+                3405
               ]
             },
             {
               "name": "commitSharedConfigRevision",
               "lines": [
-                583,
-                664,
-                720,
-                2062
+                693,
+                774,
+                830,
+                2134
               ]
             },
             {
               "name": "setSharedConfigReady",
               "lines": [
-                2149,
-                3346,
-                3475
+                2222,
+                3429,
+                3545
               ]
             },
             {
               "name": "setSharedConfigRevision",
               "lines": [
-                1397,
-                2150
+                1434,
+                2223
               ]
             },
             {
               "name": "setWorkspaceConfigConflict",
               "lines": [
-                1400,
-                2157
+                1437,
+                2230
               ]
             },
             {
               "name": "settingsDraftSnapshotRef",
               "lines": [
-                586,
-                669,
-                724,
-                750,
-                3327
+                696,
+                779,
+                834,
+                860,
+                3410
               ]
             },
             {
               "name": "sharedConfigReady",
               "lines": [
-                827,
-                2158,
-                2929,
-                2960,
-                3581,
-                3594,
-                5647,
-                6056
+                934,
+                2231,
+                3015,
+                3042,
+                3657,
+                3670,
+                5616,
+                6037
               ]
             },
             {
               "name": "sharedConfigRevision",
               "lines": [
-                1036,
-                2474,
-                2494,
-                3423,
-                3730,
-                4396,
-                6057
+                1071,
+                2566,
+                2589,
+                3493,
+                3808,
+                4446,
+                6038
               ]
             },
             {
               "name": "sharedConfigRevisionRef",
               "lines": [
-                587,
-                670,
-                725,
-                1401,
-                2159
+                697,
+                780,
+                835,
+                1438,
+                2232
               ]
             },
             {
               "name": "workspaceConfigConflict",
               "lines": [
-                1409,
-                2166,
-                6055,
-                7228
+                1447,
+                2240,
+                6036,
+                7046
               ]
             }
           ],
@@ -15472,6 +15489,7 @@
             "EMPTY_ARRAY",
             "EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY",
             "activeGroup",
+            "activeGroup.allocationTypes",
             "activeGroup.board",
             "activeGroup.board.columns",
             "activeGroup.name",
@@ -15596,17 +15614,20 @@
             "workContext"
           ],
           "outerParameterCount": 1,
-          "expandedInputCount": 126,
+          "expandedInputCount": 127,
           "returnCount": 45,
           "propCount": 0,
           "outerParameterCeiling": 1,
-          "expandedInputCeiling": 126,
+          "expandedInputCeiling": 127,
           "returnCeiling": 45,
           "propCeiling": 0,
           "unresolved": [
             "forwarded input BACKEND_URL",
+            "forwarded input availableSprints",
             "bag cohortCacheRef dynamic deep member",
             "bag cohortCacheRef member alias cached",
+            "forwarded input cohortLastN",
+            "forwarded input cohortQueryKey",
             "bag excludedCapacityCacheRef dynamic deep member",
             "bag excludedCapacityCacheRef member alias cached",
             "bag excludedCapacityCacheRef member alias cachedSprint",
@@ -15618,16 +15639,18 @@
             "forwarded input excludedCapacityStartSprintId",
             "forwarded input issueEditStateRef",
             "bag projectTrackPhaseCacheRef member alias cached",
-            "bag projectTrackPhaseCacheRef dynamic deep member"
+            "bag projectTrackPhaseCacheRef dynamic deep member",
+            "forwarded input workContext"
           ],
           "inventory": {
-            "sourceDigest": "7ad0c19ad936061827dbb99ce06946ba691ea4221918bd338f9b4eb842434e4a",
+            "sourceDigest": "a146f0d847f576c07d47007d2eb662feae2d7c2a04ac7f12e6a9c87d9a74661b",
             "reviewed": true,
             "memberNames": [
               "BACKEND_URL",
               "EMPTY_ARRAY",
               "EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY",
               "activeGroup",
+              "activeGroup.allocationTypes",
               "activeGroup.board",
               "activeGroup.board.columns",
               "activeGroup.name",
@@ -15751,13 +15774,13 @@
               "trackApiResult",
               "workContext"
             ],
-            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 4 reviewed change: the Assignee filter members (cohortAssigneeFilter, setCohortAssigneeFilter) are removed with their effect; every other binding, alias, cache index and forwarded input is unchanged. Lead Times modes Task 6 reviewed change: cohortMode, the closed quarters and cohortLastN are plain inputs; cohortData.meta.mode is read once to decide whether the data belongs to the current mode (cohortModeData aliases cohortData or null); the request body is built by buildCohortRequest from the same inputs; no other binding, cache index or forwarded input changes. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers."
+            "rationale": "BACKEND_URL is forwarded only as the existing API wrapper base URL. cohortCacheRef.current indexes cohortQueryKey; excludedCapacityCacheRef.current indexes progressive scoped sprint keys; projectTrackPhaseCacheRef.current indexes projectTrackPhaseSignature. Cached payload aliases are checked for presence and passed unchanged to existing setters or merge helpers. node aliases the dropdown DOM ref and only calls contains(event.target); forceRefresh aliases a boolean ref. Forwarded sprint ids, isolated team and selected epic keys retain the existing helper argument and setter contracts. All asynchronous callbacks and abort/generation guards are unchanged. Task 3 reviewed change: unchanged bindings/aliases except removal of panel-owned burnoutChartRef/pointer and exact scroll effect; retained memo/fetch/cache ownership unchanged. Task 10 (#251) reviewed change: automaticRefreshRef is a ref read at fetch time and never a dependency; it supplies the automatic job (job.shouldApply) and the explicit-refresh recorder, and held data is kept on failure. Issue #262 reviewed change: single-Team summary derives one boolean from the existing scoped Team ids; cache, forwarded inputs, effects and dynamic-bag reads are unchanged. Lead Times modes Task 4 reviewed change: the Assignee filter members (cohortAssigneeFilter, setCohortAssigneeFilter) are removed with their effect; every other binding, alias, cache index and forwarded input is unchanged. Lead Times modes Task 6 reviewed change: cohortMode, the closed quarters and cohortLastN are plain inputs; cohortData.meta.mode is read once to decide whether the data belongs to the current mode (cohortModeData aliases cohortData or null); the request body is built by buildCohortRequest from the same inputs; no other binding, cache index or forwarded input changes. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-10: useStatsDerivedB reads activeGroup.allocationTypes only to partition existing range/chunk caches and retire reads when the saved Department mapping changes; existing input and return names stay unchanged."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "useStatsDerivedB",
-              "line": 4130,
+              "line": 4296,
               "phase": "hook execution"
             }
           ],
@@ -15765,7 +15788,7 @@
             {
               "name": "statsB",
               "lines": [
-                6745
+                6847
               ]
             }
           ],
@@ -17670,7 +17693,6 @@
             "boardStrictScope",
             "closeSprintSelector",
             "commitSprintSelectorOption",
-            "componentScopeLabel",
             "engSprintSelectorState",
             "engWorkspaceConfigured",
             "getSprintSelectorOptions",
@@ -17730,7 +17752,7 @@
           "outerParameterCount": 1,
           "expandedInputCount": 33,
           "returnCount": 0,
-          "propCount": 26,
+          "propCount": 25,
           "outerParameterCeiling": 1,
           "expandedInputCeiling": 33,
           "returnCeiling": 0,
@@ -17744,7 +17766,7 @@
             "bag sprintTriggerRefs dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "f654d8cab623678c0eaf2c2fd9de9c6bd5acaf94decc9e853e31b5fb0aad0691",
+            "sourceDigest": "dea044be034fec8a149c58b33a9f1c89fd29bb26face07653d0c3397ed222acb",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -17781,13 +17803,13 @@
               "sprintsLoading",
               "surface"
             ],
-            "rationale": "surface remains the old main/compact argument forwarded unchanged to sprintOptionDomId/openSprintSelector. selectedSprint/sprintActiveOptionIndex are forwarded only to existing String/Math helpers. canOpen aliases engSprintSelectorState.ordinarySelectable. sprintDropdownRefs/sprintTriggerRefs.current[surface] preserve the two mounted DOM-node slots, and sprintSelectorOriginRef retains the unchanged deferred Tab reset. No state, effect, getter or scope ownership moves. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-10 for the approved DELIVERY Board scope: componentScopeLabel is a scalar display prop derived from the existing work model. It changes only the selected scope label; option searching uses the same label. The component keeps its event handlers, refs, readiness, and scope identity; no hook input, return, state, effect or transport changes."
+            "rationale": "surface remains the old main/compact argument forwarded unchanged to sprintOptionDomId/openSprintSelector. selectedSprint/sprintActiveOptionIndex are forwarded only to existing String/Math helpers. canOpen aliases engSprintSelectorState.ordinarySelectable. sprintDropdownRefs/sprintTriggerRefs.current[surface] preserve the two mounted DOM-node slots, and sprintSelectorOriginRef retains the unchanged deferred Tab reset. No state, effect, getter or scope ownership moves. Re-reviewed 2026-10-31 for the quarterly work-structure migration: added members are workModel/workContext/workScope/work-setup data read by the same consumers. Re-reviewed 2026-11-10 for the approved DELIVERY Board scope: componentScopeLabel is a scalar display prop derived from the existing work model. It changes only the selected scope label; option searching uses the same label. The component keeps its event handlers, refs, readiness, and scope identity; no hook input, return, state, effect or transport changes. Re-reviewed 2026-11-10: The changed interface retains its existing data and callback boundary."
           },
           "callers": [
             {
               "path": "frontend/src/dashboard.jsx",
               "symbol": "SprintControl",
-              "line": 5724,
+              "line": 5730,
               "phase": "render"
             }
           ],
@@ -19006,7 +19028,7 @@
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
               "symbol": "WorkConfigurationUnavailable",
-              "line": 194,
+              "line": 196,
               "phase": "render"
             }
           ],
@@ -19094,13 +19116,13 @@
               "workConfig.validation",
               "workConfig.validation.errors"
             ],
-            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here. Fix round 1: the status line is shown only on a listed configuration (typeNamesToSave.includes)."
+            "rationale": "Closed forwarded inputs and caller-owned callbacks; no persistence, API or model inference in this contract. Re-reviewed 2026-11-02 (Project config redesign): the added members are display values, callbacks and an editor-owned preview toggle; no persistence, API call or model inference is owned here. Re-reviewed 2026-11-03: the added members read the type-name re-verification list for one status line; no persistence, API call or model inference is owned here. Fix round 1: the status line is shown only on a listed configuration (typeNamesToSave.includes). Re-reviewed 2026-11-10: The Allocation value search effect moved to the Department selector. Existing field/hierarchy metadata helpers and other effects retain their semantics."
           },
           "callers": [
             {
               "path": "frontend/src/settings/AdminSettingsContainer.jsx",
               "symbol": "WorkConfigurationsEditor",
-              "line": 195,
+              "line": 197,
               "phase": "render"
             }
           ],
@@ -19348,6 +19370,7 @@
         "quarterIndex",
         "rangeLabel",
         "rebaseOntoLatest",
+        "refreshableSources",
         "removeProjectFromEntry",
         "savedSourceReady",
         "slotsFor",
@@ -19355,11 +19378,80 @@
         "sprintRefreshLine",
         "sprintValueOptions",
         "typeNamesNeedingSave",
+        "typeNamesSignature",
         "typedSprintOption",
         "validateBundle"
       ],
       "lineCeiling": 510,
       "interfaces": []
+    },
+    {
+      "id": "settings.AllocationTypeSelector",
+      "path": "frontend/src/settings/AllocationTypeSelector.jsx",
+      "features": [
+        "settings"
+      ],
+      "exports": [
+        "default",
+        "savedAllocationSource"
+      ],
+      "lineCeiling": 100,
+      "interfaces": [
+        {
+          "exportName": "default",
+          "inputNames": [],
+          "returnNames": [],
+          "propNames": [
+            "backendUrl",
+            "group",
+            "savedWorkConfigurations",
+            "setGroupDraft"
+          ],
+          "expandedInputNames": [
+            "backendUrl",
+            "group",
+            "group.allocationTypes",
+            "group.id",
+            "savedWorkConfigurations",
+            "setGroupDraft"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 6,
+          "returnCount": 0,
+          "propCount": 4,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 6,
+          "returnCeiling": 0,
+          "propCeiling": 4,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input savedWorkConfigurations"
+          ],
+          "inventory": {
+            "sourceDigest": "ef0bc88afdd276a656633744c815b87cccb8acd2d4374db0d5a8f97d635fe74c",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "group",
+              "group.allocationTypes",
+              "group.id",
+              "savedWorkConfigurations",
+              "setGroupDraft"
+            ],
+            "rationale": "Reviewed 2026-11-10: group is the selected Department draft with id/allocationTypes data rows; savedWorkConfigurations is saved administrator metadata read by savedAllocationSource (configurations model, allocation field, first project, parent issue type). setGroupDraft is the existing React functional local-draft setter. Catalog options are value records; no Jira write or administrator draft mutation."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/settings/TeamGroupsSettings.jsx",
+              "symbol": "AllocationTypeSelector",
+              "line": 460,
+              "phase": "render"
+            }
+          ],
+          "remainingAppReaders": [],
+          "getters": []
+        }
+      ]
     }
   ],
   "transfer": {

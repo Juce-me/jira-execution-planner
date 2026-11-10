@@ -105,7 +105,7 @@ function writeRange(o, apply) {
 // Mode booleans first, then every key of the mode: its default or the link's value. Returns what the link leaves unapplied
 // and the Planning rows mode to seed once the scope has loaded.
 function runStageB(o, state, scope) {
-    const boardScopeReady = (_groupId, token) => (token === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness) === 'ready';
+    const boardScopeReady = (_groupId, token) => (token === 'allocation' ? o.engSprintSelectorState.allocationReadiness : token === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness) === 'ready';
     const { apply, reported } = buildShareViewFieldPlan(state, scope, { ...resolverContext(o), boardScopeReady });
     o.setShowPlanning(scope.mode === 'planning');
     o.setShowStats(scope.mode === 'statistics');
@@ -122,6 +122,7 @@ function runStageB(o, state, scope) {
         SHARE_VIEW_ALERT_KEYS.forEach(key => o.alertFlags[key][1](Boolean(apply.alerts.expanded[key])));
     }
     if (has(apply, 'scope')) o.setBoardStrictScope(apply.scope);
+    else if ((state.scope === 'component' && o.engSprintSelectorState.componentReadiness === 'scope_model_mismatch') || (state.scope === 'allocation' && o.engSprintSelectorState.allocationReadiness === 'scope_model_mismatch')) o.setBoardStrictScope('');
     if (has(apply, 'boardFilters')) {
         o.setEngBoardFilterSelection(apply.boardFilters);
         o.setBoardView(apply.boardColumn ? { fromLink: true, focusedId: apply.boardColumn } : null);
@@ -196,8 +197,8 @@ export function createApplyController({ readOptions, now = clock }) {
         resolved = preScope ? resolveApplyPlan(o, state) : resolved;
         const target = preScope ? (resolved.ok ? { groupId: resolved.scope.group.id, sprintId: String(resolved.scope.sprint.id) } : null) : locked.target;
         const mode = preScope ? resolved.scope?.mode : locked.mode;
-        const boardToken = mode === 'board' && (state.scope === 'component' || state.scope === 'all_work') ? state.scope : null;
-        const readiness = boardToken === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness;
+        const boardToken = mode === 'board' && ['component', 'allocation', 'all_work'].includes(state.scope) ? state.scope : null;
+        const readiness = boardToken === 'allocation' ? o.engSprintSelectorState.allocationReadiness : boardToken === 'component' ? o.engSprintSelectorState.componentReadiness : o.engSprintSelectorState.allWorkReadiness;
         const teamsHydrated = Boolean(o.teamSelectionScopeKey) && o.teamSelectionHydratedScopeRef.current === o.teamSelectionScopeKey;
         const focus = resolveShareViewFocus(state, mode);
         const epochReady = machine.scopeChange ? o.loadEpochRef.current > machine.epochAtA : o.loadEpochRef.current >= machine.epochAtA;

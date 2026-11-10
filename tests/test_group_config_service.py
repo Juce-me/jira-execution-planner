@@ -20,6 +20,38 @@ def _normalize_epic_keys(values):
 
 
 class TestGroupConfigService(unittest.TestCase):
+    def test_department_allocation_mapping_is_strict_and_independent_of_components(self):
+        kwargs = dict(
+            allow_empty=True, groups_config_version=2, groups_max_teams=12,
+            normalize_team_ids_fn=_normalize_team_ids,
+            normalize_epic_keys_fn=_normalize_epic_keys,
+            normalize_group_team_labels_fn=lambda _raw, _ids: ({}, []),
+            normalize_group_board_fn=group_board.normalize_group_board,
+        )
+        group = {'id': 'd', 'name': 'Department', 'teamIds': [], 'missingInfoComponents': ['Old']}
+        def validate(value):
+            return group_config.validate_groups_config(
+                {'groups': [{**group, **value}], 'defaultGroupId': 'd'}, **kwargs)
+        normalized, errors, _ = validate({})
+        self.assertEqual(errors, [])
+        self.assertEqual(normalized['groups'][0]['allocationTypes'], [])
+        mapping = [{'value': ' A ', 'type': 'product'}, {'value': 'A', 'type': 'tech'},
+                   {'value': 'a', 'type': 'tech'}]
+        normalized, errors, _ = validate({'allocationTypes': mapping})
+        self.assertEqual(errors, [])
+        self.assertEqual(normalized['groups'][0]['allocationTypes'],
+                         [{'value': 'A', 'type': 'product'}, {'value': 'a', 'type': 'tech'}])
+        for invalid in (None, '', {}, [None], [{'value': 'A'}],
+                        [{'value': 'A', 'type': 'other'}],
+                        [{'value': 'A', 'type': 'tech', 'extra': True}],
+                        [{'value': '', 'type': 'tech'}],
+                        [{'value': 'x' * 256, 'type': 'tech'}],
+                        [{'value': str(i), 'type': 'tech'} for i in range(201)]):
+            with self.subTest(invalid=invalid):
+                _, errors, _ = validate({'allocationTypes': invalid})
+                self.assertTrue(errors)
+                self.assertTrue(all(error.startswith('Group "Department" allocationTypes') for error in errors))
+
     def test_parse_groups_config_env_returns_json_or_none(self):
         self.assertEqual(group_config.parse_groups_config_env('{"groups": []}'), {'groups': []})
         self.assertIsNone(group_config.parse_groups_config_env(''))
@@ -64,6 +96,7 @@ class TestGroupConfigService(unittest.TestCase):
                 'excludedCapacityEpics': ['EPIC-1'],
                 'adHocCapacityEpics': ['AD-1', 'AD-2'],
                 'teamLabels': {'team-a': 'team_alpha_label'},
+                'allocationTypes': [],
             }],
             'defaultGroupId': 'group-1',
         })

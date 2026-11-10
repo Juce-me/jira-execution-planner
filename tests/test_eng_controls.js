@@ -38,7 +38,7 @@ test('DELIVERY Board selection keeps its Allocation label while option search is
     const kit = load('EngControls.jsx');
     for (const [componentScopeLabel, expected] of [['Allocation', 'Allocation'], ['Component', 'Component']]) {
         const html = renderToString(React.createElement(kit.SprintControl, {
-            ...props('main'), showBoard: true, boardStrictScope: 'component',
+            ...props('main'), showBoard: true, boardStrictScope: expected === 'Allocation' ? 'allocation' : 'component',
             componentScopeLabel, sprintSearch: 'no matching option', getSprintSelectorOptions: () => [],
         }));
         assert.match(html, new RegExp(`>${expected}<`));
@@ -134,7 +134,6 @@ const expectedProps = {
         "boardStrictScope",
         "closeSprintSelector",
         "commitSprintSelectorOption",
-        "componentScopeLabel",
         "engSprintSelectorState",
         "engWorkspaceConfigured",
         "getSprintSelectorOptions",

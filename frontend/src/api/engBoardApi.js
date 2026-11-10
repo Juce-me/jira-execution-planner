@@ -197,7 +197,7 @@ function validateBody(frame) {
     switch (frame.type) {
         case 'start':
             exact(frame, [...base, 'scope', 'scopeVersion', 'scopeCohortDigest', 'columns']);
-            oneOf(frame.scope, ['all_work', 'component', 'sprint']);
+            oneOf(frame.scope, ['all_work', 'component', 'allocation', 'sprint']);
             string(frame.scopeVersion, MAX.identity);
             string(frame.scopeCohortDigest, 64, { pattern: /^[0-9a-f]{64}$/ });
             array(frame.columns, MAX.columns, column);

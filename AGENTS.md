@@ -482,3 +482,5 @@ When the user corrects your approach, append a one-line rule here before ending 
 - For UI mockups, render the branch's existing components and styles with synthetic data and capture browser screenshots; preserve the existing table layout and do not substitute generated images or a redesign. In Planning, retain Select All and Clear Selection, explain scope through tooltips/accessibility descriptions, and show counts separately.
 - Do not add hover readouts that repeat what an expandable panel already shows; keep the compact Planning summary as plain text.
 - Keep Team-card capacity editing and reconciliation in the existing card hover rail without growing the card; show UI changes with screenshots.
+
+- Keep DELIVERY Allocation values and Product/Tech mappings in shared Department settings; Legacy Component scope shows Epics and DELIVERY Allocation scope shows Initiatives under distinct scope tokens.

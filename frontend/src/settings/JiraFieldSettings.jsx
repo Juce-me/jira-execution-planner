@@ -164,19 +164,6 @@ export default function JiraFieldSettings(props) {
         mappingPreviewLabels,
         mappingFieldHelpers,
         sourceFieldHelpers,
-        // Optional DELIVERY Allocation -> Product/Tech mapping (Project config only); omitted renders nothing.
-        allocationTypesDraft,
-        allocationFieldReady,
-        allocationSearchQuery,
-        allocationSearchOpen,
-        allocationSearchLoading,
-        allocationOptionsIncomplete,
-        allocationSearchResults,
-        setAllocationSearchQuery,
-        setAllocationSearchOpen,
-        handleAllocationSearchKeyDown,
-        addAllocationType,
-        removeAllocationType,
     } = props;
     // A locked shared field (DELIVERY's Team) shows the shared value only: no remove and no search.
     const teamFieldLocked = mappingFieldHelpers?.share?.team?.locked === true;
@@ -191,12 +178,12 @@ export default function JiraFieldSettings(props) {
     const inlineIds = showTechnicalFieldIds && !workMode;
     const idSlot = id => (workMode ? <span className={`field-id-hint field-id-slot${showTechnicalFieldIds ? '' : ' is-hidden'}`} aria-hidden={!showTechnicalFieldIds || undefined} data-field-id-slot data-field-id={id || ''} /> : null);
     // The collapsed Project config preview is owned by the editor (`mappingPreviewOpen`).
-    // The Product and Tech chip columns, shared by the Legacy project split and the DELIVERY Allocation mapping.
-    const typeColumns = ({ items, keyOf, name, remove, noun, plural, removeTitle, dataType }) => ['product', 'tech'].map(type => {
+    // Legacy Project classification stays administrator-owned.
+    const typeColumns = ({ items, keyOf, name, remove, noun, plural, removeTitle }) => ['product', 'tech'].map(type => {
         const label = type === 'product' ? 'Product' : 'Tech';
         const typed = items.filter(item => item.type === type);
         return (
-            <div key={type} className="group-projects-subsection" data-allocation-type={dataType ? type : undefined}>
+            <div key={type} className="group-projects-subsection">
                 <div className="team-selector-label">{label}</div>
                 <div className="group-field-helper">{`${plural} counted as ${label} work in planning and stats.`}</div>
                 {typed.length === 0 ? (
@@ -402,45 +389,6 @@ export default function JiraFieldSettings(props) {
                                                         </div>
                                                     )}
                                                 </div>
-                                                {allocationTypesDraft && <>
-                                                <div className="group-projects-subsection" data-allocation-types>
-                                                    <div className="team-selector-label">Allocation</div>
-                                                    <div className="group-field-helper">{allocationFieldReady ? 'Each Epic\u2019s Allocation (else its Initiative\u2019s, else its Objective\u2019s) decides Product or Tech. Unmapped and blank values count as Product.' : 'Map the Allocation field in Field mapping to list its values.'}</div>
-                                                    <div className="team-search-wrapper">
-                                                        <input
-                                                            type="text"
-                                                            className="team-search-input"
-                                                            placeholder="Search Allocation values to add..."
-                                                            aria-label="Search Allocation values"
-                                                            value={allocationSearchQuery}
-                                                            onChange={(e) => { setAllocationSearchQuery(e.target.value); setAllocationSearchOpen(true); }}
-                                                            onFocus={() => setAllocationSearchOpen(true)}
-                                                            onBlur={() => { window.setTimeout(() => setAllocationSearchOpen(false), 120); }}
-                                                            onKeyDown={handleAllocationSearchKeyDown}
-                                                            disabled={!allocationFieldReady}
-                                                        />
-                                                        {allocationSearchOpen && allocationSearchQuery.trim() && (
-                                                            <div className="team-search-results" onMouseDown={(e) => e.preventDefault()}>
-                                                                {allocationSearchLoading ? (
-                                                                    <div className="team-search-result-item is-empty">Searching Allocation values...</div>
-                                                                ) : allocationSearchResults.length === 0 ? (
-                                                                    <div className="team-search-result-item is-empty">No values found</div>
-                                                                ) : allocationSearchResults.map(option => (
-                                                                    <div key={option.value} className="team-search-result-item">
-                                                                        <span className="project-result-label"><strong>{option.value}</strong></span>
-                                                                        <span className="project-result-actions">
-                                                                            <button type="button" className="project-type-btn product" onClick={() => addAllocationType(option.value, 'product')}>Product</button>
-                                                                            <button type="button" className="project-type-btn tech" onClick={() => addAllocationType(option.value, 'tech')}>Tech</button>
-                                                                        </span>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                    {allocationOptionsIncomplete && <div className="group-field-helper">Jira listed only some values here; type a value to add it.</div>}
-                                                </div>
-                                                {typeColumns({ items: allocationTypesDraft, keyOf: item => item.value, name: item => <strong>{item.value}</strong>, remove: removeAllocationType, noun: 'value', plural: 'Allocation values', removeTitle: 'Remove value', dataType: true })}
-                                                </>}
                                                 </>) : <>
                                                 {typeColumns({ items: selectedProjectsDraft, keyOf: p => p.key, name: projectName, remove: removeProjectSelection, noun: 'project', plural: 'Projects', removeTitle: 'Remove project' })}
                                                 </>}

@@ -44,12 +44,12 @@ export const buildFirstRunSettingsSaveOutcome = (overrides = {}) => ({
 
 const UNORDERED_SHARED_ARRAY_KEYS = new Set([
     'teamIds', 'teamLabels', 'missingInfoComponents', 'excludedCapacityEpics',
-    'adHocCapacityEpics', 'statuses', 'labels',
+    'adHocCapacityEpics', 'statuses', 'labels', 'allocationTypes',
 ]);
 
 const canonicalSharedValue = (value, key = '') => {
     if (Array.isArray(value)) {
-        const normalized = value.map(item => canonicalSharedValue(item));
+        const normalized = value.map(item => canonicalSharedValue(key === 'groups' ? { ...item, allocationTypes: item.allocationTypes || [] } : item));
         if (key === 'groups') return normalized.sort((left, right) => String(left?.id || '').localeCompare(String(right?.id || '')));
         if (UNORDERED_SHARED_ARRAY_KEYS.has(key)) return normalized.sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
         return normalized;
@@ -223,8 +223,8 @@ export const validateFirstRunPendingGroup = (groups = [], pendingGroupId = null)
     if (duplicate) return { ok: false, step: 'name', error: 'Department names must be unique.' };
     const hasTeam = (group.teamIds || []).some(teamId => String(teamId || '').trim());
     const hasComponent = (group.missingInfoComponents || []).some(component => String(component || '').trim());
-    if (!hasTeam && !hasComponent) {
-        return { ok: false, step: 'teams', error: 'Add at least one team or component before saving.' };
+    if (!hasTeam && !hasComponent && !(group.allocationTypes || []).length) {
+        return { ok: false, step: 'teams', error: 'Add at least one team, component or Allocation before saving.' };
     }
     return { ok: true, step: null, error: '' };
 };

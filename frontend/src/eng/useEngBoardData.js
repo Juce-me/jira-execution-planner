@@ -49,13 +49,13 @@ function normalizeSprintId(value) {
 }
 
 export function normalizeEngBoardScope(scope, inheritedSprintId = null) {
-    if (scope?.type === 'all_work' || scope?.type === 'component') return { type: scope.type };
+    if (['all_work', 'component', 'allocation'].includes(scope?.type)) return { type: scope.type };
     const sprintId = normalizeSprintId(scope?.sprintId ?? inheritedSprintId);
     return sprintId === null ? { type: 'uninitialized' } : { type: 'sprint', sprintId };
 }
 
 function hasAuthoritativeIndexScope(scope) {
-    return scope?.type === 'all_work' || scope?.type === 'component';
+    return ['all_work', 'component', 'allocation'].includes(scope?.type);
 }
 
 function scopeKey(groupId, revision, scope) {
@@ -763,7 +763,7 @@ export function useEngBoardData({
             return;
         }
         const changed = owner.selectGroup(departmentId, inheritedSprintId, groupRevision);
-        if (['all_work', 'component'].includes(strictScope)
+        if (['all_work', 'component', 'allocation'].includes(strictScope)
             && owner.getState().scopesByGroup[String(departmentId)]?.type !== strictScope) {
             void owner.setScope({ type: strictScope });
             return;

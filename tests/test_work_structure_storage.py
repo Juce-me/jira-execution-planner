@@ -186,6 +186,56 @@ class NoAmbientReadTests(StorageHarness):
                          [{'key': 'OLD', 'type': 'tech'}])
 
 
+class DepartmentAllocationOwnershipTests(StorageHarness):
+    def test_first_promotion_rejects_admin_mapping_edits(self):
+        self.seed(FLAT)
+        before = self.envelope()
+        draft = deepcopy(before['workConfigurations'])
+        draft['configurations'][1]['allocationTypes'] = [{'value': 'Growth', 'type': 'product'}]
+        error = self.expect_error('allocation_mapping_department_owned',
+                                  lambda: self.save(draft, before['configRevision'], legacy_edits=[]), 400)
+        self.assertEqual(error.response()[0], {
+            'error': 'allocation_mapping_department_owned', 'status': 'error',
+            'message': 'Configure Allocation values in Department settings.'})
+        self.assertEqual(self.envelope(), before)
+
+    def test_first_promotion_preserves_omitted_history_and_rejects_explicit_clear(self):
+        history = [{'value': 'Growth', 'type': 'product'}]
+        seed = ws.capture_virtual_bundle(FLAT)
+        seed['configurations'][1]['allocationTypes'] = history
+        self.seed({**deepcopy(FLAT), 'workConfigurations': seed})
+        before = self.envelope()
+        draft = deepcopy(before['workConfigurations'])
+        self.expect_error('allocation_mapping_department_owned',
+                          lambda: self.save(draft, before['configRevision'], legacy_edits=[]), 400)
+        self.assertEqual(self.envelope(), before)
+        del draft['configurations'][1]['allocationTypes']
+        saved = self.save(draft, before['configRevision'], legacy_edits=[])
+        self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+
+    def test_old_global_map_is_preserved_on_echo_and_omission_but_not_edit_or_clear(self):
+        history = [{'value': 'Growth', 'type': 'product'}]
+        seed = ws.capture_virtual_bundle(FLAT)
+        seed['configurations'][1]['allocationTypes'] = history
+        self.seed({**deepcopy(FLAT), 'workConfigurations': seed})
+        for promoted in (False, True):
+            before = self.envelope()
+            draft = deepcopy(before['workConfigurations'])
+            draft['configurations'][1]['allocationTypes'] = history
+            saved = self.save(draft, before['configRevision'], **({} if promoted else {'legacy_edits': []}))
+            self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+            draft = deepcopy(saved['workConfigurations'])
+            del draft['configurations'][1]['allocationTypes']
+            saved = self.save(draft, saved['configRevision'])
+            self.assertEqual(saved['workConfigurations']['configurations'][1]['allocationTypes'], history)
+            for mapping in ([], [{'value': 'Growth', 'type': 'tech'}]):
+                draft = deepcopy(saved['workConfigurations'])
+                draft['configurations'][1]['allocationTypes'] = mapping
+                self.expect_error('allocation_mapping_department_owned',
+                                  lambda: self.save(draft, saved['configRevision']), 400)
+            self.assertEqual(self.envelope()['workConfigurations']['configurations'][1]['allocationTypes'], history)
+
+
 class FirstSaveTests(StorageHarness):
     def test_promotes_atomically_and_removes_only_moved_keys(self):
         self.seed({**FLAT}, capacity_jira_site_url='https://site-1.atlassian.net', capacity_field_schema_type='number')

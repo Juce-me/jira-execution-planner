@@ -252,6 +252,7 @@ test('export and import stay scoped to the selected group', async () => {
         const payload = JSON.parse(await blobs[0].text());
         assert.deepEqual(Object.keys(payload).sort(), ['group', 'version']);
         assert.equal(payload.group.id, 'g2');
+        assert.deepEqual(payload.group.allocationTypes, [], 'effective empty map is always exported');
         assert.equal(link.download, 'group-g2.json');
 
         const text = JSON.stringify({ version: 1, group: { id: 'zzz', name: 'Imported', teamIds: ['t9'], teamLabels: { t9: ['a', 'b'] } } });
@@ -378,4 +379,23 @@ test('the search and label effects layers keep their clamps, cleanups and depend
     assert.deepEqual(cleared, [7]);
     assert.deepEqual(debounceRef.current, {}, 'unmount drops the pending label search timers');
     assert.deepEqual(effects.map((effect) => effect.deps), [[true, 'teams', '', ''], [true, 'teams', ''], [true, 'teams', ''], [2], [0], [1], [], [2, 'a', { id: 'g1' }]]);
+});
+
+test('selected-group imports preserve omitted Allocation mappings, accept explicit clearing, and reject malformed mappings before draft mutation', () => {
+    const allocationTypes = [{ value: 'Delivery', type: 'tech' }];
+    const draft = { ...DRAFT, groups: DRAFT.groups.map(group => ({ ...group, allocationTypes })) };
+    const imported = { ...DRAFT.groups[0], id: 'foreign', name: 'Imported' };
+    for (const [extra, expected] of [[{}, allocationTypes], [{ allocationTypes: [] }, []]]) {
+        const probe = renderHook({ state: { groupDraft: draft, activeGroupDraftId: 'g1', groupImportText: JSON.stringify({ group: { ...imported, ...extra } }) } });
+        probe.result.importGroupsConfig();
+        const update = probe.setterCalls.find(([name]) => name === 'setGroupDraft');
+        assert.ok(update, 'valid import mutates draft');
+        assert.deepEqual(update[1](draft).groups[0].allocationTypes, expected);
+    }
+    for (const allocationTypes of [null, {}, 'invalid', [{ value: 'X', type: 'other' }], [{ value: 'X', type: 'tech', extra: 1 }]]) {
+        const probe = renderHook({ state: { groupDraft: draft, activeGroupDraftId: 'g1', groupImportText: JSON.stringify({ group: { ...imported, allocationTypes } }) } });
+        probe.result.importGroupsConfig();
+        assert.equal(probe.setterCalls.some(([name]) => name === 'setGroupDraft'), false);
+        assert.ok(probe.calls.some(([name, error]) => name === 'setGroupDraftError' && /Allocation/.test(error)));
+    }
 });

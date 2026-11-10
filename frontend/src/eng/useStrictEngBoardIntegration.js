@@ -96,13 +96,18 @@ export function useStrictEngBoardPresentation({ active, owner, savedBoard, legac
 
 export function strictEngBoardViewProps({ active, owner, model, legacyLoading, legacyError, legacyRetry }) {
     const errorCode = owner.data.error?.code;
-    const strictError = errorCode === 'scope_too_large'
+    const setupError = {
+        board_scope_model_mismatch: 'This Board scope is unavailable for the viewed quarter. Choose a Sprint or the available Board scope.',
+        board_allocations_required: 'Add Allocation values in Department settings, then retry.',
+        board_allocation_field_required: 'Ask a workspace tool administrator to configure the Initiative Allocation field, then retry.',
+    }[errorCode];
+    const strictError = setupError || (errorCode === 'scope_too_large'
         ? model.stale
             ? 'Refresh reached the Board limit.'
             : 'Board limit reached; this result is incomplete.'
         : owner.data.error
             ? `Board load failed: ${String(errorCode || 'jira_unavailable').replaceAll('_', ' ')}.`
-            : null;
+            : null);
     return {
         strictColumns: active ? model.columns : null,
         loading: active ? owner.data.status === 'loading' : legacyLoading,

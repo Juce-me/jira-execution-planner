@@ -18,7 +18,7 @@ export const SHARE_VIEW_VERSION = 1;
 export const SHARE_VIEW_MODES = Object.freeze(['catch-up', 'planning', 'board', 'statistics']);
 
 // Board scope tokens; the empty string is the ordinary sprint scope (dashboard.jsx boardStrictScope).
-export const SHARE_VIEW_BOARD_SCOPES = Object.freeze(['component', 'all_work']);
+export const SHARE_VIEW_BOARD_SCOPES = Object.freeze(['component', 'allocation', 'all_work']);
 
 // Board facet option ids the link may name (the Board's own facets, eng/engBoardFilters.js); priority uses SHARE_VIEW_PRIORITY_IDS.
 export const SHARE_VIEW_BOARD_PROJECT_IDS = Object.freeze(['tech', 'product', 'other']);

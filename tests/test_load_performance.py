@@ -279,7 +279,7 @@ class LoadPerformanceTests(unittest.TestCase):
         self.assertEqual({'scopeType': None, 'mixedScopes': False, 'weeks': []}, weekly)
 
     def test_board_scope_validation_matches_sprint_ownership(self):
-        for scope_type in ('all_work', 'component'):
+        for scope_type in ('all_work', 'component', 'allocation'):
             with self.subTest(scope_type=scope_type):
                 performance.validate_load(board_observation(scope_type=scope_type))
             for sprint_id in ('sprint-a', '', 0, False, True):
@@ -744,6 +744,22 @@ class LoadPerformanceSecurityTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/performance/loads', data='x' * 16385, headers=self.csrf_headers()).status_code, 413)
         with patch.dict('os.environ', {'APP_PERFORMANCE_DEBUG': 'false'}):
             self.assertEqual(self.client.post('/api/performance/loads', json=observation(), headers=self.csrf_headers()).status_code, 404)
+
+    def test_oauth_allocation_load_roundtrips_without_sprint(self):
+        self.sign_in(roles=('admin',))
+        payload = board_observation(825, scope_type='allocation')
+        created = self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers())
+        self.assertEqual((created.status_code, created.get_json()), (201, {'recorded': True}))
+        response = self.client.get('/api/admin/performance', query_string={
+            'surface': 'eng_board', 'scopeType': 'allocation'})
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        report = response.get_json()
+        self.assertEqual(report['filters']['scopeTypes'], ['allocation'])
+        self.assertIsNone(report['samples'][0]['sprintId'])
+        payload = board_observation(825, scope_type='allocation')
+        payload['sprintId'] = '42'
+        rejected = self.client.post('/api/performance/loads', json=payload, headers=self.csrf_headers())
+        self.assertEqual((rejected.status_code, rejected.get_json()), (400, {'error': 'invalid_measurement'}))
 
     def test_oauth_component_ingestion_and_admin_report_use_real_storage(self):
         self.sign_in(roles=('admin',))

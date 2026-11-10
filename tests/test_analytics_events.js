@@ -690,6 +690,8 @@ test('eng_board terminal api_result accepts only bounded scope and omits high-ca
         featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'component',
     });
     assert.equal(pushed[1].scope_type, 'component');
+    trackApiResult('eng_board', { featureName: 'eng_board', method: 'GET', status: 200, scopeType: 'allocation' });
+    assert.equal(pushed[2].scope_type, 'allocation');
     assert.throws(
         () => trackApiResult('eng_board', {
             featureName: 'eng_board', status: 200, scopeType: 'department-secret',

@@ -2,6 +2,8 @@
 
 > **Status:** Done. Executed on branch `feature/quarterly-allocation-split-sprint-scoping` (Tracks A and B, A3b and Track C steps 1-3, 2026-11-09); kept for audit context only. Review fixes and the full gate run (Track C step 4) are at head `8684da3e`.
 
+> **Current accuracy, 2026-11-10:** Allocation value selection and Product/Tech mapping now belong to each shared Department, initialized empty by operator decision. Project config retains the Jira field mapping and dormant old value-map history. DELIVERY Board uses distinct `scope=allocation`; Legacy keeps `component`. See [Department Allocation contract](EXEC-department-allocation-board-scope.md); the historical Project-level mapping steps below are superseded.
+
 ## Outcome
 
 Implemented with changes. DELIVERY splits Product/Tech by its mapped Allocation (server stamp `projectClassification`, client split, one `project=all` lane request), Settings maps Allocation values with the Legacy project picker's controls, each configuration takes its Sprint ids only from its own sources, and same-named Scope Sprint values show as `<name> - legacy` / `<name> - delivery` rows. The divergences are recorded in each task's Status line. Two behaviour changes follow from them and are intended:

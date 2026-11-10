@@ -38,7 +38,7 @@ EPM_LANE_KEYS = {'project', 'name', 'durationMs'}
 EPM_GROUP_ID = 'epm'
 EPM_TABS = ('active', 'backlog', 'archived')
 EPM_MAX_LANES = 200
-SCOPE_TYPES = ('all_work', 'component', 'sprint') + EPM_TABS
+SCOPE_TYPES = ('all_work', 'component', 'allocation', 'sprint') + EPM_TABS
 
 
 def collection_enabled(environ=None):
@@ -77,9 +77,9 @@ def _validate_board_load(payload):
     except (TypeError, AttributeError):
         raise ValueError('Invalid load id') from None
     _scope(payload['groupId'])
-    if payload['scopeType'] not in ('all_work', 'component', 'sprint'):
+    if payload['scopeType'] not in ('all_work', 'component', 'allocation', 'sprint'):
         raise ValueError('Invalid Board scope')
-    if payload['scopeType'] in ('all_work', 'component'):
+    if payload['scopeType'] in ('all_work', 'component', 'allocation'):
         if payload['sprintId'] is not None:
             raise ValueError('Cross-sprint Board scope must not fabricate a sprint')
     else:

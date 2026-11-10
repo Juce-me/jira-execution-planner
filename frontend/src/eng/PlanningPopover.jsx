@@ -27,4 +27,3 @@ export default function PlanningPopover({ open, onClose, label, trigger, childre
         </div>, target)}
     </span>;
 }
-

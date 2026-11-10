@@ -6,7 +6,7 @@
 
 - Every displayed Team's card edits its own stored "Team capacity (not in Jira)" for the selected Sprint, read through the batch route `POST /api/eng/sprints/<sprint_id>/assignee-capacity/planned/read` and saved by one owner per Sprint and Team.
 - The card's → writes the stored number to the Team's own matched ticket in one click (`capacityReconcilePush`, analytics `capacity_reconcile_push`).
-- The verification-gate items (EPM automatic refresh, toggle-to-paint p50/p95, the App render measurement, Cmd/Ctrl+Z after Enter, Undo semantics) are closed in its Task 8. The headed Firefox and WebKit glyph and hover check runs with its full gates.
+- Task 8 records implemented checks for EPM automatic refresh, toggle-to-paint p50/p95, the App render measurement, Cmd/Ctrl+Z after Enter, Undo semantics, and headed Firefox/WebKit glyph and hover runs. Final gates remain open: accepted headed failures and the manual signoff (DoD 14), the operator toggle-paint signoff (DoD 15), and the extraction-lint debt and publication naming hold (DoD 18 and 20); see the execution plan's finalization review.
 
 The current behaviour is described in [docs/features/planning-sprint-review.md](../features/planning-sprint-review.md).
 

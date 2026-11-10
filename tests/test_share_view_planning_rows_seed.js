@@ -47,7 +47,8 @@ const tableProps = {
     renderPriorityIcon: noop,
 };
 
-// Each render is a new mount: the state initializer runs once per render here, as it does once per mount in the browser.
+// Static rendering runs the initializer for each render but does not run the layout effect that remembers a mounted choice.
+// These renders prove one-shot seed consumption and the unseeded SSR initializer default only.
 function mountTable(table) {
     globalThis.document = { body: {} };
     try { return renderToStaticMarkup(React.createElement(table.PlanningReviewTable, tableProps)); }
@@ -64,7 +65,7 @@ test('a Planning table nobody seeded opens in Epics', async () => {
     assert.deepEqual(rowKinds(markup), ['epic']);
 });
 
-test('a link seed is consumed by the first table mount only; the next mount resets to Epics like any user choice', async () => {
+test('an SSR render consumes the link seed once; the next SSR render uses the Epics initializer default', async () => {
     const table = await loadTable();
     table.resetShareViewForTests();
     table.setPendingPlanningRowMode('story');

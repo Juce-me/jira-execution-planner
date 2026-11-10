@@ -1,6 +1,6 @@
 # Planning Team Capacity for Every Selected Team (#323) Implementation Plan
 
-> **Status:** In execution. Tasks 0–9 and Task 10 Steps 1–3 are done on `feature/331-shared-planning` (see Execution evidence); Task 10 Step 4 (full gates) and Step 5 (publication naming) remain. Decisions D1–D4 and the G1 count were recorded on 2026-11-06; G2 opened on 2026-11-06. Revision 3 (2026-11-06) incorporates two independent reviews of revision 1 and one re-validation of revision 2. Decisions D1–D4 and gates G1–G3 below must be answered before the tasks that name them. Branch: `feature/331-shared-planning`, on top of #331 Task 0.1 (PostgreSQL-only, single-use DB CSRF tokens).
+> **Status:** In execution. Tasks 0–9, Task 10 Steps 1–3, the Task S inventory repair and Task R row-choice retention are implemented on `feature/331-shared-planning`. Final whole-branch review, verification and operator acceptance are recorded below; the operator explicitly holds the `DONE-*` rename, push and PR. The 2026-11-10 merge of `origin/main` is `cd57391d`. Decisions D1–D4 and G1 were recorded on 2026-11-06; G2 opened that day. Revision 3 incorporates the independent design reviews. This plan builds on #331 Task 0.1 (PostgreSQL-only, single-use DB CSRF tokens).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Commit steps run only after the operator authorizes commits for this work.
 
@@ -530,7 +530,7 @@ Each item is done only with its named evidence recorded in Execution evidence (c
     - The automatic follow-up waits while an editor is open; an unchanged projection keeps its identity; late responses are discarded; recovery never sends a PATCH.
     - *Evidence:* Task 7 tests.
 11. **Reconciliation.**
-    - One row per differing Team, each named; dismissal and failure are independent; "Use ticket value" writes only that Team.
+    - Under the operator-approved Task 5 design, each differing Team is marked on its own card and reconciles through its existing hover rail; there are no banner rows, dismissal or "Use ticket value" actions. Failed stored-number saves expose Team-only Retry and Discard.
     - The mirror runs only for idle loaded owners after user-initiated reads and never creates a document; a Jira save settles that Team's stored number to `jira` in any scope.
     - *Evidence:* Task 5 Playwright cases.
 12. **One-click push (D1 a).**
@@ -753,3 +753,11 @@ Review record (2026-11-06), all independent and read-only:
 - revision 2: a re-validation (4 P1, 9 P2, minors).
 
 Revision 3 addresses every finding or raises it as D1–D4 or G1–G3.
+
+### Finalization review (2026-11-10)
+
+- The operator explicitly authorized merging main before the handoff. Clean start `31de430c`, fetched main `421ff627`, merge `cd57391d`. Conflict resolutions preserve Table-only/shared Planning and every-Team capacity alongside DELIVERY Allocation and Board-only Sprint admission. The obsolete observed-Sprint fallback test was replaced test-first by Board publication fencing plus a separate scoped-source proof test. Focused backend: 140 tests, OK; Node 20: 3,685 passed; sync structure/AGENTS checks: 21 tests, OK.
+- Task R (`31de430c`) remembers the viewer's chosen Epics/Stories mode across manual Refresh and Sprint changes in session memory; a document reload starts from the default or a link. Its reported full Chromium partition was 69 serial plus 2,317 remaining cases passed, 34 skipped, zero failures. The channel and mounted regressions are in `tests/test_planning_row_mode_channel.js` and `tests/ui/planning_assignee_capacity.spec.js`.
+- Fresh whole-branch reviews found three P2 defects, independently confirmed before fixes: duplicate normalized displayed-Team names regained a stored-number pencil despite their values being excluded; Team-keyed push locks allowed cards sharing one Jira ticket to race; unavailable rail readouts omitted the shared touch-pin handlers. Test-first fixes now suppress ambiguous fallback/edit eligibility, exclude editors/pushes by the captured pending ticket key, and compose touch pinning with guarded actions. Different tickets remain concurrent and unavailable taps never retry a write. Focused evidence: 132 unit cases and nine Chromium cases passed; six new hoverless touch cases and 18 combined mouse/focus/touch cases passed. Raw logs and synthetic captures are under `tmp/capacity-review/` and `tmp/capacity-*-green.log`.
+- The operator additionally approved DELIVERY Board scope matching Initiative Allocation rather than Epic Components. Legacy Component matching is preserved; Department scope values are exact raw Allocation values, matched Initiatives admit eligible Epic children, and All work retains its Team-derived union. The displayed scope is Allocation while its existing wire value remains `component`. Maintained backend, control and browser regressions and matching before/after synthetic captures are recorded under `tmp/planning-323-every-team/finalize/`.
+- DoD 11 above is aligned with the approved hover-rail design rather than the superseded banner design. DoD 13 retains its unpointed-Team two-read residual; DoD 14 retains accepted headed failures and the unrecorded manual signoff; DoD 15 retains the operator's toggle-paint signoff. DoD 18's extraction-lint debt and DoD 20's publication naming hold must not be represented as unconditional passes. Final gate summaries follow when complete.

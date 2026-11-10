@@ -254,3 +254,30 @@ test('A to B to A keeps the deliberate quirk: the Burndown assignee resets to al
     // Original App at d0f8bc79 resets a valid saved assignee while scoped data reloads; the refactor preserves it.
     await expect(assignee()).toHaveValue('all');
 });
+
+test('a group switch keeps the stored Team selection when it differs from the cached group state (#323)', async ({ page }) => {
+    test.setTimeout(60000);
+    await openDashboard(page);
+    const teamControl = page.locator('.view-selector .team-dropdown').first();
+    await teamControl.locator('.team-dropdown-toggle').click();
+    await teamControl.locator('.team-dropdown-option', { hasText: 'team-beta' }).locator('input').check();
+    await page.mouse.click(8, 8);
+    await expect(teamControl.locator('.team-dropdown-selection-label')).toHaveText('team-beta');
+    await expect.poll(async () => (await savedPrefs(page)).selectedTeams).toEqual(['team-beta']);
+    await toB(page);
+    const secondTeams = (await savedPrefs(page)).selectedTeams;
+    // Second shows All Teams, so on the way back the hydration guard's render-closure selection equals the stored
+    // target and its first run skips, while applyGroupState queues Default's cached Beta in the same flush.
+    expect(secondTeams).toEqual(['all']);
+    // Another tab stores the Default scope's selection as this group's current one while Default's cached state keeps Beta.
+    await page.evaluate(({ scopeKey, selectedTeams }) => {
+        const key = 'jira_dashboard_team_selection_state_v1';
+        const map = JSON.parse(localStorage.getItem(key) || '{}');
+        map[scopeKey] = { selectedTeams, selectedTeamId: selectedTeams[0] || 'all' };
+        localStorage.setItem(key, JSON.stringify(map));
+    }, { scopeKey: `team-selection::${sprintId}::grp-default`, selectedTeams: secondTeams });
+    await toA(page);
+    // The pre-guard App (06bb74d0) let the stored selection win over the cached group state.
+    await expect.poll(async () => (await savedPrefs(page)).selectedTeams).toEqual(secondTeams);
+    await expect(teamControl.locator('.team-dropdown-selection-label')).not.toHaveText('team-beta');
+});

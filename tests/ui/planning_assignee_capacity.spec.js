@@ -1846,6 +1846,14 @@ test('after Enter commits a cell, Cmd/Ctrl+Z undoes it', async ({ page }) => {
     // Focus sits on the committed cell's container: inside the table, not on the input and not on the page.
     const focus = await page.evaluate(() => { const node = document.activeElement; return { tag: node.tagName, inTable: Boolean(node.closest('table.planning-assignee-table')), holdsInput: node.querySelector('input')?.getAttribute('aria-label') || '' }; });
     expect(focus).toEqual({ tag: 'TD', inTable: true, holdsInput: 'Capacity for Ann Synthetic' });
+    // The keyboard-focused cell draws the design-system focus ring (inset), not the browser's default outline.
+    const ring = await page.evaluate(() => {
+        const node = document.activeElement, style = getComputedStyle(node), probe = document.createElement('span');
+        probe.style.color = 'var(--focus-ring-color)'; document.body.appendChild(probe);
+        const token = getComputedStyle(probe).color; probe.remove();
+        return { focusVisible: node.matches(':focus-visible'), outline: `${style.outlineStyle} ${style.outlineWidth}`, offset: style.outlineOffset, colorIsToken: style.outlineColor === token };
+    });
+    expect(ring, 'the focus token ring on the committed cell').toEqual({ focusVisible: true, outline: 'solid 2px', offset: '-2px', colorIsToken: true });
     await page.mouse.move(5, 600);
     await rowOf(page, 'acc-ann').screenshot({ path: 'tmp/planning-323-every-team/task8/focus-after-enter.png', animations: 'disabled' });
     await page.keyboard.press('ControlOrMeta+z');

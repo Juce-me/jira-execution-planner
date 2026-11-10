@@ -53,3 +53,6 @@
 .planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button { padding: 0.15rem 0.4375rem; margin: -0.15rem -0.4375rem; }
 @media (hover: hover) { .planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button:hover:where(:enabled):where(:not([aria-disabled="true"])) { box-shadow: var(--hover-overlay), var(--hover-ring-inset); } }
 .planning-assignee-table tfoot td.planning-assignee-over > .planning-review-text-button:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: -2px; }
+/* A cell container keeps focus after Enter commits its input (#323): its keyboard ring is the focus token, inset like the
+   Totals cue's; a pointer focus on the padding stays ringless (:focus-visible). */
+.planning-assignee-table tbody td[tabindex="-1"]:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: -2px; }

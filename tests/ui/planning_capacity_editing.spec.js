@@ -716,6 +716,51 @@ test('a Team card keeps its idle height while its capacity editor is open, at re
     }
 });
 
+test('a row of Teams with no capacity keeps its card and panel height idle, while editing and after the first save', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    // Every Team has a Jira capacity ticket with a blank value, so no card has a delta (meta) line of its own.
+    await openPlanning(page, { capacityPayload: { enabled: true, mutationEnabled: true, sprint: sprintName, capacities: {}, entries: [
+        { teamName: 'Alpha', issueKey: 'CAP-101', capacity: null },
+        { teamName: 'Beta', issueKey: 'CAP-102', capacity: null },
+        { teamName: 'Gamma', issueKey: 'CAP-103', capacity: null },
+    ] } });
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    // Computed used heights, exact (see the case above for why not the DOMRect).
+    const heights = () => page.evaluate(() => ({
+        cards: [...document.querySelectorAll('.planning-team-capacity-cards .team-stat-card')].map(node => getComputedStyle(node).height),
+        panel: getComputedStyle(document.querySelector('.planning-panel.open')).height,
+    }));
+    const capture = name => page.locator('.planning-team-capacity-cards').screenshot({ path: `tmp/planning-323-every-team/task8/r4-no-capacity-${name}-1440x900.png`, animations: 'disabled' });
+    await settled();
+    const idle = await heights();
+    await page.mouse.move(5, 890);
+    await capture('idle');
+    // A card without a delta keeps an aria-hidden blank meta line, so every card has the same structure.
+    for (const team of ['Alpha', 'Beta', 'Gamma']) {
+        const meta = page.locator('.team-stat-card', { hasText: team }).locator('.microbar-meta');
+        await expect(meta).toHaveCount(1);
+        await expect(meta).toHaveAttribute('aria-hidden', 'true');
+        await expect(meta).toHaveText(' ');
+    }
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
+    const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
+    await expect(input).toBeFocused();
+    await settled();
+    expect(await heights(), 'while editing').toEqual(idle);
+    await page.mouse.move(5, 890);
+    await capture('editing');
+    await input.fill('6');
+    await input.press('Enter');
+    await expect(card.locator('form.team-capacity-editor')).toHaveCount(0);
+    await expect(card.locator('.microbar-meta')).toContainText('Cap 6.0');
+    await settled();
+    expect(await heights(), 'after the first save').toEqual(idle);
+    await page.mouse.move(5, 890);
+    await capture('saved');
+});
+
 test('capacity edit and cancel keep one accessible 28px editor and restore focus', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const { calls } = await openPlanning(page);

@@ -1010,7 +1010,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const [stickyEpicFocusKey, setStickyEpicFocusKey] = useState(null);
             const epicRefMap = useRef(new Map());
             const stickyEpicFrameRef = useRef(null);
-            const renderedLayoutRef = useRef({}); // the latest sticky-focus key and Planning offset (rendered or requested): a same-value setState is skipped (#323 DoD 9)
+            const renderedLayoutRef = useRef({ stickyEpicFocusKey: null, planningOffset: 0 }); // the last requested sticky-focus key and Planning offset (written only where one is requested): a same-value setState is skipped (#323 DoD 9)
             const groupStateRef = useRef(new Map()), issueEditStateRef = useRef(createEngIssueEditState()), mutationScopeRef = useRef('');
             const { planningOriginals, holdEditor, deferReorder, isHeld, confirmedEdit, noteEditStart, noteConfirmed, ackConfirmed } = usePlanningIssueEdits({ issueEditState: issueEditStateRef.current, onReorderReleased: key => reorderLanesFor(key) });
             const restoringGroupRef = useRef(false);
@@ -3041,7 +3041,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             useEffect(() => {
                 if (!showPlanning) {
-                    setPlanningOffset(0);
+                    renderedLayoutRef.current.planningOffset = 0; setPlanningOffset(0);
                 }
             }, [showPlanning]);
 
@@ -4511,7 +4511,6 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const pinHeight = isCatchUpMode && alertPin ? PIN_HEIGHT : 0;
             const filterBarStickyTop = compactStickyTop; const epicStickyTop = compactStickyTop + planningStickyHeight + filterBarHeight + pinHeight;
             alertStackRef.current = { compactHeight: compactHeaderOffset, filterBarHeight, pinHeight }; // read after two frames, so the pinned × sees the pin cleared
-            renderedLayoutRef.current = { stickyEpicFocusKey, planningOffset };
             useEffect(() => {
                 const computeStickyEpicFocus = () => {
                     stickyEpicFrameRef.current = null;
@@ -5474,7 +5473,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             useEffect(() => {
                 if (!showPlanning) {
-                    setPlanningOffset(0);
+                    renderedLayoutRef.current.planningOffset = 0; setPlanningOffset(0);
                     return;
                 }
                 const node = planningPanelRef.current;

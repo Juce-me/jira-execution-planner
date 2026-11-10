@@ -1077,9 +1077,10 @@ export default function PlanningTeamCapacityCards({
                                         )}
                                         <span className="microbar-label">{entry.storyPoints.toFixed(1)} SP</span>
                                     </div>
-                                    {deltaLabel && (
-                                        <div className={`microbar-meta ${capMeta?.status || ''}`}>{deltaLabel}</div>
-                                    )}
+                                    {/* A card without a delta keeps a blank meta line, so idle, editing and the first save share one height (#323). */}
+                                    {deltaLabel
+                                        ? <div className={`microbar-meta ${capMeta?.status || ''}`}>{deltaLabel}</div>
+                                        : <div className="microbar-meta" aria-hidden="true">{' '}</div>}
                                 </>
                             )}
                         </article>

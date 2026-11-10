@@ -200,6 +200,11 @@
             width: auto;
         }
 
+        /* A status in the context slot gives way to the Team name, which keeps its whole width up to the row (#323). */
+        .team-stat-card.team-card.is-capacity-editing.has-capacity-status .team-stat-label {
+            flex-shrink: 0;
+        }
+
         .team-capacity-action-rail {
             position: absolute;
             top: 0.08rem;
@@ -341,26 +346,16 @@
             white-space: nowrap;
         }
 
-        .team-capacity-status {
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-            max-width: 100%;
-            margin-top: 0.28rem;
-            padding: 0.3rem 0.38rem;
-            border-left: 3px solid var(--accent);
-            border-radius: 0 5px 5px 0;
-            background: #fff2eb;
+        /* A status shown while editing takes this slot (#323): one line, ellipsized like the Team name beside it, in the ink of
+           the in-card status block it replaces; it takes the pointer although the label row does not, and keeps the whole
+           message as its text. */
+        .team-capacity-editor-context[role="status"] {
+            flex: 0 1 auto;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
             color: #7f2d12;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.52rem;
-            line-height: 1.35;
-            overflow-wrap: anywhere;
-        }
-
-        .team-capacity-status a {
-            color: inherit;
-            text-decoration: underline;
+            pointer-events: auto;
         }
 
         .team-capacity-read-status {

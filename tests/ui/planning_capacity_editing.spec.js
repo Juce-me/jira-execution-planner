@@ -761,6 +761,47 @@ test('a row of Teams with no capacity keeps its card and panel height idle, whil
     await capture('saved');
 });
 
+test('a status shown while editing sits on the label row\'s one-line context slot and keeps the card height', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const fixture = await openPlanning(page);
+    const card = page.locator('.team-stat-card', { hasText: 'Alpha' });
+    const settled = () => page.evaluate(() => Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined))));
+    const height = () => card.evaluate(node => getComputedStyle(node).height);
+    await settled();
+    const idle = await height();
+    await card.hover();
+    await card.getByRole('button', { name: 'Edit Alpha capacity' }).click();
+    const input = card.getByRole('spinbutton', { name: 'Alpha Jira total planned capacity' });
+    await input.fill('6.5');
+    fixture.state.patchStatus = 409;
+    fixture.state.patchResponse = { error: 'capacity_conflict', currentCapacity: 7 };
+    await input.press('Enter');
+    const message = 'Capacity changed in Jira to 7.0. Review and save again, or cancel.';
+    const status = card.getByRole('status');
+    // The accessible text is the whole message, though the line is ellipsized; no native title carries it.
+    await expect(status).toHaveText(message);
+    await expect(status).toHaveClass('team-capacity-editor-context');
+    await expect(status).not.toHaveAttribute('title');
+    await expect(input).toHaveAccessibleDescription(message);
+    await settled();
+    expect(await height(), 'card height while the status shows').toBe(idle);
+    const geometry = await card.evaluate(node => {
+        const statusNode = node.querySelector('[role="status"]'), style = getComputedStyle(statusNode);
+        const range = document.createRange();
+        range.setStart(statusNode.firstChild, 0); range.setEnd(statusNode.firstChild, 1);
+        const glyph = range.getBoundingClientRect(), box = statusNode.getBoundingClientRect(), cardBox = node.getBoundingClientRect();
+        const hit = document.elementFromPoint(glyph.left + glyph.width / 2, glyph.top + glyph.height / 2);
+        const overlaps = [...node.querySelectorAll('.team-capacity-editor-row input, .team-capacity-editor-row button')].map(control => control.getBoundingClientRect())
+            .some(rect => rect.left < box.right && rect.right > box.left && rect.top < box.bottom && rect.bottom > box.top);
+        const label = node.querySelector('.team-stat-label');
+        return { nameWhole: label.scrollWidth <= label.clientWidth, hitIsStatus: hit === statusNode, overlaps, visibility: style.visibility, whiteSpace: style.whiteSpace, textOverflow: style.textOverflow,
+            truncated: statusNode.scrollWidth > statusNode.clientWidth, oneLine: box.height <= parseFloat(style.lineHeight) + 1, inside: box.left >= cardBox.left && box.right <= cardBox.right };
+    });
+    expect(geometry).toEqual({ nameWhole: true, hitIsStatus: true, overlaps: false, visibility: 'visible', whiteSpace: 'nowrap', textOverflow: 'ellipsis', truncated: true, oneLine: true, inside: true });
+    await page.mouse.move(5, 890);
+    await page.locator('.planning-team-capacity-cards').screenshot({ path: 'tmp/planning-323-every-team/task8/r5-long-status-1440x900.png', animations: 'disabled' });
+});
+
 test('capacity edit and cancel keep one accessible 28px editor and restore focus', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const { calls } = await openPlanning(page);
@@ -1595,10 +1636,18 @@ test('capacity reference states remain settled, bounded, and visible in Planning
         clientWidth: status.clientWidth,
         scrollHeight: status.scrollHeight,
         clientHeight: status.clientHeight,
+        textOverflow: getComputedStyle(status).textOverflow,
+        whiteSpace: getComputedStyle(status).whiteSpace,
         status: status.getBoundingClientRect(),
         card: status.closest('.team-stat-card').getBoundingClientRect(),
     }));
-    expect(conflictGeometry.scrollWidth).toBeLessThanOrEqual(conflictGeometry.clientWidth);
+    // The conflict is one ellipsized line in the editing card's context slot (#323 Task 8 R5, replacing "the whole message
+    // fits"); the node keeps the whole message as its text.
+    await expect(alpha.getByRole('status')).toHaveText('Capacity changed in Jira to 7.0. Review and save again, or cancel.');
+    if (conflictGeometry.scrollWidth > conflictGeometry.clientWidth) {
+        expect(conflictGeometry.textOverflow).toBe('ellipsis');
+        expect(conflictGeometry.whiteSpace).toBe('nowrap');
+    }
     expect(conflictGeometry.scrollHeight).toBeLessThanOrEqual(conflictGeometry.clientHeight);
     expect(conflictGeometry.status.left).toBeGreaterThanOrEqual(conflictGeometry.card.left);
     expect(conflictGeometry.status.right).toBeLessThanOrEqual(conflictGeometry.card.right);
@@ -1773,7 +1822,7 @@ for (const teamCount of [1, 6, 7]) {
                 const rail = card.querySelector('.team-capacity-action-rail');
                 const microbar = card.querySelector('.microbar');
                 const texts = [...card.querySelectorAll('.microbar-meta, .team-capacity-editor-context, [role="status"]')]
-                    .map(node => ({ text: node.textContent.trim(), scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
+                    .map(node => ({ text: node.textContent.trim(), status: node.getAttribute('role') === 'status', textOverflow: getComputedStyle(node).textOverflow, whiteSpace: getComputedStyle(node).whiteSpace, scrollWidth: node.scrollWidth, clientWidth: node.clientWidth, scrollHeight: node.scrollHeight, clientHeight: node.clientHeight }));
                 return {
                     rect,
                     cell: cellFor(index),
@@ -1810,7 +1859,11 @@ for (const teamCount of [1, 6, 7]) {
                 expect(card.scrollHeight, `${stateName} card vertical overflow`).toBeLessThanOrEqual(card.clientHeight);
                 rows.set(card.cell.row, [...(rows.get(card.cell.row) || []), card.rect.height]);
                 card.texts.forEach(text => {
-                    expect(text.scrollWidth, `${stateName} ${text.text} horizontal overflow`).toBeLessThanOrEqual(text.clientWidth);
+                    // A status while editing is one ellipsized line in the context slot (#323 Task 8 R5); its node keeps the whole text.
+                    if (text.status && text.scrollWidth > text.clientWidth) {
+                        expect(text.textOverflow, `${stateName} ${text.text} ellipsis`).toBe('ellipsis');
+                        expect(text.whiteSpace, `${stateName} ${text.text} one line`).toBe('nowrap');
+                    } else expect(text.scrollWidth, `${stateName} ${text.text} horizontal overflow`).toBeLessThanOrEqual(text.clientWidth);
                     expect(text.scrollHeight, `${stateName} ${text.text} vertical overflow`).toBeLessThanOrEqual(text.clientHeight);
                 });
                 if (card.label.scrollWidth > card.label.clientWidth) {

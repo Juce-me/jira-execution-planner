@@ -888,12 +888,13 @@ export default function PlanningTeamCapacityCards({
                         .replace(/\s+share\s+/, ' ');
                     const editorContext = plannedEditing ? `Team capacity (not in Jira)${capacityShareLabel ? ` · ${capacityShareLabel}` : ''}` : capacityShareLabel;
                     const compactEditorContext = plannedEditing ? 'Team capacity (not in Jira)' : compactCapacityShareLabel;
-                    const editorDescription = [editorContext ? contextId : '', statusMessage ? errorId : ''].filter(Boolean).join(' ');
+                    // A status takes the context slot while it shows (#323), so the input is described by whichever is rendered.
+                    const editorDescription = statusMessage ? errorId : editorContext ? contextId : '';
 
                     return (
                         <article
                             key={entry.id}
-                            className={`team-stat-card team-card${isEditing ? ' is-capacity-editing' : ''}${hasActionRail ? ' has-capacity-actions' : ''}${isEditing && editorContext ? ' has-capacity-share' : ''}${statusMessage ? ' has-capacity-status' : ''}`}
+                            className={`team-stat-card team-card${isEditing ? ' is-capacity-editing' : ''}${hasActionRail ? ' has-capacity-actions' : ''}${isEditing && (editorContext || statusMessage) ? ' has-capacity-share' : ''}${statusMessage ? ' has-capacity-status' : ''}`}
                             data-tooltip={isEditing || statusMessage ? undefined : tooltipText}
                             data-capacity-team={entry.id}
                             data-capacity-source={entry.capacitySource || undefined}
@@ -906,7 +907,11 @@ export default function PlanningTeamCapacityCards({
                         >
                             <div className="team-capacity-label-row">
                                 <div className="team-stat-label">{entry.name}</div>
-                                {isEditing && editorContext && (
+                                {/* While editing, a status message takes the label row's one-line context slot (ellipsized; the node keeps the
+                                    whole message as its text), so it never grows the card and the editor row cannot cover it (#323). */}
+                                {isEditing && statusMessage ? (
+                                    <span id={errorId} className="team-capacity-editor-context" role="status" aria-live="polite">{statusMessage}</span>
+                                ) : isEditing && editorContext && (
                                     <span
                                         id={contextId}
                                         className="team-capacity-editor-context"
@@ -1051,11 +1056,6 @@ export default function PlanningTeamCapacityCards({
                                         overlays them from its static position, so the card never grows (#323). */}
                                     <div className="microbar" aria-hidden="true" />
                                     <div className="microbar-meta" aria-hidden="true">{deltaLabel || '\u00a0'}</div>
-                                    {statusMessage && (
-                                        <div id={errorId} className="team-capacity-status" role="status" aria-live="polite">
-                                            <span>{statusMessage}</span>
-                                        </div>
-                                    )}
                                 </>
                             ) : (
                                 <>

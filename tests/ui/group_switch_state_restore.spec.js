@@ -276,7 +276,27 @@ test('a group switch keeps the stored Team selection when it differs from the ca
         map[scopeKey] = { selectedTeams, selectedTeamId: selectedTeams[0] || 'all' };
         localStorage.setItem(key, JSON.stringify(map));
     }, { scopeKey: `team-selection::${sprintId}::grp-default`, selectedTeams: secondTeams });
+    // Record every Team label the switch renders, every saved Team selection and every request URL from here on.
+    await page.evaluate(() => {
+        const seen = window.__teamSwitchTrace = { labels: [], saves: [] };
+        const read = () => document.querySelectorAll('.view-selector .team-dropdown-selection-label').forEach(node => seen.labels.push(node.textContent));
+        new MutationObserver(read).observe(document.body, { subtree: true, childList: true, characterData: true });
+        const setItem = Storage.prototype.setItem;
+        Storage.prototype.setItem = function (key, value) {
+            if (key === 'jira_dashboard_team_selection_state_v1' || key === 'jira_dashboard_ui_prefs_v1') seen.saves.push(String(value));
+            return setItem.call(this, key, value);
+        };
+    });
+    const requests = [];
+    page.on('request', request => requests.push(request.url()));
     await toA(page);
+    // No render, saved selection or request in between uses Default's cached Beta: the stored selection wins at once (#323 R5).
+    const trace = await page.evaluate(() => window.__teamSwitchTrace);
+    expect(trace.labels.filter(text => text.includes('team-beta')), 'labels rendered during the switch').toEqual([]);
+    expect(trace.saves.filter(value => value.includes('team-beta') && !value.includes('"team-selection::')), 'UI preferences saved with the cached selection').toEqual([]);
+    expect(trace.saves.filter(value => JSON.parse(value)[`team-selection::${sprintId}::grp-default`]?.selectedTeams?.includes('team-beta')), 'Default scope saved with the cached selection').toEqual([]);
+    // The selection travels as `team`; `teamIds` is the group's own Team list.
+    expect(requests.filter(url => (new URL(url).searchParams.get('team') || '').includes('team-beta')), 'requests scoped to the cached selection').toEqual([]);
     // The pre-guard App (06bb74d0) let the stored selection win over the cached group state.
     await expect.poll(async () => (await savedPrefs(page)).selectedTeams).toEqual(secondTeams);
     await expect(teamControl.locator('.team-dropdown-selection-label')).not.toHaveText('team-beta');

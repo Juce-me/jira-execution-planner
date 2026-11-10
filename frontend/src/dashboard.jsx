@@ -4171,8 +4171,9 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 teamSelectionHydratedSelectionRef.current = { scopeKey: teamSelectionScopeKey, selectedTeams: nextSelectedTeams };
                 teamSelectionSkipPersistScopeRef.current = hydrationWillUpdateSelection ? teamSelectionScopeKey : '';
                 const sameTeams = (value) => { const normalized = normalizeSelectedTeams(value); return normalized.length === nextSelectedTeams.length && normalized.every((id, index) => id === nextSelectedTeams[index]); };
-                // Skips a same-value setState: it would still queue an update that costs App a render later (#323 DoD 9).
-                if (!sameTeams(selectedTeams)) setSelectedTeams(prev => (sameTeams(prev) ? prev : nextSelectedTeams));
+                // Skips a same-value setState: it would still queue an update that costs App a render later (#323 DoD 9). Not while a
+                // group restore is applying: its queued cached selection would render first, so the updater must run after it.
+                if (restoringGroupRef.current || !sameTeams(selectedTeams)) setSelectedTeams(prev => (sameTeams(prev) ? prev : nextSelectedTeams));
                 saveTeamSelectionState(getLocalStorage(), teamSelectionScopeKey, { selectedTeams: nextSelectedTeams });
                 if (teamSelectionCarryForwardRef.current?.scopeKey === teamSelectionScopeKey) teamSelectionCarryForwardRef.current = null;
             }, [

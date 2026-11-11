@@ -1015,3 +1015,28 @@ test('#323 duplicate normalized Team names cannot regain stored capacity or penc
         }
     }
 });
+
+test('previous Planning capacity uses the nearest earlier quarter, dates within a quarter, and refuses ambiguous catalogs', async () => {
+    const { previousPlanningCapacitySprint } = await loadUtils();
+    const earlier = { id: '90', name: '2026Q2', startDate: '2026-04-01' };
+    const previous = { id: '2', name: '2026Q3', startDate: '2026-07-01' };
+    const current = { id: '1', name: '2026Q4', startDate: '2026-10-01' };
+    assert.equal(previousPlanningCapacitySprint([current, earlier, previous], current.name), previous);
+    assert.equal(previousPlanningCapacitySprint([current, previous], '2027Q1'), current);
+    assert.equal(previousPlanningCapacitySprint([current], current.name), null);
+    assert.equal(previousPlanningCapacitySprint([previous], 'Unscheduled'), null);
+    assert.equal(previousPlanningCapacitySprint([previous, { ...previous, id: '3' }], current.name), null);
+    assert.equal(previousPlanningCapacitySprint([previous, { ...previous, id: '3', startDate: '2026-08-01' }], current.name)?.id, '3');
+});
+
+test('previous Planning capacity keeps raw Jira precision and zero, falls back to stored values and never copies another Team or ambiguous ticket', async () => {
+    const { previousPlanningCapacityValue } = await loadUtils();
+    const payload = { capacities: { 'R&D Alpha': 20.5 }, entries: [{ teamName: 'R&D Alpha', issueKey: 'CAP-1', capacity: 20.5 }] };
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', ['Alpha', 'Beta'], 12), 20.5);
+    assert.equal(previousPlanningCapacityValue({ capacities: { Alpha: 0 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 0 }] }, 'Alpha', ['Alpha'], 12), 0);
+    assert.equal(previousPlanningCapacityValue(payload, 'Beta', ['Alpha', 'Beta']), null);
+    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [] }, 'Alpha', ['Alpha'], 12), 12);
+    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: null }] }, 'Alpha', ['Alpha'], 12), 12);
+    assert.equal(previousPlanningCapacityValue({ ...payload, entries: [...payload.entries, { teamName: 'Alpha', issueKey: 'CAP-2', capacity: 8 }] }, 'Alpha', ['Alpha'], 12), 12);
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', ['Alpha', 'R&D Alpha'], 12), 12);
+});

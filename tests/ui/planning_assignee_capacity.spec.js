@@ -1279,6 +1279,122 @@ async function showCards(page) {
     await expect(page.locator('.planning-team-capacity-cards')).toBeVisible();
 }
 
+for (const previousValue of [20.5, 0, 20.555]) test(`no ticket: editor inherits previous Planning Jira capacity ${previousValue} without visiting that Sprint`, async ({ page }) => {
+    const server = plannedServer();
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: sprint => sprint === activeSprintName ? ticket(previousValue)(sprint) : noTicket(sprint) });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toHaveValue(String(previousValue === 20.555 ? 20.56 : previousValue));
+    await expect(input).toBeFocused();
+    expect(assigneeWrites(calls)).toEqual([]);
+    expect(jiraWrites(calls)).toEqual([]);
+    if (previousValue === 20.5) await alphaCard(page).screenshot({ path: 'tmp/capacity-inheritance/editor-after.png', animations: 'disabled' });
+    await input.fill('23');
+    await input.press('Enter');
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    expect(server.state.patches[0]).toEqual({ sprintId: String(futureSprintId), body: { teamId: 'team-alpha', planned: { value: '23', source: 'user' }, changes: [] } });
+    expect(server.state.docs[String(activeSprintId)]).toBeUndefined();
+    expect(jiraWrites(calls)).toEqual([]);
+});
+
+test('no ticket: the previous Jira value wins over inherited stored capacity; the current Sprint own value wins on reopening', async ({ page }) => {
+    const server = plannedServer({ docs: { [String(activeSprintId)]: ownDoc({ value: '12', source: 'user' }) } });
+    let previousReads = 0;
+    await install(page, { server, capacityProject: 'CAP', capacity: sprint => {
+        if (sprint === activeSprintName) { previousReads += 1; return ticket(20)(sprint); }
+        return noTicket(sprint);
+    } });
+    await openPlanning(page);
+    await showCards(page);
+    expect(previousReads).toBe(0);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toHaveValue('20');
+    await alphaCard(page).getByRole('button', { name: 'Save Alpha Team team capacity', exact: true }).click();
+    await expect.poll(() => server.state.patches.length).toBe(1);
+    await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'user');
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    await expect(input).toHaveValue('20');
+    expect(previousReads).toBe(1);
+});
+
+test('no ticket: a new Team stays blank when the previous Sprint has capacity only for another Team', async ({ page }) => {
+    const server = plannedServer();
+    await install(page, { server, capacityProject: 'CAP', capacity: sprint => sprint === activeSprintName
+        ? { enabled: true, mutationEnabled: true, sprint, capacities: { 'Beta Team': 9 }, entries: [{ teamName: 'Beta Team', issueKey: 'CAP-202', capacity: 9 }] }
+        : noTicket(sprint) });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue('');
+    expect(server.state.patches).toEqual([]);
+});
+
+test('no ticket: cancel aborts a slow previous-sprint read and its late response cannot replace a reopened editor', async ({ page }) => {
+    const server = plannedServer();
+    await install(page, { server, capacityProject: 'CAP', capacity: noTicket });
+    let release;
+    const held = new Promise(resolve => { release = resolve; });
+    let reads = 0;
+    await page.route('**/api/capacity?**', async route => {
+        const sprint = new URL(route.request().url()).searchParams.get('sprint');
+        if (sprint !== activeSprintName) return route.fallback();
+        reads += 1;
+        if (reads === 1) { await held; return json(route, ticket(99)(sprint)).catch(() => {}); }
+        return json(route, ticket(22)(sprint));
+    });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toBeDisabled();
+    await expect.poll(() => reads).toBe(1);
+    await alphaCard(page).getByRole('button', { name: 'Cancel Alpha Team team capacity edit' }).click();
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    await expect(input).toHaveValue('22');
+    await input.fill('25');
+    release();
+    await page.waitForLoadState('networkidle');
+    await expect(input).toHaveValue('25');
+    expect(server.state.patches).toEqual([]);
+});
+
+test('no ticket: a failed previous-sprint read allows manual input and retries on reopening', async ({ page }) => {
+    const server = plannedServer();
+    await install(page, { server, capacityProject: 'CAP', capacity: noTicket });
+    let reads = 0;
+    await page.route('**/api/capacity?**', route => {
+        const sprint = new URL(route.request().url()).searchParams.get('sprint');
+        if (sprint !== activeSprintName) return route.fallback();
+        reads += 1;
+        return reads === 1 ? json(route, { error: 'jira_capacity_fetch_failed' }, 503) : json(route, ticket(18)(sprint));
+    });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toBeEnabled();
+    await expect(alphaCard(page)).toContainText('Previous sprint capacity could not be loaded.');
+    await input.fill('21');
+    await expect(alphaCard(page).getByRole('button', { name: 'Save Alpha Team team capacity', exact: true })).toBeEnabled();
+    await alphaCard(page).getByRole('button', { name: 'Cancel Alpha Team team capacity edit' }).click();
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    await expect(input).toHaveValue('18');
+    expect(server.state.patches).toEqual([]);
+});
+
 test('no ticket: the lead types a team number, it saves to the store only, the bar and underbar appear, and the next Sprint shows it gray', async ({ page }) => {
     const server = plannedServer();
     const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: noTicket, authMode: 'atlassian_oauth', analytics: true });

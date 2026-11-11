@@ -4,7 +4,7 @@ import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
-import { capacityAxis, parseCapacityDraft, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
+import { capacityAxis, parseCapacityDraft, previousPlanningCapacitySprint, previousPlanningCapacityValue, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
 import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
 import { formatHundredths, plannedNumber, plannedWireValue, roundHalfUpHundredths, samePlannedValue, validateNumberDraft } from './planningAssigneeCapacityModel.js';
 
@@ -229,6 +229,8 @@ export default function PlanningTeamCapacityCards({
     canEditCapacity = false,
     jiraUrl = '',
     sprintName = '',
+    sprints = [],
+    readPreviousCapacity,
     scopeSignature = '',
     capacityReadRevision = 0,
     capacityLoading = false,
@@ -287,6 +289,7 @@ export default function PlanningTeamCapacityCards({
     const syncInteraction = () => { if (mountedRef.current) onInteractionChange?.((editorRef.current ? 1 : 0) + pushAbortRefs.current.size > 0); };
     const setEditor = value => {
         const next = typeof value === 'function' ? value(editorRef.current) : value;
+        if (!next && editorRef.current?.prefilling) requestAbortRef.current?.abort();
         editorRef.current = next; syncInteraction(); updateEditor(next);
     };
     const setPush = (teamId, value) => {
@@ -393,7 +396,7 @@ export default function PlanningTeamCapacityCards({
             inputRef.current.select();
         });
         return () => window.cancelAnimationFrame(frame);
-    }, [activeEditor?.id]);
+    }, [activeEditor?.id, activeEditor?.prefilling]);
 
     React.useEffect(() => {
         if (activeEditor || !restoreFocusIssueRef.current) return undefined;
@@ -513,9 +516,13 @@ export default function PlanningTeamCapacityCards({
     const openPlannedEditor = (entry) => {
         if (activeEditor || pushAbortRefs.current.has(String(entry.id)) || !entry.plannedEditable || !plannedFor(entry)) return;
         assignee.controller.ensureTeamDocument(String(entry.id));
-        const stored = plannedOf(entry).value ?? '';
+        const planned = plannedOf(entry);
+        const stored = planned.value ?? '';
+        const previousSprint = planned.source !== 'user' && planned.source !== 'jira'
+            && typeof readPreviousCapacity === 'function' ? previousPlanningCapacitySprint(sprints, sprintName) : null;
         const nextEditor = {
             mode: 'planned',
+            prefilling: Boolean(previousSprint),
             id: `planned:${entry.id}`,
             displayedTeamId: String(entry.id),
             displayedTeamName: entry.name,
@@ -531,13 +538,31 @@ export default function PlanningTeamCapacityCards({
         };
         editorRef.current = nextEditor;
         setEditor(nextEditor);
+        if (!previousSprint) return;
+        // One scoped GET only on explicit edit. It never copies the earlier ticket's identity or writes either Sprint.
+        const controller = new AbortController();
+        requestAbortRef.current?.abort();
+        requestAbortRef.current = controller;
+        void (async () => {
+            try {
+                const payload = await readPreviousCapacity(previousSprint.name, entry.name, { signal: controller.signal });
+                const value = previousPlanningCapacityValue(payload, entry.name, entries.map(team => team.name), planned.value);
+                if (controller.signal.aborted || editorRef.current !== nextEditor) return;
+                setEditor({ ...nextEditor, prefilling: false, draft: plannedWireValue(value) ?? '' });
+            } catch (error) {
+                if (controller.signal.aborted || editorRef.current !== nextEditor) return;
+                setEditor({ ...nextEditor, prefilling: false, errorMessage: error?.name === 'AuthenticationRequiredError' ? ''
+                    : 'Previous sprint capacity could not be loaded. Enter a value or cancel and reopen to retry.' });
+            } finally {
+                if (requestAbortRef.current === controller) requestAbortRef.current = null;
+            }
+        })();
     };
 
     const cancelEditor = (restoreFocus) => {
         if (!editorRef.current || submissionRef.current) return;
         if (restoreFocus) restoreFocusIssueRef.current = editorRef.current.id;
         editorCardRef.current = null;
-        editorRef.current = null;
         setEditor(null);
     };
 
@@ -561,7 +586,7 @@ export default function PlanningTeamCapacityCards({
     const submitEditor = async (event) => {
         event.preventDefault();
         const candidate = editorRef.current;
-        if (!candidate || submissionRef.current) return;
+        if (!candidate || candidate.prefilling || submissionRef.current) return;
         if (candidate.mode === 'planned') {
             submitPlannedEditor(candidate);
             return;
@@ -880,7 +905,7 @@ export default function PlanningTeamCapacityCards({
                         ? { valid: plannedDraft.ok, value: plannedDraft.ok ? plannedDraft.value : null }
                         : isEditing ? parseCapacityDraft(activeEditor.draft) : { valid: false, value: null };
                     const saveDisabled = Boolean(
-                        !isEditing || activeEditor.submitting || editorBlockedReason
+                        !isEditing || activeEditor.submitting || activeEditor.prefilling || editorBlockedReason
                         || !parsedDraft.valid || (plannedEditing
                             ? samePlannedValue(parsedDraft.value == null ? null : { value: parsedDraft.value }, activeEditor.expectedCapacity === '' ? null : { value: activeEditor.expectedCapacity })
                             : parsedDraft.value === activeEditor.expectedCapacity),
@@ -1009,7 +1034,7 @@ export default function PlanningTeamCapacityCards({
                                     <form
                                         className="team-capacity-editor"
                                         onSubmit={submitEditor}
-                                        aria-busy={activeEditor.submitting}
+                                        aria-busy={activeEditor.submitting || activeEditor.prefilling}
                                         onKeyDown={(event) => {
                                             if (event.key === 'Escape') {
                                                 event.preventDefault();
@@ -1031,7 +1056,8 @@ export default function PlanningTeamCapacityCards({
                                                     editorRef.current = next;
                                                     return next;
                                                 })}
-                                                disabled={activeEditor.submitting}
+                                                disabled={activeEditor.submitting || activeEditor.prefilling}
+                                                placeholder={activeEditor.prefilling ? 'Loading…' : undefined}
                                                 aria-label={plannedEditing ? `${entry.name} team capacity (not in Jira)` : `${entry.name} Jira total planned capacity`}
                                                 aria-describedby={editorDescription}
                                             />
@@ -1041,7 +1067,7 @@ export default function PlanningTeamCapacityCards({
                                                 size="md"
                                                 type="submit"
                                                 disabled={saveDisabled}
-                                                isLoading={activeEditor.submitting}
+                                                isLoading={activeEditor.submitting || activeEditor.prefilling}
                                                 aria-label={activeEditor.submitting
                                                     ? `Saving ${entry.name} capacity`
                                                     : plannedEditing ? `Save ${entry.name} team capacity` : `Save ${entry.name} capacity`}

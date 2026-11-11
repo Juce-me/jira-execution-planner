@@ -131,8 +131,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
    - Current implemented output: DB/OAuth EPM is hidden until the current user connects a Home/Townsquare API token in Settings, then EPM Home reads use that user-owned token while Jira REST remains OAuth-backed. Superseded by the [public-read cutover](DONE-home-oauth-public-reads.md): the token prerequisite and stored tokens are removed and EPM Home reads use the user's OAuth grant; do not reopen this DONE plan.
 
 6. `GATE-05-home-write-capability.md`
-   - Blocked external capability gate for Jira Home/Townsquare project update writes.
-   - Expected output while blocked: checked date and status only. If it passes, create or execute a separate Home write implementation plan. It does not block the accepted [read-only implementation](DONE-home-oauth-public-reads.md).
+   - Historical Home/Townsquare project-write capability record; retained for existing links and excluded from startup gate checks. See its top status note.
 
 7. `FUTURE-db-additional-features.md`
    - Execute only after the DB auth and user-configuration phases are complete and explicitly reopened.
@@ -223,7 +222,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 4. `DONE-jira-oauth-planning-status-transitions.md`
    - Completed Jira OAuth-backed ENG Catch Up and Planning status changes across Epics, Stories, and Subtasks. Merged in [PR #100](https://github.com/Juce-me/jira-execution-planner/pull/100). Use for audit context only.
-   - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only while `GATE-05` is blocked.
+   - Output: Catch Up can transition one Epic, Story, or expanded Subtask at a time by clicking the displayed status; Planning can fetch transition options from clicked status pills/text and transition every selected status target through the signed-in user's Jira OAuth context; batch mode never silently truncates selected targets, rejects over-cap selections before mutation, preserves Story selection capacity math, and keeps EPM Jira/Home-backed issue surfaces view-only under their existing authorization contracts.
 
 5. `DONE-eng-priority-edit-mode.md`
    - Completed and merged in [PR #103](https://github.com/Juce-me/jira-execution-planner/pull/103) (branch `docs/eng-priority-edit-mode-plan`, commits `04be74a..8e4d764`). OAuth-backed ENG priority edits from the existing `task-priority-icon`, reusing the compact status dropdown UI/API pattern, and caching priority/status catalogs across app usage.
@@ -324,7 +323,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 1. `DONE-project-grade-security-hardening.md`
    - Completed project-grade hardening plan. Use for audit and release evidence; do not execute as active work.
    - Output: central endpoint policy registry, default-deny route guards, local-only dev diagnostics, loopback-safe startup defaults, security headers, project packaging metadata, CI backend/security checks, and a hardened release zip.
-   - This plan does not authorize Home/Townsquare writes or Jira write-back. `GATE-05-home-write-capability.md` remains blocked unless its documented probe records `PASS home_project_update_supported`.
+   - This plan does not authorize Home/Townsquare writes or Jira write-back. The historical `GATE-05-home-write-capability.md` record adds no startup prerequisite.
 
 ## Completed Frontend Structure
 
@@ -516,7 +515,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 2. `SUPPORT-eng-project-track-write-switch-design.md`
    - User-approved design reference for the follow-up OAuth-backed ENG Project Track write plan.
    - Expected output: every real ENG Epic header renders 🔒 Committed, 🤷 Flexible, or ⚪ Unidentified; clicking the indicator in Catch Up or Planning opens the existing compact issue-field option-menu behavior and writes only the configured Jira Project Track field through the signed-in user's OAuth context, with the same queue, optimistic update, rollback, stale-scope, auth-recovery, analytics, and surface-isolation contracts as status and priority changes.
-   - No Home/Townsquare or EPM mutation; `GATE-05` remains blocked. This support document feeds `DONE-eng-project-track-write-switch.md`, which now exists.
+   - No Home/Townsquare or EPM mutation; `GATE-05` is historical context only. This support document feeds `DONE-eng-project-track-write-switch.md`, which now exists.
 
 3. `DONE-eng-project-track-write-switch.md`
    - Completed and merged in [PR #112](https://github.com/Juce-me/jira-execution-planner/pull/112) (branch `feature/eng-project-track-write-switch`). Use for audit context only.

@@ -99,7 +99,7 @@ import StoryPointsEditor from './issues/StoryPointsEditor.jsx';
 import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkStatus, migrateEngCatchUpFilters, readEngCatchUpFilterState, resolveEngCatchUpFilters } from './eng/engCatchUpFilters.js';
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers } from './eng/planningSelectionActions.js';
-import { useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
+import { readPlanningCapacity, useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
 import { buildPlanningCardTeamIds, getTeamCapacityMeta, isCapacityTotalAvailable } from './eng/planningCapacityUtils.js';
 import { buildPlanningSelectionSummary, buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
@@ -6180,6 +6180,8 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         capacity={<PlanningCapacityBar childPlural={entityNames.childPlural} compact={compactPlanningPanel} capacityEnabled={capacityEnabled} totalCapacityAdjusted={totalCapacityAdjusted} estimatedCapacityAdjusted={estimatedCapacityAdjusted} excludedCapacityAdjusted={excludedCapacityAdjusted}
                             selectedCount={selectedCount} selectedSP={selectedSP} capacitySummary={capacitySummary} />}
                         teams={<PlanningTeamCapacityCards
+                            sprints={availableSprints}
+                            readPreviousCapacity={(sprint, team, options) => readPlanningCapacity(BACKEND_URL, sprint, team, options)}
                             entries={selectedTeamEntries}
                             capacityEnabled={capacityEnabled}
                             canOpenCapacityJira={authMode === 'atlassian_oauth'}

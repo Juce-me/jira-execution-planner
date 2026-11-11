@@ -33,7 +33,7 @@ For `DONE-*` plans, the top status note plus the `docs/plans/README.md` entry is
 At the start of any session that touches auth, DB, Home/Townsquare, EPM, or plan execution:
 
 1. List gated docs with `rg --files docs/plans | rg '/GATE-'`.
-2. Open each `GATE-*` file.
+2. Open each `GATE-*` file and skip records explicitly marked Retired or Superseded; the prefix may remain for historical links.
 3. Check whether the external blocker might now be testable.
 4. Run the gate command only when the file's required credentials, approved target, and safety constraints are available.
 5. Update the gate's `Checked on` and `Last result` fields only when the result changed or the recorded `Next review` date has passed; otherwise leave the file untouched.

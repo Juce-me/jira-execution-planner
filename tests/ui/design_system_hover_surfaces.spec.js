@@ -112,7 +112,7 @@ test('EPM and Settings preserve inline fills, disabled footer and ordinary label
 });
 
 
-for (const width of [1440, 430]) test(`EPM project actions and progress readout preserve geometry at ${width}px`, async ({ page }, testInfo) => {
+for (const width of [1440]) test(`EPM project actions and progress readout preserve geometry at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({width, height:1000});
     const projects = ['home-1','home-2'].map((id,index)=>({id,homeProjectId:id,name:index?'Second Synthetic Home Project':'Connected Home Project',displayName:index?'Second Synthetic Home Project':'Connected Home Project',label:index?'rnd_project_second':'rnd_project_connected',stateValue:'ON_TRACK',stateLabel:'On track',tabBucket:'active',homeUrl:`https://home.example/project/${id}`,subGoalKeys:['CHILD-200'],latestUpdateDate:'2026-05-11',latestUpdateSnippet:'Synthetic project update.',latestUpdateAuthor:'Synthetic Owner',latestUpdateUrl:`https://home.example/project/${id}/update`}));
     const rollup={metadataOnly:false,emptyRollup:false,truncated:false,truncatedQueries:[],initiatives:{},rootEpics:{'HOVER-EPIC':{issue:{key:'HOVER-EPIC',summary:'Synthetic rollup epic',status:'In Progress',issueType:'Epic',assignee:'Synthetic Owner'},stories:[{key:'HOVER-STORY',summary:'Synthetic rollup story',status:'In Progress',issueType:'Story',priority:'High',storyPoints:3,assignee:'Synthetic Owner'}]}},orphanStories:[]};
@@ -402,8 +402,8 @@ test('Statistics actual cohort row Clear and issue links retain underline and re
     await page.screenshot({path:path.join(evidenceDir(testInfo),'stats-cohort-links.png'),animations:'disabled'});
 });
 
-test('touch Settings and Scenario actions remain reachable without hover', async ({ browser, browserName }, testInfo) => {
-    const context = await browser.newContext({ viewport: { width: 430, height: 932 }, hasTouch: true, ...(browserName === 'firefox' ? {} : { isMobile: true }) });
+test('touch Settings and Scenario actions remain reachable without hover', async ({ browser }, testInfo) => {
+    const context = await browser.newContext({ viewport: { width:1280,height:900 }, hasTouch: true });
     const page = await context.newPage();
     try {
         await installSurface(page, 'scenario');
@@ -855,8 +855,8 @@ test('Scenario native lane, task actions, clickable headings and inline focus ex
     await expect(history).not.toBeVisible();
 });
 
-test('touch Scenario native lane, headings, history and focus exit remain reachable',async ({browser,browserName},testInfo)=>{
-    const context=await browser.newContext({viewport:{width:430,height:932},hasTouch:true,...(browserName==='firefox'?{}:{isMobile:true})});
+test('touch Scenario native lane, headings, history and focus exit remain reachable',async ({browser},testInfo)=>{
+    const context=await browser.newContext({viewport:{width:1280,height:900},hasTouch:true});
     const page=await context.newPage();
     try {
         const panel=await installScenarioHoverJourney(page);

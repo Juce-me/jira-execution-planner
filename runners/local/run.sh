@@ -61,15 +61,14 @@ remove_observed_lock() {
 stop_existing_runner() {
   local target_pid="$1"
   local target_child_pid=""
-  local attempt=0
+  local deadline=$((SECONDS + 8))
 
   printf 'Local PostgreSQL runner: replacing runner process %s.\n' \
     "$target_pid" >&2
   kill -TERM "$target_pid" 2>/dev/null || return 0
   while process_is_running "$target_pid" &&
-        [[ -d "$lock_dir" && "$attempt" -lt 140 ]]; do
+        [[ -d "$lock_dir" && "$SECONDS" -lt "$deadline" ]]; do
     sleep 0.05
-    attempt=$((attempt + 1))
   done
   if process_is_running "$target_pid" && [[ -d "$lock_dir" ]]; then
     printf 'Local PostgreSQL runner: runner process %s did not stop; sending KILL.\n' \
@@ -175,24 +174,21 @@ run_child() {
 
 terminate_child_group() {
   local target_pid="${child_pid:-}"
-  local killer_pid=""
+  local deadline=$((SECONDS + 6))
   [[ -n "$target_pid" ]] || return 0
 
   kill -TERM -- "-${target_pid}" 2>/dev/null || true
-  (
-    trap '' INT TERM
-    sleep 5
-    kill -KILL -- "-${target_pid}" 2>/dev/null || true
-  ) &
-  killer_pid=$!
-
-  wait "$target_pid" 2>/dev/null || true
+  # Bash reaps asynchronous children on SIGCHLD; wait below still collects the
+  # original child's status. Poll the whole group so an ignoring descendant
+  # cannot survive an already-exited leader. SECONDS includes scheduling overhead;
+  # its integer resolution gives at least five seconds of grace. No watchdog lingers.
+  while kill -0 -- "-${target_pid}" 2>/dev/null && [[ "$SECONDS" -lt "$deadline" ]]; do
+    sleep 0.05
+  done
   if kill -0 -- "-${target_pid}" 2>/dev/null; then
-    wait "$killer_pid" 2>/dev/null || true
-  else
-    kill "$killer_pid" 2>/dev/null || true
-    wait "$killer_pid" 2>/dev/null || true
+    kill -KILL -- "-${target_pid}" 2>/dev/null || true
   fi
+  wait "$target_pid" 2>/dev/null || true
   rm -f -- "$lock_child_pid_file"
   child_pid=""
 }

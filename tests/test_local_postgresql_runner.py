@@ -490,6 +490,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
     def _assert_signal(
         self, sent_signal, expected_status,
         ignore_app_term=False, ignore_grandchild_term=False,
+        maximum_cleanup_seconds=None,
     ):
         self.log.write_text("", encoding="utf8")
         env = self.env.copy()
@@ -512,6 +513,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
                 time.sleep(0.05)
             else:
                 self.fail("Flask stub did not start")
+            signal_started = time.monotonic()
             process.send_signal(sent_signal)
             cleanup_deadline = time.monotonic() + 10
             while time.monotonic() < cleanup_deadline:
@@ -523,6 +525,11 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             process.send_signal(signal.SIGINT)
             process.send_signal(signal.SIGTERM)
             _, stderr = process.communicate(timeout=8)
+            if maximum_cleanup_seconds is not None:
+                self.assertLess(
+                    time.monotonic() - signal_started, maximum_cleanup_seconds,
+                    "cooperative child cleanup waited for the five-second escalation grace",
+                )
             self.assertEqual(process.returncode, expected_status, stderr)
             self._assert_down_once(self._log_text())
             self._assert_pid_exits(self.child_pid_file)
@@ -535,12 +542,22 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self._assert_signal(signal.SIGINT, 130)
 
     def test_sigterm_returns_143_kills_child_and_cleans_once(self):
-        self._assert_signal(signal.SIGTERM, 143)
+        self._assert_signal(signal.SIGTERM, 143, maximum_cleanup_seconds=3)
 
     def test_sigterm_escalates_to_kill_for_ignoring_process_tree(self):
+        self._delay_runner_polls()
         self._assert_signal(
             signal.SIGTERM, 143, ignore_grandchild_term=True,
         )
+
+    def _delay_runner_polls(self):
+        # Simulate scheduling overhead without lengthening the runner's grace.
+        self._write_executable(self.fake_bin / "sleep", '''#!/usr/bin/env bash
+if [[ "$1" == "0.05" ]]; then
+  exec /bin/sleep 0.2
+fi
+exec /bin/sleep "$@"
+''')
 
     def test_sigterm_during_lock_acquisition_is_serviced_after_ownership(self):
         lock_started = self.log.parent / "lock-started"
@@ -863,6 +880,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             self._cleanup_process(unrelated)
 
     def test_replacement_escalates_when_first_runner_cannot_handle_term(self):
+        self._delay_runner_polls()
         first_log = self.log.parent / "stopped-first.log"
         first_env = self.env.copy()
         first_env.update({

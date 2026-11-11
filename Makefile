@@ -21,9 +21,10 @@ test-frontend-unit:
 	npm run test:frontend:unit
 
 test-frontend-ui:
-	npm run test:frontend:ui
+	npm run test:frontend:ui -- $(ARGS)
 
-verify: build test test-security test-frontend-unit test-frontend-ui
+verify:
+	.venv/bin/python scripts/verify_tests.py $(ARGS)
 
 preflight:
 	.venv/bin/python scripts/check_startup_preflight.py

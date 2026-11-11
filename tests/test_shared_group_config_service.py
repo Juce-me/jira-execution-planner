@@ -13,7 +13,7 @@ from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import shared_group_config as service
 import jira_server
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 
 def validate_groups_config(payload, allow_empty=False):
@@ -22,9 +22,8 @@ def validate_groups_config(payload, allow_empty=False):
 
 class SharedGroupConfigServiceTests(unittest.TestCase):
     def setUp(self):
-        self.database_url = fresh_database_url(self.addCleanup)
+        self.database_url = fresh_model_schema_url(self.addCleanup)
         self.engine = db_engine.get_engine(self.database_url)
-        models.Base.metadata.create_all(self.engine)
         self.factory = db_engine.session_factory(self.database_url)
         self.workspace_id, self.user_id, self.other_user_id = self._seed_subjects()
         self.context = self._context(self.user_id)

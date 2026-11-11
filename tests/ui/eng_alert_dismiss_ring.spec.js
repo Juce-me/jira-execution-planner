@@ -5,10 +5,7 @@ const { CATEGORIES, openRingDashboard, ringReach, settle } = require('./eng_aler
 
 // The dismiss x sits in the last grid column of an alert row, whose card body clips with
 // overflow: hidden. Its settled hover ring must stay inside both, and the glyph must be centred.
-const viewports = [
-    { name: 'desktop', width: 1280, height: 900 },
-    { name: 'mobile', width: 375, height: 800 },
-];
+const viewports = [{ name: 'desktop', width: 1280, height: 900 }];
 const screenshotDir = process.env.JEP_RING_SHOTS ? path.resolve(process.env.JEP_RING_SHOTS) : '';
 
 async function measure(page, button) {

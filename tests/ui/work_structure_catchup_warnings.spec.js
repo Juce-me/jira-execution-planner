@@ -2,7 +2,7 @@
 // warning nor "Some dependencies could not be loaded", and every work request carries the DELIVERY context only. The mocked
 // routes enforce the server contract: selectors in the query string, a `{keys, refresh}` dependency body. Synthetic values only.
 const path = require('path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 

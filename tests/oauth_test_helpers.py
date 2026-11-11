@@ -9,7 +9,7 @@ from backend.auth.db_browser_sessions import create_browser_session
 from backend.auth.db_context import invalidate_auth_status_cache
 from backend.db import engine as db_engine, models
 from tests.db_oauth_test_helpers import seed_db_actor
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 import jira_server
 
@@ -22,8 +22,8 @@ FULL_OAUTH_SCOPE = (
 
 
 def set_up_db_oauth(testcase):
-    """Own a disposable database without signing in or bypassing request guards."""
-    url = fresh_database_url(testcase.addCleanup)
+    """Own an unseeded ordinary model schema; retain real request guards."""
+    url = fresh_model_schema_url(testcase.addCleanup)
     for patcher in (
         patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': url,
                                 'TEST_DATABASE_URL': url}),
@@ -31,7 +31,6 @@ def set_up_db_oauth(testcase):
     ):
         patcher.start()
         testcase.addCleanup(patcher.stop)
-    models.Base.metadata.create_all(db_engine.get_engine(url))
     testcase.addCleanup(db_engine.dispose_engines)
     testcase.addCleanup(invalidate_auth_status_cache)
     return url
@@ -56,10 +55,8 @@ def oauth_session_payload(**overrides):
 
 
 def _db_session_payload(**overrides):
-    """Persist actual identity; never interpret a legacy session label as authority."""
+    """Persist identity in the caller's prepared schema, without initializing DDL."""
     payload = oauth_session_payload(**overrides)
-    engine = db_engine.get_engine()
-    models.Base.metadata.create_all(engine)
     with db_engine.session_scope() as db:
         connection_id = str(overrides.get('db_auth_connection_id') or '').strip()
         if connection_id:

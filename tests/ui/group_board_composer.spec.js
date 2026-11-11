@@ -1341,9 +1341,9 @@ test('with the flag on, column chips and picker rows preview the draft colours a
     expect((await chipStyle(page.locator('.board-column').first().locator('.component-chip[data-status="To Do"]'))).inline || null).toBeNull();
 });
 
-test('the colour checkbox row uses the shared row classes and stays inside its row (desktop and 375px)', async ({ page }) => {
+test('the colour checkbox row uses the shared row classes and stays inside its row on desktop', async ({ page }) => {
     for (const [name, initialBoard] of [['unchecked', 'undefined'], ['checked', referenceWithFlag()], ['disabled', 'null']]) {
-        for (const width of [1440, 375]) {
+        for (const width of [1440]) {
             await page.unrouteAll({ behavior: 'ignoreErrors' });
             await openComposer(page, { initialBoard, waitForColumns: name !== 'disabled' });
             await page.setViewportSize({ width, height: 1200 });

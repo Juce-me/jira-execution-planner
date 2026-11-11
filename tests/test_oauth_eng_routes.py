@@ -16,7 +16,7 @@ from backend.services.jira_issue_project_track import ProjectTrackServiceError
 from backend.services.jira_issue_transitions import IssueTransitionServiceError
 import jira_server
 from tests.oauth_test_helpers import install_oauth_session
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 
 class FakeResponse:
@@ -67,7 +67,7 @@ def _synthetic_epic():
 class DbOAuthFixture:
     def _setup_db(self):
         from backend.auth.db_context import invalidate_auth_status_cache
-        self.database_url = fresh_database_url(self.addCleanup)
+        self.database_url = fresh_model_schema_url(self.addCleanup)
         self._env_patcher = patch.dict(os.environ, {
             'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': self.database_url,
             'TEST_DATABASE_URL': self.database_url, 'WORK_CONFIGURATIONS_ENABLED': 'false',

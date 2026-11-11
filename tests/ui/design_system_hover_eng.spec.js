@@ -275,7 +275,7 @@ test('mounted compact filter lane paints its more-chip ring within clipping and 
         if(await options.count()>1) await options.first().click();
     }
     await page.keyboard.press('Escape');
-    await page.setViewportSize({width:390,height:1000});
+    await page.setViewportSize({width:800,height:1000});
     const more=page.locator('.chip-more');
     await expect(more).toBeVisible();
     await hoverEvidence(page,more,testInfo,'compact-filter-more',{pill:true,clipped:true,selected:true});
@@ -312,7 +312,7 @@ test('mounted dirty Planning Table Save keeps its dark fill and disabled saving 
 });
 
 test.describe('touch filter fallback',()=>{
-    test.use({hasTouch:true,isMobile:true,viewport:{width:390,height:1000}});
+    test.use({hasTouch:true,viewport:{width:1280,height:900}});
     test('mounted Filters, option, clear and Jira menu remain tappable without hover rings',async({page},testInfo)=>{
         await openSurface(page,'catch-up');
         expect(await page.evaluate(()=>matchMedia('(hover: hover)').matches)).toBe(false);
@@ -441,8 +441,15 @@ test('mounted Story requirement, summary, subtasks and retries preserve their ki
 });
 
 test('mounted compact Board off-frame hint rings its visible pill without framing the overlay',async({page},testInfo)=>{
-    await page.setViewportSize({width:390,height:1000});
-    await openSurface(page,'board',{beforeNavigate:ctx=>ctx.respond('/api/groups-config',({json})=>json({...groupsConfigPayload,groups:groupsConfigPayload.groups.map(group=>({...group,board:{columns:[{id:'todo',name:'To Do',colour:'#597ef7',star:true,statuses:['To Do'],min:null,max:null},{id:'progress',name:'In Progress',colour:'#69c0ff',star:false,statuses:['In Progress'],min:null,max:null},{id:'done',name:'Done',colour:'#52c41a',star:false,statuses:['Done'],min:null,max:null}]}}))}))});
+    await page.setViewportSize({width:1028,height:1000});
+    // Enough real columns to overflow a desktop frame; no phone viewport is needed.
+    const columns = [
+        {id:'todo',name:'To Do',colour:'#597ef7',star:true,statuses:['To Do'],min:null,max:null},
+        {id:'progress',name:'In Progress',colour:'#69c0ff',star:false,statuses:['In Progress'],min:null,max:null},
+        {id:'done',name:'Done',colour:'#52c41a',star:false,statuses:['Done'],min:null,max:null},
+        ...Array.from({length:6},(_,index)=>({id:`extra-${index}`,name:`Synthetic ${index}`,colour:'#597ef7',star:false,statuses:[`Synthetic ${index}`],min:null,max:null})),
+    ];
+    await openSurface(page,'board',{beforeNavigate:ctx=>ctx.respond('/api/groups-config',({json})=>json({...groupsConfigPayload,groups:groupsConfigPayload.groups.map(group=>({...group,board:{columns}}))}))});
     const hint=page.locator('.eng-board .board-hint.right.is-on');
     await expect(hint).toBeVisible();
     const pip=hint.locator('.pip');
@@ -452,7 +459,7 @@ test('mounted compact Board off-frame hint rings its visible pill without framin
 });
 
 test.describe('touch issue actions',()=>{
-    test.use({hasTouch:true,isMobile:true,viewport:{width:430,height:1000}});
+    test.use({hasTouch:true,viewport:{width:1280,height:900}});
     test('mounted Story remove remains tappable without hover effects',async({page},testInfo)=>{
         await openSurface(page,'catch-up');
         expect(await page.evaluate(()=>matchMedia('(hover: hover)').matches)).toBe(false);

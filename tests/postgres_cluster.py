@@ -27,6 +27,10 @@ REQUIRED_BINARIES = ("initdb", "pg_ctl", "createdb")
 class ClusterError(RuntimeError):
     """The owned test cluster could not be provisioned."""
 
+    def __init__(self, message, *, preserve_directory=False):
+        super().__init__(message)
+        self.preserve_directory = preserve_directory
+
 
 def postgres_bin_dir(environ: Mapping[str, str] | None = None) -> Path:
     env = os.environ if environ is None else environ
@@ -113,8 +117,15 @@ def owned_cluster(base: Path, environ: Mapping[str, str] | None = None) -> Itera
                "adminDatabase": ADMIN_DATABASE, "runtimeDatabase": RUNTIME_DATABASE,
                "binDir": str(bin_dir)}
     finally:
-        if started:
-            _run(bin_dir, ["pg_ctl", "-D", str(data), "-m", "immediate", "-w", "-t", "60", "stop"])
+        # pg_ctl may start the postmaster before an interrupt records success.
+        if started or (data / 'postmaster.pid').exists():
+            message = 'The owned test cluster could not be stopped; its directory was preserved.'
+            try:
+                stopped = _run(bin_dir, ["pg_ctl", "-D", str(data), "-m", "immediate", "-w", "-t", "60", "stop"])
+            except BaseException as cause:
+                raise ClusterError(message, preserve_directory=True) from cause
+            if stopped.returncode:
+                raise ClusterError(message, preserve_directory=True)
         shutil.rmtree(base, ignore_errors=True)
 
 

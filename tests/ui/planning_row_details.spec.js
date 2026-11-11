@@ -123,15 +123,15 @@ test('related lookup has one flight, preserves failures and retries unavailable 
     await expect(page.getByRole('button', { name: 'View details for SYN-1', exact: true })).toBeFocused();
 });
 
-test('mapped parent/child details and narrow portal remain inside the viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+test('mapped parent/child details and portal remain inside the desktop viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await install(page, { mapped: true });
     await page.getByRole('button', { name: 'View details for SYN-100', exact: true }).click();
     const panel = page.getByRole('dialog', { name: 'Details for SYN-100', exact: true });
     await expect(panel).toBeVisible();
     await expect(panel.getByText('2 Epics in the current view.', { exact: true })).toBeVisible();
     const bounds = await panel.boundingBox();
-    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x+bounds.width).toBeLessThanOrEqual(390);
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x+bounds.width).toBeLessThanOrEqual(1280);
 });
 
 

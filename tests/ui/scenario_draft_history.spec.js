@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('node:crypto');

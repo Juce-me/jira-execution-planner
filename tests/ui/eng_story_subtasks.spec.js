@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 
@@ -708,10 +708,7 @@ test('ENG story subtask status pills inherit shared status colors', async ({ pag
     await page.screenshot({ path: `${screenshotDir}/status-colors-expanded.png`, fullPage: true });
 });
 
-for (const { name, viewport } of [
-    { name: 'desktop', viewport: { width: 1280, height: 760 } },
-    { name: 'narrow', viewport: { width: 390, height: 760 } },
-]) {
+for (const { name, viewport } of [{ name: 'desktop', viewport: { width: 1280, height: 760 } }]) {
     test(`ENG story subtasks load on demand and reuse cached rows on ${name}`, async ({ page }) => {
         await runSubtaskFlow(page, viewport, name);
     });

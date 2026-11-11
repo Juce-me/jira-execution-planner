@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { captureDomParity } = require('./dom_parity_helpers');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const fs = require('fs');
 const path = require('path');
 

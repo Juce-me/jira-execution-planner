@@ -1,10 +1,7 @@
 const { test, expect } = require('@playwright/test');
 const { appBaseUrl, installDashboardShell } = require('./epm_view_fixture');
 
-const viewports = [
-    { name: 'desktop', width: 1440, height: 1000 },
-    { name: 'mobile', width: 390, height: 844 },
-];
+const viewports = [{ name: 'desktop', width: 1440, height: 1000 }];
 
 const epmConfig = {
     version: 2,

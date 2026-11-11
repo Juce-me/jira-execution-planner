@@ -2,7 +2,7 @@
 // The dashboard is bundled from source so the production components run.
 const fs = require('fs');
 const path = require('path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 

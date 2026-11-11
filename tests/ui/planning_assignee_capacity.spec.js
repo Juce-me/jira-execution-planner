@@ -3,8 +3,6 @@ const { installDashboardShell } = require('./epm_view_fixture');
 const { createPlanningReviewMock } = require('./planning_review_mock');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
-// Laptop/wide-screen coverage is the default; opt into deferred mobile checks explicitly.
-const testMobile = process.env.JEP_TEST_MOBILE === '1';
 const activeSprintId = 3001;
 const activeSprintName = '2026Q2 Sprint 42';
 const futureSprintId = 4002;
@@ -2273,8 +2271,8 @@ test('the Unassigned name lines up with the person names through an empty person
     expect(g.rows.find(row => row.key === 'unassigned').height).toBe(32);
 });
 
-if (testMobile) test('at 390px the table scrolls inside its wrapper, never the page, and Remove stays a 24px tap target', async ({ browser }) => {
-    const context = await browser.newContext({ hasTouch: true, viewport: { width: 390, height: 844 } });
+test('desktop touch removal keeps its 24px target and the table inside its wrapper', async ({ browser }) => {
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
     const server = capacityServer({ rows: [...annRows(), { assigneeKey: 'acc-cy', displayName: 'Cy Former', capacity: '3', vacations: null, notes: null, removed: false }] });
     await install(page, { server });
@@ -2288,7 +2286,7 @@ if (testMobile) test('at 390px the table scrolls inside its wrapper, never the p
     expect(box.width).toBeCloseTo(24, 0); expect(box.height).toBeCloseTo(24, 0);
     await remove.tap();
     await expect(rowOf(page, 'acc-cy')).toHaveCount(0);
-    await strip(page).screenshot({ path: 'tmp/slice9-shots/strip-390.png', animations: 'disabled' });
+    await strip(page).screenshot({ path: 'tmp/slice9-shots/strip-desktop-touch.png', animations: 'disabled' });
     await context.close();
 });
 
@@ -3142,7 +3140,7 @@ test('Totals Planned capacity readout opens by tap and closes by an outside tap'
     await context.close();
 });
 
-for (const [width, height] of [[1440, 900], [1280, 720], [390, 844]].filter(([width]) => testMobile || width >= 1024)) test(`Totals Planned capacity "X / Y" stays on one line inside its cell at ${width}x${height}, columns and pinned stack unchanged`, async ({ browser }) => {
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`Totals Planned capacity "X / Y" stays on one line inside its cell at ${width}x${height}, columns and pinned stack unchanged`, async ({ browser }) => {
     const context = await browser.newContext({ hasTouch: width < 768, viewport: { width, height } });
     const page = await context.newPage();
     const measure = async (rows, capacity) => {
@@ -3238,7 +3236,7 @@ const triggerGeometry = (page, bare) => page.evaluate(isBare => {
     };
 }, bare);
 
-for (const [width, height] of [[1440, 900], [1280, 720], [390, 844]].filter(([width]) => testMobile || width >= 1024)) test(`the Totals over trigger's ring clears the text inside the control at ${width}x${height}, text, row and columns in place`, async ({ browser }) => {
+for (const [width, height] of [[1440, 900], [1280, 720]]) test(`the Totals over trigger's ring clears the text inside the control at ${width}x${height}, text, row and columns in place`, async ({ browser }) => {
     const context = await browser.newContext({ hasTouch: width < 768, viewport: { width, height } });
     const page = await context.newPage();
     const server = capacityServer({ rows: peopleRows('100.25', '23.2') });

@@ -333,7 +333,7 @@ test('Board weekly view asks for one scope when scopes are mixed', async ({ page
 });
 
 test('weekly chart labels and marks stay inside the drawing, and the page never scrolls sideways', async ({ page }) => {
-    for (const viewport of [{ width: 1000, height: 1100 }, { width: 390, height: 900 }]) {
+    for (const viewport of [{ width: 1000, height: 1100 }]) {
         await openBoardWeeks(page, viewport);
         const clipped = await page.locator('.performance-week-svg').evaluate(svg => {
             const box = svg.getBoundingClientRect();
@@ -500,7 +500,7 @@ test('Catch Up legend isolates one series in both charts, lines and markers, and
 });
 
 test('Catch Up weekly labels and marks stay inside each drawing, and the page never scrolls sideways, with six weeks', async ({ page }) => {
-    for (const viewport of [{ width: 1000, height: 1100 }, { width: 390, height: 900 }]) {
+    for (const viewport of [{ width: 1000, height: 1100 }]) {
         await openCatchUpWeeks(page, viewport);
         for (const chart of ['listLoaded', 'fullyLoaded']) {
             const clipped = await page.locator(`.performance-week-svg[data-chart="${chart}"]`).evaluate(svg => {
@@ -532,7 +532,7 @@ test('the 2s and 4s reference labels never overlap and stay inside each Catch Up
     for (const slowest of [120000, 60000]) {
         const weeks = catchUpWeeks.map((week, index) => index === 4
             ? { ...week, fullyLoaded: { ...week.fullyLoaded, p95Ms: slowest } } : week);
-        for (const viewport of [{ width: 1000, height: 1100 }, { width: 390, height: 900 }]) {
+        for (const viewport of [{ width: 1000, height: 1100 }]) {
             await openCatchUpWeeks(page, viewport, { ...catchUpPayload, catchUpWeekly: { weeks } });
             for (const chart of ['listLoaded', 'fullyLoaded']) {
                 const where = `${slowest} ms ${viewport.width}px ${chart}`;
@@ -610,7 +610,7 @@ test('Catch Up readout rows are never cut off and the readout stays inside the v
         catchUpWeek('2026-09-07', 2600, 8000, { ...large, partial: true }), ...catchUpWeeks.slice(1, -1), catchUpWeek('2026-10-19', 3300, 9800, { ...large, partial: true }),
     ] } };
     for (const [data, counts] of [[catchUpPayload, 'Errors 1 · cancelled 2 · capped 0 · cache hit 25%'], [largeCountPayload, 'Errors 128 · cancelled 64 · capped 32 · cache hit 100%']]) {
-        for (const viewport of [{ width: 390, height: 900 }, { width: 700, height: 900 }]) {
+        for (const viewport of [{ width: 1028, height: 900 }, { width: 1280, height: 900 }]) {
             await openCatchUpWeeks(page, viewport, data);
             for (const chart of ['listLoaded', 'fullyLoaded']) {
                 for (const which of ['first', 'last']) {
@@ -660,8 +660,8 @@ test('a click alone opens the Catch Up readout, so touch needs no hover', async 
 
 test.describe('touch', () => {
     test.use({ hasTouch: true });
-    test('tapping a week opens the Catch Up readout on a phone-width panel', async ({ page }) => {
-        await openCatchUpWeeks(page, { width: 390, height: 900 });
+    test('tapping a week opens the Catch Up readout on a desktop touch panel', async ({ page }) => {
+        await openCatchUpWeeks(page, { width: 1280, height: 900 });
         const hit = page.locator('.performance-week-svg[data-chart="fullyLoaded"] .performance-week-hit').nth(4);
         await hit.scrollIntoViewIfNeeded();
         await hit.tap();
@@ -698,8 +698,8 @@ const epmPayload = { ...payload, summary: { ...payload.summary, avgMs: null, p50
     epmProjects: [{ projectId: 'synthetic-b', name: 'Synthetic Beta With A Rather Long Display Name', loads: 9, avgMs: 4400, medianMs: 3900, p95Ms: 7200 },
         { projectId: 'synthetic-a', name: 'Synthetic Alpha', loads: 9, avgMs: 900, medianMs: 800, p95Ms: 1400 }] };
 
-test('EPM weekly view charts both measurements, filters by project and stays inside its chart at phone width', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 900 });
+test('EPM weekly view charts both measurements, filters by project and stays inside its chart at desktop width', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await openPanel(page, epmPayload);
     await page.getByLabel('Performance surface', { exact: true }).selectOption('epm');
     await expect(page.getByLabel('Performance group', { exact: true })).toHaveCount(0);

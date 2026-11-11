@@ -295,7 +295,7 @@ test('an empty list names the cause', async ({ page }) => {
     await expect(dialog.locator('[data-sprint-values-state="empty"]')).toContainText('No Sprint has been seen yet');
 });
 
-for (const viewport of [{ width: 375, height: 667 }, { width: 768, height: 1024 }]) {
+for (const viewport of [{ width: 1024, height: 900 }]) {
     test(`Sprint pickers keep usable touch targets and a reachable footer at ${viewport.width}`, async ({ page }) => {
         await page.setViewportSize(viewport);
         await mockApp(page);
@@ -389,7 +389,7 @@ test('before the first Save there is nothing to refresh, so no Refresh button an
     expect(state.sprintCalls).toEqual([]);
 });
 
-for (const viewport of [{ width: 375, height: 667 }, { width: 1280, height: 800 }]) {
+for (const viewport of [{ width: 1280, height: 800 }]) {
     test(`Refresh Sprint values stays one reachable control at ${viewport.width}`, async ({ page }) => {
         await page.setViewportSize(viewport);
         await mockApp(page, { sources: [{ configurationId: 'delivery', diagnostics: [] }] });

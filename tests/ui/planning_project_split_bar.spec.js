@@ -47,9 +47,9 @@ async function paintedReadout(page, fill) {
 }
 
 // The compact overview hides its details (2026-11-06), so the project split shows only in the expanded details:
-// at a narrow touch width the expanded bar keeps its target and readable labels.
-test('narrow touch bar in the expanded details retains its target and readable labels', async ({ browser }, testInfo) => {
-    const context = await browser.newContext({ viewport: { width: 390, height: 400 }, hasTouch: true });
+// on desktop touch the expanded bar keeps its target and readable labels.
+test('desktop touch bar in the expanded details retains its target and readable labels', async ({ browser }, testInfo) => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: true });
     const page = await context.newPage();
     await page.setContent('<div style="margin:100px 20px" id="root"></div>');
     await page.addStyleTag({ content: css }); await page.addScriptTag({ content: script });
@@ -63,7 +63,7 @@ test('narrow touch bar in the expanded details retains its target and readable l
         const paint = await measure(page.locator('.project-bar-fill' + selector));
         expect(contrast(label.text, paint.fill), `label text over ${selector}`).toBeGreaterThanOrEqual(4.5);
     }
-    await page.screenshot({ path: testInfo.outputPath('narrow-touch.png'), animations: 'disabled' });
+    await page.screenshot({ path: testInfo.outputPath('desktop-touch.png'), animations: 'disabled' });
     await context.close();
 });
 

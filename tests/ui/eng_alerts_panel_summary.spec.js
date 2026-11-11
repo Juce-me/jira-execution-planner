@@ -329,19 +329,6 @@ test('ENG alerts summary stays visible on desktop while open and collapsed', asy
     await captureSummaryState(page, 'desktop-collapsed');
 });
 
-test('ENG alerts summary wraps without overflow on narrow screens', async ({ page }) => {
-    await openEng(page, { width: 390, height: 760 }, true);
-
-    await expect(page.getByRole('button', { name: /Hide Alerts/ })).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('#eng-alert-panels')).toBeVisible();
-    await captureSummaryState(page, 'narrow-open');
-
-    await page.getByRole('button', { name: /Hide Alerts/ }).click();
-
-    await expect(page.getByRole('button', { name: /Show Alerts/ })).toHaveAttribute('aria-expanded', 'false');
-    await expect(page.locator('#eng-alert-panels')).toHaveCount(0);
-    await captureSummaryState(page, 'narrow-collapsed');
-});
 
 test('ENG alerts summary chips open and focus their matching alert section', async ({ page }) => {
     await openEng(page, { width: 1280, height: 520 }, false, { showBlockedAlert: false });

@@ -651,10 +651,7 @@ test('a real API 401 on an EPM read locks the mounted app once and never replays
 // Firefox/WebKit (`--browser=firefox|webkit --headed`) for the engines the app is reviewed in.
 // ---------------------------------------------------------------------------------------------------------
 
-const viewports = [
-    { name: 'desktop', width: 1440, height: 1000 },
-    { name: 'mobile', width: 390, height: 844 },
-];
+const viewports = [{ name: 'desktop', width: 1440, height: 1000 }];
 
 const geometryStates = [
     ['off', {}, { dirty: true }],

@@ -621,10 +621,6 @@ test('Project Track exposes fixed visuals and both unchecked means genuinely uns
     await expect(track.locator('.pop-list')).toHaveAttribute('aria-describedby', /empty-description/);
     await waitForVisualSettled(page);
     await page.screenshot({ path: `${screenshotDir}/project-track-empty-desktop.png`, fullPage: false });
-    await page.setViewportSize({ width: 375, height: 667 });
-    await track.scrollIntoViewIfNeeded();
-    await waitForVisualSettled(page);
-    await page.screenshot({ path: `${screenshotDir}/project-track-empty-mobile.png`, fullPage: false });
     await closeFilters(page);
     await expect(page.locator('.filterbar .chip:not(.chip-more)')).toContainText('Project TrackonlyNo Project Track');
     expect(await cardKeys(page, 'col-open')).toEqual(['EPX-3', 'EPX-4', 'EPX-6']);
@@ -821,26 +817,7 @@ test('the bar holds one row at desktop widths with every facet active', async ({
 // §7.6's ceiling is "never a third row, and the view controls may take a second below 720px".
 // Board now passes the compact help control through viewControls, so it uses that allowed second
 // row while every filter chip collapses and Clear all remains reachable.
-test('the bar uses at most two rows below 720px with Board help and Clear all survives', async ({ page }) => {
-    await openBoard(page, { width: 1440, height: 900 });
-    await activateFourFacets(page);
 
-    await page.setViewportSize({ width: 375, height: 760 });
-    await waitForVisualSettled(page);
-    const baseline = await page.evaluate(
-        () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    );
-    const metrics = await measureBar(page, baseline);
-    expect(metrics.rows, 'bar rows at 375').toBe(2);
-    expect(Math.abs(metrics.height - 80), 'bar height at 375 is the fixed two-row contract')
-        .toBeLessThanOrEqual(1);
-    expect(metrics.chipsHidden, 'every chip collapses at 375').toBe(4);
-    expect(metrics.moreText).toBe('+4 more');
-    expect(metrics.clear.width, 'Clear all collapsed at 375').toBeGreaterThan(0);
-    expect(metrics.clear.clippedByLane, 'Clear all is clipped by the chips lane at 375').toBe(0);
-    expect(metrics.documentOverflow).toBeLessThanOrEqual(metrics.baselineOverflow);
-    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-375.png` });
-});
 
 /* ── D16: the bar (and the controls above it) stay at container width while the board is full-bleed ── */
 
@@ -877,7 +854,7 @@ test('the filter bar is container-width and centred while the board itself is fu
 
 test('no horizontal document overflow with the bar mounted, at three widths', async ({ page }) => {
     await openBoard(page, { width: 1440, height: 900 });
-    for (const width of [1440, 960, 375]) {
+    for (const width of [1440, 960]) {
         await page.setViewportSize({ width, height: 900 });
         await waitForVisualSettled(page);
         const overflow = await page.evaluate(

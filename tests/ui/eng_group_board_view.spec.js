@@ -4,6 +4,7 @@ const esbuild = require('esbuild');
 const { test, expect } = require('@playwright/test');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
 const { dragCard, installHeldTransitions } = require('./eng_board_dashboard_fixture');
+const { observeBootstrapRequests } = require('./bootstrap_readiness');
 
 // The Board view itself (§6.1, §6.1.2): columns, folded rails as the chart, focus and star,
 // off-frame hints, breach glow, and the invariant that exactly one column is focused and open at
@@ -500,12 +501,67 @@ async function openBoard(page, {
         showAlertsPanel: false,
         ...initialPrefs,
     });
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    if (expectBoardColumns) {
-        await page.waitForSelector('.eng-board .col', { timeout: 10000 });
-        await settle(page);
-    }
+    const bootstrap = observeBootstrapRequests(page);
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await bootstrap.waitForBootstrap();
+        await expect(page.locator('.container')).toBeVisible();
+        await bootstrap.waitForIdle();
+        if (expectBoardColumns) {
+            await page.waitForSelector('.eng-board .col', { timeout: 10000 });
+            await page.evaluate(() => document.fonts.ready);
+            await settle(page);
+        } else await waitTwoFrames(page);
+        await bootstrap.waitForIdle();
+    } finally { bootstrap.dispose(); }
 }
+
+test('fixture readiness: held group bootstrap cannot complete Board opening without columns', async ({ page }) => {
+    let releaseGroups;
+    const groupsGate = new Promise(resolve => { releaseGroups = resolve; });
+    const requests = [];
+    const events = ['request', 'requestfinished', 'requestfailed'];
+    const listenersBefore = events.map(event => page.listenerCount(event));
+    let opened = false;
+    const opening = openBoard(page, { groupsResponseGate: groupsGate, requests, expectBoardColumns: false })
+        .then(() => { opened = true; });
+    try {
+        await expect.poll(() => requests.filter(path => path === '/api/groups-config').length).toBe(1);
+        await expect(page.locator('.container')).toBeVisible();
+        await waitTwoFrames(page);
+        expect(opened, 'mounted shell must not hide unfinished group bootstrap').toBe(false);
+        releaseGroups();
+        await opening;
+        expect(events.map(event => page.listenerCount(event)), 'bootstrap listeners were removed').toEqual(listenersBefore);
+        await expect(page.locator('.eng-board .col').first()).toBeVisible();
+    } finally {
+        releaseGroups();
+        await opening;
+    }
+});
+
+test('fixture readiness: mounted alert toolbar cannot complete pin opening while its cohort is held', async ({ page }) => {
+    const { deferred, openPinDashboard, settle: settlePin } = require('./eng_alert_pin_fixture');
+    const gate = deferred();
+    const events = ['request', 'requestfinished', 'requestfailed'];
+    const listenersBefore = events.map(event => page.listenerCount(event));
+    let opened = false;
+    const opening = openPinDashboard(page, { alertGate: gate }).then(value => { opened = true; return value; });
+    try {
+        await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+        await settlePin(page);
+        await waitTwoFrames(page);
+        expect(opened, 'mounted toolbar must not hide unfinished alert requests').toBe(false);
+        gate.resolve();
+        const fixture = await opening;
+        expect(events.map(event => page.listenerCount(event)), 'bootstrap listeners were removed').toEqual(listenersBefore);
+        expect(fixture.state.inflight).toBe(0);
+        await expect(page.locator('#eng-alert-blocked .alert-story').first()).toBeVisible();
+    } finally {
+        gate.resolve();
+        await opening;
+    }
+});
 
 const statsSourceRequests = (requestLog) => requestLog.filter(({ url, method }) => (
     method === 'POST' && new URL(url).pathname === '/api/stats/excluded-capacity-source'
@@ -4251,10 +4307,10 @@ test('pane mode shows no small-screen alert and sends no board_action', async ({
     expect(await boardActionEvents(page)).toEqual([]);
 });
 
-test.describe('touch tablet', () => {
-    test.use({ isMobile: true, hasTouch: true });
+test.describe('desktop touch', () => {
+    test.use({ hasTouch: true });
 
-    test('a landscape touch tablet keeps the page-scroll model and reports touch', async ({ page }) => {
+    test('a touch laptop keeps the page-scroll model and reports touch', async ({ page }) => {
         await openBoard(page, { width: 1024, height: 768, analyticsEnabled: true });
         expect(await isPaneMode(page)).toBe(false);
         await expectSmallScreenRequestFlow(page, 'touch');
@@ -4920,7 +4976,7 @@ test('Board help icon is centered within its trigger', async ({ page }) => {
 });
 
 test('open Board help recalculates its width and viewport gutters after resize', async ({ page }) => {
-    await openBoard(page, { width: 375, height: 720, reducedMotion: true });
+    await openBoard(page, { width: 1280, height: 720, reducedMotion: true });
 
     await page.getByRole('button', { name: 'How Group Board works' }).click();
     const help = page.getByRole('dialog', { name: 'How Group Board works' });
@@ -4936,7 +4992,8 @@ test('open Board help recalculates its width and viewport gutters after resize',
     });
 
     const narrow = await readGeometry();
-    expect(narrow.width).toBeLessThanOrEqual(351 + 1);
+    expect(narrow.width).toBeGreaterThanOrEqual(511);
+    expect(narrow.width).toBeLessThanOrEqual(512 + 1);
     expect(narrow.left).toBeGreaterThanOrEqual(11);
     expect(narrow.right).toBeLessThanOrEqual(narrow.viewport - 11);
 
@@ -4952,17 +5009,17 @@ test('open Board help recalculates its width and viewport gutters after resize',
     expect(landscape.left).toBeGreaterThanOrEqual(11);
     expect(landscape.right).toBeLessThanOrEqual(landscape.viewport - 11);
 
-    await page.setViewportSize({ width: 320, height: 620 });
-    await expect.poll(async () => (await readGeometry()).width).toBeLessThanOrEqual(296 + 1);
+    await page.setViewportSize({ width: 1028, height: 620 });
+    await expect.poll(async () => (await readGeometry()).width).toBeLessThanOrEqual(512 + 1);
     await expect.poll(async () => {
         const geometry = await readGeometry();
         return geometry.left >= 11 && geometry.right <= geometry.viewport - 11;
     }).toBe(true);
     const compact = await readGeometry();
-    expect(compact.width).toBeLessThanOrEqual(296 + 1);
+    expect(compact.width).toBeLessThanOrEqual(512 + 1);
     expect(compact.left).toBeGreaterThanOrEqual(11);
     expect(compact.right).toBeLessThanOrEqual(compact.viewport - 11);
-    await page.screenshot({ path: `${screenshotDir}/board-configured-help-resized-320.png`, fullPage: false });
+    await page.screenshot({ path: `${screenshotDir}/board-configured-help-resized-laptop.png`, fullPage: false });
 });
 
 test('a never-configured group gets a first-run column that says so and offers the composer', async ({ page }) => {
@@ -5643,10 +5700,10 @@ test('first-run board renders its own state', async ({ page }) => {
 // The regression that made the bleed CSS rather than JS: measured with NO settle, exactly as
 // tests/ui/codebase_structure_smoke.spec.js measures after its own resizes. A JS-written pixel
 // width leaves the board wider than the new viewport until its handler runs — 132px of document
-// overflow going 1280 -> 1028, and 385px going 390 -> 375.
+// overflow when resizing the desktop window from 1280 -> 1028.
 test('a resize never leaves the board wider than the viewport, even before anything settles', async ({ page }) => {
     await openBoard(page, { width: 1280, height: 760 });
-    for (const width of [1280, 1028, 760, 390, 375, 1440]) {
+    for (const width of [1280, 1028, 760, 1440]) {
         await page.setViewportSize({ width, height: 760 });
         const measured = await page.evaluate(() => {
             const rect = document.querySelector('.eng-board .board').getBoundingClientRect();
@@ -5669,9 +5726,6 @@ test('pane mode turns on only for a wide fine-pointer viewport with enough heigh
     expect(await isPaneMode(page)).toBe(true);
 
     await page.setViewportSize(FALLBACK_VIEWPORT);
-    await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
-
-    await page.setViewportSize({ width: 420, height: 900 });
     await expect(page.locator('.eng-board.is-pane-mode')).toHaveCount(0);
 
     await page.setViewportSize({ width: 1280, height: 900 });

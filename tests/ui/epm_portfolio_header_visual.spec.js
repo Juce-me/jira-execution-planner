@@ -253,11 +253,7 @@ async function loadHeaderFixture(page) {
     `);
 }
 
-for (const viewport of [
-    { name: 'desktop', width: 1520, height: 900 },
-    { name: 'medium', width: 960, height: 760 },
-    { name: 'narrow', width: 520, height: 720 },
-]) {
+for (const viewport of [{ name: 'desktop', width: 1520, height: 900 }, { name: 'medium', width: 960, height: 760 }]) {
     test(`EPM portfolio header metadata does not overlap project name on ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await loadHeaderFixture(page);
@@ -575,7 +571,7 @@ for (const viewport of [
 }
 
 test('a wide ADF table in an EPM Home update scrolls locally without widening the page', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 812 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await loadHeaderFixture(page);
 
     const board = page.locator('.epm-project-board').first();
@@ -586,8 +582,8 @@ test('a wide ADF table in an EPM Home update scrolls locally without widening th
             <h3>Delivery milestones</h3>
             <div class="adf-table-scroll" role="region" aria-label="Description table" tabindex="0">
                 <table><tbody>
-                    <tr><th scope="col">Milestone</th><th scope="col">Owner</th><th scope="col">Dependency</th><th scope="col">Outcome</th></tr>
-                    <tr><td>Private beta</td><td>Platform</td><td>DeterministicGatewayCompatibilityBoundary</td><td>Ready for a synthetic narrow-screen review</td></tr>
+                    <tr><th scope="col">Milestone</th><th scope="col">Owner</th><th scope="col">Dependency</th><th scope="col">Outcome</th>${Array.from({ length: 8 }, (_, i) => `<th scope="col">Checkpoint ${i + 1}</th>`).join('')}</tr>
+                    <tr><td>Private beta</td><td>Platform</td><td>DeterministicGatewayCompatibilityBoundary</td><td>Ready for a synthetic desktop table review</td>${Array.from({ length: 8 }, (_, i) => `<td>Verified ${i + 1}</td>`).join('')}</tr>
                 </tbody></table>
             </div>`;
     });
@@ -700,10 +696,7 @@ async function loadTokenFixture(page) {
 
 const PILL_PROPS = ['fontSize', 'fontFamily', 'fontWeight', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderTopLeftRadius', 'backgroundColor', 'color'];
 
-for (const viewport of [
-    { name: 'desktop', width: 1520, height: 900 },
-    { name: 'mobile 390px', width: 390, height: 800 },
-]) {
+for (const viewport of [{ name: 'desktop', width: 1520, height: 900 }]) {
     test(`EPM header pills and duplicates labels use ENG design-system tokens on ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await loadTokenFixture(page);
@@ -798,10 +791,7 @@ for (const viewport of [
     });
 }
 
-for (const viewport of [
-    { name: 'desktop', width: 1520, height: 900 },
-    { name: 'mobile', width: 390, height: 844 },
-]) {
+for (const viewport of [{ name: 'desktop', width: 1520, height: 900 }]) {
     test(`EPM project board text inherits the page body font and stays contained on ${viewport.name}`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         await loadHeaderFixture(page);

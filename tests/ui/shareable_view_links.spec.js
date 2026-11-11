@@ -992,6 +992,29 @@ async function expectColdLanding(page) {
     await expect.poll(async () => { const value = await coldLanding(page); return Math.abs(value.top - value.bottom - 12); }).toBeLessThanOrEqual(1);
 }
 
+// Run every 50 ms controller tick and animation frame through the unchanged 20 s
+// cleanup window. Record the actual analytics emission on the same virtual clock,
+// so an early finish still fails the original elapsed-time assertion.
+async function runColdFocusCleanupWindow(page) {
+    await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 100);
+    const reachedAt = await page.evaluate(() => {
+        window.__coldApplyFinishedAt = null;
+        const push = window.dataLayer.push;
+        window.dataLayer.push = function (...entries) {
+            if (entries.some(entry => entry?.event_name === 'share_view_action')) window.__coldApplyFinishedAt = performance.now();
+            return push.apply(this, entries);
+        };
+        return performance.now();
+    });
+    expect(await applyEvents(page), 'the held alert keeps cleanup pending before the clock advances').toEqual([]);
+    await page.clock.runFor(20000);
+    await page.clock.resume();
+    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result))).toEqual(['success']);
+    const endedAt = await page.evaluate(() => window.__coldApplyFinishedAt);
+    expect(endedAt, 'the completion event was observed during the cleanup window').not.toBeNull();
+    return { reachedAt, endedAt };
+}
+
 test('cold issue focus starts before unrelated alerts and aligns each partial result once', async ({ page }, testInfo) => {
     const alerts = deferred();
     const { missing, calls } = await coldFocus(page, { alerts });
@@ -1020,12 +1043,11 @@ test('cold issue focus starts before unrelated alerts and aligns each partial re
 
 test('cold focus reached before the running bound succeeds and never scrolls after cleanup', async ({ page }) => {
     test.setTimeout(35000);
+    await page.clock.install();
     const { missing, calls } = await coldFocus(page);
     await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
     await expectColdLanding(page);
-    const reachedAt = await page.evaluate(() => performance.now());
-    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 22000 }).toEqual(['success']);
-    const endedAt = await page.evaluate(() => performance.now());
+    const { reachedAt, endedAt } = await runColdFocusCleanupWindow(page);
     expect(endedAt - reachedAt).toBeLessThan(21000);
     expect(endedAt - reachedAt).toBeGreaterThan(17000);
     expect(await page.evaluate(() => window.__shareViewProbe.notice)).toBe(null);
@@ -1096,9 +1118,11 @@ for (const interruption of ['wheel', 'pointer', 'key', 'sprint', 'group', 'mode'
 
 test('cold content beyond cleanup records native anchoring without scripted correction', async ({ page }, testInfo) => {
     test.setTimeout(35000);
+    await page.clock.install();
     const { missing, calls } = await coldFocus(page);
     await expect.poll(() => page.evaluate(() => scrollY), { timeout: 3000 }).toBeGreaterThan(500);
-    await expect.poll(() => applyEvents(page).then(events => events.map(event => event.result)), { timeout: 22000 }).toEqual(['success']);
+    await expectColdLanding(page);
+    await runColdFocusCleanupWindow(page);
     await expectColdLanding(page);
     const before = await coldLanding(page);
     missing.resolve();

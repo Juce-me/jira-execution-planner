@@ -1,6 +1,7 @@
 """Pure runner checks using disposable synthetic source/configuration only."""
 
 import importlib.util
+import io
 import json
 from pathlib import Path
 import shutil
@@ -27,6 +28,7 @@ class IsolatedRuntimeRunnerTests(unittest.TestCase):
         self.repo = self.root / "source"
         self.repo.mkdir()
         self.write("tests/run_isolated_runtime_tests.py", (SOURCE / "run_isolated_runtime_tests.py").read_text())
+        self.write("tests/runtime_test_runner.py", (SOURCE / "runtime_test_runner.py").read_text())
         self.write("tests/isolated_runtime_sitecustomize.py", (SOURCE / "isolated_runtime_sitecustomize.py").read_text())
         self.write("backend/__init__.py", "")
         self.write("backend/example.py", "VALUE = 'tracked'\n")
@@ -80,6 +82,90 @@ class IsolatedRuntimeRunnerTests(unittest.TestCase):
         for name in (".env", "dashboard-config.json", "../outside.py", "/outside.py", "secrets/key.py"):
             with self.subTest(name=name), self.assertRaises(runner.IsolationError):
                 runner.prepare_snapshot(self.repo, self.root / "snapshot", include_new=[name])
+
+    def test_parallel_inventory_uses_only_tracked_or_reviewed_test_modules_without_importing(self):
+        self.write('tests/test_tracked.py', "raise AssertionError('must not import')\n")
+        self.write('tests/test_reviewed.py', "raise AssertionError('must not import')\n")
+        self.write('tests/test_unreviewed.py', "raise AssertionError('must not import')\n")
+        self.git('add', 'tests/test_tracked.py')
+        self.assertEqual(runner.reviewed_test_modules(self.repo, ['tests/test_reviewed.py']),
+                         ['tests.test_reviewed', 'tests.test_tracked'])
+
+    def test_parallel_inventory_skips_working_tree_deletions(self):
+        self.write('tests/test_present.py', '')
+        deleted = self.write('tests/test_deleted.py', '')
+        self.git('add', 'tests/test_present.py', 'tests/test_deleted.py')
+        deleted.unlink()
+        self.assertEqual(runner.reviewed_test_modules(self.repo), ['tests.test_present'])
+
+    def test_parallel_inventory_traverses_only_reviewed_existing_packages(self):
+        self.write('tests/test_root.py', '')
+        self.write('tests/package/__init__.py', '')
+        self.write('tests/package/test_nested.py', "raise AssertionError('must not import')\n")
+        self.write('tests/not_package/test_hidden.py', '')
+        self.git('add', 'tests')
+        self.assertEqual(runner.reviewed_test_modules(self.repo), ['tests.package.test_nested', 'tests.test_root'])
+        (self.repo / 'tests/package/__init__.py').unlink()
+        self.assertEqual(runner.reviewed_test_modules(self.repo), ['tests.test_root'])
+
+    def test_parallel_reviewed_include_must_exist_and_be_allowed(self):
+        self.write('tests/test_root.py', '')
+        self.git('add', 'tests/test_root.py')
+        for name in ('tests/test_missing.py', '.env', '../tests/test_escape.py', '/outside.py'):
+            with self.subTest(name=name), self.assertRaises(runner.IsolationError):
+                runner.reviewed_test_modules(self.repo, [name])
+
+    def test_parallel_inventory_obeys_source_symlink_boundaries(self):
+        self.write('tests/test_root.py', '')
+        self.git('add', 'tests/test_root.py')
+        alias = self.repo / 'tests/test_alias.py'
+        alias.symlink_to('test_root.py')
+        self.git('add', 'tests/test_alias.py')
+        self.assertEqual(runner.reviewed_test_modules(self.repo), ['tests.test_alias', 'tests.test_root'])
+        with self.assertRaises(runner.IsolationError):
+            runner.reviewed_test_modules(self.repo, ['tests/test_alias.py'])
+        alias.unlink()
+        outside = self.root / 'outside.py'
+        outside.write_text("raise AssertionError('outside must not import')\n")
+        alias.symlink_to(outside)
+        with self.assertRaises(runner.IsolationError):
+            runner.reviewed_test_modules(self.repo)
+
+    def test_parallel_selectors_reject_duplicates_classes_and_unreviewed_modules(self):
+        self.write('tests/test_root.py', '')
+        self.git('add', 'tests/test_root.py')
+        for selectors in (['tests.test_root', 'tests.test_root'], ['tests.test_root.Example.test_work'],
+                          ['tests.test_unreviewed']):
+            with self.subTest(selectors=selectors), self.assertRaises(runner.IsolationError):
+                runner.reviewed_test_modules(self.repo, selectors=selectors)
+
+    def test_parallel_dispatch_passes_exact_reviewed_inventory_and_does_not_prepare_parent_cluster(self):
+        self.write('tests/test_root.py', '')
+        self.write('tests/test_reviewed.py', '')
+        self.git('add', 'tests/test_root.py')
+        coordinator = mock.Mock()
+        coordinator.run_shards.return_value = {'status': 7}
+        node = Path('/synthetic/node')
+        with mock.patch.object(runner, 'ROOT', self.repo), \
+                mock.patch.object(runner, 'approved_node', return_value=node), \
+                mock.patch.object(runner, 'load_shard_module', return_value=coordinator), \
+                mock.patch.object(runner, 'prepare_snapshot') as snapshot, \
+                mock.patch.object(sys, 'stdout', new_callable=io.StringIO):
+            status = runner.main(['--workers', '2', '--timings', '--include', 'tests/test_reviewed.py'])
+        self.assertEqual(status, 7)
+        snapshot.assert_not_called()
+        coordinator.run_shards.assert_called_once_with(self.repo, ['tests.test_reviewed', 'tests.test_root'],
+                                                       workers=2, include_new=['tests/test_reviewed.py'],
+                                                       node=node, timings=True)
+
+    def test_parallel_dispatch_refuses_external_postgresql_before_launch(self):
+        with mock.patch.object(runner, 'approved_postgres', return_value=({}, None)), \
+                mock.patch.object(runner, 'approved_node', return_value=None), \
+                mock.patch.object(runner, 'load_shard_module') as coordinator, \
+                mock.patch.object(sys, 'stderr', new_callable=io.StringIO):
+            status = runner.main(['--workers', '2', '--postgres', '--postgres-config', 'synthetic.json'])
+        self.assertEqual(status, 2)
+        coordinator.assert_not_called()
 
     def test_external_tracked_symlink_is_rejected(self):
         target = self.root / "outside.py"
@@ -377,6 +463,61 @@ connect=Connection.connect
             runner.approved_postgres(descriptor)
         self.assertEqual(str(raised.exception), "Invalid PostgreSQL test-target descriptor.")
         self.assertNotIn("PRIVATE_PORT_MARKER", str(raised.exception))
+
+    def test_descriptor_timings_admit_only_fixed_source_identifiers_and_numbers(self):
+        safe = 'JEP_TEST_TIMING module=tests.test_synthetic tests=4 seconds=1.234'
+        unsafe = 'JEP_TEST_TIMING module=postgresql://private tests=4 seconds=1.234'
+        self.assertEqual(runner.safe_output(safe + '\n' + unsafe, ({}, None)), safe + '\n')
+
+    def test_interrupted_test_process_is_joined_before_caller_tears_down_cluster(self):
+        child = mock.MagicMock()
+        child.pid = 12345
+        child.stdout.__iter__.side_effect = KeyboardInterrupt
+        child.wait.side_effect = [subprocess.TimeoutExpired('test', 5), 0]
+        with mock.patch.object(subprocess, 'Popen') as popen, mock.patch.object(runner.os, 'killpg') as kill:
+            popen.return_value.__enter__.return_value = child
+            with self.assertRaises(KeyboardInterrupt):
+                runner.run_test_process(['synthetic-child'], self.root, {})
+        self.assertTrue(popen.call_args.kwargs['start_new_session'])
+        self.assertEqual(kill.call_args_list, [mock.call(12345, runner.signal.SIGTERM),
+                                             mock.call(12345, runner.signal.SIGKILL)])
+        self.assertEqual(child.wait.call_count, 2)
+
+    def test_successful_leader_with_background_children_cannot_pass(self):
+        child = mock.MagicMock()
+        child.pid = 12345
+        child.returncode = 0
+        child.stdout = []
+        with mock.patch.object(subprocess, 'Popen') as popen, mock.patch.object(runner.os, 'killpg') as kill, \
+                mock.patch.object(sys, 'stderr', new_callable=io.StringIO) as errors:
+            popen.return_value.__enter__.return_value = child
+            self.assertEqual(runner.run_test_process(['synthetic-child'], self.root, {}), 1)
+        self.assertIn('left background processes', errors.getvalue())
+        self.assertEqual(kill.call_args_list, [mock.call(12345, 0), mock.call(12345, runner.signal.SIGTERM),
+                                             mock.call(12345, runner.signal.SIGKILL)])
+
+    def test_failed_start_cleanup_keeps_preservation_flag_through_parent_refusal(self):
+        class FailedCleanup(RuntimeError):
+            preserve_directory = True
+
+        cluster_module = mock.Mock(ClusterError=FailedCleanup)
+        owned = mock.MagicMock()
+        owned.__enter__.side_effect = FailedCleanup('synthetic owned cleanup failure')
+        cluster_module.owned_cluster.return_value = owned
+        snapshots = []
+
+        def prepare(_root, destination, **kwargs):
+            destination.mkdir(parents=True)
+            snapshots.append(destination)
+            return destination
+
+        with mock.patch.object(runner, 'ROOT', self.repo), \
+                mock.patch.object(runner, 'approved_node', return_value=None), \
+                mock.patch.object(runner, 'prepare_snapshot', side_effect=prepare), \
+                mock.patch.object(runner, 'load_cluster_module', return_value=cluster_module), \
+                mock.patch.object(sys, 'stderr', new_callable=io.StringIO):
+            self.assertEqual(runner.main([]), 2)
+        self.assertTrue(snapshots[0].exists())
 
 
 if __name__ == "__main__":

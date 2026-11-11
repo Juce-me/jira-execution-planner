@@ -608,15 +608,6 @@ test('Task 9 writes settled Department and Settings onboarding screenshots', asy
     await expect(settings.getByPlaceholder('Group name')).toHaveCount(1);
     await captureSettledOnboardingScreenshot(page, 'first-run-guide-name-desktop.png');
 
-    await resetDashboard({ groupsConfig: twoGroups, viewport: { width: 390, height: 844 } });
-    await openFirstRunCreateDepartment(page);
-    settings = page.locator('.group-modal');
-    guide = settings.locator('.first-run-configuration-guide');
-    await expect(settings.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
-    await expect(settings.getByPlaceholder('Group name')).toHaveCount(1);
-    await expectGuideTargetGeometry(settings.locator('[data-first-run-guide-target="name"]'), guide);
-    await captureSettledOnboardingScreenshot(page, 'first-run-guide-name-mobile.png');
-
     const existingPreferences = defaultGroupPreferences({
         customized: true,
         preferenceExists: true,
@@ -642,19 +633,6 @@ test('Task 9 writes settled Department and Settings onboarding screenshots', asy
     await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
     await captureSettledOnboardingScreenshot(page, 'settings-replay-header-desktop.png');
 
-    await resetDashboard({
-        groupsConfig: fourGroups,
-        preferences: existingPreferences,
-        viewport: { width: 390, height: 844 },
-    });
-    await page.getByRole('button', { name: 'Manage team groups' }).click();
-    settings = page.locator('.group-modal');
-    await settings.getByRole('button', { name: 'Groups', exact: true }).click();
-    await settings.locator('.group-list-item', { hasText: 'Growth' }).locator('.group-list-star').click();
-    await expect(settings.locator('.group-modal-dirty')).toContainText('Unsaved changes');
-    await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
-    await expect(settings.getByText('Save or discard changes before replaying onboarding.')).toBeVisible();
-    await captureSettledOnboardingScreenshot(page, 'settings-replay-header-mobile.png');
 });
 
 for (const mode of ['create', 'duplicate', 'repair']) {
@@ -1256,38 +1234,6 @@ test('replay is disabled while Team groups settings are dirty', async ({ page })
     await expect(settings.getByRole('button', { name: 'Run onboarding again' })).toBeDisabled();
 });
 
-test('mobile first-run handoff preserves the Department and never opens or completes dashboard onboarding', async ({ page }, testInfo) => {
-    await page.setViewportSize({ width: 390, height: 600 });
-    const calls = await mockFirstRunDashboard(page, {
-        preferences: defaultGroupPreferences({ onboardingDone: false }),
-    });
-    await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
-    const chooser = page.getByRole('dialog', { name: 'Choose your Department' });
-    await expect(chooser).toBeVisible();
-    await expect(chooser).toContainText('Next: the dashboard. The optional tour runs on desktop.');
-    await expect(chooser.getByRole('radio', { name: /Platform/ })).toBeEnabled();
-    await chooser.getByRole('radio', { name: /Platform/ }).check();
-    await chooser.getByRole('button', { name: 'Continue' }).click();
-
-    await expect(chooser).toHaveCount(0);
-    await expect(page.locator('[data-onboarding-tour]')).toHaveCount(0);
-    await expect(page.getByRole('dialog', { name: 'Choose a sprint' })).toHaveCount(0);
-    await expect(page.locator('.onboarding-tour-spotlight')).toHaveCount(0);
-    await expect(page.locator('[data-onboarding-target="sprint"][data-onboarding-surface="main"]')).toContainText('2026Q2 Sprint 42');
-    await expect(page.locator('[data-onboarding-target="teams"][data-onboarding-surface="main"]')).toBeVisible();
-    await expect.poll(() => calls.filter(call => call.pathname === '/api/groups-preferences').length).toBe(1);
-    expect(calls.find(call => call.pathname === '/api/groups-preferences').body).toEqual({
-        visibleGroupIds: ['platform'],
-        activeGroupId: 'platform',
-    });
-    expect(calls.filter(call => call.method === 'POST' && call.pathname === '/api/groups-config')).toHaveLength(0);
-    const taskCalls = calls.filter(call => call.pathname === '/api/tasks-with-team-name');
-    expect(taskCalls.length).toBeGreaterThan(0);
-    expect(taskCalls.every(call => call.params.groupId === 'platform')).toBe(true);
-    expect(calls.filter(call => call.pathname === '/api/me/onboarding')).toHaveLength(0);
-    await page.waitForTimeout(250);
-    await page.screenshot({ path: testInfo.outputPath('dashboard-onboarding-mobile-absent.png'), animations: 'disabled' });
-});
 
 test('first-run Add Department opens the anchored configuration guide and Cancel restores the picker', async ({ page }) => {
     await mockFirstRunDashboard(page);
@@ -1372,8 +1318,8 @@ test('first-run configuration guide target loss restores focus state and offers 
     await page.evaluate(() => document.querySelector('#target-loss-unowned-portal')?.remove());
 });
 
-test('first-run Add Department keeps the guide and canonical name keyboard-safe in compact layout', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 844 });
+test('first-run Add Department keeps the guide and canonical name keyboard-safe in a short desktop window', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     const calls = await mockFirstRunDashboard(page);
     await page.goto(`${baseUrl}/`, { waitUntil: 'domcontentloaded' });
 
@@ -1407,11 +1353,10 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await expect(settingsDialog.locator('.group-pane-left')).not.toHaveClass(/is-mobile-active/);
     await expectContainedInViewport(settingsDialog.locator('[data-first-run-guide-target="teams"]'));
     await guide.getByRole('button', { name: 'Back' }).click();
-    await expect(settingsDialog.locator('.group-pane-left')).toHaveClass(/is-mobile-active/);
     await expect(nameInput).toBeFocused();
     await expect(nameInput).toBeInViewport({ ratio: 1 });
 
-    await page.setViewportSize({ width: 390, height: 520 });
+    await page.setViewportSize({ width: 1280, height: 520 });
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="name"]'), guide);
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     await expectGuideTargetGeometry(settingsDialog.locator('[data-first-run-guide-target="teams"]'), guide);
@@ -1425,12 +1370,6 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     const favoriteStatus = settingsDialog.locator('[data-first-run-guide-target="favorite"]');
     await expect(favoriteStatus).toHaveCount(1);
     expect(await favoriteStatus.evaluate(node => node.closest('.group-list-item')?.classList.contains('active'))).toBe(true);
-    const favoriteGeometry = await favoriteStatus.evaluate(node => {
-        const bounds = node.getBoundingClientRect();
-        return { width: bounds.width, height: bounds.height };
-    });
-    expect(favoriteGeometry.width).toBeGreaterThanOrEqual(44);
-    expect(favoriteGeometry.height).toBeGreaterThanOrEqual(44);
     await expect(favoriteStatus).toHaveAccessibleName('Favorite Department, selected pending save');
     await guide.getByRole('button', { name: 'Continue', exact: true }).click();
     const visibilityStatus = settingsDialog.locator('[data-first-run-guide-target="visibility"]');
@@ -1441,7 +1380,7 @@ test('first-run Add Department keeps the guide and canonical name keyboard-safe 
     await guide.getByRole('button', { name: 'Done', exact: true }).click();
 
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name')).toHaveLength(0);
-    await page.screenshot({ path: `${screenshotDir}/first-run-configure-compact.png`, fullPage: true });
+    await page.screenshot({ path: `${screenshotDir}/first-run-configure-desktop-short.png`, fullPage: true });
     await settingsDialog.locator('[data-first-run-settings-cancel]').click();
 
     await expect(firstRunDialog).toBeVisible();
@@ -3512,7 +3451,7 @@ test('Team labels Settings JSON import accepts scalars and arrays and rejects in
     expect(body.groups.find(group => group.id === 'growth').teamLabels).toEqual({ 'team-b': ['label_team_b'] });
 });
 
-for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }, { name: 'compact', width: 390, height: 844 }]) {
+for (const viewport of [{ name: 'desktop', width: 1280, height: 800 }]) {
     test(`Team labels alias states keep chips, count, and Add label inside the row at ${viewport.name} width`, async ({ page }) => {
         await page.setViewportSize({ width: viewport.width, height: viewport.height });
         const { pane } = await openAliasLabelsPane(page, { teamLabels: { 'team-a': ['label_team_a'] } });

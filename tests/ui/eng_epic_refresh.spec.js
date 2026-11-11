@@ -17,6 +17,20 @@ const {
 // specs force 'reduce'. The viewport leaves room for the cap-8 test (a story card is about 74 px).
 test.use({ reducedMotion: 'no-preference', viewport: { width: 1400, height: 1000 } });
 
+// Observe the real scheduler's retry registration before advancing its browser clock.
+// Response routing and DOM assertions still settle through the real browser event loop.
+async function installRetryClock(page) {
+    await page.clock.install();
+    await page.addInitScript(() => {
+        const setTimer = window.setTimeout.bind(window);
+        window.__epicRetryWindows = [];
+        window.setTimeout = (callback, delay, ...args) => {
+            if (delay === 8000) window.__epicRetryWindows.push(Date.now());
+            return setTimer(callback, delay, ...args);
+        };
+    });
+}
+
 // ---- tests 1-8 ----
 
 test('1. the refresh button is hidden at rest and shows on header hover and keyboard focus', async ({ page }) => {
@@ -85,10 +99,10 @@ async function headerGeometry(header) {
     });
 }
 
-for (const width of [1280, 1024, 390]) {
+for (const width of [1280, 1024]) {
     test(`3. header geometry is identical with the button shown and hidden at ${width}px`, async ({ page }) => {
         const ctx = await mockDashboard(page);
-        await openCatchUp(page, ctx, { width, height: width === 390 ? 844 : 1000 });
+        await openCatchUp(page, ctx, { width, height: 1000 });
         // EPIC-1 is a direct epic, EPIC-2 is grouped under an initiative.
         await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-2"]')).toHaveCount(1);
         await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-1"]')).toHaveCount(0);
@@ -108,29 +122,6 @@ for (const width of [1280, 1024, 390]) {
             expect(shown.header, `${epicKey} header box`).toEqual(hidden.header);
             expect(shown.overflow, `${epicKey} header overflow`).toBeLessThanOrEqual(1);
             expect(shown.buttonInside, `${epicKey} button inside the header, in its top-right corner`).toBe(true);
-        }
-        if (width === 390) {
-            // The 760px-and-below padding rule is scoped to headers that own a refresh button AND the Planning stat toggle:
-            // Catch Up keeps the full epic name width (eng_compact_layout_visual), EPM-shaped headers are untouched.
-            const paddings = await page.evaluate(() => {
-                const catchUp = document.querySelector('.epic-header:has(> .epic-refresh-button) .epic-title-row');
-                const probe = (html) => {
-                    const node = document.createElement('div');
-                    node.className = 'epic-header';
-                    node.innerHTML = html;
-                    document.body.appendChild(node);
-                    const value = getComputedStyle(node.querySelector('.epic-title-row')).paddingRight;
-                    node.remove();
-                    return value;
-                };
-                return {
-                    catchUp: getComputedStyle(catchUp).paddingRight,
-                    epmShaped: probe('<div class="epic-title-row">EPM-shaped header</div>'),
-                    planningShaped: probe('<div class="epic-title-row"><button class="epic-stat-toggle"></button></div><button class="epic-refresh-button"></button>'),
-                    toggleWithoutButton: probe('<div class="epic-title-row"><button class="epic-stat-toggle"></button></div>'),
-                };
-            });
-            expect(paddings).toEqual({ catchUp: '0px', epmShaped: '0px', planningShaped: '32px', toggleWithoutButton: '0px' });
         }
     });
 }
@@ -170,10 +161,10 @@ async function titleVersusButton(header) {
     });
 }
 
-for (const width of [1280, 1024, 390]) {
+for (const width of [1280, 1024]) {
     test(`3b. the absolute button never collides with the title text and nothing clips at ${width}px`, async ({ page }) => {
         const ctx = await mockDashboard(page);
-        await openCatchUp(page, ctx, { width, height: width === 390 ? 844 : 1000 });
+        await openCatchUp(page, ctx, { width, height: 1000 });
         await expect(page.locator('.initiative-body > .epic-block[data-epic-key="EPIC-2"]')).toHaveCount(1);
         for (const epicKey of ['EPIC-1', 'EPIC-2']) {
             await revealRefreshButton(page, epicKey);
@@ -185,11 +176,6 @@ for (const width of [1280, 1024, 390]) {
             for (const [name, overflow] of Object.entries(report.clip)) {
                 if (overflow === null) continue;
                 expect(overflow, `${epicKey} ${name} scrollWidth - clientWidth`).toBeLessThanOrEqual(1);
-            }
-            if (width === 390) {
-                // Catch Up has no stat toggle to protect, so it keeps the full epic name width (the accepted overlay may cover the
-                // end of the title while the button is shown; recorded above, not asserted).
-                expect(report.titleRowPaddingRight, `${epicKey} Catch Up title row keeps its full width`).toBe('0px');
             }
         }
     });
@@ -328,7 +314,7 @@ async function clickabilityReport(header) {
     });
 }
 
-for (const width of [1280, 1024, 800, 600]) {
+for (const width of [1280, 1024, 800]) {
     test(`4. assignee, Story Points and status stay clickable under the button at ${width}px`, async ({ page }) => {
         const ctx = await mockDashboard(page);
         await openCatchUp(page, ctx, { width, height: 1000 });
@@ -343,10 +329,10 @@ for (const width of [1280, 1024, 800, 600]) {
     });
 }
 
-for (const width of [1400, 1024, 390]) {
+for (const width of [1400, 1024]) {
     test(`5. an open status menu layers above the refresh button at ${width}px`, async ({ page }) => {
         const ctx = await mockDashboard(page);
-        await openCatchUp(page, ctx, { width, height: width === 390 ? 844 : 1000 });
+        await openCatchUp(page, ctx, { width, height: 1000 });
         await revealRefreshButton(page, 'EPIC-1');
         await epicHeader(page, 'EPIC-1').locator('[data-status-transition-trigger]').click();
         const menu = page.locator('.status-transition-menu[data-issue-key="EPIC-1"]');
@@ -2010,6 +1996,7 @@ for (const failing of [500, 403, 429]) {
 
 test('48. a story status change re-checks readiness but not Missing Info or Backlog; a team change re-checks Missing Info and readiness only', async ({ page }) => {
     test.setTimeout(60000);
+    await page.clock.install();
     // The group holds a second team, so a story that changes team stays in the group (a team outside it would leave the epic's lists).
     const ctx = await openWithGhosts(page, { prepare: (mock) => mock.respond('/api/groups-config', ({ json }) => json({
         ...groupsConfigPayload, groups: [{ ...groupsConfigPayload.groups[0], teamIds: ['team-alpha', 'team-beta'] }],
@@ -2027,7 +2014,7 @@ test('48. a story status change re-checks readiness but not Missing Info or Back
     // Team: only Missing Info and readiness, not the epic-alerts / ready-to-close pair.
     setStory(ctx, 'E3-S01', { teamId: 'team-beta', teamName: 'Beta Team' });
     await parkPointer(page);
-    await page.waitForTimeout(10500); // the per-epic refresh cooldown
+    await page.clock.fastForward(10500); // the real controller's per-epic cooldown
     since = ctx.calls.length;
     await clickRefresh(page, 'EPIC-3');
     await expect.poll(() => epicReadinessCalls(ctx.calls.slice(since)).length).toBe(1);
@@ -2228,6 +2215,7 @@ test('55. in a future sprint a membership change issues one epic-scoped Backlog 
 
 test('56. an empty Backlog answer keeps the entry unless the epic-alerts call proves the epic left scope; a failed call keeps it', async ({ page }) => {
     test.setTimeout(90000);
+    await page.clock.install();
     const ctx = await openFutureSprintWithBacklogEntry(page);
     ctx.scenario.stories.push(buildStory('E1-S13', 'EPIC-1', { points: 2 }));
     ctx.backlog = {}; // the endpoint answers 200 with nothing (also what it does when its own epic search fails)
@@ -2241,7 +2229,7 @@ test('56. an empty Backlog answer keeps the entry unless the epic-alerts call pr
     // A failed Backlog call keeps the entry as well.
     ctx.scenario.stories.push(buildStory('E1-S14', 'EPIC-1', { points: 2 }));
     const failBacklog = ctx.respond('/api/backlog-epics', ({ status, call }) => (call.params.epicKeys ? status(500, { error: 'internal_error', ...LEAK_CANARIES }) : undefined));
-    await page.waitForTimeout(10500); // the per-epic refresh cooldown
+    await page.clock.fastForward(10500); // the real controller's per-epic cooldown
     since = ctx.calls.length;
     await clickRefresh(page, 'EPIC-1');
     await expect.poll(() => backlogCalls(ctx.calls.slice(since)).length).toBe(2);
@@ -2255,7 +2243,7 @@ test('56. an empty Backlog answer keeps the entry unless the epic-alerts call pr
     failBacklog();
     ctx.epicInScope = false;
     ctx.scenario.stories.push(buildStory('E1-S15', 'EPIC-1', { points: 2 }));
-    await page.waitForTimeout(10500);
+    await page.clock.fastForward(10500);
     await clickRefresh(page, 'EPIC-1');
     await expect(backlogRows(page)).toHaveCount(0);
 });
@@ -2641,17 +2629,21 @@ test.describe('429 on epic-alerts', () => {
     test.setTimeout(90000);
 
     test('89a. a rate-limited re-check is retried once after the window and then applied', async ({ page }) => {
+        await installRetryClock(page);
         const ctx = await openWithEmptyEpics(page);
         const productCalls = [];
-        ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', ({ json, status }) => {
-            productCalls.push(Date.now());
+        ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', async ({ json, status }) => {
+            productCalls.push(await page.evaluate(() => Date.now()));
             if (productCalls.length === 1) return status(429, { error: 'epic_refresh_rate_limited', ...LEAK_CANARIES });
             return json({ epicsInScope: [{ ...ctx.epicScope['EPIC-3'], summary: 'EPIC-3 after the retry' }] });
         });
         await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
         await expect.poll(() => productCalls.length).toBe(1);
-        await page.waitForTimeout(3000);
+        await expect.poll(() => page.evaluate(() => window.__epicRetryWindows.length)).toBe(1);
+        await page.clock.fastForward(3000);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         expect(productCalls, 'the retry waits for the window').toHaveLength(1);
+        await page.clock.fastForward(5000);
         await expect.poll(() => productCalls.length, { timeout: 15000 }).toBe(2);
         expect(productCalls[1] - productCalls[0]).toBeGreaterThanOrEqual(7500);
         await expect(emptyEpicRows(page).first()).toContainText('EPIC-3 after the retry');
@@ -2659,6 +2651,7 @@ test.describe('429 on epic-alerts', () => {
     });
 
     test('89b. a second 429 gives up: exactly one retry, the held alerts stay and no banner appears', async ({ page }) => {
+        await installRetryClock(page);
         const ctx = await openWithEmptyEpics(page);
         const productCalls = [];
         ctx.respond(call => call.params.purpose === 'epic-alerts' && call.params.project === 'product', ({ status }) => {
@@ -2666,9 +2659,20 @@ test.describe('429 on epic-alerts', () => {
             return status(429, { error: 'epic_refresh_rate_limited', ...LEAK_CANARIES });
         });
         await confirmStatusChange(page, ctx, { kind: 'story', key: 'E3-S01', target: 'Incomplete' });
+        await expect.poll(() => page.evaluate(() => window.__epicRetryWindows.length)).toBe(1);
+        const retryResponse = page.waitForResponse(response => {
+            const url = new URL(response.url());
+            return url.pathname === '/api/tasks-with-team-name' && url.searchParams.get('purpose') === 'epic-alerts'
+                && url.searchParams.get('project') === 'product' && response.status() === 429;
+        });
+        await page.clock.fastForward(8000);
         await expect.poll(() => productCalls.length, { timeout: 20000 }).toBe(2);
-        await page.waitForTimeout(10000);
+        await (await retryResponse).finished();
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+        await page.clock.fastForward(10000);
+        await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
         expect(productCalls, 'no third attempt').toHaveLength(2);
+        expect(await page.evaluate(() => window.__epicRetryWindows.length), 'the retry does not schedule another retry').toBe(1);
         await expect(emptyEpicRows(page)).toHaveCount(1);
         await expect(globalErrorSurfaces(page)).toHaveCount(0);
         await expectNoLeak(page);

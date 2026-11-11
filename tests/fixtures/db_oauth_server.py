@@ -10,7 +10,6 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 
@@ -50,10 +49,10 @@ def phase(name):
 def launch(database_url=None, *, mode='app', historical=False, force_startup_failure=False):
     sys.path.insert(0, str(ROOT))
     from tests.postgres_cluster import owned_cluster
-    from tests.run_isolated_runtime_tests import prepare_snapshot, synthetic_environment
+    from tests.run_isolated_runtime_tests import prepare_snapshot, runtime_directory, synthetic_environment
     scratch = ROOT / 'tmp'
     scratch.mkdir(exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix='db-oauth-browser-', dir=scratch) as directory, ExitStack() as stack:
+    with runtime_directory(scratch, prefix='db-oauth-browser-') as directory, ExitStack() as stack:
         phase('snapshot-prepare')
         snapshot = prepare_snapshot(ROOT, Path(directory) / 'checkout', include_new=NEW_SOURCES)
         phase('postgres-cluster')

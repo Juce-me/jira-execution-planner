@@ -12,7 +12,7 @@ from backend.config.json_repository import JsonConfigRepository
 from backend.db import engine as db_engine
 from backend.db import models
 from backend.services import work_structure as ws
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 XRW = 'jira-execution-planner'
 SITE = 'https://one.example.test'
@@ -46,7 +46,7 @@ class WorkStructureRouteBase(unittest.TestCase):
     def setUp(self):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        self.database_url = fresh_database_url(self.addCleanup)
+        self.database_url = fresh_model_schema_url(self.addCleanup)
         self.stack = ExitStack()
         self.addCleanup(self.stack.close)
         self.stack.enter_context(patch.dict(os.environ, {
@@ -55,7 +55,6 @@ class WorkStructureRouteBase(unittest.TestCase):
         }, clear=False))
         self.stack.enter_context(patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'))
         self.stack.enter_context(patch.object(jira_server, 'SETTINGS_ADMIN_ONLY', True))
-        models.Base.metadata.create_all(db_engine.get_engine(self.database_url))
         self.factory = db_engine.session_factory(self.database_url)
         with self.factory() as session:
             workspace = models.Workspace(environment_key='test', name='Test', jira_site_url=SITE, jira_cloud_id='cloud-one')

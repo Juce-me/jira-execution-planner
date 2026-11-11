@@ -9,11 +9,11 @@ from backend.auth.db_context import invalidate_auth_status_cache
 from backend.db import engine as db_engine, models
 from backend.epm.home import EPM_HOME_READ_SCOPES
 from tests.db_oauth_test_helpers import seed_db_actor, FULL_OAUTH_SCOPE
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 
 def force_db_oauth_mode(test_case, jira_server):
-    url = fresh_database_url(test_case.addCleanup)
+    url = fresh_model_schema_url(test_case.addCleanup)
     for patcher in (
         patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),
         patch.object(jira_server, 'JIRA_URL', 'https://example.atlassian.net'),
@@ -21,8 +21,6 @@ def force_db_oauth_mode(test_case, jira_server):
     ):
         patcher.start()
         test_case.addCleanup(patcher.stop)
-    engine = db_engine.get_engine(url)
-    models.Base.metadata.create_all(engine)
     with db_engine.session_scope(url) as db:
         actor = seed_db_actor(db, workspace={'cloud_id': 'synthetic-cloud', 'site_url': jira_server.JIRA_URL},
                               account_identity='synthetic-ordinary-user', roles=('admin',))

@@ -48,7 +48,7 @@ const closed = (key, index) => ({
 // A 1x1 PNG stands in for Jira's type icon; without `icons` the route answers like an unavailable icon.
 const ICON_PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
-async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES, icons = false } = {}) {
+async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES, icons = false, childIconFailure = null } = {}) {
     const state = { log: [] };
     await installDashboardShell(page);
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: sourceDashboardJs }));
@@ -62,6 +62,12 @@ async function mockApp(page, { prefs = {}, completedModules = ALL_MODULES, icons
         state.log.push({ method: request.method(), pathname: p, params });
         const json = (payload, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(payload) });
         if (p.startsWith('/api/issue-type-icon/')) {
+            if (!icons && childIconFailure && p === '/api/issue-type-icon/6') {
+                await childIconFailure;
+                // Exercise delayed network-error delivery after the role
+                // wrappers have mounted; mounting is not fallback readiness.
+                await new Promise(resolve => setTimeout(resolve, 200));
+            }
             return icons ? route.fulfill({ status: 200, contentType: 'image/png', body: ICON_PNG }) : json({ error: 'issue_type_icon_unavailable' }, 404);
         }
         if (p === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
@@ -164,7 +170,15 @@ test('DELIVERY draws each configured Jira type icon in the glyph box, and an una
     await shot(page, 'type-icons', page.locator('.task-list'));
 
     const fallbackPage = await page.context().newPage();
-    await mockApp(fallbackPage);
+    let releaseChildIcon;
+    const childIconFailure = new Promise(resolve => { releaseChildIcon = resolve; });
+    await mockApp(fallbackPage, { childIconFailure });
+    await expect(fallbackPage.locator('.task-item')).toHaveCount(3);
+    await expect(fallbackPage.locator('.epic-header .epic-icon svg')).toHaveCount(1);
+    await expect(fallbackPage.locator('.initiative-header .initiative-header-icon')).toHaveCount(1);
+    await expect(fallbackPage.locator('.task-item .story-icon svg image')).toHaveCount(3);
+    releaseChildIcon();
+    await expect(fallbackPage.locator('.task-item .story-icon svg image, .epic-header .epic-icon svg image, .initiative-header .initiative-header-icon svg image')).toHaveCount(0);
     const glyph = await iconBoxes(fallbackPage);
     expect(Object.values(glyph).map(box => box.image)).toEqual([null, null, null]);
     await expect(fallbackPage.locator('.task-item .story-icon path[d^="m10.271"]').first()).toBeAttached();

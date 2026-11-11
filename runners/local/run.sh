@@ -175,24 +175,21 @@ run_child() {
 
 terminate_child_group() {
   local target_pid="${child_pid:-}"
-  local killer_pid=""
+  local attempt=0
   [[ -n "$target_pid" ]] || return 0
 
   kill -TERM -- "-${target_pid}" 2>/dev/null || true
-  (
-    trap '' INT TERM
-    sleep 5
-    kill -KILL -- "-${target_pid}" 2>/dev/null || true
-  ) &
-  killer_pid=$!
-
-  wait "$target_pid" 2>/dev/null || true
+  # Bash reaps asynchronous children on SIGCHLD; wait below still collects the
+  # original child's status. Poll the whole group so an ignoring descendant
+  # cannot survive an already-exited leader. No separate watchdog can linger.
+  while kill -0 -- "-${target_pid}" 2>/dev/null && [[ "$attempt" -lt 100 ]]; do
+    sleep 0.05
+    attempt=$((attempt + 1))
+  done
   if kill -0 -- "-${target_pid}" 2>/dev/null; then
-    wait "$killer_pid" 2>/dev/null || true
-  else
-    kill "$killer_pid" 2>/dev/null || true
-    wait "$killer_pid" 2>/dev/null || true
+    kill -KILL -- "-${target_pid}" 2>/dev/null || true
   fi
+  wait "$target_pid" 2>/dev/null || true
   rm -f -- "$lock_child_pid_file"
   child_pid=""
 }

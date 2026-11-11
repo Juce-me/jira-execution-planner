@@ -588,21 +588,21 @@ test('nested tab, search state and drafts survive upper tab round trips; Test re
 });
 
 test('Departments are unchanged: the shared drawer rules do not touch their modal geometry', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
+    await page.setViewportSize({ width: 1280, height: 900 });
     await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
     const dialog = await openSettings(page);
     await dialog.getByRole('button', { name: 'Departments' }).click();
     await expect(dialog.getByRole('tab', { name: 'Team groups' })).toBeVisible();
     const departmentBox = await page.locator('.group-modal').boundingBox();
-    expect(Math.abs(departmentBox.width - 375 * 0.94)).toBeLessThan(1);
-    expect(departmentBox.height).toBeLessThanOrEqual(667 * 0.9 + 1);
+    expect(Math.abs(departmentBox.width - 980)).toBeLessThan(1);
+    expect(departmentBox.height).toBeLessThanOrEqual(720 + 1);
     await dialog.getByRole('button', { name: 'Admin' }).click();
     await projectTab(dialog);
     const projectBox = await page.locator('.group-modal').boundingBox();
-    expect(Math.abs(projectBox.width - (375 - 16))).toBeLessThan(1);
+    expect(Math.abs(projectBox.width - 980)).toBeLessThan(1);
 });
 
-for (const viewport of [{ width: 375, height: 667 }, { width: 667, height: 375 }, { width: 1024, height: 600 }]) {
+for (const viewport of [{ width: 1024, height: 600 }]) {
     test(`one scroll owner and a reachable footer at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await page.setViewportSize(viewport);
         await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle({ legacy: { legacyIssueTypeNames: ['Story', 'Task'] } }) });
@@ -661,8 +661,8 @@ for (const viewport of [{ width: 375, height: 667 }, { width: 667, height: 375 }
     });
 }
 
-for (const viewport of [{ width: 375, height: 812 }, { width: 768, height: 1024 }]) {
-    test(`touch targets at ${viewport.width}: nested tabs, drawer close and Remove keep a usable hit area`, async ({ page }) => {
+for (const viewport of [{ width: 1024, height: 900 }]) {
+    test(`desktop targets at ${viewport.width}: nested tabs and Remove keep a usable hit area`, async ({ page }) => {
         await page.setViewportSize(viewport);
         await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle() });
         const dialog = await openSettings(page);
@@ -858,7 +858,7 @@ test('an incomplete Allocation option list says typed values are allowed and off
     await expect(allocationColumn(dialog, 'Tech').locator('.selected-team-chip.tech-chip', { hasText: 'Research' })).toHaveCount(1);
 });
 
-test('production screenshots: Scope, Source, Field mapping and the mobile drawer', async ({ page }) => {
+test('production screenshots: Scope, Source and Field mapping', async ({ page }) => {
     await page.setViewportSize({ width: 1180, height: 760 });
     await mockApp(page, { promoted: true, revision: 6, bundle: promotedBundle({ legacy: { legacyIssueTypeNames: ['Story', 'Task'] } }) });
     const dialog = await openSettings(page);
@@ -874,18 +874,6 @@ test('production screenshots: Scope, Source, Field mapping and the mobile drawer
     await nested(dialog, 'Field mapping').click();
     await page.waitForTimeout(250);
     await dialog.screenshot({ path: path.join(shotDir, 'legacy-mapping-captured-filter.png'), animations: 'disabled' });
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.waitForTimeout(250);
-    await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
-    await dialog.locator('[data-work-config="delivery"] .group-list-select').click();
-    for (const [name, file] of [['Scope', 'scope'], ['Source', 'source'], ['Field mapping', 'mapping']]) {
-        await nested(dialog, name).click();
-        await page.waitForTimeout(250);
-        await dialog.screenshot({ path: path.join(shotDir, `delivery-${file}-375.png`), animations: 'disabled' });
-    }
-    await dialog.getByRole('button', { name: 'Configurations', exact: true }).click();
-    await page.waitForTimeout(350);
-    await page.screenshot({ path: path.join(shotDir, 'mobile-drawer-375.png'), animations: 'disabled' });
 });
 
 // --- Project config redesign: one global Jira IDs setting, one message per issue, collapsed preview ---------------

@@ -5,6 +5,7 @@
 const { expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 const { createPlanningReviewMock } = require('./planning_review_mock');
+const { observeBootstrapRequests } = require('./bootstrap_readiness');
 
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const sprintId = 34625;
@@ -360,10 +361,17 @@ async function apiIdle(page, state) {
 
 async function openPinDashboard(page, options = {}) {
     const fixture = await installPinFixture(page, options);
-    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
-    await settle(page);
-    return fixture;
+    const bootstrap = observeBootstrapRequests(page);
+    try {
+        await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
+        await bootstrap.waitForBootstrap();
+        await expect(page.locator('.alerts-panel-toolbar')).toBeVisible();
+        await bootstrap.waitForIdle();
+        await page.evaluate(() => document.fonts.ready);
+        await settle(page);
+        await bootstrap.waitForIdle();
+        return fixture;
+    } finally { bootstrap.dispose(); }
 }
 
 module.exports = {

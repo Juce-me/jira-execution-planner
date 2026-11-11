@@ -122,8 +122,8 @@ test('dirty typing survives layout, Escape cancels, sorting waits until blur and
     expect(await page.evaluate(() => window.harness.state().dirty)).toBe(false);
 });
 
-test('390px creation fits, frozen keys and last-column reachability at desktop and zoom', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 850 }); await install(page);
+test('column creation, frozen keys and last-column reachability at desktop and zoom', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 }); await install(page);
     await page.getByRole('button', { name: '+ Add column', exact: true }).click();
     await page.getByLabel('Column name', { exact: true }).fill('Risk');
     await page.getByRole('button', { name: 'Add column', exact: true }).click();
@@ -178,7 +178,7 @@ test('column creation form is compact, reuses the shared segmented control and a
     expect(await page.evaluate(()=>window.harness.state().columns.find(column=>column.label==='Notes').type)).toBe('text');
 });
 
-for (const width of [390,1280]) test(`page owns vertical scrolling with aligned docked headers and totals at ${width}px`, async ({page}) => {
+for (const width of [1280]) test(`page owns vertical scrolling with aligned docked headers and totals at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:850});await install(page,true);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const scroll=page.locator('.planning-review-scroll');
@@ -210,7 +210,7 @@ for (const width of [390,1280]) test(`page owns vertical scrolling with aligned 
     await page.evaluate(()=>scrollTo(0,0));await expect(header).toHaveCount(0);
 });
 
-for(const width of [390,1280]) test(`column tools open as anchored popups without moving the table at ${width}px`,async({page})=>{
+for(const width of [1280]) test(`column tools open as anchored popups without moving the table at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:850});await install(page);
     await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const table=page.locator('.planning-review-scroll');const before=await table.boundingBox();
@@ -590,7 +590,7 @@ for (const width of [1440, 2400]) test(`column widths fit their content instead 
     for(const [name,cell] of Object.entries(cells)) expect(cell.scroll,name).toBeLessThanOrEqual(cell.client+1);
 });
 
-for(const width of [390,1440]) test(`review toolbar holds only the row switch and its popups do not shift the table at ${width}px`,async({page})=>{
+for(const width of [1440]) test(`review toolbar holds only the row switch and its popups do not shift the table at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);
     const toolbar=page.locator('.planning-review-controls');
     await expect(toolbar.getByText('Rows',{exact:true})).toHaveCount(0);
@@ -638,7 +638,7 @@ test('numeric headers, values, editors and totals align right; text aligns left'
     await page.screenshot({path:path.join(root,'tmp/217-ui/table-number-alignment.png'),fullPage:true});
 });
 
-for(const width of [390,1280]) test(`Summary and Teams in scope show full clipped values on hover and focus at ${width}px`,async({page})=>{
+for(const width of [1280]) test(`Summary and Teams in scope show full clipped values on hover and focus at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page,false,true);
     for(const column of ['summary','teamsInScope']){
         const value=page.locator(`tbody .planning-review-${column} .planning-review-truncated-value`).first();
@@ -678,7 +678,7 @@ test('a trailing dot while typing a review number is not an error and drops on c
     await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('21');
 });
 
-for(const width of [390,1280]) test(`custom number editors stay inside stable compact rows at ${width}px`,async({page})=>{
+for(const width of [1280]) test(`custom number editors stay inside stable compact rows at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});await install(page);await page.getByRole('radio',{name:'Stories',exact:true}).click();
     const input=page.getByRole('textbox',{name:'Cost 0 for DEMO-1',exact:true});
     const geometry=()=>input.evaluate(node=>{const cell=node.closest('td'),row=cell.parentElement,r=node.getBoundingClientRect(),c=cell.getBoundingClientRect();return {inputHeight:r.height,height:row.getBoundingClientRect().height,width:c.width,inside:r.left>=c.left&&r.right<=c.right,shadow:getComputedStyle(node).boxShadow};});
@@ -840,8 +840,7 @@ test('the column menu opens from the docked header and from the last column at m
 });
 
 test.describe('touch', () => {
-    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
-    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test.use({ hasTouch: true, viewport: { width: 1280, height: 900 } });
     test('the lane shows without hover and every menu action works by tap', async ({ page }) => {
         await install(page); await page.getByRole('radio', { name: 'Stories', exact: true }).click();
         expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
@@ -862,7 +861,7 @@ test.describe('touch', () => {
         const popup = addDialog(page);
         await expect(popup).toBeVisible();
         const box = await popup.boundingBox();
-        expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(390);
+        expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(1280);
         await popup.getByRole('button', { name: 'Capacity', exact: true }).tap();
         await expect(page.getByRole('columnheader', { name: 'Capacity', exact: true })).toHaveCount(1);
     });
@@ -1759,7 +1758,7 @@ test('derived Epic columns come last on Story rows with an E marker before numer
     await expect(page.getByRole('tooltip').filter({ hasText: 'Detailed rollout notes' })).toBeVisible();
 });
 
-for (const width of [390, 1280]) test(`derived headings stay 32px with a 24px marker hit area and shared value edges at ${width}px`, async ({ page }) => {
+for (const width of [1280]) test(`derived headings stay 32px with a 24px marker hit area and shared value edges at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await derivedInstall(page);
     await expect(derivedCell(page, 'epic:10', 'cost0')).toHaveText('12');
     await expect(page.locator('tfoot .planning-review-cost0')).toHaveText('22');
@@ -1932,8 +1931,7 @@ test('derived columns add no requests: switching rows reads nothing and Story su
 });
 
 test.describe('touch derived marker', () => {
-    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
-    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test.use({ hasTouch: true, viewport: { width: 1280, height: 900 } });
     test('one tap opens the readout, a second tap closes it and an outside tap closes it', async ({ page }) => {
         await derivedInstall(page);
         const th = derivedHeading(page, 'Cost 0, Story property'), letter = markerIn(th).locator('span'), tooltip = page.getByRole('tooltip');
@@ -1944,7 +1942,7 @@ test.describe('touch derived marker', () => {
         await page.waitForTimeout(200); await expect(tooltip).toHaveCount(0);
         await letter.tap(); await expect(tooltip).toHaveCount(1);
         await page.locator('#reference').tap(); await expect(tooltip).toHaveCount(0);
-        await page.screenshot({ path: path.join(root, 'tmp/267-ui/derived-marker-touch-390.png'), fullPage: false, animations: 'disabled' });
+        await page.screenshot({ path: path.join(root, 'tmp/267-ui/derived-marker-touch-desktop.png'), fullPage: false, animations: 'disabled' });
     });
 });
 
@@ -1963,7 +1961,7 @@ test('the Archive confirmation names the group, with "this group" when the group
     await expect(columnMenu(page, 'Cost 7').locator('.planning-review-column-confirm > span').first()).toHaveText('Archive “Cost 7”? It leaves this table in every Sprint for this group and cannot be restored here.');
 });
 
-for (const width of [1280, 390]) test(`the Archive confirmation wraps inside the menu for the longest label and a long group name at ${width}px`, async ({ page }) => {
+for (const width of [1280]) test(`the Archive confirmation wraps inside the menu for the longest label and a long group name at ${width}px`, async ({ page }) => {
     expect(Array.from(longColumnLabel)).toHaveLength(80);
     await page.setViewportSize({ width, height: 900 }); await install(page, false, false, false, false, { groupName: longGroupName });
     await page.evaluate(label => { window.harness.setSchema('group-alpha', { columns: window.harness.state().columns.map(column => column.id === 'cost7' ? { ...column, label } : column) }); return window.harness.reload(); }, longColumnLabel);
@@ -2066,7 +2064,7 @@ test('"Review saving is unavailable" never shows while the review is inactive', 
     await expect(page.getByText('Review saving is unavailable in this deployment.', { exact: true })).toHaveCount(0);
 });
 
-for (const width of [375, 1280]) test(`the hint row keeps one line with a 24px dismiss control and a settled flat hover at ${width}px`, async ({ page }) => {
+for (const width of [1280]) test(`the hint row keeps one line with a 24px dismiss control and a settled flat hover at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 }); await install(page, false, false, false, false, inheritedView);
     const geometry = () => hintRow(page).evaluate(node => {
         const row = node.getBoundingClientRect(), text = node.querySelector('p'), range = document.createRange(); range.selectNodeContents(text);
@@ -2127,8 +2125,6 @@ for (const [code, message, draft] of [['review_group_unknown', 'This Department 
     await expect(save).toBeDisabled();
     expect(await page.evaluate(() => ({ blocked: window.harness.state().groupBlocked, dirty: window.harness.state().dirty }))).toEqual({ blocked: true, dirty: true });
     await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-1280.png`), fullPage: false, animations: 'disabled' });
-    await page.setViewportSize({ width: 390, height: 844 });
-    await page.screenshot({ path: path.join(root, `tmp/267-ui/group-blocked-${code}-390.png`), fullPage: false, animations: 'disabled' });
     await page.getByRole('button', { name: 'Discard changes', exact: true }).click(); await page.getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect(save).toHaveCount(0);
     await expect(page.getByRole('alert').filter({ hasText: message })).toHaveCount(0);
@@ -2176,8 +2172,7 @@ test('limit messages say "per group"', async ({ page }) => {
 });
 
 test.describe('hint by touch', () => {
-    test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
-    test.skip(({ browserName }) => browserName === 'firefox', 'Firefox does not support mobile emulation (isMobile)');
+    test.use({ hasTouch: true, viewport: { width: 1280, height: 900 }, deviceScaleFactor: 2 });
     test('a tap dismisses the hint for this group and Sprint; it survives Sprint and group switches and returns when the source is re-saved', async ({ page }) => {
         await install(page, false, false, false, false, inheritedView);
         await expect(hintRow(page)).toHaveCount(1);

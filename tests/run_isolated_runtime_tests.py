@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import argparse
 import base64
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 import importlib.util
 import json
 import os
@@ -25,12 +25,14 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 from urllib.parse import unquote, urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[1]
 BOOTSTRAP = "tests/isolated_runtime_sitecustomize.py"
 RUNNER = "tests/run_isolated_runtime_tests.py"
+CHILD_RUNNER = "tests/runtime_test_runner.py"
 PRIVATE_NAMES = {
     "dashboard-config.json", "team-groups.json", "team-catalog.json", "teams.json",
     "sprints_cache.json", "stats_cache.json", "scenario-overrides.json",
@@ -43,6 +45,20 @@ PRIVATE_PARTS = {".git", ".aws", ".ssh", ".agents", ".codex", ".secrets", "secre
 
 class IsolationError(RuntimeError):
     """A synthetic test run cannot be prepared safely."""
+
+
+@contextmanager
+def runtime_directory(parent, *, prefix):
+    """Clean snapshots unless owned PostgreSQL shutdown requires preserving data."""
+    directory = Path(tempfile.mkdtemp(prefix=prefix, dir=parent))
+    try:
+        yield directory
+    except BaseException as error:
+        if not getattr(error, 'preserve_directory', False):
+            shutil.rmtree(directory)
+        raise
+    else:
+        shutil.rmtree(directory)
 
 
 def allowed_source(relative):
@@ -77,7 +93,7 @@ def prepare_snapshot(repo, destination, *, include_new=(), include_frontend=True
     repo, destination = Path(repo).resolve(), Path(destination).resolve()
     if destination.exists():
         raise IsolationError("Snapshot destination must not exist.")
-    additions = {RUNNER, BOOTSTRAP, *include_new}
+    additions = {RUNNER, BOOTSTRAP, CHILD_RUNNER, *include_new}
     if any(not allowed_source(name) for name in additions):
         raise IsolationError("New-source allowlist contains a forbidden path.")
     files = set(tracked_sources(repo)) | additions
@@ -288,9 +304,105 @@ def safe_output(value, postgres=None):
         # libpq/SQLAlchemy diagnostics can independently expose host/user/database
         # or encoded DSN fragments. Report only fixed-format test summaries.
         lines = [line for line in value.splitlines() if re.fullmatch(
-            r"Ran \d+ tests? in [\d.]+s|OK(?: \(skipped=\d+\))?|FAILED \([a-z=, 0-9]+\)", line)]
+            r"Ran \d+ tests? in [\d.]+s|OK(?: \(skipped=\d+\))?|FAILED \([a-z=, 0-9]+\)"
+            r"|JEP_TEST_TIMING (?:module=[A-Za-z_][A-Za-z0-9_.]* tests=\d+|test=[A-Za-z_][A-Za-z0-9_.]*|phase=discovery) seconds=\d+\.\d{3}"
+            r"|JEP_TEST_PROGRESS module=[A-Za-z_][A-Za-z0-9_.]* tests=\d+ seconds=\d+\.\d{3}"
+            r"|JEP_TEST_INVENTORY tests=\d+"
+            r"|Model database (?:template|fixture) cleanup failed\.", line)]
         return "\n".join(lines) + ("\n" if lines else "")
     return re.sub(r"postgres(?:ql)?(?:\+[a-z0-9]+)?://[^\s\"']+", "[test database]", value)
+
+
+def run_test_process(command, snapshot, env, postgres=None):
+    """Own the test process group until it exits, including on interruption."""
+    with subprocess.Popen(command, cwd=snapshot, env=env, stdout=subprocess.PIPE,
+                          stderr=subprocess.STDOUT, text=True, start_new_session=True) as child:
+        try:
+            if postgres:
+                output, _ = child.communicate()
+                print(safe_output(output, postgres), end='', flush=True)
+            else:
+                for line in child.stdout:
+                    print(safe_output(line), end='', flush=True)
+                child.wait()
+        except BaseException:
+            try:
+                os.killpg(child.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                child.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            finally:
+                # The leader may exit before a test's subprocess. Kill any
+                # remaining members of this group before cluster teardown.
+                try:
+                    os.killpg(child.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                child.wait()
+            raise
+        try:
+            os.killpg(child.pid, 0)
+        except ProcessLookupError:
+            return child.returncode
+        # A successful leader does not make abandoned background tests safe.
+        # Dispose its owned process group before the caller stops PostgreSQL.
+        print('Isolated runtime test child left background processes.', file=sys.stderr)
+        try:
+            os.killpg(child.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
+        try:
+            os.killpg(child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        return 1
+
+
+def reviewed_test_modules(repo, include_new=(), selectors=()):
+    repo = Path(repo).resolve()
+    additions = set(map(str, include_new))
+
+    def reviewed_file(name, *, new=False):
+        if not allowed_source(name):
+            return False
+        source = repo / name
+        validate_source_path(repo, source, allow_leaf_symlink=not new)
+        if source.is_symlink() and not allowed_source(source.resolve().relative_to(repo)):
+            raise IsolationError('Tracked test source symlink targets a forbidden path.')
+        return source.is_file()
+
+    if any(not reviewed_file(name, new=True) for name in additions):
+        raise IsolationError('A reviewed include is forbidden, missing or a symlink.')
+    sources = set(tracked_sources(repo)) | additions
+    modules = set()
+    for name in sources:
+        path = Path(name)
+        if (not path.parts or path.parts[0] != 'tests' or not path.name.startswith('test_')
+                or path.suffix != '.py' or not reviewed_file(name)):
+            continue
+        package = path.parent
+        while package != Path('.'):
+            initializer = (package / '__init__.py').as_posix()
+            if initializer not in sources or not reviewed_file(initializer):
+                break
+            if package == Path('tests'):
+                modules.add('.'.join(path.with_suffix('').parts))
+                break
+            package = package.parent
+    selected = list(selectors) if selectors else sorted(modules)
+    if not selected or len(set(selected)) != len(selected) or any(name not in modules for name in selected):
+        raise IsolationError('Parallel selectors must be unique reviewed test modules; use one worker for cases.')
+    return selected
+
+
+def load_shard_module():
+    spec = importlib.util.spec_from_file_location('isolated_runtime_shards', ROOT / 'tests/runtime_shards.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def main(argv=None):
@@ -299,17 +411,30 @@ def main(argv=None):
     parser.add_argument("--postgres", action="store_true")
     parser.add_argument("--postgres-config", type=Path)
     parser.add_argument("--node", type=Path, help="Explicit Node 20 executable for suites using frontend tools")
+    parser.add_argument("--timings", action="store_true", help="Report sanitized phase and test-case timings")
+    parser.add_argument("--workers", type=int, default=1, choices=range(1, 9), metavar="1..8")
     parser.add_argument("modules", nargs="*")
     args = parser.parse_args(argv)
+    started = time.perf_counter()
+    phases = {}
     try:
         pg = approved_postgres(args.postgres_config) if args.postgres else None
         node = approved_node(args.node)
         if args.postgres_config and not args.postgres:
             raise IsolationError("A PostgreSQL descriptor requires --postgres.")
+        if args.workers > 1:
+            if pg:
+                raise IsolationError('Parallel workers require separately owned clusters, not an external descriptor.')
+            modules = reviewed_test_modules(ROOT, args.include, args.modules)
+            report = load_shard_module().run_shards(ROOT, modules, workers=args.workers,
+                                                   include_new=args.include, node=node, timings=args.timings)
+            return report['status']
         scratch = ROOT / "tmp"
         scratch.mkdir(exist_ok=True)
-        with tempfile.TemporaryDirectory(prefix="isolated-runtime-", dir=scratch) as temporary:
+        with runtime_directory(scratch, prefix="isolated-runtime-") as temporary:
+            phase_started = time.perf_counter()
             snapshot = prepare_snapshot(ROOT, Path(temporary) / "checkout", include_new=args.include)
+            phases['snapshot'] = time.perf_counter() - phase_started
             with ExitStack() as stack:
                 def interrupt(_signal, _frame):
                     raise KeyboardInterrupt
@@ -317,31 +442,46 @@ def main(argv=None):
                 # SIGTERM unwinds the stack so the owned cluster is always stopped and removed.
                 stack.callback(signal.signal, signal.SIGTERM, signal.signal(signal.SIGTERM, interrupt))
                 cluster = None
+                phase_started = time.perf_counter()
                 if not pg:
                     clusters = load_cluster_module()
                     try:
                         cluster = stack.enter_context(clusters.owned_cluster(snapshot / "tmp/isolated-runtime/postgres"))
                     except clusters.ClusterError as error:
-                        raise IsolationError(str(error)) from None
+                        refused = IsolationError(str(error))
+                        refused.preserve_directory = getattr(error, 'preserve_directory', False)
+                        raise refused from None
+                phases['cluster'] = time.perf_counter() - phase_started
                 env = synthetic_environment(snapshot, postgres=pg, cluster=cluster, node=node)
-                command = [sys.executable, "-s", "-m", "unittest", *args.modules]
-                if not args.modules:
-                    command.extend(["discover", "-s", "tests"])
-                if not pg:
-                    with subprocess.Popen(command, cwd=snapshot, env=env, stdout=subprocess.PIPE,
-                                          stderr=subprocess.STDOUT, text=True) as child:
-                        for line in child.stdout:
-                            print(safe_output(line), end="", flush=True)
-                        return child.wait()
-                result = subprocess.run(command, cwd=snapshot, env=env, capture_output=True, text=True)
-            print(safe_output(result.stdout, pg), end="")
-            print(safe_output(result.stderr, pg), end="", file=sys.stderr)
-            if pg and result.returncode:
+                command = [sys.executable, "-s", "-m", "tests.runtime_test_runner"]
+                if args.timings:
+                    command.append('--timings')
+                command.extend(args.modules)
+                phase_started = time.perf_counter()
+                status = run_test_process(command, snapshot, env, pg)
+                phases['child'] = time.perf_counter() - phase_started
+            if pg and status:
                 print("PostgreSQL test failed; connection diagnostics withheld.", file=sys.stderr)
-            return result.returncode
+            return status
     except IsolationError as error:
         print("Isolated runtime tests refused: " + str(error), file=sys.stderr)
         return 2
+    except KeyboardInterrupt:
+        print('Isolated runtime tests interrupted; owned resources cleaned up.', file=sys.stderr)
+        return 130
+    except RuntimeError as error:
+        if not getattr(error, 'preserve_directory', False):
+            raise
+        print('Isolated runtime cleanup failed; owned directory preserved.', file=sys.stderr)
+        return 2
+    finally:
+        if args.timings:
+            total = time.perf_counter() - started
+            for name, seconds in phases.items():
+                print(f'JEP_RUNTIME_PHASE phase={name} seconds={seconds:.3f}', flush=True)
+            remainder = max(0, total - sum(phases.values()))
+            print(f'JEP_RUNTIME_PHASE phase=preparation-and-cleanup seconds={remainder:.3f}', flush=True)
+            print(f'JEP_RUNTIME_PHASE phase=total seconds={total:.3f}', flush=True)
 
 
 if __name__ == "__main__":

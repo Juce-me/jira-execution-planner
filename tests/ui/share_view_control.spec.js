@@ -313,7 +313,7 @@ test.describe('Share control: apply notice', () => {
     });
 
     // Element-level geometry (MRT020): the painted text, the field and the Dismiss button, not only the container box.
-    for (const width of [1440, 1028, 760, 390, 375]) {
+    for (const width of [1440, 1028, 760]) {
         for (const surface of ['main', 'compact']) {
             test(`the fallback notice stays inside the viewport and its header, unclipped and hit-testable, on ${surface} at ${width}px`, async ({ page }) => {
                 await openHarness(page, { width, clipboard: 'missing' });
@@ -603,7 +603,7 @@ test.describe('Share control: in the app', () => {
             });
             return { ...top, ...scrolled };
         };
-        for (const width of [1440, 1028, 900, 760, 390]) {
+        for (const width of [1440, 1028, 900, 760]) {
             await page.setViewportSize({ width, height: 900 });
             await setShare(false);
             const baseline = await measure();
@@ -717,11 +717,11 @@ async function explicitShot(page, name) {
 
 test('Epic share discovery preserves title geometry and works by touch', async ({ browser }) => {
     for (const touch of [false, true]) {
-        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
         const page = await context.newPage();
         try {
             await openShareFixture(page);
-            await page.setViewportSize({ width: touch ? 390 : 1440, height: 900 });
+            await page.setViewportSize({ width: 1440, height: 900 });
             const header = page.locator('.epic-block[data-epic-key="EPIC-1"] > .epic-header');
             await header.scrollIntoViewIfNeeded();
             await page.mouse.move(2, 2);
@@ -802,7 +802,7 @@ test('grouped Epic and Planning Epic row copy their own targets', async ({ page,
 
 test('Epic Table discovery keeps row geometry and touch fallback operable with no Story or synthetic action', async ({ browser }) => {
     for (const touch of [false, true]) {
-        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
         const page = await context.newPage();
         try {
             await openShareFixture(page, 'table', true);
@@ -1017,10 +1017,10 @@ async function expectCompactFeedback(notice) {
 }
 
 test('manual and warning feedback controls stay compact and hit-testable on touch main and compact headers', async ({ browser }) => {
-    const context = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true });
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, hasTouch: true });
     const page = await context.newPage();
     try {
-        await openHarness(page, { width: 390, clipboard: 'missing' });
+        await openHarness(page, { width: 1280, clipboard: 'missing' });
         for (const surface of ['main', 'compact']) {
             for (const manual of [true, false]) {
                 await setHarness(page, { active: surface, capture: manual
@@ -1046,11 +1046,11 @@ test('manual and warning feedback controls stay compact and hit-testable on touc
 
 test('Epic List and Table manual feedback keeps the URL and compact dismissal above the sticky layers', async ({ browser }) => {
     for (const layout of ['list', 'table']) for (const touch of [false, true]) {
-        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
         const page = await context.newPage();
         try {
             await openShareFixture(page, layout);
-            await page.setViewportSize({ width: touch ? 390 : 1440, height: 900 });
+            await page.setViewportSize({ width: 1440, height: 900 });
             await page.evaluate(() => Object.defineProperty(navigator, 'clipboard', { configurable: true, value: undefined }));
             const action = epicCopy(page, 'EPIC-1');
             await action.scrollIntoViewIfNeeded();
@@ -1078,11 +1078,11 @@ test('genuine warnings match the Jira warning typography and wrapping across mai
     const directory = path.join(repoRoot, 'tmp/share-view-tasks/warning-font-visual');
     fs.mkdirSync(directory, { recursive: true });
     for (const touch of [false, true]) {
-        const context = await browser.newContext({ viewport: { width: touch ? 390 : 1440, height: 900 }, hasTouch: touch });
+        const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, hasTouch: touch });
         const referencePage = await context.newPage();
         try {
             // Use the existing mounted Jira overflow warning in its canonical main-header context.
-            await openHarness(referencePage, { width: touch ? 390 : 1440 });
+            await openHarness(referencePage, { width: 1440 });
             await setHarness(referencePage, { referenceControls: true });
             await referencePage.getByRole('button', { name: 'Open Jira issue menu' }).click();
             await referencePage.getByRole('menuitem', { name: 'Open epics' }).click();

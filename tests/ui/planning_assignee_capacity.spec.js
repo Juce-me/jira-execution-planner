@@ -1325,6 +1325,21 @@ test('no ticket: the previous Jira value wins over inherited stored capacity; th
     expect(previousReads).toBe(1);
 });
 
+for (const currentValue of [null, 0]) test(`ticket with ${currentValue === null ? 'blank' : 'zero'} capacity: editor inherits the active Sprint's Jira capacity, saves against the ticket value`, async ({ page }) => {
+    const server = plannedServer();
+    const { calls } = await install(page, { server, capacityProject: 'CAP', capacity: sprint => sprint === activeSprintName ? ticket(20.5)(sprint) : ticket(currentValue)(sprint) });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await alphaCard(page).getByRole('button', { name: 'Edit Alpha Team capacity' }).click();
+    const jiraInput = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
+    await expect(jiraInput).toHaveValue('20.5');
+    expect(jiraWrites(calls), 'opening writes nothing').toEqual([]);
+    await alphaCard(page).getByRole('button', { name: 'Save Alpha Team capacity' }).click();
+    await expect.poll(() => jiraWrites(calls).length).toBe(1);
+    expect(jiraWrites(calls)[0].body).toMatchObject({ capacity: 20.5, expectedCapacity: currentValue, teamName: 'Alpha Team' });
+});
+
 test('no ticket: a new Team stays blank when the previous Sprint has capacity only for another Team', async ({ page }) => {
     const server = plannedServer();
     await install(page, { server, capacityProject: 'CAP', capacity: sprint => sprint === activeSprintName

@@ -644,10 +644,12 @@ class PersistentCatalogRouteTests(unittest.TestCase):
     def test_stale_hit_returns_before_held_worker(self):
         release = __import__('threading').Event()
         started = __import__('threading').Event()
+        finished = __import__('threading').Event()
 
         def held_get(_url, **_kwargs):
             started.set()
-            release.wait(2)
+            release.wait(10)  # Bounded deadlock guard; normal completion is explicit.
+            finished.set()
             return self._response(200, {
                 'values': [], 'startAt': 0, 'maxResults': 100, 'isLast': True,
             })
@@ -657,14 +659,12 @@ class PersistentCatalogRouteTests(unittest.TestCase):
                 payload=[{'id': 101, 'name': 'old'}], stale=True,
             ) as (client, factory, _context), \
                     patch.object(jira_server.HTTP_SESSION, 'get', side_effect=held_get) as jira_get:
-                before = __import__('time').monotonic()
                 stale = client.get('/api/sprints')
-                elapsed = __import__('time').monotonic() - before
                 self.assertEqual(stale.status_code, 200, stale.get_data(as_text=True))
-                self.assertLess(elapsed, 1)
                 self.assertEqual(stale.get_json()['sprints'], [{'id': 101, 'name': 'old'}])
                 self.assertTrue(stale.get_json()['cache']['refreshStarted'])
-                self.assertTrue(started.wait(1))
+                self.assertTrue(started.wait(5))
+                self.assertFalse(finished.is_set(), 'stale response waited for the held refresh')
                 cache = stale.get_json()['cache']
                 completion = client.get(
                     '/api/sprints?completionAttemptId='

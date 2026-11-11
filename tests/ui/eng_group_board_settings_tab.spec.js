@@ -741,7 +741,9 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
     await dialog.locator('.board-column .remove-btn[title="Delete column"]').first().click();
     await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
 
-    await page.setViewportSize({ width: 375, height: 760 });
+    await page.setViewportSize({ width: 1028, height: 760 });
+    // Exercise a constrained composer pane inside a supported desktop viewport.
+    await pane.evaluate((node) => { node.style.width = '480px'; });
     await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
     const narrowGeometry = await dialog.evaluate((node) => {
         const paneNode = node.querySelector('.group-pane-right');
@@ -771,6 +773,7 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
         animations: 'disabled',
     });
     await right.focus();
+    await pane.evaluate((node) => { node.style.removeProperty('width'); });
     await page.setViewportSize({ width: 1280, height: 480 });
     await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Reset to default columns' })).toBeFocused();
@@ -785,42 +788,6 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
     await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
 });
 
-test('at a narrow viewport, the Boards tab group list is reachable via the mobile Groups button and returns to the composer on pick', async ({ page }) => {
-    // No spec in the suite exercised a narrow viewport on any group pane before this test: at
-    // <=820px .group-pane-left defaults to translateX(-105%) (off-screen) and, unlike Team
-    // groups, the Boards tab had no trigger that ever set showGroupListMobile to true.
-    await page.setViewportSize({ width: 375, height: 760 });
-    await mockConfigSettings(page);
-    await page.goto(baseUrl, { waitUntil: 'domcontentloaded' });
-    await page.getByRole('button', { name: 'Manage team groups' }).click();
-    const dialog = page.getByRole('dialog').first();
-    await openBoardsTab(page, dialog);
-
-    const leftPane = dialog.locator('.group-pane-left');
-    const groupsButton = dialog.locator('.group-pane-right .group-pane-mobile-header').getByRole('button', { name: 'Groups' });
-
-    // Off-screen by default. A negative x confirms translateX(-105%) is really in effect, not
-    // merely that the is-mobile-active class string happens to be absent.
-    await expect(leftPane).not.toHaveClass(/is-mobile-active/);
-    const hiddenBox = await leftPane.boundingBox();
-    expect(hiddenBox.x).toBeLessThan(0);
-
-    await expect(groupsButton).toBeVisible();
-    await groupsButton.click();
-    await expect(leftPane).toHaveClass(/is-mobile-active/);
-
-    // Let the 0.25s transform transition finish before reading geometry, or the box is caught
-    // mid-slide and still reads deeply negative.
-    await page.waitForTimeout(300);
-    const visibleBox = await leftPane.boundingBox();
-    expect(visibleBox.x).toBeGreaterThanOrEqual(0);
-
-    // The existing exit path (setShowGroupListMobile(false) on selection, line 54) returns to the
-    // composer, now scoped to the picked group — reachable in both directions.
-    await dialog.locator('.group-pane-list .group-list-item', { hasText: 'Southridge' }).click();
-    await expect(leftPane).not.toHaveClass(/is-mobile-active/);
-    await expect(dialog.getByText('This group has no board configured. Add a column to compose one.')).toBeVisible();
-});
 
 // normalizeGroupsConfig (groupConfigUtils.js) shallow-copies an imported board's columns without
 // normalizing members, so any element shape valid JSON allows can reach

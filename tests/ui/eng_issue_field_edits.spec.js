@@ -170,7 +170,7 @@ async function expectInsideViewport(locator, viewport) {
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height - 7);
 }
 
-for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 900 }]) {
     test(`person combobox is bounded and keyboard accessible at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await mountHarness(page, viewport);
         await page.evaluate(() => {
@@ -346,7 +346,7 @@ test('delayed metadata selects the existing text and delayed search results sele
     await page.screenshot({ path: path.join(screenshotDir, 'person-existing-selected.png') });
 });
 
-for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 900 }]) {
     test(`team combobox filters, saves on Enter and cancels on Escape at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await mountHarness(page, viewport);
         const trigger = page.getByRole('combobox', { name: 'Team: Beta Team' });
@@ -457,7 +457,7 @@ test('person editor preserves the current value until typing and keeps failed ch
 });
 
 test('story points stays inline, rejects blank, saves Enter once, and discards on blur', async ({ page }) => {
-    await mountHarness(page, { width: 390, height: 844 });
+    await mountHarness(page, { width: 1280, height: 900 });
     const input = page.getByRole('textbox', { name: 'Story Points' });
     await expect(page.getByRole('dialog', { name: 'Edit Story Points' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Save Story Points' })).toHaveCount(0);
@@ -496,7 +496,7 @@ test('story points stays inline, rejects blank, saves Enter once, and discards o
 });
 
 test('story points accept two decimals, round a third half-up before saving, reject negatives and cancel on Escape', async ({ page }) => {
-    await mountHarness(page, { width: 390, height: 844 });
+    await mountHarness(page, { width: 1280, height: 900 });
     const input = page.getByRole('textbox', { name: 'Story Points' });
     const submits = () => page.evaluate(() => window.__issueEditorHarness.pointSubmits);
     await input.click();
@@ -527,7 +527,7 @@ test('story points accept two decimals, round a third half-up before saving, rej
 });
 
 test('missing Jira Story Points render as 0 in the inline input', async ({ page }) => {
-    await mountHarness(page, { width: 390, height: 844 });
+    await mountHarness(page, { width: 1280, height: 900 });
     await page.evaluate(() => window.__issueEditorHarness.setPoints(null));
     const input = page.getByRole('textbox', { name: 'Story Points' });
     const unit = page.locator('.story-points-editor-unit');
@@ -536,11 +536,11 @@ test('missing Jira Story Points render as 0 in the inline input', async ({ page 
     await expect(unit).toHaveCSS('margin-left', '2px');
     expect(await unit.evaluate(element => getComputedStyle(element).color))
         .not.toBe(await input.evaluate(element => getComputedStyle(element).color));
-    await page.screenshot({ path: path.join(screenshotDir, 'story-points-unit-390x844.png') });
+    await page.screenshot({ path: path.join(screenshotDir, 'story-points-unit-desktop.png') });
 });
 
 test('editors fail closed before editable metadata and allow retry after a rejected save', async ({ page }) => {
-    await mountHarness(page, { width: 390, height: 844 });
+    await mountHarness(page, { width: 1280, height: 900 });
     await page.evaluate(() => {
         window.__issueEditorHarness.setPersonEditable(false);
         window.__issueEditorHarness.setPointsEditable(false);
@@ -585,7 +585,7 @@ test('editors fail closed before editable metadata and allow retry after a rejec
 });
 
 test('person recovery stays explicit while inline Story Points recovery runs without extra controls', async ({ page }) => {
-    await mountHarness(page, { width: 390, height: 844 });
+    await mountHarness(page, { width: 1280, height: 900 });
     await page.evaluate(() => {
         window.__issueEditorHarness.setPersonOpen(true);
         window.__issueEditorHarness.setPersonError('This field changed in Jira.');

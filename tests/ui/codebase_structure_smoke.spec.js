@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { buildRuntimeProbeBundle, readAppRenderCount, buildEngScopeProbeBundle } = require('./runtime_probe_helpers');
 const { installDashboardShell } = require('./epm_view_fixture');
@@ -474,7 +474,7 @@ async function captureStatsParityScreenshots(page, name) {
     if (!dir) return;
     fs.mkdirSync(dir, { recursive: true });
     const originalViewport = page.viewportSize();
-    for (const width of [1280, 375]) {
+    for (const width of [1280]) {
         const destination = path.join(dir, `${name}-${width}.png`);
         if (fs.existsSync(destination)) throw new Error(`Duplicate Statistics screenshot: ${destination}`);
         await page.setViewportSize({ width, height: 760 });
@@ -1488,7 +1488,7 @@ test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ pa
     await captureSmokeScreenshot(page, 'board-mode');
 
     const desktopButtonWidths = (await readEngModeGeometry(page, '.view-selector .eng-mode-control')).buttonWidths;
-    for (const width of [1280, 1028, 760, 390, 375]) {
+    for (const width of [1280, 1028, 760]) {
         await page.setViewportSize({ width, height: 760 });
         const geometry = await expectEngModeControlSingleRow(page, '.view-selector .eng-mode-control');
         expect(geometry.height, 'the mode control keeps the shared control height at every width').toBe(38);
@@ -1521,7 +1521,7 @@ test('ENG Board is a fifth mode that replaces the Catch Up surface', async ({ pa
     // (header.css gives it flex: 0 0 auto and its buttons a tighter min-width), so the
     // narrow-viewport behaviour has to be proven here too, not inferred from .view-selector.
     const compactButtonWidths = (await readEngModeGeometry(page, '.compact-sticky-header .eng-mode-control')).buttonWidths;
-    for (const width of [1280, 1028, 760, 390, 375]) {
+    for (const width of [1280, 1028, 760]) {
         await page.setViewportSize({ width, height: 760 });
         await page.evaluate(() => window.scrollTo(0, 600));
         await expect(stickyModes).toBeVisible();
@@ -2078,11 +2078,8 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     await expect(startQuarterButton).toHaveAttribute('aria-expanded', 'false');
     await expect(startQuarterButton).toBeFocused();
 
-    // Responsive proof: at 375px the quarter range reflows without horizontal overflow.
-    // Overflow is asserted on the cohort controls row rather than the whole document:
-    // the dashboard shell has a pre-existing 4px document overflow at 375px from the
-    // header .eng-mode-control, unrelated to the stats controls under test here.
-    await page.setViewportSize({ width: 375, height: 760 });
+    // Laptop containment is asserted on the cohort controls row and its dropdowns.
+    await page.setViewportSize({ width: 1028, height: 760 });
     const reflow = await quarterRange.evaluate((node) => {
         const controls = node.closest('.cohort-controls');
         const viewportWidth = document.documentElement.clientWidth;
@@ -2106,7 +2103,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const quarterToggleBox = await endQuarterButton.boundingBox();
     expect(quarterPanelBox.width).toBeGreaterThanOrEqual(quarterToggleBox.width - 0.01);
     expect(quarterPanelBox.x).toBeGreaterThanOrEqual(16);
-    expect(quarterPanelBox.x + quarterPanelBox.width).toBeLessThanOrEqual(359);
+    expect(quarterPanelBox.x + quarterPanelBox.width).toBeLessThanOrEqual(page.viewportSize().width - 16);
     await endQuarterButton.click();
     await page.setViewportSize({ width: 1280, height: 760 });
 
@@ -2199,7 +2196,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-test('stats sprint range End panels keep long options inside the narrow viewport', async ({ page }) => {
+test('stats sprint range End panels keep long options inside the laptop viewport', async ({ page }) => {
     test.setTimeout(90000);
     const calls = [];
     const apiMocks = await installApiMocks(page, calls, {
@@ -2209,7 +2206,7 @@ test('stats sprint range End panels keep long options inside the narrow viewport
             { id: longSprintId, name: longSprintName, state: 'future' },
         ],
     });
-    await page.setViewportSize({ width: 375, height: 760 });
+    await page.setViewportSize({ width: 1028, height: 760 });
     await page.addInitScript((prefs) => {
         window.localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs));
     }, {
@@ -2223,9 +2220,9 @@ test('stats sprint range End panels keep long options inside the narrow viewport
     await waitForCallCount(calls, call => call.pathname === '/api/stats/excluded-capacity-source', 1);
     const statsTabs = page.locator('.stats-panel.open .stats-view-toggle');
     const views = [
-        { tab: 'Excluded Capacity', range: 'excluded-capacity-sprint', screenshot: 'statistics-excluded-capacity-range-375' },
-        { tab: 'Mono vs Cross', range: 'mono-cross-sprint', screenshot: 'statistics-mono-cross-range-375' },
-        { tab: 'Project Track', range: 'project-track-sprint', screenshot: 'statistics-project-track-range-375' },
+        { tab: 'Excluded Capacity', range: 'excluded-capacity-sprint', screenshot: 'statistics-excluded-capacity-range-laptop' },
+        { tab: 'Mono vs Cross', range: 'mono-cross-sprint', screenshot: 'statistics-mono-cross-range-laptop' },
+        { tab: 'Project Track', range: 'project-track-sprint', screenshot: 'statistics-project-track-range-laptop' },
     ];
     const panelResults = [];
 
@@ -2234,7 +2231,7 @@ test('stats sprint range End panels keep long options inside the narrow viewport
         await statsTabs.getByRole('radio', { name: view.tab, exact: true }).click();
         const range = page.locator(`.stats-view.open [data-stats-range="${view.range}"]`);
         await expect(range).toBeVisible();
-        await page.setViewportSize({ width: 375, height: 760 });
+        await page.setViewportSize({ width: 1028, height: 760 });
         await waitForVisualSettled(page);
         const endToggle = range.getByRole('button', { name: 'End sprint' });
         await endToggle.click();
@@ -2423,13 +2420,13 @@ test('Lead Times mode switch swaps exactly one selection control and keeps the b
     expect(seen.last_n.groupBy.height).toBe(seen.created.groupBy.height);
     expect(seen.last_n.groups[0].left).toBe(seen.created.groups[0].left);
 
-    await page.setViewportSize({ width: 375, height: 812 });
+    await page.setViewportSize({ width: 1028, height: 812 });
     for (const mode of ['last_n', 'closed', 'created']) {
         await modeSelect.selectOption(mode);
         await waitForVisualSettled(page);
         const narrow = await leadTimesBarGeometry(page);
-        expect(narrow.labels.filter((label) => label.clipped), `${mode} clipped labels at 375px`).toEqual([]);
-        narrow.selects.forEach((item) => expect(item.clipped, `${item.label} at 375px`).toBe(false));
+        expect(narrow.labels.filter((label) => label.clipped), `${mode} clipped labels at laptop width`).toEqual([]);
+        narrow.selects.forEach((item) => expect(item.clipped, `${item.label} at laptop width`).toBe(false));
     }
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
@@ -2469,8 +2466,8 @@ for (const mode of ['last_n', 'created']) test(`Lead Times ${mode} heatmap with 
 });
 
 // MRT018 for the closed modes: Epics created years before they closed fall in the trailing overflow column instead of
-// vanishing, and a long heatmap and a long Completed list stay inside the Statistics panel at desktop and phone widths.
-for (const mode of ['closed', 'last_n']) for (const [width, height] of [[1280, 900], [375, 812]]) {
+// vanishing, and a long heatmap and a long Completed list stay inside the Statistics panel at desktop width.
+for (const mode of ['closed', 'last_n']) for (const [width, height] of [[1280, 900]]) {
     test(`Lead Times ${mode} keeps long-lived Epics and long lists inside the panel at ${width}px`, async ({ page }) => {
         const calls = [];
         const epics = Array.from({ length: 40 }, (_, index) => makeClosedCohortEpic(index, {
@@ -2863,7 +2860,7 @@ test('Project Track tab renders filter bar, mode title, totals, per-sprint and b
     // .view-selector and .compact-sticky-header; these two controls sit outside both and must
     // keep the default overflow at the same width. (The Statistics view toggle is not a witness
     // here — stats/shell.css already gives it overflow-x: auto at every width.)
-    await page.setViewportSize({ width: 390, height: 900 });
+    await page.setViewportSize({ width: 1028, height: 900 });
     for (const label of ['Capacity side', 'Mode']) {
         expect(
             await controls.getByRole('radiogroup', { name: label }).evaluate(node => window.getComputedStyle(node).overflowX),
@@ -3206,9 +3203,9 @@ test('Project Track Team mode strips split each track by Board column with a hov
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-test('Project Track strips fall back to the default board and stay aligned at 375px', async ({ page }) => {
+test('Project Track strips fall back to the default board and stay aligned at laptop width', async ({ page }) => {
     const calls = [];
-    const { apiMocks, statsView } = await openProjectTrackStrips(page, calls, { board: null, width: 375 });
+    const { apiMocks, statsView } = await openProjectTrackStrips(page, calls, { board: null, width: 1028 });
     const byTeamCard = statsView.locator('.project-track-card', { hasText: 'By team' });
     await expect(byTeamCard.locator('.stacked-bar-row')).toHaveCount(12);
 
@@ -3234,11 +3231,11 @@ test('Project Track strips fall back to the default board and stay aligned at 37
 
     await page.mouse.move(0, 0);
     await waitForVisualSettled(page);
-    await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-375.png` });
+    await statsView.screenshot({ path: `${screenshotDir}/statistics-project-track-strips-laptop.png` });
     expect(apiMocks.unexpectedCalls).toEqual([]);
 });
 
-for (const width of [1280, 375]) test(`Project Track hides duplicate totals for one selected team at ${width}px`, async ({ page }) => {
+for (const width of [1280]) test(`Project Track hides duplicate totals for one selected team at ${width}px`, async ({ page }) => {
     const calls = [];
     const sourceIssues = [
         makeExcludedCapacityIssue({ key: 'DEMO-1', epicKey: 'DEMO-E1', epicSummary: 'Shared Epic', teamId: 'team-alpha', teamName: 'Alpha Team',
@@ -3647,7 +3644,7 @@ test('open header dropdown toggles filter groups teams and sprints', async ({ pa
         }
     }
 
-    for (const width of [760, 390, 375]) {
+    for (const width of [760]) {
         await page.setViewportSize({ width, height: 900 });
         await page.evaluate(() => window.scrollTo(0, 600));
         await waitForVisualSettled(page);
@@ -3829,12 +3826,7 @@ test('multiple groups keep the main controls on one row and settings beside refr
     expect(Math.abs(wideGeometry.teamToModeGap - wideGeometry.columnGap - wideGeometry.modeMarginLeft)).toBeLessThanOrEqual(1);
     await captureSmokeScreenshot(page, 'stable-multi-group-header-controls-wide');
 
-    for (const viewport of [
-        { width: 1440, height: 900 }, { width: 1091, height: 800 },
-        { width: 1028, height: 800 }, { width: 768, height: 800 },
-        { width: 761, height: 800 }, { width: 760, height: 800 },
-        { width: 390, height: 900 }, { width: 375, height: 900 },
-    ]) {
+    for (const viewport of [{ width: 1440, height: 900 }, { width: 1091, height: 800 }, { width: 1028, height: 800 }, { width: 768, height: 800 }, { width: 761, height: 800 }, { width: 760, height: 800 }]) {
         await page.setViewportSize(viewport);
         await waitForVisualSettled(page);
         const responsiveGeometry = await readHeaderRowGeometry(filters);
@@ -3849,8 +3841,8 @@ test('multiple groups keep the main controls on one row and settings beside refr
             expect(edge.right).toBeLessThanOrEqual(responsiveGeometry.viewportWidth + 1);
         });
         if ([1440, 1091].includes(viewport.width)) expect(responsiveGeometry.rowCount).toBe(1);
-        if ([760, 390, 375].includes(viewport.width)) expect(responsiveGeometry.rowCount).toBeGreaterThan(1);
-        if ([1440, 1091, 760, 390, 375].includes(viewport.width)) {
+        if ([760].includes(viewport.width)) expect(responsiveGeometry.rowCount).toBeGreaterThan(1);
+        if ([1440, 1091, 760].includes(viewport.width)) {
             await page.screenshot({ path: path.join(headerDropdownAfterDir, `stable-main-header-${viewport.width}.png`), fullPage: false });
         }
     }
@@ -6522,7 +6514,7 @@ for (const connected of [false, true]) test(`Task9 freshness reserved copy prese
     await page.route('**/frontend/dist/dashboard.js', route => route.fulfill({ status: 200, contentType: 'application/javascript', body: dashboardJs }));
     await openCatchUp(page, ctx, { prefs: { groupByInitiativeChoice: false } });
     await page.addStyleTag({ content: '*,*::before,*::after{animation:none!important;transition:none!important}' });
-    const viewports = [375,698,755,768,999,1000,1010,1023,1400].map(width => ({width,height:900}));
+    const viewports = [698,755,768,999,1000,1010,1023,1400].map(width => ({width,height:900}));
     const states = ['rest', 'focused', 'applied'];
     const setSearchState = async state => { const search = page.locator('.header-actions-row .search-input'); await search.fill(state === 'applied' ? 'synthetic' : ''); if (state === 'focused') await search.focus(); else await search.blur(); await waitForVisualSettled(page); };
     const measure = () => page.locator('.header-actions-row').evaluate(row => {

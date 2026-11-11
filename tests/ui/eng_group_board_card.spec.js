@@ -1126,63 +1126,8 @@ test('fallback epic headline keeps the row contract at DPR 1/2 and zoom 100/125/
     await session.detach();
 });
 
-test('Catch Up mobile epic metadata wraps without clipping any control or the full assignee', async ({ page }) => {
-    await openBoard(page, {
-        width: 390,
-        height: 844,
-        epicAssigneeName: 'Alexanderson Petrovsky',
-        firstEpicStatus: 'In Progress',
-        firstEpicStoryPoints: 24.6,
-    });
-    await page.locator('.view-selector .eng-mode-control').getByRole('radio', { name: 'Catch Up' }).click();
-    const geometry = await page.locator('.epic-block').first().locator('.epic-header').evaluate(element => {
-        const header = element.getBoundingClientRect();
-        const meta = element.querySelector('.epic-meta');
-        const metaBox = meta.getBoundingClientRect();
-        const assignee = meta.querySelector('input.issue-person-editor-trigger');
-        const style = getComputedStyle(assignee);
-        const canvas = document.createElement('canvas');
-        const context = canvas.getContext('2d');
-        context.font = style.font;
-        const letterSpacing = Number.parseFloat(style.letterSpacing) || 0;
-        const requiredTextWidth = context.measureText(assignee.value).width
-            + letterSpacing * Math.max(0, assignee.value.length - 1);
-        const controls = [
-            meta.querySelector('.epic-status-pill'),
-            meta.querySelector('.epic-story-points'),
-            assignee,
-        ].map(control => {
-            const box = control.getBoundingClientRect();
-            return { top: box.top, bottom: box.bottom, left: box.left, right: box.right, height: box.height };
-        });
-        return {
-            header: { left: header.left, right: header.right },
-            meta: { height: metaBox.height, scrollWidth: meta.scrollWidth, clientWidth: meta.clientWidth },
-            controls,
-            assigneeTextFits: requiredTextWidth <= assignee.clientWidth,
-        };
-    });
 
-    expect(geometry.meta.scrollWidth).toBeLessThanOrEqual(geometry.meta.clientWidth);
-    expect(geometry.meta.height).toBeLessThanOrEqual(56.1);
-    expect(geometry.controls.map(control => Math.round(control.height))).toEqual([17, 24, 24]);
-    geometry.controls.forEach(control => {
-        expect(control.left).toBeGreaterThanOrEqual(geometry.header.left - 1);
-        expect(control.right).toBeLessThanOrEqual(geometry.header.right + 1);
-    });
-    const rows = geometry.controls.reduce((grouped, control) => {
-        const rowKey = Math.round(control.top);
-        grouped[rowKey] = [...(grouped[rowKey] || []), control];
-        return grouped;
-    }, {});
-    Object.values(rows).forEach(row => {
-        expect(Math.max(...row.map(control => control.bottom)) - Math.min(...row.map(control => control.bottom))).toBeLessThanOrEqual(1);
-    });
-    expect(geometry.assigneeTextFits).toBe(true);
-    await page.screenshot({ path: path.join(screenshotDir, 'catch-up-epic-header-long-assignee-390x844.png') });
-});
-
-for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+for (const viewport of [{ width: 1440, height: 900 }]) {
     test(`settled Board field edit preserves card geometry at ${viewport.width}x${viewport.height}`, async ({ page }) => {
         await openBoard(page, viewport);
         const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');

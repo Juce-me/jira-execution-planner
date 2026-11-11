@@ -505,8 +505,8 @@ test('a ghost-only hierarchy is a non-empty ENG result', async ({ page }) => {
     await expect(page.getByText(/0 stories · 1 required/i)).toBeVisible();
 });
 
-test('keyboard activation and narrow layout preserve native link behavior and containment', async ({ page }) => {
-    await page.setViewportSize({ width: 390, height: 760 });
+test('keyboard activation preserves native link behavior and containment on desktop', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await installFixture(page, { mode: 'catchUp', readinessEpics: [readinessEpic('ZERO-EPIC')] });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 

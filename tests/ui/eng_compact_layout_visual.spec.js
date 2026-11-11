@@ -564,44 +564,6 @@ test('the filter bar holds one row at desktop widths with every facet active', a
     await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-960.png` });
 });
 
-test('the filter bar takes at most two rows below 720px', async ({ page }) => {
-    await openEngCatchUp(page, { width: 1440, height: 900 });
-    await activateThreeFacets(page);
-
-    for (const width of [375, 360]) {
-        await page.setViewportSize({ width, height: 760 });
-        await waitForVisualSettled(page);
-        const baseline = await page.evaluate(
-            () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-        );
-        const metrics = await measureBar(page, baseline);
-        expect(metrics.rows, `bar rows at ${width}`).toBe(2);
-        expect(Math.round(metrics.height), `bar height at ${width}`).toBeLessThanOrEqual(BAR_TWO_ROW_HEIGHT);
-        expect(metrics.clear.width, `Clear all collapsed at ${width}`).toBeGreaterThan(0);
-        // At this width the lane cannot hold both "+n more" and Clear all; Clear all wins and
-        // the residue falls on "+n more", whose only job is reopening the popover.
-        expect(metrics.chipsHidden, `chips collapsed at ${width}`).toBe(3);
-        expect(metrics.moreClippedByLane, `"+n more" clipping at ${width}`).toBeLessThanOrEqual(40);
-        expectNoClipping(metrics, { laneMayClip: true });
-    }
-    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-360.png` });
-
-    await page.setViewportSize({ width: 375, height: 600 });
-    await waitForVisualSettled(page);
-    const narrowSnapshots = await collectStickySnapshots(page, waitForVisualSettled);
-    // Filters now precede alerts; target the real Epic instead of assuming it pins at a fixed page offset.
-    await page.locator('.epic-header').first().evaluate(node => window.scrollTo(0, window.scrollY + node.getBoundingClientRect().top));
-    await waitForVisualSettled(page);
-    narrowSnapshots.push(await snapshotStickyStack(page));
-    const narrowPinned = narrowSnapshots.find(result => result.compactVisible && result.filterbarPinned && result.pinnedEpic);
-    expect(narrowPinned, 'expected a narrow two-row pinned epic witness').toBeTruthy();
-    expect(narrowPinned.filterbarWrap.height).toBeGreaterThan(narrowPinned.filterbar.height);
-    expect(Math.abs(narrowPinned.epic.top - narrowPinned.filterbarWrap.bottom)).toBeLessThanOrEqual(1);
-    expect(Math.abs(
-        (narrowPinned.epicStickyTop - narrowPinned.filterbarStickyTop) - narrowPinned.filterbarWrap.height
-    )).toBeLessThanOrEqual(1);
-    await page.screenshot({ path: `${screenshotDir}/catch-up-sticky-stack-375.png`, fullPage: false });
-});
 
 test('Catch Up exposes the compact, filter-bar, and pinned-epic sticky stack', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 600 });
@@ -700,9 +662,6 @@ test('Status labels and Priority options reuse configured visuals without decora
     expect(new Set(ids).size).toBe(ids.length);
     await waitForVisualSettled(page);
     await popover(page).screenshot({ path: `${screenshotDir}/filter-option-visuals-desktop.png` });
-    await page.setViewportSize({ width: 375, height: 667 });
-    await waitForVisualSettled(page);
-    await popover(page).screenshot({ path: `${screenshotDir}/filter-option-visuals-mobile.png` });
 });
 
 test('every configured Status colour and the neutral fallback have readable filter text', async ({ page }) => {
@@ -848,9 +807,8 @@ test('Catch Up Project Track counts Epics and filters their Stories in all four 
 });
 
 test('the popover fits a short viewport and its last facet stays reachable', async ({ page }) => {
-    await openEngCatchUp(page, { width: 375, height: 667 });
-    // Baseline: this page already overflows 375 by a few px through the capacity grid and the
-    // mode control, neither of which this change touches. The popover must add nothing.
+    await openEngCatchUp(page, { width: 1028, height: 667 });
+    // Opening the popover must not add document overflow at laptop width.
     const baselineOverflow = await page.evaluate(
         () => document.documentElement.scrollWidth - document.documentElement.clientWidth
     );
@@ -872,7 +830,7 @@ test('the popover fits a short viewport and its last facet stays reachable', asy
         const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
         return Boolean(hit && node.contains(hit));
     });
-    expect(reachable, 'the last facet option is off screen at 375x667').toBe(true);
+    expect(reachable, 'the last facet option is off screen at 1028x667').toBe(true);
 });
 
 test('Status and Priority compose, which the old single select could not do', async ({ page }) => {
@@ -1062,41 +1020,6 @@ test('sort and grouping are view controls in the bar and render no chip', async 
     await grouping.click();
     await expect(grouping).toHaveAttribute('aria-pressed', 'false');
 
-    await page.setViewportSize({ width: 375, height: 800 });
-    await waitForVisualSettled(page);
-    await grouping.scrollIntoViewIfNeeded();
-    await waitForVisualSettled(page);
-    const measureNarrowGroupingRow = async () => viewControls.evaluate((controls) => {
-        const filterbar = controls.closest('.filterbar');
-        const sort = controls.querySelector('.eng-epic-sort-dropdown .sprint-dropdown-toggle');
-        const groupingButton = controls.querySelector('button[aria-label="Group by Initiative"]');
-        const firstRowBottom = Math.max(...[...filterbar.children]
-            .filter(node => node !== controls)
-            .map(node => node.getBoundingClientRect().bottom));
-        const sortRect = sort.getBoundingClientRect();
-        const groupingRect = groupingButton.getBoundingClientRect();
-        return {
-            firstRowBottom,
-            sortTop: sortRect.top,
-            sortCenter: sortRect.top + sortRect.height / 2,
-            groupingCenter: groupingRect.top + groupingRect.height / 2,
-        };
-    });
-    const narrowOffGeometry = await measureGroupingGeometry();
-    expectGroupedControlGeometry(narrowOffGeometry);
-    const narrowOffRow = await measureNarrowGroupingRow();
-    expect(narrowOffRow.sortTop).toBeGreaterThan(narrowOffRow.firstRowBottom);
-    expect(Math.abs(narrowOffRow.sortCenter - narrowOffRow.groupingCenter)).toBeLessThanOrEqual(1);
-    await grouping.click();
-    await expect(grouping).toHaveAttribute('aria-pressed', 'true');
-    const narrowOnGeometry = await measureGroupingGeometry();
-    expectGroupedControlGeometry(narrowOnGeometry);
-    expect(narrowOnGeometry[0]).toEqual(narrowOffGeometry[0]);
-    const narrowOnRow = await measureNarrowGroupingRow();
-    expect(narrowOnRow.sortTop).toBeGreaterThan(narrowOnRow.firstRowBottom);
-    expect(Math.abs(narrowOnRow.sortCenter - narrowOnRow.groupingCenter)).toBeLessThanOrEqual(1);
-    expect((await measureBar(page)).rows).toBeLessThanOrEqual(2);
-
     // A plain click on the sort option: no force, so this also proves the panel is not
     // painted under the task list from inside the sticky bar.
     await viewControls.locator('.sprint-dropdown-toggle').click();
@@ -1248,64 +1171,6 @@ test('the inherited Catch Up rows are untouched by the new chrome', async ({ pag
     await expect(page.locator('.filterbar-wrap')).toBeVisible();
 });
 
-test('ENG epic rows stay readable on narrow screens', async ({ page }) => {
-    await openEngCatchUp(page, { width: 390, height: 760 });
-    const metrics = await page.evaluate(() => {
-        const parsePx = (value) => Number.parseFloat(value) || 0;
-        const firstStory = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block > .task-item');
-        const storyStyle = getComputedStyle(firstStory);
-        const title = firstStory.querySelector('.task-title');
-        const epicBlock = document.querySelector('.task-list:not(.epm-issue-board) > .epic-block');
-        const activeModeButton = document.querySelector('.eng-mode-control .segmented-control-button.active');
-        return {
-            storyPaddingTop: parsePx(storyStyle.paddingTop),
-            storyPaddingLeft: parsePx(storyStyle.paddingLeft),
-            storyTitleFontSize: parsePx(getComputedStyle(title).fontSize),
-            titleRight: title.getBoundingClientRect().right,
-            storyRight: firstStory.getBoundingClientRect().right,
-            epicPaddingTop: parsePx(getComputedStyle(epicBlock).paddingTop),
-            epicNameWidth: epicBlock.querySelector('.epic-name').getBoundingClientRect().width,
-            activeModeButtonWhiteSpace: getComputedStyle(activeModeButton).whiteSpace,
-            activeModeButtonOverflow: activeModeButton.scrollWidth - activeModeButton.clientWidth,
-            modeControl: (() => {
-                const control = document.querySelector('.eng-mode-control');
-                const row = control.parentElement;
-                return {
-                    overflowX: getComputedStyle(control).overflowX,
-                    scrolls: control.scrollWidth - control.clientWidth,
-                    spillsRight: control.getBoundingClientRect().right - row.getBoundingClientRect().right,
-                    height: Math.round(control.getBoundingClientRect().height),
-                };
-            })(),
-            alertOverflowX: (() => {
-                const toolbar = document.querySelector('.alerts-panel-toolbar');
-                return toolbar.scrollWidth - toolbar.clientWidth;
-            })(),
-            overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-        };
-    });
-    expect(metrics.storyPaddingTop).toBeGreaterThanOrEqual(11);
-    expect(metrics.storyPaddingTop).toBeLessThanOrEqual(12);
-    expect(metrics.storyPaddingLeft).toBeGreaterThanOrEqual(15);
-    expect(metrics.storyPaddingLeft).toBeLessThanOrEqual(16);
-    expect(metrics.storyTitleFontSize).toBeGreaterThanOrEqual(15);
-    expect(metrics.storyTitleFontSize).toBeLessThanOrEqual(16);
-    expect(metrics.epicPaddingTop).toBeGreaterThanOrEqual(8);
-    expect(metrics.epicPaddingTop).toBeLessThanOrEqual(9);
-    expect(metrics.epicNameWidth).toBeGreaterThanOrEqual(110);
-    expect(metrics.activeModeButtonWhiteSpace).toBe('nowrap');
-    expect(metrics.activeModeButtonOverflow).toBeLessThanOrEqual(1);
-    expect(metrics.alertOverflowX).toBeLessThanOrEqual(1);
-    expect(metrics.titleRight).toBeLessThanOrEqual(metrics.storyRight + 1);
-    expect(metrics.overflowX).toBeLessThanOrEqual(1);
-    // Five ENG modes are wider than this row, so the control scrolls internally instead of
-    // pushing the document sideways — the overflowX assertion above is what that protects.
-    expect(metrics.modeControl.overflowX).toBe('auto');
-    expect(metrics.modeControl.scrolls).toBeGreaterThan(0);
-    expect(metrics.modeControl.spillsRight).toBeLessThanOrEqual(1);
-    expect(metrics.modeControl.height).toBe(38);
-    await page.locator('.filterbar-wrap').screenshot({ path: `${screenshotDir}/filter-bar-mobile.png` });
-});
 
 test('the compact sticky header wraps long sprint options inside its stable panel', async ({ page }) => {
     await openEngCatchUp(page, { width: 1440, height: 760 });

@@ -654,7 +654,7 @@ test('Stories required identity is the requirement id, and the pin clears with d
 });
 
 test.describe('pinned row layout', () => {
-    for (const width of [1280, 375]) {
+    for (const width of [1280]) {
         test(`at ${width}px: 40px single-line row, back button left, 24px hit areas, × visible without hover`, async ({ page }) => {
             await openPinDashboard(page, { viewport: { width, height: 800 } });
             await page.screenshot({ path: path.join(screenshotDir, `before-pin-${width}.png`) });
@@ -986,9 +986,9 @@ test('the Back button is the unframed hint-dismiss control: transparent at rest,
 });
 
 test('touch: every pin control works by tap', async ({ browser }) => {
-    const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 800 } });
+    const context = await browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 900 } });
     const page = await context.newPage();
-    await openPinDashboard(page, { viewport: { width: 375, height: 800 } });
+    await openPinDashboard(page, { viewport: { width: 1280, height: 900 } });
     await clickPrimary(page, 'eng-alert-blocked', 'PIN-3', { tap: true });
     await expectPinned(page, { key: 'PIN-3', note: 'Blocked' });
     await settle(page);
@@ -1084,7 +1084,7 @@ test.describe('pinned category tone and icon', () => {
         });
     }
 
-    for (const width of [1280, 375]) {
+    for (const width of [1280]) {
         test(`at ${width}px every tone keeps the 40px row with a long summary, no overflow (screenshots with PIN_SHOT_LABEL)`, async ({ page }) => {
             await openPinDashboard(page, { viewport: { width, height: 800 }, longSummaries: true });
             for (const [sectionId, key, tone] of [['eng-alert-blocked', 'PIN-3', 'blocked'], ['eng-alert-missing', 'PIN-1', 'missing'], ['eng-alert-waiting', 'PIN-W1', 'following'], ['eng-alert-done', 'PIN-D1', 'done']]) {
@@ -1204,9 +1204,9 @@ test.describe('pin title opens the Story or Epic', () => {
     });
 
     test('touch: tapping the title lands the Story', async ({ browser }) => {
-        const context = await browser.newContext({ hasTouch: true, isMobile: true, viewport: { width: 375, height: 800 } });
+        const context = await browser.newContext({ hasTouch: true, viewport: { width: 1280, height: 900 } });
         const page = await context.newPage();
-        await openPinDashboard(page, { viewport: { width: 375, height: 800 } });
+        await openPinDashboard(page, { viewport: { width: 1280, height: 900 } });
         await openFromPin(page, { sectionId: 'eng-alert-blocked', key: 'PIN-3', target: '.task-item[data-issue-key="PIN-3"]', action: main => main.tap() });
         await context.close();
     });

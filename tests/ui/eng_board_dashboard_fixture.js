@@ -1,6 +1,6 @@
 const path = require('node:path');
 const fs = require('node:fs');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { installDashboardShell } = require('./epm_view_fixture');
 
 const selectedSprintId = 34625;

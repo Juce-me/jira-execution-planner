@@ -66,7 +66,7 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
     };
     child.on('exit', fail);
     child.on('error', fail);
-    const exited = new Promise(resolve => child.once('exit', resolve));
+    const exited = new Promise(resolve => child.once('close', resolve));
     async function control(command, values = {}) {
         const id = ++sequence;
         const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
@@ -78,22 +78,35 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
         stopped = true;
         if (child.exitCode === null) {
             if (mode === 'app' || mode === 'measurement' || mode === 'planning') {
-                await Promise.race([control('stop').catch(() => {}), new Promise(resolve => setTimeout(resolve, 2000))]);
+                await Promise.race([control('stop').catch(() => {}), new Promise(resolve => setTimeout(resolve, 2000).unref())]);
             } else child.kill('SIGTERM');
             child.stdin.end();
-            await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 12000))]);
+            await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 12000).unref())]);
             if (child.exitCode === null) child.kill('SIGTERM');
             await exited;
         }
+        // Drain diagnostics before closing readers: exit can precede stderr EOF.
+        await exited;
         lines.close();
         diagnosticLines.close();
+        if (startup && diagnostic.startsWith('Synthetic DB/OAuth fixture failed:')
+            && !diagnostic.endsWith('/KeyboardInterrupt')) {
+            const message = diagnostic.endsWith('/ClusterError')
+                ? 'Owned PostgreSQL fixture cleanup failed. ' : 'Owned fixture shutdown failed. ';
+            throw new Error(message + diagnostic);
+        }
     }
     let startup;
     const timer = setTimeout(() => {
         const handler = pending.get('ready');
         if (handler) handler.reject(new Error(`Synthetic DB/OAuth fixture startup timed out after ${Math.round(performance.now() - startupStarted)}ms. ${diagnostic}; ${timings.join(', ')}`));
     }, DB_OAUTH_SETUP_TIMEOUT_MS);
-    try { startup = await ready; } catch (error) { await stop(); throw error; }
+    try { startup = await ready; } catch (error) {
+        // Preserve sanitized startup evidence even if the hook expires in cleanup.
+        console.error(`Synthetic DB/OAuth startup failed: ${diagnostic}; ${timings.join(', ')}`);
+        await stop();
+        throw error;
+    }
     finally { clearTimeout(timer); }
     console.log(`Synthetic DB/OAuth fixture startup: ${Math.round(performance.now() - startupStarted)}ms; ${timings.join(', ')}`);
     const baseUrl = startup.baseUrl;

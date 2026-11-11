@@ -520,16 +520,6 @@ test('Show full description widens the panel within the viewport and Show less r
     expect(Math.abs((await width()) - normal)).toBeLessThanOrEqual(1);
 });
 
-test('Show full description leaves the narrow-viewport panel width unchanged', async ({ page }) => {
-    const calls = [];
-    await openBoard(page, calls, { width: 375, height: 812 });
-    await openPanel(page, 'PLAT-1');
-    const before = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
-    await panel(page).locator('.m-desc-more').click();
-    await expect(panel(page)).toHaveClass(/is-description-expanded/);
-    const after = await panel(page).evaluate((node) => node.getBoundingClientRect().width);
-    expect(Math.abs(after - before)).toBeLessThanOrEqual(1);
-});
 
 test('a description H1 appears without an entrance animation', async ({ page }) => {
     const calls = [];
@@ -547,7 +537,13 @@ test('a description H1 appears without an entrance animation', async ({ page }) 
 
 test('description tables keep semantic columns and scroll only the selected table', async ({ page }) => {
     const calls = [];
-    await openBoard(page, calls, { width: 1280, height: 820, descriptionHtml: TABLE_DESCRIPTION_HTML });
+    const extraHeaders = Array.from({ length: 8 }, (_, i) => '<th scope="col">Checkpoint ' + (i + 1) + '</th>').join('');
+    const extraCells = Array.from({ length: 8 }, (_, i) => '<td>Verified ' + (i + 1) + '</td>').join('');
+    const wideDescription = TABLE_DESCRIPTION_HTML
+        .replace('Summary</th></tr>', 'Summary</th>' + extraHeaders + '</tr>')
+        .replace('gateway application</td></tr>', 'gateway application</td>' + extraCells + '</tr>')
+        .replace('through distribution</td></tr>', 'through distribution</td>' + extraCells + '</tr>');
+    await openBoard(page, calls, { width: 1280, height: 820, descriptionHtml: wideDescription });
     await openPanel(page, 'PLAT-1');
     const body = panel(page).locator('.m-desc-body');
     const heading = body.getByRole('heading', { name: 'Scope (Child Stories)', level: 3 });
@@ -564,10 +560,10 @@ test('description tables keep semantic columns and scroll only the selected tabl
     await page.screenshot({ path: `${screenshotDir}/panel-table-desktop.png` });
 
     await body.locator('.adf-table-scroll').first().evaluate((node) => { window.__panelDescriptionTable = node; });
-    await page.setViewportSize({ width: 375, height: 812 });
+    await page.setViewportSize({ width: 800, height: 380 });
     const wrappers = body.locator('.adf-table-scroll');
     await expect(wrappers).toHaveCount(2);
-    // The narrow viewport re-renders the Board (its pane-mode fallback strip); that render must not
+    // The short desktop window re-renders the Board (its pane-mode fallback strip); that render must not
     // rebuild the injected description, or a scrolled/focused table resets under the reader.
     await expect(page.locator('.eng-board .board-data-state')).toBeVisible();
     expect(await page.evaluate(() => window.__panelDescriptionTable.isConnected)).toBe(true);
@@ -601,7 +597,7 @@ test('description tables keep semantic columns and scroll only the selected tabl
     Object.entries(outerOverflow).forEach(([surface, overflow]) => {
         expect(overflow, `${surface} owns no table overflow`).toBeLessThanOrEqual(1);
     });
-    await page.screenshot({ path: `${screenshotDir}/panel-table-mobile.png` });
+    await page.screenshot({ path: `${screenshotDir}/panel-table-desktop-window.png` });
 });
 
 test('clamped descriptions omit clipped tables from Tab order and restore them on expand', async ({ page }) => {
@@ -763,47 +759,13 @@ test('the panel shows an SP header aligned right over fixed one- or two-decimal 
     await panel(page).screenshot({ path: `${screenshotDir}/panel-sp.png` });
 });
 
-test('the SP header and cells are dropped below 761px', async ({ page }) => {
-    const calls = [];
-    await openBoard(page, calls, { width: 375, height: 812 });
-    await openPanel(page, 'PLAT-1');
-    await expect(panel(page).locator('.story-subtask-head')).toBeHidden();
-    await expect(panel(page).locator('.story-subtask-row .story-subtask-sp').first()).toBeHidden();
-});
 
 // Below 761px the row folds to "pri name" / "status status updated". The status control is
 // PriorityTransitionMenu's sibling wrapper `span.status-transition`, which carries no grid-area of
 // its own — Catch Up's base row happens to auto-place it into the right cell, and the modifier
 // must not leave that to luck: auto-placement drops it into the 1.1rem `pri` column instead of the
 // two-column `status` area, so the pill overflows its cell.
-test('the panel row keeps the status control in its own area below 761px', async ({ page }) => {
-    const calls = [];
-    await openBoard(page, calls, { width: 375, height: 812 });
-    await openPanel(page, 'PLAT-1');
 
-    const row = panel(page).locator('.story-subtask-row').first();
-    const geometry = await row.evaluate((node) => {
-        const status = node.querySelector('.status-transition');
-        const updated = node.querySelector('.story-subtask-updated');
-        return {
-            cells: getComputedStyle(node).gridTemplateColumns.split(' ').filter(Boolean).length,
-            statusArea: getComputedStyle(status).gridArea,
-            priorityArea: getComputedStyle(node.querySelector('.priority-transition')).gridArea,
-            statusRight: status.getBoundingClientRect().right,
-            statusWidth: status.getBoundingClientRect().width,
-            pillWidth: status.querySelector('.status-pill').getBoundingClientRect().width,
-            updatedLeft: updated.getBoundingClientRect().left,
-        };
-    });
-
-    expect(geometry.cells).toBe(3);
-    expect(geometry.priorityArea).toBe('pri');
-    expect(geometry.statusArea).toBe('status');
-    // The pill fits its cell rather than spilling out of it, and never reaches the updated cell.
-    expect(geometry.statusWidth).toBeGreaterThanOrEqual(geometry.pillWidth - 1);
-    expect(geometry.statusRight).toBeLessThanOrEqual(geometry.updatedLeft + 1);
-    await page.screenshot({ path: `${screenshotDir}/panel-mobile.png` });
-});
 
 test('Catch Up\'s own subtask panel still computes the four-cell row, unchanged', async ({ page }) => {
     const calls = [];

@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const {
     enabledEpmOptions,

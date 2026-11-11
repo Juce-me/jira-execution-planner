@@ -17,7 +17,7 @@ from backend.db import models
 import jira_server
 from tests.oauth_test_helpers import FULL_OAUTH_SCOPE, install_oauth_session
 from tests.db_oauth_test_helpers import seed_db_actor
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 
 class SharedGroupConfigRouteTests(unittest.TestCase):
@@ -25,9 +25,7 @@ class SharedGroupConfigRouteTests(unittest.TestCase):
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
         self.client = jira_server.app.test_client()
-        self.database_url = fresh_database_url(self.addCleanup)
-        self.engine = db_engine.get_engine(self.database_url)
-        models.Base.metadata.create_all(self.engine)
+        self.database_url = fresh_model_schema_url(self.addCleanup)
         self.factory = db_engine.session_factory(self.database_url)
         env_patcher = self._env_patch()
         env_patcher.start()

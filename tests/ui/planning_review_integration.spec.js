@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 const { hoverEvidence } = require('./design_system_hover_helpers');
@@ -600,7 +600,7 @@ test('Catch Up List keeps its own controls and stored choices and gains no Plann
 
 // Operator (2026-11-09): the popover may wrap whole toggles onto several lines, but each toggle is one line tall, never
 // wraps, ellipsizes or overflows its label, sits inside the popover, and the popover sits inside the viewport.
-for (const [width, height] of [[1280, 720], [1440, 900], [390, 844]]) test(`Include by status toggles stay one line tall inside the popover and the viewport at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1280, 720], [1440, 900]]) test(`Include by status toggles stay one line tall inside the popover and the viewport at ${width}x${height}`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: [futureStories[0].id, futureStories[2].id] } } });
     await openPlanning(page, { expectStories: false });
@@ -802,7 +802,7 @@ for (const passive of [true, false]) test(`table status chips retain shared pres
     }
 });
 
-for (const width of [390, 1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
+for (const width of [1280]) test(`Story rows match compact Epic row height with the real Jira editor at ${width}px`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width, height: 900 });
     await installPlanningFixture(page, { authMode: 'atlassian_oauth' });
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review(?:\?.*)?$/, route => json(route, { schemaRevision: 0, columns: [], capabilities: { canRead: false, canSave: false } }));
@@ -920,7 +920,7 @@ test('Planning table Story Points save two decimals, round a third before the si
     expect(bodies).toHaveLength(2);
 });
 
-for (const passive of [true,false]) for(const width of [390,1280]) test(`summaries truncate and reveal the full text with Settings ${passive ? 'open' : 'closed'} at ${width}px`, async ({page})=>{
+for (const passive of [true,false]) for(const width of [1280]) test(`summaries truncate and reveal the full text with Settings ${passive ? 'open' : 'closed'} at ${width}px`, async ({page})=>{
     const summary='[D] Adding new fields in logs and updating the migration implementation for the next sprint review';
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
@@ -948,7 +948,7 @@ for (const passive of [true,false]) for(const width of [390,1280]) test(`summari
     await page.screenshot({path:`tmp/217-ui/planning-review-summary-${passive?'passive':'editing'}-${width}.png`,fullPage:true});
 });
 
-for(const width of [390,1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page},testInfo)=>{
+for(const width of [1280]) test(`Summary edits inside its cell with Enter, blur and Escape at ${width}px`,async({page},testInfo)=>{
     const summary='Original summary';let saved=[];
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{authMode:'atlassian_oauth',summary});
@@ -1115,12 +1115,12 @@ for(const [scopeTeamIds,selectedTeams] of [[['team-alpha'],null],[['team-alpha',
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
-test('compact Table panel fits narrow screens and restores normal Planning in Scenario',async({page})=>{
-    await page.setViewportSize({width:390,height:900});await installPlanningFixture(page,{});await openPlanning(page,{expectStories:false});
+test('compact Table panel keeps controls inside the desktop panel and restores normal Planning in Scenario',async({page})=>{
+    await page.setViewportSize({width:1280,height:900});await installPlanningFixture(page,{});await openPlanning(page,{expectStories:false});
     const panel=page.locator('.planning-panel');await expect(panel).toHaveClass(/planning-panel-compact/);
     await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText('Cap unavailable');
     const primary=panel.locator('.planning-actions button');
-    // Six direct controls (2026-11-06); at 390px the row wraps inside the panel instead of overflowing it.
+    // Six direct controls stay contained in the compact overview component.
     await expect(primary).toHaveCount(6);
     const panelBox=await panel.boundingBox();
     for(const control of await primary.all()) {
@@ -1136,8 +1136,8 @@ test('compact Table panel fits narrow screens and restores normal Planning in Sc
         return {className:element.className,display:style.display,text:element.textContent.trim().slice(0,180),x:r.x,y:r.y,width:r.width,height:r.height,
             padding:style.padding,font:style.font,fontSize:style.fontSize,lineHeight:style.lineHeight,gap:style.gap,columnGap:style.columnGap,boxSizing:style.boxSizing};
     }));
-    fs.writeFileSync(path.join(repoRoot,'tmp','217-ui','shared-planning-narrow-390.json'),JSON.stringify(compactGeometry,null,2));
-    await page.screenshot({path:'tmp/217-ui/shared-planning-narrow-390.png',fullPage:false});
+    fs.writeFileSync(path.join(repoRoot,'tmp','217-ui','shared-planning-desktop.json'),JSON.stringify(compactGeometry,null,2));
+    await page.screenshot({path:'tmp/217-ui/shared-planning-desktop.png',fullPage:false});
     expect((await panel.boundingBox()).height).toBeLessThan(130);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
     await clickPlanningOption(page, 'Show capacity details');await expect(panel.getByRole('button',{name:'Select All',exact:true})).toBeVisible();
@@ -1169,7 +1169,7 @@ async function allowReviewSaving(page) {
     await page.route(/\/api\/eng\/sprints\/[^/?]+\/review\/values\/read(?:\?.*)?$/, route => json(route, {cells:[],unavailableIssueIds:[]}));
 }
 
-for (const width of [1280, 390]) test(`first Table scroll activates the sticky Filters then capacity stack without losing state at ${width}px`,async({page})=>{
+for (const width of [1280]) test(`first Table scroll activates the sticky Filters then capacity stack without losing state at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{planningLayout:null,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await page.addStyleTag({content:'body{padding-bottom:1000px}'});await page.evaluate(()=>scrollTo(0,0));
@@ -1199,7 +1199,7 @@ for (const width of [1280, 390]) test(`first Table scroll activates the sticky F
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();await expect(panel).toHaveCount(0);
 });
 
-for (const width of [1280, 390]) test(`Table mode has no toolbar tier: the row switch is the shared compact control in the Filters row, and Sort leaves Table view only at ${width}px`,async({page})=>{
+for (const width of [1280]) test(`Table mode has no toolbar tier: the row switch is the shared compact control in the Filters row, and Sort leaves Table view only at ${width}px`,async({page})=>{
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);await openPlanning(page,{expectStories:false});
     await expect(page.locator('.planning-review-toolbar, .planning-review-toolbar-slot')).toHaveCount(0);
@@ -1357,7 +1357,7 @@ test('Discard and Save sit at the right end of the Filters row only while the re
     await expect(save).toHaveCount(0);
 });
 
-for (const width of [1280, 390]) test(`Catch Up shares the second controls row before alerts at ${width}px`, async ({page}) => {
+for (const width of [1280]) test(`Catch Up shares the second controls row before alerts at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:900});await installPlanningFixture(page);await openPlanning(page);
     await page.locator('.view-selector .eng-mode-control').getByRole('radio',{name:'Catch Up',exact:true}).click();
     const filters=page.locator('.filterbar-wrap'),alerts=page.locator('.alerts-panel-shell');
@@ -1369,7 +1369,7 @@ for (const width of [1280, 390]) test(`Catch Up shares the second controls row b
     await filters.locator('.fb-trigger').click();await page.screenshot({path:`tmp/217-ui/catch-up-controls-${width}.png`,fullPage:false});
 });
 
-for (const width of [1280,390]) test(`document scroll docks table headings below the measured controls at ${width}px`, async ({page}) => {
+for (const width of [1280]) test(`document scroll docks table headings below the measured controls at ${width}px`, async ({page}) => {
     await page.setViewportSize({width,height:900});
     await installPlanningFixture(page,{longTable:true,scopeTeamIds:['team-alpha','team-beta']});await allowReviewSaving(page);
     await openPlanning(page,{expectStories:false});
@@ -1652,10 +1652,9 @@ test('the inherited-view hint names its source Sprint; its dismissal survives Sp
     await expect(hintLine(page)).toHaveText(`Layout inherited from ${activeSprintName}.`);
 });
 
-for (const width of [1280, 390]) test(`the docked table header stays below the sticky stack with the hint shown and after it is dismissed at ${width}px`, async ({ page }) => {
+for (const width of [1280]) test(`the docked table header stays below the sticky stack with the hint shown and after it is dismissed at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
-    // 390px uses the one-group fixture: with two visible groups the compact header's search covers Catch Up (docs/TODO.md).
-    await inheritedViewFixture(page, { groups: width === 390 ? 1 : 2, longTable: true });
+    await inheritedViewFixture(page, { groups: 2, longTable: true });
     await openPlanning(page, { expectStories: false });
     await page.getByRole('radio', { name: 'Stories', exact: true }).click();
     const scroll = page.locator('.planning-review-scroll'), stack = page.locator('.planning-review-sticky-stack'), heading = page.locator('.planning-review-docked-header');

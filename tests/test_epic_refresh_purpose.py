@@ -9,7 +9,7 @@ from tests.auth_mode_test_utils import force_db_oauth_mode
 from tests.oauth_test_helpers import install_oauth_session
 from backend.auth.db_context import resolve_db_request_auth_context, invalidate_auth_status_cache
 from backend.db import engine as db_engine, models
-from tests.postgres_test_db import fresh_database_url
+from tests.postgres_test_db import fresh_model_schema_url
 
 try:
     import jira_server
@@ -443,7 +443,7 @@ class EpicRefreshOAuthTests(unittest.TestCase):
         from backend.services import epic_refresh
         jira_server.app.config['TESTING'] = True
         jira_server.app.secret_key = 'test-secret'
-        url = fresh_database_url(self.addCleanup)
+        url = fresh_model_schema_url(self.addCleanup)
         for patcher in (
             patch.dict(os.environ, {'CONFIG_STORAGE_BACKEND': 'db', 'DATABASE_URL': url, 'TEST_DATABASE_URL': url}),
             patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'),

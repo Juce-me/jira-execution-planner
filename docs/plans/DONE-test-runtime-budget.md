@@ -1,10 +1,10 @@
 # Desktop Chromium verification runtime
 
-> **Status:** Active. The uncapped full diagnostic completed in 31m 28s with failures (2026-11-11); remediation and 600-second acceptance remain open. Execution in `improvement/chromium-only-verification`; publication requested, with full verification and explicit speed reporting before push. The 600-second combined acceptance limit is not yet achieved or forecast as guaranteed.
+> **Status:** Done for the implemented optimization delivery on `improvement/chromium-only-verification`. The combined 600-second performance target remains open in `docs/TODO.md`; this status does not attest passing performance acceptance. Publication-run measurements are reported in the PR. Prior uncapped baseline: 31m 28s with failures (2026-11-11).
 
 ## Outcome and Current Accuracy
 
-Initial implementation and focused verification are complete; end-to-end performance acceptance remains open. Historical evidence and the implementation ledger are in [the runtime evaluation](../agents/bugfixes/2026-11-10-executed-test-runtime-evaluation.md). This plan incorporates the independent PostgreSQL, browser and budget reviews plus the operator's Chromium-only and unsupported-mobile decisions.
+Implemented with changes and focused verification complete. The implementation and contributor workflow are the source of truth; full performance acceptance remains open and is tracked in `docs/TODO.md`. Historical evidence and the implementation ledger are in [the runtime evaluation](../agents/bugfixes/2026-11-10-executed-test-runtime-evaluation.md). This plan incorporates the independent PostgreSQL, browser and budget reviews plus the operator's Chromium-only and unsupported-mobile decisions.
 
 ## Contract
 
@@ -21,7 +21,7 @@ Initial implementation and focused verification are complete; end-to-end perform
 - Chromium fixture setup: `tests/ui/eng_board_progressive_loading.spec.js` for bulk historical source extraction and test-scoped provisioning with its existing startup budget; retain fresh databases and the unchanged browser assertion deadline.
 - Browser timer work: `tests/ui/eng_epic_refresh.spec.js`, `tests/ui/shareable_view_links.spec.js`, plus `tests/ui/bootstrap_readiness.js` and `tests/ui/eng_alert_pin_fixture.js` for explicit browser-response/bootstrap readiness. The operator additionally requested issue #337: repair the demonstrated delayed-icon readiness race in `tests/ui/work_structure_entity_names.spec.js`, preserving SVG fallback and geometry assertions. Production timer/renderer semantics remain unchanged; historical Firefox/WebKit findings are suspended, not repaired by scope removal.
 - Mobile retirement: remaining `tests/ui/*.spec.js`; retain desktop zoom/touch and component-sized fixtures. Other agent-owned files are excluded until integration.
-- Runtime orchestration/accounting: `runners/local/run.sh` and `tests/test_local_postgresql_runner.py` for owned shutdown/watchdog cancellation, `tests/run_isolated_runtime_tests.py`, new `tests/runtime_test_runner.py`, `tests/runtime_shards.py` and their focused tests, `tests/test_isolated_runtime_runner.py`, `tests/postgres_cluster.py` and its interruption/shutdown-failure lifecycle checks, the browser fixture `tests/fixtures/db_oauth_server.py` using the same preservation boundary, `scripts/verify_tests.py` and focused orchestration tests, `Makefile`, `package.json`, `playwright.config.js` only if scheduling evidence requires it.
+- Runtime orchestration/accounting: `runners/local/run.sh`, `tests/test_local_postgresql_runner.py` and `tests/test_postgresql_runner_contract.py` for owned shutdown/watchdog cancellation, `tests/run_isolated_runtime_tests.py`, new `tests/runtime_test_runner.py`, `tests/runtime_shards.py` and their focused tests, `tests/test_isolated_runtime_runner.py`, `tests/postgres_cluster.py` and its interruption/shutdown-failure lifecycle checks, the browser fixture `tests/fixtures/db_oauth_server.py` using the same preservation boundary, `scripts/verify_tests.py` and focused orchestration tests, `Makefile`, `package.json`, `playwright.config.js` only if scheduling evidence requires it.
 - Affected documentation: root `AGENTS.md`, `README.md`, `docs/ontology.md`, this plan/index, and the existing runtime evaluation. No application features, endpoint rights, schema migrations, analytics contracts, credentials or dependencies change.
 
 ## Implementation and checks
@@ -37,7 +37,7 @@ Initial implementation and focused verification are complete; end-to-end perform
 
 ## Non-applicable reviews
 
-No endpoints or user-visible application behavior change, so endpoint/auth/CSRF/workspace state-machine matrices and new analytics events are not applicable. Existing security, concurrency, Jira-write and app feature contracts remain required tests. Home write gate remains unchanged and unrelated; no live capability probe runs.
+No endpoints or user-visible application behavior change, so endpoint/auth/CSRF/workspace state-machine matrices and new analytics events are not applicable. Existing security, concurrency, Jira-write and app feature contracts remain required tests. Home write capability is unrelated to this change; the upstream retirement of its workflow gate is preserved and no live capability probe runs.
 
 ## Execution checkpoint
 
@@ -164,3 +164,9 @@ The same four-case pilot before pooling passed in 57.207s with four successful s
 Final verification for this batch: all 14 campaign/isolation cases passed in 147.994s with two successful worker server startups, plus the separately retained malformed-startup path. Three mocked cases across production/test/multi-output CSS spec variants passed in 21.493s. After strengthening transport shutdown reporting, the cold-start and two isolation cases passed again in 19.251s. Eleven focused Node checks and 30 Python lifecycle/orchestration/structure/instruction checks passed. Default UI collection remains 2,345 cases across 98 files (the two isolation canaries are new), and the focused command selects one file. Make now forwards `ARGS` to the same focused command.
 
 Worker transport waits for closed stdout/stderr rather than only process exit, reports terminal shutdown failures, and does not keep losing shutdown timeout timers alive. A synthetic cleanup-failure regression failed before that change and passed afterward. Compilation reuse also watches input directories so newly added higher-priority module candidates cannot leave an old resolution cached. Final six-request build ABBA means were 0.560s direct versus 0.095s cached (83.0% less build-request time), with identical compiled bytes. These are scoped measurements; no final full-suite runtime or 600-second acceptance is claimed.
+
+## Publication fixture repairs (2026-11-11)
+
+Synced with fetched `origin/main` before final publication verification. Repaired the stale local-runner source contract to check the implemented 100 x 50ms bounded TERM polling rather than the removed literal five-second sleep; all 14 source checks and two real process shutdown checks passed. No shutdown grace or ownership assertion was removed.
+
+The remaining desktop-only fixture failures were reproduced and repaired without application changes: Statistics uses the active desktop viewport's right gutter, the Board hint has enough synthetic columns to genuinely overflow a desktop frame, the composer overflow case constrains its pane inside a supported desktop viewport, and the Share harness waits for its active surface to reach the committed DOM before rejecting a deferred clipboard write. The original behavior/geometry assertions remain. All five previously targeted functional cases passed across the initial/recheck selections; the three repaired failures passed together in 8.021s. The complete publication run is recorded separately; component checks do not attest the 600-second target.

@@ -71,7 +71,12 @@ const surfaceScope = (surface) => surface ? `[data-share-view="${surface}"]` : '
 const shareButton = (page, surface) => page.locator(`${surfaceScope(surface)} > [data-share-view-control]`);
 const shareNotice = (page, surface) => page.locator(`${surfaceScope(surface)} > :is(.jira-export-menu, .jira-export-toast)`);
 const shareStatus = (page, surface) => page.locator(`${surfaceScope(surface)} > .planning-review-sr-only`);
-const setHarness = (page, patch) => page.evaluate(next => window.__shareHarness.set(next), patch);
+const setHarness = async (page, patch) => {
+    await page.evaluate(next => window.__shareHarness.set(next), patch);
+    if (patch.active !== undefined) {
+        await expect(page.locator('[data-share-harness-active]')).toHaveAttribute('data-share-harness-active', patch.active);
+    }
+};
 // The dataLayer also carries explicit nulls that clear sparse parameters between pushes; only the keys with a value are the payload.
 const shareEvents = (page) => page.evaluate(() => window.dataLayer.filter(entry => entry && entry.event_name === 'share_view_action')
     .map(entry => Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== null && value !== undefined))));

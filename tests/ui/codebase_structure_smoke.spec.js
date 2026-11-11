@@ -2103,7 +2103,7 @@ test('Statistics subviews render extracted panels and preserve stats API ownersh
     const quarterToggleBox = await endQuarterButton.boundingBox();
     expect(quarterPanelBox.width).toBeGreaterThanOrEqual(quarterToggleBox.width - 0.01);
     expect(quarterPanelBox.x).toBeGreaterThanOrEqual(16);
-    expect(quarterPanelBox.x + quarterPanelBox.width).toBeLessThanOrEqual(359);
+    expect(quarterPanelBox.x + quarterPanelBox.width).toBeLessThanOrEqual(page.viewportSize().width - 16);
     await endQuarterButton.click();
     await page.setViewportSize({ width: 1280, height: 760 });
 

@@ -1,6 +1,6 @@
 # Plan Index And Naming
 
-- [Desktop Chromium verification runtime](EXEC-test-runtime-budget.md): preserve full desktop/security/PostgreSQL coverage while reducing the combined build and test gate to 600 seconds; historical timings and pilot evidence determine remaining work.
+- [Desktop Chromium verification runtime](DONE-test-runtime-budget.md): preserve full desktop/security/PostgreSQL coverage while reducing the combined build and test gate to 600 seconds; historical timings and pilot evidence determine remaining work.
 
 Use this file to choose the right plan before starting auth, DB, or Home/Townsquare work.
 

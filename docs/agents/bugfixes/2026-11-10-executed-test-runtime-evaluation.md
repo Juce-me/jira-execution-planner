@@ -5,7 +5,7 @@ Type: bug investigation
 
 ## Outcome
 
-Evaluation completed; the first optimization batch is implemented on the active branch under [the runtime execution plan](../../plans/EXEC-test-runtime-budget.md). The operator requires the complete build, backend, frontend-unit and desktop-Chromium verification to finish within 600 seconds combined. Mobile is officially unsupported. The first canonical full-gate attempt failed incomplete at 527.762s; the complete 600-second target is unmet.
+Evaluation completed; the first optimization batch is implemented on the active branch under [the runtime execution plan](../../plans/DONE-test-runtime-budget.md). The operator requires the complete build, backend, frontend-unit and desktop-Chromium verification to finish within 600 seconds combined. Mobile is officially unsupported. The first canonical full-gate attempt failed incomplete at 527.762s; the complete 600-second target is unmet.
 
 Operator scope update (2026-11-10, after independent review): Chromium is the only required browser. Firefox and WebKit verification is suspended, including previously required headed glyph/geometry checks, unless explicitly requested. Active contributor instructions and the frontend UI command now reflect this decision; existing tests and historical cross-browser evidence are preserved.
 
@@ -295,3 +295,9 @@ Final focused checks: 11 Node checks passed via `node --test tests/test_ui_fixtu
 Final diff review removed 15 import-only changes in custom/instrumented/component-only builders that could not benefit from the cache. Those builders keep their original esbuild imports; the 30 compatible dashboard consumers retain worker reuse. This does not remove or alter tests.
 
 Publication requested after this batch: commit the reviewed changes, sync the branch, run full verification, explicitly report measured improvement before push, and create the PR only after the publication gates are resolved. No full-suite gain is inferred from component timings.
+
+## Publication preparation (2026-11-11)
+
+Committed worker reuse as `c73a18d4`, then synchronized with fetched main through the prescribed `make sync` workflow (`98d8f92c`). The complete local range contains only runtime optimization commits plus that merge. The delivered plan is now `DONE-test-runtime-budget.md`, with the unachieved 600-second target explicitly retained in `docs/TODO.md`; done does not mean performance acceptance passed. The publication report supplies the full-run timing rather than inferring a complete gain from component benchmarks.
+
+Before the full run, the known backend contract failure was repaired to assert the actual bounded polling shutdown. Fourteen source checks plus cooperative and ignoring-process-tree shutdown cases passed (16 checks, 12.731s). A five-case Chromium preflight passed Statistics and the warm-link comparison but reproduced three desktop fixture failures. The Board hint and composer now create genuine overflow within supported desktop geometry; the Share harness exposes its committed active surface and the driver waits for it before resolving/rejecting deferred work. Those three cases passed together after repair; no production UI code or assertion was removed. Full publication verification follows at the final committed source.

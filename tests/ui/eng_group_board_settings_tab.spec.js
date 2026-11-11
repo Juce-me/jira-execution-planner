@@ -741,7 +741,9 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
     await dialog.locator('.board-column .remove-btn[title="Delete column"]').first().click();
     await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
 
-    await page.setViewportSize({ width: 800, height: 760 });
+    await page.setViewportSize({ width: 1028, height: 760 });
+    // Exercise a constrained composer pane inside a supported desktop viewport.
+    await pane.evaluate((node) => { node.style.width = '480px'; });
     await expect(dialog.locator('.board-columns-scroll-controls')).toBeVisible();
     const narrowGeometry = await dialog.evaluate((node) => {
         const paneNode = node.querySelector('.group-pane-right');
@@ -771,6 +773,7 @@ test('overflowing Board columns expose controls and route wheel input by scroll 
         animations: 'disabled',
     });
     await right.focus();
+    await pane.evaluate((node) => { node.style.removeProperty('width'); });
     await page.setViewportSize({ width: 1280, height: 480 });
     await expect(dialog.locator('.board-columns-scroll-controls')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Reset to default columns' })).toBeFocused();

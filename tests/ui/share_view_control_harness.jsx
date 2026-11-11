@@ -46,7 +46,7 @@ function Harness() {
         <ShareViewButton surface={surface} scopeKey={state.scopeKey} epicKey={state.epicKey} share={share} sourceSurface={state.sourceSurface} activeControlSurface={state.active} />
     );
     return (
-        <div className="container">
+        <div className="container" data-share-harness-active={state.active}>
             <header>
                 <div className="subtitle">
                     <span className="subtitle-main">Jira Delivery Planner</span>

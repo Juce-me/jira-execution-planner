@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import argparse
 import base64
+import errno
+from functools import lru_cache
 from contextlib import ExitStack, contextmanager
 import importlib.util
 import json
@@ -84,6 +86,68 @@ def tracked_sources(repo):
     return [name for name in result.stdout.decode().split("\0") if name]
 
 
+@lru_cache(maxsize=1)
+def _darwin_copy_functions():
+    """Resolve the optional native fast path once; other platforms keep copyfile."""
+    if sys.platform != "darwin":
+        return None
+    import ctypes
+    try:
+        library = ctypes.CDLL(None, use_errno=True)
+        clone = library.clonefile
+        attributes = library.listxattr
+        remove_attribute = library.removexattr
+    except (AttributeError, OSError):
+        return None
+    clone.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
+    clone.restype = ctypes.c_int
+    attributes.argtypes = [ctypes.c_char_p, ctypes.c_void_p, ctypes.c_size_t, ctypes.c_int]
+    attributes.restype = ctypes.c_ssize_t
+    remove_attribute.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_int]
+    remove_attribute.restype = ctypes.c_int
+    return ctypes, clone, attributes, remove_attribute
+
+
+def copy_snapshot_file(source, target):
+    """Copy validated files into a new snapshot, never link mutable source inodes.
+
+    macOS clonefile creates separate copy-on-write files without opening each
+    source/destination in Python. Unsupported filesystems use the portable path.
+    Match copyfile's data-only behavior rather than importing source xattrs/flags.
+    The caller still applies the original mode/mtime and all isolation checks.
+    """
+    functions = _darwin_copy_functions()
+    if functions is None:
+        return shutil.copyfile(source, target)
+    ctypes, clone, attributes, remove_attribute = functions
+    encoded_target = os.fsencode(target)
+    # CLONE_NOOWNERCOPY keeps ownership equivalent to a newly created copy.
+    if clone(os.fsencode(source), encoded_target, 0x0002):
+        code = ctypes.get_errno()
+        if code in {errno.EXDEV, errno.ENOTSUP, errno.ENOSYS}:
+            return shutil.copyfile(source, target)
+        raise OSError(code, os.strerror(code), str(source), None, str(target))
+    # clonefile is atomic and requires a new target. It preserves source metadata
+    # that the former copyfile did not; discard it before chmod/utime below.
+    os.chflags(target, 0)
+    os.chmod(target, 0o600)
+    size = attributes(encoded_target, None, 0, 0)
+    if size < 0:
+        code = ctypes.get_errno()
+        raise OSError(code, os.strerror(code), str(target))
+    if size:
+        buffer = ctypes.create_string_buffer(size)
+        count = attributes(encoded_target, buffer, size, 0)
+        if count < 0:
+            code = ctypes.get_errno()
+            raise OSError(code, os.strerror(code), str(target))
+        for name in buffer.raw[:count].split(b"\0"):
+            if name and remove_attribute(encoded_target, name, 0):
+                code = ctypes.get_errno()
+                raise OSError(code, os.strerror(code), str(target))
+    return target
+
+
 def prepare_snapshot(repo, destination, *, include_new=(), include_frontend=True):
     """Copy tracked working-tree source and individually reviewed new source files.
 
@@ -116,9 +180,10 @@ def prepare_snapshot(repo, destination, *, include_new=(), include_frontend=True
             continue  # Working-tree deletions must remain deleted in the snapshot.
         target = destination / name
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source, target)
-        target.chmod(source.stat().st_mode & 0o777)
-        source_mtime = source.stat().st_mtime_ns
+        copy_snapshot_file(source, target)
+        source_stat = source.stat()
+        target.chmod(source_stat.st_mode & 0o777)
+        source_mtime = source_stat.st_mtime_ns
         os.utime(target, ns=(source_mtime, source_mtime))
     if include_frontend and (repo / "frontend/dist").is_dir():
         validate_source_path(repo, repo / "frontend/dist", allow_leaf_symlink=False)

@@ -1,6 +1,9 @@
 """Pure runner checks using disposable synthetic source/configuration only."""
 
 import importlib.util
+import ctypes
+import errno
+import os
 import io
 import json
 from pathlib import Path
@@ -77,6 +80,140 @@ class IsolatedRuntimeRunnerTests(unittest.TestCase):
         executed = subprocess.run([str(snapshot / "backend/owned-runner.sh")],
                                   cwd=snapshot, env=env)
         self.assertEqual(executed.returncode, 0)
+
+    @unittest.skipUnless(sys.platform == "darwin", "Native copy-on-write is a macOS optimization")
+    def test_snapshot_uses_independent_clones_without_open_copy_for_tracked_source(self):
+        functions = runner._darwin_copy_functions()
+        if functions is None:
+            self.skipTest("Native clonefile is unavailable")
+        (self.repo / "backend/example.py").chmod(0o644)
+        probe = self.root / "clone-probe.py"
+        if functions[1](os.fsencode(self.repo / "backend/example.py"), os.fsencode(probe), 0):
+            code = ctypes.get_errno()
+            if code in {errno.EXDEV, errno.ENOTSUP, errno.ENOSYS}:
+                self.skipTest("Fixture filesystem does not support native clones")
+            self.fail("Native clone probe failed with errno %s" % code)
+        probe.unlink()
+        original_copy = shutil.copyfile
+
+        def reject_open_copy(source, target, **kwargs):
+            if Path(source) == self.repo / "backend/example.py":
+                raise AssertionError("Tracked source should use the native copy-on-write path")
+            return original_copy(source, target, **kwargs)
+
+        with mock.patch.object(runner.shutil, "copyfile", side_effect=reject_open_copy):
+            snapshot, _ = self.snapshot()
+        source = self.repo / "backend/example.py"
+        copied = snapshot / "backend/example.py"
+        self.assertNotEqual(source.stat().st_ino, copied.stat().st_ino)
+        copied.write_text("VALUE = 'snapshot-private'\n")
+        copied.chmod(0o600)
+        self.assertEqual(source.read_text(), "VALUE = 'tracked'\n")
+        source.write_text("VALUE = 'later-source-edit'\n")
+        self.assertEqual(copied.read_text(), "VALUE = 'snapshot-private'\n")
+        self.assertNotEqual(source.stat().st_mode & 0o777, copied.stat().st_mode & 0o777)
+
+    def test_snapshot_copy_falls_back_when_native_support_is_absent(self):
+        source = self.repo / "backend/example.py"
+        target = self.root / "portable-copy.py"
+        with mock.patch.object(runner, "_darwin_copy_functions", return_value=None):
+            runner.copy_snapshot_file(source, target)
+        self.assertEqual(target.read_bytes(), source.read_bytes())
+        target.write_text("private copy")
+        self.assertEqual(source.read_text(), "VALUE = 'tracked'\n")
+
+    def test_snapshot_copy_falls_back_only_for_unsupported_native_operations(self):
+        source = self.repo / "backend/example.py"
+        for code in (errno.EXDEV, errno.ENOTSUP, errno.ENOSYS):
+            with self.subTest(code=code):
+                target = self.root / ("fallback-%s.py" % code)
+                clone = mock.Mock(return_value=-1)
+                attributes = mock.Mock()
+                remove = mock.Mock()
+                ctypes.set_errno(code)
+                with mock.patch.object(runner, "_darwin_copy_functions",
+                                       return_value=(ctypes, clone, attributes, remove)):
+                    runner.copy_snapshot_file(source, target)
+                self.assertEqual(target.read_bytes(), source.read_bytes())
+                attributes.assert_not_called()
+                remove.assert_not_called()
+
+    def test_snapshot_copy_preserves_native_permission_io_and_destination_failures(self):
+        source = self.repo / "backend/example.py"
+        target = self.root / "existing.py"
+        target.write_text("do not overwrite")
+        for code in (errno.EACCES, errno.EPERM, errno.EEXIST, errno.ENOSPC, errno.EIO):
+            with self.subTest(code=code):
+                clone = mock.Mock(return_value=-1)
+                ctypes.set_errno(code)
+                with mock.patch.object(runner, "_darwin_copy_functions",
+                                       return_value=(ctypes, clone, mock.Mock(), mock.Mock())), \
+                        mock.patch.object(runner.shutil, "copyfile") as portable:
+                    with self.assertRaises(OSError) as raised:
+                        runner.copy_snapshot_file(source, target)
+                self.assertEqual(raised.exception.errno, code)
+                portable.assert_not_called()
+                self.assertEqual(target.read_text(), "do not overwrite")
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS clone metadata failure")
+    def test_snapshot_copy_does_not_hide_metadata_cleanup_failure(self):
+        source = self.repo / "backend/example.py"
+        target = self.root / "metadata-failure.py"
+        target.write_text("new clone")
+        ctypes.set_errno(errno.EIO)
+        functions = (ctypes, mock.Mock(return_value=0), mock.Mock(return_value=-1), mock.Mock())
+        with mock.patch.object(runner, "_darwin_copy_functions", return_value=functions), \
+                mock.patch.object(runner.shutil, "copyfile") as portable:
+            with self.assertRaises(OSError) as raised:
+                runner.copy_snapshot_file(source, target)
+        self.assertEqual(raised.exception.errno, errno.EIO)
+        portable.assert_not_called()
+
+    def test_internal_source_aliases_are_materialized_without_sharing_inodes(self):
+        source = self.repo / "backend/example.py"
+        alias = self.repo / "backend/alias.py"
+        alias.symlink_to("example.py")
+        self.git("add", "backend/alias.py")
+        snapshot, _ = self.snapshot()
+        copied = snapshot / "backend/alias.py"
+        self.assertFalse(copied.is_symlink())
+        self.assertEqual(copied.read_bytes(), source.read_bytes())
+        copied.write_text("alias-private")
+        self.assertEqual(source.read_text(), "VALUE = 'tracked'\n")
+        self.assertEqual((snapshot / "backend/example.py").read_text(), "VALUE = 'tracked'\n")
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS clone metadata contract")
+    def test_clone_does_not_import_source_extended_attributes_or_flags(self):
+        functions = runner._darwin_copy_functions()
+        if functions is None:
+            self.skipTest("Native clone metadata API is unavailable")
+        source = self.repo / "backend/example.py"
+        library = ctypes.CDLL(None, use_errno=True)
+        set_attribute = library.setxattr
+        set_attribute.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_void_p,
+                                  ctypes.c_size_t, ctypes.c_uint32, ctypes.c_int]
+        set_attribute.restype = ctypes.c_int
+        name = b"org.synthetic.snapshot-test"
+        value = b"synthetic-local-metadata"
+        self.assertEqual(set_attribute(os.fsencode(source), name, value, len(value), 0, 0), 0)
+        source.chmod(0o444)
+        os.chflags(source, 0x8000)  # UF_HIDDEN: data-only copies must not inherit it.
+        snapshot, _ = self.snapshot()
+        copied = snapshot / "backend/example.py"
+        _, _, attributes, _ = functions
+        self.assertGreater(attributes(os.fsencode(source), None, 0, 0), 0)
+        size = attributes(os.fsencode(copied), None, 0, 0)
+        self.assertGreaterEqual(size, 0)
+        buffer = ctypes.create_string_buffer(size)
+        count = attributes(os.fsencode(copied), buffer, size, 0)
+        self.assertGreaterEqual(count, 0)
+        # macOS may add its own provenance after chmod/utime; source metadata
+        # must not cross the boundary regardless of those generated attributes.
+        self.assertNotIn(name, buffer.raw[:count].split(b"\0"))
+        self.assertEqual(copied.stat().st_flags, 0)
+        self.assertEqual(copied.stat().st_mode & 0o777, 0o444)
+        self.assertEqual(copied.stat().st_mtime_ns, source.stat().st_mtime_ns)
+        self.assertEqual(copied.read_bytes(), source.read_bytes())
 
     def test_forbidden_new_paths_are_rejected_before_copy(self):
         for name in (".env", "dashboard-config.json", "../outside.py", "/outside.py", "secrets/key.py"):

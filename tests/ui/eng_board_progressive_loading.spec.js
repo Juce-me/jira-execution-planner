@@ -1,8 +1,8 @@
-const { startDbOAuthServer } = require('./db_oauth_fixture');
+const { DB_OAUTH_SETUP_TIMEOUT_MS, startDbOAuthServer } = require('./db_oauth_fixture');
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
-const { test, expect } = require('@playwright/test');
+const { test: base, expect } = require('@playwright/test');
 const { installEngBoardDashboardFixture, selectedSprintId, selectedSprintName } = require('./eng_board_dashboard_fixture');
 const { python, pythonMissingReason } = require('./python_interpreter');
 
@@ -10,6 +10,27 @@ const repoRoot = path.join(__dirname, '..', '..');
 const baselineRevision = '40bffe730159ebadb1904b0188981c853fdf85ed';
 const baselineRoot = path.join(repoRoot, 'tmp', 'board-190', 'baseline-source');
 const activeCampaignChildren = new Set();
+
+// Provisioning owns its existing 90-second startup budget; browser assertions
+// still have Playwright's unchanged 30-second deadline. Each case gets a fresh DB.
+async function useCampaignServer(sourceRoot, use) {
+    const server = await startDiagnosticServer(sourceRoot);
+    try { await use(server); }
+    finally { await stopServer(server); }
+}
+const test = base.extend({
+    currentServer: [async ({}, use) => useCampaignServer(null, use),
+        { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+    historicalServer: [async ({}, use) => useCampaignServer(baselineRoot, use),
+        { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+    failedStartup: [async ({}, use) => {
+        await expect(startDiagnosticServer(null, { forceStartupFailure: true })).rejects.toThrow(
+            /Synthetic DB\/OAuth fixture stopped/);
+        expect(activeCampaignChildren.size).toBe(0);
+        await use(true);
+    }, { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+});
+
 const campaignServer = String.raw`
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util, json, os, re, sys, threading, time
@@ -419,11 +440,10 @@ function timingEvidence(evidence, events) {
     };
 }
 
-async function runHeldScenario(page, scenario, gate, {
+async function runHeldScenario(page, server, scenario, gate, {
     expectEarlyPaint = true, expectedCoalesced = 0, expectedHeldCandidateFrames = 0,
     revision = 'current', outputLabel = revision, sourceRoot = repoRoot,
 } = {}) {
-    const server = await startDiagnosticServer(revision === baselineRevision ? baselineRoot : null);
     const outputDir = path.join(repoRoot, 'tmp', 'board-190', outputLabel);
     let released = false;
     let evidence = null;
@@ -489,7 +509,6 @@ async function runHeldScenario(page, scenario, gate, {
     } finally {
         if (evidence?.cdp) try { await evidence.cdp.detach(); } catch (_) {}
         if (!released) try { await control(server, `/__test__/release?gate=${gate}`); } catch (_) {}
-        await stopServer(server);
     }
 }
 
@@ -500,21 +519,23 @@ function materializeBaseline() {
         baselineRoot,
     ]) fs.rmSync(target, { recursive: true, force: true });
     fs.mkdirSync(baselineRoot, { recursive: true });
-    const files = execFileSync('git', ['ls-tree', '-r', '--name-only', baselineRevision, '--', 'frontend/src'], { cwd: repoRoot, encoding: 'utf8' })
-        .trim().split('\n').filter(Boolean);
-    files.push('backend/services/eng_board.py', 'backend/services/eng_board_stream.py', 'backend/routes/eng_board_routes.py');
-    for (const relative of files) {
-        const destination = path.join(baselineRoot, relative);
-        fs.mkdirSync(path.dirname(destination), { recursive: true });
-        fs.writeFileSync(destination, execFileSync('git', ['show', `${baselineRevision}:${relative}`], { cwd: repoRoot }));
-    }
+    // A single immutable archive avoids hundreds of process launches, including
+    // when Playwright restarts a failed worker. No mutable database state is cached.
+    const archive = execFileSync('git', ['archive', '--format=tar', baselineRevision, '--',
+        'frontend/src', 'backend/services/eng_board.py', 'backend/services/eng_board_stream.py',
+        'backend/routes/eng_board_routes.py'], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
+    execFileSync('tar', ['-xf', '-', '-C', baselineRoot], { input: archive });
 }
 
 test.skip(Boolean(pythonMissingReason), pythonMissingReason);
 
 test.beforeAll(() => materializeBaseline());
 
-test('diagnoses strict Component owner activation and Board request routing', async ({ page }) => {
+test('rejects malformed campaign startup without retaining a child', async ({ failedStartup }) => {
+    expect(failedStartup).toBe(true);
+});
+
+test('diagnoses strict Component owner activation and Board request routing', async ({ page, currentServer: server }) => {
     expect(coalescedProducerUpdates([
         { event: 'eligible_batch', updateId: 'component-1' },
         { event: 'eligible_batch', updateId: 'component-2' },
@@ -537,10 +558,6 @@ test('diagnoses strict Component owner activation and Board request routing', as
         { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
         { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
     ])).toThrow(/assigned to multiple candidates/);
-    await expect(startDiagnosticServer(null, { forceStartupFailure: true })).rejects.toThrow(
-        /Synthetic DB\/OAuth fixture stopped/);
-    expect(activeCampaignChildren.size).toBe(0);
-    const server = await startDiagnosticServer();
     const browserRequests = [];
     page.on('request', request => browserRequests.push(request.url()));
     const fixture = await installEngBoardDashboardFixture(page, { sourceRoot: repoRoot, passthroughEngBoard: true });
@@ -548,34 +565,30 @@ test('diagnoses strict Component owner activation and Board request routing', as
         selectedView: 'eng', selectedSprint: sprintId, sprintName, activeGroupId: 'grp-default',
         showBoard: true, showPlanning: false, showScenario: false, showAlertsPanel: false,
     })), { sprintId: selectedSprintId, sprintName: selectedSprintName });
-    try {
-        await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
-        const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
-        await expect(sprint).toContainText(selectedSprintName);
-        await sprint.click();
-        const component = page.getByRole('option', { name: 'Component', exact: true });
-        await expect(component).not.toHaveAttribute('aria-disabled');
-        await expect(component).not.toHaveAttribute('aria-describedby');
-        await expect(component).toHaveText('Component');
-        await component.click();
-        await expect(sprint).toContainText('Component');
-        await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);
-        await expect.poll(() => fixture.apiRoutes.some(row => row.path.startsWith('/api/eng/board?'))).toBe(true);
-        await expect.poll(async () => {
-            const response=await fetch(`${server.origin}/__test__/events`); const body=await response.json();
-            return body.events.some(row => row.event==='request_entry');
-        }).toBe(true);
-        expect(fixture.boardRouteAction).toBe('continue');
-        expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')))).toMatchObject({
-            selectedSprint: selectedSprintId, activeGroupId: 'grp-default', showBoard: true,
-        });
-    } finally {
-        await stopServer(server);
-    }
+    await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
+    const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
+    await expect(sprint).toContainText(selectedSprintName);
+    await sprint.click();
+    const component = page.getByRole('option', { name: 'Component', exact: true });
+    await expect(component).not.toHaveAttribute('aria-disabled');
+    await expect(component).not.toHaveAttribute('aria-describedby');
+    await expect(component).toHaveText('Component');
+    await component.click();
+    await expect(sprint).toContainText('Component');
+    await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);
+    await expect.poll(() => fixture.apiRoutes.some(row => row.path.startsWith('/api/eng/board?'))).toBe(true);
+    await expect.poll(async () => {
+        const response=await fetch(`${server.origin}/__test__/events`); const body=await response.json();
+        return body.events.some(row => row.event==='request_entry');
+    }).toBe(true);
+    expect(fixture.boardRouteAction).toBe('continue');
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')))).toMatchObject({
+        selectedSprint: selectedSprintId, activeGroupId: 'grp-default', showBoard: true,
+    });
 });
 
-test('current production pager paints a focused Component Epic while page 2 is held', async ({ page }) => {
-    await runHeldScenario(page, 'component_page_2', 'component_page_2', { expectedHeldCandidateFrames: 1 });
+test('current production pager paints a focused Component Epic while page 2 is held', async ({ page, currentServer }) => {
+    await runHeldScenario(page, currentServer, 'component_page_2', 'component_page_2', { expectedHeldCandidateFrames: 1 });
 });
 
 for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames] of [
@@ -584,8 +597,8 @@ for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCan
     ['child_completion', 'child_completion', true, 0, 0],
     ['collapsed_first', 'component_page_2', false, 0, 1],
 ]) {
-    test(`joined current ${scenario} schedule preserves real paint ordering`, async ({ page }) => {
-        await runHeldScenario(page, scenario, gate, {
+    test(`joined current ${scenario} schedule preserves real paint ordering`, async ({ page, currentServer }) => {
+        await runHeldScenario(page, currentServer, scenario, gate, {
             expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames,
         });
     });
@@ -598,8 +611,8 @@ for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCan
     ['child_completion', 'child_completion', true, 0, 0],
     ['collapsed_first', 'component_page_2', false, 0, 0],
 ]) {
-    test(`joined baseline ${scenario} schedule records the historical paint boundary`, async ({ page }) => {
-        await runHeldScenario(page, scenario, gate, {
+    test(`joined baseline ${scenario} schedule records the historical paint boundary`, async ({ page, historicalServer }) => {
+        await runHeldScenario(page, historicalServer, scenario, gate, {
             expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames,
             revision: baselineRevision, outputLabel: 'baseline', sourceRoot: baselineRoot,
         });

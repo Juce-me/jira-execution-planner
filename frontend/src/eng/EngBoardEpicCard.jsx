@@ -6,6 +6,7 @@ import { epicStatusName, getProjectTrackEmoji, getProjectTrackLabel } from './en
 import { epicPriorityName } from './engBoardColumns.js';
 import { computeEpicStoryProgress } from './engBoardCardModel.js';
 import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
+import { PersonAvatarSlot } from '../ui/PersonAvatar.jsx';
 
 // §6.2 — the board's epic card. Layout and geometry are lifted from the asset
 // (docs/plans/assets/eng-group-board/board.html: .ecard/.erow1-3/.etitle/.ekey/.eperson — new
@@ -50,6 +51,7 @@ export default function EngBoardEpicCard({
         return (
             <span className="eperson">
                 <span className="lbl">{label}</span>
+                <PersonAvatarSlot avatarUrl={value?.avatarUrl} />
                 <b className={value?.displayName ? '' : 'is-empty'}>
                     <IssuePersonEditor
                         issueKey={key} field={field} fieldLabel={label} currentValue={value}
@@ -125,8 +127,8 @@ export default function EngBoardEpicCard({
             {/* A sibling of the card's native trigger, never inside it; positioned beside the key in board.css. */}
             {shareControl}
             <div className="erow3">
-                {issueFieldEdits ? personEditor('assignee', 'Assignee', epic.assignee) : <span className="eperson"><span className="lbl">Assignee</span><b>{assigneeName}</b></span>}
-                {issueFieldEdits ? personEditor('deliveryOwner', 'Delivery owner', epic.deliveryOwner) : <span className="eperson"><span className="lbl">Delivery owner</span><b className={deliveryOwnerName ? '' : 'is-empty'}>{deliveryOwnerName || 'Not set'}</b></span>}
+                {issueFieldEdits ? personEditor('assignee', 'Assignee', epic.assignee) : <span className="eperson"><span className="lbl">Assignee</span><PersonAvatarSlot avatarUrl={epic.assignee?.avatarUrl} /><b>{assigneeName}</b></span>}
+                {issueFieldEdits ? personEditor('deliveryOwner', 'Delivery owner', epic.deliveryOwner) : <span className="eperson"><span className="lbl">Delivery owner</span><PersonAvatarSlot avatarUrl={epic.deliveryOwner?.avatarUrl} /><b className={deliveryOwnerName ? '' : 'is-empty'}>{deliveryOwnerName || 'Not set'}</b></span>}
                 {epic.updated ? (
                     <time className="eupdated" dateTime={epic.updated}>{formatSubtaskUpdatedDate(epic.updated)}</time>
                 ) : (

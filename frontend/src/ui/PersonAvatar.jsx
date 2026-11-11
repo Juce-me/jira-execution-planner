@@ -36,3 +36,18 @@ export default function PersonAvatar({ avatarUrl, children }) {
         />
     );
 }
+
+// The leading person mark for sites that had no glyph slot before (Board cards, Planning Table cells): the
+// shared `.task-assignee-icon` box with the photo, else the same glyph the ENG rows use.
+export function PersonAvatarSlot({ avatarUrl }) {
+    return (
+        <span className="task-assignee-icon" aria-hidden="true">
+            <PersonAvatar avatarUrl={avatarUrl}>
+                <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M12 12a4.5 4.5 0 1 0-4.5-4.5A4.5 4.5 0 0 0 12 12Z" stroke="currentColor" strokeWidth="1.6" />
+                    <path d="M4 20c1.8-4 6-5.5 8-5.5S18.2 16 20 20" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                </svg>
+            </PersonAvatar>
+        </span>
+    );
+}

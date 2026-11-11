@@ -63,7 +63,7 @@ across the whole row, with the same `#fff1f0` the alerts and board use. Awaiting
 placeholders and the No Epic group row are never tinted.
 Rows scroll with the page; column headings dock below the shared controls and totals remain visible at the viewport bottom until their natural row enters view.
 Stories expose the parent Epic summary in the Epic column, linked to that Epic in Jira (falling back to the key when its summary is missing). Assignee is a visible
-column, without a Fields menu. Component, Project, Capacity and Project Track are optional and
+column, without a Fields menu; its cell and the Delivery Owner cell lead with the shared person mark (`PersonAvatarSlot`, photo or glyph, #336). Delivery Owner (Epic rows only, read-only, "Not set" when empty), Component, Project, Capacity and Project Track are optional and
 hidden by default; use Show hidden in the Add popover to show them. Saved visibility choices
 take precedence over defaults, including an explicitly saved all-visible layout. Story Points have a visible
 in-cell input with Enter to save and Escape to cancel in the signed-in Jira editor;

@@ -222,7 +222,7 @@ EXCLUDED_CAPACITY_EPIC_SUMMARY_BATCH_SIZE = int(os.getenv('EXCLUDED_CAPACITY_EPI
 SCENARIO_CACHE = {'generatedAt': None, 'data': None}
 TASKS_CACHE, SPRINTS_PROCESS_CACHE = {}, {}
 TASKS_CACHE_TTL_SECONDS = 60 * 5
-TASKS_CACHE_SCHEMA_VERSION = 'v4-person-avatars'
+TASKS_CACHE_SCHEMA_VERSION = 'v5-delivery-owner-avatars'
 MISSING_INFO_CACHE = {}
 MISSING_INFO_CACHE_TTL_SECONDS = 60 * 5
 DEPENDENCIES_CACHE = {}
@@ -2893,7 +2893,7 @@ def fetch_epic_details_bulk(epic_keys, headers, epic_name_field, roles=None, anc
                 }
                 # Omitted while unconfigured: "no field is set up" must not read as "no owner".
                 if delivery_owner_field:
-                    epic_details[key]['deliveryOwner'] = shape_jira_person(fields.get(delivery_owner_field))
+                    epic_details[key]['deliveryOwner'] = shape_jira_person(fields.get(delivery_owner_field), avatar=True)
                 if allocation_field:
                     epic_details[key]['allocation'] = _allocation.allocation_value(fields.get(allocation_field))
                 # Extract initiative from parent if present

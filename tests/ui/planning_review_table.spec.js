@@ -14,7 +14,7 @@ test.beforeAll(() => {
         import { createPlanningSprintReviewController } from './frontend/src/eng/usePlanningSprintReview.js';
         import { recordInheritedHintDismissal } from './frontend/src/eng/usePlanningGroupScope.js';
         const stories = Array.from({length:window.longReview?60:3},(_,i)=>i+1).map(id => ({id:String(id),key:'DEMO-'+id,fields:{summary:'Story '+id,customfield_10004:window.zeroStory&&id===3?null:id,teamId:'alpha',teamName:window.longNames?(id===1?'Research Long Named Alpha Engineering Team':'Research Long Named Beta Engineering Team'):'Alpha',projectKey:'DEMO',status:{name:'To Do'},priority:{name:'High'}}}));
-        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team'},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:window.longNames?'Readiness Epic with a deliberately long title that must truncate beside its chip':'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
+        const epics=[{key:'DEMO-10',epic:{id:'10',key:'DEMO-10',summary:window.longNames?'Automate detailed calculations and adjustments across multiple supported integrations':'Epic summary',status:{name:'To Do'},priority:{name:'High'},teamName:'Own Team',deliveryOwner:{accountId:'owner-1',displayName:'Delivery Owner One'}},tasks:stories.slice(0,2),requirements:[]},{key:'DEMO-20',epic:{id:'20',key:'DEMO-20',summary:window.longNames?'Readiness Epic with a deliberately long title that must truncate beside its chip':'Readiness Epic'},tasks:[],requirements:[{id:'required',team:{name:'Beta'}}]}];
         const columns=Array.from({length:8},(_,i)=>({id:'cost'+i,rowKind:'story',label:'Cost '+i,type:'number',aggregation:'sum',archived:false,order:i}));
         // Synthetic group-scoped review server: one schema per Department group (the second has no columns), values only for the
         // group's original columns, and a save that stores the controller's columns and layouts under the payload's group.
@@ -456,10 +456,30 @@ test('keyboard reorder steps over hidden optional columns instead of swapping wi
     expect(back.indexOf('Cost 0'),JSON.stringify(back)).toBe(back.indexOf('Assignee')+1);
 });
 
+test('Delivery Owner is a hidden Epic column showing the owner or Not set, and Assignee cells carry the person mark (#336)', async({page})=>{
+    await install(page);
+    await page.getByRole('radio',{name:'Epics',exact:true}).click();
+    await expect(page.getByRole('columnheader',{name:'Delivery Owner',exact:true})).toHaveCount(0);
+    await page.getByRole('button',{name:'+ Add column',exact:true}).click();
+    await addDialog(page).getByRole('button',{name:'Delivery Owner',exact:true}).click();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('columnheader',{name:'Delivery Owner',exact:true})).toHaveCount(1);
+    const owner=id=>page.locator(`tr[data-review-row="epic:${id}"] td.planning-review-deliveryOwner`);
+    await expect(owner('10')).toHaveText('Delivery Owner One');
+    await expect(owner('20')).toHaveText('Not set');
+    for(const id of ['10','20']) {
+        const mark=owner(id).locator('.task-assignee-icon');
+        await expect(mark).toHaveCount(1);
+        expect(await mark.evaluate(node=>{const r=node.getBoundingClientRect(),cell=node.closest('td').getBoundingClientRect();return r.width===14&&r.height===14&&r.top>=cell.top&&r.bottom<=cell.bottom;})).toBe(true);
+    }
+    await expect(page.locator('tr[data-review-row="epic:10"] td.planning-review-assignee .task-assignee-icon')).toHaveCount(1);
+});
+
 for(const mode of ['Epics','Stories']) test(`optional metadata hidden by default and explicit visibility persists in ${mode}`,async({page})=>{
     await install(page);
     await page.getByRole('radio',{name:mode,exact:true}).click();
-    const optional=['Component','Project','Capacity','Project Track'];
+    // Delivery Owner is an Epic-row column (#336).
+    const optional=[...(mode==='Epics'?['Delivery Owner']:[]),'Component','Project','Capacity','Project Track'];
     for(const name of optional) await expect(page.getByRole('columnheader',{name,exact:true})).toHaveCount(0);
     await page.getByRole('button',{name:'+ Add column',exact:true}).click();
     const popup=addDialog(page);
@@ -1544,7 +1564,7 @@ test('heading hover highlights its header cell without framing the heading or ch
 });
 
 test('on a wide display the sheet shrinks to its columns and sits centred with no blank frame to its right', async ({ page }) => {
-    await page.setViewportSize({ width: 2400, height: 900 }); await install(page);
+    await page.setViewportSize({ width: 2560, height: 900 }); await install(page);
     for (const mode of ['Epics', 'Stories']) {
         await page.getByRole('radio', { name: mode, exact: true }).click();
         const geometry = await page.evaluate(() => {

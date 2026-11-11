@@ -12,6 +12,7 @@ import { isInheritedHintDismissed } from './usePlanningGroupScope.js';
 import SegmentedControl from '../ui/SegmentedControl.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import StatusPill from '../ui/StatusPill.jsx';
+import { PersonAvatarSlot } from '../ui/PersonAvatar.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
 import { withoutReadout } from '../issues/PriorityIcon.jsx';
 import PlanningReviewBoundaryPlus from './PlanningReviewBoundaryPlus.jsx';
@@ -406,7 +407,8 @@ export default function PlanningReviewTable({ epicGroups = [], visibleTasks = []
                         : column.id === labels.parentColumnId ? (row.epicKey ? <TrackedExternalLink href={`${jiraUrl.replace(/\/+$/, '')}/browse/${encodeURIComponent(row.epicKey)}`} className="task-key-link" target="_blank" rel="noopener noreferrer" analyticsMeta={buildJiraBrowseLinkAnalytics({ issueKind: kindOf('epic'), sourceSurface: 'planning' })}>{row.epic || row.epicKey}</TrackedExternalLink> : row.epic || '—')
                         : column.id === 'capacity' ? (row.synthetic ? '—' : field(row, 'inclusion', excludedEpicSet.has(String(row.rowKind === 'epic' ? row.key : row.epicKey || '').toUpperCase()) ? 'Excluded' : 'Included'))
                         : column.id === 'projectTrack' ? field(row, 'projectTrack', row.projectTrack || '—')
-                        : column.id === 'assignee' ? (row.synthetic ? '—' : field(row, 'assignee', row.assignee || 'Unassigned'))
+                        : column.id === 'assignee' ? (row.synthetic ? '—' : <span className="planning-review-person"><PersonAvatarSlot avatarUrl={(row.issue?.fields || row.issue)?.assignee?.avatarUrl} />{field(row, 'assignee', row.assignee || 'Unassigned')}</span>)
+                        : column.id === 'deliveryOwner' ? (row.synthetic || row.rowKind === 'story' ? '—' : <span className="planning-review-person"><PersonAvatarSlot avatarUrl={row.issue?.deliveryOwner?.avatarUrl} />{row.deliveryOwner || 'Not set'}</span>)
                         : column.id === 'status' ? (row.rowKind === 'requirement' ? 'Awaiting creation' : field(row, 'status', <StatusPill label={row.status || '—'} className={getIssueStatusClassName(row.status)} status={row.status} />)) : reviewValue(row, column, review.cells) || '—'}
                 </td>)}
                 </>}

@@ -37,11 +37,12 @@ test('only real Epic and Story rows without points count as zero SP', async () =
 test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthetic requirements', async () => {
     const { buildPlanningReviewRows, reviewSelectionState } = await model();
     const stories = [story('1', 'DEMO-1', 0.1), story('2', 'DEMO-2', 0.2), story('3', 'DEMO-3', 3)];
-    const epicGroups = [{ key: 'DEMO-10', epic: { id: '10', key: 'DEMO-10', summary: 'Epic', teamName: 'Own Team', projectTrack: 'Product', components: ['Platform'] }, tasks: stories.slice(0, 2), requirements: [] }, { key: 'DEMO-20', epic: { id: '20', key: 'DEMO-20' }, tasks: [], requirements: [{ id: 'requirement', team: { name: 'Beta' } }] }];
+    const epicGroups = [{ key: 'DEMO-10', epic: { id: '10', key: 'DEMO-10', summary: 'Epic', deliveryOwner: { accountId: 'owner-1', displayName: 'Owner One' }, teamName: 'Own Team', projectTrack: 'Product', components: ['Platform'] }, tasks: stories.slice(0, 2), requirements: [] }, { key: 'DEMO-20', epic: { id: '20', key: 'DEMO-20' }, tasks: [], requirements: [{ id: 'requirement', team: { name: 'Beta' } }] }];
     const epics = buildPlanningReviewRows({ epicGroups, visibleTasks: stories });
     assert.equal(epics.length, 3);
     assert.equal(epics[0].storyPoints, '0.3');
     assert.equal(epics[0].components, 'Platform');
+    assert.equal(epics[0].deliveryOwner, 'Owner One');
     assert.deepEqual(epics[0].teamsInScope, ['Alpha']);
     assert.equal(epics[1].issueId, '20');
     assert.equal(epics[2].synthetic, true);
@@ -69,7 +70,7 @@ test('hierarchy projection keeps readiness-only Epics, orphan Stories and synthe
 test('scope columns avoid Sprint/numeric priority and use admitted dimensions despite filters', async () => {
     const { buildPlanningReviewColumns } = await model();
     const columns = buildPlanningReviewColumns({ mode: 'epic', rows: [], admittedTeamCount: 2, admittedProjectCount: 2 });
-    assert.deepEqual(columns.map(column => column.id), ['key', 'summary', 'status', 'priority', 'storyPoints', 'accepted', 'teamsInScope', 'project', 'team', 'assignee', 'components', 'capacity', 'projectTrack']);
+    assert.deepEqual(columns.map(column => column.id), ['key', 'summary', 'status', 'priority', 'storyPoints', 'accepted', 'teamsInScope', 'project', 'team', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack']);
     assert.equal(columns.find(column => column.id === 'storyPoints').label, 'Sprint SP');
     const narrow = buildPlanningReviewColumns({ mode: 'story', rows: [], admittedTeamCount: 1, admittedProjectCount: 1 });
     assert.ok(!narrow.some(column => column.id === 'team' || column.id === 'project'));
@@ -111,13 +112,15 @@ test('shared order places custom columns among Jira columns and keeps row identi
 
 test('every column but Summary is optional and hideable, and Summary always stays visible', async()=>{
     const {buildPlanningReviewColumns,DEFAULT_REVIEW_HIDDEN_COLUMNS}=await model();
-    assert.deepEqual(DEFAULT_REVIEW_HIDDEN_COLUMNS,['components','project','capacity','projectTrack']);
+    assert.deepEqual(DEFAULT_REVIEW_HIDDEN_COLUMNS,['deliveryOwner','components','project','capacity','projectTrack']);
     for(const mode of ['epic','story']) {
         const options={mode,admittedProjectCount:2,admittedTeamCount:2};
         const all=buildPlanningReviewColumns(options);
-        for(const id of DEFAULT_REVIEW_HIDDEN_COLUMNS) assert.equal(all.find(column=>column.id===id).optional,true);
-        const hidden=buildPlanningReviewColumns({...options,hidden:new Set([...DEFAULT_REVIEW_HIDDEN_COLUMNS,'key','summary','status','storyPoints'])});
-        for(const id of [...DEFAULT_REVIEW_HIDDEN_COLUMNS,'key','status','storyPoints']) assert.equal(hidden.some(column=>column.id===id),false,id);
+        // Delivery Owner is an Epic-row column (#336); Story mode has none to hide.
+        const hideable=DEFAULT_REVIEW_HIDDEN_COLUMNS.filter(id=>mode==='epic'||id!=='deliveryOwner');
+        for(const id of hideable) assert.equal(all.find(column=>column.id===id).optional,true);
+        const hidden=buildPlanningReviewColumns({...options,hidden:new Set([...hideable,'key','summary','status','storyPoints'])});
+        for(const id of [...hideable,'key','status','storyPoints']) assert.equal(hidden.some(column=>column.id===id),false,id);
         assert.equal(hidden.some(column=>column.id==='summary'),true);
         for(const column of all) assert.equal(Boolean(column.required),column.id==='summary',column.id);
     }

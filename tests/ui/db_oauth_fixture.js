@@ -101,7 +101,12 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
         const handler = pending.get('ready');
         if (handler) handler.reject(new Error(`Synthetic DB/OAuth fixture startup timed out after ${Math.round(performance.now() - startupStarted)}ms. ${diagnostic}; ${timings.join(', ')}`));
     }, DB_OAUTH_SETUP_TIMEOUT_MS);
-    try { startup = await ready; } catch (error) { await stop(); throw error; }
+    try { startup = await ready; } catch (error) {
+        // Preserve sanitized startup evidence even if the hook expires in cleanup.
+        console.error(`Synthetic DB/OAuth startup failed: ${diagnostic}; ${timings.join(', ')}`);
+        await stop();
+        throw error;
+    }
     finally { clearTimeout(timer); }
     console.log(`Synthetic DB/OAuth fixture startup: ${Math.round(performance.now() - startupStarted)}ms; ${timings.join(', ')}`);
     const baseUrl = startup.baseUrl;

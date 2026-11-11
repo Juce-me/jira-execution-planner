@@ -545,9 +545,19 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
         self._assert_signal(signal.SIGTERM, 143, maximum_cleanup_seconds=3)
 
     def test_sigterm_escalates_to_kill_for_ignoring_process_tree(self):
+        self._delay_runner_polls()
         self._assert_signal(
             signal.SIGTERM, 143, ignore_grandchild_term=True,
         )
+
+    def _delay_runner_polls(self):
+        # Simulate scheduling overhead without lengthening the runner's grace.
+        self._write_executable(self.fake_bin / "sleep", '''#!/usr/bin/env bash
+if [[ "$1" == "0.05" ]]; then
+  exec /bin/sleep 0.2
+fi
+exec /bin/sleep "$@"
+''')
 
     def test_sigterm_during_lock_acquisition_is_serviced_after_ownership(self):
         lock_started = self.log.parent / "lock-started"
@@ -870,6 +880,7 @@ class LocalPostgresqlRunnerProcessTests(unittest.TestCase):
             self._cleanup_process(unrelated)
 
     def test_replacement_escalates_when_first_runner_cannot_handle_term(self):
+        self._delay_runner_polls()
         first_log = self.log.parent / "stopped-first.log"
         first_env = self.env.copy()
         first_env.update({

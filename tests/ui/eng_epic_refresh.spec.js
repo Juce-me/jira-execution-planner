@@ -2075,6 +2075,7 @@ async function openWithEpicAwareMissingInfo(page) {
     });
     await openCatchUp(page, ctx);
     await expect(missingRows(page)).toHaveCount(4);
+    await expect.poll(() => heldMissingKeys(page)).toEqual(HELD_BEFORE);
     return ctx;
 }
 

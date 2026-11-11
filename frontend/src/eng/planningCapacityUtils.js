@@ -1,3 +1,4 @@
+import { quarterFromSprintName } from '../workStructure/configurationContext.js';
 import { classifyCapacityIssue } from '../capacityClassification.mjs';
 import { buildTeamDropdownOptions } from '../teamSelectionUtils.mjs';
 
@@ -664,4 +665,29 @@ export function buildCapacityTotals({
         acc.total.postponed += info.total.postponed;
         return acc;
     }, emptyCapacityTotals());
+}
+
+// Planning Sprints are quarters. Resolve the nearest earlier quarter in the admitted catalog, never a later Sprint.
+export function previousPlanningCapacitySprint(sprints, sprintName) {
+    const quarter = quarterFromSprintName(sprintName);
+    if (!quarter) return null;
+    const earlier = (sprints || []).filter(sprint => {
+        const candidate = quarterFromSprintName(sprint.name);
+        return candidate && candidate < quarter;
+    }).sort((a, b) => quarterFromSprintName(b.name).localeCompare(quarterFromSprintName(a.name))
+        || String(b.startDate || '').localeCompare(String(a.startDate || '')));
+    if (earlier.length > 1 && quarterFromSprintName(earlier[0].name) === quarterFromSprintName(earlier[1].name)
+        && (earlier[0].startDate || '') === (earlier[1].startDate || '')) return null;
+    return earlier[0] || null;
+}
+
+// Use the same raw Jira number as Planning (before Product/Tech share), retaining stored inheritance if Jira is blank.
+export function previousPlanningCapacityValue(payload, teamName, teamNames = [], stored = null) {
+    const state = buildCapacityReadState(payload);
+    const key = normalizeCapacityKey(teamName);
+    if (teamNames.filter(name => normalizeCapacityKey(name) === key).length !== 1) return stored;
+    const options = { exactOnly: true };
+    const target = resolveUniqueCapacityTarget(state.capacityTargetsByTeam, teamName, options);
+    const value = resolveUniqueCapacityValue(state.capacityByTeam, teamName, options);
+    return target.state === 'matched' && value.matched ? value.value : stored;
 }

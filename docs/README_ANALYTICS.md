@@ -154,6 +154,8 @@ The browser-observed capacity API reliability event uses the existing `api_resul
 
 This uses the existing GTM `userevent` trigger and existing GA4 property keys. Do not register GA4 custom dimensions for capacity editing.
 
+Opening a no-ticket Team editor may read the previous Planning Sprint through the existing `jira_team_capacity` API surface to prefill its effective capacity. This read-on-edit retains the existing `api_result` event (`trigger=userevent`, `event_type=event`, `feature_name=planning_capacity_edit`, standard typed reliability params); no additional interaction event is allowlisted because prefilling is derived editor state. App-stored edits keep their existing Planning review API reliability contract. Never send the inherited value or source Sprint as analytics parameters.
+
 ### ENG Inline Issue Field Editing
 
 Inline Assignee, Delivery Owner, and Story Points editing uses canonical `issue_field_edit_action` on the existing `userevent` transport. The fixed builder accepts only the workflow, field, issue-kind, surface, and result enums listed above. Open and submit omit `result`; the final result event requires it. The related browser reliability event uses `api_result` with `api_surface=jira_issue_field_edits` and `feature_name=eng_issue_field_edits`.

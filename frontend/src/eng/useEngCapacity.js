@@ -28,6 +28,15 @@ import {
 import { buildExcludedProjectStats, buildSelectedAdHocStats, buildSelectedProjectStats, buildSelectedTeamProjectStats, buildSelectedTeamStats } from './planningSelectionStats.js';
 import { fetchCapacity as requestCapacity } from '../api/capacityApi.js';
 
+// Explicit Team-card prefill: retain capacity API ownership here, outside the current Sprint's read lifecycle.
+export async function readPlanningCapacity(backendUrl, sprintName, teamName, options = {}) {
+    const response = await requestCapacity(backendUrl, { sprintName, teams: [teamName], signal: options.signal });
+    if (!response.ok) throw new Error('capacity_read_failed');
+    const payload = await response.json();
+    if (payload.enabled !== true) throw new Error('capacity_read_failed');
+    return payload;
+}
+
 export function useEngCapacityState() {
     const [capacityState, setCapacityState] = useState(() => ({ capacityByTeam: {}, capacityTargetsByTeam: {}, capacityIssueCount: null, mutationEnabled: false, scopeSignature: '' }));
     const capacityStateRef = useRef(capacityState);

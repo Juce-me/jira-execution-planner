@@ -488,8 +488,12 @@ export default function PlanningTeamCapacityCards({
         ) return;
         // After a push conflict the ticket holds Jira's current value: the editor expects that one, not the last read.
         const ticket = conflictTicketOf(entry);
+        // A blank (null) or 0 ticket opens with the earlier Sprint's Jira value; the ticket value stays the conflict baseline.
+        const previousSprint = (typeof ticket !== 'number' || ticket === 0) && typeof readPreviousCapacity === 'function'
+            ? previousPlanningCapacitySprint(sprints, sprintName) : null;
         const nextEditor = {
             mode: 'jira',
+            prefilling: Boolean(previousSprint),
             id: `jira:${entry.id}`,
             displayedTeamId: String(entry.id),
             displayedTeamName: entry.name,
@@ -508,6 +512,7 @@ export default function PlanningTeamCapacityCards({
         if (plannedOf(entry)?.source === 'user' && statusOf(entry)?.canSave === true) assignee?.controller?.ensureTeamDocument(String(entry.id));
         editorRef.current = nextEditor;
         setEditor(nextEditor);
+        if (previousSprint) prefillFromPreviousSprint(nextEditor, entry, previousSprint, null);
         onAnalyticsAction?.('capacity_edit_open');
     };
 
@@ -538,17 +543,21 @@ export default function PlanningTeamCapacityCards({
         };
         editorRef.current = nextEditor;
         setEditor(nextEditor);
-        if (!previousSprint) return;
-        // One scoped GET only on explicit edit. It never copies the earlier ticket's identity or writes either Sprint.
+        if (previousSprint) prefillFromPreviousSprint(nextEditor, entry, previousSprint, planned.value);
+    };
+
+    // One scoped GET only on explicit edit. It never copies the earlier ticket's identity or writes either Sprint.
+    // A missing or unmatched earlier value keeps the editor's own draft.
+    const prefillFromPreviousSprint = (nextEditor, entry, previousSprint, stored) => {
         const controller = new AbortController();
         requestAbortRef.current?.abort();
         requestAbortRef.current = controller;
         void (async () => {
             try {
                 const payload = await readPreviousCapacity(previousSprint.name, entry.name, { signal: controller.signal });
-                const value = previousPlanningCapacityValue(payload, entry.name, entries.map(team => team.name), planned.value);
+                const value = previousPlanningCapacityValue(payload, entry.name, entries.map(team => team.name), stored);
                 if (controller.signal.aborted || editorRef.current !== nextEditor) return;
-                setEditor({ ...nextEditor, prefilling: false, draft: plannedWireValue(value) ?? '' });
+                setEditor({ ...nextEditor, prefilling: false, draft: plannedWireValue(value) ?? nextEditor.draft });
             } catch (error) {
                 if (controller.signal.aborted || editorRef.current !== nextEditor) return;
                 setEditor({ ...nextEditor, prefilling: false, errorMessage: error?.name === 'AuthenticationRequiredError' ? ''

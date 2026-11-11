@@ -676,6 +676,9 @@ export function previousPlanningCapacitySprint(sprints, sprintName) {
         return candidate && candidate < quarter;
     }).sort((a, b) => quarterFromSprintName(b.name).localeCompare(quarterFromSprintName(a.name))
         || String(b.startDate || '').localeCompare(String(a.startDate || '')));
+    // The one active earlier Sprint is the source; none or several active ones fall back to the nearest earlier quarter.
+    const active = earlier.filter(sprint => String(sprint.state || '').toLowerCase() === 'active');
+    if (active.length === 1) return active[0];
     if (earlier.length > 1 && quarterFromSprintName(earlier[0].name) === quarterFromSprintName(earlier[1].name)
         && (earlier[0].startDate || '') === (earlier[1].startDate || '')) return null;
     return earlier[0] || null;

@@ -1027,6 +1027,10 @@ test('previous Planning capacity uses the nearest earlier quarter, dates within 
     assert.equal(previousPlanningCapacitySprint([previous], 'Unscheduled'), null);
     assert.equal(previousPlanningCapacitySprint([previous, { ...previous, id: '3' }], current.name), null);
     assert.equal(previousPlanningCapacitySprint([previous, { ...previous, id: '3', startDate: '2026-08-01' }], current.name)?.id, '3');
+    const active = { ...earlier, state: 'active' };
+    assert.equal(previousPlanningCapacitySprint([current, active, previous], current.name), active, 'the one active earlier Sprint wins over a nearer quarter');
+    assert.equal(previousPlanningCapacitySprint([current, active, { ...previous, state: 'active' }], current.name)?.id, previous.id, 'several active Sprints fall back to the nearest quarter');
+    assert.equal(previousPlanningCapacitySprint([{ ...current, state: 'active' }, previous], current.name), previous, 'the selected Sprint itself is never the source');
 });
 
 test('previous Planning capacity keeps raw Jira precision and zero, falls back to stored values and never copies another Team or ambiguous ticket', async () => {

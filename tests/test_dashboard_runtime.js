@@ -624,7 +624,7 @@ test('EPM read error classifier: rate_limited, denied, failed; only Home denial 
 
 test('EPM settings error copy is typed, useful and never echoes provider text', () => {
     const scope = describeEpmReadError({ status: 409, category: 'epm_scope_required', message: 'RAW provider text' });
-    assert.match(scope, /read permission/);
+    assert.match(scope, /Sign in again/);
     assert.match(describeEpmReadError({ status: 403, code: 'home_access_denied', message: 'RAW' }), /did not grant access/);
     assert.match(describeEpmReadError({ status: 502, code: 'home_read_failed', message: 'RAW' }), /could not be read/);
     assert.match(describeEpmReadError({ status: 503, code: 'home_rate_limited', retryAfterSeconds: 7 }), /7s/);

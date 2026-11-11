@@ -675,7 +675,7 @@ export function classifyEpmReadError(error) {
 export function describeEpmReadError(error, fallback = '') {
     const status = Number(error?.status) || 0;
     const category = String(error?.category || error?.code || '');
-    if (status === 409 && category === 'epm_scope_required') return 'Atlassian Home read permission is needed. Update your Atlassian permissions in Settings > Connections.';
+    if (status === 409 && category === 'epm_scope_required') return 'Sign in again to use the Atlassian Home permissions included with login.';
     if (status === 403 && category === 'home_access_denied') return 'Atlassian Home did not grant access to this scope.';
     if (status === 502 && category === 'home_read_failed') return 'Atlassian Home could not be read. Try again later.';
     if (status === 503 && category === 'home_rate_limited') {

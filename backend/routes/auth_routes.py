@@ -337,22 +337,6 @@ def api_auth_csrf():
     return jsonify({'csrfToken': token})
 
 
-def _epm_home_authorize_scopes():
-    """Optional Home read scopes for an authenticated user who enabled the EPM view.
-
-    Resolved only from the server-owned preference and the signed-in identity, never from the request;
-    no resolvable user (initial login, base scopes missing, storage trouble) means base consent only.
-    """
-    if not (database_storage_enabled() and db_oauth_browser_session_data()):
-        return ()
-    try:
-        context = current_request_auth_context()
-        enabled = epm_view_enabled_for_context(context)
-    except (AuthError, ConfigStorageError, UserViewConfigStorageError, DatabaseConfigurationError):
-        return ()
-    return epm_home.EPM_HOME_READ_SCOPES if enabled else ()
-
-
 @bp.route('/api/auth/atlassian/login', methods=['GET'])
 def api_atlassian_login():
     if JIRA_AUTH_MODE != AUTH_MODE_ATLASSIAN_OAUTH:
@@ -370,7 +354,7 @@ def api_atlassian_login():
     force_consent = str(request.args.get('prompt') or '').strip().lower() == 'consent'
     return redirect(build_authorize_url(
         config, state, build_pkce_challenge(verifier), force_consent=force_consent,
-        extra_scopes=_epm_home_authorize_scopes(),
+        extra_scopes=epm_home.EPM_HOME_READ_SCOPES,
     ))
 
 

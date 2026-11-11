@@ -289,3 +289,11 @@ test('the taxonomy and runbook document role kinds, objective and the mix values
     assert.ok(runbook.includes('`issue_kind=story|epic|initiative|objective|unknown`'));
     assert.ok(runbook.includes('`issue_kind=initiative|epic|story|objective`'));
 });
+
+test('cross-configuration Board selection retains the existing typed filter event', async () => {
+    const { sanitizeAnalyticsParams } = await loadEvents();
+    for (const scope of ['component', 'allocation']) {
+        const params = { feature_name: 'dashboard', filter_type: 'sprint', source_surface: 'board', scope_type: scope, sprint_selection_state: scope };
+        assert.deepEqual(sanitizeAnalyticsParams(params, 'filter_changed'), params);
+    }
+});

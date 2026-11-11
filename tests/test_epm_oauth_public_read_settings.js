@@ -190,8 +190,8 @@ test('Connections: the registered checkbox reuses the private-preference hooks a
 
 test('Connections: saved state shows the access message and the same-tab scope link only when permission is missing', () => {
     const scope = renderConnections({ checked: true, savedEnabled: true, onChange() {}, access: { state: 'scope_missing', loginUrl: '/login?reason=missing_scope', message: 'RAW' }, loginUrl: '/login?reason=missing_scope' });
-    assert.ok(scope.includes('href="/login?reason=missing_scope"'));
-    assert.ok(scope.includes('Permission needed'));
+    assert.equal(scope.includes('href="/login?reason=missing_scope"'), false);
+    assert.ok(scope.includes('Sign in again'));
     assert.equal(scope.includes('RAW'), false, 'provider or server payload text is never echoed');
     assert.equal(scope.includes('target='), false, 'same tab');
     for (const [state, copy] of [['denied', 'did not grant access'], ['empty', 'No accessible Atlassian Home goal'], ['unavailable', 'could not be checked']]) {

@@ -347,7 +347,7 @@ test('Enable EPM view: a failed save keeps the draft with an error and does not 
     expect(epmAccessCalls(fixture.calls)).toHaveLength(1);
 });
 
-test('Enable EPM view: the scope-update link appears only after the enabled value is saved', async ({ page }) => {
+test('Enable EPM view: saving an older grant never adds a Settings consent link', async ({ page }) => {
     const fixture = await installDashboardFixture(page, {
         epmAfterEnable: { homeReadAvailable: false, loginUrl: SCOPE_URL, access: { state: 'scope_missing' } },
     });
@@ -362,8 +362,8 @@ test('Enable EPM view: the scope-update link appears only after the enabled valu
 
     dialog = await openConnections(page);
     await expect(epmCheckbox(dialog)).toBeChecked();
-    await expect(linkIn(dialog)).toBeVisible();
-    await expect(linkIn(dialog)).toHaveAttribute('href', SCOPE_URL);
+    await expect(linkIn(dialog)).toHaveCount(0);
+    await expect(epmCard(dialog)).toContainText('Sign in again');
     // Scopes are missing: still no navigation, and no Home access or EPM read was made.
     await closeSettings(page, dialog);
     await expect(page.getByRole('radiogroup', { name: 'Dashboard view' })).toHaveCount(0);
@@ -375,7 +375,7 @@ test('Enable EPM view: the scope-update link appears only after the enabled valu
 // Missing scopes, denied and empty Home visibility
 // ---------------------------------------------------------------------------------------------------------
 
-test('enabled user without Home scopes: hidden navigation, Settings reachable with the scope-update link, no Home traffic', async ({ page }) => {
+test('enabled user without Home scopes: hidden navigation, Settings reachable without a second consent link, no Home traffic', async ({ page }) => {
     await seedEpmView(page);
     const fixture = await installDashboardFixture(page, {
         epmViewEnabled: true,
@@ -393,20 +393,17 @@ test('enabled user without Home scopes: hidden navigation, Settings reachable wi
     const dialog = await openConnections(page);
     await expect(epmCheckbox(dialog)).toBeChecked();
     const link = dialog.getByRole('link', { name: 'Update Atlassian permissions' });
-    await expect(link).toBeVisible();
-    await expect(link).toHaveAttribute('href', SCOPE_URL);
+    await expect(link).toHaveCount(0);
+    await expect(epmCard(dialog)).toContainText('Sign in again');
 });
 
-// PRODUCT BUG (Part B, not fixed here: frontend/src is out of this task's scope). For an enabled user whose Home scopes
-// are missing no access read is made, so dashboard.jsx passes `access: null` and the card shows "Checking" forever
-// instead of the implemented `scope_missing` copy ("Permission needed" + "has not been granted yet").
 test('enabled user without Home scopes: the checkbox card states the missing permission instead of an endless check', async ({ page }) => {
     await seedEpmView(page);
     await installDashboardFixture(page, { epmViewEnabled: true, epmHomeReadAvailable: false, epmHomeReadLoginUrl: SCOPE_URL });
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
     const dialog = await openConnections(page);
-    await expect(epmCard(dialog).locator('.user-connection-status')).toHaveText('Permission needed');
-    await expect(epmCard(dialog)).toContainText('Atlassian Home read permission has not been granted yet.');
+    await expect(epmCard(dialog).locator('.user-connection-status')).toHaveText('Sign in again');
+    await expect(epmCard(dialog)).toContainText('Sign in again to use the Atlassian Home permissions included with login.');
 });
 
 test('an unsafe or mistyped scope-update link is never rendered (fail closed)', async ({ page }) => {
@@ -485,7 +482,7 @@ test('typed goals and scope failures in Settings show useful copy and never the 
     await dialog.getByRole('tab', { name: 'Scope' }).click();
     await expect(dialog).toContainText('Atlassian Home could not be read. Try again later.');
     await dialog.getByPlaceholder('Search main goals...').click();
-    await expect(dialog).toContainText('Atlassian Home read permission is needed. Update your Atlassian permissions in Settings > Connections.');
+    await expect(dialog).toContainText('Sign in again to use the Atlassian Home permissions included with login.');
     await expect(dialog).not.toContainText('RAWPROVIDER');
     await expect(page.getByRole('alertdialog')).toHaveCount(0);
     expect(countOf(fixture.calls, 'GET', '/api/epm/goals')).toBeGreaterThanOrEqual(1);
@@ -662,7 +659,7 @@ const viewports = [
 const geometryStates = [
     ['off', {}, { dirty: true }],
     ['available', { enabled: true }, {}],
-    ['scope-missing', { epmViewEnabled: true, epmHomeReadAvailable: false, epmHomeReadLoginUrl: SCOPE_URL }, { link: true }],
+    ['scope-missing', { epmViewEnabled: true, epmHomeReadAvailable: false, epmHomeReadLoginUrl: SCOPE_URL }, { link: false }],
     ['denied', { enabled: true, epmAccess: { state: 'denied' } }, {}],
 ];
 

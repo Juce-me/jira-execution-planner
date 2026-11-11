@@ -260,7 +260,7 @@ test('goal lookup shows typed OAuth failures as useful copy, while a Basic 200 +
         assert.equal(limited.outcome.lookupFailed, true);
         assert.deepEqual(limited.errors.slice(-1), ['Atlassian Home is rate limiting requests. Try again in 9s.']);
         const scope = await run(reply(409, { error: 'epm_scope_required', loginUrl: '/login?reason=missing_scope', message: 'RAW' }));
-        assert.match(scope.errors.slice(-1)[0], /Atlassian Home read permission is needed/);
+        assert.match(scope.errors.slice(-1)[0], /Sign in again/);
         const denied = await run(reply(403, { error: 'home_access_denied', message: 'RAW' }));
         assert.match(denied.errors.slice(-1)[0], /did not grant access/);
         const failed = await run(reply(502, { error: 'home_read_failed', message: 'RAW' }));

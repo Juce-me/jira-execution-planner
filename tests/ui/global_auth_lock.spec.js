@@ -1,5 +1,5 @@
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { enabledEpmOptions, installDashboardFixture } = require('./epm_view_fixture');
 const { createPlanningReviewMock } = require('./planning_review_mock');

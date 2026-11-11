@@ -21,7 +21,7 @@ test-frontend-unit:
 	npm run test:frontend:unit
 
 test-frontend-ui:
-	npm run test:frontend:ui
+	npm run test:frontend:ui -- $(ARGS)
 
 verify:
 	.venv/bin/python scripts/verify_tests.py $(ARGS)

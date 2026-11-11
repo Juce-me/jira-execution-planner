@@ -2,7 +2,7 @@
 // and the EPM fixture routes: this module registers its own `/api/**` handler after them (the last
 // registered route wins) and falls back to the shared routes for everything it does not own.
 const path = require('node:path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { expect } = require('@playwright/test');
 const { installDashboardFixture, enabledEpmOptions } = require('./epm_view_fixture');
 

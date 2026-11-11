@@ -66,7 +66,7 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
     };
     child.on('exit', fail);
     child.on('error', fail);
-    const exited = new Promise(resolve => child.once('exit', resolve));
+    const exited = new Promise(resolve => child.once('close', resolve));
     async function control(command, values = {}) {
         const id = ++sequence;
         const response = new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
@@ -78,15 +78,23 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
         stopped = true;
         if (child.exitCode === null) {
             if (mode === 'app' || mode === 'measurement' || mode === 'planning') {
-                await Promise.race([control('stop').catch(() => {}), new Promise(resolve => setTimeout(resolve, 2000))]);
+                await Promise.race([control('stop').catch(() => {}), new Promise(resolve => setTimeout(resolve, 2000).unref())]);
             } else child.kill('SIGTERM');
             child.stdin.end();
-            await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 12000))]);
+            await Promise.race([exited, new Promise(resolve => setTimeout(resolve, 12000).unref())]);
             if (child.exitCode === null) child.kill('SIGTERM');
             await exited;
         }
+        // Drain diagnostics before closing readers: exit can precede stderr EOF.
+        await exited;
         lines.close();
         diagnosticLines.close();
+        if (startup && diagnostic.startsWith('Synthetic DB/OAuth fixture failed:')
+            && !diagnostic.endsWith('/KeyboardInterrupt')) {
+            const message = diagnostic.endsWith('/ClusterError')
+                ? 'Owned PostgreSQL fixture cleanup failed. ' : 'Owned fixture shutdown failed. ';
+            throw new Error(message + diagnostic);
+        }
     }
     let startup;
     const timer = setTimeout(() => {

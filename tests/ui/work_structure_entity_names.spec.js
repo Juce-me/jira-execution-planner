@@ -3,7 +3,7 @@
 // the words Story/Epic appear only in "Story Points". Mocked routes, synthetic values only; the dashboard is bundled from source.
 const fs = require('fs');
 const path = require('path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 

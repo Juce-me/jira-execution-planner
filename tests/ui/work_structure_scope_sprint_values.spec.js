@@ -2,7 +2,7 @@
 // quarter text. Mocked routes, synthetic values; the app is the real dashboard source bundle.
 const fs = require('fs');
 const path = require('path');
-const esbuild = require('esbuild');
+const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { installDashboardShell } = require('./epm_view_fixture');
 

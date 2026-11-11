@@ -12,28 +12,42 @@ const baselineRoot = path.join(repoRoot, 'tmp', 'board-190', 'baseline-source');
 const activeCampaignChildren = new Set();
 
 // Provisioning owns its existing 90-second startup budget; browser assertions
-// still have Playwright's unchanged 30-second deadline. Each case gets a fresh DB.
+// still have Playwright's unchanged 30-second deadline. Infrastructure is worker-scoped;
+// each case leases a new physical database and a fresh browser context.
 async function useCampaignServer(sourceRoot, use) {
     const server = await startDiagnosticServer(sourceRoot);
     try { await use(server); }
     finally { await stopServer(server); }
 }
+async function useCampaignCase(server, page, use) {
+    await control(server, '/__test__/begin-case', { method: 'POST' });
+    try { await use(server); }
+    finally {
+        await page.close();
+        await control(server, '/__test__/end-case', { method: 'POST' });
+    }
+}
 const test = base.extend({
-    currentServer: [async ({}, use) => useCampaignServer(null, use),
-        { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
-    historicalServer: [async ({}, use) => useCampaignServer(baselineRoot, use),
-        { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+    currentWorkerServer: [async ({}, use) => useCampaignServer(null, use),
+        { scope: 'worker', timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+    historicalWorkerServer: [async ({}, use) => useCampaignServer(baselineRoot, use),
+        { scope: 'worker', timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
+    currentServer: [async ({ currentWorkerServer, page }, use) => useCampaignCase(currentWorkerServer, page, use),
+        { timeout: 20000 }],
+    historicalServer: [async ({ historicalWorkerServer, page }, use) => useCampaignCase(historicalWorkerServer, page, use),
+        { timeout: 20000 }],
     failedStartup: [async ({}, use) => {
+        const before = activeCampaignChildren.size;
         await expect(startDiagnosticServer(null, { forceStartupFailure: true })).rejects.toThrow(
             /Synthetic DB\/OAuth fixture stopped/);
-        expect(activeCampaignChildren.size).toBe(0);
+        expect(activeCampaignChildren.size).toBe(before);
         await use(true);
     }, { timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
 });
 
 const campaignServer = String.raw`
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import importlib.util, json, os, re, sys, threading, time
+import hashlib, importlib.util, json, os, re, sys, threading, time
 from types import SimpleNamespace
 from backend.db import engine as db_engine, models
 from urllib.parse import parse_qs, urlparse
@@ -51,17 +65,29 @@ from backend.services.eng_board_stream import EngBoardRequestTransport
 from tests.test_eng_board_routes import FakeResponse, board_query, board_snapshot, db_context, epic, child
 if os.environ.get('BOARD_FIXTURE_STARTUP_FAILURE'):
     print('{malformed startup',flush=True); raise SystemExit(2)
-context = db_context()
-with db_engine.session_scope() as db:
-    db.add(models.WorkspaceDashboardConfig(workspace_id=context.workspace_id,
-        payload={'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]}, 'board': {'boardId': '701'}}))
-    db.add(models.WorkspaceGroupConfig(workspace_id=context.workspace_id,
-        payload={'version': 2, 'groups': [{'id': 'department-a', 'name': 'Synthetic Department', 'teamIds': ['team-a']}],
-                 'defaultGroupId': 'department-a'}))
-    db.add(models.UserGroupPreference(workspace_id=context.workspace_id, user_id=context.user_id,
-        visible_group_ids=['department-a'], active_group_id='department-a', customized=True, onboarding_done=True))
+from sqlalchemy.engine import make_url
+from backend.auth.db_context import invalidate_auth_status_cache
+from tests.postgres_test_db import fresh_model_database_url, _admin_url, _execute_admin
+initial_database_url=os.environ['DATABASE_URL']
+case_url=None
+case_lock=threading.Lock()
+context=None
+
+def seed_campaign():
+    global context
+    context=db_context()
+    with db_engine.session_scope() as db:
+        db.add(models.WorkspaceDashboardConfig(workspace_id=context.workspace_id,
+            payload={'projects': {'selected': [{'key': 'ABC', 'type': 'product'}]}, 'board': {'boardId': '701'}}))
+        db.add(models.WorkspaceGroupConfig(workspace_id=context.workspace_id,
+            payload={'version': 2, 'groups': [{'id': 'department-a', 'name': 'Synthetic Department', 'teamIds': ['team-a']}],
+                     'defaultGroupId': 'department-a'}))
+        db.add(models.UserGroupPreference(workspace_id=context.workspace_id, user_id=context.user_id,
+            visible_group_ids=['department-a'], active_group_id='department-a', customized=True, onboarding_done=True))
+seed_campaign()
+
 class State:
-    def __init__(self): self.lock=threading.Lock(); self.events=[]; self.gates={}; self.scenario='component_page_2'; self.sample='unset'; self.component_calls=0; self.parent_calls=0; self.update_id=0; self.eligible_counts={}; self.pending_update_ids=[]
+    def __init__(self): self.requests=threading.Condition(); self.active=0; self.changing=False; self.lock=threading.Lock(); self.events=[]; self.gates={}; self.scenario='component_page_2'; self.sample='unset'; self.component_calls=0; self.parent_calls=0; self.update_id=0; self.eligible_counts={}; self.pending_update_ids=[]
     def record(self,event,**fields):
         with self.lock:
             self.events.append({'sampleId':self.sample,'event':event,'serverNs':time.monotonic_ns(),**fields})
@@ -79,7 +105,9 @@ class State:
     def candidate_updates(self):
         with self.lock: updates=list(self.pending_update_ids); self.pending_update_ids=[]; return updates
     def gate(self,name):
-        with self.lock: gate=self.gates.setdefault(name,threading.Event())
+        with self.lock:
+            gate=self.gates.setdefault(name,threading.Event())
+            if self.changing: gate.set()
         self.record('gate_wait',gate=name)
         ok=gate.wait(20); self.record('gate_released',gate=name,released=ok)
         if not ok: raise TimeoutError(name)
@@ -90,6 +118,56 @@ class State:
         with self.lock: gates=list(self.gates.values())
         for gate in gates: gate.set()
 S=State()
+
+def quiesce_case():
+    with S.requests: S.changing=True
+    S.release_all()
+    deadline=time.monotonic()+5
+    with S.requests:
+        while S.active:
+            remaining=deadline-time.monotonic()
+            if remaining<=0: raise RuntimeError('Campaign requests did not finish before reset')
+            S.requests.wait(remaining)
+
+def end_case():
+    global case_url
+    with case_lock:
+        quiesce_case()
+        db_engine.dispose_engines()
+        invalidate_auth_status_cache()
+        if case_url:
+            name=make_url(case_url).database
+            if not re.fullmatch(r'jep_t_[0-9a-f]{32}',name): raise RuntimeError('Foreign campaign database')
+            admin=_admin_url().update_query_dict({'options':'-clock_timeout=1000 -cstatement_timeout=5000'})
+            # Do not force-drop: a surviving connection must fail case cleanup.
+            _execute_admin(f'DROP DATABASE "{name}"',admin)
+            case_url=None
+        os.environ['DATABASE_URL']=initial_database_url
+
+def begin_case():
+    global case_url
+    with case_lock:
+        if case_url: raise RuntimeError('Campaign already has an active case')
+        quiesce_case()
+        db_engine.dispose_engines()
+        invalidate_auth_status_cache()
+        # Reuse the already-approved unseeded current-model template; each
+        # lease is still a separate physical database, never a prior case clone.
+        case_url=fresh_model_database_url()
+        os.environ['DATABASE_URL']=case_url
+        seed_campaign()
+        S.reset('component_page_2','unset')
+        with S.requests: S.changing=False
+
+def case_info():
+    marker=False
+    if case_url:
+        with db_engine.session_scope() as db:
+            row=db.query(models.WorkspaceDashboardConfig).filter_by(workspace_id=context.workspace_id).one()
+            marker=bool(row.payload.get('__test_case_marker'))
+    return {'databaseIdentity':hashlib.sha256((case_url or '').encode()).hexdigest(),
+            'markerPresent':marker,'activeCase':bool(case_url)}
+
 OriginalWriter=eng_board_routes.EngBoardStreamWriter
 class ObservedWriter(OriginalWriter):
     def prepare(self,frame):
@@ -145,7 +223,17 @@ class H(BaseHTTPRequestHandler):
     def send_json(self,status,value):
         body=json.dumps(value,separators=(',',':')).encode(); self.send_response(status); self.send_header('Content-Type','application/json'); self.send_header('Content-Length',str(len(body))); self.send_header('Connection','close'); self.end_headers(); self.wfile.write(body); self.wfile.flush()
     def do_GET(self):
+        if urlparse(self.path).path.startswith('/api/'):
+            with S.requests:
+                if S.changing or not case_url: return self.send_json(409,{'error':'case_not_ready'})
+                S.active+=1
+            try: return self.get_request()
+            finally:
+                with S.requests: S.active-=1; S.requests.notify_all()
+        return self.get_request()
+    def get_request(self):
         p=urlparse(self.path); q=parse_qs(p.query)
+        if p.path=='/__test__/case-info': return self.send_json(200,case_info())
         if p.path=='/__test__/health': return self.send_json(200,{'ok':True})
         if p.path=='/__test__/clock': return self.send_json(200,{'serverNs':time.monotonic_ns()})
         if p.path=='/__test__/events':
@@ -183,6 +271,17 @@ class H(BaseHTTPRequestHandler):
             except Exception: pass
     def do_POST(self):
         p=urlparse(self.path); n=int(self.headers.get('Content-Length','0')); body=json.loads(self.rfile.read(n) or b'{}')
+        if p.path in ('/__test__/begin-case','/__test__/end-case'):
+            try:
+                (begin_case if p.path=='/__test__/begin-case' else end_case)()
+                return self.send_json(200,case_info())
+            except Exception as error: return self.send_json(500,{'error':type(error).__name__})
+        if p.path=='/__test__/mark-case':
+            with db_engine.session_scope() as db:
+                row=db.query(models.WorkspaceDashboardConfig).filter_by(workspace_id=context.workspace_id).one()
+                row.payload={**row.payload,'__test_case_marker':True}
+            S.record('fixture_marker')
+            return self.send_json(200,case_info())
         if p.path=='/__test__/reset': S.reset(body.get('scenario','component_page_2'),body.get('sampleId','unset')); return self.send_json(200,{'reset':True})
         if p.path=='/__test__/release-all': S.release_all(); return self.send_json(200,{'released':True})
         return self.send_json(404,{'error':'not_found'})
@@ -584,6 +683,25 @@ test('diagnoses strict Component owner activation and Board request routing', as
     expect(fixture.boardRouteAction).toBe('continue');
     expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')))).toMatchObject({
         selectedSprint: selectedSprintId, activeGroupId: 'grp-default', showBoard: true,
+    });
+});
+
+test.describe('worker infrastructure isolation', () => {
+    test.describe.configure({ mode: 'serial' });
+    let previous;
+    test('first case writes a synthetic marker', async ({ currentServer }) => {
+        previous = { origin: currentServer.origin, ...(await control(currentServer, '/__test__/case-info')) };
+        expect(previous.activeCase).toBe(true);
+        expect(previous.markerPresent).toBe(false);
+        await control(currentServer, '/__test__/mark-case', { method: 'POST' });
+        expect((await control(currentServer, '/__test__/case-info')).markerPresent).toBe(true);
+    });
+    test('next case reuses the process with a fresh database and empty events', async ({ currentServer }) => {
+        const next = await control(currentServer, '/__test__/case-info');
+        expect(currentServer.origin).toBe(previous.origin);
+        expect(next.databaseIdentity).not.toBe(previous.databaseIdentity);
+        expect(next.markerPresent).toBe(false);
+        expect((await control(currentServer, '/__test__/events')).events).toEqual([]);
     });
 });
 

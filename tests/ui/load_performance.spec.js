@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { buildSync } = require('esbuild');
+const { buildSync } = require('./fixture_bundles');
 const fs = require('node:fs');
 const path = require('node:path');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardFixture } = require('./epm_view_fixture');

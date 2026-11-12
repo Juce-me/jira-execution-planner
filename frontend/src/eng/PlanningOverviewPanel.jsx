@@ -47,7 +47,9 @@ export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onTo
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>
         {/* The summary and note sit in the action row's flexible gap. */}
         {React.isValidElement(actions) ? React.cloneElement(actions, { panelControl, summary, notice: note }) : <>{summary}{note}</>}
-        {capacityStatus && <span className="planning-panel-capacity-status" role="status">{capacityStatus}</span>}
+        {/* Every status is a retry message ending "retry with": the line shows the refresh icon's own glyph, so a touch user
+            sees which control retries without hovering it. */}
+        {capacityStatus && <span className="planning-panel-capacity-status" role="status">{capacityStatus} <span role="img" aria-label="Refresh capacity"><RefreshGlyph width="12" height="12" /></span></span>}
         <div id="planning-panel-details" hidden={compact} className="planning-panel-graphs">
             <div className="planning-panel-capacity-graph" aria-label="Planned effort and capacity">{planReady ? capacity : <p className="planning-review-guidance">Planned effort is unavailable until this plan is loaded.</p>}</div>
             <div className="planning-panel-team-details">{React.isValidElement(teams) ? React.cloneElement(teams, { onPushSummaryChange: setPushSummary }) : teams}</div>

@@ -1397,6 +1397,120 @@ for (const [name, activate] of [
     await expect.poll(() => capacityCalls(fixture.calls, 'GET').length, 'the guard releases once the read settles').toBe(beforeRefresh + 2);
 });
 
+// The panel refresh icon and its recovery line, at the supported desktop sizes, expanded and compact: the line shows the
+// icon's own glyph, and the icon stays unclipped inside the panel and viewport, just before the details button.
+const settleAnimations = page => page.evaluate(async () => {
+    await new Promise(requestAnimationFrame);
+    await Promise.all(document.getAnimations({ subtree: true }).map(animation => animation.finished.catch(() => undefined)));
+    await new Promise(requestAnimationFrame);
+});
+for (const viewport of [{ width: 1280, height: 800 }, { width: 1920, height: 1080 }]) for (const compact of [false, true]) {
+    const mode = compact ? 'compact' : 'expanded';
+    test(`capacity refresh icon and recovery glyph stay settled and bounded at ${viewport.width}px ${mode}`, async ({ page }, testInfo) => {
+        await page.setViewportSize(viewport);
+        const fixture = await openPlanning(page);
+        if (compact) await page.getByRole('button', { name: 'Hide capacity details', exact: true }).click();
+        const panel = page.locator('.planning-panel');
+        await expect(panel).toHaveClass(compact ? /planning-panel-compact/ : /^(?!.*planning-panel-compact)/);
+        const refresh = panel.locator('.planning-panel-refresh');
+        await expect(refresh).toHaveAccessibleName('Refresh capacity');
+        await expect(refresh).toHaveClass(/planning-action-button planning-icon-button planning-panel-refresh/);
+
+        for (const [state, getStatus, copy] of [['stale', 500, 'Capacity stale — retry with'], ['unavailable', 500, 'Capacity unavailable — retry with']]) {
+            if (state === 'unavailable') await selectSprint(page, nextSprintName);
+            fixture.state.capacityGetStatus = getStatus;
+            if (state === 'stale') await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).evaluate(button => button.click());
+            const status = panel.locator('.planning-panel-capacity-status');
+            await expect(status).toContainText(copy);
+            await expect(status.getByRole('img', { name: 'Refresh capacity' })).toBeVisible();
+            await expect(refresh).toBeEnabled();
+            await page.mouse.move(0, 0);
+            await settleAnimations(page);
+            if (viewport.width === 1280) await captureCapacityScreenshot(page, testInfo, `refresh-${mode}-${state}`);
+            const geometry = await refresh.evaluate(button => {
+                const rect = node => node.getBoundingClientRect();
+                const panelNode = button.closest('.planning-panel'), statusNode = panelNode.querySelector('.planning-panel-capacity-status');
+                const collapse = button.parentElement.querySelector('.planning-panel-collapse');
+                const glyph = statusNode.querySelector('svg');
+                const range = document.createRange(); range.selectNodeContents(statusNode.firstChild);
+                const textLine = [...range.getClientRects()].filter(line => line.width > 0);
+                return {
+                    button: rect(button), panel: rect(panelNode), collapse: rect(collapse), status: rect(statusNode), glyph: rect(glyph),
+                    textTops: [...new Set(textLine.map(line => Math.round(line.top)))], textLine: textLine[0],
+                    nextIsCollapse: button.nextElementSibling === collapse,
+                    clip: { sw: button.scrollWidth, cw: button.clientWidth, sh: button.scrollHeight, ch: button.clientHeight,
+                        ssw: statusNode.scrollWidth, scw: statusNode.clientWidth, ssh: statusNode.scrollHeight, sch: statusNode.clientHeight },
+                    viewport: { width: window.innerWidth, height: window.innerHeight },
+                };
+            });
+            const label = `${viewport.width}px ${mode} ${state}`;
+            expect(geometry.clip.sw, `${label} icon horizontal clip`).toBeLessThanOrEqual(geometry.clip.cw);
+            expect(geometry.clip.sh, `${label} icon vertical clip`).toBeLessThanOrEqual(geometry.clip.ch);
+            expect(geometry.clip.ssw, `${label} status horizontal clip`).toBeLessThanOrEqual(geometry.clip.scw);
+            expect(geometry.clip.ssh, `${label} status vertical clip`).toBeLessThanOrEqual(geometry.clip.sch);
+            expect(geometry.nextIsCollapse, `${label} icon directly before details`).toBe(true);
+            expect(geometry.button.right, `${label} icon left of details`).toBeLessThanOrEqual(geometry.collapse.left);
+            for (const box of ['button', 'status']) {
+                expect(geometry[box].left, `${label} ${box} inside panel left`).toBeGreaterThanOrEqual(geometry.panel.left);
+                expect(geometry[box].right, `${label} ${box} inside panel right`).toBeLessThanOrEqual(geometry.panel.right);
+                expect(geometry[box].top, `${label} ${box} inside panel top`).toBeGreaterThanOrEqual(geometry.panel.top);
+                expect(geometry[box].bottom, `${label} ${box} inside panel bottom`).toBeLessThanOrEqual(geometry.panel.bottom);
+                expect(geometry[box].left, `${label} ${box} inside viewport left`).toBeGreaterThanOrEqual(0);
+                expect(geometry[box].right, `${label} ${box} inside viewport right`).toBeLessThanOrEqual(geometry.viewport.width);
+                expect(geometry[box].top, `${label} ${box} inside viewport top`).toBeGreaterThanOrEqual(0);
+                expect(geometry[box].bottom, `${label} ${box} inside viewport bottom`).toBeLessThanOrEqual(geometry.viewport.height);
+            }
+            // The copy and its glyph are one line: the glyph follows the text and sits within the text line's box.
+            expect(geometry.textTops, `${label} status text one line`).toHaveLength(1);
+            expect(geometry.glyph.left, `${label} glyph after text`).toBeGreaterThanOrEqual(geometry.textLine.right);
+            expect(geometry.glyph.right, `${label} glyph inside status`).toBeLessThanOrEqual(geometry.status.right);
+            expect(geometry.glyph.top, `${label} glyph within text line top`).toBeGreaterThanOrEqual(geometry.textLine.top - 1);
+            expect(geometry.glyph.bottom, `${label} glyph within text line bottom`).toBeLessThanOrEqual(geometry.textLine.bottom + 1);
+        }
+
+        // Hover and keyboard focus paint the icon in place (shared foundation ring; no geometry change).
+        const paint = () => refresh.evaluate(button => {
+            const style = getComputedStyle(button), rect = button.getBoundingClientRect();
+            return { boxShadow: style.boxShadow, outlineStyle: style.outlineStyle, rect: { x: rect.x, y: rect.y, w: rect.width, h: rect.height } };
+        });
+        const idle = await paint();
+        await refresh.hover();
+        await settleAnimations(page);
+        const hovered = await paint();
+        expect(hovered.boxShadow, `${viewport.width}px ${mode} hover paint`).not.toBe(idle.boxShadow);
+        expect(hovered.rect, `${viewport.width}px ${mode} hover keeps geometry`).toEqual(idle.rect);
+        await page.mouse.move(0, 0);
+        await panel.locator('.planning-panel-collapse').focus();
+        await page.keyboard.press('Shift+Tab');
+        await expect(refresh).toBeFocused();
+        await settleAnimations(page);
+        const focused = await paint();
+        expect(focused.outlineStyle, `${viewport.width}px ${mode} focus paint`).not.toBe('none');
+        expect(focused.rect, `${viewport.width}px ${mode} focus keeps geometry`).toEqual(idle.rect);
+    });
+}
+
+test('without capacity the panel shows no refresh icon and keeps the details button right-aligned, expanded and compact', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await installCapacityFixture(page, { capacityProject: '' });
+    await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+    const panel = page.locator('.planning-panel.open');
+    await expect(panel).toBeVisible();
+    for (const mode of ['compact', 'expanded']) {
+        if (mode === 'expanded') await showCapacityDetails(page);
+        await settleAnimations(page);
+        await expect(panel.locator('.planning-panel-refresh')).toHaveCount(0);
+        await expect(panel.locator('.planning-panel-capacity-status')).toHaveCount(0);
+        const geometry = await panel.locator('.planning-actions').first().evaluate(row => {
+            const collapse = row.querySelector(':scope > .planning-panel-collapse').getBoundingClientRect();
+            const style = getComputedStyle(row);
+            return { collapseRight: collapse.right, rowContentRight: row.getBoundingClientRect().right - Number.parseFloat(style.paddingRight), panelRight: row.closest('.planning-panel').getBoundingClientRect().right };
+        });
+        expect(Math.abs(geometry.collapseRight - geometry.rowContentRight), `${mode} details right-aligned`).toBeLessThanOrEqual(1);
+        expect(geometry.collapseRight, `${mode} details inside panel`).toBeLessThanOrEqual(geometry.panelRight);
+    }
+});
+
 test('already-current saves reconcile numeric values and null conflicts keep the explicit baseline', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const fixture = await openPlanning(page);

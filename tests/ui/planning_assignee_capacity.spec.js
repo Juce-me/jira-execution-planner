@@ -1343,7 +1343,7 @@ for (const currentValue of [null, 0]) test(`ticket with ${currentValue === null 
 // Uniqueness uses the Department's complete saved Team membership, not the displayed cards (T3 of the cross-configuration plan).
 async function expectPrefillWith(page, { scopeTeamIds, extraStories = [], prefilled }) {
     const server = plannedServer();
-    await install(page, { server, scopeTeamIds, issues: [...stories, ...extraStories], capacityProject: 'CAP',
+    const { calls } = await install(page, { server, scopeTeamIds, issues: [...stories, ...extraStories], capacityProject: 'CAP',
         capacity: sprint => sprint === activeSprintName ? ticket(20.5)(sprint) : noTicket(sprint) });
     await openPlanning(page);
     await showCards(page);
@@ -1352,6 +1352,9 @@ async function expectPrefillWith(page, { scopeTeamIds, extraStories = [], prefil
     const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
     await expect(input).toBeEnabled();
     await expect(input).toHaveValue(prefilled ? '20.5' : '');
+    // The earlier Sprint was read for the visible Team and answered with one unique ticket, so only the membership rule can blank the input.
+    const previousReads = calls.filter(call => call.pathname === '/api/capacity' && call.params.sprint === activeSprintName && call.params.teams === 'Alpha Team');
+    expect(previousReads.length).toBe(1);
     expect(server.state.patches).toEqual([]);
 }
 

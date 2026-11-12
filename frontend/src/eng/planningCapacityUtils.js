@@ -669,19 +669,42 @@ export function buildCapacityTotals({
 
 // Planning Sprints are quarters. Resolve the nearest earlier quarter in the admitted catalog, never a later Sprint.
 export function previousPlanningCapacitySprint(sprints, sprintName) {
+    return previousCapacitySprintFromCatalogs([sprints], sprintName);
+}
+
+const sprintStateOf = sprint => String(sprint?.state || '').toLowerCase();
+
+// The earlier Sprint of several validated catalogs (one per configuration), and whether the choice is ambiguous. A Sprint
+// repeated across catalogs counts once; the same id with another name, state or start date fails the whole lookup closed.
+export function rankPreviousCapacitySprint(catalogs, sprintName) {
     const quarter = quarterFromSprintName(sprintName);
-    if (!quarter) return null;
-    const earlier = (sprints || []).filter(sprint => {
+    if (!quarter) return { sprint: null, ambiguous: false };
+    const byId = new Map();
+    for (const sprint of (catalogs || []).flatMap(catalog => (Array.isArray(catalog) ? catalog : []))) {
+        if (!sprint || sprint.id === null || sprint.id === undefined) continue;
+        const seen = byId.get(String(sprint.id));
+        if (!seen) { byId.set(String(sprint.id), sprint); continue; }
+        if (String(seen.name ?? '') !== String(sprint.name ?? '') || sprintStateOf(seen) !== sprintStateOf(sprint)
+            || String(seen.startDate || '') !== String(sprint.startDate || '')) return { sprint: null, ambiguous: true };
+    }
+    const earlier = [...byId.values()].filter(sprint => {
         const candidate = quarterFromSprintName(sprint.name);
         return candidate && candidate < quarter;
     }).sort((a, b) => quarterFromSprintName(b.name).localeCompare(quarterFromSprintName(a.name))
         || String(b.startDate || '').localeCompare(String(a.startDate || '')));
     // The one active earlier Sprint is the source; none or several active ones fall back to the nearest earlier quarter.
-    const active = earlier.filter(sprint => String(sprint.state || '').toLowerCase() === 'active');
-    if (active.length === 1) return active[0];
-    if (earlier.length > 1 && quarterFromSprintName(earlier[0].name) === quarterFromSprintName(earlier[1].name)
-        && (earlier[0].startDate || '') === (earlier[1].startDate || '')) return null;
-    return earlier[0] || null;
+    const active = earlier.filter(sprint => sprintStateOf(sprint) === 'active');
+    if (active.length === 1) return { sprint: active[0], ambiguous: false };
+    const [top] = earlier;
+    if (!top) return { sprint: null, ambiguous: false };
+    // Equally ranked (same quarter and start date), however many: no Sprint is chosen.
+    const tied = earlier.filter(sprint => quarterFromSprintName(sprint.name) === quarterFromSprintName(top.name)
+        && String(sprint.startDate || '') === String(top.startDate || ''));
+    return tied.length > 1 ? { sprint: null, ambiguous: true } : { sprint: top, ambiguous: false };
+}
+
+export function previousCapacitySprintFromCatalogs(catalogs, sprintName) {
+    return rankPreviousCapacitySprint(catalogs, sprintName).sprint;
 }
 
 // Use the same raw Jira number as Planning (before Product/Tech share), retaining stored inheritance if Jira is blank.

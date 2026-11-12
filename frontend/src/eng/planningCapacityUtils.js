@@ -667,13 +667,9 @@ export function buildCapacityTotals({
     }, emptyCapacityTotals());
 }
 
-// Planning Sprints are quarters. Resolve the nearest earlier quarter in the admitted catalog, never a later Sprint.
-export function previousPlanningCapacitySprint(sprints, sprintName) {
-    return previousCapacitySprintFromCatalogs([sprints], sprintName);
-}
-
 const sprintStateOf = sprint => String(sprint?.state || '').toLowerCase();
 
+// Planning Sprints are quarters: the nearest earlier quarter, never the selected or a later Sprint.
 // The earlier Sprint of several validated catalogs (one per configuration), and whether the choice is ambiguous. A Sprint
 // repeated across catalogs counts once; the same id with another name, state or start date fails the whole lookup closed.
 export function rankPreviousCapacitySprint(catalogs, sprintName) {
@@ -701,10 +697,6 @@ export function rankPreviousCapacitySprint(catalogs, sprintName) {
     const tied = earlier.filter(sprint => quarterFromSprintName(sprint.name) === quarterFromSprintName(top.name)
         && String(sprint.startDate || '') === String(top.startDate || ''));
     return tied.length > 1 ? { sprint: null, ambiguous: true } : { sprint: top, ambiguous: false };
-}
-
-export function previousCapacitySprintFromCatalogs(catalogs, sprintName) {
-    return rankPreviousCapacitySprint(catalogs, sprintName).sprint;
 }
 
 // Use the same raw Jira number as Planning (before Product/Tech share), retaining stored inheritance if Jira is blank.

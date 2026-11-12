@@ -1,0 +1,48 @@
+# Catch Up subtask layout #346
+
+> **Status:** Done. Executed on `bugfix/346-catch-up-subtask-width`; kept for audit. Final complete publication verification is recorded in the PR.
+
+## Contract
+
+Implement [#346](https://github.com/Juce-me/jira-execution-planner/issues/346) using its execution handoff. Expanded Catch Up Story panels fill the card's inner width. A shared content-sized status track aligns passive and interactive StatusPills, including Awaiting Validation, with padding and clear neighboring cells. Keep long names ellipsized and menus anchored and hit-testable.
+
+Scope: `frontend/src/dashboard.jsx`, `frontend/src/eng/EngView.jsx`, `frontend/src/styles/eng/subtasks.css`; regression coverage in `tests/ui/eng_story_subtasks.spec.js`, `eng_group_board_panel.spec.js`, `planning_row_details.spec.js` and a passive mounted harness if needed; analytics allowlist, ontology and this plan/index; synthetic screenshot assets. Verification follow-up also covers `tests/ui/scenario_draft_history.spec.js` and the standing keyboard-only disposition in `docs/TODO.md`. Operator-approved verification follow-up adds `tests/ui/eng_status_transitions.spec.js`, `tests/ui/planning_review_integration.spec.js`, `tests/ui/shareable_view_links.spec.js`, and their directly implicated fixture/runtime consumers if diagnosis requires them.
+
+Preserve Board six-cell rows and Story Points/header alignment, Planning popover containment, narrow rules, colors, hover/focus, toggle/retry, permissions, own-issue writes and existing `issue_status_action` analytics. No new dependency or control kind.
+
+## Execution and verification
+
+1. Add mounted synthetic regression before editing implementation; capture settled before screenshots and actual bounds.
+2. Pass existing `isCatchUpMode` into EngView, mark its list container, and scope a parent grid/subgrid to Catch Up desktop rows. Status wrapper and passive pill share the content-sized track.
+3. Assert card/panel/row edges, label padding, pill and cell containment, aligned status starts, no page overflow and anchored visible menu without writes at 1024×768 and 1600×1000. Preserve existing <=760px CSS; mobile testing is excluded by current desktop-only policy.
+4. Build and run affected Chromium specs and necessary structure/contract checks before publication. The operator explicitly requested skipping unrelated tests on 2026-11-12; focused local coverage plus configured GitHub CI supersedes the default full-local-gate publication requirement for this task. Record results and screenshots, finalize this plan, audit fetched base/head/scope, commit, push and create PR with `Closes #346`; inspect the remote PR and wait for online checks. The user's task explicitly authorizes commit, push and PR.
+
+## Outcome
+
+Implemented with operator-approved verification corrections. Catch Up alone uses a full-width panel and shared content-sized status tracks; passive and interactive pills retain their existing components and writes. At 1600px the panel grew from 768px to 939.03px, removing a 171px gap; Awaiting Validation changed from 4.69px of right overflow to 6.08px of padding on each side. At 1024px the panel fills 908.03px. The passive fixture mounts the actual IssueCard under the Catch Up list scope.
+
+Verification: `npm run build` passed; the three affected desktop Chromium specs passed 49/49 in 40.0s; isolated structure and instruction checks passed 21/21; focused source/analytics checks passed 60/60. Full publication gate failed twice by timeout: default four workers stopped backend at 514.537s (516.033s total), eight workers at 519.222s (520.798s total). Both builds passed; neither run reached frontend-unit or full Chromium. Local ignored ledgers: `tmp/verification/run-cjkpmx_2/result.json` and `tmp/verification/run-zugexly6/result.json`. The normal 600s gate reserves cleanup time, so backend stops before the wall limit. These are incomplete runs, not passing verification. The operator then authorized an unrestricted diagnostic. Every stage ran: build passed in 3.575s; backend passed 3,700 tests across 223 modules in 828.752s; frontend unit passed 3,723 tests in 18.971s; desktop Chromium ran in 1201.275s with 2,324 passed, 33 skipped and three failures. Total 2053.832s (34m 14s), an overrun of 1453.832s above the 600s target. This is a completed diagnostic with failures, not a passing full gate. Ledger: `tmp/verification/run-6ip9fbcv/result.json`.
+
+Initial diagnostic findings, before the corrections below:
+
+- `eng_status_transitions.spec.js` — docked Planning header absent after opening a status menu, although it existed before the click. Failed once in five isolated branch runs and once in ten unchanged-base runs at `01b7f732`; confirmed to predate this fix. Trace shows the table returned to an undocked position while the menu was opening; the deeper cause and production impact were unconfirmed at that checkpoint.
+- `planning_review_integration.spec.js` — 1440px overview test timed out waiting for Planning actions; failure snapshot showed EPM selected. Passed five isolated branch runs and ten base runs. At that checkpoint, the underlying cause and production impact were unknown.
+- `shareable_view_links.spec.js` — Lead Times Last N warm-cache comparison observed an unexpected cache-hit value. Passed five isolated branch runs and ten base runs. At that checkpoint, the underlying cause and production impact were unknown.
+
+Isolated repeats: branch 14/15 passed, unchanged base 29/30 passed. The #346 geometry cases all passed in the full suite. The operator explicitly chose to diagnose and fix all three failures before publication. At that checkpoint, no commit, push, PR or online CI validation had occurred.
+
+### Operator-approved verification corrections
+
+- Sticky header: `Locator.click` introduced a synthetic scroll inside Chromium's clipped table before activating a row that was already fully visible. The test now asserts full visibility and clicks that row at its settled coordinates, waits for fixture requests and header measurement frames, then asserts the document scroll and header layering stay unchanged. This preserves actual pointer activation without modifying production sticky offsets. Controlled comparison: locator activation failed 3/20; coordinate activation passed 20/20.
+- Overview fixture: replacing React-owned summary children made pending filter reconciliation throw `NotFoundError: removeChild`, unmounting the Planning surface. A controlled hidden-filter/clear transition reproduced the error. The bundle-only probe now renders the actual `PlanningOverviewSummary` with specimen props via React state; a retained regression asserts no page error and a surviving worst-case summary after that transition. Production components and styles are unchanged.
+- Statistics link race: delayed config exposed a real premature Closed request for the saved Department before Last N loaded the linked Department. Bootstrap timing probes reproduced it in 15/20 runs. Statistics data owners A/B now consume the existing `shareViewHold` through their boolean `showStats` inputs, matching ENG's request hold. The existing matrix case delays config by 140ms and retains all scope, body, cache and request-count assertions for cold and warm journeys. No aborted request is dropped from evidence and no wrong-scope read is tolerated.
+
+- Additional fixture follow-up: the three original failures passed in the full 38m 38s diagnostic (`tmp/verification/run-k4c0oxy6/result.json`); backend 3,700 and frontend unit 3,723 passed, while Chromium had 2,327 passed, 33 skipped and one unrelated Scenario keyboard-focus failure. A held-response reproduction confirmed that the test pressed Escape while the History trigger was disabled for the pending read. The existing loaded-history test now explicitly holds and settles the response before Escape, preserving its focus assertions. Rapid-close focus restoration remains a keyboard-only Deferred item under root AGENTS.md; no Scenario production code is changed. The history-row test also verifies pointer Close. The controlled loaded-history case passed 20/20 (33.6s); the full Scenario history spec passed 23 tests with its existing performance-baseline skip unchanged.
+
+Follow-up verification: all six affected Chromium specs passed 225/225 in 3.8 minutes, including the delayed-config cold/warm matrix and pending-filter summary regression. The settled sticky case passed 20/20 (30.7s); 106 focused source/unit checks and 21 isolated structure/instruction checks passed. Temporary debug hooks were removed. The operator subsequently requested skipping unrelated tests. The final broad run was stopped cleanly during Chromium after build, 3,700 backend tests and 3,723 frontend unit tests passed (`tmp/verification/run-09gnm521/result.json`). Publication relies on the passing focused results, the unchanged runtime/test source hashes, and configured GitHub CI. No complete passing local Chromium gate is claimed. The normal 600-second target remains unmet and is separately reported.
+
+Synthetic settled screenshots: [before](../../assets/screenshots/catch-up-subtasks-346-before.png), [after](../../assets/screenshots/catch-up-subtasks-346-after.png). Analytics: geometry-only No-Event Allowlist entry; existing issue_status_action behavior preserved. Narrow CSS remains unchanged; mobile testing is excluded by policy.
+
+## Current Accuracy
+
+Accurate for the implementation and verification corrections; final complete publication results are recorded in the PR. The issue's execution handoff supplied the contract because its referenced prepared branch/plan was unavailable on fetched origin or locally.

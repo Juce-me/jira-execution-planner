@@ -20,14 +20,37 @@ const completedSprintName = '2026Q1 Sprint 9';
 const groupTeamIds = ['team-alpha'];
 let dashboardJs, dashboardCss;
 
-test.beforeAll(() => {
+// Render the worst-case copy through React; replacing its managed children breaks pending renders.
+const summarySpecimenProbe = {
+    name: 'planning-summary-specimen',
+    setup(build) {
+        build.onLoad({ filter: /[\\/]PlanningOverviewPanel\.jsx$/ }, async args => {
+            const source = await fs.promises.readFile(args.path, 'utf8');
+            const declaration = 'export function PlanningOverviewSummary(';
+            if (!source.includes(declaration)) throw new Error('Update the Planning summary specimen probe');
+            return { contents: source.replace(declaration, 'function PlanningOverviewSummaryOriginal(') + `
+                export function PlanningOverviewSummary(props) {
+                    const [specimen, setSpecimen] = React.useState(null);
+                    React.useLayoutEffect(() => {
+                        window.__setPlanningSummarySpecimen = setSpecimen;
+                        return () => { delete window.__setPlanningSummarySpecimen; };
+                    }, []);
+                    return <PlanningOverviewSummaryOriginal {...props} {...specimen} />;
+                }
+            `, loader: 'jsx' };
+        });
+    },
+};
+
+test.beforeAll(async () => {
     fs.mkdirSync(path.join(repoRoot, 'tmp', '217-ui'), { recursive: true });
-    const result = esbuild.buildSync({
+    const result = await esbuild.build({
         entryPoints: [path.join(repoRoot, 'frontend', 'src', 'dashboard.jsx')],
         bundle: true,
         write: false,
         format: 'iife',
         loader: { '.css': 'empty' },
+        plugins: [summarySpecimenProbe],
         define: { 'process.env.NODE_ENV': '"test"' },
     });
     dashboardJs = result.outputFiles[0].text;
@@ -437,9 +460,9 @@ const COMPACT_ERROR_HEIGHT = 72.8;
 // Worst case (operator, 2026-11-09): the real summary element carries the longest copy; it must still fit unclipped.
 const worstCaseSummary = ['209 stories', '220.0 SP', 'Cap 183.4 SP', '32 unestimated', '12 hidden'];
 async function fillWorstCaseSummary(panel) {
-    await panel.locator('.planning-actions > .planning-stats').evaluate((node, parts) => {
-        node.replaceChildren(...parts.flatMap((part, index) => { const span = document.createElement('span'); span.textContent = part; return index ? [document.createTextNode(' · '), span] : [span]; }));
-    }, worstCaseSummary);
+    await panel.evaluate(() => window.__setPlanningSummarySpecimen({ planned: true, count: 209, sp: 220,
+        capacity: 183.4, unestimated: 32, hidden: 12 }));
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText(worstCaseSummary.join(' · '));
 }
 async function overviewRowGeometry(panel) {
     return panel.locator('.planning-actions').first().evaluate(row => {
@@ -1790,4 +1813,20 @@ test('a re-created group id reattaches its review columns and values, and hiding
     await riskCell.fill('7'); await page.getByRole('button', { name: 'Save plan', exact: true }).click();
     await expect.poll(() => patches.length).toBe(2);
     expect(patches[1].groupId).toBe('new-group');
+});
+
+
+test('Planning summary specimen survives pending filter reconciliation', async ({ page }) => {
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    await installPlanningFixture(page, { initialPlans: { [futureSprintId]: { includedIssueIds: futureStories.map(story => story.id) } } });
+    await openPlanning(page, { expectStories: false });
+    const panel = page.locator('.planning-panel');
+    await page.locator('.search-input:visible').fill('no-matching-story');
+    await expect(panel.getByRole('button', { name: 'Open planned stories in Jira', exact: true })).toBeDisabled();
+    await fillWorstCaseSummary(panel);
+    await page.locator('.search-input:visible').fill('');
+    await expect(panel.getByRole('button', { name: 'Open planned stories in Jira', exact: true })).toBeEnabled();
+    await expect(panel.locator('.planning-actions > .planning-stats')).toHaveText(worstCaseSummary.join(' · '));
+    expect(errors).toEqual([]);
 });

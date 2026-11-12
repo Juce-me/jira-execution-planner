@@ -714,3 +714,5 @@ Use this section to avoid treating missing historical artifacts as current work:
 
 - `DONE-root-cleanup-docs-postmortems.md`
   - Completed and merged in [PR #99](https://github.com/Juce-me/jira-execution-planner/pull/99). Root-folder cleanup: icons to `assets/`, `install.sh` to `scripts/`, postmortems to `docs/postmortem/`, redundant root docs removed, AGENTS/README aligned. Use for audit context only.
+
+- [Catch Up subtask layout #346](DONE-catch-up-subtask-layout-346.md): Fill expanded Story panels and size aligned status pills to their labels, preserving Board and Planning consumers.

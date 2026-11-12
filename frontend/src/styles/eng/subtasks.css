@@ -248,3 +248,32 @@
                 background-position: 0 0;
             }
         }
+
+        /* Catch Up alone shares intrinsic status sizing across rows. The interactive wrapper
+           remains the positioned menu anchor; its trigger fills the same track as passive pills.
+           Board's six-cell template and Planning's bounded popovers keep their existing rules. */
+        @media (min-width: 761px) {
+            [data-catch-up-list] .story-subtasks-panel {
+                width: 100%;
+            }
+
+            [data-catch-up-list] .story-subtasks-rows {
+                grid-template-columns: minmax(0, 1fr) max-content minmax(7rem, 9rem) 5.3rem;
+                column-gap: 0.55rem;
+            }
+
+            [data-catch-up-list] .story-subtask-row {
+                grid-column: 1 / -1;
+                grid-template-columns: subgrid;
+            }
+
+            [data-catch-up-list] .story-subtask-row > .status-transition {
+                min-width: max-content;
+            }
+
+            [data-catch-up-list] .story-subtask-row > .task-status,
+            [data-catch-up-list] .story-subtask-row > .status-transition > .task-status {
+                width: 100%;
+                min-width: max-content;
+            }
+        }

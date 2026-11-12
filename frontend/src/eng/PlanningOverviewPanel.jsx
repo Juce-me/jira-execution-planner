@@ -25,16 +25,24 @@ export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onTo
     // Re-reads the Jira capacity tickets for the Sprint; it also retries a failed or stale read.
     const refreshLabel = capacityLoading ? 'Refreshing capacity' : 'Refresh capacity';
     // A synchronous guard: a second activation before the busy render lands would otherwise restart the read. It holds from
-    // the click until the read it started settles (capacityLoading true, then false); a gated no-op refresh releases it on
-    // the next read cycle.
+    // the click until the read it started settles (capacityLoading true, then false). A gated refresh (no Team or Sprint
+    // name) never turns capacityLoading true, so the guard is released once the read's start would have landed: the click's
+    // commit runs the panel's check effect before the parent's read effect, and the check's one extra render is batched with
+    // that read's start, so `refreshCheck` advances twice and the second pass sees whether the read began.
     const refreshPendingRef = React.useRef(null);
+    const [refreshCheck, setRefreshCheck] = React.useState(0);
     React.useEffect(() => {
         if (capacityLoading && refreshPendingRef.current) refreshPendingRef.current = 'loading';
         else if (!capacityLoading && refreshPendingRef.current === 'loading') refreshPendingRef.current = null;
     }, [capacityLoading]);
+    React.useEffect(() => {
+        if (refreshCheck % 2 === 1) setRefreshCheck(value => value + 1);
+        else if (refreshCheck && !capacityLoading && refreshPendingRef.current === 'requested') refreshPendingRef.current = null;
+    }, [refreshCheck]);
     const requestRefresh = () => {
         if (capacityLoading || refreshPendingRef.current) return;
         refreshPendingRef.current = 'requested';
+        setRefreshCheck(value => value + 1);
         onRefreshCapacity();
     };
     const panelControl = <>

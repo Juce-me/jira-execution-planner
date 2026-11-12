@@ -1396,6 +1396,53 @@ for (const [name, activate] of [
     await refresh.click();
     await expect.poll(() => capacityCalls(fixture.calls, 'GET').length, 'the guard releases once the read settles').toBe(beforeRefresh + 2);
 });
+// A gated Refresh (no Team names or no Sprint name: the read never starts, so capacityLoading never turns true) must not
+// keep the synchronous guard: the next click asks again. Mounted panel; the parent starts its "read" in an effect after the
+// request, as useEngCapacity does, unless it is gated.
+test('capacity Refresh: a gated click releases the guard, so the recovery click reads; same-turn clicks still ask once', async ({ page }) => {
+    const bundle = esbuild.buildSync({
+        stdin: { resolveDir: repoRoot, loader: 'jsx', contents: `
+            import React from 'react';
+            import { createRoot } from 'react-dom/client';
+            import PlanningOverviewPanel from './frontend/src/eng/PlanningOverviewPanel.jsx';
+            window.__requests = 0; window.__gated = true;
+            const Actions = ({ panelControl }) => <div className="planning-actions">{panelControl}</div>;
+            function Harness() {
+                const [nonce, setNonce] = React.useState(0);
+                const [loading, setLoading] = React.useState(false);
+                window.__settle = () => setLoading(false);
+                React.useEffect(() => { if (nonce && !window.__gated) setLoading(true); }, [nonce]);
+                return <PlanningOverviewPanel compact={false} onToggleDetails={() => {}} capacityLoading={loading} actions={<Actions />}
+                    onRefreshCapacity={() => { window.__requests += 1; setNonce(value => value + 1); }} />;
+            }
+            createRoot(document.getElementById('root')).render(<Harness />);
+        ` },
+        bundle: true, write: false, format: 'iife', loader: { '.css': 'empty' }, define: { 'process.env.NODE_ENV': '"test"' },
+    }).outputFiles[0].text;
+    await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root" style="width: 760px; margin: 40px;"></div></body></html>');
+    await page.addStyleTag({ content: fs.readFileSync(path.join(repoRoot, 'frontend', 'dist', 'dashboard.css'), 'utf8') });
+    await page.addScriptTag({ content: bundle });
+    const refresh = page.getByRole('button', { name: 'Refresh capacity' });
+    await refresh.click();
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.__requests)).toBe(1);
+    await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
+    await page.evaluate(() => { window.__gated = false; });
+    await refresh.click();
+    await expect(page.getByRole('button', { name: 'Refreshing capacity' })).toHaveAttribute('aria-busy', 'true');
+    expect(await page.evaluate(() => window.__requests), 'the recovery click after a gated one asks again').toBe(2);
+    await page.evaluate(() => window.__settle());
+    await expect(refresh).not.toHaveAttribute('aria-busy', 'true');
+    await refresh.evaluate(button => { button.click(); button.click(); });
+    await expect(page.getByRole('button', { name: 'Refreshing capacity' })).toHaveAttribute('aria-busy', 'true');
+    expect(await page.evaluate(() => window.__requests), 'same-turn clicks ask once').toBe(3);
+    await page.evaluate(() => window.__settle());
+    await page.evaluate(() => { window.__gated = true; });
+    await refresh.evaluate(button => { button.click(); button.click(); });
+    await page.waitForTimeout(150);
+    expect(await page.evaluate(() => window.__requests), 'same-turn gated clicks ask once too').toBe(4);
+});
+
 
 // The panel refresh icon and its recovery line, at the supported desktop sizes, expanded and compact: the line shows the
 // icon's own glyph, and the icon stays unclipped inside the panel and viewport, just before the details button.

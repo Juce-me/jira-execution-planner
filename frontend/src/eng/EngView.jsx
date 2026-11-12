@@ -11,6 +11,7 @@ const LEGACY_NAMES = resolveEntityNames(WORK_MODEL_LEGACY);
 
 export default function EngView({
     selectedView,
+    isCatchUpMode = false,
     sprintCatalogLoading,
     productTasksLoading,
     techTasksLoading,
@@ -146,6 +147,7 @@ export default function EngView({
                     ) : (
                         <div
                             className={`task-list ${activeDependencyFocus ? 'focus-mode' : ''}`}
+                            data-catch-up-list={isCatchUpMode || undefined}
                             data-onboarding-target="hierarchy"
                             onClick={handleDependencyFocusClick}
                         >

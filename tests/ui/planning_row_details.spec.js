@@ -87,6 +87,15 @@ test('native dependency clicks and subtask expansion load only explicit bounded 
     expect(requests.filter(item=>item.path==='/api/issues/lookup').map(item=>item.keys.split(',').length)).toEqual([19,5]);
     await panel.getByRole('button', { name: 'Show subtasks for SYN-1', exact: true }).click();
     await expect(panel.getByText('Synthetic subtask', { exact: true })).toBeVisible();
+    const subtaskBounds = await panel.evaluate(node => {
+        const outer = node.getBoundingClientRect();
+        return [...node.querySelectorAll('.story-subtasks-panel, .story-subtask-row')].map(el => {
+            const box = el.getBoundingClientRect(); return box.left >= outer.left && box.right <= outer.right;
+        });
+    });
+    expect(subtaskBounds.length).toBeGreaterThan(0);
+    expect(subtaskBounds.every(Boolean)).toBe(true);
+
     await expect(panel.getByText('Subtask results are incomplete. 1 of 2 loaded.', { exact: true })).toBeVisible();
     expect(requests.filter(item=>item.path==='/api/issues/subtasks')).toHaveLength(1);
     expect(requests.every(item=>item.method==='GET')).toBe(true);

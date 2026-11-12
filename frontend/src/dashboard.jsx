@@ -4294,7 +4294,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 workContext, workSetupScope,
                 ...stats, scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, activeGroupMissingComponents, activeGroupTeamIds,
                 activeGroupTeamSet, getTeamInfo, groupPreferences, isCompletedSprintSelected, issueEditStateRef, normalizeEpicKey,
-                normalizeStatus, perfCountersRef, perfEnabled, showStats, tasksFetched
+                normalizeStatus, perfCountersRef, perfEnabled, showStats: showStats && !shareViewHold, tasksFetched
             });
             const { burnoutScopedTeamSignature } = statsA;
 
@@ -4303,7 +4303,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const statsB = useStatsDerivedB({
                 ...stats, ...statsA, scope, automaticRefreshRef: freshness.automaticRefreshRef, BACKEND_URL, EMPTY_ARRAY, EXCLUDED_CAPACITY_STATS_SOURCE_CONCURRENCY,
                 activeGroup, activeGroupAdHocCapacityEpics, activeGroupMissingComponents, activeGroupTeamIds,
-                adminSettingsGate, availableSprints, groupPreferences, issueEditStateRef, showStats, trackApiResult
+                adminSettingsGate, availableSprints, groupPreferences, issueEditStateRef, showStats: showStats && !shareViewHold, trackApiResult
             });
 
             const scenario = useScenarioPlanner({
@@ -6922,6 +6922,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
                             {shouldRenderEngTaskList && (
                                 <EngView
+                                    isCatchUpMode={isCatchUpMode}
                                     selectedView={selectedView} sprintCatalogLoading={sprintsLoading} InitiativeIcon={InitiativeIcon}
                                     planningTable={showPlanning ? <PlanningReviewTable key={shareViewPlanningTableKey} toolbarHost={planningToolbarHost} workModel={workModel} entityNames={entityNames} onInteractionChange={value => { if (planningInteractionRef.current === Boolean(value)) return; planningInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                                         epicGroups={epicGroups} visibleTasks={visibleTasksForList}

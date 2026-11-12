@@ -1059,11 +1059,13 @@ test('sticky order keeps the Planning stack above the docked table header while 
     await installEngStatusFixture(page, { stories });
     await page.goto(appBaseUrl);
     await openPlanning(page, { allPlanned: false });
+    await page.waitForLoadState('networkidle');
     await page.locator('.planning-review-table thead').first().evaluate((head) => {
         const stack = document.querySelector('.planning-review-sticky-stack');
         window.scrollTo(0, window.scrollY + head.getBoundingClientRect().top - stack.offsetHeight + 120);
     });
     await expect(page.locator('.planning-review-docked-header')).toBeVisible();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
     const readLayering = () => page.evaluate(() => {
         const stack = document.querySelector('.planning-review-sticky-stack');
@@ -1088,8 +1090,15 @@ test('sticky order keeps the Planning stack above the docked table header while 
             .find(node => node.getBoundingClientRect().top > header.bottom + 4 && node.getBoundingClientRect().bottom < window.innerHeight - 80);
         return row?.dataset.issueKey;
     });
-    await trigger(page, 'story', visibleKey).click();
+    const button = trigger(page, 'story', visibleKey);
+    await expect(button).toBeInViewport({ ratio: 1 });
+    const box = await button.boundingBox();
+    const scrollBefore = await page.evaluate(() => scrollY);
+    // Locator.click scrolls Chromium's clipped table before clicking, even for this visible row.
+    // Exercise the user's pointer action at its settled position without that synthetic scroll.
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await expect(menu(page, visibleKey)).toBeVisible();
+    expect(await page.evaluate(() => scrollY)).toBe(scrollBefore);
     expect(await readLayering()).toEqual(before);
 });
 

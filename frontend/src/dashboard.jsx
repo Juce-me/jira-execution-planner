@@ -6186,6 +6186,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             resolvePreviousCapacitySprint={resolvePreviousCapacitySprint}
                             readPreviousCapacity={(sprint, team, options) => readPlanningCapacity(BACKEND_URL, sprint, team, options)}
                             entries={selectedTeamEntries}
+                            teamMembers={teamOptions.filter(team => team.id !== 'all')}
                             capacityEnabled={capacityEnabled}
                             canOpenCapacityJira={authMode === 'atlassian_oauth'}
                             canEditCapacity={authMode === 'atlassian_oauth' && capacityMutationEnabled === true}

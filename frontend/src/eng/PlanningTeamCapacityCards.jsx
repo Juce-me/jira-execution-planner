@@ -234,6 +234,8 @@ export function usePlanningTeamCapacitySaveStatus() {
 
 export default function PlanningTeamCapacityCards({
     entries = [],
+    // Complete `{ id, name }` Team membership of the active Department (displayed or not), for prefill uniqueness only.
+    teamMembers = [],
     capacityEnabled = false,
     canOpenCapacityJira = false,
     canEditCapacity = false,
@@ -283,6 +285,7 @@ export default function PlanningTeamCapacityCards({
     const previousReadRevisionRef = React.useRef(capacityReadRevision);
     const latestScopeRef = React.useRef(scopeSignature);
     const latestEntriesRef = React.useRef(entries);
+    const latestMembersRef = React.useRef(teamMembers);
     const latestCanEditRef = React.useRef(canEditCapacity);
     const latestReadFailureRef = React.useRef(Boolean(capacityReadError || capacityDataStale));
     const invalidTargetsRef = React.useRef(invalidTargets);
@@ -325,6 +328,7 @@ export default function PlanningTeamCapacityCards({
 
     latestScopeRef.current = scopeSignature;
     latestEntriesRef.current = entries;
+    latestMembersRef.current = teamMembers;
     latestCanEditRef.current = canEditCapacity;
     latestReadFailureRef.current = Boolean(capacityReadError || capacityDataStale);
     invalidTargetsRef.current = invalidTargets;
@@ -584,7 +588,7 @@ export default function PlanningTeamCapacityCards({
                 if (resolved?.state !== 'ready') { settle({ errorMessage: PREVIOUS_SPRINT_MESSAGES[resolved?.state] || '' }); return; }
                 const payload = await readPreviousCapacity(resolved.sprint.name, entry.name, { signal });
                 if (!live()) return;
-                const value = previousPlanningCapacityValue(payload, entry.name, latestEntriesRef.current.map(team => team.name), stored);
+                const value = previousPlanningCapacityValue(payload, entry.name, latestMembersRef.current, stored);
                 settle({ draft: plannedWireValue(value) });
             } catch (error) {
                 settle({ errorMessage: error?.name === 'AuthenticationRequiredError' ? '' : PREVIOUS_SPRINT_MESSAGES.failed });

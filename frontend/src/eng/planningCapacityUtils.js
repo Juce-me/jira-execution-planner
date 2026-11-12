@@ -708,10 +708,20 @@ export function previousCapacitySprintFromCatalogs(catalogs, sprintName) {
 }
 
 // Use the same raw Jira number as Planning (before Product/Tech share), retaining stored inheritance if Jira is blank.
-export function previousPlanningCapacityValue(payload, teamName, teamNames = [], stored = null) {
-    const state = buildCapacityReadState(payload);
+// `members` is the complete `{ id, name }` Team membership of the active Department, displayed or not. Repeated ids count
+// once; an id without a real name (empty, or the raw id) or a comma-joined name fails closed, as do distinct ids whose
+// normalized names collide with the target.
+export function previousPlanningCapacityValue(payload, teamName, members = [], stored = null) {
     const key = normalizeCapacityKey(teamName);
-    if (teamNames.filter(name => normalizeCapacityKey(name) === key).length !== 1) return stored;
+    const ids = new Map();
+    for (const member of Array.isArray(members) ? members : []) {
+        const id = String(member?.id ?? '').trim();
+        const name = typeof member?.name === 'string' ? member.name.trim() : '';
+        if (!id || !name || name === id || name.includes(',')) return stored;
+        if (!ids.has(id)) ids.set(id, normalizeCapacityKey(name));
+    }
+    if (!key || [...ids.values()].filter(memberKey => memberKey === key).length !== 1) return stored;
+    const state = buildCapacityReadState(payload);
     const options = { exactOnly: true };
     const target = resolveUniqueCapacityTarget(state.capacityTargetsByTeam, teamName, options);
     const value = resolveUniqueCapacityValue(state.capacityByTeam, teamName, options);

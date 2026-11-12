@@ -18,7 +18,7 @@ const json = (route, body, status = 200) => {
 };
 const requestBody = request => { try { return request.postDataJSON(); } catch (error) { return null; } };
 
-function story(key, accountId, name, sp, { team = 'team-alpha', status = 'To Do' } = {}) {
+function story(key, accountId, name, sp, { team = 'team-alpha', status = 'To Do', teamName = team === 'team-alpha' ? 'Alpha Team' : 'Beta Team' } = {}) {
     return {
         id: String(8000 + Number(key.split('-').pop())),
         key,
@@ -26,7 +26,7 @@ function story(key, accountId, name, sp, { team = 'team-alpha', status = 'To Do'
             summary: `${key} synthetic story`, status: { name: status }, priority: { name: 'Major' }, issuetype: { name: 'Story' },
             assignee: { accountId, displayName: name },
             customfield_10004: sp, epicKey: 'PLAN-EPIC', parentSummary: 'Synthetic epic', projectKey: 'PLAN',
-            teamId: team, teamName: team === 'team-alpha' ? 'Alpha Team' : 'Beta Team',
+            teamId: team, teamName,
             sprint: [{ id: futureSprintId, name: futureSprintName, state: 'future' }],
         },
     };
@@ -1338,6 +1338,35 @@ for (const currentValue of [null, 0]) test(`ticket with ${currentValue === null 
     await alphaCard(page).getByRole('button', { name: 'Save Alpha Team capacity' }).click();
     await expect.poll(() => jiraWrites(calls).length).toBe(1);
     expect(jiraWrites(calls)[0].body).toMatchObject({ capacity: 20.5, expectedCapacity: currentValue, teamName: 'Alpha Team' });
+});
+
+// Uniqueness uses the Department's complete saved Team membership, not the displayed cards (T3 of the cross-configuration plan).
+async function expectPrefillWith(page, { scopeTeamIds, extraStories = [], prefilled }) {
+    const server = plannedServer();
+    await install(page, { server, scopeTeamIds, issues: [...stories, ...extraStories], capacityProject: 'CAP',
+        capacity: sprint => sprint === activeSprintName ? ticket(20.5)(sprint) : noTicket(sprint) });
+    await openPlanning(page);
+    await showCards(page);
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect(input).toBeEnabled();
+    await expect(input).toHaveValue(prefilled ? '20.5' : '');
+    expect(server.state.patches).toEqual([]);
+}
+
+test('no ticket: a hidden configured Team whose normalized name collides blocks the prefill', async ({ page }) => {
+    await expectPrefillWith(page, { scopeTeamIds: ['team-alpha', 'team-beta', 'team-hidden'],
+        extraStories: [story('PLAN-6', 'acc-eve', 'Eve Synthetic', 2, { team: 'team-hidden', teamName: 'R&D Alpha Team' })], prefilled: false });
+});
+
+test('no ticket: an unconfigured same-name id (a re-keyed directory entry) does not suppress a valid Team', async ({ page }) => {
+    await expectPrefillWith(page, { scopeTeamIds: ['team-alpha', 'team-beta'],
+        extraStories: [story('PLAN-6', 'acc-eve', 'Eve Synthetic', 2, { team: 'team-old', teamName: 'Alpha Team' })], prefilled: true });
+});
+
+test('no ticket: the same Team id repeated in the saved membership counts once', async ({ page }) => {
+    await expectPrefillWith(page, { scopeTeamIds: ['team-alpha', 'team-alpha', 'team-beta'], prefilled: true });
 });
 
 test('no ticket: a new Team stays blank when the previous Sprint has capacity only for another Team', async ({ page }) => {

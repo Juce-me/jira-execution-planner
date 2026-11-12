@@ -1036,13 +1036,13 @@ test('previous Planning capacity uses the nearest earlier quarter, dates within 
 test('previous Planning capacity keeps raw Jira precision and zero, falls back to stored values and never copies another Team or ambiguous ticket', async () => {
     const { previousPlanningCapacityValue } = await loadUtils();
     const payload = { capacities: { 'R&D Alpha': 20.5 }, entries: [{ teamName: 'R&D Alpha', issueKey: 'CAP-1', capacity: 20.5 }] };
-    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', ['Alpha', 'Beta'], 12), 20.5);
-    assert.equal(previousPlanningCapacityValue({ capacities: { Alpha: 0 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 0 }] }, 'Alpha', ['Alpha'], 12), 0);
-    assert.equal(previousPlanningCapacityValue(payload, 'Beta', ['Alpha', 'Beta']), null);
-    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [] }, 'Alpha', ['Alpha'], 12), 12);
-    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: null }] }, 'Alpha', ['Alpha'], 12), 12);
-    assert.equal(previousPlanningCapacityValue({ ...payload, entries: [...payload.entries, { teamName: 'Alpha', issueKey: 'CAP-2', capacity: 8 }] }, 'Alpha', ['Alpha'], 12), 12);
-    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', ['Alpha', 'R&D Alpha'], 12), 12);
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }, { id: 'id-Beta', name: 'Beta' }], 12), 20.5);
+    assert.equal(previousPlanningCapacityValue({ capacities: { Alpha: 0 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 0 }] }, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }], 12), 0);
+    assert.equal(previousPlanningCapacityValue(payload, 'Beta', [{ id: 'id-Alpha', name: 'Alpha' }, { id: 'id-Beta', name: 'Beta' }]), null);
+    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [] }, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }], 12), 12);
+    assert.equal(previousPlanningCapacityValue({ capacities: {}, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: null }] }, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }], 12), 12);
+    assert.equal(previousPlanningCapacityValue({ ...payload, entries: [...payload.entries, { teamName: 'Alpha', issueKey: 'CAP-2', capacity: 8 }] }, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }], 12), 12);
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [{ id: 'id-Alpha', name: 'Alpha' }, { id: 'id-RDAlpha', name: 'R&D Alpha' }], 12), 12);
 });
 
 test('previous-Sprint prefill reads Jira with the normalized Team name the Sprint read sends', async () => {

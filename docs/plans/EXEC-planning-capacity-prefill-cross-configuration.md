@@ -1,10 +1,10 @@
 # Planning capacity prefill across work configurations
 
-> **Status:** Planned; T0 diagnostic complete 2026-11-12 (see T0 outcome), T1-T5 ready to execute. Implementation branch: `bugfix/team-capacity-prefill-and-refresh-icon`. Independent of the unfinished historical capacity-editing plan. This contract supersedes that plan's removed read-status panel and Retry-button requirements, including its prop inventory. Reviewed 2026-11-12 by three independent read-only reviews (frontend flow, backend/identity, file map/process); their confirmed findings are folded in below.
+> **Status:** Implemented on branch `bugfix/team-capacity-prefill-and-refresh-icon` (T0-T5, 2026-11-12); not yet published. Rename to `DONE-*` and name the head commit at publication, per root `AGENTS.md` section 10. Implementation branch: `bugfix/team-capacity-prefill-and-refresh-icon`. Independent of the unfinished historical capacity-editing plan. This contract supersedes that plan's removed read-status panel and Retry-button requirements, including its prop inventory. Reviewed 2026-11-12 by three independent read-only reviews (frontend flow, backend/identity, file map/process); their confirmed findings are folded in below.
 
 ## Outcome and current accuracy
 
-The 2027Q1 Team capacity editor should offer the uniquely identified earlier Sprint's raw Jira capacity even when that Sprint belongs to the Legacy work configuration. This plan has not been executed. The localhost example shows a blank Distribution editor and a 2026Q4 display capacity of 27; the displayed value may include a Product/Tech share, so it does not establish the raw prefill value. Do not claim a live cause or raw value until T0 measures it.
+The 2027Q1 Team capacity editor should offer the uniquely identified earlier Sprint's raw Jira capacity even when that Sprint belongs to the Legacy work configuration. Implemented with changes: T1-T4 landed with per-task and whole-branch reviews; the localhost example shows a blank Distribution editor and a 2026Q4 display capacity of 27; the displayed value may include a Product/Tech share, so it does not establish the raw prefill value. The live cause was measured in T0 (below); the raw prefill value was not read.
 
 ## Evidence and diagnosis
 
@@ -71,3 +71,17 @@ Commands (record actual results): `npm run build`; `.venv/bin/python tests/run_i
 ## Forbidden regressions
 
 Do not copy previous ticket identity, write Jira on prefill, overwrite user edits or current-Sprint own values, relax auth/scope fences, merge review namespaces, change Sprint selection, feed sibling reads into `sprintCatalogState`, introduce SQLite, collect identifiers in analytics, add background fan-out or startup requests, or make the refresh control depend on hover. No unrelated UI or data changes.
+
+## Outcome (2026-11-12)
+
+Implemented with changes. The implementation and its tests are now the source of truth.
+
+- Earlier configurations' catalogs are read on editor open (not at mount), each validated by a per-sibling validator in `frontend/src/dashboardRuntime.js`; acquisition lives in `frontend/src/eng/usePreviousCapacityCatalogs.js`; the Sprint is ranked across validated rows and one capacity GET is issued under one `AbortController` with fences. Unpromoted or flag-off mode keeps the previous viewed-catalog-only behavior.
+- Team uniqueness uses the Department's complete Team options (saved `teamIds`, or the task-derived fallback when none are saved) with fail-closed rules; backend search code is unchanged.
+- The refresh icon is registered (`planning-panel-refresh`), the stale/error copy carries the glyph, and a panel ref guards same-turn double activation.
+- Rulings: an aged validated catalog is authority (Contract 2); any pending/unavailable earlier source, or any unnamed configured Team, blocks prefill (accepted fail-closed costs). **Operator sign-off on the stale-catalog ruling is outstanding.**
+- Verification run (focused, no full gate): `npm run build`; `tests.test_codebase_structure_budgets`, `tests.test_agents_md_learnings`, `tests.test_capacity_service`; Node capacity/catalog/`useEngCapacity`/design-system tests; Chromium `planning_assignee_capacity`, `planning_capacity_editing`, `planning_review_integration` specs.
+
+## Current Accuracy
+
+Accurate. Unverified or open: Jira phrase-search behavior for prefix-titled tickets (no prefixed title was observed in T0); the raw prefill value on the live site; a possible pre-existing hang where, after a configuration re-read in promoted mode, Planning stayed on "Loading sprints" in the test fixture (to be checked against the real backend; out of scope here); the full combined publication gate was not run.

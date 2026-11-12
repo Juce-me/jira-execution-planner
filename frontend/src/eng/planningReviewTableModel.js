@@ -60,7 +60,7 @@ function issueRow(issue, rowKind, getTeamInfo) {
         status: statusName(fields.status), priority: statusName(fields.priority),
         storyPoints: fields.customfield_10004 ?? fields.storyPoints ?? 0,
         team: getTeamInfo(rowKind === 'story' ? issue : { fields }), project: projectInfo(issue, fields),
-        assignee: fields.assignee?.displayName || '', components: (fields.components || []).map(item => typeof item === 'string' ? item : item.name).filter(Boolean).join(', '), projectTrack: fields.projectTrack || '', issue, synthetic: false, children: [], requirements: [],
+        assignee: fields.assignee?.displayName || '', deliveryOwner: fields.deliveryOwner?.displayName || '', components: (fields.components || []).map(item => typeof item === 'string' ? item : item.name).filter(Boolean).join(', '), projectTrack: fields.projectTrack || '', issue, synthetic: false, children: [], requirements: [],
     };
 }
 
@@ -119,7 +119,7 @@ export function selectedStoryPoints(row, selectedKeys = new Set()) {
     return formatReviewScaled(tasks.reduce((sum, task) => sum + (parseReviewNumber(task.fields?.customfield_10004 ?? task.fields?.storyPoints).scaled ?? 0n), 0n));
 }
 
-export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['components', 'project', 'capacity', 'projectTrack'];
+export const DEFAULT_REVIEW_HIDDEN_COLUMNS = ['deliveryOwner', 'components', 'project', 'capacity', 'projectTrack'];
 // Column limits accumulate across every Sprint for a Department group: the table's own check and the server's codes share this copy.
 export const REVIEW_LIMIT_MESSAGES = {
     review_column_limit: 'This row mode supports up to 30 active custom columns per group.',
@@ -180,7 +180,7 @@ export function buildPlanningReviewColumns({ rows = [], mode = 'epic', customCol
     if (mode === 'epic') columns.push({ id: 'team', label: `${labels.parent} Team`, type: 'text', optional: true });
     // The child level's parent column keeps its stored builtin id: `epic` in Legacy, `initiative` in the combined namespace.
     if (mode === 'story') columns.push({ id: labels.parentColumnId, label: labels.parent, type: 'text', optional: true });
-    columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', optional: true });
+    columns.push({ id: 'assignee', label: 'Assignee', type: 'text', optional: true }, ...(mode === 'epic' ? [{ id: 'deliveryOwner', label: 'Delivery Owner', type: 'text', optional: true }] : []), { id: 'components', label: 'Component', type: 'text', optional: true }, { id: 'capacity', label: 'Capacity', type: 'text', optional: true }, { id: 'projectTrack', label: 'Project Track', type: 'text', optional: true });
     const pinned = columns.filter(column => ['key', 'summary'].includes(column.id));
     if (!derived) {
         columns.push(...customColumns.filter(column => column.rowKind === mode && !column.archived).sort((a, b) => a.order - b.order).map(column => ({ ...column, custom: true })));

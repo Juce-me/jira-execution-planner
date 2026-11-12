@@ -6,6 +6,7 @@ import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from '../issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from '../issues/ProjectTrackTransitionMenu.jsx';
 import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
+import { PersonAvatarSlot } from '../ui/PersonAvatar.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
 import { epicStatusName, formatStoryPointsFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
@@ -380,8 +381,8 @@ export default function EngBoardEpicPanel({
                             {incomplete ? (loading ? `Loading ${workItemLabel}…` : `${workItemLabel} incomplete`)
                                 : `${storyPoints} sp · ${progress.done} of ${progress.total} ${workItemLabel} done`}
                         </span>
-                        <span className="eperson"><span className="lbl">Assignee</span><b>{renderPersonEditor({ key: epicKey }, 'parent', 'assignee', 'Assignee', epic.assignee)}</b></span>
-                        <span className="eperson"><span className="lbl">Delivery owner</span><b>{renderPersonEditor({ key: epicKey }, 'parent', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
+                        <span className="eperson"><span className="lbl">Assignee</span><PersonAvatarSlot avatarUrl={epic.assignee?.avatarUrl} /><b>{renderPersonEditor({ key: epicKey }, 'parent', 'assignee', 'Assignee', epic.assignee)}</b></span>
+                        <span className="eperson"><span className="lbl">Delivery owner</span><PersonAvatarSlot avatarUrl={epic.deliveryOwner?.avatarUrl} /><b>{renderPersonEditor({ key: epicKey }, 'parent', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
                 </div>

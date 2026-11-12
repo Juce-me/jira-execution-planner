@@ -1,3 +1,4 @@
+import inspect
 import unittest
 
 import jira_server
@@ -38,6 +39,11 @@ class ShapeJiraPersonTests(unittest.TestCase):
         self.assertEqual(slim[0]['assigneeAvatarUrl'], PHOTO)
         self.assertNotIn('assigneeAvatarUrl', slim[1])
         self.assertNotIn('assigneeAvatarUrl', slim[2])
+
+    def test_epic_details_delivery_owner_carries_the_avatar(self):
+        # #336: Planning's Delivery Owner column and the Board read the Epic's owner photo from this payload.
+        source = inspect.getsource(jira_server.fetch_epic_details_bulk)
+        self.assertIn("shape_jira_person(fields.get(delivery_owner_field), avatar=True)", source)
 
     def test_cache_version_changed_so_old_payloads_are_not_served(self):
         self.assertNotEqual(jira_server.TASKS_CACHE_SCHEMA_VERSION, 'v3-team-label-aliases')

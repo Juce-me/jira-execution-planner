@@ -663,6 +663,29 @@ test('Delivery owner shows "Not set" when the epic has none', async ({ page }) =
     await expect(card.locator('.eperson').nth(1).locator('b')).toHaveClass(/is-empty/);
 });
 
+test('Assignee and Delivery owner each carry the shared person mark inside the people row, and the panel too (issue #336)', async ({ page }) => {
+    await openBoard(page);
+    const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-2"]');
+    const marks = async (scope) => scope.evaluate(node => {
+        const row = node.querySelector('.erow3') || node.querySelector('.eperson').parentElement;
+        const bounds = row.getBoundingClientRect();
+        return [...node.querySelectorAll('.eperson')].map((person) => {
+            const mark = person.querySelector(':scope > .task-assignee-icon');
+            const rect = mark.getBoundingClientRect();
+            const label = person.querySelector('.lbl').getBoundingClientRect();
+            return { size: [rect.width, rect.height], inside: rect.top >= bounds.top && rect.bottom <= bounds.bottom, afterLabel: rect.left >= label.right - 0.5, glyph: Boolean(mark.querySelector('svg')) };
+        });
+    });
+    const cardMarks = await marks(card);
+    expect(cardMarks).toHaveLength(2);
+    for (const mark of cardMarks) expect(mark).toEqual({ size: [12, 12], inside: true, afterLabel: true, glyph: true });
+    await card.locator('button.ecard-open').click();
+    await expect(page.locator('.epic-panel')).toBeVisible();
+    const panelMarks = await marks(page.locator('.epic-panel .m-meta, .epic-panel').first());
+    expect(panelMarks.length).toBeGreaterThanOrEqual(2);
+    for (const mark of panelMarks) expect(mark).toMatchObject({ size: [12, 12], afterLabel: true, glyph: true });
+});
+
 test('Board person controls neither open nor drag the card wrapper', async ({ page }) => {
     await openBoard(page);
     const card = col(page, 'col-1a2b3c4d').locator('.ecard[data-epic-key="PLAT-1"]');

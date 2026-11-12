@@ -268,3 +268,7 @@
 
 /* The transparent boundary hit region owns placement; feedback belongs to its visible dot. */
 @media (hover: hover) { .planning-review-boundary-hit:hover:where(:not(:disabled)):where(:not([aria-disabled="true"])) .planning-review-boundary-dot { box-shadow: var(--hover-ring); } }
+
+/* Assignee and Delivery Owner cells: the shared person mark (#336) beside the name, inside the cell's existing height. */
+.planning-review-person { display: flex; align-items: center; gap: 0.35rem; min-width: 0; }
+.planning-review-person .task-assignee-icon { flex: none; }

@@ -123,7 +123,7 @@ class NamespaceIsolationTests(NamespaceFixture, unittest.TestCase):
         self.assertIn('teamsInScope', review.layout_builtins(CFG)['initiative'])
         self.assertNotIn('initiative', review.layout_builtins(None)['story'])
         self.assertEqual(review.layout_builtins(None), review.REVIEW_LAYOUT_BUILTINS)
-        parent = {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'components', 'capacity', 'projectTrack'}
+        parent = {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack'}
         self.assertEqual(review.layout_builtins(CFG)['initiative'], parent)
         self.assertEqual(review.layout_builtins(None)['epic'], parent)
         self.assertEqual(review.layout_builtins(CFG)['epic'], (parent - {'teamsInScope'}) | {'initiative'})

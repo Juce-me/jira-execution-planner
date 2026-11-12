@@ -280,14 +280,14 @@ def apply_schema(columns, changes, configuration_id=None, other_definitions=0):
 
 
 REVIEW_LAYOUT_BUILTINS = {
-    'epic': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'components', 'capacity', 'projectTrack'},
-    'story': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'project', 'epic', 'assignee', 'components', 'capacity', 'projectTrack'},
+    'epic': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack'},
+    'story': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'project', 'epic', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack'},
 }
 
 
 CONFIGURATION_LAYOUT_BUILTINS = {
-    'initiative': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'components', 'capacity', 'projectTrack'},
-    'epic': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'project', 'initiative', 'assignee', 'components', 'capacity', 'projectTrack'},
+    'initiative': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'teamsInScope', 'project', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack'},
+    'epic': {'status', 'priority', 'storyPoints', 'accepted', 'team', 'project', 'initiative', 'assignee', 'deliveryOwner', 'components', 'capacity', 'projectTrack'},
 }
 
 

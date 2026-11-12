@@ -100,6 +100,7 @@ import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkSt
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers } from './eng/planningSelectionActions.js';
 import { readPlanningCapacity, useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
+import { usePreviousCapacityCatalogs } from './eng/usePreviousCapacityCatalogs.js';
 import { buildPlanningCardTeamIds, getTeamCapacityMeta, isCapacityTotalAvailable } from './eng/planningCapacityUtils.js';
 import { buildPlanningSelectionSummary, buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
@@ -584,6 +585,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const workContextKey = contextKey(workContextCandidate);
             const workContext = React.useMemo(() => workContextCandidate, [workContextKey]);
             const siblingQuarterStates = useSiblingQuarterStates({ summaries: workBootstrap.summaries, currentContext: workContext, read: context => requestSprints(BACKEND_URL, { context }) });
+            const resolvePreviousCapacitySprint = usePreviousCapacityCatalogs({ backendUrl: BACKEND_URL, summaries: workBootstrap.summaries, currentContext: workContext, currentSprints: availableSprints, browserContextId: sprintCatalogState.browserContextId });
             // The model comes from the viewed quarter's configuration summary. Unpromoted, flag-off and Legacy-era quarters
             // are `legacy`: every consumer below then behaves exactly as before the quarterly configurations existed.
             const workModel = quarterMode ? normalizeWorkModel(activeConfiguration?.model) : normalizeWorkModel(null);
@@ -6181,6 +6183,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             selectedCount={selectedCount} selectedSP={selectedSP} capacitySummary={capacitySummary} />}
                         teams={<PlanningTeamCapacityCards
                             sprints={availableSprints}
+                            resolvePreviousCapacitySprint={resolvePreviousCapacitySprint}
                             readPreviousCapacity={(sprint, team, options) => readPlanningCapacity(BACKEND_URL, sprint, team, options)}
                             entries={selectedTeamEntries}
                             capacityEnabled={capacityEnabled}

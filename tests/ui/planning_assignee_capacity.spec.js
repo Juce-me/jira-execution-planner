@@ -4826,7 +4826,8 @@ const twoCatalogSprints = params => (params.configurationId === 'legacy'
         { id: 4005, name: '2027Q4', state: 'future', startDate: '2027-10-04' },
     ], '55555555-5555-4555-8555-555555555555'));
 const mutatingCalls = calls => calls.filter(call => ['PATCH', 'PUT', 'POST', 'DELETE'].includes(call.method)
-    && !call.pathname.startsWith('/api/auth/') && !/\/read$/.test(call.pathname) && call.pathname !== '/api/eng/assignee-capacity/user-options');
+    && !call.pathname.startsWith('/api/auth/') && !/\/read$/.test(call.pathname) && call.pathname !== '/api/eng/assignee-capacity/user-options'
+    && call.pathname !== '/api/dependencies'); // a read-by-POST of the loaded Stories' links (fetchDependencies)
 
 test('cross-configuration: a 2027Q1 Team capacity editor offers the 2026Q4 raw capacity from the Legacy catalog with one read and no write', async ({ page }) => {
     const server = plannedServer();
@@ -4853,7 +4854,8 @@ test('cross-configuration: a 2027Q1 Team capacity editor offers the 2026Q4 raw c
     expect(server.state.patches).toEqual([]);
     await expect(trigger).toHaveText('2027Q1');
     expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name').length, 'opening the editor does not reload work').toBe(workBefore);
-    for (const call of calls.filter(call => call.pathname === '/api/tasks-with-team-name')) expect(call.params.configurationId).toBe('delivery');
+    // The app starts on the saved (Legacy) Sprint before 2027Q1 is chosen; the work the 2027Q1 view shows is DELIVERY's.
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name').at(-1).params.configurationId).toBe('delivery');
     // The sibling catalog is read with its own configuration stamp (id, revision, digest); the catalog read carries no quarter.
     const legacyReads = calls.filter(call => call.pathname === '/api/sprints' && call.params.configurationId === 'legacy');
     expect(legacyReads.length).toBeGreaterThan(0);

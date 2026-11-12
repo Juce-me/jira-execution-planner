@@ -18373,6 +18373,82 @@
       ]
     },
     {
+      "id": "eng.usePreviousCapacityCatalogs",
+      "path": "frontend/src/eng/usePreviousCapacityCatalogs.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "earlierCapacitySources",
+        "resolvePreviousCapacitySprint",
+        "usePreviousCapacityCatalogs"
+      ],
+      "lineCeiling": 70,
+      "interfaces": [
+        {
+          "exportName": "usePreviousCapacityCatalogs",
+          "inputNames": [
+            "backendUrl",
+            "browserContextId",
+            "currentContext",
+            "currentSprints",
+            "summaries"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "backendUrl",
+            "browserContextId",
+            "currentContext",
+            "currentSprints",
+            "summaries"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 5,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 5,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input currentContext",
+            "return spread/dynamic"
+          ],
+          "inventory": {
+            "sourceDigest": "c9a543d8b6a81de554201a63faa2bc4dff29814f5aa20ffdc2c86627abddf8af",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "browserContextId",
+              "currentContext",
+              "currentSprints",
+              "summaries"
+            ],
+            "rationale": "Cross-configuration capacity prefill (T2): one object parameter of five named inputs; backendUrl and currentContext are forwarded to fetchSprints and the configuration-range filter, read only when the returned resolver is called on an explicit editor open. The return is one useCallback resolver (no state, no effects, no startup request); its identity follows the viewed catalog context, the browser context and each summary's id/revision/digest/range."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "usePreviousCapacityCatalogs",
+              "line": 588,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "resolvePreviousCapacitySprint",
+              "lines": [
+                6186
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
       "id": "components.LazyViewBoundary",
       "path": "frontend/src/components/LazyViewBoundary.jsx",
       "features": [

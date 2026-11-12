@@ -1372,6 +1372,31 @@ test('capacity Retry is busy and duplicate-safe until its one GET settles', asyn
     expect(capacityCalls(fixture.calls, 'GET')).toHaveLength(beforeRetry + 1);
 });
 
+// The guard is synchronous: two activations from the idle state, before React re-renders the busy label, send one read.
+for (const [name, activate] of [
+    ['same turn', button => { button.click(); button.click(); }],
+    ['consecutive tasks', button => new Promise(resolve => { button.click(); setTimeout(() => { button.click(); resolve(); }, 0); })],
+]) test(`capacity Refresh activated twice in the ${name} from idle sends one GET`, async ({ page }) => {
+    await page.setViewportSize({ width: 1028, height: 720 });
+    const fixture = await openPlanning(page);
+    const refresh = page.locator('.planning-panel').getByRole('button', { name: 'Refresh capacity' });
+    await expect(refresh).toBeEnabled();
+    let resolveGet;
+    fixture.state.capacityGetGate = new Promise(resolve => { resolveGet = resolve; });
+    const beforeRefresh = capacityCalls(fixture.calls, 'GET').length;
+    await refresh.evaluate(activate);
+    await expect(page.locator('.planning-panel').getByRole('button', { name: 'Refreshing capacity' })).toHaveAttribute('aria-busy', 'true');
+    await expect.poll(() => capacityCalls(fixture.calls, 'GET').length).toBe(beforeRefresh + 1);
+    await page.waitForTimeout(150);
+    expect(capacityCalls(fixture.calls, 'GET')).toHaveLength(beforeRefresh + 1);
+
+    fixture.state.capacityGetGate = null;
+    resolveGet();
+    await expect(page.locator('.planning-panel').getByRole('button', { name: 'Refresh capacity' })).toBeEnabled();
+    await refresh.click();
+    await expect.poll(() => capacityCalls(fixture.calls, 'GET').length, 'the guard releases once the read settles').toBe(beforeRefresh + 2);
+});
+
 test('already-current saves reconcile numeric values and null conflicts keep the explicit baseline', async ({ page }) => {
     await page.setViewportSize({ width: 1028, height: 720 });
     const fixture = await openPlanning(page);

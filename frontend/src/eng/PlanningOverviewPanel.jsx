@@ -24,10 +24,23 @@ export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onTo
     const note = teamSaveStatus && planReady ? <span className="planning-review-state-note" role="status">{teamSaveStatus}</span> : notice;
     // Re-reads the Jira capacity tickets for the Sprint; it also retries a failed or stale read.
     const refreshLabel = capacityLoading ? 'Refreshing capacity' : 'Refresh capacity';
+    // A synchronous guard: a second activation before the busy render lands would otherwise restart the read. It holds from
+    // the click until the read it started settles (capacityLoading true, then false); a gated no-op refresh releases it on
+    // the next read cycle.
+    const refreshPendingRef = React.useRef(null);
+    React.useEffect(() => {
+        if (capacityLoading && refreshPendingRef.current) refreshPendingRef.current = 'loading';
+        else if (!capacityLoading && refreshPendingRef.current === 'loading') refreshPendingRef.current = null;
+    }, [capacityLoading]);
+    const requestRefresh = () => {
+        if (capacityLoading || refreshPendingRef.current) return;
+        refreshPendingRef.current = 'requested';
+        onRefreshCapacity();
+    };
     const panelControl = <>
         {onRefreshCapacity && <button type="button" className="planning-action-button planning-icon-button planning-panel-refresh" aria-label={refreshLabel} aria-busy={capacityLoading || undefined}
             aria-disabled={capacityLoading || undefined} title="Check and update capacity from the Jira capacity tickets, if they exist"
-            onClick={() => { if (!capacityLoading) onRefreshCapacity(); }}><RefreshGlyph width="14" height="14" /></button>}
+            onClick={requestRefresh}><RefreshGlyph width="14" height="14" /></button>}
         <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
             aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>
     </>;

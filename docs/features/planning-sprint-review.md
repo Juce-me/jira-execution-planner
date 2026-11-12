@@ -27,8 +27,9 @@ rest. A group with no matching story is disabled. The popover stays open so seve
 groups can be toggled, and closes on an outside click or Escape. The popover stays inside the viewport and wraps whole toggles onto further lines; each toggle stays one line tall and never wraps, ellipsizes or clips its label. Hiding capacity
 details keeps the controls and counts visible; Details reveals the
 existing graphs and Team capacity content without changing inclusion or fetching
-another dataset. Capacity errors ("Capacity unavailable — show capacity details to
-retry") remain visible while details are hidden. Only the spreadsheet region widens;
+another dataset. A refresh icon beside the details button re-reads the Jira capacity tickets; capacity
+errors ("Capacity unavailable — use Refresh capacity to retry") remain visible while
+details are hidden. Only the spreadsheet region widens;
 extra columns scroll inside it.
 Summary titles and Teams in scope use bounded single lines with ellipsis in both
 read-only and editable profiles. Hover or keyboard focus reveals full text using

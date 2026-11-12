@@ -361,27 +361,6 @@
             pointer-events: auto;
         }
 
-        .team-capacity-read-status {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 0.5rem;
-            margin-top: 0.3rem;
-            padding: 0.35rem 0.45rem;
-            border: 1px solid #ffd591;
-            border-radius: 7px;
-            background: #fff7e6;
-            color: #8a4b00;
-            font-family: 'IBM Plex Mono', monospace;
-            font-size: 0.56rem;
-            line-height: 1.35;
-        }
-
-        .team-capacity-read-status button {
-            flex: 0 0 auto;
-            margin: 0;
-        }
-
         @media (hover: none) {
             .team-capacity-action-rail {
                 opacity: 1;

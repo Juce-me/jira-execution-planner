@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { usePlanningTeamCapacitySaveStatus } from './PlanningTeamCapacityCards.jsx';
+import { RefreshGlyph } from '../ui/EpicRefreshButton.jsx';
 
 // The Table summary in the overview row: short parts joined by " · ", warnings only when above zero (2026-11-09).
 export function PlanningOverviewSummary({ childSingular = 'story', childPlural = 'stories', planned = false, count = 0, sp = 0, capacity = null, unestimated = 0, hidden = 0 }) {
@@ -12,7 +13,7 @@ export function PlanningOverviewSummary({ childSingular = 'story', childPlural =
     return <span className="planning-stats compact">{parts.map((part, index) => <React.Fragment key={index}>{index > 0 && ' · '}<span>{part}</span></React.Fragment>)}</span>;
 }
 
-export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
+export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onToggleDetails, capacityStatus = '', onRefreshCapacity = null, capacityLoading = false, actions, summary, notice, planReady = true, capacity, teams, projects, 'data-onboarding-target': onboardingTarget = 'planning-overview' }) {
     // Stored-number saves in flight or failed (#323) take the action row's state note, compact and expanded, so the row
     // keeps its height (the cards never grow; a failed card's Retry and Discard are in its hover rail). They displace only
     // a ready plan's notes ("Plan saved" and the like): while the plan is not ready its notice (loading, restoring, or the
@@ -21,8 +22,15 @@ export default function PlanningOverviewPanel({ panelRef, compact, isStuck, onTo
     const [pushSummary, setPushSummary] = React.useState('');
     const teamSaveStatus = [usePlanningTeamCapacitySaveStatus(), pushSummary].filter(Boolean).join(' · ');
     const note = teamSaveStatus && planReady ? <span className="planning-review-state-note" role="status">{teamSaveStatus}</span> : notice;
-    const panelControl = <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
-        aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>;
+    // Re-reads the Jira capacity tickets for the Sprint; it also retries a failed or stale read.
+    const refreshLabel = capacityLoading ? 'Refreshing capacity' : 'Refresh capacity';
+    const panelControl = <>
+        {onRefreshCapacity && <button type="button" className="planning-action-button planning-icon-button planning-panel-refresh" aria-label={refreshLabel} aria-busy={capacityLoading || undefined}
+            aria-disabled={capacityLoading || undefined} title="Check and update capacity from the Jira capacity tickets, if they exist"
+            onClick={() => { if (!capacityLoading) onRefreshCapacity(); }}><RefreshGlyph width="14" height="14" /></button>}
+        <button type="button" className="planning-action-button planning-panel-collapse" aria-expanded={!compact} aria-controls="planning-panel-details"
+            aria-label={compact ? 'Show capacity details' : 'Hide capacity details'} onClick={onToggleDetails}>{compact ? 'Details' : 'Hide details'}</button>
+    </>;
     return <div ref={panelRef} className={`planning-panel open${isStuck ? ' stuck' : ''}${compact ? ' planning-panel-compact' : ''}`} data-onboarding-target={onboardingTarget} tabIndex={-1}>
         {/* The summary and note sit in the action row's flexible gap. */}
         {React.isValidElement(actions) ? React.cloneElement(actions, { panelControl, summary, notice: note }) : <>{summary}{note}</>}

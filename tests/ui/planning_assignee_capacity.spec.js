@@ -1453,7 +1453,7 @@ test('no ticket: the lead types a team number, it saves to the store only, the b
     await page.getByRole('dialog').getByRole('button', { name: 'Discard changes', exact: true }).click();
     await expect(alphaCard(page)).toHaveAttribute('data-planned-source', 'inherited');
     await expect(teamCap(page)).toHaveText(/Capacity\s*14\.0/);
-    await expect(page.locator('.team-capacity-read-status').filter({ hasText: 'have not been created yet for this future sprint' })).toContainText('Showing Team capacity (not in Jira) meanwhile.');
+    await expect(page.locator('.team-capacity-read-status')).toHaveCount(0);
     await hover(page, alphaCard(page));
     await plannedPencil(page).click();
     await expect(alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' })).toHaveValue('14');

@@ -1156,7 +1156,7 @@ test('unresolved bootstrap config still loads Capacity and exposes retry recover
         capacityPayload: { error: 'capacity_config_conflict' },
     });
 
-    await expect(page.getByRole('button', { name: 'Retry capacity' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh capacity' })).toBeVisible();
     expect(capacityCalls(fixture.calls, 'GET')).toHaveLength(1);
 });
 
@@ -1179,8 +1179,8 @@ test('capacity scope reread blocks a remapped open editor and shows stale retry 
     await card.getByRole('button', { name: 'Cancel Alpha capacity edit' }).click();
     fixture.state.capacityGetStatus = 500;
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).evaluate(button => button.click());
-    await expect(page.locator('.team-capacity-read-status')).toContainText('Showing last loaded values');
-    await expect(page.getByRole('button', { name: 'Retry capacity' })).toBeEnabled();
+    await expect(page.locator('.planning-panel-capacity-status')).toContainText('Capacity stale');
+    await expect(page.getByRole('button', { name: 'Refresh capacity' })).toBeEnabled();
     await expect(page.locator('.team-capacity-action-rail')).toHaveCount(0);
     await expect(page.locator('.team-stat-card', { hasText: 'Alpha' }).locator('.microbar-meta')).toContainText('Cap 5.5');
 });
@@ -1349,7 +1349,7 @@ test('capacity Retry is busy and duplicate-safe until its one GET settles', asyn
     const fixture = await openPlanning(page);
     fixture.state.capacityGetStatus = 500;
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).evaluate(button => button.click());
-    const retry = page.getByRole('button', { name: 'Retry capacity' });
+    const retry = page.getByRole('button', { name: 'Refresh capacity' });
     await expect(retry).toBeEnabled();
 
     let resolveGet;
@@ -1357,10 +1357,9 @@ test('capacity Retry is busy and duplicate-safe until its one GET settles', asyn
     fixture.state.capacityGetGate = new Promise(resolve => { resolveGet = resolve; });
     const beforeRetry = capacityCalls(fixture.calls, 'GET').length;
     await retry.click();
-    const busyRetry = page.getByRole('button', { name: 'Retrying capacity' });
+    const busyRetry = page.getByRole('button', { name: 'Refreshing capacity' });
     await expect(busyRetry).toBeDisabled();
-    await expect(busyRetry).toHaveText('Retrying capacity');
-    await expect(page.locator('.team-capacity-read-status')).toHaveAttribute('aria-busy', 'true');
+    await expect(busyRetry).toHaveAttribute('aria-busy', 'true');
     await busyRetry.evaluate(button => {
         button.click();
         button.click();
@@ -1369,7 +1368,7 @@ test('capacity Retry is busy and duplicate-safe until its one GET settles', asyn
 
     fixture.state.capacityGetGate = null;
     resolveGet();
-    await expect(page.locator('.team-capacity-read-status')).toHaveCount(0);
+    await expect(page.locator('.planning-panel-capacity-status')).toHaveCount(0);
     expect(capacityCalls(fixture.calls, 'GET')).toHaveLength(beforeRetry + 1);
 });
 
@@ -1494,12 +1493,10 @@ test('an empty future sprint explains missing issues and refreshes only Capacity
     });
 
     await selectSprint(page, nextSprintName);
-    const emptyStatus = page.locator('.team-capacity-read-status');
-    await expect(emptyStatus).toContainText(
-        'Team capacity Jira issues have not been created yet for this future sprint.',
-    );
-    const refreshButton = emptyStatus.getByRole('button', { name: 'Refresh capacity' });
+    await expect(page.locator('.team-capacity-read-status')).toHaveCount(0);
+    const refreshButton = page.locator('.planning-panel').getByRole('button', { name: 'Refresh capacity' });
     await expect(refreshButton).toBeEnabled();
+    await expect(refreshButton).toHaveAttribute('title', /Jira capacity tickets/);
     await captureCapacityScreenshot(page, testInfo, 'capacity-future-sprint-no-issues');
 
 
@@ -1513,7 +1510,7 @@ test('an empty future sprint explains missing issues and refreshes only Capacity
     fixture.state.nextCapacityPayload = structuredClone(nextCapacityPayload);
 
     await refreshButton.click();
-    const refreshingButton = emptyStatus.getByRole('button', { name: 'Refreshing capacity' });
+    const refreshingButton = page.locator('.planning-panel').getByRole('button', { name: 'Refreshing capacity' });
     await expect(refreshingButton).toBeDisabled();
     await expect.poll(() => capacityCalls(fixture.calls, 'GET').length).toBe(capacityGetsBefore + 1);
     expect(fixture.calls.filter(call => call.method === 'GET'
@@ -1523,7 +1520,7 @@ test('an empty future sprint explains missing issues and refreshes only Capacity
 
     finishRefresh();
     fixture.state.capacityGetGate = null;
-    await expect(emptyStatus).toHaveCount(0);
+    await expect(page.locator('.planning-panel').getByRole('button', { name: 'Refresh capacity' })).toBeEnabled();
     const alpha = page.locator('.team-stat-card', { hasText: 'Alpha' });
     await alpha.hover();
     await expect(alpha.getByRole('button', { name: 'Edit Alpha capacity' })).toBeVisible();
@@ -1534,49 +1531,27 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     const fixture = await openPlanning(page);
     const alpha = page.locator('.team-stat-card', { hasText: 'Alpha' });
     const beta = page.locator('.team-stat-card', { hasText: 'Beta' });
+    // The panel's refresh icon sits before the details button, unclipped, inside the panel and the viewport.
     const expectReadStatusBounds = async (stateName) => {
-        const geometry = await page.locator('.team-capacity-read-status').evaluate(status => {
-            const text = status.querySelector('span');
-            const button = status.querySelector('button');
-            const dimensions = node => ({
-                rect: node.getBoundingClientRect(),
-                scrollWidth: node.scrollWidth,
-                clientWidth: node.clientWidth,
-                scrollHeight: node.scrollHeight,
-                clientHeight: node.clientHeight,
-            });
+        const geometry = await page.locator('.planning-panel-refresh').evaluate(button => {
+            const collapse = button.parentElement.querySelector('.planning-panel-collapse').getBoundingClientRect();
             return {
-                status: dimensions(status),
-                text: dimensions(text),
-                button: dimensions(button),
-                planning: status.closest('.planning-panel').getBoundingClientRect(),
+                rect: button.getBoundingClientRect(),
+                collapse,
+                scrollWidth: button.scrollWidth,
+                clientWidth: button.clientWidth,
+                planning: button.closest('.planning-panel').getBoundingClientRect(),
                 viewport: { width: window.innerWidth, height: window.innerHeight },
             };
         });
-        [geometry.status, geometry.text, geometry.button].forEach((element, index) => {
-            expect(element.scrollWidth, `${stateName} element ${index} horizontal clip`).toBeLessThanOrEqual(element.clientWidth);
-            expect(element.scrollHeight, `${stateName} element ${index} vertical clip`).toBeLessThanOrEqual(element.clientHeight);
-        });
-        [geometry.text, geometry.button].forEach((element, index) => {
-            expect(element.rect.left, `${stateName} child ${index} left`).toBeGreaterThanOrEqual(geometry.status.rect.left);
-            expect(element.rect.right, `${stateName} child ${index} right`).toBeLessThanOrEqual(geometry.status.rect.right);
-            expect(element.rect.top, `${stateName} child ${index} top`).toBeGreaterThanOrEqual(geometry.status.rect.top);
-            expect(element.rect.bottom, `${stateName} child ${index} bottom`).toBeLessThanOrEqual(geometry.status.rect.bottom);
-        });
-        expect(geometry.status.rect.left, `${stateName} status inside Planning left`)
-            .toBeGreaterThanOrEqual(geometry.planning.left);
-        expect(geometry.status.rect.right, `${stateName} status inside Planning right`)
-            .toBeLessThanOrEqual(geometry.planning.right);
-        expect(geometry.status.rect.top, `${stateName} status inside Planning top`)
-            .toBeGreaterThanOrEqual(geometry.planning.top);
-        expect(geometry.status.rect.bottom, `${stateName} status inside Planning bottom`)
-            .toBeLessThanOrEqual(geometry.planning.bottom);
-        expect(geometry.status.rect.left, `${stateName} status inside viewport left`).toBeGreaterThanOrEqual(0);
-        expect(geometry.status.rect.right, `${stateName} status inside viewport right`)
-            .toBeLessThanOrEqual(geometry.viewport.width);
-        expect(geometry.status.rect.top, `${stateName} status inside viewport top`).toBeGreaterThanOrEqual(0);
-        expect(geometry.status.rect.bottom, `${stateName} status inside viewport bottom`)
-            .toBeLessThanOrEqual(geometry.viewport.height);
+        expect(geometry.scrollWidth, `${stateName} horizontal clip`).toBeLessThanOrEqual(geometry.clientWidth);
+        expect(geometry.rect.right, `${stateName} before details button`).toBeLessThanOrEqual(geometry.collapse.left);
+        expect(geometry.rect.left, `${stateName} inside Planning left`).toBeGreaterThanOrEqual(geometry.planning.left);
+        expect(geometry.rect.top, `${stateName} inside Planning top`).toBeGreaterThanOrEqual(geometry.planning.top);
+        expect(geometry.rect.bottom, `${stateName} inside Planning bottom`).toBeLessThanOrEqual(geometry.planning.bottom);
+        expect(geometry.rect.left, `${stateName} inside viewport left`).toBeGreaterThanOrEqual(0);
+        expect(geometry.rect.right, `${stateName} inside viewport right`).toBeLessThanOrEqual(geometry.viewport.width);
+        expect(geometry.rect.bottom, `${stateName} inside viewport bottom`).toBeLessThanOrEqual(geometry.viewport.height);
     };
 
     await captureCapacityScreenshot(page, testInfo, 'capacity-default-idle');
@@ -1624,8 +1599,8 @@ test('capacity reference states remain settled, bounded, and visible in Planning
     await alpha.getByRole('button', { name: 'Cancel Alpha capacity edit' }).click();
     fixture.state.capacityGetStatus = 500;
     await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).evaluate(button => button.click());
-    await expect(page.getByRole('button', { name: 'Retry capacity' })).toBeVisible();
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+    await expect(page.getByRole('button', { name: 'Refresh capacity' })).toBeVisible();
+    await page.locator('.planning-panel-refresh').scrollIntoViewIfNeeded();
     await expectReadStatusBounds('desktop Retry');
     await captureCapacityScreenshot(page, testInfo, 'capacity-stale-retry');
 
@@ -1639,14 +1614,13 @@ test('capacity reference states remain settled, bounded, and visible in Planning
 
 
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.locator('.team-capacity-read-status').scrollIntoViewIfNeeded();
+    await page.locator('.planning-panel-refresh').scrollIntoViewIfNeeded();
     let resolveRetry;
     fixture.state.capacityGetStatus = 200;
     fixture.state.capacityGetGate = new Promise(resolve => { resolveRetry = resolve; });
-    await page.getByRole('button', { name: 'Retry capacity' }).click();
-    const retrying = page.getByRole('button', { name: 'Retrying capacity' });
+    await page.getByRole('button', { name: 'Refresh capacity' }).click();
+    const retrying = page.getByRole('button', { name: 'Refreshing capacity' });
     await expect(retrying).toBeDisabled();
-    await expect(retrying).toHaveText('Retrying capacity');
     await expectReadStatusBounds('desktop Retrying');
     await page.locator('.planning-panel.open').evaluate(element => {
         const rect = element.getBoundingClientRect();

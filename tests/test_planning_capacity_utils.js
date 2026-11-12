@@ -1044,3 +1044,20 @@ test('previous Planning capacity keeps raw Jira precision and zero, falls back t
     assert.equal(previousPlanningCapacityValue({ ...payload, entries: [...payload.entries, { teamName: 'Alpha', issueKey: 'CAP-2', capacity: 8 }] }, 'Alpha', ['Alpha'], 12), 12);
     assert.equal(previousPlanningCapacityValue(payload, 'Alpha', ['Alpha', 'R&D Alpha'], 12), 12);
 });
+
+test('previous-Sprint prefill reads Jira with the normalized Team name the Sprint read sends', async () => {
+    const { build } = require('esbuild');
+    const bundle = await build({ entryPoints: ['frontend/src/eng/useEngCapacity.js'], bundle: true, write: false, format: 'esm', platform: 'node', logLevel: 'error', jsx: 'automatic' });
+    const realFetch = globalThis.fetch;
+    let requested = '';
+    globalThis.fetch = async (url) => { requested = String(url); return { ok: true, json: async () => ({ enabled: true, capacities: {}, entries: [] }) }; };
+    try {
+        const { readPlanningCapacity } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+        await readPlanningCapacity('http://backend.test', '2026Q4', 'R&D Data Science');
+    } finally {
+        globalThis.fetch = realFetch;
+    }
+    const params = new URL(requested).searchParams;
+    assert.equal(params.get('sprint'), '2026Q4');
+    assert.equal(params.get('teams'), 'Data Science', 'Jira phrase-searches "Team info <Sprint> - <name>"; the raw "R&D …" name misses tickets titled without it');
+});

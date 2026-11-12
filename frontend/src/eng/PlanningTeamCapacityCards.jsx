@@ -236,11 +236,9 @@ export default function PlanningTeamCapacityCards({
     capacityLoading = false,
     capacityReadError = '',
     capacityDataStale = false,
-    futureSprintCapacityIssuesMissing = false,
     capacityShareLabel = '',
     updateCapacityRequest,
     onCapacitySaved,
-    onCapacityRetry,
     onAnalyticsAction,
     onInteractionChange,
     resolveTeamColor,
@@ -777,10 +775,6 @@ export default function PlanningTeamCapacityCards({
     const rows = teamCount === 6 ? 2 : Math.ceil(teamCount / 6);
     const columns = Math.ceil(teamCount / rows);
     const actionsGloballySuppressed = Boolean(activeEditor || capacityReadError || capacityDataStale);
-    const retryMessage = capacityDataStale
-        ? 'Capacity could not be refreshed. Showing last loaded values.'
-        : 'Capacity is unavailable. Retry.';
-    const showFutureSprintEmptyStatus = futureSprintCapacityIssuesMissing && !capacityReadError;
     // A mismatch: a matched ticket the user may write and a number the user typed that differs from it (after rounding).
     // It marks the card, and its push icon (→) joins the hover rail when the card has the Jira capacity writer.
     const mismatchOf = (entry) => {
@@ -795,8 +789,6 @@ export default function PlanningTeamCapacityCards({
         if (samePlannedValue(stored, ticket == null ? null : { value: ticket })) return null;
         return { stored: stored.value, ticket };
     };
-    // A future Sprint with no capacity tickets yet: say so, and that the cards show stored numbers meanwhile.
-    const futureSprintUsesPlanned = sortedTeams.some(entry => entry.capacitySource === 'planned');
 
     return (
         <section className="planning-team-capacity-cards" aria-label="Planned story points by team">
@@ -805,38 +797,6 @@ export default function PlanningTeamCapacityCards({
                     <span className="planning-stat-label">Planned SP by Team:</span>
                 </div>
             </div>
-            {capacityReadError && (
-                <div className="team-capacity-read-status" role="status" aria-busy={capacityLoading}>
-                    <span>{retryMessage}</span>
-                    <button
-                        type="button"
-                        className="secondary compact"
-                        onClick={() => {
-                            if (!capacityLoading) onCapacityRetry?.();
-                        }}
-                        disabled={capacityLoading}
-                        aria-label={capacityLoading ? 'Retrying capacity' : 'Retry capacity'}
-                    >
-                        {capacityLoading ? 'Retrying capacity' : 'Retry'}
-                    </button>
-                </div>
-            )}
-            {showFutureSprintEmptyStatus && (
-                <div className="team-capacity-read-status" role="status" aria-busy={capacityLoading}>
-                    <span>Team capacity Jira issues have not been created yet for this future sprint.{futureSprintUsesPlanned ? ' Showing Team capacity (not in Jira) meanwhile.' : ''}</span>
-                    <button
-                        type="button"
-                        className="secondary compact"
-                        onClick={() => {
-                            if (!capacityLoading) onCapacityRetry?.();
-                        }}
-                        disabled={capacityLoading}
-                        aria-label={capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
-                    >
-                        {capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
-                    </button>
-                </div>
-            )}
             <div
                 className="team-stats-grid"
                 style={{ '--planning-team-columns': columns }}

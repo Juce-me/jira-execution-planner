@@ -1061,3 +1061,80 @@ test('previous-Sprint prefill reads Jira with the normalized Team name the Sprin
     assert.equal(params.get('sprint'), '2026Q4');
     assert.equal(params.get('teams'), 'Data Science', 'Jira phrase-searches "Team info <Sprint> - <name>"; the raw "R&D …" name misses tickets titled without it');
 });
+
+// Cross-configuration prefill (docs/plans/EXEC-planning-capacity-prefill-cross-configuration.md, T1). Expected RED until
+// T2/T3 add `previousCapacitySprintFromCatalogs(catalogs, sprintName)` (catalogs: one validated Sprint array per
+// configuration) and make `previousPlanningCapacityValue(payload, teamName, members, stored)` take the complete `{ id, name }`
+// membership of the active Department group instead of the displayed names.
+test('combined-catalog lookup: the one active earlier Sprint wins over a nearer closed quarter', async () => {
+    const { previousCapacitySprintFromCatalogs } = await loadUtils();
+    const active = { id: '10', name: '2026Q2', state: 'active', startDate: '2026-04-01' };
+    const nearer = { id: '11', name: '2026Q4', state: 'closed', startDate: '2026-10-01' };
+    const current = { id: '20', name: '2027Q1', state: 'future', startDate: '2027-01-04' };
+    assert.equal(previousCapacitySprintFromCatalogs([[active, nearer], [current]], '2027Q1')?.id, '10');
+    assert.equal(previousCapacitySprintFromCatalogs([[nearer], [current]], '2027Q1')?.id, '11', 'no active Sprint: the nearest earlier quarter');
+});
+
+test('combined-catalog lookup: several active earlier Sprints fall back to the nearest quarter', async () => {
+    const { previousCapacitySprintFromCatalogs } = await loadUtils();
+    const catalogs = [
+        [{ id: '10', name: '2026Q2', state: 'active', startDate: '2026-04-01' }, { id: '12', name: '2026Q3', state: 'active', startDate: '2026-07-01' }],
+        [{ id: '11', name: '2026Q4', state: 'closed', startDate: '2026-10-01' }],
+    ];
+    assert.equal(previousCapacitySprintFromCatalogs(catalogs, '2027Q1')?.id, '11');
+});
+
+test('combined-catalog lookup fails closed on equally ranked candidates, including a three-way tie', async () => {
+    const { previousCapacitySprintFromCatalogs } = await loadUtils();
+    const tied = id => ({ id, name: '2026Q4', state: 'closed', startDate: '2026-10-01' });
+    assert.equal(previousCapacitySprintFromCatalogs([[tied('1')], [tied('2')]], '2027Q1'), null);
+    assert.equal(previousCapacitySprintFromCatalogs([[tied('1')], [tied('2')], [tied('3')]], '2027Q1'), null);
+    assert.equal(previousCapacitySprintFromCatalogs([[tied('1')], [tied('2')], [{ ...tied('3'), startDate: '2026-10-08' }]], '2027Q1')?.id, '3', 'a later start date within the quarter breaks the tie');
+});
+
+test('combined-catalog lookup counts a Sprint repeated across catalogs once and fails closed on an identity conflict', async () => {
+    const { previousCapacitySprintFromCatalogs } = await loadUtils();
+    const earlier = { id: '11', name: '2026Q4', state: 'closed', startDate: '2026-10-01' };
+    assert.equal(previousCapacitySprintFromCatalogs([[earlier], [{ ...earlier, id: 11 }]], '2027Q1')?.id, '11');
+    for (const conflict of [{ name: '2026Q3' }, { state: 'active' }, { startDate: '2026-10-02' }]) {
+        assert.equal(previousCapacitySprintFromCatalogs([[earlier], [{ ...earlier, ...conflict }]], '2027Q1'), null, JSON.stringify(conflict));
+    }
+});
+
+test('combined-catalog lookup never selects the current or a later quarter', async () => {
+    const { previousCapacitySprintFromCatalogs } = await loadUtils();
+    const catalogs = [[{ id: '11', name: '2026Q4', state: 'active', startDate: '2026-10-01' }], [{ id: '20', name: '2027Q1', state: 'future', startDate: '2027-01-04' }, { id: '21', name: '2027Q2', state: 'future', startDate: '2027-04-05' }]];
+    assert.equal(previousCapacitySprintFromCatalogs(catalogs, '2026Q4'), null);
+    assert.equal(previousCapacitySprintFromCatalogs(catalogs, '2027Q1')?.id, '11');
+    assert.equal(previousCapacitySprintFromCatalogs([[{ id: '21', name: '2027Q2', state: 'future', startDate: '2027-04-05' }]], '2027Q1'), null);
+    assert.equal(previousCapacitySprintFromCatalogs([], '2027Q1'), null);
+    assert.equal(previousCapacitySprintFromCatalogs(catalogs, 'Unscheduled'), null);
+});
+
+test('previous capacity value takes the complete {id, name} membership: configured hidden Teams, duplicate ids and colliding names', async () => {
+    const { previousPlanningCapacityValue } = await loadUtils();
+    const payload = { capacities: { Alpha: 20.5 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 20.5 }] };
+    const alpha = { id: 'team-alpha', name: 'Alpha' };
+    const beta = { id: 'team-beta', name: 'Beta' };
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [alpha, beta], 12), 20.5);
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [alpha, { ...alpha }, beta], 12), 20.5, 'repeated references to the same id count once');
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [alpha, { id: 'team-hidden', name: 'R&D Alpha' }], 12), 12, 'a configured Team that is not displayed still collides');
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [alpha, { id: 'team-other', name: 'Tech - Alpha' }], 12), 12, 'distinct ids normalizing alike: no prefill');
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [beta], 12), 12, 'a Team outside the membership is never prefilled');
+});
+
+test('previous capacity value fails closed on an unresolved membership name and keeps zero and full precision', async () => {
+    const { previousPlanningCapacityValue } = await loadUtils();
+    const payload = { capacities: { Alpha: 20.5 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 20.5 }] };
+    const alpha = { id: 'team-alpha', name: 'Alpha' };
+    for (const unresolved of [{ id: 'team-x', name: 'team-x' }, { id: 'team-y', name: '' }, { id: 'team-z', name: null }, { id: 'team-c', name: 'A, B' }]) {
+        assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [alpha, unresolved], 12), 12, JSON.stringify(unresolved));
+    }
+    assert.equal(previousPlanningCapacityValue(payload, 'Alpha', [{ id: 'team-alpha', name: 'team-alpha' }], 12), 12, 'a raw-id name is not a name');
+    const zero = { capacities: { Alpha: 0 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 0 }] };
+    assert.equal(previousPlanningCapacityValue(zero, 'Alpha', [alpha], 12), 0);
+    const fractional = { capacities: { Alpha: 20.555 }, entries: [{ teamName: 'Alpha', issueKey: 'CAP-1', capacity: 20.555 }] };
+    assert.equal(previousPlanningCapacityValue(fractional, 'Alpha', [alpha], 12), 20.555);
+    const duplicated = { ...payload, entries: [...payload.entries, { teamName: 'Alpha', issueKey: 'CAP-2', capacity: 8 }] };
+    assert.equal(previousPlanningCapacityValue(duplicated, 'Alpha', [alpha], 12), 12, 'two tickets for one Team: no prefill');
+});

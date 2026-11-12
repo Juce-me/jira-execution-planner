@@ -83,7 +83,7 @@ const searchPeople = [
 ];
 const defaultPeople = query => ({ users: searchPeople.filter(person => person.displayName.toLowerCase().includes(String(query || '').toLowerCase())), reason: null });
 
-async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople, capacityPatch = null, epics = [epic] } = {}) {
+async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeamIds = ['team-alpha', 'team-beta'], prefs = {}, capacityProject = '', issues = stories, capacity = defaultCapacity, authMode = 'atlassian_oauth', analytics = false, people = defaultPeople, capacityPatch = null, epics = [epic], workConfigurations = null, sprintsFor = null } = {}) {
     const calls = [];
     await installDashboardShell(page);
     // Planning counts only Stories included in the shared plan (#331); the previous default selection becomes a saved plan of every Story.
@@ -92,7 +92,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
     await page.route('**/api/**', async route => {
         const request = route.request();
         const url = new URL(request.url());
-        calls.push({ method: request.method(), pathname: url.pathname, teams: url.searchParams.get('teams'), body: request.method() === 'GET' ? null : requestBody(request) });
+        calls.push({ method: request.method(), pathname: url.pathname, teams: url.searchParams.get('teams'), params: Object.fromEntries(url.searchParams.entries()), body: request.method() === 'GET' ? null : requestBody(request) });
         if (url.pathname === '/api/auth/refresh') return route.fulfill({ status: 204, body: '' });
         if (url.pathname === '/api/auth/csrf') return json(route, { csrfToken: 'csrf-token' });
         if (url.pathname === '/api/epm/access') return json(route, { state: 'disabled', epmHomeReadAvailable: false });
@@ -100,6 +100,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
             return json(route, {
                 jiraUrl: 'https://jira.example', capacityProject, authMode, epmViewEnabled: false, epmHomeReadAvailable: false,
                 projectsConfigured: true, userCanEditSettings: true, environmentConfigExists: true,
+                ...(workConfigurations ? { workConfigurationsEnabled: true, workConfigurationsPromoted: true, workConfigurationSummaries: workConfigurations, adminSettingsMissingByConfiguration: Object.fromEntries(workConfigurations.map(item => [item.id, []])) } : {}),
                 viewConfig: { workspaceId: 'workspace-test', viewConfigId: 'view-test', version: 1, view: { selectedView: 'eng', selectedSprint: activeSprintId, sprintName: activeSprintName, activeGroupId: 'group-alpha', showPlanning: false, showScenario: false } },
             });
         }
@@ -123,6 +124,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
         if (/^\/api\/(sprint-field|parent-name-field|story-points-field|team-field|delivery-owner-field)\/config$/.test(url.pathname)) return json(route, { fieldId: '', fieldName: '', configRevision: 1 });
         if (url.pathname === '/api/issue-types/config') return json(route, { issueTypes: ['Story'], configRevision: 1 });
         if (url.pathname === '/api/stats/priority-weights-config') return json(route, { weights: [], source: 'test' });
+        if (url.pathname === '/api/sprints' && sprintsFor) return json(route, sprintsFor(Object.fromEntries(url.searchParams.entries())));
         if (url.pathname === '/api/sprints') {
             return json(route, { sprints: [
                 { id: activeSprintId, name: activeSprintName, state: 'active', startDate: '2026-05-01' },
@@ -131,7 +133,7 @@ async function install(page, { server, selectedTeams = ['team-alpha'], scopeTeam
             ] });
         }
         if (url.pathname === '/api/tasks-with-team-name') {
-            const product = url.searchParams.get('project') === 'product' && !url.searchParams.get('purpose');
+            const product = ['product', 'all'].includes(url.searchParams.get('project')) && !url.searchParams.get('purpose');
             return json(route, { issues: product ? issues : [], epics: Object.fromEntries(epics.map(item => [item.key, item])), epicsInScope: product ? epics : [], names: {} });
         }
         if (/^\/api\/eng\/sprints\/[^/]+\/assignee-capacity\/planned\/read$/.test(url.pathname)) return server.batch ? server.batch(route) : json(route, { sprintId: url.pathname.split('/')[4], capabilities: caps, teams: [] });
@@ -4793,4 +4795,75 @@ test('each new choice, Stories then Epics, is the one a data reload restores', a
     await page.waitForLoadState('networkidle'); await page.waitForTimeout(300);
     await expect(rowsButton(page, 'Epics')).toHaveAttribute('aria-checked', 'true');
     await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
+});
+
+// Cross-configuration prefill (docs/plans/EXEC-planning-capacity-prefill-cross-configuration.md, T1; expected RED until T2/T3).
+// Legacy answers through 2026Q4 (one active Sprint); DELIVERY answers from 2027Q1 (future Sprints only), so the viewed
+// catalog never holds the Sprint the earlier capacity ticket belongs to.
+const LEGACY_DIGEST = 'a'.repeat(32);
+const DELIVERY_DIGEST = 'b'.repeat(32);
+const twoConfigurations = [
+    { id: 'legacy', name: 'Legacy', revision: 3, model: 'legacy', fromQuarter: null, throughQuarter: '2026Q4', digest: LEGACY_DIGEST },
+    { id: 'delivery', name: 'DELIVERY', revision: 2, model: 'rnd_2027', fromQuarter: '2027Q1', throughQuarter: null, digest: DELIVERY_DIGEST },
+];
+const catalogEnvelope = (sprints, catalogVersion) => ({
+    sprints,
+    cache: {
+        backend: 'postgresql', identity: 'sc1:synthetic-two-catalogs', browserContextId: 'bc1:synthetic-two-catalogs', scopeDigest: null,
+        state: 'fresh', catalogVersion, validatedAt: '2026-11-12T09:00:00Z', refreshStatus: 'idle', refreshAttemptId: null,
+        refreshStarted: false, refreshFailed: false,
+    },
+});
+const twoCatalogSprints = params => (params.configurationId === 'legacy'
+    ? catalogEnvelope([
+        { id: 1999, name: '2026Q3', state: 'closed', startDate: '2026-07-01' },
+        { id: activeSprintId, name: '2026Q4', state: 'active', startDate: '2026-10-01' },
+    ], '44444444-4444-4444-8444-444444444444')
+    : catalogEnvelope([
+        { id: futureSprintId, name: '2027Q1', state: 'future', startDate: '2027-01-04' },
+        { id: 4003, name: '2027Q2', state: 'future', startDate: '2027-04-05' },
+        { id: 4004, name: '2027Q3', state: 'future', startDate: '2027-07-05' },
+        { id: 4005, name: '2027Q4', state: 'future', startDate: '2027-10-04' },
+    ], '55555555-5555-4555-8555-555555555555'));
+const mutatingCalls = calls => calls.filter(call => ['PATCH', 'PUT', 'POST', 'DELETE'].includes(call.method)
+    && !call.pathname.startsWith('/api/auth/') && !/\/read$/.test(call.pathname) && call.pathname !== '/api/eng/assignee-capacity/user-options');
+
+test('cross-configuration: a 2027Q1 Team capacity editor offers the 2026Q4 raw capacity from the Legacy catalog with one read and no write', async ({ page }) => {
+    const server = plannedServer();
+    const { calls } = await install(page, {
+        server, capacityProject: 'CAP', workConfigurations: twoConfigurations, sprintsFor: twoCatalogSprints,
+        capacity: sprint => (sprint === '2026Q4' ? ticket(27)(sprint) : noTicket(sprint)),
+    });
+    await openPlanningIn(page, '2027Q1');
+    await showCards(page);
+    const trigger = page.locator('.sprint-dropdown').first().locator('.sprint-dropdown-toggle');
+    await expect(trigger).toHaveText('2027Q1');
+    const priorReads = () => calls.filter(call => call.method === 'GET' && call.pathname === '/api/capacity' && call.params.sprint === '2026Q4');
+    expect(priorReads(), 'no earlier-Sprint capacity read before the editor opens').toHaveLength(0);
+    const workBefore = calls.filter(call => call.pathname === '/api/tasks-with-team-name').length;
+    await hover(page, alphaCard(page));
+    await plannedPencil(page).click();
+    const input = alphaCard(page).getByRole('spinbutton', { name: 'Alpha Team team capacity (not in Jira)' });
+    await expect.poll(() => priorReads().length, 'exactly one prior-Sprint capacity GET on open').toBe(1);
+    await expect(input).toHaveValue('27');
+    await page.waitForTimeout(400);
+    expect(priorReads()).toHaveLength(1);
+    expect(priorReads()[0].params.teams).toBe('Alpha Team');
+    expect(mutatingCalls(calls), 'no Jira or application write before Save').toEqual([]);
+    expect(server.state.patches).toEqual([]);
+    await expect(trigger).toHaveText('2027Q1');
+    expect(calls.filter(call => call.pathname === '/api/tasks-with-team-name').length, 'opening the editor does not reload work').toBe(workBefore);
+    for (const call of calls.filter(call => call.pathname === '/api/tasks-with-team-name')) expect(call.params.configurationId).toBe('delivery');
+    // The sibling catalog is read with its own configuration stamp (id, revision, digest); the catalog read carries no quarter.
+    const legacyReads = calls.filter(call => call.pathname === '/api/sprints' && call.params.configurationId === 'legacy');
+    expect(legacyReads.length).toBeGreaterThan(0);
+    for (const call of legacyReads) {
+        expect(call.params.configurationRevision).toBe('3');
+        expect(call.params.configurationDigest).toBe(LEGACY_DIGEST);
+        expect(call.params.quarter).toBeUndefined();
+    }
+    for (const call of calls.filter(call => call.pathname === '/api/sprints' && call.params.configurationId === 'delivery')) {
+        expect(call.params.configurationRevision).toBe('2');
+        expect(call.params.configurationDigest).toBe(DELIVERY_DIGEST);
+    }
 });

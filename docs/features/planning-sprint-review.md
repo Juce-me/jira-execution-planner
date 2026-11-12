@@ -27,9 +27,12 @@ rest. A group with no matching story is disabled. The popover stays open so seve
 groups can be toggled, and closes on an outside click or Escape. The popover stays inside the viewport and wraps whole toggles onto further lines; each toggle stays one line tall and never wraps, ellipsizes or clips its label. Hiding capacity
 details keeps the controls and counts visible; Details reveals the
 existing graphs and Team capacity content without changing inclusion or fetching
-another dataset. A refresh icon beside the details button re-reads the Jira capacity tickets; capacity
-errors ("Capacity unavailable — use Refresh capacity to retry") remain visible while
-details are hidden. Only the spreadsheet region widens;
+another dataset. While capacity is enabled, compact or expanded, a refresh icon (`planning-panel-refresh`, the shared
+refresh glyph) directly before the details button re-reads the Jira capacity tickets for the Sprint; its accessible name
+is Refresh capacity, and Refreshing capacity with `aria-busy` while the read runs. A repeat activation before that read
+settles sends nothing. Stale and failed reads show "Capacity stale — retry with ⟳" or "Capacity unavailable — retry with ⟳"
+(⟳ being the icon's own glyph, so the retry control is identifiable by tap, without hover); the line stays visible while
+details are hidden. Without capacity the icon is absent and the details button keeps its place. Only the spreadsheet region widens;
 extra columns scroll inside it.
 Summary titles and Teams in scope use bounded single lines with ellipsis in both
 read-only and editable profiles. Hover or keyboard focus reveals full text using
@@ -479,7 +482,28 @@ Teams until the Sprint's work is known. Every card shows its Team's stored numbe
 the project split, and the compact "Capacity:" total judges only Teams with effort or a capacity value. A Team whose name
 is unresolved (its id) or contains a comma keeps its card but shows no stored number and is not sent to the Jira read, and
 a Team never borrows another configured Team's ticket or stored number by name containment. Teams sharing a normalized
-capacity name keep their cards but have no stored-number fallback or pencil. Each card edits its own
+capacity name keep their cards but have no stored-number fallback or pencil.
+
+**Earlier-Sprint prefill.** Opening a card's editor whose own value is absent or inherited (the Jira editor also when the
+ticket reads 0, which stays the conflict baseline) offers the earlier Sprint's raw Jira capacity as the draft; an own
+`user` or `jira` value is never replaced. The earlier Sprint is ranked across the viewed configuration's catalog and every
+other work configuration whose range starts before the viewed quarter (for example a Legacy 2026Q4 for a DELIVERY 2027Q1):
+exactly one earlier active Sprint wins, otherwise the nearest earlier quarter with the latest start date; ties and rows
+whose id appears with a different name, state or start date fail closed. Each earlier catalog is read once per open
+through the configuration-stamped Sprint read (no forced refresh, nothing at startup), validated on its own (workspace,
+Jira site, browser context, catalog version, validation time, configuration revision and completion) and never feeds the
+Sprint selector. Then exactly one capacity read for that Sprint runs; prefill is a read-only suggestion that writes
+nothing until Save, copies no ticket identity, and never replaces a typed draft. Cancel, a new open, unmount, and a change
+of Sprint, Team scope or configuration revision end the lookup. When no value is offered the draft stays as stored,
+manual entry works, and the editor says why: "The earlier Sprint catalog is still loading." / "…is unavailable." /
+"The earlier Sprint is ambiguous, so no previous capacity is offered." / "Previous sprint capacity could not be loaded.",
+each followed by "Enter a value, or cancel and reopen to retry."; no earlier Sprint, no ticket or an expired sign-in shows
+nothing. A Team's ticket counts only when the Department's complete membership resolves every name uniquely and exactly
+one ticket entry matches. Accepted costs: if any earlier configuration's catalog is pending or unavailable, nothing is
+prefilled, even for a quarter the viewed catalog alone could answer; a validated catalog whose refresh time has merely
+passed still counts; one configured Team with no resolvable name (no catalog entry and no task this Sprint) blocks prefill
+for every Team of that Department; and distinct Teams that normalize to one name get no prefill and no message. Whether
+Jira's phrase search finds prefix-titled tickets (`[archived]`, `R&D`, `Product -`, `Tech -`) is unverified live. Each card edits its own
 Team's stored number with its own pencil, for its own Team and Sprint only; saves of different Teams run independently (at
 most 4 at once) and a scope change never retargets one. A failed save shows ↻ Retry and × Discard changes (that Team's
 stored-number draft only) in the card's hover rail, its message in the rail's readout and "N Team save(s) failed: hover a card to

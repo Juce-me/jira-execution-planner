@@ -5,11 +5,12 @@ import { buildConfigurationContext, catalogContextKey, quarterFromSprintName, qu
 import { rankPreviousCapacitySprint } from './planningCapacityUtils.js';
 
 // The configurations other than the viewed one whose saved range reaches a quarter earlier than `quarter`; each carries
-// its own catalog context, or null when it has no usable one (that source is then unavailable, never skipped).
+// its own catalog context, or null when it has no usable one (that source is then unavailable, never skipped). Without a
+// viewed configuration context (unpromoted or flag off) the viewed catalog is the only source, as before.
 export function earlierCapacitySources(summaries, currentContext, quarter) {
     const index = quarterIndex(quarter);
-    if (index === null) return [];
-    return (summaries || []).filter(summary => summary?.id && summary.id !== currentContext?.id
+    if (index === null || !currentContext) return [];
+    return (summaries || []).filter(summary => summary?.id && summary.id !== currentContext.id
         && (quarterIndex(summary.fromQuarter) ?? -Infinity) < index)
         .map(summary => buildConfigurationContext(summary, summary.fromQuarter || summary.throughQuarter));
 }

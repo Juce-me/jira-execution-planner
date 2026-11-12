@@ -164,10 +164,12 @@ export function validateSiblingSprintCatalog(envelope, { context, browserContext
     if (envelope.httpStatus !== 200 || envelope.error) return { status: 'unavailable' };
     const source = normalizeCatalogSource(cache);
     const sprints = normalizeSprintList(envelope.sprints);
-    const answered = { configurationId: cache.configurationId, configurationRevision: cache.configurationRevision };
+    // The backend stamps every configuration-scoped envelope; a missing stamp is not the requested configuration.
     const accepted = sprints !== null && Boolean(source.identity) && Boolean(browserContextId)
         && source.browserContextId === browserContextId && Boolean(cache.validatedAt) && Boolean(cache.catalogVersion)
-        && responseMatchesContext(context, answered) && responseMatchesContext(context, envelope.context ?? envelope.configuration)
+        && cache.configurationId != null && String(cache.configurationId) === context.id
+        && cache.configurationRevision != null && Number(cache.configurationRevision) === context.revision
+        && responseMatchesContext(context, envelope.context ?? envelope.configuration)
         && (!sources || (sources.length === 1 && sources[0]?.configurationId === context.id && sources[0]?.state === 'ready'))
         && sprints.every(sprint => sprint.configurationId === undefined || String(sprint.configurationId) === context.id);
     return accepted ? { status: 'ready', sprints } : { status: 'unavailable' };

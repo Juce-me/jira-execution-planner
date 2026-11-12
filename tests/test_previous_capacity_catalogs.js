@@ -38,6 +38,9 @@ test('sibling validator: HTTP 200 alone is not authority', async () => {
     assert.equal(check(envelope({}, { browserContextId: 'bc1:other-site' })), 'unavailable', 'foreign workspace or Jira site');
     assert.equal(check(envelope(), null), 'unavailable', 'no current browser context to compare with');
     assert.equal(check(envelope({}, { configurationRevision: 2 })), 'unavailable', 'stale configuration revision');
+    assert.equal(check(envelope({}, { configurationId: undefined })), 'unavailable', 'no configuration stamp');
+    assert.equal(check(envelope({}, { configurationRevision: undefined })), 'unavailable', 'no revision stamp');
+    assert.equal(check(envelope({}, { configurationRevision: '3' })), 'ready', 'the revision compares as a number');
     assert.equal(check(envelope({}, { configurationId: 'delivery' })), 'unavailable', 'another configuration answered');
     assert.equal(check(envelope({ sprints: [q4, { ...q3, configurationId: 'delivery' }] })), 'unavailable', 'a foreign row');
     assert.equal(check(envelope({ sprints: [q4, { ...q4 }] })), 'unavailable', 'duplicate ids are not a catalog');
@@ -124,4 +127,14 @@ test('resolver: the browser context is re-read when each answer arrives', async 
     let browser = BROWSER;
     const read = async () => { browser = 'bc1:switched'; return { status: 200, json: async () => envelope() }; };
     assert.equal((await resolve(read, { getBrowserContextId: () => browser })).state, 'unavailable');
+});
+
+test('resolver: without a viewed configuration context (unpromoted or flag off) no catalog is read; the viewed catalog alone answers', async () => {
+    const { earlierCapacitySources } = await loadResolver();
+    assert.deepEqual(earlierCapacitySources([LEGACY, DELIVERY], null, '2027Q1'), []);
+    const { calls, read } = reader({ legacy: envelope({}, { refreshStatus: 'pending' }) });
+    const result = await resolve(read, { currentContext: null, currentSprints: [q3, q4, ...delivery] });
+    assert.equal(calls.length, 0);
+    assert.equal(result.state, 'ready');
+    assert.equal(result.sprint.id, 2001);
 });

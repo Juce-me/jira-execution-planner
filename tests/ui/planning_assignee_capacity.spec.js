@@ -4838,10 +4838,11 @@ const twoConfigurations = [
     { id: 'legacy', name: 'Legacy', revision: 3, model: 'legacy', fromQuarter: null, throughQuarter: '2026Q4', digest: LEGACY_DIGEST },
     { id: 'delivery', name: 'DELIVERY', revision: 2, model: 'rnd_2027', fromQuarter: '2027Q1', throughQuarter: null, digest: DELIVERY_DIGEST },
 ];
-const catalogEnvelope = (sprints, catalogVersion) => ({
+const catalogEnvelope = (sprints, catalogVersion, configurationId, configurationRevision) => ({
     sprints,
     cache: {
         backend: 'postgresql', identity: 'sc1:synthetic-two-catalogs', browserContextId: 'bc1:synthetic-two-catalogs', scopeDigest: null,
+        configurationId, configurationRevision,
         state: 'fresh', catalogVersion, validatedAt: '2026-11-12T09:00:00Z', refreshStatus: 'idle', refreshAttemptId: null,
         refreshStarted: false, refreshFailed: false,
     },
@@ -4850,13 +4851,13 @@ const twoCatalogSprints = params => (params.configurationId === 'legacy'
     ? catalogEnvelope([
         { id: 1999, name: '2026Q3', state: 'closed', startDate: '2026-07-01' },
         { id: activeSprintId, name: '2026Q4', state: 'active', startDate: '2026-10-01' },
-    ], '44444444-4444-4444-8444-444444444444')
+    ], '44444444-4444-4444-8444-444444444444', 'legacy', 3)
     : catalogEnvelope([
         { id: futureSprintId, name: '2027Q1', state: 'future', startDate: '2027-01-04' },
         { id: 4003, name: '2027Q2', state: 'future', startDate: '2027-04-05' },
         { id: 4004, name: '2027Q3', state: 'future', startDate: '2027-07-05' },
         { id: 4005, name: '2027Q4', state: 'future', startDate: '2027-10-04' },
-    ], '55555555-5555-4555-8555-555555555555'));
+    ], '55555555-5555-4555-8555-555555555555', 'delivery', 2));
 const mutatingCalls = calls => calls.filter(call => ['PATCH', 'PUT', 'POST', 'DELETE'].includes(call.method)
     && !call.pathname.startsWith('/api/auth/') && !/\/read$/.test(call.pathname) && call.pathname !== '/api/eng/assignee-capacity/user-options'
     && call.pathname !== '/api/dependencies'); // a read-by-POST of the loaded Stories' links (fetchDependencies)

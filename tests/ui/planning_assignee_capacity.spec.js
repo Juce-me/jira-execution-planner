@@ -5015,8 +5015,9 @@ test('cross-configuration: a 401 on the Legacy catalog read is silent in the edi
 });
 // The resolver-identity fence, on the mounted cards alone: in the full app a configuration re-read also resets the viewed
 // Sprint catalog (Planning shows "Loading sprints"), which would end the editor by unmounting it instead. Here only the
-// resolver changes, as it does when a configuration revision or the browser context changes.
-test('cross-configuration: a new resolver (configuration revision change) while the lookup is open cancels it with no capacity GET and no prefill', async ({ page }) => {
+// resolver changes, as usePreviousCapacityCatalogs changes it: `revisionKey` follows the configuration revisions, and a
+// browser context change makes a new resolver with the same key.
+async function mountResolverHarness(page) {
     const path = require('node:path');
     const fs = require('node:fs');
     const esbuild = require('./fixture_bundles');
@@ -5029,17 +5030,17 @@ test('cross-configuration: a new resolver (configuration revision change) while 
             window.__lookups = []; window.__capacityReads = [];
             const entry = { id: 'team-a', name: 'Alpha Team', storyPoints: 4, capacityTargetState: 'matched', capacityIssueKey: 'CAP-1', capacityTargetTeamName: 'Alpha Team',
                 capacityTargetCapacity: null, hasCapacityValue: false, teamCapacity: null, rawCapacity: null, capacitySource: '', plannedEditable: false };
-            const readPreviousCapacity = (sprintName, teamName) => { window.__capacityReads.push(sprintName);
-                return Promise.resolve({ enabled: true, capacities: { 'Alpha Team': 27 }, entries: [{ teamName: 'Alpha Team', issueKey: 'CAP-0', capacity: 27 }] }); };
-            const makeResolver = revision => (sprintName, { signal }) => new Promise((resolve, reject) => {
-                const lookup = { revision, resolve, get aborted() { return signal.aborted; } };
+            const held = (list, fields, signal) => new Promise((resolve, reject) => {
+                list.push({ ...fields, resolve, get aborted() { return signal.aborted; } });
                 signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })));
-                window.__lookups.push(lookup);
             });
+            const readPreviousCapacity = (sprintName, teamName, { signal }) => held(window.__capacityReads, { sprintName }, signal);
             function Harness() {
-                const [revision, setRevision] = React.useState(3);
-                window.__setRevision = setRevision;
-                const resolver = React.useMemo(() => makeResolver(revision), [revision]);
+                const [key, setKey] = React.useState({ revision: 3, browser: '' });
+                window.__setRevision = revision => setKey(previous => ({ ...previous, revision }));
+                window.__setBrowser = browser => setKey(previous => ({ ...previous, browser }));
+                const resolver = React.useMemo(() => Object.assign((sprintName, { signal }) => held(window.__lookups, { revision: key.revision }, signal),
+                    { revisionKey: String(key.revision) }), [key.revision, key.browser]);
                 return <PlanningTeamCapacityCards entries={[entry]} capacityEnabled canOpenCapacityJira canEditCapacity jiraUrl="https://jira.example"
                     sprintName="2027Q1" scopeSignature="scope" resolvePreviousCapacitySprint={resolver} readPreviousCapacity={readPreviousCapacity}
                     updateCapacityRequest={() => Promise.reject(new Error('no write'))} resolveTeamColor={() => '#7a8bc4'} getTeamCapacityMeta={() => ({ status: '' })} />;
@@ -5057,6 +5058,12 @@ test('cross-configuration: a new resolver (configuration revision change) while 
     const input = card.getByRole('spinbutton', { name: 'Alpha Team Jira total planned capacity' });
     await expect.poll(() => page.evaluate(() => window.__lookups.length)).toBe(1);
     await expect(input).toBeDisabled();
+    return { card, input };
+}
+const previousSprintMessages = /earlier Sprint|Previous sprint capacity could not be loaded/;
+
+test('cross-configuration: a new resolver (configuration revision change) while the catalog lookup is open cancels it with the unavailable message and no capacity GET', async ({ page }) => {
+    const { card, input } = await mountResolverHarness(page);
     await page.evaluate(() => window.__setRevision(4));
     await expect(card).toContainText('The earlier Sprint catalog is unavailable.');
     expect(await page.evaluate(() => window.__lookups[0].aborted), 'the open lookup is aborted').toBe(true);
@@ -5065,10 +5072,32 @@ test('cross-configuration: a new resolver (configuration revision change) while 
     // A late answer of the cancelled lookup changes nothing and sends no capacity GET.
     await page.evaluate(() => window.__lookups[0].resolve({ state: 'ready', sprint: { id: '2001', name: '2026Q4' } }));
     await page.waitForTimeout(300);
-    expect(await page.evaluate(() => window.__capacityReads)).toEqual([]);
+    expect(await page.evaluate(() => window.__capacityReads.length)).toBe(0);
     await expect(input).toHaveValue('');
     await input.fill('19');
     await expect(card.getByRole('button', { name: 'Save Alpha Team capacity' })).toBeEnabled();
 });
+
+test('cross-configuration: a configuration revision change during the earlier capacity GET cancels it silently with no prefill', async ({ page }) => {
+    const { card, input } = await mountResolverHarness(page);
+    await page.evaluate(() => window.__lookups[0].resolve({ state: 'ready', sprint: { id: '2001', name: '2026Q4' } }));
+    await expect.poll(() => page.evaluate(() => window.__capacityReads.map(read => read.sprintName))).toEqual(['2026Q4']);
+    await page.evaluate(() => window.__setRevision(4));
+    await expect(input).toBeEnabled();
+    expect(await page.evaluate(() => window.__capacityReads[0].aborted), 'the capacity GET is aborted').toBe(true);
+    await expect(card).not.toContainText(previousSprintMessages);
+    await expect(input).toHaveValue('');
+});
+
+test('cross-configuration: a browser context that arrives (null to a value) during the catalog lookup cancels it silently', async ({ page }) => {
+    const { card, input } = await mountResolverHarness(page);
+    await page.evaluate(() => window.__setBrowser('bc1:synthetic'));
+    await expect(input).toBeEnabled();
+    expect(await page.evaluate(() => window.__lookups[0].aborted), 'the open lookup is aborted').toBe(true);
+    await expect(card).not.toContainText(previousSprintMessages);
+    await expect(input).toHaveValue('');
+    expect(await page.evaluate(() => window.__capacityReads.length)).toBe(0);
+});
+
 
 

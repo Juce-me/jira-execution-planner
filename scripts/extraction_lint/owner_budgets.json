@@ -18417,7 +18417,7 @@
             "return spread/dynamic"
           ],
           "inventory": {
-            "sourceDigest": "c9a543d8b6a81de554201a63faa2bc4dff29814f5aa20ffdc2c86627abddf8af",
+            "sourceDigest": "ca0053de8571bef208707fd82d03c4b50a12309065002141737f566db329b9f5",
             "reviewed": true,
             "memberNames": [
               "backendUrl",
@@ -18426,7 +18426,7 @@
               "currentSprints",
               "summaries"
             ],
-            "rationale": "Cross-configuration capacity prefill (T2): one object parameter of five named inputs; backendUrl and currentContext are forwarded to fetchSprints and the configuration-range filter, read only when the returned resolver is called on an explicit editor open. The return is one useCallback resolver (no state, no effects, no startup request); its identity follows the viewed catalog context, the browser context and each summary's id/revision/digest/range."
+            "rationale": "Cross-configuration capacity prefill (T2): one object parameter of five named inputs; backendUrl and currentContext are forwarded to fetchSprints and the configuration-range filter, read only when the returned resolver is called on an explicit editor open. The return is one useMemo resolver carrying a revisionKey (the configuration part of its identity, so the editor tells a revision change from a browser context change) (no state, no effects, no startup request); its identity follows the viewed catalog context, the browser context and each summary's id/revision/digest/range."
           },
           "callers": [
             {

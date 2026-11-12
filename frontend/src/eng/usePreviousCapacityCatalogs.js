@@ -44,15 +44,16 @@ export async function resolvePreviousCapacitySprint({ sprintName, summaries, cur
 }
 
 // The editor's lookup-private previous-Sprint resolver. Its identity changes with the viewed configuration, the saved
-// configuration revisions or the browser context, so an editor open in flight can fence on it. Reads happen only on call.
+// configuration revisions or the browser context, so an editor open in flight can fence on it; `revisionKey` names the
+// configuration part, so the editor can tell a revision change from a browser context change. Reads happen only on call.
 export function usePreviousCapacityCatalogs({ backendUrl, summaries, currentContext, currentSprints, browserContextId }) {
     const latest = React.useRef(null);
     latest.current = { summaries, currentContext, currentSprints, browserContextId };
-    const signature = [catalogContextKey(currentContext), browserContextId || '',
+    const revisionKey = [catalogContextKey(currentContext),
         ...(summaries || []).map(summary => [summary?.id, summary?.revision, summary?.digest, summary?.fromQuarter, summary?.throughQuarter].join('|'))].join('\n');
-    return React.useCallback((sprintName, { signal } = {}) => resolvePreviousCapacitySprint({
+    return React.useMemo(() => Object.assign((sprintName, { signal } = {}) => resolvePreviousCapacitySprint({
         sprintName, ...latest.current, signal,
         getBrowserContextId: () => latest.current.browserContextId,
         read: (context, options) => fetchSprints(backendUrl, { context, signal: options.signal }),
-    }), [backendUrl, signature]);
+    }), { revisionKey }), [backendUrl, revisionKey, browserContextId || '']);
 }

@@ -281,6 +281,8 @@ export default function PlanningTeamCapacityCards({
     const restoreFocusIssueRef = React.useRef('');
     const requestAbortRef = React.useRef(null);
     const prefillTokenRef = React.useRef(0);
+    // Which await the open chain is in: 'catalog' (resolving the earlier Sprint) or 'capacity' (its one capacity GET).
+    const prefillPhaseRef = React.useRef('');
     const submissionRef = React.useRef(false);
     const previousReadRevisionRef = React.useRef(capacityReadRevision);
     const latestScopeRef = React.useRef(scopeSignature);
@@ -571,6 +573,7 @@ export default function PlanningTeamCapacityCards({
         const token = prefillTokenRef.current + 1;
         prefillTokenRef.current = token;
         const { signal } = controller;
+        prefillPhaseRef.current = 'catalog';
         const live = () => !signal.aborted && prefillTokenRef.current === token && editorRef.current?.id === nextEditor.id
             && editorRef.current.prefilling && latestScopeRef.current === nextEditor.scopeSignature;
         const settle = ({ draft, errorMessage = '' }) => {
@@ -586,6 +589,7 @@ export default function PlanningTeamCapacityCards({
                     : await resolveFromViewedCatalog({ sprintName: nextEditor.sprintName, currentSprints: sprints, summaries: [], signal });
                 if (!live()) return;
                 if (resolved?.state !== 'ready') { settle({ errorMessage: PREVIOUS_SPRINT_MESSAGES[resolved?.state] || '' }); return; }
+                prefillPhaseRef.current = 'capacity';
                 const payload = await readPreviousCapacity(resolved.sprint.name, entry.name, { signal });
                 if (!live()) return;
                 const value = previousPlanningCapacityValue(payload, entry.name, latestMembersRef.current, stored);
@@ -598,14 +602,17 @@ export default function PlanningTeamCapacityCards({
         })();
     };
 
-    // A changed configuration revision or browser context (a new resolver) ends an open lookup; the draft is kept.
+    // A new resolver (configuration revision or browser context change) ends an open lookup; the draft is kept. Only a
+    // revision change while the catalogs are being resolved says the catalog is unavailable; any other cancel is silent.
     const previousResolverRef = React.useRef(resolvePreviousCapacitySprint);
     React.useEffect(() => {
-        if (previousResolverRef.current === resolvePreviousCapacitySprint) return;
+        const previous = previousResolverRef.current;
+        if (previous === resolvePreviousCapacitySprint) return;
         previousResolverRef.current = resolvePreviousCapacitySprint;
         if (!editorRef.current?.prefilling) return;
         requestAbortRef.current?.abort();
-        setEditor({ ...editorRef.current, prefilling: false, errorMessage: PREVIOUS_SPRINT_MESSAGES.unavailable });
+        const revised = prefillPhaseRef.current === 'catalog' && previous?.revisionKey !== resolvePreviousCapacitySprint?.revisionKey;
+        setEditor({ ...editorRef.current, prefilling: false, errorMessage: revised ? PREVIOUS_SPRINT_MESSAGES.unavailable : '' });
     }, [resolvePreviousCapacitySprint]);
 
     const cancelEditor = (restoreFocus) => {

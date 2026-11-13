@@ -22,7 +22,7 @@ Use this file to choose the right plan before starting auth, DB, or Home/Townsqu
 
 ## Current Planning Work
 
-- [Planning capacity prefill across configurations](EXEC-planning-capacity-prefill-cross-configuration.md): diagnose and repair cross-configuration previous-Sprint capacity lookup, Team ambiguity and refresh recovery.
+- [Planning capacity prefill across configurations](DONE-planning-capacity-prefill-cross-configuration.md): diagnose and repair cross-configuration previous-Sprint capacity lookup, Team ambiguity and refresh recovery.
 - [Shared Planning inclusion and clear controls #331](DONE-planning-shared-plan-331.md): prerequisite app-wide DB/OAuth-only retirement, then shared Department/Sprint inclusion, atomic review save, scoped projection, recovery, wording, Table inspection and real persistence/concurrency acceptance.
 - [Quarterly project configurations design](SUPPORT-quarterly-project-configurations-design.md): Settings hierarchy, component reuse, DB/OAuth-only quarterly configuration contracts, runnable mockup and accepted planning decisions.
 - [Quarterly work-structure migration](DONE-quarterly-work-structure-migration.md): Tasks 0–6 with dependencies and acceptance journeys for DB/OAuth quarter ranges, reader enablement, isolated reviews, combined capacity and Legacy Scenario compatibility; separate extraction remains a release prerequisite.

@@ -4829,7 +4829,7 @@ test('each new choice, Stories then Epics, is the one a data reload restores', a
     await expect.poll(() => reviewRowKinds(page)).toEqual(['epic']);
 });
 
-// Cross-configuration prefill (docs/plans/EXEC-planning-capacity-prefill-cross-configuration.md, T1; expected RED until T2/T3).
+// Cross-configuration prefill (docs/plans/DONE-planning-capacity-prefill-cross-configuration.md, T1; expected RED until T2/T3).
 // Legacy answers through 2026Q4 (one active Sprint); DELIVERY answers from 2027Q1 (future Sprints only), so the viewed
 // catalog never holds the Sprint the earlier capacity ticket belongs to.
 const LEGACY_DIGEST = 'a'.repeat(32);

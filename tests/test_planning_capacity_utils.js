@@ -1062,7 +1062,7 @@ test('previous-Sprint prefill reads Jira with the normalized Team name the Sprin
     assert.equal(params.get('teams'), 'Data Science', 'Jira phrase-searches "Team info <Sprint> - <name>"; the raw "R&D …" name misses tickets titled without it');
 });
 
-// Cross-configuration prefill (docs/plans/EXEC-planning-capacity-prefill-cross-configuration.md, T1). Expected RED until
+// Cross-configuration prefill (docs/plans/DONE-planning-capacity-prefill-cross-configuration.md, T1). Expected RED until
 // T2/T3 add `rankPreviousCapacitySprint(catalogs, sprintName)` (catalogs: one validated Sprint array per
 // configuration) and make `previousPlanningCapacityValue(payload, teamName, members, stored)` take the complete `{ id, name }`
 // membership of the active Department group instead of the displayed names.

@@ -1,6 +1,6 @@
 # Planning capacity prefill across work configurations
 
-> **Status:** Implemented on branch `bugfix/team-capacity-prefill-and-refresh-icon` (T0-T5, 2026-11-12); not yet published. Rename to `DONE-*` and name the head commit at publication, per root `AGENTS.md` section 10. Implementation branch: `bugfix/team-capacity-prefill-and-refresh-icon`. Independent of the unfinished historical capacity-editing plan. This contract supersedes that plan's removed read-status panel and Retry-button requirements, including its prop inventory. Reviewed 2026-11-12 by three independent read-only reviews (frontend flow, backend/identity, file map/process); their confirmed findings are folded in below.
+> **Status:** Done. Executed in branch `bugfix/team-capacity-prefill-and-refresh-icon` (T0-T5, 2026-11-12). Kept for audit context only; see Outcome and Current Accuracy at the end.
 
 ## Outcome and current accuracy
 

@@ -1,5 +1,5 @@
 // Cross-configuration capacity prefill: the per-sibling catalog validator and the on-open previous-Sprint resolver
-// (docs/plans/EXEC-planning-capacity-prefill-cross-configuration.md, T2). Synthetic identities only.
+// (docs/plans/DONE-planning-capacity-prefill-cross-configuration.md, T2). Synthetic identities only.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 

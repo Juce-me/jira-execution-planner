@@ -841,12 +841,21 @@ test('history rows render current and loaded version states', async ({ page }) =
     await expect(currentRow.getByText('Current')).toBeVisible();
     await expect(currentRow.getByText('Loaded')).toHaveCount(0);
     await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
 });
 
 test('keyboard opens history, focuses the title, and Escape returns focus to History', async ({ page }) => {
     await installDashboardFromSource(page);
     await openScenarioWithDirtyDraft(page);
 
+    let releaseHistory;
+    const historyReply = new Promise(resolve => { releaseHistory = resolve; });
+    await page.route('**/api/scenario/drafts**', async route => {
+        if (new URL(route.request().url()).pathname !== '/api/scenario/drafts' || route.request().method() !== 'GET') return route.fallback();
+        await historyReply;
+        return route.fallback();
+    });
     const historyButton = page.getByRole('button', { name: 'History' });
     await historyButton.focus();
     await page.keyboard.press('Enter');
@@ -855,6 +864,12 @@ test('keyboard opens history, focuses the title, and Escape returns focus to His
     await expect(dialog).toBeVisible();
     await expect(page.locator('#scenario-draft-history-title')).toBeFocused();
 
+    await expect(historyButton).toBeDisabled();
+    // Exercise focus return after the read settles. Rapid-close focus while the trigger is
+    // disabled is a deferred keyboard-only finding (docs/TODO.md).
+    releaseHistory();
+    await expect(historyButton).toBeEnabled();
+    await expect(dialog.getByText('Version 1', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
 
     await expect(dialog).toHaveCount(0);

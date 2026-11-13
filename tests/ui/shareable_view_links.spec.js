@@ -113,7 +113,7 @@ async function installDocumentRoutes(page) {
 
 async function installLinkFixture(page, {
     groupsSource = 'workspace_db', preferences = {}, taskGate = null, taskAuthFailure = false, epmEnabled = false,
-    prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false, cohortIssues = null,
+    prefs = {}, teamSelection = null, analytics = null, capsules = null, coldAlerts = null, matrix = false, backendCache = null, strictScope = '', statsRefresh = false, cohortIssues = null, configDelayMs = 0,
 } = {}) {
     const calls = [];
     const requestCalls = new Map();
@@ -175,6 +175,7 @@ async function installLinkFixture(page, {
         if (url.pathname === '/api/epm/access') return reply({ state: epmEnabled ? 'available' : 'disabled', epmHomeReadAvailable: epmEnabled });
         if (url.pathname === '/api/analytics/context') return reply(analytics || { enabled: false });
         if (url.pathname === '/api/config') {
+            if (configDelayMs) await new Promise(resolve => setTimeout(resolve, configDelayMs));
             return reply({
                 jiraUrl: 'https://jira.example', capacityProject: '', authMode: 'atlassian_oauth', groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false, userCanEditSettings: true, projectsConfigured: true, environmentConfigExists: true,
@@ -715,7 +716,7 @@ const MATRIX_CASES = [
         flags: { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1) }, endpoint: '/api/stats/epic-cohort', requestModes: ['closed'] },
     { name: 'Lead Times Last N', mode: 'statistics', query: '&stats=cohort&lead=last_n&n=50', flags: { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortLastN: 50 }, endpoint: '/api/stats/epic-cohort', requestModes: ['last_n'] },
     // The recipient already sits in Lead Times Closed on another Department and Sprint: the link must not let that saved view read first.
-    { name: 'Lead Times Last N over a saved Closed view', mode: 'statistics', query: '&stats=cohort&lead=last_n&n=50',
+    { name: 'Lead Times Last N over a saved Closed view', mode: 'statistics', configDelayMs: 140, query: '&stats=cohort&lead=last_n&n=50',
         recipientPrefs: { showStats: true, statsView: 'cohort', cohortMode: 'closed', cohortClosedStartQuarter: quarterLabel(-2), cohortClosedEndQuarter: quarterLabel(-1) },
         flags: { showStats: true, statsView: 'cohort', cohortMode: 'last_n', cohortLastN: 50 }, endpoint: '/api/stats/epic-cohort', requestModes: ['last_n'] },
     { name: 'source-only Statistics Project Track', mode: 'statistics', query: '&stats=projectTrack&from=42&to=42',
@@ -734,7 +735,7 @@ async function matrixRun(browser, scenario, { linked = false, backendCache = new
     const manualPrefs = { ...MANUAL_SCOPE_B42, ...scenario.flags };
     // Match the raw session state the real selectBoardScope/commitSprintSelection controls write;
     // it has no persisted preference key. Only the initial value changes in the synthetic bundle.
-    const calls = await installLinkFixture(page, { matrix: true, backendCache, analytics: ANALYTICS_ENABLED,
+    const calls = await installLinkFixture(page, { matrix: true, backendCache, analytics: ANALYTICS_ENABLED, configDelayMs: scenario.configDelayMs,
         ...(linked ? {} : MANUAL_DEPARTMENT_B), strictScope: linked ? '' : scenario.strict || '', statsRefresh: !linked && Boolean(scenario.sourceOnly),
         prefs: { ...(linked ? { selectedSprint: 40, sprintName: 'Sprint 40', ...scenario.recipientPrefs } : manualPrefs), ...(sprintCatalog ? { sprintCatalog } : {}) },
     });
@@ -772,7 +773,7 @@ for (const scenario of MATRIX_CASES) {
                     if (call.params.teamIds) expect(call.params.teamIds.split(',').every(id => ['team-b1', 'team-b2'].includes(id))).toBe(true);
                 }
                 const scoped = run.calls.filter(call => call.pathname === scenario.endpoint);
-                expect(scoped.every(call => call.cacheHit === (cache === 'warm' && !call.cacheBypassed))).toBe(true);
+                expect(scoped.every(call => call.cacheHit === (cache === 'warm' && !call.cacheBypassed)), JSON.stringify(scoped.map(({ body, cacheHit }) => ({ body, cacheHit })))).toBe(true);
                 // Warm source-only initial navigation deliberately bypasses its data cache on both paths.
                 // The warmed catalog is still consumed and validated; never relabel a forced source miss as a hit.
                 const catalog = run.calls.find(call => call.pathname === '/api/sprints');

@@ -726,6 +726,10 @@ test('the Board panel row computes six grid cells and Catch Up\'s computes four'
     templates.forEach((row) => expect(row.cells).toBe(6));
     // Column-aligned: every row computes the identical template.
     expect(new Set(templates.map((row) => row.template)).size).toBe(1);
+    // Catch Up's shared intrinsic track must never leak into the six-column Board table.
+    const starts = await rows.evaluateAll(nodes => nodes.map(node => [...node.children].map(cell => cell.getBoundingClientRect().left)));
+    starts.forEach(row => row.forEach((left, index) => expect(Math.abs(left - starts[0][index])).toBeLessThan(1)));
+
 
     // And the same page, with the modifier removed, computes the app's existing four-cell row —
     // proof the BASE rule was not changed to make the panel work.
@@ -767,7 +771,7 @@ test('the panel shows an SP header aligned right over fixed one- or two-decimal 
 // two-column `status` area, so the pill overflows its cell.
 
 
-test('Catch Up\'s own subtask panel still computes the four-cell row, unchanged', async ({ page }) => {
+test('Catch Up\'s own subtask panel shares four columns without Board priority or SP cells', async ({ page }) => {
     const calls = [];
     await loadDashboard(page, calls, { showBoard: false });
     await page.waitForSelector('.task-item[data-task-key="PLAT-1-b"]', { timeout: 10000 });
@@ -777,8 +781,9 @@ test('Catch Up\'s own subtask panel still computes the four-cell row, unchanged'
     await expect(rows).toHaveCount(1);
 
     await expect(rows.first()).not.toHaveClass(/has-priority/);
-    const templates = await rowTemplates(rows);
-    expect(templates[0].cells).toBe(4);
+    expect(await rows.first().evaluate(node => getComputedStyle(node).gridTemplateColumns)).toMatch(/^subgrid/);
+    const columns = await rows.first().evaluate(node => getComputedStyle(node.parentElement).gridTemplateColumns.split(' ').length);
+    expect(columns).toBe(4);
     // The row that Catch Up renders carries no priority cell at all.
     await expect(rows.first().locator('.task-priority-icon')).toHaveCount(0);
     expect(await rows.first().evaluate((node) => node.children.length)).toBe(4);

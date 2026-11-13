@@ -751,3 +751,98 @@ test('ENG story subtask retry refreshes failed rows', async ({ page }) => {
     expect(retryCall.params.refresh).toBe('true');
     await expect(page.locator('.story-subtask-row')).toHaveCount(3);
 });
+
+
+// #346: exercise the actual Catch Up list and the read-only IssueCard consumer of its scope.
+for (const width of [1024, 1600]) {
+    for (const passive of [false, true]) {
+        test(`Catch Up subtask geometry at ${width}px (${passive ? 'passive' : 'interactive'})`, async ({ page }) => {
+            await page.setViewportSize({ width, height: width === 1024 ? 768 : 1000 });
+            const calls = [];
+            const payload = statusColorSubtaskPayload();
+            payload.subtasks[0].summary = 'A long synthetic subtask title '.repeat(30);
+            await installEngSubtasksFixture(page, calls, { subtaskResponse: () => payload });
+            await page.addInitScript(prefs => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify(prefs)), {
+                selectedView: 'eng', selectedSprint: selectedSprintId, sprintName: selectedSprintName,
+                activeGroupId: 'grp-default', showPlanning: false, showScenario: false,
+            });
+            await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
+            const card = page.locator('.task-item[data-task-key="PROD-1"]');
+            await expect(card).toBeVisible();
+            if (passive) {
+                const bundle = esbuild.buildSync({ stdin: { contents: `
+                    import React from 'react';
+                    import { createRoot } from 'react-dom/client';
+                    import IssueCard from './frontend/src/issues/IssueCard.jsx';
+                    const host = document.createElement('div');
+                    document.querySelector('.task-item[data-task-key="PROD-1"]').replaceWith(host);
+                    createRoot(host).render(<IssueCard task={${JSON.stringify(parentStory())}}
+                        jiraUrl="https://jira.example" statusTransitionEnabled={false}
+                        subtaskState={{expanded:true, items:${JSON.stringify(payload.subtasks)}}} />);
+                `, resolveDir: repoRoot, loader: 'jsx' }, bundle: true, write: false, format: 'iife' });
+                await page.addScriptTag({ content: bundle.outputFiles[0].text });
+            } else {
+                await card.locator('.story-subtasks-toggle').click();
+            }
+            const panel = page.locator('.story-subtasks-panel');
+            await expect(panel.locator('.story-subtask-row')).toHaveCount(7);
+            await waitForVisualSettled(page);
+            const phase = process.env.JEP_SUBTASK_CAPTURE_PHASE || 'after';
+            const captureDir = path.join(repoRoot, 'tmp/issue-346');
+            fs.mkdirSync(captureDir, { recursive: true });
+            await page.screenshot({ path: `${captureDir}/${phase}-${width}-${passive ? 'passive' : 'interactive'}.png`, fullPage: true });
+            const metrics = await panel.evaluate(node => {
+                const box = el => { const r = el.getBoundingClientRect(); return { left:r.left, right:r.right, top:r.top, bottom:r.bottom, width:r.width }; };
+                const card = node.closest('.task-item'), cs = getComputedStyle(card), cb = box(card);
+                return {
+                    panel: box(node), innerLeft: cb.left + parseFloat(cs.borderLeftWidth) + parseFloat(cs.paddingLeft),
+                    innerRight: cb.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight),
+                    overflow: document.documentElement.scrollWidth > innerWidth,
+                    rows: [...node.querySelectorAll('.story-subtask-row')].map(row => {
+                        const pill = row.querySelector('.task-status');
+                        const range = document.createRange(); range.selectNodeContents(pill);
+                        const label = range.getBoundingClientRect(); const ps = getComputedStyle(pill);
+                        return { row:box(row), pill:box(pill), label:{left:label.left,right:label.right},
+                            padding:parseFloat(ps.paddingRight), track:box(row.querySelector('.status-transition') || pill),
+                            name:box(row.querySelector('.story-subtask-name')), assignee:box(row.querySelector('.story-subtask-assignee')),
+                            date:box(row.querySelector('.story-subtask-updated')),
+                            ellipsized:row.querySelector('.story-subtask-name').scrollWidth > row.querySelector('.story-subtask-name').clientWidth };
+                    }),
+                };
+            });
+            fs.writeFileSync(`${captureDir}/${phase}-${width}-${passive ? 'passive' : 'interactive'}.json`, JSON.stringify(metrics, null, 2));
+            expect(Math.abs(metrics.panel.left - metrics.innerLeft)).toBeLessThan(1);
+            expect(Math.abs(metrics.panel.right - metrics.innerRight)).toBeLessThan(1);
+            expect(metrics.overflow).toBe(false);
+            for (const row of metrics.rows) {
+                expect(Math.abs(row.row.width - metrics.panel.width)).toBeLessThan(1);
+                expect(Math.abs(row.pill.left - metrics.rows[0].pill.left)).toBeLessThan(1);
+                expect(row.label.left - row.pill.left).toBeGreaterThanOrEqual(row.padding - 1);
+                expect(row.pill.right - row.label.right).toBeGreaterThanOrEqual(row.padding - 1);
+                expect(row.pill.left).toBeGreaterThanOrEqual(row.track.left);
+                expect(row.pill.right).toBeLessThanOrEqual(row.track.right);
+                expect(row.name.right).toBeLessThan(row.pill.left);
+                expect(row.pill.right).toBeLessThan(row.assignee.left);
+                expect(row.assignee.right).toBeLessThan(row.date.left);
+            }
+            expect(metrics.rows[0].ellipsized).toBe(true);
+            if (!passive) {
+                await page.route('**/api/issues/transitions/options', route => route.fulfill({ json: {
+                    targetStatuses:[{ name:'Done', availableCount:1, blockedCount:0 }],
+                } }));
+                const pill = panel.locator('button.task-status', { hasText:'Awaiting Validation' });
+                await pill.click();
+                const menu = panel.locator('.status-transition-menu');
+                await expect(menu).toBeVisible();
+                const option = menu.getByRole('menuitem').first();
+                await expect(option).toBeVisible();
+                const triggerBox = await pill.boundingBox(), menuBox = await menu.boundingBox();
+                expect(Math.abs(menuBox.x - triggerBox.x)).toBeLessThan(2);
+                expect(menuBox.y).toBeGreaterThanOrEqual(triggerBox.y + triggerBox.height);
+                expect(menuBox.x + menuBox.width).toBeLessThanOrEqual(width);
+                expect(await option.evaluate(el => { const b=el.getBoundingClientRect(); return el.contains(document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)); })).toBe(true);
+                expect(calls.filter(call => call.method !== 'GET' && !['/api/auth/refresh', '/api/issues/transitions/options', '/api/dependencies'].includes(call.pathname))).toEqual([]);
+            }
+        });
+    }
+}

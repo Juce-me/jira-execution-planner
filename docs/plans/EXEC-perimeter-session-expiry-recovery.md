@@ -1,6 +1,6 @@
 # Perimeter Session Expiry Recovery Implementation Plan
 
-> **Status:** Planned (2026-11-23), revision R2 after two independent reviews; not executed. Branch `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`. Operator accepted D-1 A and D-2 A on 2026-11-23.
+> **Status:** Implemented locally (2026-11-23), revision R2. Branch `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`. The operator accepted D-1 through D-4 and authorized execution from the local R2 commit `4dee2624` without publishing the branch. Retain `EXEC-` until the operator authorizes publication.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -64,6 +64,15 @@ A dashboard tab left open for about a week showed the "Server is not responding"
 3. **Background traffic during a blocked recovery.** Repeated perimeter events while recovery is waiting for a save or blocked on preservation must not start repeated probes. Tested in Task 2.
 4. **ENG Board stream (`apiFetchHeaders`, the only caller is `engBoardApi.js`).** It must get the typed error. Scenario realtime uses `EventSource`, which follows the redirect, errors and falls back to polling; polling then gets the typed error through `apiFetch`. Tested in Task 1 for `apiFetchHeaders`.
 5. **Lazy view chunks after expiry.** `lazyViewLoaders.js` fetches a manifest and imports chunks that the proxy also redirects. Out of scope: the existing MRT032 Retry/Reload page recovery handles it with its own copy. Recorded in `docs/TODO.md` (Task 4); no test.
+
+## Execution Record
+
+- **Task 1 complete, `cea36090`.** Independent review approved. The first test run produced 10 expected JS failures; the navigation guards and all 24 Python inventory tests passed. The build and all 144 focused JS, 24 Python, and 17 auth/config checks passed after implementation. Two additional existing fetch-init assertions in the mapped source-guard test needed the enforced redirect option. Review added exact redirect-path coverage and a concurrent authentication-lock test; the 8 HTTP and 24 Python checks passed again.
+- **Task 2 complete, `2ebe4595`.** Independent review approved. The first test run reproduced seven hook and two Chromium failures; the auth-lock guard already passed. Chromium's focus harness needed a 60,001 ms clock advance in place of importing an ES module. Focused verification passed: 26 hook and owner, 93 source and design, nine isolated structure, and 36 Chromium checks. Review added an in-memory preservation guard, retention of the prior capsule when a new document still lacks a mounted principal, and mutual exclusion with Scenario restoration. One source pin in the Task 1 file map was updated in Task 2 to protect the previous-restore versus newer-outage ownership boundary. The dashboard grew by the two planned lines to 7,504 of 7,508.
+- **Task 3 complete, `83d179e0`.** Independent review approved. The first test run reproduced three hook, one hosted-copy, and one Chromium failure. Offline, timeout and local copy guards already passed. Focused verification passed: 35 hook and owner, 46 runtime, and 21 Chromium checks. Review covered focus and visibility while the offer is active, retention of a prior capsule, explicit discard without reprobing, and manual perimeter copy while awaiting a click. One extra frontend source-guard run outside Task 3's named verification passed all 79 checks. Desktop Chromium screenshots of the real banner and built styles confirmed the copy and button changes.
+- **Task 4 complete, `f9b0e39d`.** Independent review approved. All 12 isolated documentation checks and 63 analytics checks passed after the final wording update. The ontology Coverage line is unchanged. The plan rename and index change remain deferred to publication.
+
+The live hosting redirect chain and a real IdP sign-in across the capsule TTL remain unverified. Tests use synthetic redirects and desktop Chromium. Lazy view chunks keep their existing MRT032 recovery (Review Focus 5).
 
 ---
 

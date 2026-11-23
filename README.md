@@ -394,7 +394,7 @@ Junk Sprint views: each group is capped at 500 Sprint views and the app has no d
 
 Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
 
-OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes.
+OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes. When the perimeter session expires, the app expects `/api/*` requests to receive a redirect and recovers by reloading the page, while a bare `401` from the perimeter triggers the app’s sign-in lock screen.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner container-build method, branch/tag policy, and when image push may be enabled.

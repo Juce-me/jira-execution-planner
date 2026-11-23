@@ -7,28 +7,32 @@ function mountRecovery({
     storageWorks = true, identityChanged = false, captureThrows = false,
     probeError, probeWait, authLocked = false, values = new Map(), visibility = 'visible', pendingWrite = false,
     outageError = new Error('synthetic outage'), principalMounted = true, attemptStorageWorks = true, scenario = null,
+    dirtySettings = false, dirtyPlanning = true, scenarioRecoveryOwners,
 } = {}) {
     const oldWindow = global.window, oldDocument = global.document;
     const principal = { workspaceId: 'workspace-1', viewConfigId: 'view-1' };
     const messages = [], waitCalls = [];
-    let reloads = 0, probes = 0, captures = 0, finishPendingWrite;
+    const capsuleKey = 'jira_dashboard_connection_recovery_v1';
+    let reloads = 0, probes = 0, captures = 0, capsuleMutations = 0, finishPendingWrite;
     const win = new EventTarget();
     win.sessionStorage = {
         getItem: key => values.get(key) || null,
         setItem: (key, value) => {
+            if (key === capsuleKey) capsuleMutations++;
             if (!storageWorks || (!attemptStorageWorks && key === 'jira_dashboard_connection_recovery_attempt_v1')) throw new Error('quota');
             values.set(key, value);
         },
-        removeItem: key => values.delete(key),
+        removeItem: key => { if (key === capsuleKey) capsuleMutations++; values.delete(key); },
     };
     win.setTimeout = setTimeout; win.clearTimeout = clearTimeout; win.location = { reload: () => reloads++ };
     global.window = win; global.document = new EventTarget(); document.visibilityState = visibility;
     const snapshot = {
-        principal, outage: { id: '' }, view: { selectedView: 'eng', activeGroupId: 'group-1', selectedSprint: '101', engMode: 'statistics', scrollX: 0, scrollY: 0 }, droppedSettings: false, scenario,
-        planning: { scope: { workspaceId: 'workspace-1', groupId: 'group-1', sprintId: '101', namespaceId: null }, selectedTeams: [], submission: null,
-            draft: { inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } },
+        principal, outage: { id: '' }, view: { selectedView: 'eng', activeGroupId: 'group-1', selectedSprint: '101', engMode: 'statistics', scrollX: 0, scrollY: 0 }, droppedSettings: dirtySettings, scenario,
+        planning: dirtyPlanning ? { scope: { workspaceId: 'workspace-1', groupId: 'group-1', sprintId: '101', namespaceId: null }, selectedTeams: [], submission: null,
+            draft: { inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } } : null,
     };
     const owner = mountBundledHook({ entry: path.resolve('frontend/src/api/useConnectionRecovery.js'), exportName: 'useConnectionRecovery', modules: {
+        ...(scenarioRecoveryOwners && { '../scenario/connectionScenarioRecovery.js': scenarioRecoveryOwners }),
         './configApi.js': { fetchAppConfig: async (_url, { signal }) => {
             probes++;
             if (probeWait) await probeWait;
@@ -56,6 +60,7 @@ function mountRecovery({
     return {
         owner, principal, values, messages, waitCalls,
         get reloads() { return reloads; }, get probes() { return probes; }, get captures() { return captures; },
+        get capsuleMutations() { return capsuleMutations; },
         allowStorage() { storageWorks = true; },
         finishPendingWrite() { finishPendingWrite(); },
         lockAuthentication() { authLocked = true; },
@@ -356,8 +361,51 @@ const scenarioDraft = {
     groupId: 'group-1', sprintId: '101', scopeKey: 'scenario-scope', activeDraftId: null, baseDraftRevision: 0,
     savedOverrides: {}, localOverrides: {}, editMode: false, scrollTop: 0, scrollLeft: 0,
 };
+const stagedScenarioDraft = { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-24', end: '2026-09-25' } } };
+
+for (const [label, scenario] of [
+    ['missing', null],
+    ['conflicting', { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-26', end: '2026-09-27' } } }],
+    ['identical', stagedScenarioDraft],
+]) {
+    test(`an uninstalled Scenario draft survives a mounted capture that is ${label}`, async () => {
+        const values = new Map();
+        const capsuleKey = 'jira_dashboard_connection_recovery_v1';
+        const first = mountRecovery({ probeError: perimeterError, scenario: stagedScenarioDraft, values });
+        try {
+            await dispatchPerimeterExpiry();
+            assert.equal(first.reloads, 1);
+        } finally { first.close(); }
+
+        const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario, values });
+        try {
+            const { consume, markBootstrapHealthy, recover } = second.owner.result;
+            const pending = consume(second.principal);
+            assert.deepEqual(pending.scenario.localOverrides, stagedScenarioDraft.localOverrides);
+            for (const part of ['config', 'groups', 'sprints']) markBootstrapHealthy(part);
+            const beforeOutage = new Map(values);
+            assert.equal(beforeOutage.size, 1);
+            await dispatchPerimeterExpiry();
+            const result = second.owner.render();
+            assert.equal(second.reloads, 0);
+            assert.equal(second.capsuleMutations, 0);
+            assert.deepEqual(values, beforeOutage);
+            assert.equal(result.pendingRef.current, pending);
+            assert.equal(result.notice.kind, 'preservation_failed');
+            window.dispatchEvent(new Event('focus'));
+            document.dispatchEvent(new Event('visibilitychange'));
+            await flushRecovery();
+            assert.equal(second.probes, 1);
+
+            await recover({ manual: true, discardUnsaved: true });
+            assert.equal(second.reloads, 1);
+            assert.deepEqual(JSON.parse(values.get(capsuleKey)).scenario?.localOverrides ?? null, scenario?.localOverrides ?? null);
+        } finally { second.close(); }
+    });
+}
 
 test('a newer perimeter outage remains retryable after Scenario finishes ahead of Planning', async () => {
+    const scenarioRecoveryOwners = await import('../frontend/src/scenario/connectionScenarioRecovery.js');
     const values = new Map();
     const capsuleKey = 'jira_dashboard_connection_recovery_v1';
     const first = mountRecovery({ probeError: perimeterError, scenario: scenarioDraft, values });
@@ -366,9 +414,9 @@ test('a newer perimeter outage remains retryable after Scenario finishes ahead o
         assert.equal(first.reloads, 1);
     } finally { first.close(); }
     const originalCapsule = values.get(capsuleKey);
-    const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario: scenarioDraft, values });
+    const second = mountRecovery({ outageError: null, probeError: perimeterError, scenarioRecoveryOwners, values });
     try {
-        const { consume, markBootstrapHealthy, scenarioStartedRef, setStatus, recover } = second.owner.result;
+        const { consume, markBootstrapHealthy, pendingRef, releaseOwnership, scenarioStartedRef, setStatus, recover } = second.owner.result;
         const pending = consume(second.principal);
         assert.ok(pending.scenario && pending.planning);
         for (const part of ['config', 'groups', 'sprints']) markBootstrapHealthy(part);
@@ -384,6 +432,9 @@ test('a newer perimeter outage remains retryable after Scenario finishes ahead o
         assert.equal(values.get(capsuleKey), originalCapsule);
 
         // Scenario settles without releasing the shared capsule while Planning still owns it.
+        assert.equal(scenarioRecoveryOwners.completeConnectionRecoveryOwner({
+            pendingRecoveryRef: pendingRef, owner: 'scenario', releaseOwnership, recovery: pending,
+        }), false);
         scenarioStartedRef.current = false;
         const result = second.owner.render();
         assert.equal(result.status, 'unavailable');
@@ -471,6 +522,35 @@ test('a perimeter expiry that cannot store dirty Planning keeps the page', async
         assert.equal(h.reloads, 0);
         for (let i = 0; i < 3; i++) await dispatchPerimeterExpiry();
         assert.equal(h.probes, 1);
+    } finally { h.close(); }
+});
+
+test('automatic recovery waits for explicit action when dirty Settings cannot be preserved', async () => {
+    const h = mountRecovery({ outageError: null, probeError: perimeterError, storageWorks: false, dirtySettings: true, dirtyPlanning: false });
+    try {
+        await dispatchPerimeterExpiry();
+        let result = h.owner.render();
+        assert.equal(result.status, 'discard_required');
+        const notice = result.notice;
+        assert.equal(notice.kind, 'discard_required');
+        assert.equal(h.probes, 1);
+
+        for (let i = 0; i < 2; i++) {
+            await dispatchPerimeterExpiry();
+            assert.equal(h.owner.render().status, 'discard_required');
+            window.dispatchEvent(new Event('focus'));
+            document.dispatchEvent(new Event('visibilitychange'));
+            await flushRecovery();
+        }
+        result = h.owner.render();
+        assert.equal(h.probes, 1);
+        assert.equal(h.reloads, 0);
+        assert.equal(result.status, 'discard_required');
+        assert.equal(result.notice, notice);
+
+        await result.recover({ manual: true, discardUnsaved: true });
+        assert.equal(h.probes, 2);
+        assert.equal(h.reloads, 1);
     } finally { h.close(); }
 });
 

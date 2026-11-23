@@ -16,6 +16,7 @@ import {
     writeConnectionRecoveryState,
 } from './connectionRecoveryState.js';
 import { getServerConnectionErrorMessage, isBackendConnectionFailure } from '../dashboardRuntime.js';
+import { isConnectionRecoveryOwnerComplete } from '../scenario/connectionScenarioRecovery.js';
 
 export const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
 
@@ -132,7 +133,7 @@ export function useConnectionRecovery({
         setServerConnectionError(expired
             ? 'Your sign-in session expired. Reloading to sign in again; unsaved changes are kept.'
             : getServerConnectionErrorMessage(backendUrl));
-        if (!['checking', 'waiting_for_save', 'restoring', 'manual_required', 'reload_offered'].includes(statusRef.current)) {
+        if (!['checking', 'waiting_for_save', 'restoring', 'manual_required', 'reload_offered', 'discard_required'].includes(statusRef.current)) {
             setStatusTracked('unavailable');
         }
         window.dispatchEvent(new Event(CONNECTION_UNAVAILABLE_EVENT));
@@ -155,7 +156,8 @@ export function useConnectionRecovery({
     const recover = React.useCallback(async ({ manual = false, discardUnsaved = false } = {}) => {
         if (!unavailableRef.current || inFlightRef.current || reloadStartedRef.current || scenarioStartedRef.current) return;
         const reloadOffered = statusRef.current === 'reload_offered';
-        if (!manual && (reloadOffered || discardWithoutProbeRef.current)) return;
+        if (!manual && (reloadOffered || statusRef.current === 'discard_required'
+            || preservationFailedRef.current || discardWithoutProbeRef.current)) return;
         const storage = getConnectionRecoveryStorage(window);
         const outageId = outageIdRef.current;
         if (!manual && !canAutomaticallyRecoverConnection(storage, outageId)) {
@@ -198,16 +200,18 @@ export function useConnectionRecovery({
                 if (readPendingAuthenticationRequired() || scenarioStartedRef.current) return;
             }
             let captured;
+            let captureFailed = false;
             try { captured = mountedPrincipal && !(skipProbe && discardUnsaved) ? snapshotRef.current?.() : null; }
-            catch (error) {
-                if (!discardUnsaved) {
-                    preservationFailedRef.current = true;
-                    discardWithoutProbeRef.current = skipProbe;
-                    setStatusTracked('unavailable');
-                    setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
-                    return;
-                }
-                captured = null;
+            catch (error) { captureFailed = true; }
+            const pending = pendingRef.current;
+            // Keep the original capsule and its expiry until the staged Scenario owner completes.
+            const hasUninstalledScenario = pending?.scenario && !isConnectionRecoveryOwnerComplete(pending, 'scenario');
+            if (!discardUnsaved && (captureFailed || hasUninstalledScenario)) {
+                preservationFailedRef.current = true;
+                discardWithoutProbeRef.current = skipProbe;
+                setStatusTracked('unavailable');
+                setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
+                return;
             }
             if (identityChanged && (captured?.scenario || captured?.planning) && !discardUnsaved) {
                 setStatusTracked('discard_required');

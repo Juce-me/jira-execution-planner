@@ -315,6 +315,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                 markBootstrapHealthy: markConnectionBootstrapHealthy,
                 notice: connectionRecoveryNotice,
                 pendingRef: pendingConnectionRecoveryRef,
+                perimeterExpired: connectionPerimeterExpired,
                 recover: recoverServerConnection,
                 releaseOwnership: releaseConnectionRecoveryOwnership,
                 reportServerConnectionError,
@@ -6399,6 +6400,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                     <ServerUnavailableBanner
                         message={serverConnectionError}
                         status={connectionRecoveryStatus}
+                        perimeterExpired={connectionPerimeterExpired}
                         onRetry={() => recoverServerConnection({ manual: true })}
                     />
 

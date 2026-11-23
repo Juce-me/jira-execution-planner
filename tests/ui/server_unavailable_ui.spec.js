@@ -31,6 +31,48 @@ async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
     return { fixture, state };
 }
 
+async function openWithPerimeterExpiry(page) {
+    const state = { redirect: false, documents: 0, idpRequests: [] };
+    page.on('request', request => {
+        if (request.resourceType() === 'document') {
+            state.documents += 1;
+            state.redirect = false;
+        }
+        if (request.url().startsWith('https://idp.example.test')) state.idpRequests.push(request.url());
+    });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
+    await page.route('**/api/**', route => (state.redirect
+        ? route.fulfill({ status: 302, headers: { Location: 'https://idp.example.test/auth' } })
+        : route.fallback()));
+    await gotoAfterInitialSprints(page);
+    await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
+    return state;
+}
+
+test('an expired perimeter session reloads once and restores the dashboard', async ({ page }) => {
+    const state = await openWithPerimeterExpiry(page);
+    const documentsBefore = state.documents;
+    state.redirect = true;
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+    await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
+    await expect(page.locator('.server-unavailable-banner')).toHaveCount(0);
+    expect(state.documents).toBe(documentsBefore + 1);
+    expect(state.idpRequests).toEqual([]);
+});
+
+test('a focus auth refresh that meets the perimeter redirect recovers', async ({ page }) => {
+    await page.clock.install();
+    const state = await openWithPerimeterExpiry(page);
+    await page.clock.fastForward(60_001); // Past AUTH_REFRESH_THROTTLE_MS.
+    const documentsBefore = state.documents;
+    state.redirect = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+});
+
 test('shows a visible server error when bootstrap API requests cannot connect', async ({ page }) => {
     const consoleFailures = [];
     page.on('console', message => {

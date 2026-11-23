@@ -372,6 +372,10 @@ test('display cache validation key changes only for accepted validation', () => 
     assert.equal(sprintCatalogValidationKey(null), '');
 });
 
+test('isBackendConnectionFailure classifies an expired perimeter session', () => {
+    assert.equal(isBackendConnectionFailure({ name: 'PerimeterSessionExpiredError' }), true);
+});
+
 test('isBackendConnectionFailure classifies the config bootstrap timeout but not other aborts', () => {
     const timeout = new Error('Config did not respond');
     timeout.name = 'ConfigBootstrapTimeoutError';

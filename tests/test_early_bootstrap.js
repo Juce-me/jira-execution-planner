@@ -94,7 +94,7 @@ function createPage({ protocol = 'https:', backendUrl = '', responder = () => js
     }
     const sandbox = {
         console, URL, Headers, Request, Response, ReadableStream, TextEncoder, AbortController, AbortSignal, DOMException,
-        Date: HarnessDate,
+        Date: HarnessDate, Event,
         location,
         BACKEND_URL: backendUrl,
         performance: { now: () => clock.now },
@@ -159,7 +159,7 @@ test('test_contract_requests_equal_the_loader_requests', async () => {
         const call = page.fetchCalls[index];
         const { signal, ...loaderInit } = call.init || {};
         assert.equal(call.url, request.url);
-        assert.deepEqual(plain(loaderInit), request.init);
+        assert.deepEqual(plain(loaderInit), { ...request.init, redirect: 'manual' });
         assert.equal(String(loaderInit.method || 'GET').toUpperCase(), String(request.init.method || 'GET').toUpperCase());
         assert.deepEqual([...new Headers(loaderInit.headers || {})], [...new Headers(request.init.headers || {})]);
         assert.equal(loaderInit.cache || 'default', request.init.cache || 'default');
@@ -179,7 +179,7 @@ test('test_script_starts_both_requests_once_with_no_referrer_and_no_query', () =
         const { signal, ...rest } = call.init;
         assert.equal(call.url, url);
         assert.ok(!call.url.includes('find='), 'The early request must never carry the page query');
-        assert.deepEqual(plain(rest), { ...init, credentials: 'same-origin', referrerPolicy: 'no-referrer' });
+        assert.deepEqual(plain(rest), { ...init, credentials: 'same-origin', referrerPolicy: 'no-referrer', redirect: 'manual' });
         assert.equal(typeof signal?.aborted, 'boolean');
     }
     const slot = page.slot();
@@ -355,6 +355,19 @@ test('test_stalled_body_after_adopted_headers_obeys_the_callers_abort_signal', a
     assert.equal(timed.slot().config.claimed, true);
     assert.equal(timed.slot().config.controller.signal.aborted, true);
     assert.equal(timed.callsTo(CONFIG_URL).length, 1);
+});
+
+test('an adopted early opaque redirect rejects apiFetch with the typed error and starts no second fetch', async () => {
+    const page = createPage({ responder: url => url === CONFIG_URL ? {
+        type: 'opaqueredirect', status: 0, ok: false,
+        clone: () => ({
+            arrayBuffer: async () => new ArrayBuffer(0),
+            json: async () => { throw new Error('opaque'); },
+        }),
+    } : jsonResponse({}) });
+    page.runScript();
+    await assert.rejects(page.app.apiFetch(CONFIG_URL), { name: 'PerimeterSessionExpiredError' });
+    assert.equal(page.fetchCalls.length, 2);
 });
 
 test('test_early_401_is_adopted_locks_once_and_is_never_replaced_by_a_second_request', async () => {

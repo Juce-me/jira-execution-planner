@@ -1,3 +1,4 @@
+import inspect
 import unittest
 
 import jira_server
@@ -17,6 +18,27 @@ POLICY_ONLY_ROUTES_PENDING_IMPLEMENTATION = set()
 class EndpointPolicyInventoryTests(unittest.TestCase):
     def route_methods(self, rule):
         return sorted(method for method in rule.methods if method not in IGNORED_METHODS)
+
+    def test_only_navigation_auth_api_routes_redirect(self):
+        app = jira_server.app
+        api_rules = [rule for rule in app.url_map.iter_rules() if rule.rule.startswith("/api/")]
+        navigation_paths = {"/api/auth/atlassian/login", "/api/auth/atlassian/callback"}
+        navigation_rules = {rule.rule: rule.endpoint for rule in api_rules if rule.rule in navigation_paths}
+        self.assertEqual(set(navigation_rules), navigation_paths)
+
+        redirect_rules = [
+            rule for rule in api_rules
+            if "redirect(" in inspect.getsource(app.view_functions[rule.endpoint])
+        ]
+        self.assertEqual({rule.endpoint for rule in redirect_rules}, set(navigation_rules.values()))
+        self.assertEqual({rule.rule for rule in redirect_rules}, navigation_paths)
+
+    def test_no_api_rule_ends_with_slash(self):
+        slash_rules = sorted(
+            rule.rule for rule in jira_server.app.url_map.iter_rules()
+            if rule.rule.startswith("/api/") and rule.rule.endswith("/")
+        )
+        self.assertEqual(slash_rules, [])
 
     def test_every_non_static_route_method_has_exactly_one_security_policy(self):
         from backend.security.policy import matching_policies

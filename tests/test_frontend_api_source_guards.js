@@ -18,13 +18,13 @@ test('first-run guide owns no endpoint literals and save auth outcomes stay in d
     assert.ok(saveHook.includes('committedSections'));
 });
 
-function listSourceFiles(root) {
+function listSourceFiles(root, include = name => /\.(?:js|jsx|mjs|ts|tsx)$/.test(name)) {
     if (!fs.existsSync(root)) return [];
     const entries = fs.readdirSync(root, { withFileTypes: true });
     return entries.flatMap((entry) => {
         const fullPath = path.join(root, entry.name);
-        if (entry.isDirectory()) return listSourceFiles(fullPath);
-        return /\.(?:js|jsx|mjs|ts|tsx)$/.test(entry.name) ? [fullPath] : [];
+        if (entry.isDirectory()) return listSourceFiles(fullPath, include);
+        return include(entry.name) ? [fullPath] : [];
     });
 }
 
@@ -36,13 +36,21 @@ function relativeFile(filePath) {
     return path.relative(path.join(__dirname, '..'), filePath);
 }
 
+test('navigation-only auth API routes are never fetched', () => {
+    const violations = listSourceFiles(frontendSrcPath, () => true)
+        .filter(filePath => readSource(filePath).includes('/api/auth/atlassian/'))
+        .map(relativeFile);
+    assert.deepEqual(violations, []);
+});
+
 function loadHttpHelpers() {
     const helperPath = path.join(frontendSrcPath, 'api', 'http.js');
     assert.ok(fs.existsSync(helperPath), 'Expected frontend/src/api/http.js to exist');
     const source = readSource(helperPath)
         .replace(/import\s+\{[^}]+\}\s+from\s+'[^']+';\n?/g, '')
         .replaceAll('export async function ', 'async function ')
-        .replaceAll('export function ', 'function ');
+        .replaceAll('export function ', 'function ')
+        .replaceAll('export class ', 'class ');
     class TestAuthenticationRequiredError extends Error {
         constructor(state = {}) {
             super('Authentication is required to continue.');
@@ -250,7 +258,8 @@ function withoutMountedManifestFetch(source) {
 
 const httpBoundaryOwner = 'frontend/src/api/http.js';
 const earlyBootstrapOwner = 'frontend/src/api/earlyBootstrap.js';
-const earlyBootstrapFetch = "fetch(request.url, { ...request.init, signal: controller.signal, credentials: 'same-origin', referrerPolicy: 'no-referrer' })";
+const earlyBootstrapFetch = "fetch(request.url, { ...request.init, signal: controller.signal, credentials: 'same-origin', referrerPolicy: 'no-referrer', redirect: 'manual' })";
+const bufferedResponseFetch = "response = (early ? await early.promise : null) || await fetch(url, { ...options, redirect: 'manual' });";
 const nativeFetchCall = /\bfetch\s*\(/g;
 
 function countNativeFetches(source) {
@@ -270,7 +279,7 @@ function assertBoundaryFetches(source) {
     const buffered = functionBody(source, 'async function performApiFetch(url, options) {');
     const streaming = functionBody(source, 'export async function apiFetchHeaders(url, options = {}) {');
     assert.ok(buffered.includes('const early = takeEarlyResponse(url, options);'), 'performApiFetch must offer each read to the early registry');
-    assert.ok(buffered.includes('response = (early ? await early.promise : null) || await fetch(url, options);'), 'performApiFetch must adopt the early response before its own fetch');
+    assert.ok(buffered.includes(bufferedResponseFetch), 'performApiFetch must adopt the early response before its own manual redirect fetch');
     assert.equal(countNativeFetches(buffered), 1, 'Expected one native fetch in performApiFetch');
     assert.equal(countNativeFetches(streaming), 1, 'Expected one native fetch in apiFetchHeaders');
     assert.equal(countNativeFetches(source), 2, 'Expected exactly two native fetch calls in the shared HTTP boundary');
@@ -289,7 +298,7 @@ function withoutEarlyBootstrapFetch(source) {
     assert.doesNotMatch(source, /\/api\//, 'The early script takes its URLs from the shared contract');
     assert.doesNotMatch(source, /location\.(?:search|href|hash)|URLSearchParams|localStorage|sessionStorage|indexedDB|document\.cookie/,
         'The early script reads no query string and no storage');
-    assert.equal(source.split(earlyBootstrapFetch).length - 1, 1, 'Expected exactly one approved early bootstrap fetch');
+    assert.equal(source.split(earlyBootstrapFetch).length - 1, 1, 'Expected exactly one approved early bootstrap fetch with manual redirects');
     const remainingSource = source.replace(earlyBootstrapFetch, '');
     assert.doesNotMatch(remainingSource, nativeFetchCall, 'The early script must not add native fetch calls');
     return remainingSource;
@@ -339,7 +348,7 @@ test('native fetch classification rejects extra early bootstrap fetches, a third
         { [earlyBootstrapOwner]: early.replace('resolveBackendUrl(window)', 'window.location.origin') },
         { [httpBoundaryOwner]: `${boundary}\nfetch('/unexpected');` },
         { [httpBoundaryOwner]: boundary.replace('export function getJson(', "function extraRead() { return fetch('/unexpected'); }\nexport function getJson(") },
-        { [httpBoundaryOwner]: boundary.replace('response = (early ? await early.promise : null) || await fetch(url, options);', 'response = await fetch(url, options);') },
+        { [httpBoundaryOwner]: boundary.replace(bufferedResponseFetch, "response = await fetch(url, { ...options, redirect: 'manual' });") },
     ];
     for (const mutation of mutations) {
         assert.throws(() => nativeFetchViolations({ ...sources, ...mutation }), assert.AssertionError);
@@ -454,7 +463,7 @@ test('shared API HTTP helpers preserve caller options and headers', async () => 
         const getOptions = { cache: 'no-cache' };
         await getJson('/api/example', 'GET example', getOptions);
         assert.equal(calls[0].url, '/api/example');
-        assert.deepEqual(calls[0].options, getOptions);
+        assert.deepEqual(calls[0].options, { ...getOptions, redirect: 'manual' });
 
         await postJson('/api/example', { id: 1 }, 'POST example', {
             cache: 'no-cache',
@@ -995,7 +1004,7 @@ test('settings API wrappers preserve save body shapes and no-cache reads', async
 
         assert.deepEqual(appConfig, { ok: true });
         assert.equal(calls[0].url, 'http://backend/api/config?includeViewConfig=true');
-        assert.deepEqual(calls[0].options, {});
+        assert.deepEqual(calls[0].options, { redirect: 'manual' });
 
         assert.equal(calls[1].url, 'http://backend/api/board-config');
         assert.equal(calls[1].options.method, 'GET');

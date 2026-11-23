@@ -28,7 +28,7 @@ function startEarlyRequest(slot, request) {
     };
     let pending;
     try {
-        pending = fetch(request.url, { ...request.init, signal: controller.signal, credentials: 'same-origin', referrerPolicy: 'no-referrer' });
+        pending = fetch(request.url, { ...request.init, signal: controller.signal, credentials: 'same-origin', referrerPolicy: 'no-referrer', redirect: 'manual' });
     } catch {
         pending = null;
     }

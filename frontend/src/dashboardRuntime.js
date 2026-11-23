@@ -686,6 +686,7 @@ export function describeEpmReadError(error, fallback = '') {
 }
 
 export function isBackendConnectionFailure(error) {
+    if (error?.name === 'PerimeterSessionExpiredError') return true;
     if (!error || error.name === 'AbortError') return false;
     if (error.name === 'ConfigBootstrapTimeoutError') return true;
     const message = String(error.message || error || '').toLowerCase();

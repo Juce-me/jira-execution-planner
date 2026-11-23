@@ -698,7 +698,12 @@ export function isBackendConnectionFailure(error) {
 }
 
 export function getServerConnectionErrorMessage(backendUrl) {
-    return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
+    let hostname;
+    try { hostname = new URL(backendUrl).hostname; } catch {}
+    if (hostname === undefined || ['localhost', '127.0.0.1', '[::1]'].includes(hostname)) {
+        return `Server is not responding at ${backendUrl}. Start the Python server, then retry.`;
+    }
+    return `The server at ${backendUrl} is not reachable. Retry when it is available.`;
 }
 
 export function getCurrentQuarter() {

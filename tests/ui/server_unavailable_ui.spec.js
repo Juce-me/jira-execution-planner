@@ -301,7 +301,30 @@ test('a Retry probe that still cannot connect says so instead of silently repeat
     const documentsBefore = state.documents;
     await page.getByRole('button', { name: 'Retry connection' }).click();
     await expect(page.getByText('The server is still unreachable. Retry when it is available.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled();
+    const reload = page.getByRole('button', { name: 'Reload page' });
+    await expect(reload).toBeEnabled();
+    expect(state.documents).toBe(documentsBefore);
+
+    await reload.click();
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+});
+
+test('a perimeter expiry during a reload offer prompts the user to reload to sign in', async ({ page }) => {
+    let refuseConfig = false;
+    const { state } = await openWithSprintOutage(page, {
+        routes: () => page.route('**/api/config?**', route => (refuseConfig ? route.abort('connectionrefused') : route.fallback())),
+    });
+    refuseConfig = true;
+    const documentsBefore = state.documents;
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+    const reload = page.getByRole('button', { name: 'Reload page' });
+    await expect(reload).toBeEnabled();
+
+    await page.evaluate(() => window.dispatchEvent(new Event('jep:perimeter-session-expired')));
+    const banner = page.getByRole('alert').filter({ hasText: 'Sign-in session expired' });
+    await expect(banner).toContainText('Sign-in session expired');
+    await expect(banner).toContainText('Your sign-in session expired. Reload the page to sign in again; unsaved changes are kept.');
+    await expect(reload).toBeEnabled();
     expect(state.documents).toBe(documentsBefore);
 });
 

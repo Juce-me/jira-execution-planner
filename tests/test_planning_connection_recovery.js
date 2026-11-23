@@ -29,9 +29,10 @@ function mountRecovery({
             draft: { inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } },
     };
     const owner = mountBundledHook({ entry: path.resolve('frontend/src/api/useConnectionRecovery.js'), exportName: 'useConnectionRecovery', modules: {
-        './configApi.js': { fetchAppConfig: async () => {
+        './configApi.js': { fetchAppConfig: async (_url, { signal }) => {
             probes++;
             if (probeWait) await probeWait;
+            signal.throwIfAborted();
             if (probeError) throw probeError;
             return { viewConfig: identityChanged ? { ...principal, workspaceId: 'other' } : principal };
         } },
@@ -55,6 +56,7 @@ function mountRecovery({
     return {
         owner, principal, values, messages, waitCalls,
         get reloads() { return reloads; }, get probes() { return probes; }, get captures() { return captures; },
+        allowStorage() { storageWorks = true; },
         finishPendingWrite() { finishPendingWrite(); },
         lockAuthentication() { authLocked = true; },
         close() { owner.unmount(); global.window = oldWindow; global.document = oldDocument; },
@@ -62,6 +64,83 @@ function mountRecovery({
 }
 
 const perimeterError = { name: 'PerimeterSessionExpiredError' };
+const unreachableProbeError = new TypeError('NetworkError when attempting to fetch resource.');
+
+function mockNavigator(onLine) {
+    const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+    if (onLine === undefined) {
+        Reflect.deleteProperty(globalThis, 'navigator');
+    } else {
+        Object.defineProperty(globalThis, 'navigator', { value: { onLine }, configurable: true });
+    }
+    return () => {
+        if (original) Object.defineProperty(globalThis, 'navigator', original);
+        else Reflect.deleteProperty(globalThis, 'navigator');
+    };
+}
+
+test('a manual probe that cannot connect offers a reload', async () => {
+    const h = mountRecovery({ probeError: unreachableProbeError });
+    const restoreNavigator = mockNavigator(true);
+    try {
+        await h.owner.result.recover({ manual: true });
+        const result = h.owner.render();
+        assert.equal(result.status, 'reload_offered');
+        assert.equal(result.blocksManualRefresh, true);
+        assert.equal(h.reloads, 0);
+        assert.equal(result.notice.message, 'The server is still unreachable. Retry when it is available.');
+
+        await result.recover({ manual: true });
+        assert.equal(h.probes, 1);
+        assert.equal(h.reloads, 1);
+        const stored = JSON.parse(h.values.get('jira_dashboard_connection_recovery_v1'));
+        assert.equal(stored.planning.draft.inclusionChanges[0].issueId, '8101');
+    } finally { restoreNavigator(); h.close(); }
+});
+
+test('reload_offered survives a later connection report', async () => {
+    const h = mountRecovery({ probeError: unreachableProbeError });
+    const restoreNavigator = mockNavigator(true);
+    try {
+        await h.owner.result.recover({ manual: true });
+        h.owner.result.reportServerConnectionError(new Error('Failed to fetch'));
+        assert.equal(h.owner.render().status, 'reload_offered');
+    } finally { restoreNavigator(); h.close(); }
+});
+
+test('an offline browser is not offered a reload', async () => {
+    const h = mountRecovery({ probeError: unreachableProbeError });
+    const restoreNavigator = mockNavigator(false);
+    try {
+        await h.owner.result.recover({ manual: true });
+        assert.equal(h.owner.render().status, 'unavailable');
+    } finally { restoreNavigator(); h.close(); }
+});
+
+test('no navigator means online', async () => {
+    const h = mountRecovery({ probeError: unreachableProbeError });
+    const restoreNavigator = mockNavigator(undefined);
+    try {
+        assert.equal('navigator' in globalThis, false);
+        await h.owner.result.recover({ manual: true });
+        assert.equal(h.owner.render().status, 'reload_offered');
+    } finally { restoreNavigator(); h.close(); }
+});
+
+test('a probe timeout keeps its notice and offers no reload', async () => {
+    const h = mountRecovery();
+    const restoreNavigator = mockNavigator(true);
+    window.setTimeout = (abort, timeout) => {
+        assert.equal(timeout, 10_000);
+        abort();
+    };
+    try {
+        await h.owner.result.recover({ manual: true });
+        const result = h.owner.render();
+        assert.equal(result.status, 'unavailable');
+        assert.equal(result.notice.message, 'The server did not answer within 10 seconds. Retry when it is available.');
+    } finally { restoreNavigator(); h.close(); }
+});
 
 async function dispatchPerimeterExpiry() {
     await publishPerimeterExpiry();
@@ -75,6 +154,72 @@ async function publishPerimeterExpiry(beforeRecovery = () => {}) {
 }
 
 const flushRecovery = () => new Promise(resolve => setImmediate(resolve));
+
+for (const eventType of ['focus', 'visibilitychange']) {
+    test(`reload_offered survives a ${eventType} event without another probe`, async () => {
+        const h = mountRecovery({ probeError: unreachableProbeError, visibility: 'hidden' });
+        const restoreNavigator = mockNavigator(true);
+        try {
+            await h.owner.result.recover({ manual: true });
+            assert.equal(h.owner.render().status, 'reload_offered');
+            document.visibilityState = 'visible';
+            const target = eventType === 'focus' ? window : document;
+            target.dispatchEvent(new Event(eventType));
+            await flushRecovery();
+            assert.equal(h.probes, 1);
+            assert.equal(h.reloads, 0);
+            assert.equal(h.owner.render().status, 'reload_offered');
+        } finally { restoreNavigator(); h.close(); }
+    });
+}
+
+test('an offered reload before config mounts keeps the unconsumed capsule for later validation', async () => {
+    const values = new Map();
+    const capsuleKey = 'jira_dashboard_connection_recovery_v1';
+    const first = mountRecovery({ values });
+    let originalCapsule;
+    try {
+        await first.owner.result.recover({ manual: true });
+        assert.equal(first.reloads, 1);
+        originalCapsule = values.get(capsuleKey);
+        assert.ok(originalCapsule);
+    } finally { first.close(); }
+
+    const second = mountRecovery({ probeError: unreachableProbeError, principalMounted: false, values });
+    const restoreNavigator = mockNavigator(true);
+    try {
+        await second.owner.result.recover({ manual: true });
+        assert.equal(second.owner.render().status, 'reload_offered');
+        await second.owner.result.recover({ manual: true });
+        assert.equal(second.reloads, 1);
+        assert.equal(values.get(capsuleKey), originalCapsule);
+    } finally { restoreNavigator(); second.close(); }
+
+    const third = mountRecovery({ outageError: null, values });
+    try {
+        const restored = third.owner.result.consume(third.principal);
+        assert.equal(restored.planning.draft.inclusionChanges[0].issueId, '8101');
+        assert.equal(third.owner.result.consume({ ...third.principal, viewConfigId: 'other' }), null);
+    } finally { third.close(); }
+});
+
+test('Reload and discard after failed preservation reloads without probing again', async () => {
+    const h = mountRecovery({ probeError: unreachableProbeError, storageWorks: false });
+    const restoreNavigator = mockNavigator(true);
+    try {
+        await h.owner.result.recover({ manual: true });
+        assert.equal(h.owner.render().status, 'reload_offered');
+        await h.owner.result.recover({ manual: true });
+        assert.equal(h.owner.render().notice.kind, 'preservation_failed');
+        assert.equal(h.reloads, 0);
+
+        h.allowStorage();
+        await h.owner.result.recover({ manual: true, discardUnsaved: true });
+        assert.equal(h.probes, 1);
+        assert.equal(h.reloads, 1);
+        assert.equal(h.values.has('jira_dashboard_connection_recovery_v1'), false);
+    } finally { restoreNavigator(); h.close(); }
+});
 
 test('perimeter expiry reloads although the probe is redirected and keeps the Planning capsule', async () => {
     const h = mountRecovery({ outageError: perimeterError, probeError: perimeterError });

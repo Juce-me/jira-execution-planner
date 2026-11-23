@@ -21,7 +21,7 @@ export const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
 
 // Statuses during which the server is unreachable or recovery owns the page; Refresh Jira waits.
 const REFRESH_BLOCKING_STATUSES = new Set([
-    'unavailable', 'manual_required', 'discard_required', 'checking', 'waiting_for_save', 'restoring',
+    'unavailable', 'manual_required', 'reload_offered', 'discard_required', 'checking', 'waiting_for_save', 'restoring',
 ]);
 
 const settingsDiscardedNotice = {
@@ -45,6 +45,7 @@ export function useConnectionRecovery({
     const reloadStartedRef = React.useRef(false);
     const unavailableRef = React.useRef(false);
     const preservationFailedRef = React.useRef(false);
+    const discardWithoutProbeRef = React.useRef(false);
     const bootstrapHealthRef = React.useRef(new Set());
     const initialAttemptRef = React.useRef(undefined);
     if (initialAttemptRef.current === undefined) {
@@ -76,6 +77,7 @@ export function useConnectionRecovery({
     const releaseOwnership = React.useCallback((nextStatus = 'idle') => {
         unavailableRef.current = false;
         preservationFailedRef.current = false;
+        discardWithoutProbeRef.current = false;
         perimeterEncounteredRef.current = false;
         setPerimeterExpired(false);
         setStatusTracked(nextStatus);
@@ -101,6 +103,7 @@ export function useConnectionRecovery({
         if (!['config', 'groups', 'sprints'].every(required => bootstrapHealthRef.current.has(required))) return;
         outageIdRef.current = '';
         preservationFailedRef.current = false;
+        discardWithoutProbeRef.current = false;
         perimeterEncounteredRef.current = false;
         clearConnectionRecoveryAttempt(getConnectionRecoveryStorage(window));
         setPerimeterExpired(false);
@@ -151,6 +154,8 @@ export function useConnectionRecovery({
 
     const recover = React.useCallback(async ({ manual = false, discardUnsaved = false } = {}) => {
         if (!unavailableRef.current || inFlightRef.current || reloadStartedRef.current || scenarioStartedRef.current) return;
+        const reloadOffered = statusRef.current === 'reload_offered';
+        if (!manual && (reloadOffered || discardWithoutProbeRef.current)) return;
         const storage = getConnectionRecoveryStorage(window);
         const outageId = outageIdRef.current;
         if (!manual && !canAutomaticallyRecoverConnection(storage, outageId)) {
@@ -158,25 +163,29 @@ export function useConnectionRecovery({
             return;
         }
         inFlightRef.current = true;
+        const skipProbe = reloadOffered || (manual && discardUnsaved && discardWithoutProbeRef.current);
+        discardWithoutProbeRef.current = false;
         setStatusTracked('checking');
-        const probe = new AbortController();
-        const probeTimer = window.setTimeout(() => probe.abort(), CONNECTION_PROBE_TIMEOUT_MS);
+        const probe = skipProbe ? null : new AbortController();
         try {
             let config;
             let perimeterReachable = false;
-            try {
-                config = await fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal });
-            } catch (error) {
-                if (!isPerimeterSessionExpiredError(error)) throw error;
-                perimeterReachable = true;
-                perimeterEncounteredRef.current = true;
-                config = null;
-            } finally {
-                window.clearTimeout(probeTimer);
+            if (probe) {
+                const probeTimer = window.setTimeout(() => probe.abort(), CONNECTION_PROBE_TIMEOUT_MS);
+                try {
+                    config = await fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal });
+                } catch (error) {
+                    if (!isPerimeterSessionExpiredError(error)) throw error;
+                    perimeterReachable = true;
+                    perimeterEncounteredRef.current = true;
+                    config = null;
+                } finally {
+                    window.clearTimeout(probeTimer);
+                }
             }
             if (readPendingAuthenticationRequired() || scenarioStartedRef.current) return;
             const mountedPrincipal = principalRef.current;
-            const identityChanged = !perimeterReachable && Boolean(mountedPrincipal)
+            const identityChanged = !skipProbe && !perimeterReachable && Boolean(mountedPrincipal)
                 && !sameConnectionRecoveryPrincipal(mountedPrincipal, connectionRecoveryPrincipalFromConfig(config));
             // A write sent during the outage may still land; reloading first would report the user's own
             // save as a remote conflict. Capture the page only after it settles. The wait is bounded so a
@@ -189,10 +198,11 @@ export function useConnectionRecovery({
                 if (readPendingAuthenticationRequired() || scenarioStartedRef.current) return;
             }
             let captured;
-            try { captured = mountedPrincipal ? snapshotRef.current?.() : null; }
+            try { captured = mountedPrincipal && !(skipProbe && discardUnsaved) ? snapshotRef.current?.() : null; }
             catch (error) {
                 if (!discardUnsaved) {
                     preservationFailedRef.current = true;
+                    discardWithoutProbeRef.current = skipProbe;
                     setStatusTracked('unavailable');
                     setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
                     return;
@@ -209,12 +219,13 @@ export function useConnectionRecovery({
             }
             const snapshot = captured && !identityChanged ? { ...captured, outage: { id: outageId } } : null;
             const capsuleWritten = snapshot ? writeConnectionRecoveryState(storage, snapshot) : false;
-            // A recovery probe does not mount the principal, even if sign-in already succeeded
-            // elsewhere. Leave the previous capsule for validation at bootstrap.
-            const retainStoredCapsule = perimeterEncounteredRef.current && !mountedPrincipal && !discardUnsaved;
+            // Perimeter recovery and an offered reload can run before the principal mounts.
+            // Leave the previous capsule for validation at bootstrap.
+            const retainStoredCapsule = (skipProbe || perimeterEncounteredRef.current) && !mountedPrincipal && !discardUnsaved;
             if (!capsuleWritten && !retainStoredCapsule) clearConnectionRecoveryState(storage);
             if (!capsuleWritten && (snapshot?.scenario || snapshot?.planning) && !discardUnsaved) {
                 preservationFailedRef.current = true;
+                discardWithoutProbeRef.current = skipProbe;
                 setStatusTracked('unavailable');
                 setNotice({
                     kind: 'preservation_failed',
@@ -223,6 +234,7 @@ export function useConnectionRecovery({
                 return;
             }
             if (!capsuleWritten && snapshot?.droppedSettings && !discardUnsaved) {
+                discardWithoutProbeRef.current = skipProbe;
                 setStatusTracked('discard_required');
                 setNotice({
                     kind: 'discard_required',
@@ -251,10 +263,13 @@ export function useConnectionRecovery({
         } catch (err) {
             if (isAuthenticationRequiredError(err) || readPendingAuthenticationRequired()) return;
             setStatusTracked('unavailable');
-            if (probe.signal.aborted) {
+            if (probe?.signal.aborted) {
                 setNotice({ kind: 'probe_failed', message: 'The server did not answer within 10 seconds. Retry when it is available.' });
             } else if (reportServerConnectionError(err)) {
                 setNotice({ kind: 'probe_failed', message: 'The server is still unreachable. Retry when it is available.' });
+                if (probe && manual && globalThis.navigator?.onLine !== false) {
+                    setStatusTracked('reload_offered');
+                }
             } else {
                 setNotice({ kind: 'probe_failed', message: err.message || 'The server is still unavailable.' });
             }
@@ -266,6 +281,7 @@ export function useConnectionRecovery({
     const discardRecovery = React.useCallback(() => {
         clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
         pendingRef.current = null;
+        discardWithoutProbeRef.current = false;
         setNotice(null);
         setStatusTracked(unavailableRef.current ? 'unavailable' : 'idle');
     }, [setStatusTracked]);

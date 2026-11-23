@@ -9,7 +9,8 @@ export default function ServerUnavailableBanner({
     if (!message) return null;
     const busy = status === 'checking' || status === 'waiting_for_save' || status === 'restoring';
     const requiresManualRetry = status === 'manual_required';
-    const requiresPerimeterReload = perimeterExpired && requiresManualRetry;
+    const offersReload = status === 'reload_offered' || (perimeterExpired && requiresManualRetry);
+    const requiresPerimeterReload = perimeterExpired && offersReload;
     return (
         <div className="server-unavailable-banner" role="alert">
             <div>
@@ -18,7 +19,7 @@ export default function ServerUnavailableBanner({
                 {requiresManualRetry && !perimeterExpired && <p>Automatic recovery already ran for this outage. Retry explicitly when the server is ready.</p>}
             </div>
             <button type="button" onClick={onRetry} disabled={busy}>
-                {status === 'checking' ? 'Checking connection…' : status === 'waiting_for_save' ? 'Waiting for save…' : status === 'restoring' ? 'Reloading…' : requiresPerimeterReload ? 'Reload page' : 'Retry connection'}
+                {status === 'checking' ? 'Checking connection…' : status === 'waiting_for_save' ? 'Waiting for save…' : status === 'restoring' ? 'Reloading…' : offersReload ? 'Reload page' : 'Retry connection'}
             </button>
         </div>
     );

@@ -1,6 +1,6 @@
 # Epic header visible-height regression analysis
 
-> **Current accuracy:** Historical diagnosis and design evidence. The correction was implemented and locally verified from `EXEC-epic-header-visible-height.md` on 2026-09-10; application source is now authoritative. User acceptance and publication remain pending.
+> **Current accuracy:** Historical diagnosis and design evidence. The correction was implemented and locally verified from `DONE-epic-header-visible-height.md` on 2026-09-10; application source is now authoritative. User acceptance and publication remain pending.
 
 Status: executed (investigation only; no implementation)
 Date: 2026-09-10
@@ -89,6 +89,6 @@ For this regression, validate a concrete visual specimen yourself; compare optic
 
 ## Outcome and remaining work
 
-Investigation completed with a concrete failing reproduction and a false-green existing-test result. The UI remains unfixed. Historical MRT028 correction claims are not acceptance of the current rejected appearance. Implementation is described in [the proposed plan](EXEC-epic-header-visible-height.md) and requires a separate user instruction to proceed.
+Investigation completed with a concrete failing reproduction and a false-green existing-test result. The UI remains unfixed. Historical MRT028 correction claims are not acceptance of the current rejected appearance. Implementation is described in [the proposed plan](DONE-epic-header-visible-height.md) and requires a separate user instruction to proceed.
 
 Remote branch freshness and upstream instruction-template version could not be checked: GitHub DNS failed locally and the web fetch returned a cache miss. Existing dirty instructions and branch history were left intact.

@@ -40,4 +40,4 @@ No legend pane, no "left" or remaining-capacity values, no click actions, popups
 
 ## Implementation contract
 
-See [the implementation plan](EXEC-project-track-board-column-strips.md) for file ownership, tests, and acceptance checks. Review any future layout change against this decision and the approved preview.
+See [the implementation plan](DONE-project-track-board-column-strips.md) for file ownership, tests, and acceptance checks. Review any future layout change against this decision and the approved preview.

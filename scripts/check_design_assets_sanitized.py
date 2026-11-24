@@ -29,7 +29,7 @@ CONFIG = ROOT / "dashboard-config.json"
 # tracked files that describe the design and must stay free of local identifiers
 SCANNED = [
     *sorted((ROOT / "docs/plans/assets").rglob("*.html")),
-    ROOT / "docs/plans/EXEC-eng-group-board.md",
+    ROOT / "docs/plans/DONE-eng-group-board.md",
 ]
 
 # short or generic values would match everywhere; only check distinctive ones

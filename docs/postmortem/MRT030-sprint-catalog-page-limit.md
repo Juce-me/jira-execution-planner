@@ -27,7 +27,7 @@ The Board fetcher now accepts a positive integer response `maxResults` and still
 
 ## Verification
 
-New service and authenticated-route tests failed before the change: the service raised `catalog_incomplete`, and the cold route returned `502`. After the change, the focused Sprint service and persistent catalog route files passed 45 tests. The route fixture cold-fills a nonempty catalog from a capped page and then reads that catalog without another Jira call. Malformed, empty nonfinal, overfull, and stalled pages remain covered. The full Python suite passed 1,910 tests with 25 skips, and the frontend unit suite passed 1,423. Independent review evidence belongs in the active [runtime repair plan](../plans/EXEC-persistent-sprint-team-catalogs-runtime-repair.md). Authenticated live Jira/browser verification is still open.
+New service and authenticated-route tests failed before the change: the service raised `catalog_incomplete`, and the cold route returned `502`. After the change, the focused Sprint service and persistent catalog route files passed 45 tests. The route fixture cold-fills a nonempty catalog from a capped page and then reads that catalog without another Jira call. Malformed, empty nonfinal, overfull, and stalled pages remain covered. The full Python suite passed 1,910 tests with 25 skips, and the frontend unit suite passed 1,423. Independent review evidence belongs in the active [runtime repair plan](../plans/DONE-persistent-sprint-team-catalogs-runtime-repair.md). Authenticated live Jira/browser verification is still open.
 
 ## Lessons learned
 
@@ -47,4 +47,4 @@ Strict completeness validation must check continuity and bounds, not equality be
 - `tests/test_sprint_service.py`
 - `tests/test_persistent_catalog_routes.py`
 - [Jira Software REST pagination](https://developer.atlassian.com/cloud/jira/software/rest/intro/)
-- [Runtime repair plan](../plans/EXEC-persistent-sprint-team-catalogs-runtime-repair.md)
+- [Runtime repair plan](../plans/DONE-persistent-sprint-team-catalogs-runtime-repair.md)

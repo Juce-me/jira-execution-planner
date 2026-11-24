@@ -1,6 +1,6 @@
 # ENG Board Optional Sprint And Component Scope Design
 
-> **Accuracy correction (2026-09-09):** The [All work implementation plan](EXEC-eng-board-all-work.md) is authoritative. Board has no independent sprint state and no local selector, button, or toggle. It reuses the existing top Sprint selector and Catch Up snapshot for an ordinary selected sprint. While Board is active, that selector presents **All work**, **Component**, and ordinary sprints. All work and Component are transient cross-sprint Board modes and invoke the strict Board endpoint without changing the saved sprint. Component contains only exact Component-matched Epics. All work unions those Epics with Team-derived parent Epics; Component matching applies only to the Epic, and the Team-parent source remains additive in All work when Components exist. Any historical text below describing a Board-local scope control, only All work plus sprints, a strict selected-sprint pipeline, Team discovery as a Component-absent fallback, or Catch Up as an incomplete/capped selected-sprint source is superseded and non-executable.
+> **Accuracy correction (2026-09-09):** The [All work implementation plan](DONE-eng-board-all-work.md) is authoritative. Board has no independent sprint state and no local selector, button, or toggle. It reuses the existing top Sprint selector and Catch Up snapshot for an ordinary selected sprint. While Board is active, that selector presents **All work**, **Component**, and ordinary sprints. All work and Component are transient cross-sprint Board modes and invoke the strict Board endpoint without changing the saved sprint. Component contains only exact Component-matched Epics. All work unions those Epics with Team-derived parent Epics; Component matching applies only to the Epic, and the Team-parent source remains additive in All work when Components exist. Any historical text below describing a Board-local scope control, only All work plus sprints, a strict selected-sprint pipeline, Team discovery as a Component-absent fallback, or Catch Up as an incomplete/capped selected-sprint source is superseded and non-executable.
 
 
 > **Status:** Reviewed support design updated on 2026-09-07. Diagnostic Tasks 0–5 are implemented
@@ -899,7 +899,7 @@ all five have valid evidence; schema v2 can never PASS.
 
 ## Related evidence
 
-- [`EXEC-eng-group-board.md`](EXEC-eng-group-board.md) — currently implemented Board behavior and
+- [`DONE-eng-group-board.md`](DONE-eng-group-board.md) — currently implemented Board behavior and
   historical execution contract.
 - [`MRT004-performance-degradation-page-load.md`](../postmortem/MRT004-performance-degradation-page-load.md)
   — guard derived work and stale dependencies.

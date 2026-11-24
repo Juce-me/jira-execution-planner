@@ -109,4 +109,4 @@ Treat publication as an all-or-stop transaction:
 - Commits `7addded`, `9429b55`, and `4a27ba9`.
 - Operator screenshot captured 2026-09-08 at 10:06 CEST.
 - Root `AGENTS.md` Git workflow and project learnings.
-- `docs/plans/EXEC-board-configuration-horizontal-scroll.md` atomic publication requirement.
+- `docs/plans/DONE-board-configuration-horizontal-scroll.md` atomic publication requirement.

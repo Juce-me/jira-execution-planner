@@ -4,7 +4,7 @@
 
 > **Status:** Done. Executed and merged in [PR #290](https://github.com/Juce-me/jira-execution-planner/pull/290) (2026-10-20). The gates this plan's record lists as open at that point (the Gate 7 cutover rehearsal, headed Firefox and WebKit marker geometry, a CI PostgreSQL run) were not formally closed here; the follow-up plan [DONE-planning-review-adoption-merge-mode.md](DONE-planning-review-adoption-merge-mode.md) (#299) records a rehearsal of the adoption restore and a run of the repository's CI PostgreSQL runner script. Kept for audit context only.
 
-> **Current accuracy (2026-10-23):** the adoption this plan describes as a manual, quiesced script is now also run automatically on upgrade by revision `20261023_0020` (see [EXEC-planning-review-automatic-adoption-on-release.md](EXEC-planning-review-automatic-adoption-on-release.md)); the cutover steps describe the manual path.
+> **Current accuracy (2026-10-23):** the adoption this plan describes as a manual, quiesced script is now also run automatically on upgrade by revision `20261023_0020` (see [DONE-planning-review-automatic-adoption-on-release.md](DONE-planning-review-automatic-adoption-on-release.md)); the cutover steps describe the manual path.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -199,7 +199,7 @@ A (A1, A2, A3 sequential) then B and C in parallel (D-I: B = `scripts/`, `Docker
 **Files:** Test `tests/test_sprint_review.py` (counts), `tests/test_sprint_review_postgresql.py`; design Performance table (pin measured numbers).
 
 - [ ] **Step 1: failing tests:** SQLAlchemy `before_cursor_execute` counts on the design's fixture: GET 2, values read 2, empty PATCH 2, cell-only 4 plus upserts (one new cell on an existing group schema: 5 new vs 4 today), column-only 4, layout-only existing view 5, first view save 6, add plus layout 6 or 7 (AC 19); opt-in PostgreSQL (`REQUIRE_POSTGRES_REVIEW_CONCURRENCY=1`, `TEST_DATABASE_URL`): two first creations of the group schema row, two first view saves for one Sprint, column add vs layout save in both orders (both succeed), empty PATCH takes no `FOR UPDATE`, model/database parity including `ON DELETE` (AC 17, 20, 21).
-- [ ] **Step 2:** run the count tests (`tests.test_sprint_review`) FAIL; PostgreSQL tests need a local PostgreSQL (`EXEC-local-postgresql-runners.md`). If none exists, state "not run", leave Gate 6 open, and do not claim green.
+- [ ] **Step 2:** run the count tests (`tests.test_sprint_review`) FAIL; PostgreSQL tests need a local PostgreSQL (`DONE-local-postgresql-runners.md`). If none exists, state "not run", leave Gate 6 open, and do not claim green.
 - [ ] **Step 3:** adjust only if a count differs from measurement, then record measured numbers in the design.
 - [ ] **Step 4:** PASS. Also launch `.venv/bin/python jira_server.py` from this checkout (verify the listening process belongs to it; port 5050 is the main checkout's, so use another port if implementing in a worktree) on a database at the new head and `curl http://localhost:<port>/api/test` with no Python warning before the Flask banner (Gate 6).
 - [ ] **Step 5:** commit "Pin review statement counts and PostgreSQL races (#267)".

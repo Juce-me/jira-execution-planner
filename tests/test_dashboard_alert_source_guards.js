@@ -12,7 +12,7 @@ const engSprintDataPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', '
 const engTaskUtilsPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engTaskUtils.js');
 const engAlertsPanelPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'EngAlertsPanel.jsx');
 const engWorkHierarchyPath = path.join(__dirname, '..', 'frontend', 'src', 'eng', 'engWorkHierarchy.js');
-const planPath = path.join(__dirname, '..', 'docs', 'plans', 'EXEC-defer-eng-alert-loading.md');
+const planPath = path.join(__dirname, '..', 'docs', 'plans', 'DONE-defer-eng-alert-loading.md');
 const stylesDir = path.join(__dirname, '..', 'frontend', 'src', 'styles');
 const cssImportPattern = /@import\s+["'](.+?)["'];/;
 

@@ -1,6 +1,6 @@
 # OAuth inline issue editing — design
 
-**Status:** Implemented and verified locally on 2026-09-09; awaiting live tenant capability and operator-approved disposable Jira write evidence. Implementation contract: [EXEC-oauth-inline-issue-editing.md](EXEC-oauth-inline-issue-editing.md).
+**Status:** Implemented and verified locally on 2026-09-09; awaiting live tenant capability and operator-approved disposable Jira write evidence. Implementation contract: [DONE-oauth-inline-issue-editing.md](DONE-oauth-inline-issue-editing.md).
 **Created / reviewed:** 2026-09-08
 **Scope:** ENG Catch Up, Planning, and Board. Local application implementation and synthetic verification are complete; no live Jira write has been performed.
 

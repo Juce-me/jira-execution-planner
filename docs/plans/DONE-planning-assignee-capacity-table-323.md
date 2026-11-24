@@ -4,7 +4,7 @@
 
 ## Intent
 
-The team lead plans the team's effort for a Sprint from one view: how much capacity each person has, how much work each carries, how much has been taken (checked) into the plan, and how much work still has no owner. Issue [#323](https://github.com/Juce-me/jira-execution-planner/issues/323). All numbers are Story Points. Anti-goal: a second source of truth where a Jira capacity ticket exists. Jira capacity stays the core number; the stored team number is a fallback and an inheritance source only, and nothing is ever written to Jira without the user saving it in the existing capacity editor. D7 supersedes `SUPPORT-planning-capacity-editing-design.md` lines 46-47 and the Global Constraints of `EXEC-planning-capacity-editing.md` ("Jira is the only source of capacity values"); both get a Current Accuracy note in Task 10.
+The team lead plans the team's effort for a Sprint from one view: how much capacity each person has, how much work each carries, how much has been taken (checked) into the plan, and how much work still has no owner. Issue [#323](https://github.com/Juce-me/jira-execution-planner/issues/323). All numbers are Story Points. Anti-goal: a second source of truth where a Jira capacity ticket exists. Jira capacity stays the core number; the stored team number is a fallback and an inheritance source only, and nothing is ever written to Jira without the user saving it in the existing capacity editor. D7 supersedes `SUPPORT-planning-capacity-editing-design.md` lines 46-47 and the Global Constraints of `DONE-planning-capacity-editing.md` ("Jira is the only source of capacity values"); both get a Current Accuracy note in Task 10.
 
 ## Operator decisions
 

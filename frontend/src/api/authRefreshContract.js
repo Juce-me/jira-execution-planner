@@ -6,4 +6,5 @@ export const AUTH_LONG_ABSENCE_SLOT = '__JEP_PENDING_LONG_RETURN__';
 export const AUTH_SESSION_REFRESH_EVENT = 'jep:auth-session-refreshed';
 export const CONNECTION_UNAVAILABLE_EVENT = 'jep:connection-unavailable';
 export const CONNECTION_AVAILABLE_EVENT = 'jep:connection-available';
+export const PERIMETER_SESSION_EXPIRED_EVENT = 'jep:perimeter-session-expired';
 export const AUTH_FOCUS_REFRESH_STATE_EVENT = 'jep:auth-focus-refresh-state';

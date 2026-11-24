@@ -4,7 +4,28 @@ import {
     publishAuthenticationRequired,
     readPendingAuthenticationRequired,
 } from './authRequired.js';
+import { PERIMETER_SESSION_EXPIRED_EVENT } from './authRefreshContract.js';
 import { earlyTimingOf, takeEarlyResponse } from './earlyBootstrapRegistry.js';
+
+export class PerimeterSessionExpiredError extends Error {
+    constructor() {
+        super('The sign-in session expired.');
+        this.name = 'PerimeterSessionExpiredError';
+        this.code = 'perimeter_session_expired';
+    }
+}
+
+export function isPerimeterSessionExpiredError(error) {
+    return error?.name === 'PerimeterSessionExpiredError';
+}
+
+function throwIfPerimeterSessionExpired(response) {
+    if (response.type !== 'opaqueredirect') return;
+    const pending = readPendingAuthenticationRequired();
+    if (pending) throw new AuthenticationRequiredError(pending, response.status);
+    globalThis.window?.dispatchEvent(new Event(PERIMETER_SESSION_EXPIRED_EVENT));
+    throw new PerimeterSessionExpiredError();
+}
 
 async function authenticationPayload(response) {
     if (!response || response.ok) return null;
@@ -87,12 +108,13 @@ async function performApiFetch(url, options) {
     const early = takeEarlyResponse(url, options);
     const requestStartedAt = early ? early.startedAtEpoch : Date.now();
     try {
-        response = (early ? await early.promise : null) || await fetch(url, options);
+        response = (early ? await early.promise : null) || await fetch(url, { ...options, redirect: 'manual' });
     } catch (error) {
         const lockedAfterFailure = readPendingAuthenticationRequired();
         if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, 0);
         throw error;
     }
+    throwIfPerimeterSessionExpired(response);
     if (!response.ok) {
         const payload = await authenticationPayload(response);
         if (response.status === 401 || payload?.error === 'auth_required') {
@@ -120,13 +142,14 @@ export async function apiFetchHeaders(url, options = {}) {
     const requestStartedAt = Date.now();
     let response;
     try {
-        response = await fetch(url, options);
+        response = await fetch(url, { ...options, redirect: 'manual' });
     } catch (error) {
         const lockedAfterFailure = readPendingAuthenticationRequired();
         if (lockedAfterFailure) throw new AuthenticationRequiredError(lockedAfterFailure, 0);
         throw error;
     }
     throwIfRequestStopped(options.signal, response.status);
+    throwIfPerimeterSessionExpired(response);
     if (!response.ok) {
         const payload = await authenticationPayload(response);
         if (response.status === 401 || payload?.error === 'auth_required') {

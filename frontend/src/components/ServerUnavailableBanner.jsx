@@ -3,20 +3,23 @@ import * as React from 'react';
 export default function ServerUnavailableBanner({
     message,
     status = 'unavailable',
+    perimeterExpired = false,
     onRetry,
 }) {
     if (!message) return null;
     const busy = status === 'checking' || status === 'waiting_for_save' || status === 'restoring';
     const requiresManualRetry = status === 'manual_required';
+    const offersReload = status === 'reload_offered' || (perimeterExpired && requiresManualRetry);
+    const detail = perimeterExpired && !busy ? 'Your sign-in session expired. Reload the page to sign in again.' : message;
     return (
         <div className="server-unavailable-banner" role="alert">
             <div>
-                <div className="server-unavailable-title">Server is not responding</div>
-                <p>{message}</p>
-                {requiresManualRetry && <p>Automatic recovery already ran for this outage. Retry explicitly when the server is ready.</p>}
+                <div className="server-unavailable-title">{perimeterExpired ? 'Sign-in session expired' : 'Server is not responding'}</div>
+                <p>{detail}</p>
+                {requiresManualRetry && !perimeterExpired && <p>Automatic recovery already ran for this outage. Retry explicitly when the server is ready.</p>}
             </div>
             <button type="button" onClick={onRetry} disabled={busy}>
-                {status === 'checking' ? 'Checking connection…' : status === 'waiting_for_save' ? 'Waiting for save…' : status === 'restoring' ? 'Reloading…' : 'Retry connection'}
+                {status === 'checking' ? 'Checking connection…' : status === 'waiting_for_save' ? 'Waiting for save…' : status === 'restoring' ? 'Reloading…' : offersReload ? 'Reload page' : 'Retry connection'}
             </button>
         </div>
     );

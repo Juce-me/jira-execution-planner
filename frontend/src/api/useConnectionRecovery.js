@@ -1,8 +1,8 @@
 import * as React from 'react';
 import { fetchAppConfig } from './configApi.js';
-import { CONNECTION_AVAILABLE_EVENT, CONNECTION_UNAVAILABLE_EVENT } from './authRefreshContract.js';
+import { CONNECTION_AVAILABLE_EVENT, CONNECTION_UNAVAILABLE_EVENT, PERIMETER_SESSION_EXPIRED_EVENT } from './authRefreshContract.js';
 import { isAuthenticationRequiredError, readPendingAuthenticationRequired } from './authRequired.js';
-import { hasPendingMutations, waitForPendingMutations } from './http.js';
+import { hasPendingMutations, isPerimeterSessionExpiredError, PerimeterSessionExpiredError, waitForPendingMutations } from './http.js';
 import {
     canAutomaticallyRecoverConnection,
     clearConnectionRecoveryAttempt,
@@ -16,18 +16,26 @@ import {
     writeConnectionRecoveryState,
 } from './connectionRecoveryState.js';
 import { getServerConnectionErrorMessage, isBackendConnectionFailure } from '../dashboardRuntime.js';
+import { isConnectionRecoveryOwnerComplete } from '../scenario/connectionScenarioRecovery.js';
+import { scenarioDraftOverridesSignature } from '../scenario/scenarioDraftOverrides.js';
 
 export const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
 
 // Statuses during which the server is unreachable or recovery owns the page; Refresh Jira waits.
 const REFRESH_BLOCKING_STATUSES = new Set([
-    'unavailable', 'manual_required', 'discard_required', 'checking', 'waiting_for_save', 'restoring',
+    'unavailable', 'manual_required', 'reload_offered', 'discard_required', 'checking', 'waiting_for_save', 'restoring',
 ]);
 
 const settingsDiscardedNotice = {
     kind: 'settings_discarded',
     message: 'Unsaved configuration changes were discarded while restoring the connection.',
 };
+
+function matchesScenarioDraft(staged, captured) {
+    return ['scopeKey', 'groupId', 'sprintId', 'activeDraftId', 'baseDraftRevision'].every(key => staged[key] === captured[key])
+        && scenarioDraftOverridesSignature(staged.savedOverrides) === scenarioDraftOverridesSignature(captured.savedOverrides)
+        && scenarioDraftOverridesSignature(staged.localOverrides) === scenarioDraftOverridesSignature(captured.localOverrides);
+}
 
 export function useConnectionRecovery({
     backendUrl,
@@ -36,11 +44,16 @@ export function useConnectionRecovery({
     setServerConnectionError,
 }) {
     const [status, setStatus] = React.useState('idle');
+    const statusRef = React.useRef(status);
+    const [perimeterExpired, setPerimeterExpired] = React.useState(false);
+    const perimeterEncounteredRef = React.useRef(false);
     const [notice, setNotice] = React.useState(null);
     const [stagedRevision, setStagedRevision] = React.useState(0);
     const inFlightRef = React.useRef(false);
     const reloadStartedRef = React.useRef(false);
     const unavailableRef = React.useRef(false);
+    const preservationFailedRef = React.useRef(false);
+    const discardWithoutProbeRef = React.useRef(false);
     const bootstrapHealthRef = React.useRef(new Set());
     const initialAttemptRef = React.useRef(undefined);
     if (initialAttemptRef.current === undefined) {
@@ -48,20 +61,60 @@ export function useConnectionRecovery({
     }
     const outageIdRef = React.useRef(initialAttemptRef.current?.outageId || '');
     const pendingRef = React.useRef(null);
-    const scenarioStartedRef = React.useRef(false);
+    const recoverRef = React.useRef(null);
+
+    const queuePerimeterRecovery = React.useCallback(() => {
+        queueMicrotask(() => {
+            if (document.visibilityState !== 'visible' || !unavailableRef.current || !perimeterEncounteredRef.current
+                || !['idle', 'unavailable'].includes(statusRef.current) || preservationFailedRef.current
+                || readPendingAuthenticationRequired()) return;
+            void recoverRef.current({ manual: false });
+        });
+    }, []);
+
+    const setStatusTracked = React.useCallback((next) => {
+        statusRef.current = next;
+        setStatus(next);
+    }, []);
+
+    const scenarioStartedRef = React.useMemo(() => {
+        let started = false;
+        return {
+            get current() { return started; },
+            set current(next) {
+                if (started === next) return;
+                started = next;
+                // Scenario can finish while Planning still owns the capsule and no release runs.
+                if (!started && unavailableRef.current && statusRef.current === 'restoring' && !reloadStartedRef.current) {
+                    setStatusTracked('unavailable');
+                    queuePerimeterRecovery();
+                }
+            },
+        };
+    }, [queuePerimeterRecovery, setStatusTracked]);
 
     const releaseOwnership = React.useCallback((nextStatus = 'idle') => {
         unavailableRef.current = false;
-        setStatus(nextStatus);
+        preservationFailedRef.current = false;
+        discardWithoutProbeRef.current = false;
+        perimeterEncounteredRef.current = false;
+        setPerimeterExpired(false);
+        setStatusTracked(nextStatus);
         window.dispatchEvent(new Event(CONNECTION_AVAILABLE_EVENT));
-    }, []);
+    }, [setStatusTracked]);
 
     // Restoring the reload capsule ends only the previous outage; an outage reported after the reload
     // is still active and must keep ownership so focus/visibility recovery can reload again.
     const releaseRestoredOwnership = React.useCallback((nextStatus = 'idle') => {
-        if (unavailableRef.current) return;
+        if (unavailableRef.current) {
+            if (statusRef.current === 'restoring' && !reloadStartedRef.current) {
+                setStatusTracked('unavailable');
+                queuePerimeterRecovery();
+            }
+            return;
+        }
         releaseOwnership(nextStatus);
-    }, [releaseOwnership]);
+    }, [queuePerimeterRecovery, releaseOwnership, setStatusTracked]);
 
     const clearServerConnectionError = React.useCallback(() => {
         if (!unavailableRef.current) setServerConnectionError('');
@@ -71,7 +124,11 @@ export function useConnectionRecovery({
         bootstrapHealthRef.current.add(part);
         if (!['config', 'groups', 'sprints'].every(required => bootstrapHealthRef.current.has(required))) return;
         outageIdRef.current = '';
+        preservationFailedRef.current = false;
+        discardWithoutProbeRef.current = false;
+        perimeterEncounteredRef.current = false;
         clearConnectionRecoveryAttempt(getConnectionRecoveryStorage(window));
+        setPerimeterExpired(false);
         setServerConnectionError('');
         if (!pendingRef.current) releaseOwnership('idle');
     }, [releaseOwnership, setServerConnectionError]);
@@ -91,11 +148,18 @@ export function useConnectionRecovery({
                 || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         }
         unavailableRef.current = true;
-        setServerConnectionError(getServerConnectionErrorMessage(backendUrl));
-        setStatus(current => current === 'checking' ? current : 'unavailable');
+        const expired = isPerimeterSessionExpiredError(err);
+        if (expired) perimeterEncounteredRef.current = true;
+        setPerimeterExpired(expired);
+        setServerConnectionError(expired
+            ? 'Your sign-in session expired. Reloading to sign in again; unsaved changes are kept.'
+            : getServerConnectionErrorMessage(backendUrl));
+        if (!['checking', 'waiting_for_save', 'restoring', 'manual_required', 'reload_offered', 'discard_required'].includes(statusRef.current)) {
+            setStatusTracked('unavailable');
+        }
         window.dispatchEvent(new Event(CONNECTION_UNAVAILABLE_EVENT));
         return true;
-    }, [backendUrl, markBootstrapHealthy, setServerConnectionError]);
+    }, [backendUrl, markBootstrapHealthy, setServerConnectionError, setStatusTracked]);
 
     const consume = React.useCallback((principal) => {
         const recovery = readConnectionRecoveryState(getConnectionRecoveryStorage(window), principal);
@@ -111,63 +175,97 @@ export function useConnectionRecovery({
     }, []);
 
     const recover = React.useCallback(async ({ manual = false, discardUnsaved = false } = {}) => {
-        if (!unavailableRef.current || inFlightRef.current || reloadStartedRef.current) return;
+        if (!unavailableRef.current || inFlightRef.current || reloadStartedRef.current || scenarioStartedRef.current) return;
+        const reloadOffered = statusRef.current === 'reload_offered';
+        if (!manual && (reloadOffered || statusRef.current === 'discard_required'
+            || preservationFailedRef.current || discardWithoutProbeRef.current)) return;
         const storage = getConnectionRecoveryStorage(window);
         const outageId = outageIdRef.current;
         if (!manual && !canAutomaticallyRecoverConnection(storage, outageId)) {
-            setStatus('manual_required');
+            setStatusTracked('manual_required');
             return;
         }
         inFlightRef.current = true;
-        setStatus('checking');
-        const probe = new AbortController();
-        const probeTimer = window.setTimeout(() => probe.abort(), CONNECTION_PROBE_TIMEOUT_MS);
+        const skipProbe = reloadOffered || (manual && discardUnsaved && discardWithoutProbeRef.current);
+        discardWithoutProbeRef.current = false;
+        setStatusTracked('checking');
+        const probe = skipProbe ? null : new AbortController();
         try {
             let config;
-            try {
-                config = await fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal });
-            } finally {
-                window.clearTimeout(probeTimer);
+            let perimeterReachable = false;
+            if (probe) {
+                const probeTimer = window.setTimeout(() => probe.abort(), CONNECTION_PROBE_TIMEOUT_MS);
+                try {
+                    config = await fetchAppConfig(backendUrl, { cache: 'no-cache', signal: probe.signal });
+                } catch (error) {
+                    if (!isPerimeterSessionExpiredError(error)) throw error;
+                    perimeterReachable = true;
+                    perimeterEncounteredRef.current = true;
+                    config = null;
+                } finally {
+                    window.clearTimeout(probeTimer);
+                }
             }
-            if (readPendingAuthenticationRequired()) return;
-            // Without a mounted identity (the page never bootstrapped, or DB mode has no view config)
-            // nothing can be matched safely, so the reload starts clean.
+            if (readPendingAuthenticationRequired() || scenarioStartedRef.current) return;
             const mountedPrincipal = principalRef.current;
-            const identityChanged = Boolean(mountedPrincipal)
+            const identityChanged = !skipProbe && !perimeterReachable && Boolean(mountedPrincipal)
                 && !sameConnectionRecoveryPrincipal(mountedPrincipal, connectionRecoveryPrincipalFromConfig(config));
             // A write sent during the outage may still land; reloading first would report the user's own
             // save as a remote conflict. Capture the page only after it settles. The wait is bounded so a
             // hung request cannot block recovery.
             if (hasPendingMutations()) {
-                setStatus('waiting_for_save');
+                setStatusTracked('waiting_for_save');
                 setNotice({ kind: 'waiting_for_save', message: 'Waiting for a pending save to finish before reloading.' });
                 await waitForPendingMutations(CONNECTION_PROBE_TIMEOUT_MS);
                 setNotice(null);
-                if (readPendingAuthenticationRequired()) return;
+                if (readPendingAuthenticationRequired() || scenarioStartedRef.current) return;
             }
             let captured;
-            try { captured = mountedPrincipal ? snapshotRef.current?.() : null; }
-            catch (error) {
-                if (!discardUnsaved) {
-                    setStatus('unavailable');
-                    setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
-                    return;
-                }
-                captured = null;
+            let captureFailed = false;
+            try { captured = mountedPrincipal && !(skipProbe && discardUnsaved) ? snapshotRef.current?.() : null; }
+            catch (error) { captureFailed = true; }
+            const pending = pendingRef.current;
+            const hasUninstalledScenario = pending?.scenario && !isConnectionRecoveryOwnerComplete(pending, 'scenario');
+            // Reuse the original bytes and expiry only if they already cover the work in this tab.
+            const retainStagedScenario = !discardUnsaved && hasUninstalledScenario && perimeterEncounteredRef.current
+                && !captureFailed && !identityChanged && sameConnectionRecoveryPrincipal(pending.principal, mountedPrincipal)
+                && (!captured?.scenario || matchesScenarioDraft(pending.scenario, captured.scenario))
+                // A completed Planning owner can have saved or discarded the staged draft.
+                && ((!isConnectionRecoveryOwnerComplete(pending, 'planning') && !captured?.planning)
+                    || JSON.stringify(captured?.planning ?? null) === JSON.stringify(pending.planning ?? null))
+                && (!captured?.droppedSettings || pending.droppedSettings)
+                && JSON.stringify(readConnectionRecoveryState(storage, mountedPrincipal)) === JSON.stringify(pending);
+            if (!discardUnsaved && (captureFailed || (hasUninstalledScenario && !retainStagedScenario))) {
+                preservationFailedRef.current = true;
+                discardWithoutProbeRef.current = skipProbe;
+                setStatusTracked('unavailable');
+                setNotice({
+                    kind: 'preservation_failed',
+                    message: hasUninstalledScenario
+                        ? 'Your staged Scenario draft is still in this tab. Recovery cannot safely carry your drafts through another reload. Stay here or reload and discard.'
+                        : 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.',
+                });
+                return;
             }
             if (identityChanged && (captured?.scenario || captured?.planning) && !discardUnsaved) {
-                setStatus('discard_required');
+                setStatusTracked('discard_required');
                 setNotice({
                     kind: 'discard_required',
                     message: `The active workspace or private view changed. Reloading will discard your unsaved ${[captured.planning && 'Planning', captured.scenario && 'Scenario'].filter(Boolean).join(' and ')} changes.`,
                 });
                 return;
             }
-            const snapshot = captured && !identityChanged ? { ...captured, outage: { id: outageId } } : null;
+            const snapshot = captured && !identityChanged && !retainStagedScenario ? { ...captured, outage: { id: outageId } } : null;
             const capsuleWritten = snapshot ? writeConnectionRecoveryState(storage, snapshot) : false;
-            if (!capsuleWritten) clearConnectionRecoveryState(storage);
+            // Perimeter recovery and an offered reload can run before the principal mounts.
+            // Leave the previous capsule for validation at bootstrap.
+            const retainStoredCapsule = retainStagedScenario
+                || ((skipProbe || perimeterEncounteredRef.current) && !mountedPrincipal && !discardUnsaved);
+            if (!capsuleWritten && !retainStoredCapsule) clearConnectionRecoveryState(storage);
             if (!capsuleWritten && (snapshot?.scenario || snapshot?.planning) && !discardUnsaved) {
-                setStatus('unavailable');
+                preservationFailedRef.current = true;
+                discardWithoutProbeRef.current = skipProbe;
+                setStatusTracked('unavailable');
                 setNotice({
                     kind: 'preservation_failed',
                     message: `The page cannot reload safely because your unsaved ${[snapshot.planning && 'Planning', snapshot.scenario && 'Scenario'].filter(Boolean).join(' and ')} changes could not be preserved in this tab.`,
@@ -175,7 +273,8 @@ export function useConnectionRecovery({
                 return;
             }
             if (!capsuleWritten && snapshot?.droppedSettings && !discardUnsaved) {
-                setStatus('discard_required');
+                discardWithoutProbeRef.current = skipProbe;
+                setStatusTracked('discard_required');
                 setNotice({
                     kind: 'discard_required',
                     message: 'Unsaved configuration cannot be preserved in this tab. Reloading will discard it.',
@@ -185,57 +284,67 @@ export function useConnectionRecovery({
             const attemptMarked = markConnectionRecoveryAttempt(storage, outageId);
             if (!attemptMarked && !manual) {
                 if (capsuleWritten) clearConnectionRecoveryState(storage);
-                setStatus('manual_required');
+                setStatusTracked('manual_required');
                 setNotice({
                     kind: 'manual_required',
-                    message: 'Automatic recovery could not create a reload-loop guard. Use Retry connection to reload explicitly.',
+                    message: 'Automatic recovery could not create a reload-loop guard. Use the button to reload explicitly.',
                 });
                 return;
             }
             if (readPendingAuthenticationRequired()) {
-                clearConnectionRecoveryState(storage);
+                if (!retainStoredCapsule) clearConnectionRecoveryState(storage);
                 clearConnectionRecoveryAttempt(storage);
                 return;
             }
-            setStatus('restoring');
+            setStatusTracked('restoring');
             reloadStartedRef.current = true;
             window.location.reload();
         } catch (err) {
             if (isAuthenticationRequiredError(err) || readPendingAuthenticationRequired()) return;
-            setStatus('unavailable');
-            if (probe.signal.aborted) {
+            setStatusTracked('unavailable');
+            if (probe?.signal.aborted) {
                 setNotice({ kind: 'probe_failed', message: 'The server did not answer within 10 seconds. Retry when it is available.' });
             } else if (reportServerConnectionError(err)) {
                 setNotice({ kind: 'probe_failed', message: 'The server is still unreachable. Retry when it is available.' });
+                if (probe && manual && globalThis.navigator?.onLine !== false) {
+                    setStatusTracked('reload_offered');
+                }
             } else {
                 setNotice({ kind: 'probe_failed', message: err.message || 'The server is still unavailable.' });
             }
         } finally {
             inFlightRef.current = false;
         }
-    }, [backendUrl, principalRef, reportServerConnectionError, snapshotRef]);
+    }, [backendUrl, principalRef, reportServerConnectionError, scenarioStartedRef, setStatusTracked, snapshotRef]);
 
     const discardRecovery = React.useCallback(() => {
         clearConnectionRecoveryState(getConnectionRecoveryStorage(window));
         pendingRef.current = null;
+        discardWithoutProbeRef.current = false;
         setNotice(null);
-        setStatus(unavailableRef.current ? 'unavailable' : 'idle');
-    }, []);
+        setStatusTracked(unavailableRef.current ? 'unavailable' : 'idle');
+    }, [setStatusTracked]);
 
-    const recoverRef = React.useRef(recover);
     recoverRef.current = recover;
     React.useEffect(() => {
         const handleVisibleReturn = () => {
-            if (document.visibilityState !== 'visible' || !unavailableRef.current) return;
+            if (document.visibilityState !== 'visible' || !unavailableRef.current || !perimeterEncounteredRef.current
+                || statusRef.current === 'restoring' || scenarioStartedRef.current) return;
             void recoverRef.current({ manual: false });
+        };
+        const handlePerimeterExpiry = () => {
+            reportServerConnectionError(new PerimeterSessionExpiredError());
+            queuePerimeterRecovery();
         };
         document.addEventListener('visibilitychange', handleVisibleReturn);
         window.addEventListener('focus', handleVisibleReturn);
+        window.addEventListener(PERIMETER_SESSION_EXPIRED_EVENT, handlePerimeterExpiry);
         return () => {
             document.removeEventListener('visibilitychange', handleVisibleReturn);
             window.removeEventListener('focus', handleVisibleReturn);
+            window.removeEventListener(PERIMETER_SESSION_EXPIRED_EVENT, handlePerimeterExpiry);
         };
-    }, []);
+    }, [queuePerimeterRecovery, reportServerConnectionError, scenarioStartedRef]);
 
     return {
         blocksManualRefresh: REFRESH_BLOCKING_STATUSES.has(status),
@@ -245,13 +354,14 @@ export function useConnectionRecovery({
         markBootstrapHealthy,
         notice,
         pendingRef,
+        perimeterExpired,
         recover,
         releaseOwnership: releaseRestoredOwnership,
         reportServerConnectionError,
         scenarioStartedRef,
         setNotice,
         setStagedRevision,
-        setStatus,
+        setStatus: setStatusTracked,
         stagedRevision,
         status,
         unavailableRef,

@@ -11,9 +11,10 @@ async function gotoAfterInitialSprints(page) {
 }
 
 async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
-    const state = { failSprints: false, documents: 0 };
+    const state = { failSprints: false, documents: 0, configRequests: 0 };
     page.on('request', request => {
         if (request.resourceType() === 'document') state.documents += 1;
+        if (new URL(request.url()).pathname === '/api/config') state.configRequests += 1;
     });
     const fixture = await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await routes();
@@ -30,6 +31,61 @@ async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
     state.failSprints = false;
     return { fixture, state };
 }
+
+async function expectNoRecoveryOnReturn(page, state, eventType) {
+    const counts = () => ({ documents: state.documents, configRequests: state.configRequests });
+    const before = counts();
+    await page.evaluate(type => {
+        (type === 'focus' ? window : document).dispatchEvent(new Event(type));
+    }, eventType);
+    // An already loaded document can report networkidle before a probe starts.
+    const observationEnds = performance.now() + 500;
+    await expect.poll(() => (performance.now() >= observationEnds ? counts() : null), {
+        intervals: [500], timeout: 2_000,
+    }).toEqual(before);
+}
+
+async function openWithPerimeterExpiry(page) {
+    const state = { redirect: false, documents: 0, idpRequests: [] };
+    page.on('request', request => {
+        if (request.resourceType() === 'document') {
+            state.documents += 1;
+            state.redirect = false;
+        }
+        if (request.url().startsWith('https://idp.example.test')) state.idpRequests.push(request.url());
+    });
+    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
+    await page.route('**/api/**', route => (state.redirect
+        ? route.fulfill({ status: 302, headers: { Location: 'https://idp.example.test/auth' } })
+        : route.fallback()));
+    await gotoAfterInitialSprints(page);
+    await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
+    return state;
+}
+
+test('an expired perimeter session reloads once and restores the dashboard', async ({ page }) => {
+    const state = await openWithPerimeterExpiry(page);
+    const documentsBefore = state.documents;
+    state.redirect = true;
+    await page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' }).click();
+
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+    await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
+    await expect(page.locator('.server-unavailable-banner')).toHaveCount(0);
+    expect(state.documents).toBe(documentsBefore + 1);
+    expect(state.idpRequests).toEqual([]);
+});
+
+test('a focus auth refresh that meets the perimeter redirect recovers', async ({ page }) => {
+    await page.clock.install();
+    const state = await openWithPerimeterExpiry(page);
+    await page.clock.fastForward(60_001); // Past AUTH_REFRESH_THROTTLE_MS.
+    const documentsBefore = state.documents;
+    state.redirect = true;
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+});
 
 test('shows a visible server error when bootstrap API requests cannot connect', async ({ page }) => {
     const consoleFailures = [];
@@ -117,37 +173,20 @@ test('a concurrent config 401 wins over connection recovery and never reloads', 
     expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
 });
 
-test('automatic visible-return reload runs once per outage and then requires explicit Retry', async ({ page }) => {
-    let documentRequests = 0;
-    let failSprints = false;
-    page.on('request', request => {
-        if (request.resourceType() === 'document') documentRequests += 1;
-    });
-    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
-    await page.route('**/api/sprints**', route => {
-        if (failSprints) return route.abort('connectionrefused');
-        return route.fallback();
-    });
-    await gotoAfterInitialSprints(page);
-    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
-    await expect(refresh).toBeEnabled();
-    failSprints = true;
-    await refresh.click();
-    await expect(page.getByRole('alert')).toContainText('Server is not responding');
+test('an ordinary outage never reloads on focus or visibility return; Retry reloads once', async ({ page }) => {
+    const { state } = await openWithSprintOutage(page);
+    const documentsBefore = state.documents;
+    const banner = page.getByRole('alert').filter({ hasText: 'Server is not responding' });
+    const retry = banner.getByRole('button', { name: 'Retry connection' });
 
-    const documentsBeforeAutomatic = documentRequests;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect.poll(() => documentRequests).toBe(documentsBeforeAutomatic + 1);
-    await expect(page.getByRole('alert')).toContainText('Server is not responding');
+    for (const eventType of ['focus', 'visibilitychange']) {
+        await expectNoRecoveryOnReturn(page, state, eventType);
+        await expect(banner).toBeVisible();
+        await expect(retry).toBeEnabled();
+    }
 
-    failSprints = false;
-    const documentsBeforeSuppressedAttempt = documentRequests;
-    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await expect(page.getByText('Automatic recovery already ran for this outage.')).toBeVisible();
-    expect(documentRequests).toBe(documentsBeforeSuppressedAttempt);
-
-    await page.getByRole('button', { name: 'Retry connection' }).click();
-    await expect.poll(() => documentRequests).toBe(documentsBeforeSuppressedAttempt + 1);
+    await retry.click();
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
     await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
 });
 
@@ -259,7 +298,31 @@ test('a Retry probe that still cannot connect says so instead of silently repeat
     const documentsBefore = state.documents;
     await page.getByRole('button', { name: 'Retry connection' }).click();
     await expect(page.getByText('The server is still unreachable. Retry when it is available.')).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Retry connection' })).toBeEnabled();
+    const reload = page.getByRole('button', { name: 'Reload page' });
+    await expect(reload).toBeEnabled();
+    expect(state.documents).toBe(documentsBefore);
+
+    await reload.click();
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
+});
+
+test('a perimeter expiry during a reload offer prompts the user to reload to sign in', async ({ page }) => {
+    let refuseConfig = false;
+    const { state } = await openWithSprintOutage(page, {
+        routes: () => page.route('**/api/config?**', route => (refuseConfig ? route.abort('connectionrefused') : route.fallback())),
+    });
+    refuseConfig = true;
+    const documentsBefore = state.documents;
+    await page.getByRole('button', { name: 'Retry connection' }).click();
+    const reload = page.getByRole('button', { name: 'Reload page' });
+    await expect(reload).toBeEnabled();
+
+    await page.evaluate(() => window.dispatchEvent(new Event('jep:perimeter-session-expired')));
+    const banner = page.getByRole('alert').filter({ hasText: 'Sign-in session expired' });
+    await expect(banner).toContainText('Sign-in session expired');
+    await expect(banner).toContainText('Your sign-in session expired. Reload the page to sign in again.');
+    await expect(banner).not.toContainText('unsaved changes are kept');
+    await expect(reload).toBeEnabled();
     expect(state.documents).toBe(documentsBefore);
 });
 
@@ -284,6 +347,8 @@ test('a reachable server that fails the Sprint read after reload still ends the 
     await expect(page.getByRole('alert')).toContainText('Server is not responding');
     state.failSprints = false;
     const documentsBeforeNewOutage = state.documents;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expectNoRecoveryOnReturn(page, state, 'focus');
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    await page.getByRole('button', { name: 'Retry connection' }).click();
     await expect.poll(() => state.documents).toBe(documentsBeforeNewOutage + 1);
 });

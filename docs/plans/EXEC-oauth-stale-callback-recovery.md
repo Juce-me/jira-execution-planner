@@ -1,6 +1,6 @@
 # OAuth stale callback recovery Implementation Plan
 
-> **Status:** Planned 2026-11-24 against `origin/main` `3c2d3186`; not executed. Implements decision D4 option 1 (keep a single pending login) and D7 option 1 (accept follower release without a new sign-in) unless the operator chooses otherwise before execution.
+> **Status:** Planned 2026-11-24 against `origin/main` `3c2d3186`; not executed. Implements decision D4 option 1 (keep a single pending login) and D7 option 1 (accept follower release without a new sign-in), both accepted by the operator on 2026-11-24.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 

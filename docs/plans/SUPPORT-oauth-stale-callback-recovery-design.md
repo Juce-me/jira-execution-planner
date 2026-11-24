@@ -1,6 +1,6 @@
 # OAuth stale callback recovery (design)
 
-> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Decisions marked **Operator** need confirmation before execution.
+> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24: option 1 for both.
 
 ## Problem
 
@@ -93,7 +93,7 @@ What the user sees:
 
 A tab that holds the recovery lease keeps its `sessionStorage` attempt across these navigations. With D1 it either reaches `/` (and `completeAuthRecovery` in `dashboard.jsx` releases followers; today a leader stuck on a JSON page leaves followers in the follower state until a `storage` event or a click, they do not resume on lease expiry; see D7 for a release without a new sign-in) or reaches the sign-in card and completes on its next sign-in. Follower tabs never start a login, so the lease already prevents the in-app path from superseding itself. Nothing beyond the redirect is needed.
 
-### D7. Release of follower tabs without a new sign-in (**Operator**)
+### D7. Release of follower tabs without a new sign-in (**Operator**: option 1 accepted 2026-11-24)
 
 `completeAuthRecovery` runs after any successful `/api/config` in a tab holding the lease, not only after a real sign-in. With D1, a leader whose lock came from a route-specific `401` (the EPM `missing_scope` guard) and whose base session still validates is forwarded to `/` after cancelling consent, writes the success record and releases followers; they navigate to `/` and lock again on the same call. No loop results (each new lock needs a click), and today the same release happens when the user types `/` after the JSON page, as the reporting user did. Options:
 
@@ -101,7 +101,7 @@ A tab that holds the recovery lease keeps its `sessionStorage` attempt across th
 2. **Make `sign_in_incomplete` terminal**: no forwarding, so a replayed callback with a valid session shows the card instead of the dashboard, which loses the main benefit for the reported case.
 3. **Tighten lease completion** in the frontend (for example complete only when the tab's last navigation came from a successful callback): a frontend auth-recovery change outside this design's scope; a separate plan.
 
-### D4. Concurrent pending logins (**Operator**)
+### D4. Concurrent pending logins (**Operator**: option 1 accepted 2026-11-24)
 
 Login start overwrites any earlier pending state, and any callback, matching or not, pops the pair. Options:
 

@@ -379,11 +379,12 @@ const scenarioDraft = {
 };
 const stagedScenarioDraft = { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-24', end: '2026-09-25' } } };
 
-for (const [label, scenario, planningIssueId] of [
+for (const [label, scenario, planningIssueId, planningSaved] of [
     ['missing', null],
     ['conflicting', { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-26', end: '2026-09-27' } } }],
     ['identical', stagedScenarioDraft],
     ['missing with newer Planning work', null, '8102'],
+    ['missing with Planning saved after restore', null, undefined, true],
 ]) {
     test(`an uninstalled Scenario draft survives a mounted capture that is ${label}`, async () => {
         const values = new Map();
@@ -394,11 +395,19 @@ for (const [label, scenario, planningIssueId] of [
             assert.equal(first.reloads, 1);
         } finally { first.close(); }
 
-        const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario, planningIssueId, values });
+        const scenarioRecoveryOwners = planningSaved ? await import('../frontend/src/scenario/connectionScenarioRecovery.js') : undefined;
+        const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario, planningIssueId,
+            dirtyPlanning: !planningSaved, scenarioRecoveryOwners, values });
         try {
-            const { consume, markBootstrapHealthy, recover } = second.owner.result;
+            const { consume, markBootstrapHealthy, pendingRef, recover, releaseOwnership } = second.owner.result;
             const pending = consume(second.principal);
             assert.deepEqual(pending.scenario.localOverrides, stagedScenarioDraft.localOverrides);
+            if (planningSaved) {
+                assert.equal(pending.planning.draft.inclusionChanges[0].issueId, '8101');
+                assert.equal(scenarioRecoveryOwners.completeConnectionRecoveryOwner({
+                    pendingRecoveryRef: pendingRef, owner: 'planning', releaseOwnership, recovery: pending,
+                }), false);
+            }
             for (const part of ['config', 'groups', 'sprints']) markBootstrapHealthy(part);
             const beforeOutage = new Map(values);
             assert.equal(beforeOutage.size, 1);
@@ -423,7 +432,9 @@ for (const [label, scenario, planningIssueId] of [
 
             await recover({ manual: true, discardUnsaved: true });
             assert.equal(second.reloads, 1);
-            assert.deepEqual(JSON.parse(values.get(capsuleKey)).scenario?.localOverrides ?? null, scenario?.localOverrides ?? null);
+            const replacement = JSON.parse(values.get(capsuleKey));
+            assert.deepEqual(replacement.scenario?.localOverrides ?? null, scenario?.localOverrides ?? null);
+            if (planningSaved) assert.equal(replacement.planning, null);
         } finally { second.close(); }
     });
 }

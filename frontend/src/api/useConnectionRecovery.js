@@ -230,7 +230,9 @@ export function useConnectionRecovery({
             const retainStagedScenario = !discardUnsaved && hasUninstalledScenario && perimeterEncounteredRef.current
                 && !captureFailed && !identityChanged && sameConnectionRecoveryPrincipal(pending.principal, mountedPrincipal)
                 && (!captured?.scenario || matchesScenarioDraft(pending.scenario, captured.scenario))
-                && (!captured?.planning || JSON.stringify(captured.planning) === JSON.stringify(pending.planning))
+                // A completed Planning owner can have saved or discarded the staged draft.
+                && ((!isConnectionRecoveryOwnerComplete(pending, 'planning') && !captured?.planning)
+                    || JSON.stringify(captured?.planning ?? null) === JSON.stringify(pending.planning ?? null))
                 && (!captured?.droppedSettings || pending.droppedSettings)
                 && JSON.stringify(readConnectionRecoveryState(storage, mountedPrincipal)) === JSON.stringify(pending);
             if (!discardUnsaved && (captureFailed || (hasUninstalledScenario && !retainStagedScenario))) {

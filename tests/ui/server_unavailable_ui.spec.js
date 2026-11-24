@@ -11,9 +11,10 @@ async function gotoAfterInitialSprints(page) {
 }
 
 async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
-    const state = { failSprints: false, documents: 0 };
+    const state = { failSprints: false, documents: 0, configRequests: 0 };
     page.on('request', request => {
         if (request.resourceType() === 'document') state.documents += 1;
+        if (new URL(request.url()).pathname === '/api/config') state.configRequests += 1;
     });
     const fixture = await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
     await routes();
@@ -29,6 +30,19 @@ async function openWithSprintOutage(page, { routes = async () => {} } = {}) {
     await expect(page.getByRole('alert')).toContainText('Server is not responding');
     state.failSprints = false;
     return { fixture, state };
+}
+
+async function expectNoRecoveryOnReturn(page, state, eventType) {
+    const counts = () => ({ documents: state.documents, configRequests: state.configRequests });
+    const before = counts();
+    await page.evaluate(type => {
+        (type === 'focus' ? window : document).dispatchEvent(new Event(type));
+    }, eventType);
+    // An already loaded document can report networkidle before a probe starts.
+    const observationEnds = performance.now() + 500;
+    await expect.poll(() => (performance.now() >= observationEnds ? counts() : null), {
+        intervals: [500], timeout: 2_000,
+    }).toEqual(before);
 }
 
 async function openWithPerimeterExpiry(page) {
@@ -166,11 +180,7 @@ test('an ordinary outage never reloads on focus or visibility return; Retry relo
     const retry = banner.getByRole('button', { name: 'Retry connection' });
 
     for (const eventType of ['focus', 'visibilitychange']) {
-        await page.evaluate(type => {
-            (type === 'focus' ? window : document).dispatchEvent(new Event(type));
-        }, eventType);
-        await page.waitForLoadState('networkidle');
-        expect(state.documents).toBe(documentsBefore);
+        await expectNoRecoveryOnReturn(page, state, eventType);
         await expect(banner).toBeVisible();
         await expect(retry).toBeEnabled();
     }
@@ -337,9 +347,7 @@ test('a reachable server that fails the Sprint read after reload still ends the 
     await expect(page.getByRole('alert')).toContainText('Server is not responding');
     state.failSprints = false;
     const documentsBeforeNewOutage = state.documents;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await page.waitForLoadState('networkidle');
-    expect(state.documents).toBe(documentsBeforeNewOutage);
+    await expectNoRecoveryOnReturn(page, state, 'focus');
     await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
     await page.getByRole('button', { name: 'Retry connection' }).click();
     await expect.poll(() => state.documents).toBe(documentsBeforeNewOutage + 1);

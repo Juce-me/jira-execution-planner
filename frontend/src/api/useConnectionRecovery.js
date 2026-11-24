@@ -326,7 +326,8 @@ export function useConnectionRecovery({
     recoverRef.current = recover;
     React.useEffect(() => {
         const handleVisibleReturn = () => {
-            if (document.visibilityState !== 'visible' || !unavailableRef.current || statusRef.current === 'restoring' || scenarioStartedRef.current) return;
+            if (document.visibilityState !== 'visible' || !unavailableRef.current || !perimeterEncounteredRef.current
+                || statusRef.current === 'restoring' || scenarioStartedRef.current) return;
             void recoverRef.current({ manual: false });
         };
         const handlePerimeterExpiry = () => {

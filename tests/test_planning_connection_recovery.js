@@ -245,6 +245,19 @@ test('a perimeter event on a visible page starts recovery without any call', asy
     } finally { h.close(); }
 });
 
+test('an ordinary outage does not reload on focus or visibility return', async () => {
+    const h = mountRecovery();
+    try {
+        window.dispatchEvent(new Event('focus'));
+        document.dispatchEvent(new Event('visibilitychange'));
+        await flushRecovery();
+        assert.equal(h.probes, 0);
+        assert.equal(h.reloads, 0);
+        await h.owner.result.recover({ manual: true });
+        assert.equal(h.reloads, 1);
+    } finally { h.close(); }
+});
+
 test('a perimeter event on a hidden page waits for the visible return', async () => {
     const h = mountRecovery({ outageError: null, probeError: perimeterError, visibility: 'hidden' });
     try {

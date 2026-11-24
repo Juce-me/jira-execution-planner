@@ -159,37 +159,24 @@ test('a concurrent config 401 wins over connection recovery and never reloads', 
     expect(await page.evaluate(() => sessionStorage.getItem('jira_dashboard_connection_recovery_v1'))).toBeNull();
 });
 
-test('automatic visible-return reload runs once per outage and then requires explicit Retry', async ({ page }) => {
-    let documentRequests = 0;
-    let failSprints = false;
-    page.on('request', request => {
-        if (request.resourceType() === 'document') documentRequests += 1;
-    });
-    await installDashboardFixture(page, { authMode: 'atlassian_oauth' });
-    await page.route('**/api/sprints**', route => {
-        if (failSprints) return route.abort('connectionrefused');
-        return route.fallback();
-    });
-    await gotoAfterInitialSprints(page);
-    const refresh = page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' });
-    await expect(refresh).toBeEnabled();
-    failSprints = true;
-    await refresh.click();
-    await expect(page.getByRole('alert')).toContainText('Server is not responding');
+test('an ordinary outage never reloads on focus or visibility return; Retry reloads once', async ({ page }) => {
+    const { state } = await openWithSprintOutage(page);
+    const documentsBefore = state.documents;
+    const banner = page.getByRole('alert').filter({ hasText: 'Server is not responding' });
+    const retry = banner.getByRole('button', { name: 'Retry connection' });
 
-    const documentsBeforeAutomatic = documentRequests;
-    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
-    await expect.poll(() => documentRequests).toBe(documentsBeforeAutomatic + 1);
-    await expect(page.getByRole('alert')).toContainText('Server is not responding');
+    for (const eventType of ['focus', 'visibilitychange']) {
+        await page.evaluate(type => {
+            (type === 'focus' ? window : document).dispatchEvent(new Event(type));
+        }, eventType);
+        await page.waitForLoadState('networkidle');
+        expect(state.documents).toBe(documentsBefore);
+        await expect(banner).toBeVisible();
+        await expect(retry).toBeEnabled();
+    }
 
-    failSprints = false;
-    const documentsBeforeSuppressedAttempt = documentRequests;
-    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await expect(page.getByText('Automatic recovery already ran for this outage.')).toBeVisible();
-    expect(documentRequests).toBe(documentsBeforeSuppressedAttempt);
-
-    await page.getByRole('button', { name: 'Retry connection' }).click();
-    await expect.poll(() => documentRequests).toBe(documentsBeforeSuppressedAttempt + 1);
+    await retry.click();
+    await expect.poll(() => state.documents).toBe(documentsBefore + 1);
     await expect(page.getByRole('button', { name: 'Refresh tasks and sprints from Jira' })).toBeEnabled();
 });
 
@@ -351,5 +338,9 @@ test('a reachable server that fails the Sprint read after reload still ends the 
     state.failSprints = false;
     const documentsBeforeNewOutage = state.documents;
     await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await page.waitForLoadState('networkidle');
+    expect(state.documents).toBe(documentsBeforeNewOutage);
+    await expect(page.getByRole('alert').filter({ hasText: 'Server is not responding' })).toBeVisible();
+    await page.getByRole('button', { name: 'Retry connection' }).click();
     await expect.poll(() => state.documents).toBe(documentsBeforeNewOutage + 1);
 });

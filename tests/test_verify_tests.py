@@ -23,23 +23,46 @@ class VerificationGateTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
 
-    def run_gate(self, statuses, seconds):
+    def run_gate(self, statuses, seconds, **options):
         now = [0.0]
+        self.timeouts = []
 
         def stage(*args, **kwargs):
+            self.timeouts.append(kwargs['timeout'])
             now[0] += seconds.pop(0)
             status = statuses.pop(0)
             return {'status': status, 'exitCode': 0 if status == 'passed' else 124, 'seconds': now[0]}
 
         stages = [(name, ['synthetic-command']) for name in ('build', 'backend', 'frontend-unit', 'chromium')]
-        with patch.object(verify, 'run_stage', side_effect=stage), redirect_stdout(io.StringIO()):
-            return verify.run_gate(stages, root=ROOT, environment={}, directory=self.directory, clock=lambda: now[0])
+        output = io.StringIO()
+        with patch.object(verify, 'run_stage', side_effect=stage), redirect_stdout(output):
+            report = verify.run_gate(stages, root=ROOT, environment={}, directory=self.directory, clock=lambda: now[0], **options)
+        self.output = output.getvalue()
+        return report
 
     def test_each_required_stage_runs_once_and_total_includes_all_stages(self):
         report = self.run_gate(['passed'] * 4, [1, 2, 3, 4])
         self.assertTrue(report['passed'])
+        self.assertTrue(report['deadlineEnforced'])
         self.assertEqual(report['seconds'], 10)
         self.assertEqual([row['name'] for row in report['stages']], ['build', 'backend', 'frontend-unit', 'chromium'])
+
+    def test_without_deadline_every_stage_runs_to_completion_after_a_failure(self):
+        report = self.run_gate(['passed', 'failed', 'passed', 'failed'], [1, 900, 10, 900], enforce_deadline=False)
+        self.assertEqual(self.timeouts, [None] * 4)
+        self.assertEqual([row['name'] for row in report['stages']], ['build', 'backend', 'frontend-unit', 'chromium'])
+        self.assertEqual(report['notRun'], [])
+        self.assertFalse(report['deadlineEnforced'])
+        self.assertFalse(report['complete'])
+        self.assertFalse(report['passed'])
+        self.assertIn('failed stages: backend, chromium', self.output)
+
+    def test_without_deadline_a_complete_slow_run_passes_and_reports_the_overrun(self):
+        report = self.run_gate(['passed'] * 4, [100, 1500, 20, 180], enforce_deadline=False)
+        self.assertTrue(report['complete'])
+        self.assertTrue(report['passed'])
+        self.assertFalse(report['withinBudget'])
+        self.assertIn('600s target exceeded by 1200.000s', self.output)
 
     def test_timed_out_backend_cannot_pass_or_claim_unrun_browser_coverage(self):
         report = self.run_gate(['passed', 'deadline-exceeded'], [1, 600])

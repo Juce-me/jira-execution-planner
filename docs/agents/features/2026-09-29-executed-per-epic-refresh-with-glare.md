@@ -218,7 +218,7 @@ Acceptance criteria (testable):
 1. Button placement: the requester's approved top-right overlay (section 3.1).
 2. Issue number: #213 ("Dashboard epics on demand sync feature"); branch `feature/213-per-epic-refresh`.
 3. Analytics: the `epic_refresh_action` event with its own `epic_refresh` API surface.
-4. The 8-11 week estimate and the wave order, with Planning last, were accepted; the execution plan is `docs/plans/EXEC-per-epic-refresh-213.md` (reviewed by five subagents on 2026-09-30).
+4. The 8-11 week estimate and the wave order, with Planning last, were accepted; the execution plan is `docs/plans/DONE-per-epic-refresh-213.md` (reviewed by five subagents on 2026-09-30).
 
 Follow-up candidate, not in scope: re-homing stories that moved out of the epic by adding `key in (held keys of this epic)` to the same search; it needs the MRT031 byte budget for large epics.
 
@@ -232,7 +232,7 @@ Implemented with changes. The implementation, its tests and `docs/features/eng-w
 
 What shipped as designed: the manual per-Epic refresh button (top-right overlay, hover and focus reveal, always visible on touch), the `purpose=epic-refresh` and `purpose=epic-alerts` server branches with validation, a per-user limiter and cache skip with scope eviction, the pure diff and merge rules, in-place patching with `is-removing` dissolve and `task-appear`, the amber glare (cap 8, reduced-motion tint), the status announcement region, the `epic_refresh_action` analytics event on its own `epic_refresh` API surface, and the three alert slices A, B and C, enabled in Catch Up first and in Planning last.
 
-Differences from the design, each recorded in `docs/plans/EXEC-per-epic-refresh-213.md`:
+Differences from the design, each recorded in `docs/plans/DONE-per-epic-refresh-213.md`:
 - **Circuit breaker (section 3.3).** The design assumed the shared retry helper honors `Retry-After`; it does not on the normal path. Epic-refresh searches now use a dedicated breaker with a two-attempt budget and the helper's 0.5 to 3 s exponential backoff (decision: implemented, not deferred). Measured Jira searches from the Python tests: 2 per lane for `epic-refresh` (one Story page, one Epic details search; 4 per click) and 5 per lane for `epic-alerts` (one scope, one counts, three distribution).
 - **Dependency refetch (3.4 step 7).** The one-shot skip is armed in a wrapper around the loader, tagged with the load epoch (`epicRefreshDependencySkip.js`), because the merge's `flushSync` flushes the dependencies effect before `afterApply`.
 - **Planning capacity (section 4).** The two-frame hold of the capacity scope signature became a pin that lasts until the user changes the capacity scope or a department load bumps the epoch, so a refresh issues zero `/api/capacity` requests; the cost is a stale capacity card for a Team that newly rises above zero Story Points (flagged for the requester).

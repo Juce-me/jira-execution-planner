@@ -8,13 +8,14 @@ const source = esbuild.buildSync({
     entryPoints: [path.join(__dirname, '..', 'frontend', 'src', 'dashboardRuntime.js')],
     bundle: true, write: false, format: 'cjs', platform: 'browser',
 }).outputFiles[0].text;
-const sandbox = { module: { exports: {} }, exports: {}, console, AbortController };
+const sandbox = { module: { exports: {} }, exports: {}, console, AbortController, URL };
 vm.runInContext(source, vm.createContext(sandbox));
 const {
     classifyEpmReadError,
     createSprintCatalogController,
     createSprintCatalogState,
     describeEpmReadError,
+    getServerConnectionErrorMessage,
     isBackendConnectionFailure,
     isEpmNavigationVisible,
     getLocalStorage,
@@ -32,6 +33,17 @@ vm.runInContext(esbuild.buildSync({
     bundle: true, write: false, format: 'cjs', platform: 'browser',
 }).outputFiles[0].text, vm.createContext(contextSandbox));
 const { buildConfigurationContext } = contextSandbox.module.exports;
+
+test('unreachable local backends retain the Python server instructions', () => {
+    for (const backendUrl of ['http://localhost:5050', 'http://127.0.0.1:5050', 'http://[::1]:5050', '']) {
+        assert.match(getServerConnectionErrorMessage(backendUrl), /Start the Python server, then retry\./);
+    }
+});
+
+test('unreachable hosted backends ask the user to retry when available', () => {
+    assert.equal(getServerConnectionErrorMessage('https://app.example.test'),
+        'The server at https://app.example.test is not reachable. Retry when it is available.');
+});
 
 test('local storage acquisition tolerates a denied browser property without touching data', () => {
     const storage = { getItem() { throw new Error('no data access expected'); } };
@@ -370,6 +382,10 @@ test('display cache validation key changes only for accepted validation', () => 
     assert.equal(sprintCatalogValidationKey(snapshot), sprintCatalogValidationKey({ ...snapshot, sprints: [{ id: 1, name: 'ignored' }] }));
     assert.notEqual(sprintCatalogValidationKey({ sprints: [{ id: 1, name: 'Legacy' }] }), '');
     assert.equal(sprintCatalogValidationKey(null), '');
+});
+
+test('isBackendConnectionFailure classifies an expired perimeter session', () => {
+    assert.equal(isBackendConnectionFailure({ name: 'PerimeterSessionExpiredError' }), true);
 });
 
 test('isBackendConnectionFailure classifies the config bootstrap timeout but not other aborts', () => {

@@ -332,7 +332,7 @@ A second `--merge` is a no-op, with three exceptions: a column that was matched 
 
 Junk Sprint views: each group is capped at 500 Sprint views and the app has no delete action. An operator can purge rows by hand, after a backup and a review of the exact rows. In a one-off database session, first run `SELECT id, sprint_id, view_revision FROM group_sprint_review_views WHERE workspace_id = '<id>' AND group_id = '<group id>' AND sprint_id IN ('<sprint id>');`, check the result, then run the same `WHERE` clause with `DELETE FROM group_sprint_review_views` inside a transaction and commit only if the deleted count matches. Deleting a view makes that Sprint inherit again from earlier Sprints; it removes no cells or columns. Run it with application writers stopped or idle.
 
-OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads with the Home read scopes for Home/Townsquare EPM metadata.
+OAuth2 Proxy may protect the ingress perimeter, but it does not replace app-level Atlassian OAuth. The app still needs Atlassian OAuth 2.0 (3LO) for Jira REST reads with the Home read scopes for Home/Townsquare EPM metadata. When the perimeter session expires, the app expects `/api/*` requests to receive a redirect and recovers by reloading the page, while a bare `401` from the perimeter triggers the app’s sign-in lock screen.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner build method, default branch/tag policy, and the exact point when image push may be enabled.

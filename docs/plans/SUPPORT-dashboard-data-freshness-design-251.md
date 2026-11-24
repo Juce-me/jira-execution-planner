@@ -5,7 +5,7 @@ Date: 2026-10-09 (Europe/Berlin)
 Baseline: `fb3593492d52a9f854ba1300c4f21f55476a9f51`, matching fetched `origin/main`
 Issue: [#251 — check if the page is refreshing is necessary](https://github.com/Juce-me/jira-execution-planner/issues/251)
 Evidence: [research note](SUPPORT-data-freshness-research-251.md)
-Execution contract: [implementation plan](EXEC-dashboard-data-freshness-251.md); remaining validation is its Task 0 prerequisite before application edits.
+Execution contract: [implementation plan](DONE-dashboard-data-freshness-251.md); remaining validation is its Task 0 prerequisite before application edits.
 
 ## Assessment
 
@@ -140,7 +140,7 @@ The design is ready for execution only when the design checkpoint below is satis
 
 - [x] The user has accepted the return policy, focus definition, >12-minute trigger, one-Epic reading exception, partial/unknown freshness wording, and the absence of a maximum data-age guarantee during uninterrupted focused use (2026-10-09).
 - [ ] Validation covers the remaining affected surfaces and lifecycle/intent gaps, with confirmed defects separated from hypotheses. Any scope reduction or stream/response-contract expansion is explicitly accepted and recorded.
-- [x] The [execution plan](EXEC-dashboard-data-freshness-251.md) has a verified Create/Modify file map, concrete acquisition/application/cancellation contracts for each affected owner, bounded request/retry budgets, and tests for the failure paths. It preserves the existing auth, workspace, catalog, review and collaboration boundaries. Its Task 0 gates remaining validation before application edits.
+- [x] The [execution plan](DONE-dashboard-data-freshness-251.md) has a verified Create/Modify file map, concrete acquisition/application/cancellation contracts for each affected owner, bounded request/retry budgets, and tests for the failure paths. It preserves the existing auth, workspace, catalog, review and collaboration boundaries. Its Task 0 gates remaining validation before application edits.
 
 ### Feature completion gates
 

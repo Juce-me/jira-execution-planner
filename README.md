@@ -266,6 +266,8 @@ make verify
 
 Use `make verify ARGS="--backend-workers 4 --workers 4"` to set backend/Chromium concurrency explicitly (each accepts one through eight). Backend workers own separate snapshots and PostgreSQL clusters; cases within a worker remain sequential. Audited ordinary fixtures use fresh schemas in a process-owned database, while empty/migration/history/real-race fixtures retain physical database isolation. The 20-case schema pilot reduced median complete cold-process time by 26.3% before the final checked-out-connection survivor guard was added; the final implementation and full combined gate have no measured gain claim yet.
 
+Use `make verify ARGS=--no-deadline` for the full delivery check after development: every stage runs to completion even after a failure, and the 600-second target is reported but not enforced. During development, run only the focused tests for the feature.
+
 Use `make verify ARGS=--headed` when glyph/geometry acceptance needs headed Chromium. While source/tests are untracked, pass each reviewed new file with repeated `--include` arguments in `ARGS`, as for the isolated backend runner. `make test-security` remains a focused command; the full gate does not rerun it after backend discovery. For backend diagnosis, add `--timings` to `tests/run_isolated_runtime_tests.py`; module case totals include per-test setup and cleanup, while the enclosing process time also includes discovery/imports and class/module fixtures. To run UI alone, build first: `npm run build && npx playwright test tests/ui --browser=chromium --workers=4`.
 
 ## Internal Hosting Pre-SRE Checklist
@@ -394,7 +396,7 @@ Junk Sprint views: each group is capped at 500 Sprint views and the app has no d
 
 Migration `20260827_0008` must run with application writers quiesced and only after a database backup. Its workspace-EPM archive is migration-only rollback state: the migration is reversible, and operators or application code must never use the archive to infer or create a private EPM owner.
 
-OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes.
+OAuth2 Proxy is perimeter access only. The app still requires Atlassian OAuth 2.0 (3LO) because Jira REST reads use the signed-in user's Atlassian OAuth session, and Home/Townsquare EPM reads use the same session with the Home read scopes. When the perimeter session expires, the app expects `/api/*` requests to receive a redirect and recovers by reloading the page, while a bare `401` from the perimeter triggers the app’s sign-in lock screen.
 
 Needs SRE ownership or confirmation:
 - CI project location, registry/image path, runner container-build method, branch/tag policy, and when image push may be enabled.

@@ -168,7 +168,7 @@ Expected: all tests in the file pass; `panel-loaded.png` and `panel-expanded.png
 ### Task 3: Align documentation and analytics review
 
 **Files:**
-- Modify: `docs/plans/EXEC-eng-group-board.md:1560-1574`
+- Modify: `docs/plans/DONE-eng-group-board.md:1560-1574`
 - Modify: `docs/README_ANALYTICS.md:122`
 - Modify: `docs/agents/features/2026-08-08-planned-board-epic-description-smart-links.md`
 - Modify: `docs/plans/EXEC-board-epic-description-smart-links.md`
@@ -243,7 +243,7 @@ Open `tmp/eng-group-board-panel/panel-loaded.png` and `panel-expanded.png`. Conf
 ```bash
 git diff --check
 git status --short
-git diff -- backend/epm/home.py tests/test_oauth_eng_routes.py tests/ui/eng_group_board_panel.spec.js docs/plans/EXEC-eng-group-board.md docs/README_ANALYTICS.md docs/agents/features/2026-08-08-executed-board-epic-description-smart-links.md docs/plans/EXEC-board-epic-description-smart-links.md
+git diff -- backend/epm/home.py tests/test_oauth_eng_routes.py tests/ui/eng_group_board_panel.spec.js docs/plans/DONE-eng-group-board.md docs/README_ANALYTICS.md docs/agents/features/2026-08-08-executed-board-epic-description-smart-links.md docs/plans/EXEC-board-epic-description-smart-links.md
 ```
 
 Expected: no whitespace errors; every scoped line traces to Smart Link support; unrelated alert-loading changes remain outside the scoped diff/staging set.
@@ -253,7 +253,7 @@ Expected: no whitespace errors; every scoped line traces to Smart Link support; 
 Stage exactly the scoped files and commit:
 
 ```bash
-git add backend/epm/home.py tests/test_oauth_eng_routes.py tests/ui/eng_group_board_panel.spec.js docs/plans/EXEC-eng-group-board.md docs/README_ANALYTICS.md docs/plans/EXEC-board-epic-description-smart-links.md
+git add backend/epm/home.py tests/test_oauth_eng_routes.py tests/ui/eng_group_board_panel.spec.js docs/plans/DONE-eng-group-board.md docs/README_ANALYTICS.md docs/plans/EXEC-board-epic-description-smart-links.md
 git add -A -- docs/agents/features/2026-08-08-planned-board-epic-description-smart-links.md docs/agents/features/2026-08-08-executed-board-epic-description-smart-links.md
 git commit -m "Support Smart Links in Board descriptions"
 ```

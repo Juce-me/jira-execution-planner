@@ -156,7 +156,7 @@ Do not repeat the `Epics by column` heading inside the Board body.
 - Modify: `tests/ui/eng_group_board_panel.spec.js`
 - Modify: `tests/ui/eng_group_board_drag.spec.js` (Task 1 scale contract assertion only)
 - Modify: `tests/ui/eng_group_board_filters.spec.js` (Task 1 help/sticky geometry assertions only)
-- Modify: `docs/plans/EXEC-eng-group-board.md`
+- Modify: `docs/plans/DONE-eng-group-board.md`
 - Modify: `docs/README_ANALYTICS.md`
 - Regenerate from source: `frontend/dist/dashboard.css`, `frontend/dist/dashboard.js`,
   `frontend/dist/dashboard.js.map`

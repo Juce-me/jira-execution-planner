@@ -24,7 +24,7 @@ For internal container hosting, register the HTTPS ingress callback URL in the A
 <https-origin>/api/auth/atlassian/callback
 ```
 
-Set `ATLASSIAN_REDIRECT_URI` to that exact HTTPS callback URL and set `APP_ALLOWED_ORIGINS` to the same HTTPS origin. OAuth2 Proxy may enforce perimeter identity at ingress, but it does not replace app-level Atlassian OAuth. Jira REST calls still use the signed-in user's Atlassian OAuth 2.0 (3LO) session, and Home/Townsquare EPM metadata uses the same user's encrypted DB OAuth grant with the Home read scopes.
+Set `ATLASSIAN_REDIRECT_URI` to that exact HTTPS callback URL and set `APP_ALLOWED_ORIGINS` to the same HTTPS origin. OAuth2 Proxy may enforce perimeter identity at ingress, but it does not replace app-level Atlassian OAuth. Jira REST calls still use the signed-in user's Atlassian OAuth 2.0 (3LO) session, and Home/Townsquare EPM metadata uses the same user's encrypted DB OAuth grant with the Home read scopes. When the perimeter session expires, the app expects `/api/*` requests to receive a redirect and recovers by reloading the page, while a bare `401` from the perimeter triggers the app’s sign-in lock screen.
 
 If Microsoft Entra SSO is enforced for the organization, keep using the Atlassian OAuth app. Entra remains part of the Atlassian login flow; do not replace the Atlassian app with a Microsoft OAuth app for Jira REST or Home/Townsquare token flows.
 

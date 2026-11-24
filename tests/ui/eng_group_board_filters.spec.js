@@ -554,7 +554,7 @@ test('a facet narrows the open column cards, both column counts, and the folded 
 });
 
 /* ── §1's acceptance point 4, as amended: no SINGLE facet empties the board; a combination that
-   empties it says so, rather than going silently blank (docs/plans/EXEC-eng-group-board.md,
+   empties it says so, rather than going silently blank (docs/plans/DONE-eng-group-board.md,
    "Narrowed during execution, to what the plan actually specifies") ──────────────────────────── */
 
 test('a combination that admits zero epics says so and ordinary facets still lock their final option', async ({ page }) => {

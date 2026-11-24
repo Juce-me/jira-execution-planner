@@ -112,7 +112,7 @@ const saveFieldConfig = async (backendUrl, endpoint, fieldId, fieldName, baselin
 // Owns the whole five-picker family (sprint, parent name, story points, team, delivery owner):
 // their draft/search state, dirty tracking, and load/save wiring. Extracted behaviour-identically
 // from dashboard.jsx to keep that file inside its line budget — see
-// docs/plans/EXEC-eng-group-board.md §6.5.7 and §14.
+// docs/plans/DONE-eng-group-board.md §6.5.7 and §14.
 export function useJiraFieldPickers({ backendUrl, jiraFields }) {
     const [fieldBaselineRevision, setFieldBaselineRevision] = React.useState(0);
     const markBaselineAccepted = React.useCallback(() => {

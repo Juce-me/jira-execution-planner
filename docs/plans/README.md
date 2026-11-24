@@ -109,7 +109,7 @@ Reviewed on 2026-11-24 against released `main` commit `19b05ee9`. The operator c
 ## OAuth callback recovery
 
 - [OAuth stale callback recovery design](SUPPORT-oauth-stale-callback-recovery-design.md): a replayed, superseded, denied or truncated Atlassian callback redirects to `/login?reason=sign_in_incomplete`, which forwards a signed-in browser to the dashboard and otherwise shows a notice; the state check and single pending login are unchanged.
-- [OAuth stale callback recovery](EXEC-oauth-stale-callback-recovery.md): three test-first tasks (sign-in notice, callback redirect, docs) with the no-exchange and redaction pins.
+- [OAuth stale callback recovery](EXEC-oauth-stale-callback-recovery.md): runtime setup, two test-first tasks (sign-in notice with forced consent after an incomplete grant, callback redirect with hardened browser fixtures), docs and a finalization gate.
 
 ## Epic header regression review
 

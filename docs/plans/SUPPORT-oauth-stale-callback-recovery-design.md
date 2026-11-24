@@ -1,6 +1,6 @@
 # OAuth stale callback recovery (design)
 
-> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24: option 1 for both.
+> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24 (option 1 for both); D8 (consent link after an incomplete grant) approved 2026-11-24. Revised after a second three-reviewer round on 2026-11-24.
 
 ## Problem
 
@@ -12,9 +12,9 @@ The perimeter recovery work (`bugfix/perimeter-session-expiry-recovery`, PR #348
 
 ## How the journey works today
 
-Verified against `origin/main` `3c2d3186` on 2026-11-24.
+Verified against `origin/main` `3c2d3186` on 2026-11-24 and re-checked at `30d0923b` (docs-only drift).
 
-1. A browser without a valid DB browser session asks for `/` or `/jira-dashboard.html`. `redirect_unauthenticated_oauth_dashboard_entry` (`jira_server.py`, `OAUTH_DASHBOARD_ENTRY_PATHS`) stashes a valid share-view query with `stash_share_view_query` and redirects to `/login`, or to `/login?reason=session_expired` when an old `db_oauth_session` cookie entry is present.
+1. A browser without a valid DB browser session asks for `/` or `/jira-dashboard.html`. `redirect_unauthenticated_oauth_dashboard_entry` (`jira_server.py`, `OAUTH_DASHBOARD_ENTRY_PATHS`) stashes a valid share-view query with `stash_share_view_query` and redirects to `/login`, or to `/login?reason=session_expired` when an old `db_oauth_session` cookie entry is present. Any `AuthError`, including `missing_oauth_scope` for a stored grant that lacks base scopes, takes that `session_expired` path, whose card offers the plain link.
 2. `/login` (`auth_entry_page`) forwards a browser with a valid session to `pop_share_view_target(session)` unless the reason is terminal (`session_expired`, `missing_scope`). Otherwise it renders the sign-in card with an optional `.auth-notice` paragraph and a "Sign in with Atlassian" link to `/api/auth/atlassian/login` (with `?prompt=consent` for `missing_scope`).
 3. `api_atlassian_login` writes a fresh `oauth_state` (`secrets.token_urlsafe(32)`) and PKCE verifier into the session on every call, overwriting any earlier pending pair, and redirects to Atlassian.
 4. `api_atlassian_callback` pops both values, validates state, provider error, code and verifier in that order, exchanges the code, stores encrypted tokens and a new DB browser session (`store_db_oauth_callback_session_metadata`), and redirects to `pop_share_view_target(session)`.
@@ -34,17 +34,17 @@ None of these is an attack, but an attacker-forged callback looks exactly like t
 
 ## Goals, non-goals, anti-goals
 
-Goals: every pre-exchange callback failure ends on a page a user can act on; a browser that is already signed in goes back to the dashboard (or its stashed share view) without another Atlassian round trip; the state check stays exactly as strict.
+Goals: in a healthy DB/OAuth runtime, every pre-exchange callback failure ends on a page a user can act on; a browser that is already signed in goes back to the dashboard (or its stashed share view) without another Atlassian round trip; the state check stays exactly as strict.
 
 Non-goals: post-exchange failures (`user_inactive`, `jira_site_not_accessible`, token-exchange `AuthError`s, configuration errors) keep their current responses; a follow-up may map them to the existing `/auth/*` recovery pages. No change to `api_atlassian_login`, cookie attributes, the DB browser-session model or the frontend recovery lease.
 
-Anti-goals: exchanging any `code` whose `state` did not match the saved one; putting `state`, `code` or any provider error text into a URL, log line, page or database row; a redirect target built from request parameters; a sign-in loop that never renders a page.
+Anti-goals: exchanging any `code` whose `state` did not match the saved one; putting `state`, `code` or any provider error text into an application-generated URL, page or database row or an app-controlled log line (proxies, browsers and Atlassian are outside this guarantee; see `docs/PRIVACY.md`); a redirect target built from request parameters; a sign-in loop that never renders a page.
 
 ## Decisions
 
 ### D1. Outcome per pre-exchange failure (redirect targets)
 
-All four pre-exchange failures (state missing or different, provider `error`, missing `code`, missing verifier) stop before `validate_auth_config` and `exchange_authorization_code`, keep popping the pending pair exactly as today, and leave the DB browser session and share-view stash untouched. Instead of `400` JSON they return one fixed redirect:
+All four pre-exchange failures (state missing or different, provider `error`, missing `code`, missing verifier) stop before `validate_auth_config` and `exchange_authorization_code`, keep popping the pending pair exactly as today, and leave the DB browser session and share-view stash untouched. This no-mutation guarantee covers the callback response itself; the following `/login` request may consume the stash (forwarding) or upgrade a legacy connection-only cookie into a browser row, as it does today. Instead of `400` JSON they return one fixed redirect:
 
 ```text
 302 Location: /login?reason=sign_in_incomplete
@@ -55,7 +55,8 @@ All four pre-exchange failures (state missing or different, provider `error`, mi
 | Browser state on arrival at `/login?reason=sign_in_incomplete` | Result |
 | --- | --- |
 | Valid DB browser session (`current_request_auth_context` succeeds) | `302` to `pop_share_view_target(session)`: `/` or `/?<stashed share view>`; the stash is consumed |
-| No session, expired session, or any `AuthError` from validation | Sign-in card with the new notice; the stash is kept for the next successful callback |
+| Session whose validation raises `missing_oauth_scope` (stored grant lacks base scopes) | Sign-in card with the new notice and the existing consent link `/api/auth/atlassian/login?prompt=consent` (D8); the stash is kept |
+| No session, expired, deleted or revoked session, or any other `AuthError` from validation | Sign-in card with the new notice and the plain link; the stash is kept for the next successful callback |
 
 `sign_in_incomplete` is a **non-terminal** reason (it is not added to the `{session_expired, missing_scope}` set), which is what lets `/login` forward a valid session.
 
@@ -67,11 +68,15 @@ Approaches considered:
 - **B. Callback always redirects to `/login?reason=sign_in_incomplete`** (recommended, my call). One fixed target, no new session logic in the callback, the end destinations are identical to A. The extra same-origin `302` is not visible.
 - **C. Render an HTML error page from the callback.** Rejected: it would be a fourth copy of the auth card HTML and still need a "go to dashboard" path for signed-in users.
 
-Provider `error` is folded into the same reason on purpose: it is usually a cancelled consent, the user's next step is the same, and echoing Atlassian's `error`/`error_description` values would put provider text into the page. A browser whose grant is complete and which cancels a voluntary sign-in is forwarded to the dashboard by `/login`. A browser that cancels a *re-consent* is, by definition, missing scopes: `current_request_auth_context` raises `missing_oauth_scope` (`backend/auth/db_context.py`), so `/login` renders the card with the plain sign-in link instead of the `prompt=consent` one. That is not a loop: the user signs in, the dashboard's first API call returns the existing `missing_scope` 401, and `/login?reason=missing_scope` offers consent again, one round trip more than strictly needed. Accepted as a limitation (my call); mapping `missing_oauth_scope` to the consent link on `/login` would change `/login` for every non-terminal reason and is left as an optional follow-up.
+Provider `error` is folded into the same reason on purpose: it is usually a cancelled consent, the user's next step is the same, and echoing Atlassian's `error`/`error_description` values would put provider text into the page. A browser whose grant is complete and which cancels a voluntary sign-in is forwarded to the dashboard by `/login`. A browser that cancels a *re-consent* is missing base scopes: `current_request_auth_context` raises `missing_oauth_scope` (`backend/auth/db_context.py`). See D8 for why its card must keep the consent link.
+
+### D8. Keep forced consent after an incomplete grant (**Operator**: approved 2026-11-24)
+
+Without it, a re-consent that the user cancels ends on the plain link. A plain sign-in can return the same incomplete grant; the callback then succeeds, the dashboard entry guard catches `missing_oauth_scope` and redirects to the terminal `/login?reason=session_expired`, which again offers the plain link, so the user can repeat the cycle without ever being asked for the missing scopes. Decision: when `auth_entry_page` handles `reason=sign_in_incomplete` and session validation raises `AuthError` with code `missing_oauth_scope`, the card shows the `sign_in_incomplete` notice with the existing `/api/auth/atlassian/login?prompt=consent` link. The share-view stash is kept. No other reason or error code changes. The pre-existing entry-guard path (`session_expired` with the plain link for a base-scope gap that reaches `/` directly) is not changed by this design and is recorded as a residual risk.
 
 ### D2. Copy and UI
 
-The new notice reuses the existing `.auth-notice` paragraph on the `/login` card (`role="status"`), the same element and tone as the two existing reasons; the link stays the plain `/api/auth/atlassian/login`. The server-rendered sign-in page is not in `docs/design-system.md`; no new element kind, class, font size or radius is introduced, so no design-system entry is required.
+The new notice reuses the existing `.auth-notice` paragraph on the `/login` card (`role="status"`), the same element and tone as the two existing reasons; the link is the plain `/api/auth/atlassian/login`, or the existing `?prompt=consent` link under D8. The server-rendered sign-in page is not in `docs/design-system.md`; no new element kind, class, font size or radius is introduced, so no design-system entry is required.
 
 Proposed copy (my call, matching the existing "...Sign in again to continue." pattern):
 
@@ -85,8 +90,9 @@ What the user sees:
 | Superseded login in another tab, other tab not yet signed in | Raw JSON in the stale tab; the newer tab's pending pair is consumed, so it also fails | Sign-in card with the notice in both tabs |
 | Superseded login, other tab already signed in | Raw JSON | Dashboard |
 | Cancelled or denied consent, not signed in | Raw JSON `oauth_authorization_failed` | Sign-in card with the notice |
+| Cancelled re-consent, stored grant lacks base scopes | Raw JSON `oauth_authorization_failed` | Sign-in card with the notice and the consent link (D8) |
 | Missing `code` or verifier (tampered or truncated URL) | Raw JSON | Sign-in card with the notice, or the dashboard if signed in |
-| In-app recovery leader cancels or replays the callback while its base session still validates (for example an EPM-route `missing_scope` 401 from `backend/security/guards.py`) | Raw JSON; leader stuck, followers wait | Leader forwarded to `/`; its `/api/config` succeeds, so `completeAuthRecovery` releases followers, and every tab that repeats the failing call locks again (see D7) |
+| In-app recovery leader whose terminal `401` does not reproduce on base-session validation cancels or replays the callback | Raw JSON; leader stuck, followers wait | Conditional (D7): leader forwarded to `/`; if bootstrap establishes a principal and the leader still owns the live lease, `completeAuthRecovery` releases followers, and every tab that repeats the failing call locks again |
 | Post-exchange failure | Unchanged JSON | Unchanged (non-goal) |
 
 ### D3. Multi-tab recovery lease (no change)
@@ -95,7 +101,7 @@ A tab that holds the recovery lease keeps its `sessionStorage` attempt across th
 
 ### D7. Release of follower tabs without a new sign-in (**Operator**: option 1 accepted 2026-11-24)
 
-`completeAuthRecovery` runs after any successful `/api/config` in a tab holding the lease, not only after a real sign-in. With D1, a leader whose lock came from a route-specific `401` (the EPM `missing_scope` guard) and whose base session still validates is forwarded to `/` after cancelling consent, writes the success record and releases followers; they navigate to `/` and lock again on the same call. No loop results (each new lock needs a click), and today the same release happens when the user types `/` after the JSON page, as the reporting user did. Options:
+`completeAuthRecovery` (`frontend/src/dashboard.jsx`) runs after a successful `/api/config` that yields a workspace/view principal in a tab holding the lease, not only after a real sign-in. The release happens only when all three hold: a rejected callback forwards the leader because its base session still validates; dashboard bootstrap establishes a principal; and the leader still owns the live lease. Then followers navigate to `/` and lock again on the same failing call. Base-scope gaps do not qualify, because `/login` validates the same base scopes and renders the card; missing optional Home scopes surface as a feature-level `409 epm_scope_required` (`backend/routes/epm_errors.py`), not a terminal lock. A qualifying case is any terminal `401` from a route whose failure base validation does not reproduce. No loop results (each new lock needs a click), and today the same release happens when the user types `/` after the JSON page, as the reporting user did. Options:
 
 1. **Accept** (recommended): document it; behavior equals today's manual recovery, minus the JSON page.
 2. **Make `sign_in_incomplete` terminal**: no forwarding, so a replayed callback with a valid session shows the card instead of the dashboard, which loses the main benefit for the reported case.
@@ -105,7 +111,7 @@ A tab that holds the recovery lease keeps its `sessionStorage` attempt across th
 
 Login start overwrites any earlier pending state, and any callback, matching or not, pops the pair. Options:
 
-1. **Keep as is** (recommended). A superseded tab gets the notice; at worst the user signs in once more. No change to CSRF or fixation properties.
+1. **Keep as is** (recommended). A superseded tab gets the notice; a second tab can leave both attempts needing a restart, so the guidance is to restart in one tab. No change to CSRF or fixation properties.
 2. **Do not consume on mismatch.** A mismatching callback leaves the pending pair for the tab whose callback is still coming. A mismatch still never exchanges a code, and the 256-bit state is not guessable, so login CSRF is not weakened; the cost is that a pending pair can survive a forged or stale callback until the next login start or successful callback, and the "a callback always clears pending state" invariant (asserted by `test_callback_rejects_invalid_state`) goes away.
 3. **Keep several pending pairs** (a bounded map of state to verifier with a TTL). Lets both tabs finish, but grows the cookie that the share-view stash budget (3,300 bytes) already constrains, and adds expiry logic to the most security-sensitive route.
 
@@ -113,7 +119,7 @@ Risk weighed: login CSRF (an attacker making the victim's browser complete the a
 
 ### D5. Logging and secrecy
 
-- The redirect target is a constant; it never contains `state`, `code`, `error` or `error_description` values, and nothing from the callback query is rendered, logged, stored or audited.
+- The redirect target is a constant; it never contains `state`, `code`, `error` or `error_description` values, and nothing from the callback query is rendered, logged, stored or audited by the application. App-controlled logs are the Werkzeug and application loggers plus the container's Gunicorn access log, which records the path without the query string (`docs/PRIVACY.md`).
 - The Werkzeug request line for the callback stays redacted by `SENSITIVE_CALLBACK_QUERY_RE` / `SensitiveLogRedactionFilter` (`jira_server.py`), covered by `test_werkzeug_logs_redact_oauth_callback_query` (`tests/test_logging_migration.py`). `/login?reason=sign_in_incomplete` contains no secret and needs no redaction.
 - `Referrer-Policy: same-origin` (`backend/security/headers.py`) is unchanged. After a `302` the referrer of `/login` is the document that started the navigation (the Atlassian page), not the callback URL, so the callback query never travels as a referrer.
 - No new log line is added. If diagnostics are wanted later, log only the fixed failure kind (for example `oauth_callback_rejected kind=state_mismatch`), never values.
@@ -126,7 +132,7 @@ Trigger none; `event_type=none`; canonical `event_name=none`; `feature_name=auth
 
 - OAuth is the only auth mode; no Basic or local-token fallback (root `AGENTS.md` section 11).
 - Only `/api/auth/atlassian/login` and `/api/auth/atlassian/callback` may redirect under `/api/` (`EndpointPolicyInventoryTests.test_only_navigation_auth_api_routes_redirect`); the change stays inside that guard.
-- Pre-exchange failures must not mutate the current or any other DB browser session (`SUPPORT-multi-device-browser-sessions-design.md`; `DbOauthCutoverTests.test_callback_validation_failures_preserve_current_and_other_browser_rows`).
+- The callback response for a pre-exchange failure must not mutate the current or any other DB browser session (`SUPPORT-multi-device-browser-sessions-design.md`; `DbOauthCutoverTests.test_callback_validation_failures_preserve_current_and_other_browser_rows`).
 - Every failed callback keeps the share-view stash for a retry (`test_failed_callback_keeps_the_stash_and_a_retry_applies_it`, `test_callback_failures_retain_the_pending_share_view_for_a_retry`).
 - The frontend 401 lock path and `VALID_REASONS` are unchanged: the new reason is produced only by a server redirect, never by an API `loginUrl` payload.
 
@@ -138,6 +144,7 @@ Trigger none; `event_type=none`; canonical `event_name=none`; `feature_name=auth
 ## Residual risks
 
 - Two truly concurrent requests carrying the same matching state can both reach the exchange; the second fails on the one-time `code` and, as a post-exchange failure, deletes the browser session referenced by its own (older) cookie and may overwrite the cookie written by the first. This is pre-existing, outside this change, and rare in browsers because a navigation is not duplicated concurrently.
+- The dashboard entry guard still sends a base-scope gap that reaches `/` directly to `/login?reason=session_expired` with the plain link (pre-existing; D8 covers only the `sign_in_incomplete` path).
 - `/login` catches only `AuthError` from `current_request_auth_context`. With a cookie session present and the database unavailable, a redirected callback now ends on `/login`'s raw `500` instead of the callback's `400` JSON. This is `/login`'s pre-existing behavior for any visitor during an outage and is not changed here.
 - Any page can force a top-level navigation to the callback (`SameSite=Lax`) and so consume a pending login; pre-existing, now silent instead of JSON. The state comparison is not constant-time; the state is a 256-bit one-time value.
 - The trigger the user hit is inferred, not observed. The redacted Werkzeug log of that server, if retained, would show whether two callback request lines arrived.

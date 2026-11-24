@@ -1,6 +1,6 @@
 # OAuth stale callback recovery (design)
 
-> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24 (option 1 for both); D8 (consent link after an incomplete grant) approved 2026-11-24. Revised after a second three-reviewer round on 2026-11-24.
+> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24 (option 1 for both); D8 (consent link after an incomplete grant) approved 2026-11-24. Revised after a second and a third three-reviewer round on 2026-11-24.
 
 ## Problem
 
@@ -72,7 +72,7 @@ Provider `error` is folded into the same reason on purpose: it is usually a canc
 
 ### D8. Keep forced consent after an incomplete grant (**Operator**: approved 2026-11-24)
 
-Without it, a re-consent that the user cancels ends on the plain link. A plain sign-in can return the same incomplete grant; the callback then succeeds, the dashboard entry guard catches `missing_oauth_scope` and redirects to the terminal `/login?reason=session_expired`, which again offers the plain link, so the user can repeat the cycle without ever being asked for the missing scopes. Decision: when `auth_entry_page` handles `reason=sign_in_incomplete` and session validation raises `AuthError` with code `missing_oauth_scope`, the card shows the `sign_in_incomplete` notice with the existing `/api/auth/atlassian/login?prompt=consent` link. The share-view stash is kept. No other reason or error code changes. The pre-existing entry-guard path (`session_expired` with the plain link for a base-scope gap that reaches `/` directly) is not changed by this design and is recorded as a residual risk.
+Without it, a re-consent that the user cancels ends on the plain link. A plain sign-in can return the same incomplete grant; the callback then succeeds, the dashboard entry guard catches `missing_oauth_scope` and redirects to the terminal `/login?reason=session_expired`, which again offers the plain link, so the user can repeat the cycle without ever being asked for the missing scopes. Decision: when `auth_entry_page` handles `reason=sign_in_incomplete` and session validation raises `AuthError` with code `missing_oauth_scope`, the card shows the `sign_in_incomplete` notice with the existing `/api/auth/atlassian/login?prompt=consent` link. The share-view stash is kept. No other reason or error code changes. The consent promise is limited to cancellations where the stored grant lacks base scopes: the optional EPM Home permission prompt (`epm_scope_required`, `backend/routes/epm_errors.py`) also forces consent, and cancelling it leaves a browser with valid base scopes that `/login` forwards to the dashboard, where EPM asks again. The pre-existing entry-guard path (`session_expired` with the plain link for a base-scope gap that reaches `/` directly) is not changed by this design and is recorded as a residual risk.
 
 ### D2. Copy and UI
 
@@ -111,7 +111,7 @@ A tab that holds the recovery lease keeps its `sessionStorage` attempt across th
 
 Login start overwrites any earlier pending state, and any callback, matching or not, pops the pair. Options:
 
-1. **Keep as is** (recommended). A superseded tab gets the notice; a second tab can leave both attempts needing a restart, so the guidance is to restart in one tab. No change to CSRF or fixation properties.
+1. **Keep as is** (recommended). A superseded tab gets the notice; an older return (another tab, Back, a second click) clears the newer pending pair in the same browser, so the guidance is to restart in one tab and complete the newest attempt, starting once more after the notice if needed. No change to CSRF or fixation properties.
 2. **Do not consume on mismatch.** A mismatching callback leaves the pending pair for the tab whose callback is still coming. A mismatch still never exchanges a code, and the 256-bit state is not guessable, so login CSRF is not weakened; the cost is that a pending pair can survive a forged or stale callback until the next login start or successful callback, and the "a callback always clears pending state" invariant (asserted by `test_callback_rejects_invalid_state`) goes away.
 3. **Keep several pending pairs** (a bounded map of state to verifier with a TTL). Lets both tabs finish, but grows the cookie that the share-view stash budget (3,300 bytes) already constrains, and adds expiry logic to the most security-sensitive route.
 

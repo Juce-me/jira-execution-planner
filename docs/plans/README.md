@@ -94,7 +94,7 @@ Publication update (2026-10-14): the operator approved one combined design-syste
 
 ## Hosted perimeter session recovery
 
-- [Perimeter session expiry recovery](EXEC-perimeter-session-expiry-recovery.md): an expired OAuth2 Proxy session makes API calls redirect cross-origin; detect the redirect and recover with one draft-preserving reload instead of the "Server is not responding" banner.
+- [Perimeter session expiry recovery](DONE-perimeter-session-expiry-recovery.md): an expired OAuth2 Proxy session makes API calls redirect cross-origin; detect the redirect and recover with one draft-preserving reload instead of the "Server is not responding" banner.
 
 ## Epic header regression review
 

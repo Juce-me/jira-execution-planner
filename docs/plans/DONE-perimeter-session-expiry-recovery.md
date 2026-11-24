@@ -1,6 +1,6 @@
 # Perimeter Session Expiry Recovery Implementation Plan
 
-> **Status:** Implemented locally, revision R3; operator added D-5 on 2026-11-24. Focused checks passed and the whole-branch review approved. The bounded combined gate stops at its backend deadline; the uncapped `make verify ARGS=--no-deadline` passed every stage on 2026-11-24. Branch `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`. The operator accepted D-1 through D-4 and authorized execution from the local R2 commit `4dee2624` without publishing the branch. Retain `EXEC-` until the operator authorizes publication.
+> **Status:** Done. Revision R3 executed on `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`; kept for audit. The operator accepted D-1 through D-5. The uncapped `make verify ARGS=--no-deadline` passed every stage on 2026-11-24; the bounded 600-second gate still stops at its backend deadline. Live hosting and the real IdP round trip remain unverified.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -14,6 +14,19 @@
 **Tech Stack:** React 19 + esbuild frontend, `node --test` unit tests, Playwright desktop Chromium, `unittest` backend guards through the isolated runner.
 
 **Spec:** This plan carries its own diagnosis (below); no separate spec document.
+
+## Outcome
+
+Implemented with changes. The implementation is now the source of truth.
+
+- API requests no longer follow redirects. A redirect to the sign-in host raises `PerimeterSessionExpiredError` and one `PERIMETER_SESSION_EXPIRED_EVENT`, and `useConnectionRecovery` reloads once through the existing draft-preserving path.
+- Automatic reload happens only after that detected auth failure (D-5): never on a hidden tab, never for an ordinary outage. Ordinary outages keep the banner until the user clicks Retry connection or Reload page.
+- Beyond R2: mutual exclusion with Scenario restoration, retention of an unconsumed recovery copy when no principal is mounted, reuse of a staged Scenario copy only when it still covers the tab's drafts (Planning saved or discarded after restoration blocks reuse), and accurate banner copy outside busy states. Each is recorded with its commit in the Execution Record.
+- `make verify` gained `ARGS=--no-deadline` for the full delivery check (`e100a4a4`), operator-requested on this branch.
+
+## Current Accuracy
+
+Accurate for the shipped behavior as of the final branch head. Task checkboxes below were not ticked during execution; the Execution Record is the completion log. The live OAuth2 Proxy and IdP redirect chain was never exercised; all redirects in tests are synthetic.
 
 ## Diagnosis (production, 2026-11-23)
 

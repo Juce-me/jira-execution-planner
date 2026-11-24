@@ -1,6 +1,6 @@
 # Perimeter Session Expiry Recovery Implementation Plan
 
-> **Status:** Implemented locally (2026-11-23), revision R2. Focused checks passed and the whole-branch review approved. Combined verification was incomplete because the backend stage hit its deadline. Branch `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`. The operator accepted D-1 through D-4 and authorized execution from the local R2 commit `4dee2624` without publishing the branch. Retain `EXEC-` until the operator authorizes publication.
+> **Status:** Implemented locally, revision R3; operator added D-5 on 2026-11-24. Focused checks passed and the whole-branch review approved. Combined verification was incomplete because the backend stage hit its deadline. Branch `bugfix/perimeter-session-expiry-recovery` from `origin/main` `19b05ee9`. The operator accepted D-1 through D-4 and authorized execution from the local R2 commit `4dee2624` without publishing the branch. Retain `EXEC-` until the operator authorizes publication.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -35,7 +35,7 @@ A dashboard tab left open for about a week showed the "Server is not responding"
 
 ## Decisions
 
-- **D-1 (recovery surface): A, accepted 2026-11-23.** A perimeter expiry triggers the existing capsule + automatic reload with no extra click, bounded by the one-attempt-per-outage guard. `manual_required` falls back to the explicit button. A perimeter redirect is not an application `401`, so the terminal-lock rule does not apply.
+- **D-1 (recovery surface): A, accepted 2026-11-23.** A perimeter expiry triggers the existing capsule + automatic reload with no extra click, bounded by the one-attempt-per-outage guard and limited by D-5. `manual_required` falls back to the explicit button. A perimeter redirect is not an application `401`, so the terminal-lock rule does not apply.
 - **D-2 (button after a failed probe): A, accepted 2026-11-23.** After a manual probe fails with a connection failure while `globalThis.navigator?.onLine !== false`, the same banner button becomes "Reload page" (the MRT032 label). Its next click preserves drafts and reloads without probing. This replaces the current contract of the spec "a Retry probe that still cannot connect says so instead of silently repeating the banner" (Task 3 updates it).
 - **D-3 (copy, mechanical).**
   - **Local backend:** "Start the Python server, then retry." is shown only when the backend hostname is `localhost`, `127.0.0.1` or `[::1]`, or when `backendUrl` cannot be parsed.
@@ -44,6 +44,8 @@ A dashboard tab left open for about a week showed the "Server is not responding"
   - **Perimeter message while recovery runs:** "Your sign-in session expired. Reloading to sign in again; unsaved changes are kept."
   - **Perimeter message in `manual_required`:** "Your sign-in session expired. Reload the page to sign in again; unsaved changes are kept." This replaces the generic "Automatic recovery already ran…" line, and the button label is "Reload page".
 - **D-4 (detection transport, mechanical).** `http.js` dispatches `PERIMETER_SESSION_EXPIRED_EVENT` and `useConnectionRecovery` subscribes. This covers focus refresh, automatic reads and the ENG Board stream without editing each caller, and it removes the sprint-read edit from `dashboard.jsx`.
+
+- **D-5 (automatic reload only on auth failure), accepted 2026-11-24.** Only an outage that started from a detected perimeter redirect may reload automatically: from the perimeter event, from queued recovery after restoration, or on focus or visibility return. Ordinary connection outages never reload automatically. On return they keep the banner, and only a Retry connection or Reload page click reloads. A tab that stays mounted does not reload for a non-auth reason.
 
 ## Global Constraints
 
@@ -65,6 +67,8 @@ A dashboard tab left open for about a week showed the "Server is not responding"
 4. **ENG Board stream (`apiFetchHeaders`, the only caller is `engBoardApi.js`).** It must get the typed error. Scenario realtime uses `EventSource`, which follows the redirect, errors and falls back to polling; polling then gets the typed error through `apiFetch`. Tested in Task 1 for `apiFetchHeaders`.
 5. **Lazy view chunks after expiry.** `lazyViewLoaders.js` fetches a manifest and imports chunks that the proxy also redirects. Out of scope: the existing MRT032 Retry/Reload page recovery handles it with its own copy. Recorded in `docs/TODO.md` (Task 4); no test.
 
+6. **Planning saved or discarded after restore** must not be resurrected by a reused capsule.
+
 ## Execution Record
 
 - **Task 1 complete, `cea36090`.** Independent review approved. The first test run produced 10 expected JS failures; the navigation guards and all 24 Python inventory tests passed. The build and all 144 focused JS, 24 Python, and 17 auth/config checks passed after implementation. Two additional existing fetch-init assertions in the mapped source-guard test needed the enforced redirect option. Review added exact redirect-path coverage and a concurrent authentication-lock test; the 8 HTTP and 24 Python checks passed again.
@@ -75,6 +79,12 @@ A dashboard tab left open for about a week showed the "Server is not responding"
 - **Combined verification, `b44518f2`.** Ran `make verify` with Node 20 on the clean reviewed commit. Exact summary: `build: passed (1.340s)`, `backend: deadline-exceeded (517.853s)`, `Complete verification: failed; 519.309s/600s`. The backend did not finish before the runner's deadline, which reserves 90 seconds for cleanup. The full frontend unit and desktop Chromium stages did not start. The run finished within 600 seconds and no substitute run was used.
 
 - **Follow-up review, 2026-11-24.** The nonbusy sign-in banner gives reload guidance without promising draft retention. This supersedes the D-3 manual message for nonbusy states. Eligible perimeter recovery resumes when Scenario restoration yields, without another focus event. The operator kept the original 30-minute expiry for uninstalled Scenario drafts. A second perimeter reload reuses the validated capsule byte for byte when no newer work would be lost. Conflicting drafts or newer work keep recovery blocked and the staged draft in the tab. The existing connection-recovery analytics allowlist covers these paths. The build, 134 Node checks, 21 isolated structure and documentation checks, and 37 desktop Chromium tests passed. The full gate was not rerun.
+
+- **R3 preflight, `4e5e7cd4`.** Committed the seven reviewed follow-up files only. The Node 20 build, 188 Node tests and 12 desktop Chromium recovery cases passed with zero failures.
+
+- **R3 D-5, `35cd994b`.** The new Node case failed before the fix (one unwanted probe; 35 cases outside the filter skipped). Both changed Chromium cases failed on an unwanted document reload. After the visible-return guard, the build and 189 Node tests passed. Chromium ran the recovery (12 passed), auth-focus (33 passed), Planning (66 passed), and Scenario (23 passed, one opt-in runtime baseline skipped) specs, with zero failures. The former automatic-reload case and the post-bootstrap second-outage case now expect focus or visibility to leave the ordinary outage mounted and Retry to reload once. Perimeter focus and hidden-return coverage stayed intact. The R3 plan update passed 12 isolated documentation checks.
+
+- **R3 Planning capsule protection, `20e86f23`.** The saved-Planning regression failed before the fix (one unexpected reload; 36 cases outside the filter skipped). Once Planning declares its capsule work restored, the current capture must match the stored Planning draft, including an explicit absence. If the user saved or discarded that draft and Scenario is still staged, the hook blocks the reload with the staged-Scenario preservation notice, keeps the original capsule and expiry, and does not reinstall the old Planning draft. Explicit Reload and discard writes no old Planning draft. The build, 190 Node tests and 12 Chromium recovery cases passed with zero failures.
 
 The live hosting redirect chain and a real IdP sign-in across the capsule TTL remain unverified. Tests use synthetic redirects and desktop Chromium. Lazy view chunks keep their existing MRT032 recovery (Review Focus 5).
 
@@ -239,6 +249,8 @@ The live hosting redirect chain and a real IdP sign-in across the capsule TTL re
 - [ ] **Step 4:** Before push and PR, run `make verify` and follow the publication transaction in root `AGENTS.md` section 10. Rename the plan to `DONE-` in that publication, with Outcome and Current Accuracy sections.
 
 ## Acceptance Criteria
+
+- An ordinary outage causes zero reloads on focus or visibility return; one Retry click reloads once.
 
 - A redirected API response never shows the "Start the Python server" text and needs no click. The page reloads once and drafts are restored; this is triggered by any request, including focus refresh and automatic reads (Tasks 1-2).
 - A second perimeter detection after the reload shows `manual_required` with the "Reload page" button, and never loops (Task 2).

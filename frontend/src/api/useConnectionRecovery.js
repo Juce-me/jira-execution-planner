@@ -17,6 +17,7 @@ import {
 } from './connectionRecoveryState.js';
 import { getServerConnectionErrorMessage, isBackendConnectionFailure } from '../dashboardRuntime.js';
 import { isConnectionRecoveryOwnerComplete } from '../scenario/connectionScenarioRecovery.js';
+import { scenarioDraftOverridesSignature } from '../scenario/scenarioDraftOverrides.js';
 
 export const CONNECTION_PROBE_TIMEOUT_MS = 10_000;
 
@@ -29,6 +30,12 @@ const settingsDiscardedNotice = {
     kind: 'settings_discarded',
     message: 'Unsaved configuration changes were discarded while restoring the connection.',
 };
+
+function matchesScenarioDraft(staged, captured) {
+    return ['scopeKey', 'groupId', 'sprintId', 'activeDraftId', 'baseDraftRevision'].every(key => staged[key] === captured[key])
+        && scenarioDraftOverridesSignature(staged.savedOverrides) === scenarioDraftOverridesSignature(captured.savedOverrides)
+        && scenarioDraftOverridesSignature(staged.localOverrides) === scenarioDraftOverridesSignature(captured.localOverrides);
+}
 
 export function useConnectionRecovery({
     backendUrl,
@@ -54,6 +61,16 @@ export function useConnectionRecovery({
     }
     const outageIdRef = React.useRef(initialAttemptRef.current?.outageId || '');
     const pendingRef = React.useRef(null);
+    const recoverRef = React.useRef(null);
+
+    const queuePerimeterRecovery = React.useCallback(() => {
+        queueMicrotask(() => {
+            if (document.visibilityState !== 'visible' || !unavailableRef.current || !perimeterEncounteredRef.current
+                || !['idle', 'unavailable'].includes(statusRef.current) || preservationFailedRef.current
+                || readPendingAuthenticationRequired()) return;
+            void recoverRef.current({ manual: false });
+        });
+    }, []);
 
     const setStatusTracked = React.useCallback((next) => {
         statusRef.current = next;
@@ -70,10 +87,11 @@ export function useConnectionRecovery({
                 // Scenario can finish while Planning still owns the capsule and no release runs.
                 if (!started && unavailableRef.current && statusRef.current === 'restoring' && !reloadStartedRef.current) {
                     setStatusTracked('unavailable');
+                    queuePerimeterRecovery();
                 }
             },
         };
-    }, [setStatusTracked]);
+    }, [queuePerimeterRecovery, setStatusTracked]);
 
     const releaseOwnership = React.useCallback((nextStatus = 'idle') => {
         unavailableRef.current = false;
@@ -89,11 +107,14 @@ export function useConnectionRecovery({
     // is still active and must keep ownership so focus/visibility recovery can reload again.
     const releaseRestoredOwnership = React.useCallback((nextStatus = 'idle') => {
         if (unavailableRef.current) {
-            if (statusRef.current === 'restoring' && !reloadStartedRef.current) setStatusTracked('unavailable');
+            if (statusRef.current === 'restoring' && !reloadStartedRef.current) {
+                setStatusTracked('unavailable');
+                queuePerimeterRecovery();
+            }
             return;
         }
         releaseOwnership(nextStatus);
-    }, [releaseOwnership, setStatusTracked]);
+    }, [queuePerimeterRecovery, releaseOwnership, setStatusTracked]);
 
     const clearServerConnectionError = React.useCallback(() => {
         if (!unavailableRef.current) setServerConnectionError('');
@@ -204,13 +225,24 @@ export function useConnectionRecovery({
             try { captured = mountedPrincipal && !(skipProbe && discardUnsaved) ? snapshotRef.current?.() : null; }
             catch (error) { captureFailed = true; }
             const pending = pendingRef.current;
-            // Keep the original capsule and its expiry until the staged Scenario owner completes.
             const hasUninstalledScenario = pending?.scenario && !isConnectionRecoveryOwnerComplete(pending, 'scenario');
-            if (!discardUnsaved && (captureFailed || hasUninstalledScenario)) {
+            // Reuse the original bytes and expiry only if they already cover the work in this tab.
+            const retainStagedScenario = !discardUnsaved && hasUninstalledScenario && perimeterEncounteredRef.current
+                && !captureFailed && !identityChanged && sameConnectionRecoveryPrincipal(pending.principal, mountedPrincipal)
+                && (!captured?.scenario || matchesScenarioDraft(pending.scenario, captured.scenario))
+                && (!captured?.planning || JSON.stringify(captured.planning) === JSON.stringify(pending.planning))
+                && (!captured?.droppedSettings || pending.droppedSettings)
+                && JSON.stringify(readConnectionRecoveryState(storage, mountedPrincipal)) === JSON.stringify(pending);
+            if (!discardUnsaved && (captureFailed || (hasUninstalledScenario && !retainStagedScenario))) {
                 preservationFailedRef.current = true;
                 discardWithoutProbeRef.current = skipProbe;
                 setStatusTracked('unavailable');
-                setNotice({ kind: 'preservation_failed', message: 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.' });
+                setNotice({
+                    kind: 'preservation_failed',
+                    message: hasUninstalledScenario
+                        ? 'Your staged Scenario draft is still in this tab. Recovery cannot safely carry your drafts through another reload. Stay here or reload and discard.'
+                        : 'Your unsaved changes could not be preserved in this tab. Stay here or explicitly reload without preserving changes.',
+                });
                 return;
             }
             if (identityChanged && (captured?.scenario || captured?.planning) && !discardUnsaved) {
@@ -221,11 +253,12 @@ export function useConnectionRecovery({
                 });
                 return;
             }
-            const snapshot = captured && !identityChanged ? { ...captured, outage: { id: outageId } } : null;
+            const snapshot = captured && !identityChanged && !retainStagedScenario ? { ...captured, outage: { id: outageId } } : null;
             const capsuleWritten = snapshot ? writeConnectionRecoveryState(storage, snapshot) : false;
             // Perimeter recovery and an offered reload can run before the principal mounts.
             // Leave the previous capsule for validation at bootstrap.
-            const retainStoredCapsule = (skipProbe || perimeterEncounteredRef.current) && !mountedPrincipal && !discardUnsaved;
+            const retainStoredCapsule = retainStagedScenario
+                || ((skipProbe || perimeterEncounteredRef.current) && !mountedPrincipal && !discardUnsaved);
             if (!capsuleWritten && !retainStoredCapsule) clearConnectionRecoveryState(storage);
             if (!capsuleWritten && (snapshot?.scenario || snapshot?.planning) && !discardUnsaved) {
                 preservationFailedRef.current = true;
@@ -290,23 +323,15 @@ export function useConnectionRecovery({
         setStatusTracked(unavailableRef.current ? 'unavailable' : 'idle');
     }, [setStatusTracked]);
 
-    const recoverRef = React.useRef(recover);
     recoverRef.current = recover;
     React.useEffect(() => {
         const handleVisibleReturn = () => {
             if (document.visibilityState !== 'visible' || !unavailableRef.current || statusRef.current === 'restoring' || scenarioStartedRef.current) return;
             void recoverRef.current({ manual: false });
         };
-        const canStartPerimeterRecovery = () => document.visibilityState === 'visible'
-            && unavailableRef.current && !inFlightRef.current && !reloadStartedRef.current && !scenarioStartedRef.current
-            // A failed capsule write leaves the page mounted without a durable attempt marker.
-            && !preservationFailedRef.current && ['idle', 'unavailable'].includes(statusRef.current);
         const handlePerimeterExpiry = () => {
             reportServerConnectionError(new PerimeterSessionExpiredError());
-            if (!canStartPerimeterRecovery()) return;
-            queueMicrotask(() => {
-                if (canStartPerimeterRecovery()) void recoverRef.current({ manual: false });
-            });
+            queuePerimeterRecovery();
         };
         document.addEventListener('visibilitychange', handleVisibleReturn);
         window.addEventListener('focus', handleVisibleReturn);
@@ -316,7 +341,7 @@ export function useConnectionRecovery({
             window.removeEventListener('focus', handleVisibleReturn);
             window.removeEventListener(PERIMETER_SESSION_EXPIRED_EVENT, handlePerimeterExpiry);
         };
-    }, [reportServerConnectionError, scenarioStartedRef]);
+    }, [queuePerimeterRecovery, reportServerConnectionError, scenarioStartedRef]);
 
     return {
         blocksManualRefresh: REFRESH_BLOCKING_STATUSES.has(status),

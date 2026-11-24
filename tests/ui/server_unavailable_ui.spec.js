@@ -323,7 +323,8 @@ test('a perimeter expiry during a reload offer prompts the user to reload to sig
     await page.evaluate(() => window.dispatchEvent(new Event('jep:perimeter-session-expired')));
     const banner = page.getByRole('alert').filter({ hasText: 'Sign-in session expired' });
     await expect(banner).toContainText('Sign-in session expired');
-    await expect(banner).toContainText('Your sign-in session expired. Reload the page to sign in again; unsaved changes are kept.');
+    await expect(banner).toContainText('Your sign-in session expired. Reload the page to sign in again.');
+    await expect(banner).not.toContainText('unsaved changes are kept');
     await expect(reload).toBeEnabled();
     expect(state.documents).toBe(documentsBefore);
 });

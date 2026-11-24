@@ -7,7 +7,7 @@ function mountRecovery({
     storageWorks = true, identityChanged = false, captureThrows = false,
     probeError, probeWait, authLocked = false, values = new Map(), visibility = 'visible', pendingWrite = false,
     outageError = new Error('synthetic outage'), principalMounted = true, attemptStorageWorks = true, scenario = null,
-    dirtySettings = false, dirtyPlanning = true, scenarioRecoveryOwners,
+    dirtySettings = false, dirtyPlanning = true, planningIssueId = '8101', scenarioRecoveryOwners,
 } = {}) {
     const oldWindow = global.window, oldDocument = global.document;
     const principal = { workspaceId: 'workspace-1', viewConfigId: 'view-1' };
@@ -29,7 +29,7 @@ function mountRecovery({
     const snapshot = {
         principal, outage: { id: '' }, view: { selectedView: 'eng', activeGroupId: 'group-1', selectedSprint: '101', engMode: 'statistics', scrollX: 0, scrollY: 0 }, droppedSettings: dirtySettings, scenario,
         planning: dirtyPlanning ? { scope: { workspaceId: 'workspace-1', groupId: 'group-1', sprintId: '101', namespaceId: null }, selectedTeams: [], submission: null,
-            draft: { inclusionChanges: [{ issueId: '8101', included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } } : null,
+            draft: { inclusionChanges: [{ issueId: planningIssueId, included: true, baseRevision: 0 }], initializePlan: true, basePlanRevision: 0, baseScopeProof: 'synthetic-proof', baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] } } : null,
     };
     const owner = mountBundledHook({ entry: path.resolve('frontend/src/api/useConnectionRecovery.js'), exportName: 'useConnectionRecovery', modules: {
         ...(scenarioRecoveryOwners && { '../scenario/connectionScenarioRecovery.js': scenarioRecoveryOwners }),
@@ -337,7 +337,7 @@ test('queued perimeter recovery gives way to a newly started restoration', async
     } finally { h.close(); }
 });
 
-test('a perimeter outage found during restoration becomes retryable when restoration releases ownership', async () => {
+test('a perimeter outage found during restoration resumes once when restoration releases ownership', async () => {
     const h = mountRecovery({ outageError: null, probeError: perimeterError });
     try {
         h.owner.result.setStatus('restoring');
@@ -354,6 +354,9 @@ test('a perimeter outage found during restoration becomes retryable when restora
         assert.equal(result.unavailableRef.current, true);
         assert.equal(result.perimeterExpired, true);
         assert.equal(availableEvents, 0);
+        await flushRecovery();
+        assert.equal(h.probes, 1);
+        assert.equal(h.reloads, 1);
     } finally { h.close(); }
 });
 
@@ -363,10 +366,11 @@ const scenarioDraft = {
 };
 const stagedScenarioDraft = { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-24', end: '2026-09-25' } } };
 
-for (const [label, scenario] of [
+for (const [label, scenario, planningIssueId] of [
     ['missing', null],
     ['conflicting', { ...scenarioDraft, localOverrides: { 'PLAN-1': { start: '2026-09-26', end: '2026-09-27' } } }],
     ['identical', stagedScenarioDraft],
+    ['missing with newer Planning work', null, '8102'],
 ]) {
     test(`an uninstalled Scenario draft survives a mounted capture that is ${label}`, async () => {
         const values = new Map();
@@ -377,7 +381,7 @@ for (const [label, scenario] of [
             assert.equal(first.reloads, 1);
         } finally { first.close(); }
 
-        const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario, values });
+        const second = mountRecovery({ outageError: null, probeError: perimeterError, scenario, planningIssueId, values });
         try {
             const { consume, markBootstrapHealthy, recover } = second.owner.result;
             const pending = consume(second.principal);
@@ -386,12 +390,19 @@ for (const [label, scenario] of [
             const beforeOutage = new Map(values);
             assert.equal(beforeOutage.size, 1);
             await dispatchPerimeterExpiry();
+            if (label === 'missing' || label === 'identical') {
+                assert.equal(second.reloads, 1);
+                assert.equal(second.capsuleMutations, 0);
+                assert.equal(values.get(capsuleKey), beforeOutage.get(capsuleKey));
+                return;
+            }
             const result = second.owner.render();
             assert.equal(second.reloads, 0);
             assert.equal(second.capsuleMutations, 0);
             assert.deepEqual(values, beforeOutage);
             assert.equal(result.pendingRef.current, pending);
             assert.equal(result.notice.kind, 'preservation_failed');
+            assert.match(result.notice.message, /staged Scenario draft is still in this tab/);
             window.dispatchEvent(new Event('focus'));
             document.dispatchEvent(new Event('visibilitychange'));
             await flushRecovery();
@@ -404,7 +415,7 @@ for (const [label, scenario] of [
     });
 }
 
-test('a newer perimeter outage remains retryable after Scenario finishes ahead of Planning', async () => {
+test('a newer perimeter outage resumes after Scenario finishes ahead of Planning', async () => {
     const scenarioRecoveryOwners = await import('../frontend/src/scenario/connectionScenarioRecovery.js');
     const values = new Map();
     const capsuleKey = 'jira_dashboard_connection_recovery_v1';
@@ -416,7 +427,7 @@ test('a newer perimeter outage remains retryable after Scenario finishes ahead o
     const originalCapsule = values.get(capsuleKey);
     const second = mountRecovery({ outageError: null, probeError: perimeterError, scenarioRecoveryOwners, values });
     try {
-        const { consume, markBootstrapHealthy, pendingRef, releaseOwnership, scenarioStartedRef, setStatus, recover } = second.owner.result;
+        const { consume, markBootstrapHealthy, pendingRef, releaseOwnership, scenarioStartedRef, setStatus } = second.owner.result;
         const pending = consume(second.principal);
         assert.ok(pending.scenario && pending.planning);
         for (const part of ['config', 'groups', 'sprints']) markBootstrapHealthy(part);
@@ -442,7 +453,8 @@ test('a newer perimeter outage remains retryable after Scenario finishes ahead o
         assert.equal(result.pendingRef.current, pending);
         assert.equal(values.get(capsuleKey), originalCapsule);
         assert.equal(second.probes, 0);
-        await recover({ manual: true });
+        await flushRecovery();
+        assert.equal(second.probes, 1);
         assert.equal(second.reloads, 1);
     } finally { second.close(); }
 });
@@ -614,13 +626,27 @@ test('an unavailable capture fails closed with sanitized feedback', async () => 
     } finally { h.close(); }
 });
 
-test('preservation failure exposes an explicit Reload and discard action', () => {
+function loadRecoveryComponent(name) {
     const esbuild = require('esbuild');
-    const code = esbuild.buildSync({ entryPoints: [path.resolve('frontend/src/components/ConnectionRecoveryNotice.jsx')], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react'] }).outputFiles[0].text;
+    const code = esbuild.buildSync({ entryPoints: [path.resolve(`frontend/src/components/${name}.jsx`)], bundle: true, write: false, format: 'cjs', platform: 'node', external: ['react'] }).outputFiles[0].text;
     const module = { exports: {} };
     new Function('module', 'exports', 'require', code)(module, module.exports, () => ({ createElement: (type, props, ...children) => ({ type, props: { ...props, children } }) }));
+    return module.exports.default;
+}
+
+test('a blocked perimeter recovery gives no assurance that work was preserved', () => {
+    const renderBanner = loadRecoveryComponent('ServerUnavailableBanner');
+    for (const status of ['discard_required', 'unavailable']) {
+        const banner = renderBanner({ perimeterExpired: true, status, message: 'Reloading to sign in again; unsaved changes are kept.' });
+        const [detail] = banner.props.children[0].props.children.filter(node => node?.type === 'p');
+        assert.equal(detail.props.children.join(''), 'Your sign-in session expired. Reload the page to sign in again.');
+    }
+});
+
+test('preservation failure exposes an explicit Reload and discard action', () => {
+    const renderNotice = loadRecoveryComponent('ConnectionRecoveryNotice');
     let discards = 0;
-    const tree = module.exports.default({ notice: { kind: 'preservation_failed', message: 'Could not preserve work.' }, onReloadDiscard: () => discards++ });
+    const tree = renderNotice({ notice: { kind: 'preservation_failed', message: 'Could not preserve work.' }, onReloadDiscard: () => discards++ });
     const nodes = node => !node || typeof node !== 'object' ? [] : [node, ...(node.props?.children || []).flat(Infinity).flatMap(nodes)];
     const action = nodes(tree).find(node => node.type === 'button' && node.props.children.join('') === 'Reload and discard');
     assert.ok(action);

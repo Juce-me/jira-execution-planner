@@ -2287,7 +2287,7 @@ test('connection Retry uses an exact config probe and hard reload instead of the
 test('capsule restore cannot release an outage reported after the recovery reload', () => {
     const recoverySource = readSource(path.join(frontendSrcPath, 'api', 'useConnectionRecovery.js'));
 
-    assert.match(recoverySource, /const releaseRestoredOwnership = React\.useCallback\(\(nextStatus = 'idle'\) => \{\s*if \(unavailableRef\.current\) \{\s*if \(statusRef\.current === 'restoring' && !reloadStartedRef\.current\) setStatusTracked\('unavailable'\);\s*return;\s*\}\s*releaseOwnership\(nextStatus\);/);
+    assert.match(recoverySource, /const releaseRestoredOwnership = React\.useCallback\(\(nextStatus = 'idle'\) => \{\s*if \(unavailableRef\.current\) \{\s*if \(statusRef\.current === 'restoring' && !reloadStartedRef\.current\) \{\s*setStatusTracked\('unavailable'\);\s*queuePerimeterRecovery\(\);\s*\}\s*return;\s*\}\s*releaseOwnership\(nextStatus\);/);
     assert.ok(recoverySource.includes('releaseOwnership: releaseRestoredOwnership,'), 'Capsule consumers must receive the outage-guarded release');
 });
 

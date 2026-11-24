@@ -20,7 +20,7 @@ any other surface. Column titles are always visible.
 1. Replace the page-scroll plus JS-pinned column chrome design with per-column inner scroll panes
    on desktop. This supersedes the "no internal vertical card scroller" constraint of
    [2026-08-08-executed-sticky-board-column-chrome.md](2026-08-08-executed-sticky-board-column-chrome.md),
-   [EXEC-sticky-board-column-chrome.md](../../plans/EXEC-sticky-board-column-chrome.md), and the
+   [DONE-sticky-board-column-chrome.md](../../plans/DONE-sticky-board-column-chrome.md), and the
    "no second scroll container" constraint of
    [2026-08-08-executed-unfolded-board-column-scroll.md](2026-08-08-executed-unfolded-board-column-scroll.md)
    for pane mode only. (`.board` is already a horizontal scroll container today, so the latter
@@ -218,9 +218,9 @@ are re-checked against the measured gate.
 - `docs/README_ANALYTICS.md` ("ENG Group Board sticky column chrome" allowlist row)
 - `docs/ontology.md` (ENG Board entry)
 - `docs/features/eng-workflows.md` (Board section: scrolling behavior)
-- The two 2026-08-08 Board scroll artifacts and `docs/plans/EXEC-sticky-board-column-chrome.md`
+- The two 2026-08-08 Board scroll artifacts and `docs/plans/DONE-sticky-board-column-chrome.md`
   (Current Accuracy notes)
-- `docs/plans/EXEC-board-column-scroll-panes.md` and `docs/plans/README.md`
+- `docs/plans/DONE-board-column-scroll-panes.md` and `docs/plans/README.md`
 
 ## Postmortems To Review Before Implementation
 
@@ -287,7 +287,7 @@ Global:
 - `docs/ontology.md`: ENG Board entry gains the pane-mode layout concept and its tests.
 - `docs/README_ANALYTICS.md` "ENG Group Board sticky column chrome" row: reword (passive layout, no
   scroll collection).
-- Mark the superseded 2026-08-08 artifacts and `EXEC-sticky-board-column-chrome.md` with a Current
+- Mark the superseded 2026-08-08 artifacts and `DONE-sticky-board-column-chrome.md` with a Current
   Accuracy note limiting them to fallback mode.
 
 ## Revision 2026-09-25: Fixed-Height Page (after live review)

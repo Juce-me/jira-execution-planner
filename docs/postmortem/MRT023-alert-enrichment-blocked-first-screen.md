@@ -39,7 +39,7 @@ This recurred despite MRT010 because request intent remained implicit. Ready-to-
 
 ## Resolution
 
-Implementation is tracked in `docs/plans/EXEC-defer-eng-alert-loading.md`:
+Implementation is tracked in `docs/plans/DONE-defer-eng-alert-loading.md`:
 
 1. Make the default task response visible-data-only by skipping alert count/distribution.
 2. Preserve the full enrichment behind explicit `purpose=alerts` requests.
@@ -88,4 +88,4 @@ The original live Jira timing cannot be reproduced with synthetic tests, so no u
 - `jira_server.py`
 - `frontend/src/dashboard.jsx`
 - `frontend/src/eng/useEngSprintData.js`
-- `docs/plans/EXEC-defer-eng-alert-loading.md`
+- `docs/plans/DONE-defer-eng-alert-loading.md`

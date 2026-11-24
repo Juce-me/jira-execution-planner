@@ -4,7 +4,7 @@ Status: Local draft; the exact amended revision is not yet verified published/fe
 
 ## Base and intended outcome
 
-The accepted measurement implementation is commit `fc4d6a4`. The eventual handoff base must be an exact published revision containing this file and [EXEC-eng-board-all-work.md](EXEC-eng-board-all-work.md). No such revision is certified by this local amendment. Follow the root publication contract and verify both files at that revision before distributing an execution prompt. Local preparation is not publication authorization.
+The accepted measurement implementation is commit `fc4d6a4`. The eventual handoff base must be an exact published revision containing this file and [DONE-eng-board-all-work.md](DONE-eng-board-all-work.md). No such revision is certified by this local amendment. Follow the root publication contract and verify both files at that revision before distributing an execution prompt. Local preparation is not publication authorization.
 
 Resume the existing `feature/issue-137-board-all-work` branch, created from `ea587d984013d5926f8dee5df06b543286b8560a`. Do not recreate it or switch to main. Check PR #172's current state before choosing a future PR base; a merged measurement branch does not require restarting implementation. Preserve local work and avoid history rewrites. No push/merge/deploy authorization is inherited from this reusable prompt.
 
@@ -13,7 +13,7 @@ Resume the existing `feature/issue-137-board-all-work` branch, created from `ea5
 ```text
 Resume issue #137 on feature/issue-137-board-all-work. Treat the implementation as a local
 DB/OAuth candidate and execute only the open evidence gates in Task 7 of
-docs/plans/EXEC-eng-board-all-work.md. Do not rebuild completed Tasks 1–6 without a reproduced
+docs/plans/DONE-eng-board-all-work.md. Do not rebuild completed Tasks 1–6 without a reproduced
 defect. Count eligible in-app measurements first, then gather only missing authenticated
 selected-sprint and All work cohorts through the normal app. Keep configuration/cache/build
 cohorts separate and verify completeness, 100ms loading feedback, <=10% comparable first-content
@@ -33,7 +33,7 @@ it is retained only to explain the original delegation boundaries.
 
 ```text
 Resume issue #137, ENG Board All work, on feature/issue-137-board-all-work using
-docs/plans/EXEC-eng-board-all-work.md and its revised DB evidence/gate table.
+docs/plans/DONE-eng-board-all-work.md and its revised DB evidence/gate table.
 Use superpowers:subagent-driven-development. Treat this as a gated implementation contract,
 not permission to skip prototype, runtime, completeness or SLO evidence.
 

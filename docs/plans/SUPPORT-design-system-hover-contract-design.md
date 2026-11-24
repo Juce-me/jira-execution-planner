@@ -42,7 +42,7 @@ Make the UI simpler, more readable and easier for a new user: (1) write down whi
 
 ## Delivery: three PRs
 
-Publication override (2026-10-14): the operator approved one combined PR for specs #1 and #2 plus the approved visual follow-ups, preserving the existing history and adding one Planning refinement commit (five commits total, 108 audited raw paths). The original three-slice design below is retained as implementation history; see [Part 3 execution](EXEC-design-system-part-3.md) for the approved publication contract.
+Publication override (2026-10-14): the operator approved one combined PR for specs #1 and #2 plus the approved visual follow-ups, preserving the existing history and adding one Planning refinement commit (five commits total, 108 audited raw paths). The original three-slice design below is retained as implementation history; see [Part 3 execution](DONE-design-system-part-3.md) for the approved publication contract.
 
 ### PR1: contract, map and guards (no visible change)
 

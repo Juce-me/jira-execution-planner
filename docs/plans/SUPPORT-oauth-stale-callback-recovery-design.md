@@ -1,6 +1,6 @@
 # OAuth stale callback recovery (design)
 
-> **Status:** Design draft 2026-11-24, not implemented. Execution contract: [EXEC-oauth-stale-callback-recovery.md](EXEC-oauth-stale-callback-recovery.md). Operator decisions D4 and D7 resolved 2026-11-24 (option 1 for both); D8 (consent link after an incomplete grant) approved 2026-11-24. Revised after a second and a third three-reviewer round on 2026-11-24.
+> **Status:** Implemented in `bugfix/oauth-stale-callback-recovery`. See the [completed execution plan](DONE-oauth-stale-callback-recovery.md) for current behavior and verification. The baseline below describes the behavior before the change. The operator approved option 1 for D4 and D7 and approved D8 on 2026-11-24.
 
 ## Problem
 
@@ -10,7 +10,7 @@ A signed-in user finished an Atlassian sign-in on localhost and was shown a raw 
 
 The perimeter recovery work (`bugfix/perimeter-session-expiry-recovery`, PR #348) changed no backend code and is not involved.
 
-## How the journey works today
+## How the journey worked before the change
 
 Verified against `origin/main` `3c2d3186` on 2026-11-24 and re-checked at `30d0923b` (docs-only drift) and `1e16e8f0` then `4693a05a` on 2026-11-25 (upstream changed only capacity and Team-catalog tests and three docs, none in the OAuth journey).
 

@@ -1,6 +1,14 @@
 # OAuth stale callback recovery Implementation Plan
 
-> **Status:** Planned 2026-11-24, revised 2026-11-24 after a second and a third three-reviewer round, rebased 2026-11-25; base `origin/main` `4693a05a`; not executed. Implements D4 option 1 (single pending login) and D7 option 1 (accept follower release without a new sign-in), both accepted 2026-11-24, and D8 (keep forced consent after an incomplete grant), approved 2026-11-24.
+> **Status:** Done. Executed in `bugfix/oauth-stale-callback-recovery` through Task 3 commit `994bf897` and review commit `ddd0d8c3`. Rebased from `4693a05a` onto the approved `origin/main` base `d66d8624`. Kept for audit context.
+
+## Outcome
+
+The four pre-exchange OAuth callback rejections redirect to `/login?reason=sign_in_incomplete`. A valid browser session proceeds to the dashboard or its pending share view. Otherwise the sign-in card explains the incomplete sign-in and forces consent only for a stored grant missing base OAuth scopes. The review added a regression for missing state on both sides and verified it with an isolated mutation.
+
+## Current Accuracy
+
+The route and recovery behavior described below matches the implementation, including the approved single-pending-login and follower-release decisions. D7 is documented and intentionally outside test coverage. The browser tests use a synthetic OAuth provider. The original live navigation trigger and real Atlassian/Entra sign-in were outside the focused verification. The final delivery gate records its exact-commit result in the verification ledger.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -240,21 +248,36 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 
 ### Task 4: Finalization and publication gate (only when the operator asks to publish)
 
-- [ ] **Step 1: Base check.** `git fetch origin main`; if `origin/main` is no longer `4693a05a` (the base P was recorded against), stop and ask the operator whether to rebase; after an approved rebase P is unchanged (rebasing keeps the commit count); record the base actually used.
-- [ ] **Step 2: Pre-finalization scope.** Against the recorded base, `git log --oneline <base>..HEAD` lists exactly P + 3 commits: the P planning commits recorded in Task 0 Step 6, then Task 1, Task 2 and Task 3 and `git diff --name-status <base>...HEAD` lists exactly Step 4's paths with this plan's pre-rename path in place of its `DONE-*` path. `git status --short` is empty before anything is staged. Any difference: stop and ask.
-- [ ] **Step 3: Finalization commit** ("Mark OAuth stale callback recovery plan done"). Stage, then inspect `git diff --cached --name-status` before committing: `git mv` of this plan to `DONE-oauth-stale-callback-recovery.md`; its `> **Status:**` set to done naming the branch and Task 3's commit; an `## Outcome` and a `## Current Accuracy` section; Task 3's commit and the focused results in Execution Status; the design's `> **Status:**` changed from draft to implemented with the new plan link; every link to the old file updated. Link check, built so the command cannot match itself: `old="EXEC-oauth-stale-callback-recovery"; rg -l --fixed-strings "${old}.md" . ` prints nothing. After committing, `git show --stat HEAD` shows the rename with content changes.
-- [ ] **Step 4: Final scope check** per root `AGENTS.md` section 10: `git log --oneline <base>..HEAD` lists exactly P + 4 commits (Step 2's plus the finalization commit) and `git diff --name-status <base>...HEAD` lists exactly: `backend/routes/auth_routes.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`, `tests/test_epm_home_scope_request.py`, `tests/ui/db_oauth_fixture.js`, `tests/ui/db_oauth_lifecycle.spec.js`, `docs/SUPPORT-atlassian-oauth-setup.md`, `docs/ontology.md`, `docs/README_ANALYTICS.md`, `docs/plans/README.md`, `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`, `docs/plans/SUPPORT-oauth-stale-callback-recovery-design.md`, `docs/plans/DONE-oauth-stale-callback-recovery.md`. `git status --short` is empty. Any difference: stop and ask.
-- [ ] **Step 5: Full gate at the exact final `HEAD`.** `npm run build`, then `"$PY" scripts/verify_tests.py --no-deadline` (the recipe behind `make verify ARGS=--no-deadline`, documented in `README.md` "Verification" and requested by the operator for this work on 2026-11-24; called directly because `make` hardcodes `.venv/bin/python`). Expected: every stage passes, and the ledger under `tmp/verification/` records `revision` equal to `git rev-parse HEAD` and `dirty: false`; report any overrun of the 600-second target as measured. The exact-head result goes into the ledger and the PR notes, not into another commit; the committed plan keeps the focused results only. If the gate fails, publication stays on hold: diagnose the failure and report it to the operator, and get approval for any repair commit and the revised commit count or path list before making it. After an approved repair, do not repeat Steps 2 and 3 (the rename is done); resume at Step 4 with the approved count and paths, then rerun this step at the repaired `HEAD`.
+- [x] **Step 1: Base check.** The fetch returned `d66d8624`, two commits beyond the pinned `4693a05a`. The operator approved the rebase. Git's range comparison confirmed equivalent patches for all 12 commits.
+- [x] **Step 2: Pre-finalization scope.** Against `d66d8624`, Git reported the approved 12 commits (eight planning, three implementation, and the review follow-up) and exactly Step 4's paths with the execution plan at its pre-rename path. The working tree was clean.
+- [x] **Step 3: Finalization commit** ("Mark OAuth stale callback recovery plan done"). The renamed plan records the outcome, current accuracy and focused results. The design and index point to the renamed plan. The fixed-string scan for the old filename returned no matches.
+- [ ] **Step 4: Final scope check.** `git log --oneline <base>..HEAD` lists exactly 13 commits (Step 2's 12 plus the finalization commit). `git diff --name-status <base>...HEAD` lists exactly these paths.
+  - `backend/routes/auth_routes.py`
+  - `tests/test_auth_routes.py`
+  - `tests/test_db_oauth_cutover.py`
+  - `tests/test_epm_home_scope_request.py`
+  - `tests/ui/db_oauth_fixture.js`
+  - `tests/ui/db_oauth_lifecycle.spec.js`
+  - `docs/SUPPORT-atlassian-oauth-setup.md`
+  - `docs/ontology.md`
+  - `docs/README_ANALYTICS.md`
+  - `docs/plans/README.md`
+  - `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`
+  - `docs/plans/SUPPORT-oauth-stale-callback-recovery-design.md`
+  - `docs/plans/DONE-oauth-stale-callback-recovery.md`
+  `git status --short` is empty. Stop and ask if the scope differs.
+- [ ] **Step 5: Full gate at the exact final `HEAD`.** Run `"$PY" scripts/verify_tests.py --no-deadline` (the recipe behind `make verify ARGS=--no-deadline`). The gate builds first, following the delivery verification instructions on the approved base. Every stage must pass, and the ledger under `tmp/verification/` must record `revision` equal to `git rev-parse HEAD` and `dirty: false`. Report any overrun of the 600-second target. Record the exact-head result in the ledger and PR notes. If the gate fails, hold publication, diagnose and report the failure, and get approval for any repair commit and revised commit count or path list. After an approved repair, resume at Step 4 with the approved count and paths, then rerun this step at the repaired `HEAD`.
 - [ ] **Step 6: Publish** only after explicit operator confirmation, following the rest of the section 10 transaction (stdin PR body, remote head equal to the verified `HEAD`, rendered-body and changed-file checks, CI state), with the synthetic screenshots from Task 2 Step 4 in the PR notes.
 
 ## Execution Status
 
 | Task | State | Commit | Verification |
 | --- | --- | --- | --- |
-| 0 | complete | none (setup) | P = 8, last planning SHA `b9379b2d`. Python 3.14.10 with OpenSSL, Node v20.20.2, and PostgreSQL tools verified. `npm ci`, `npm run build`, and `run tests.test_agents_md_learnings` passed (12 tests). The owned PostgreSQL cluster required local sandbox escalation. |
-| 1 | complete | `684d81f2` | Red: four expected failures on the missing notice, with forwarding and the plain link passing. Green: all six entry cases and both neighbouring consent checks passed. |
-| 2 | complete | `2e9e1ad1` | Red: the backend reported 25 expected rejection assertion failures across 46 tests. Each of the two Chromium cases separately received `400` when expecting `302`. Green: both backend commands passed (46 and 99 tests) and all 19 tests in the three Chromium specs passed. Synthetic screenshots captured for the PR notes. |
-| 3 | not started | | |
-| 4 | not started | | |
+| 0 | complete | none (setup) | P = 8. Last planning SHA `b9379b2d` before rebase and `fdeba28d` on `d66d8624`. Python 3.14.10 with OpenSSL, Node v20.20.2, and PostgreSQL tools verified. `npm ci`, `npm run build`, and `run tests.test_agents_md_learnings` passed (12 tests). The owned PostgreSQL cluster required local sandbox escalation. |
+| 1 | complete | `1475cc29` | Four expected red failures on the missing notice, with forwarding and the plain link passing. All six entry cases and both neighbouring consent checks passed after the fix. |
+| 2 | complete | `18e401d7` | The red backend run reported 25 expected rejection assertion failures across 46 tests. Each of the two Chromium cases separately received `400` when expecting `302`. After the fix, both backend commands passed (46 and 99 tests) and all 19 Chromium tests passed. Synthetic screenshots captured for the PR notes. |
+| 3 | complete | `994bf897` | All 12 documentation guard tests passed. |
+| Review | complete | `ddd0d8c3` | Isolated mutation failed the new missing-state case as expected. With the guard intact, the targeted callback test and 12 documentation tests passed. The reviewer also passed 56 tests across both modules at the pre-rebase review commit. |
+| 4 | finalization | this commit | The full delivery gate and publication checks follow this commit. |
 
 The post-implementation review added a case with state missing from both the callback and the session. The case keeps a synthetic code and a saved verifier so the later missing-code and missing-verifier checks cannot mask a broken state guard. Removing the missing-saved-state check in an isolated snapshot failed this case at the forbidden configuration-validation call.

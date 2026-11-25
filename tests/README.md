@@ -15,16 +15,16 @@ This directory contains automated tests for the Jira Delivery Planner.
 
 ## Running Tests
 
-Run the local CI-style verification path:
+Run the full local delivery verification:
 ```bash
-make verify
+make verify ARGS=--no-deadline
 ```
 
 `frontend/dist` is not committed. Run `npm run build` first: tests that read the built bundle (`npm run test:frontend:unit`, `tests/ui`, parts of the Python suite) fail or run on a stale bundle without it.
 
-Run all tests:
+Run only the full backend suite in its isolated PostgreSQL environment:
 ```bash
-python3 -m unittest discover -s tests
+.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)"
 ```
 
 Run endpoint security tests:

@@ -1468,7 +1468,11 @@ def _render_adf_html_nodes(nodes: list) -> str:
             tag = "ul" if node_type == "bulletList" else "ol"
             items = _render_adf_html_nodes(content)
             if items:
-                parts.append(f"<{tag}>{items}</{tag}>")
+                order = attrs.get("order")
+                start = ""
+                if tag == "ol" and type(order) is int and order >= 0 and order != 1:
+                    start = f' start="{order}"'
+                parts.append(f"<{tag}{start}>{items}</{tag}>")
             continue
         if node_type == "listItem":
             inner = _render_adf_html_nodes(content)

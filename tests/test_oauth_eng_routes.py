@@ -1854,6 +1854,52 @@ class IssueDescriptionRouteTests(DbOAuthFixture, unittest.TestCase):
         self.assertEqual(mock_get.call_args.args[0], "/rest/api/3/issue/PROD-1")
         self.assertEqual(mock_get.call_args.kwargs.get("params"), {"fields": "description"})
 
+    def test_description_route_preserves_ordered_list_start_numbers(self):
+        def list_node(label, attrs=None, node_type="orderedList"):
+            node = {
+                "type": node_type,
+                "content": [{
+                    "type": "listItem",
+                    "content": [{
+                        "type": "paragraph",
+                        "content": [{"type": "text", "text": label}],
+                    }],
+                }],
+            }
+            if attrs is not None:
+                node["attrs"] = attrs
+            return node
+
+        description = {
+            "type": "doc",
+            "content": [
+                list_node("First"),
+                list_node("Second", {"order": 2}),
+                list_node("Third", {"order": 3}),
+                list_node("Zero-based", {"order": 0}),
+                list_node("Explicit default", {"order": 1}),
+                list_node("Invalid string", {"order": '2" onclick="alert(1)'}),
+                list_node("Invalid boolean", {"order": True}),
+                list_node("Invalid negative", {"order": -2}),
+                list_node("Bullet", {"order": 5}, "bulletList"),
+            ],
+        }
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {"description": description},
+             })):
+            response = self.client.get("/api/issues/description?key=SYNTH-1")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(
+            response.get_json()["html"],
+            '<ol><li>First</li></ol><ol start="2"><li>Second</li></ol>'
+            '<ol start="3"><li>Third</li></ol><ol start="0"><li>Zero-based</li></ol>'
+            '<ol><li>Explicit default</li></ol><ol><li>Invalid string</li></ol>'
+            '<ol><li>Invalid boolean</li></ol><ol><li>Invalid negative</li></ol>'
+            '<ul><li>Bullet</li></ul>',
+        )
+
     def test_description_route_renders_safe_semantic_heading_and_table(self):
         description = {
             "type": "doc",

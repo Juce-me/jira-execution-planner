@@ -19,6 +19,7 @@ from . import bind_server_globals
 
 
 bp = Blueprint("auth_routes", __name__)
+SIGN_IN_INCOMPLETE_URL = '/login?reason=sign_in_incomplete'
 
 
 @bp.before_request
@@ -373,14 +374,14 @@ def api_atlassian_callback():
     code_verifier = session.pop('oauth_pkce_verifier', None)
     actual_state = request.args.get('state')
     if not expected_state or actual_state != expected_state:
-        return jsonify({'error': 'invalid_oauth_state'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     if request.args.get('error'):
-        return jsonify({'error': 'oauth_authorization_failed'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     code = request.args.get('code')
     if not code:
-        return jsonify({'error': 'missing_oauth_code'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     if not code_verifier:
-        return jsonify({'error': 'missing_pkce_verifier'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     config = current_auth_config()
     exchange_started = False
     try:

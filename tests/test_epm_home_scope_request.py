@@ -210,6 +210,7 @@ class CallbackGrantTests(DbJourneyMixin, unittest.TestCase):
         base = jira_server.ATLASSIAN_SCOPES
         response, grant = self.callback_with(base)
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        self.assertEqual(response.headers['Location'], '/')
         self.assertEqual(grant, (base.split(), 'provider'))
         with self.helper._db_route_mode():
             status = self.client.get('/api/auth/status').get_json()
@@ -221,6 +222,7 @@ class CallbackGrantTests(DbJourneyMixin, unittest.TestCase):
         granted = jira_server.ATLASSIAN_SCOPES + ' read:goal:goals read:access:goals'
         response, grant = self.callback_with(granted)
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
         self.assertEqual(grant, (granted.split(), 'provider'))
         self.assertFalse(set(HOME) <= set(grant[0]))
 
@@ -228,11 +230,13 @@ class CallbackGrantTests(DbJourneyMixin, unittest.TestCase):
         granted = jira_server.ATLASSIAN_SCOPES + ' ' + ' '.join(HOME)
         response, grant = self.callback_with(granted)
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
         self.assertEqual(grant, (granted.split(), 'provider'))
 
     def test_grant_without_a_scope_field_is_unverified_and_infers_nothing(self):
         response, grant = self.callback_with(None)
         self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], '/')
         self.assertEqual(grant, ([], 'unknown'))
 
 

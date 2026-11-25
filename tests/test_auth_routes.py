@@ -3,7 +3,7 @@ import secrets
 import time
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
 from backend import app as app_module
@@ -24,6 +24,15 @@ NOTICE = ('Your sign-in did not finish, for example because the page was reloade
           'or sign-in was started again in another tab. Sign in again to continue.')
 PLAIN = 'href="/api/auth/atlassian/login"'
 CONSENT = 'href="/api/auth/atlassian/login?prompt=consent"'
+REJECTED = '/login?reason=sign_in_incomplete'
+PRE_EXCHANGE_FAILURES = (
+    ('state_mismatch', '/api/auth/atlassian/callback?state=wrong&code=abc', True, False),
+    ('state_missing_in_session', '/api/auth/atlassian/callback?state=state-123&code=abc', False, False),
+    ('state_missing_in_query', '/api/auth/atlassian/callback?code=abc', True, False),
+    ('provider_error', '/api/auth/atlassian/callback?state=state-123&code=abc&error=access_denied', True, False),
+    ('missing_code', '/api/auth/atlassian/callback?state=state-123', True, False),
+    ('missing_verifier', '/api/auth/atlassian/callback?state=state-123&code=abc', True, True),
+)
 
 
 class TestAuthRoutes(unittest.TestCase):
@@ -333,8 +342,8 @@ class TestAuthRoutes(unittest.TestCase):
             session['oauth_pkce_verifier'] = 'verifier-123'
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.get('/api/auth/atlassian/callback?state=bad&code=abc')
-        self.assertEqual(response.status_code, 400)
-        self.assertEqual(response.get_json()['error'], 'invalid_oauth_state')
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers['Location'], REJECTED)
         with self.client.session_transaction() as session:
             self.assertNotIn('oauth_state', session)
             self.assertNotIn('oauth_pkce_verifier', session)
@@ -494,18 +503,21 @@ class TestAuthRoutes(unittest.TestCase):
 
         stash = self._fresh_stash(self.SHARE_LINK)
         failures = (
-            ('invalid_state', self.CALLBACK_URL.replace('state-123', 'wrong'), {}, 400, 'invalid_oauth_state'),
-            ('authorization_denied', '/api/auth/atlassian/callback?state=state-123&error=access_denied', {}, 400, 'oauth_authorization_failed'),
-            ('missing_code', '/api/auth/atlassian/callback?state=state-123', {}, 400, 'missing_oauth_code'),
-            ('failed_exchange', self.CALLBACK_URL, {'exchange_authorization_code': reject_exchange}, 401, 'auth_required'),
+            ('invalid_state', self.CALLBACK_URL.replace('state-123', 'wrong'), {}, 302, REJECTED, None),
+            ('authorization_denied', '/api/auth/atlassian/callback?state=state-123&error=access_denied', {}, 302, REJECTED, None),
+            ('missing_code', '/api/auth/atlassian/callback?state=state-123', {}, 302, REJECTED, None),
+            ('failed_exchange', self.CALLBACK_URL, {'exchange_authorization_code': reject_exchange}, 401, None, 'auth_required'),
         )
-        for name, url, overrides, status, error in failures:
+        for name, url, overrides, status, location, error in failures:
             with self.subTest(failure=name):
                 self._prime_callback(stash)
                 with self._oauth_flow(**overrides):
                     response = self.client.get(url)
                 self.assertEqual(response.status_code, status)
-                self.assertEqual(response.get_json()['error'], error)
+                if location is None:
+                    self.assertEqual(response.get_json()['error'], error)
+                else:
+                    self.assertEqual(response.headers['Location'], location)
                 self.assertEqual(self._stash(), stash)
         with self.subTest(failure='missing_verifier'):
             self._prime_callback(stash)
@@ -513,7 +525,8 @@ class TestAuthRoutes(unittest.TestCase):
                 flask_session.pop('oauth_pkce_verifier')
             with self._oauth_flow():
                 response = self.client.get(self.CALLBACK_URL)
-            self.assertEqual(response.get_json()['error'], 'missing_pkce_verifier')
+            self.assertEqual(response.status_code, 302)
+            self.assertEqual(response.headers['Location'], REJECTED)
             self.assertEqual(self._stash(), stash)
 
         self._prime_callback()
@@ -581,9 +594,128 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertEqual(login_page.status_code, 200)
         self.assertEqual(authorize.status_code, 302)
         self.assertEqual((callback.status_code, callback.headers['Location']), (302, '/?' + self.SHARE_LINK))
-        self.assertEqual((repeated.status_code, repeated.get_json()['error']), (400, 'invalid_oauth_state'))
+        self.assertEqual((repeated.status_code, repeated.headers.get('Location')), (302, REJECTED))
         self.assertEqual(dashboard.status_code, 200)
         self.assertIsNone(self._stash())
+
+    def test_pre_exchange_callback_failures_never_reach_the_exchange(self):
+        stash = self._fresh_stash(self.SHARE_LINK)
+        for name, url, prime_pending_pair, pop_verifier in PRE_EXCHANGE_FAILURES:
+            with self.subTest(failure=name):
+                if prime_pending_pair:
+                    self._prime_callback(stash)
+                with self.client.session_transaction() as flask_session:
+                    flask_session[self.PENDING_VIEW_KEY] = stash
+                    if not prime_pending_pair:
+                        flask_session.pop('oauth_state', None)
+                    if not prime_pending_pair or pop_verifier:
+                        flask_session.pop('oauth_pkce_verifier', None)
+                forbidden_calls = {
+                    symbol: Mock(side_effect=AssertionError(f'{symbol} must not be called'))
+                    for symbol in (
+                        'exchange_authorization_code',
+                        'fetch_current_user',
+                        'fetch_accessible_resources',
+                        'validate_auth_config',
+                        'validate_local_token_store_allowed',
+                        'store_db_oauth_callback_session_metadata',
+                    )
+                }
+                with self._oauth_flow(**forbidden_calls):
+                    response = self.client.get(url)
+                self.assertEqual((response.status_code, response.headers.get('Location')), (302, REJECTED))
+                for forbidden in forbidden_calls.values():
+                    forbidden.assert_not_called()
+                with self.client.session_transaction() as flask_session:
+                    self.assertNotIn('oauth_state', flask_session)
+                    self.assertNotIn('oauth_pkce_verifier', flask_session)
+                    self.assertNotIn('db_oauth_session', flask_session)
+                self.assertEqual(self._stash(), stash)
+
+    def test_mismatched_callback_with_a_valid_session_returns_to_the_dashboard(self):
+        forbid_jira_http(self)
+        self._prime_callback()
+        with self._oauth_flow():
+            signed_in = self.client.get(self.CALLBACK_URL)
+        self.assertEqual((signed_in.status_code, signed_in.headers['Location']), (302, '/'))
+        stash = self._fresh_stash(self.SHARE_LINK)
+        with self.client.session_transaction() as flask_session:
+            flask_session['oauth_state'] = 'state-456'
+            flask_session['oauth_pkce_verifier'] = 'verifier-456'
+            flask_session[self.PENDING_VIEW_KEY] = stash
+        exchange = Mock(side_effect=AssertionError('Mismatched state must not reach the exchange'))
+        with self._oauth_flow(exchange_authorization_code=exchange):
+            callback = self.client.get(self.CALLBACK_URL.replace('state-123', 'wrong'))
+            self.assertEqual((callback.status_code, callback.headers.get('Location')), (302, REJECTED))
+            self.assertEqual(self._stash(), stash)
+            first = self.client.get(REJECTED)
+            self.assertEqual((first.status_code, first.headers['Location']), (302, '/?' + self.SHARE_LINK))
+            self.assertIsNone(self._stash())
+            second = self.client.get(REJECTED)
+        self.assertEqual((second.status_code, second.headers['Location']), (302, '/'))
+
+    def test_mismatched_callback_without_a_session_lands_on_the_sign_in_page(self):
+        stash = self._fresh_stash(self.SHARE_LINK)
+        self._prime_callback(stash)
+        exchange = Mock(side_effect=AssertionError('Mismatched state must not reach the exchange'))
+        with self._oauth_flow(exchange_authorization_code=exchange):
+            callback = self.client.get(self.CALLBACK_URL.replace('state-123', 'wrong'))
+            self.assertEqual((callback.status_code, callback.headers.get('Location')), (302, REJECTED))
+            landing = self.client.get(REJECTED)
+        self.assertEqual(landing.status_code, 200)
+        self.assertIn(NOTICE, landing.get_data(as_text=True))
+        self.assertEqual(self._stash(), stash)
+
+    def test_replayed_callback_after_sign_in_returns_to_the_dashboard(self):
+        forbid_jira_http(self)
+        with self._oauth_flow():
+            entry = self.client.get('/?' + self.SHARE_LINK)
+            self.assertEqual((entry.status_code, entry.headers['Location']), (302, '/login'))
+            self.assertEqual(self.client.get(entry.headers['Location']).status_code, 200)
+            authorize = self.client.get('/api/auth/atlassian/login')
+            state = parse_qs(urlparse(authorize.headers['Location']).query)['state'][0]
+            url = self.CALLBACK_URL.replace('state-123', state)
+            callback = self.client.get(url)
+            self.assertEqual((callback.status_code, callback.headers['Location']), (302, '/?' + self.SHARE_LINK))
+            repeated = self.client.get(url)
+            self.assertEqual((repeated.status_code, repeated.headers.get('Location')), (302, REJECTED))
+            landing = self.client.get(REJECTED)
+        self.assertEqual((landing.status_code, landing.headers['Location']), (302, '/'))
+
+    def test_older_return_after_two_login_starts_needs_one_restart(self):
+        def start_login():
+            authorize = self.client.get('/api/auth/atlassian/login')
+            return parse_qs(urlparse(authorize.headers['Location']).query)['state'][0]
+
+        with self._oauth_flow():
+            state_a = start_login()
+            state_b = start_login()
+            self.assertNotEqual(state_b, state_a)
+            first = self.client.get(self.CALLBACK_URL.replace('state-123', state_a))
+            self.assertEqual((first.status_code, first.headers.get('Location')), (302, REJECTED))
+            with self.client.session_transaction() as flask_session:
+                self.assertNotIn('oauth_state', flask_session)
+                self.assertNotIn('oauth_pkce_verifier', flask_session)
+            second = self.client.get(self.CALLBACK_URL.replace('state-123', state_b))
+            self.assertEqual((second.status_code, second.headers.get('Location')), (302, REJECTED))
+            state_c = start_login()
+            retry = self.client.get(self.CALLBACK_URL.replace('state-123', state_c))
+            self.assertEqual((retry.status_code, retry.headers['Location']), (302, '/'))
+            self.assertTrue(self.client.get('/api/auth/status').get_json()['authenticated'])
+
+    def test_rejected_callback_location_is_constant_and_echoes_nothing(self):
+        self._prime_callback()
+        response = self.client.get(
+            '/api/auth/atlassian/callback?state=wrong-7f3a&code=code-9c1e'
+            '&error=%3Cscript%3E&error_description=leak-5b2d&next=//evil.example'
+        )
+        self.assertEqual((response.status_code, response.headers.get('Location')), (302, REJECTED))
+        body = response.get_data(as_text=True)
+        landing_body = self.client.get(REJECTED).get_data(as_text=True)
+        for value in ('wrong-7f3a', 'code-9c1e', '<script>', 'leak-5b2d', 'evil.example'):
+            with self.subTest(value=value):
+                self.assertNotIn(value, body)
+                self.assertNotIn(value, landing_body)
 
     def test_pending_share_view_cookie_stays_under_the_browser_limit_through_the_login_hop(self):
         """V8: a maximum stash on top of every session key still fits one cookie (limit 4093 bytes)."""

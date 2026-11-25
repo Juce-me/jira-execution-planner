@@ -134,7 +134,15 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
             const authorization = new URL(entry.headers().location);
             const syntheticProvider = new URL('https://synthetic-oauth.invalid/authorize');
             syntheticProvider.searchParams.set('state', authorization.searchParams.get('state'));
-            await page.goto(syntheticProvider.href);
+            const navigation = await page.goto(syntheticProvider.href);
+            let callback = navigation?.request();
+            while (callback && new URL(callback.url()).pathname !== '/api/auth/atlassian/callback') {
+                callback = callback.redirectedFrom();
+            }
+            const response = await callback?.response();
+            if (response?.status() !== 302 || response.headers().location !== '/') {
+                throw new Error('Synthetic OAuth callback failed.');
+            }
         }
         finally { await page.unroute(provider, handler); }
         return (await control('inspect', { actor })).actor;
@@ -161,7 +169,9 @@ async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historica
             callback.searchParams.set('state', authorization.searchParams.get('state'));
             callback.searchParams.set('code', 'synthetic-provider-code');
             const response = await context.request.get(callback.href, { maxRedirects: 0 });
-            if (response.status() !== 302) throw new Error('Synthetic OAuth callback failed.');
+            if (response.status() !== 302 || response.headers().location !== '/') {
+                throw new Error('Synthetic OAuth callback failed.');
+            }
             return context;
         } catch (error) { await context.close(); throw error; }
     }

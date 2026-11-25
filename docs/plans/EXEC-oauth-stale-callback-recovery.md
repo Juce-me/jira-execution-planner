@@ -251,7 +251,7 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 | Task | State | Commit | Verification |
 | --- | --- | --- | --- |
 | 0 | complete | none (setup) | P = 8, last planning SHA `b9379b2d`. Python 3.14.10 with OpenSSL, Node v20.20.2, and PostgreSQL tools verified. `npm ci`, `npm run build`, and `run tests.test_agents_md_learnings` passed (12 tests). The owned PostgreSQL cluster required local sandbox escalation. |
-| 1 | not started | | |
+| 1 | complete | `684d81f2` | Red: four expected failures on the missing notice, with forwarding and the plain link passing. Green: all six entry cases and both neighbouring consent checks passed. |
 | 2 | not started | | |
 | 3 | not started | | |
 | 4 | not started | | |

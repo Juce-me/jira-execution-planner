@@ -150,17 +150,18 @@ Expected: all PASS.
 
 ```python
 REJECTED = '/login?reason=sign_in_incomplete'
-PRE_EXCHANGE_FAILURES = (  # (name, url, prime_pending_pair, pop_verifier)
-    ('state_mismatch',           '/api/auth/atlassian/callback?state=wrong&code=abc',                  True,  False),
-    ('state_missing_in_session', '/api/auth/atlassian/callback?state=state-123&code=abc',              False, False),
-    ('state_missing_in_query',   '/api/auth/atlassian/callback?code=abc',                              True,  False),
-    ('provider_error',           '/api/auth/atlassian/callback?state=state-123&code=abc&error=access_denied', True, False),
-    ('missing_code',             '/api/auth/atlassian/callback?state=state-123',                       True,  False),
-    ('missing_verifier',         '/api/auth/atlassian/callback?state=state-123&code=abc',              True,  True),
+PRE_EXCHANGE_FAILURES = (  # (name, url, saved_state, saved_verifier)
+    ('state_mismatch', '/api/auth/atlassian/callback?state=wrong&code=abc', 'state-123', 'verifier-123'),
+    ('state_missing_in_session', '/api/auth/atlassian/callback?state=state-123&code=abc', None, None),
+    ('state_missing_in_query', '/api/auth/atlassian/callback?code=abc', 'state-123', 'verifier-123'),
+    ('state_missing_on_both_sides', '/api/auth/atlassian/callback?code=abc', None, 'verifier-123'),
+    ('provider_error', '/api/auth/atlassian/callback?state=state-123&code=abc&error=access_denied', 'state-123', 'verifier-123'),
+    ('missing_code', '/api/auth/atlassian/callback?state=state-123', 'state-123', 'verifier-123'),
+    ('missing_verifier', '/api/auth/atlassian/callback?state=state-123&code=abc', 'state-123', None),
 )
 
 def test_pre_exchange_callback_failures_never_reach_the_exchange(self):
-    # per row, in a subTest: prime the pair (or clear it) and pop the verifier as the row says; put a fresh stash.
+    # Per row, in a subTest, set the saved state and verifier when provided and put a fresh stash.
     # Patch through _oauth_flow(...) each of exchange_authorization_code, fetch_current_user,
     # fetch_accessible_resources, validate_auth_config, validate_local_token_store_allowed,
     # store_db_oauth_callback_session_metadata with Mock(side_effect=AssertionError(...)).
@@ -211,7 +212,7 @@ Expected: the updated and new rejection tests FAIL (`400 != 302`, or `KeyError: 
 
 - [ ] **Step 7: Run to verify they pass**, plus the retained guards and the fixture consumers
 
-Run: the Step 5 backend command; `run tests.test_endpoint_policy_inventory tests.test_logging_migration tests.test_db_oauth_cutover tests.test_epm_home_scope_request`; `npm run test:frontend:ui -- db_oauth_lifecycle.spec.js planning_shared_plan.spec.js planning_shared_plan_http.spec.js` (consumers of `createContext` and `login`).
+Run: the Step 5 backend command; `run tests.test_endpoint_policy_inventory tests.test_logging_migration tests.test_db_oauth_cutover tests.test_epm_home_scope_request`; `npm run test:frontend:ui -- db_oauth_lifecycle.spec.js planning_shared_plan.spec.js planning_shared_plan_http.spec.js` (consumers of `createContext` and `login`). The code review also ran `planning_capacity_real_server.spec.js` and `eng_board_measurement_runner.spec.js`, which use `createContext` or `createContexts`. Both passed.
 Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stashed_share_view_and_pops_it`, `test_callback_without_a_stash_redirects_to_root`, `test_callback_stores_encrypted_tokens_and_only_opaque_cookie`, `test_post_exchange_callback_failure_deletes_only_current_browser_row`, `test_only_navigation_auth_api_routes_redirect` and the filter pin `test_werkzeug_logs_redact_oauth_callback_query`.
 
 - [ ] **Step 8: Commit** the route, the three Python test files, the fixture and the lifecycle spec: "Redirect rejected OAuth callbacks to the sign-in page". Record Task 1's commit and its Step 4 result in the Execution Status table in this commit.
@@ -255,3 +256,5 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 | 2 | complete | `2e9e1ad1` | Red: the backend reported 25 expected rejection assertion failures across 46 tests. Each of the two Chromium cases separately received `400` when expecting `302`. Green: both backend commands passed (46 and 99 tests) and all 19 tests in the three Chromium specs passed. Synthetic screenshots captured for the PR notes. |
 | 3 | not started | | |
 | 4 | not started | | |
+
+The post-implementation review added a case with state missing from both the callback and the session. The case keeps a synthetic code and a saved verifier so the later missing-code and missing-verifier checks cannot mask a broken state guard. Removing the missing-saved-state check in an isolated snapshot failed this case at the forbidden configuration-validation call.

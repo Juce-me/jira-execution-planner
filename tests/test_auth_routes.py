@@ -26,12 +26,13 @@ PLAIN = 'href="/api/auth/atlassian/login"'
 CONSENT = 'href="/api/auth/atlassian/login?prompt=consent"'
 REJECTED = '/login?reason=sign_in_incomplete'
 PRE_EXCHANGE_FAILURES = (
-    ('state_mismatch', '/api/auth/atlassian/callback?state=wrong&code=abc', True, False),
-    ('state_missing_in_session', '/api/auth/atlassian/callback?state=state-123&code=abc', False, False),
-    ('state_missing_in_query', '/api/auth/atlassian/callback?code=abc', True, False),
-    ('provider_error', '/api/auth/atlassian/callback?state=state-123&code=abc&error=access_denied', True, False),
-    ('missing_code', '/api/auth/atlassian/callback?state=state-123', True, False),
-    ('missing_verifier', '/api/auth/atlassian/callback?state=state-123&code=abc', True, True),
+    ('state_mismatch', '/api/auth/atlassian/callback?state=wrong&code=abc', 'state-123', 'verifier-123'),
+    ('state_missing_in_session', '/api/auth/atlassian/callback?state=state-123&code=abc', None, None),
+    ('state_missing_in_query', '/api/auth/atlassian/callback?code=abc', 'state-123', 'verifier-123'),
+    ('state_missing_on_both_sides', '/api/auth/atlassian/callback?code=abc', None, 'verifier-123'),
+    ('provider_error', '/api/auth/atlassian/callback?state=state-123&code=abc&error=access_denied', 'state-123', 'verifier-123'),
+    ('missing_code', '/api/auth/atlassian/callback?state=state-123', 'state-123', 'verifier-123'),
+    ('missing_verifier', '/api/auth/atlassian/callback?state=state-123&code=abc', 'state-123', None),
 )
 
 
@@ -322,7 +323,6 @@ class TestAuthRoutes(unittest.TestCase):
         self.assertIn(PLAIN, body)
         self.assertEqual(self._stash(), stash)
 
-
     def test_oauth_logout_requires_unsafe_method_header(self):
         with patch.object(jira_server, 'JIRA_AUTH_MODE', 'atlassian_oauth'):
             response = self.client.post('/api/auth/logout')
@@ -600,16 +600,14 @@ class TestAuthRoutes(unittest.TestCase):
 
     def test_pre_exchange_callback_failures_never_reach_the_exchange(self):
         stash = self._fresh_stash(self.SHARE_LINK)
-        for name, url, prime_pending_pair, pop_verifier in PRE_EXCHANGE_FAILURES:
+        for name, url, saved_state, saved_verifier in PRE_EXCHANGE_FAILURES:
             with self.subTest(failure=name):
-                if prime_pending_pair:
-                    self._prime_callback(stash)
                 with self.client.session_transaction() as flask_session:
                     flask_session[self.PENDING_VIEW_KEY] = stash
-                    if not prime_pending_pair:
-                        flask_session.pop('oauth_state', None)
-                    if not prime_pending_pair or pop_verifier:
-                        flask_session.pop('oauth_pkce_verifier', None)
+                    if saved_state is not None:
+                        flask_session['oauth_state'] = saved_state
+                    if saved_verifier is not None:
+                        flask_session['oauth_pkce_verifier'] = saved_verifier
                 forbidden_calls = {
                     symbol: Mock(side_effect=AssertionError(f'{symbol} must not be called'))
                     for symbol in (

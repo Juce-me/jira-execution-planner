@@ -100,6 +100,7 @@ import { DEFAULT_ENG_STATUS_FILTER, buildEngCatchUpFacetModel, isEngClosedWorkSt
 import { PRIORITY_ORDER, getTaskTeamInfo, groupTasksByTeam, matchesEngTaskSearch, resetEngFacetFilters, resetEngFilters, normalizeEngEpicSort, DEFAULT_ENG_EPIC_SORT, sortEpicGroups } from './eng/engTaskUtils.js';
 import { createPlanningSelectionHandlers } from './eng/planningSelectionActions.js';
 import { readPlanningCapacity, useEngCapacityState, useEngCapacity } from './eng/useEngCapacity.js';
+import { usePreviousCapacityCatalogs } from './eng/usePreviousCapacityCatalogs.js';
 import { buildPlanningCardTeamIds, getTeamCapacityMeta, isCapacityTotalAvailable } from './eng/planningCapacityUtils.js';
 import { buildPlanningSelectionSummary, buildSelectedPlanningTasksList, sumPlanningStoryPoints } from './eng/planningSelectionStats.js';
 import { getSprintQuarterLabel } from './stats/excludedCapacityStats.js';
@@ -585,6 +586,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
             const workContextKey = contextKey(workContextCandidate);
             const workContext = React.useMemo(() => workContextCandidate, [workContextKey]);
             const siblingQuarterStates = useSiblingQuarterStates({ summaries: workBootstrap.summaries, currentContext: workContext, read: context => requestSprints(BACKEND_URL, { context }) });
+            const resolvePreviousCapacitySprint = usePreviousCapacityCatalogs({ backendUrl: BACKEND_URL, summaries: workBootstrap.summaries, currentContext: workContext, currentSprints: availableSprints, browserContextId: sprintCatalogState.browserContextId });
             // The model comes from the viewed quarter's configuration summary. Unpromoted, flag-off and Legacy-era quarters
             // are `legacy`: every consumer below then behaves exactly as before the quarterly configurations existed.
             const workModel = quarterMode ? normalizeWorkModel(activeConfiguration?.model) : normalizeWorkModel(null);
@@ -6140,7 +6142,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
 
             const planningOverview = selectedView === 'eng' && showPlanning && engWorkspaceConfigured && (
                 <PlanningAssigneeCapacity enabled={!shareViewHold && reviewGroupReady} selectedTeamIds={selectedTeamSet} teamIds={planningCardTeamIds} allTeams={isAllTeamsSelected} sprintId={selectedSprint} sprintClosed={isCompletedSprintSelected} sprints={availableSprints} backendUrl={BACKEND_URL} tasks={capacityTasks} originals={planningOriginals} selectedTasks={selectedTasksList} selectedKeys={selectedTasks} getTeamInfo={getTeamInfo} normalizeStatus={normalizeStatus} rawCapacity={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].rawCapacity : null} capacitySource={capacityEnabled && selectedTeamEntries.length === 1 ? selectedTeamEntries[0].capacitySource : ''} automaticRefreshRef={freshness.automaticRefreshRef} entityNames={entityNames}>
-                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — show capacity details to retry' : capacityReadError ? 'Capacity unavailable — show capacity details to retry' : ''}
+                    <PlanningOverviewPanel data-onboarding-target="planning-overview" panelRef={planningPanelRef} compact={compactPlanningPanel} isStuck={isPlanningStuck} capacityStatus={capacityDataStale ? 'Capacity stale — retry with' : capacityReadError ? 'Capacity unavailable — retry with' : ''} onRefreshCapacity={capacityEnabled ? retryCapacity : null} capacityLoading={capacityLoading}
                         onToggleDetails={() => { setPlanningPanelExpanded(compactPlanningPanel); trackPlanningReviewAction(compactPlanningPanel ? 'panel_expanded' : 'panel_collapsed'); }}
                         planReady={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current}
                         summary={planningSourceReady && planningReview.planReady && !pendingPlanningAuthResumeRef.current && <PlanningOverviewSummary childSingular={entityNames.child.toLowerCase()} childPlural={entityNames.childPlural.toLowerCase()} planned={Boolean(planningReview.plan?.exists || planningReview.dirty)} count={selectedCount} sp={selectedSP}
@@ -6182,8 +6184,10 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             selectedCount={selectedCount} selectedSP={selectedSP} capacitySummary={capacitySummary} />}
                         teams={<PlanningTeamCapacityCards
                             sprints={availableSprints}
+                            resolvePreviousCapacitySprint={resolvePreviousCapacitySprint}
                             readPreviousCapacity={(sprint, team, options) => readPlanningCapacity(BACKEND_URL, sprint, team, options)}
                             entries={selectedTeamEntries}
+                            teamMembers={teamOptions.filter(team => team.id !== 'all')}
                             capacityEnabled={capacityEnabled}
                             canOpenCapacityJira={authMode === 'atlassian_oauth'}
                             canEditCapacity={authMode === 'atlassian_oauth' && capacityMutationEnabled === true}
@@ -6194,13 +6198,11 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                             capacityLoading={capacityLoading}
                             capacityReadError={capacityReadError}
                             capacityDataStale={capacityDataStale}
-                            futureSprintCapacityIssuesMissing={isFutureSprintSelected && effectiveCapacityState.capacityIssueCount === 0}
                             capacityShareLabel={capacityShareLabel}
                             updateCapacityRequest={(issueKey, payload, options) =>
                                 updateCapacity(BACKEND_URL, issueKey, payload, options)}
                             onInteractionChange={value => { if (capacityInteractionRef.current === Boolean(value)) return; capacityInteractionRef.current = Boolean(value); notifyPlanningInteraction(previous => previous + 1); }}
                             onCapacitySaved={handleCapacitySaved}
-                            onCapacityRetry={retryCapacity}
                             onAnalyticsAction={trackPlanningCapacityAction}
                             resolveTeamColor={resolveTeamColor}
                             getTeamCapacityMeta={getTeamCapacityMeta}

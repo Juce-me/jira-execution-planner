@@ -18373,6 +18373,82 @@
       ]
     },
     {
+      "id": "eng.usePreviousCapacityCatalogs",
+      "path": "frontend/src/eng/usePreviousCapacityCatalogs.js",
+      "features": [
+        "eng"
+      ],
+      "exports": [
+        "earlierCapacitySources",
+        "resolvePreviousCapacitySprint",
+        "usePreviousCapacityCatalogs"
+      ],
+      "lineCeiling": 70,
+      "interfaces": [
+        {
+          "exportName": "usePreviousCapacityCatalogs",
+          "inputNames": [
+            "backendUrl",
+            "browserContextId",
+            "currentContext",
+            "currentSprints",
+            "summaries"
+          ],
+          "returnNames": [],
+          "propNames": [],
+          "expandedInputNames": [
+            "backendUrl",
+            "browserContextId",
+            "currentContext",
+            "currentSprints",
+            "summaries"
+          ],
+          "outerParameterCount": 1,
+          "expandedInputCount": 5,
+          "returnCount": 0,
+          "propCount": 0,
+          "outerParameterCeiling": 1,
+          "expandedInputCeiling": 5,
+          "returnCeiling": 0,
+          "propCeiling": 0,
+          "unresolved": [
+            "forwarded input backendUrl",
+            "forwarded input currentContext",
+            "return spread/dynamic"
+          ],
+          "inventory": {
+            "sourceDigest": "ca0053de8571bef208707fd82d03c4b50a12309065002141737f566db329b9f5",
+            "reviewed": true,
+            "memberNames": [
+              "backendUrl",
+              "browserContextId",
+              "currentContext",
+              "currentSprints",
+              "summaries"
+            ],
+            "rationale": "Cross-configuration capacity prefill (T2): one object parameter of five named inputs; backendUrl and currentContext are forwarded to fetchSprints and the configuration-range filter, read only when the returned resolver is called on an explicit editor open. The return is one useMemo resolver carrying a revisionKey (the configuration part of its identity, so the editor tells a revision change from a browser context change) (no state, no effects, no startup request); its identity follows the viewed catalog context, the browser context and each summary's id/revision/digest/range."
+          },
+          "callers": [
+            {
+              "path": "frontend/src/dashboard.jsx",
+              "symbol": "usePreviousCapacityCatalogs",
+              "line": 588,
+              "phase": "hook execution"
+            }
+          ],
+          "remainingAppReaders": [
+            {
+              "name": "resolvePreviousCapacitySprint",
+              "lines": [
+                6186
+              ]
+            }
+          ],
+          "getters": []
+        }
+      ]
+    },
+    {
       "id": "components.LazyViewBoundary",
       "path": "frontend/src/components/LazyViewBoundary.jsx",
       "features": [

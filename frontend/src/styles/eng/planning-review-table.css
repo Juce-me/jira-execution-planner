@@ -141,7 +141,8 @@
 .planning-review-summary textarea.issue-summary-editor-input:focus { outline: 2px solid #93c5fd; outline-offset: 0; box-shadow: none; }
 
 .planning-panel-collapse { flex-shrink: 0; }
-.planning-actions > .planning-panel-collapse { margin-left: auto; }
+.planning-actions > .planning-panel-collapse, .planning-actions > .planning-panel-refresh { margin-left: auto; }
+.planning-actions > .planning-panel-refresh + .planning-panel-collapse { margin-left: 0; }
 .planning-panel-visibility { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 6px; }
 .planning-panel [hidden] { display: none !important; }
 .planning-panel.open.planning-panel-compact { display: flex; align-items: center; gap: 8px; padding: 8px; }
@@ -179,6 +180,8 @@
 .planning-panel-project-graph .planning-compact-readout { color: var(--text-primary); text-shadow: none; }
 .planning-panel-compact:has(.planning-panel-capacity-status) { flex-wrap: wrap; }
 .planning-panel-capacity-status { flex-basis: 100%; color: #92400e; font-size: 0.7rem; }
+/* The inline refresh glyph that names the retry control sits on the text's x-height, not its baseline. */
+.planning-panel-capacity-status svg { vertical-align: -0.15em; }
 
 .planning-review-add-row .eng-mode-control { margin-top: 0; }
 .planning-review-add-row > .planning-action-button { height: var(--control-height); box-sizing: border-box; border-radius: 10px; font-family: 'IBM Plex Mono', monospace; font-size: 0.7rem; letter-spacing: 0.04em; padding: 0 0.75rem; justify-content: center; }

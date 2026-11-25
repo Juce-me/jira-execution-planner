@@ -10,6 +10,8 @@
 
 > **Note (2026-10-30):** Superseded in part by decision D7 of the assignee capacity table plan (`DONE-planning-assignee-capacity-table-323.md`, issue #323): the Global Constraint "Jira is the only source of capacity values" no longer holds. The app now stores a per-Sprint, per-Team "Team capacity (not in Jira)" number in `planning_team_sprint_capacity`; it is only a fallback when no Jira capacity ticket or value exists and an inheritance source for later Sprints. Jira stays the core number and wins on screen whenever a ticket exists, and nothing is written to Jira except through the existing capacity editor on the user's Save.
 
+> **Current accuracy (2026-11-12):** Superseded in part by [DONE-planning-capacity-prefill-cross-configuration](DONE-planning-capacity-prefill-cross-configuration.md): the read-status panel and its Retry button, with their prop inventory, are replaced by the overview's `planning-panel-refresh` icon (repeat activations dropped until the read settles; the stale/unavailable status line ends with its glyph), and the editor's earlier-Sprint prefill now resolves the Sprint across work configurations. The history below is unchanged.
+
 **Historical execution status:** Implemented with changes and verified on `feature/planning-capacity-editing`; pending integration into `main`.
 
 ## Outcome

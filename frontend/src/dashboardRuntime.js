@@ -149,6 +149,32 @@ export function createSprintCatalogState({ displaySnapshot = null, savedSprintId
     };
 }
 
+// A non-viewed configuration's catalog answer, judged by the acceptance rules below for a read-only lookup only: it is never
+// fed to reduceSprintCatalog. Authority needs the cache identity, the current workspace/Jira site browser context, a
+// validated version, a completed (not pending, partial or failed) refresh and the requested configuration; HTTP 200 alone
+// is not enough. Returns { status: 'ready', sprints } | { status: 'pending' } | { status: 'unavailable' }.
+export function validateSiblingSprintCatalog(envelope, { context, browserContextId } = {}) {
+    if (!envelope || typeof envelope !== 'object' || !context) return { status: 'unavailable' };
+    const cache = envelope.cache && typeof envelope.cache === 'object' ? envelope.cache : {};
+    const sources = Array.isArray(envelope.sources) ? envelope.sources : null;
+    if (cache.state === 'failed' || cache.refreshStatus === 'failed' || cache.refreshFailed === true
+        || sources?.some(source => source?.state === 'failed')) return { status: 'unavailable' };
+    if (cache.refreshStatus === 'pending' || cache.state === 'refreshing' || cache.state === 'missing'
+        || envelope.error === 'catalog_refresh_pending' || sources?.some(source => source?.state === 'refreshing')) return { status: 'pending' };
+    if (envelope.httpStatus !== 200 || envelope.error) return { status: 'unavailable' };
+    const source = normalizeCatalogSource(cache);
+    const sprints = normalizeSprintList(envelope.sprints);
+    // The backend stamps every configuration-scoped envelope; a missing stamp is not the requested configuration.
+    const accepted = sprints !== null && Boolean(source.identity) && Boolean(browserContextId)
+        && source.browserContextId === browserContextId && Boolean(cache.validatedAt) && Boolean(cache.catalogVersion)
+        && cache.configurationId != null && String(cache.configurationId) === context.id
+        && cache.configurationRevision != null && Number(cache.configurationRevision) === context.revision
+        && responseMatchesContext(context, envelope.context ?? envelope.configuration)
+        && (!sources || (sources.length === 1 && sources[0]?.configurationId === context.id && sources[0]?.state === 'ready'))
+        && sprints.every(sprint => sprint.configurationId === undefined || String(sprint.configurationId) === context.id);
+    return accepted ? { status: 'ready', sprints } : { status: 'unavailable' };
+}
+
 export function reduceSprintCatalog(state, event) {
     if (!state || !event || typeof event !== 'object') return state;
     if (state.authority === 'auth_locked' && event.type !== 'AUTH_LOCK') return state;

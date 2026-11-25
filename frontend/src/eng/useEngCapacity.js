@@ -30,7 +30,9 @@ import { fetchCapacity as requestCapacity } from '../api/capacityApi.js';
 
 // Explicit Team-card prefill: retain capacity API ownership here, outside the current Sprint's read lifecycle.
 export async function readPlanningCapacity(backendUrl, sprintName, teamName, options = {}) {
-    const response = await requestCapacity(backendUrl, { sprintName, teams: [teamName], signal: options.signal });
+    // The same normalized name the Sprint read sends: Jira searches the ticket summary as a phrase, and a ticket titled
+    // "Team info <Sprint> - Data Science" never contains the raw "R&D Data Science".
+    const response = await requestCapacity(backendUrl, { sprintName, teams: [normalizeCapacityTeamName(teamName)], signal: options.signal });
     if (!response.ok) throw new Error('capacity_read_failed');
     const payload = await response.json();
     if (payload.enabled !== true) throw new Error('capacity_read_failed');

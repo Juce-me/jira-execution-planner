@@ -1,3 +1,4 @@
+import re
 import unittest
 
 from backend.auth.jira_auth import AuthError
@@ -326,6 +327,63 @@ class TestCapacityService(unittest.TestCase):
             {'teamName': 'Non-finite', 'issueKey': 'CAP-106', 'capacity': None},
             {'teamName': 'Huge', 'issueKey': 'CAP-107', 'capacity': None},
         ])
+
+    def test_capacity_read_evaluates_the_phrase_against_titles_keeps_duplicate_entries_and_overwrites_capacities(self):
+        # Local parsing only: the fake evaluates the quoted phrase against synthetic titles; it does not model Jira's text index.
+        titles = [
+            ('CAP-1', 'Team info 2026Q4 - Alpha', 10),
+            ('CAP-2', 'Team info 2026Q4 - Alpha', 7),
+            ('CAP-3', 'Team info 2026Q4 - Gamma', 3),
+            ('CAP-4', 'Team info 2026Q3 - Alpha', 99),
+        ]
+        phrases_seen = []
+
+        def search_request(payload):
+            phrases = re.findall(r'summary ~ "\\"(.*?)\\""', payload['jql'])
+            phrases_seen.extend(phrases)
+            return FakeResponse(200, {'issues': [
+                {'key': key, 'fields': {'summary': title, 'customfield_capacity': value}}
+                for key, title, value in titles
+                if any(phrase.lower() in title.lower() for phrase in phrases)
+            ]})
+
+        result, error = capacity.fetch_capacity_for_sprint(
+            '2026Q4',
+            None,
+            team_names=['Alpha', 'Gamma'],
+            capacity_project='CAP',
+            capacity_field_id='customfield_capacity',
+            search_request=search_request,
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(phrases_seen, ['Team info 2026Q4 - Alpha', 'Team info 2026Q4 - Gamma'])
+        self.assertEqual(result['entries'], [
+            {'teamName': 'Alpha', 'issueKey': 'CAP-1', 'capacity': 10.0},
+            {'teamName': 'Alpha', 'issueKey': 'CAP-2', 'capacity': 7.0},
+            {'teamName': 'Gamma', 'issueKey': 'CAP-3', 'capacity': 3.0},
+        ])
+        self.assertEqual(result['capacities'], {'Alpha': 7.0, 'Gamma': 3.0})
+
+    def test_capacity_read_with_no_matching_title_returns_empty_entries(self):
+        def search_request(payload):
+            phrases = re.findall(r'summary ~ "\\"(.*?)\\""', payload['jql'])
+            return FakeResponse(200, {'issues': [
+                {'key': 'CAP-1', 'fields': {'summary': 'Team info 2026Q4 - Alpha', 'customfield_capacity': 10}}
+            ] if any(phrase.lower() in 'team info 2026q4 - alpha' for phrase in phrases) else []})
+
+        result, error = capacity.fetch_capacity_for_sprint(
+            '2026Q4',
+            None,
+            team_names=['Delta'],
+            capacity_project='CAP',
+            capacity_field_id='customfield_capacity',
+            search_request=search_request,
+        )
+
+        self.assertIsNone(error)
+        self.assertEqual(result['entries'], [])
+        self.assertEqual(result['capacities'], {})
 
     def test_fetch_capacity_team_sizes_uses_watches_and_watcher_fallback(self):
         watcher_calls = []

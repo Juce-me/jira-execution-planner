@@ -715,7 +715,8 @@ test('a capacity read error stays visible while the overview is compact', async 
     const panel = page.locator('.planning-panel');
     await expect(panel).toHaveClass(/planning-panel-compact/);
     const status = panel.locator('.planning-panel-capacity-status');
-    await expect(status).toHaveText('Capacity unavailable — show capacity details to retry');
+    await expect(status).toHaveText('Capacity unavailable — retry with');
+    await expect(status.getByRole('img', { name: 'Refresh capacity' })).toBeVisible();
     await expect(status).toBeVisible();
     expect(await status.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     // The error adds one line under the row: the compact panel is pinned at that height, not the 46.9px row alone.

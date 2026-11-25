@@ -4,7 +4,8 @@ import TrackedExternalLink from '../components/TrackedExternalLink.jsx';
 import IconButton from '../ui/IconButton.jsx';
 import JiraMarkIcon from '../ui/JiraMarkIcon.jsx';
 import EpicHeaderValueReadout from './EpicHeaderValueReadout.jsx';
-import { capacityAxis, parseCapacityDraft, previousPlanningCapacitySprint, previousPlanningCapacityValue, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
+import { capacityAxis, parseCapacityDraft, previousPlanningCapacityValue, TEAM_CARD_HEADROOM } from './planningCapacityUtils.js';
+import { resolvePreviousCapacitySprint as resolveFromViewedCatalog } from './usePreviousCapacityCatalogs.js';
 import { usePlanningAssigneeCapacityView } from './PlanningAssigneeCapacity.jsx';
 import { formatHundredths, plannedNumber, plannedWireValue, roundHalfUpHundredths, samePlannedValue, validateNumberDraft } from './planningAssigneeCapacityModel.js';
 
@@ -43,6 +44,15 @@ const CONFIG_FAILURE_CODES = new Set([
 ]);
 
 const RELOAD_RESET_CODES = new Set([...TARGET_FAILURE_CODES, ...CONFIG_FAILURE_CODES]);
+
+// Why no previous Sprint capacity was offered (the draft is kept and manual entry stays allowed); a missing earlier Sprint
+// or ticket shows nothing.
+const PREVIOUS_SPRINT_MESSAGES = {
+    pending: 'The earlier Sprint catalog is still loading. Enter a value, or cancel and reopen to retry.',
+    unavailable: 'The earlier Sprint catalog is unavailable. Enter a value, or cancel and reopen to retry.',
+    ambiguous: 'The earlier Sprint is ambiguous, so no previous capacity is offered. Enter a value, or cancel and reopen to retry.',
+    failed: 'Previous sprint capacity could not be loaded. Enter a value or cancel and reopen to retry.',
+};
 
 function PencilIcon() {
     return (
@@ -224,23 +234,25 @@ export function usePlanningTeamCapacitySaveStatus() {
 
 export default function PlanningTeamCapacityCards({
     entries = [],
+    // Complete `{ id, name }` Team membership of the active Department (displayed or not), for prefill uniqueness only.
+    teamMembers = [],
     capacityEnabled = false,
     canOpenCapacityJira = false,
     canEditCapacity = false,
     jiraUrl = '',
     sprintName = '',
     sprints = [],
+    // Lookup-private: resolves the earlier Sprint across the configuration catalogs on an explicit open (else `sprints`).
+    resolvePreviousCapacitySprint,
     readPreviousCapacity,
     scopeSignature = '',
     capacityReadRevision = 0,
     capacityLoading = false,
     capacityReadError = '',
     capacityDataStale = false,
-    futureSprintCapacityIssuesMissing = false,
     capacityShareLabel = '',
     updateCapacityRequest,
     onCapacitySaved,
-    onCapacityRetry,
     onAnalyticsAction,
     onInteractionChange,
     resolveTeamColor,
@@ -268,10 +280,14 @@ export default function PlanningTeamCapacityCards({
     const pencilRefs = React.useRef(new Map());
     const restoreFocusIssueRef = React.useRef('');
     const requestAbortRef = React.useRef(null);
+    const prefillTokenRef = React.useRef(0);
+    // Which await the open chain is in: 'catalog' (resolving the earlier Sprint) or 'capacity' (its one capacity GET).
+    const prefillPhaseRef = React.useRef('');
     const submissionRef = React.useRef(false);
     const previousReadRevisionRef = React.useRef(capacityReadRevision);
     const latestScopeRef = React.useRef(scopeSignature);
     const latestEntriesRef = React.useRef(entries);
+    const latestMembersRef = React.useRef(teamMembers);
     const latestCanEditRef = React.useRef(canEditCapacity);
     const latestReadFailureRef = React.useRef(Boolean(capacityReadError || capacityDataStale));
     const invalidTargetsRef = React.useRef(invalidTargets);
@@ -314,6 +330,7 @@ export default function PlanningTeamCapacityCards({
 
     latestScopeRef.current = scopeSignature;
     latestEntriesRef.current = entries;
+    latestMembersRef.current = teamMembers;
     latestCanEditRef.current = canEditCapacity;
     latestReadFailureRef.current = Boolean(capacityReadError || capacityDataStale);
     invalidTargetsRef.current = invalidTargets;
@@ -489,11 +506,10 @@ export default function PlanningTeamCapacityCards({
         // After a push conflict the ticket holds Jira's current value: the editor expects that one, not the last read.
         const ticket = conflictTicketOf(entry);
         // A blank (null) or 0 ticket opens with the earlier Sprint's Jira value; the ticket value stays the conflict baseline.
-        const previousSprint = (typeof ticket !== 'number' || ticket === 0) && typeof readPreviousCapacity === 'function'
-            ? previousPlanningCapacitySprint(sprints, sprintName) : null;
+        const prefill = (typeof ticket !== 'number' || ticket === 0) && typeof readPreviousCapacity === 'function';
         const nextEditor = {
             mode: 'jira',
-            prefilling: Boolean(previousSprint),
+            prefilling: prefill,
             id: `jira:${entry.id}`,
             displayedTeamId: String(entry.id),
             displayedTeamName: entry.name,
@@ -512,7 +528,7 @@ export default function PlanningTeamCapacityCards({
         if (plannedOf(entry)?.source === 'user' && statusOf(entry)?.canSave === true) assignee?.controller?.ensureTeamDocument(String(entry.id));
         editorRef.current = nextEditor;
         setEditor(nextEditor);
-        if (previousSprint) prefillFromPreviousSprint(nextEditor, entry, previousSprint, null);
+        if (prefill) prefillFromPreviousSprint(nextEditor, entry, null);
         onAnalyticsAction?.('capacity_edit_open');
     };
 
@@ -523,11 +539,11 @@ export default function PlanningTeamCapacityCards({
         assignee.controller.ensureTeamDocument(String(entry.id));
         const planned = plannedOf(entry);
         const stored = planned.value ?? '';
-        const previousSprint = planned.source !== 'user' && planned.source !== 'jira'
-            && typeof readPreviousCapacity === 'function' ? previousPlanningCapacitySprint(sprints, sprintName) : null;
+        // An own `user` or `jira` value is kept; an absent or inherited one opens with the earlier Sprint's Jira value.
+        const prefill = planned.source !== 'user' && planned.source !== 'jira' && typeof readPreviousCapacity === 'function';
         const nextEditor = {
             mode: 'planned',
-            prefilling: Boolean(previousSprint),
+            prefilling: prefill,
             id: `planned:${entry.id}`,
             displayedTeamId: String(entry.id),
             displayedTeamName: entry.name,
@@ -543,30 +559,61 @@ export default function PlanningTeamCapacityCards({
         };
         editorRef.current = nextEditor;
         setEditor(nextEditor);
-        if (previousSprint) prefillFromPreviousSprint(nextEditor, entry, previousSprint, planned.value);
+        if (prefill) prefillFromPreviousSprint(nextEditor, entry, planned.value);
     };
 
-    // One scoped GET only on explicit edit. It never copies the earlier ticket's identity or writes either Sprint.
-    // A missing or unmatched earlier value keeps the editor's own draft.
-    const prefillFromPreviousSprint = (nextEditor, entry, previousSprint, stored) => {
+    // One async chain per explicit open, under one AbortController and a per-open token checked after every await: resolve
+    // the earlier Sprint (catalog reads), then exactly one scoped capacity GET for it. It never copies the earlier ticket's
+    // identity or writes either Sprint. Cancel, unmount, a new open and a scope or configuration change abort it; a late
+    // answer applies only to the editor it was opened for and never replaces a typed draft.
+    const prefillFromPreviousSprint = (nextEditor, entry, stored) => {
         const controller = new AbortController();
         requestAbortRef.current?.abort();
         requestAbortRef.current = controller;
+        const token = prefillTokenRef.current + 1;
+        prefillTokenRef.current = token;
+        const { signal } = controller;
+        prefillPhaseRef.current = 'catalog';
+        const live = () => !signal.aborted && prefillTokenRef.current === token && editorRef.current?.id === nextEditor.id
+            && editorRef.current.prefilling && latestScopeRef.current === nextEditor.scopeSignature;
+        const settle = ({ draft, errorMessage = '' }) => {
+            if (!live()) return;
+            const current = editorRef.current;
+            setEditor({ ...current, prefilling: false, errorMessage,
+                draft: draft != null && current.draft === nextEditor.draft ? draft : current.draft });
+        };
         void (async () => {
             try {
-                const payload = await readPreviousCapacity(previousSprint.name, entry.name, { signal: controller.signal });
-                const value = previousPlanningCapacityValue(payload, entry.name, entries.map(team => team.name), stored);
-                if (controller.signal.aborted || editorRef.current !== nextEditor) return;
-                setEditor({ ...nextEditor, prefilling: false, draft: plannedWireValue(value) ?? nextEditor.draft });
+                const resolved = typeof resolvePreviousCapacitySprint === 'function'
+                    ? await resolvePreviousCapacitySprint(nextEditor.sprintName, { signal })
+                    : await resolveFromViewedCatalog({ sprintName: nextEditor.sprintName, currentSprints: sprints, summaries: [], signal });
+                if (!live()) return;
+                if (resolved?.state !== 'ready') { settle({ errorMessage: PREVIOUS_SPRINT_MESSAGES[resolved?.state] || '' }); return; }
+                prefillPhaseRef.current = 'capacity';
+                const payload = await readPreviousCapacity(resolved.sprint.name, entry.name, { signal });
+                if (!live()) return;
+                const value = previousPlanningCapacityValue(payload, entry.name, latestMembersRef.current, stored);
+                settle({ draft: plannedWireValue(value) });
             } catch (error) {
-                if (controller.signal.aborted || editorRef.current !== nextEditor) return;
-                setEditor({ ...nextEditor, prefilling: false, errorMessage: error?.name === 'AuthenticationRequiredError' ? ''
-                    : 'Previous sprint capacity could not be loaded. Enter a value or cancel and reopen to retry.' });
+                settle({ errorMessage: error?.name === 'AuthenticationRequiredError' ? '' : PREVIOUS_SPRINT_MESSAGES.failed });
             } finally {
                 if (requestAbortRef.current === controller) requestAbortRef.current = null;
             }
         })();
     };
+
+    // A new resolver (configuration revision or browser context change) ends an open lookup; the draft is kept. Only a
+    // revision change while the catalogs are being resolved says the catalog is unavailable; any other cancel is silent.
+    const previousResolverRef = React.useRef(resolvePreviousCapacitySprint);
+    React.useEffect(() => {
+        const previous = previousResolverRef.current;
+        if (previous === resolvePreviousCapacitySprint) return;
+        previousResolverRef.current = resolvePreviousCapacitySprint;
+        if (!editorRef.current?.prefilling) return;
+        requestAbortRef.current?.abort();
+        const revised = prefillPhaseRef.current === 'catalog' && previous?.revisionKey !== resolvePreviousCapacitySprint?.revisionKey;
+        setEditor({ ...editorRef.current, prefilling: false, errorMessage: revised ? PREVIOUS_SPRINT_MESSAGES.unavailable : '' });
+    }, [resolvePreviousCapacitySprint]);
 
     const cancelEditor = (restoreFocus) => {
         if (!editorRef.current || submissionRef.current) return;
@@ -777,10 +824,6 @@ export default function PlanningTeamCapacityCards({
     const rows = teamCount === 6 ? 2 : Math.ceil(teamCount / 6);
     const columns = Math.ceil(teamCount / rows);
     const actionsGloballySuppressed = Boolean(activeEditor || capacityReadError || capacityDataStale);
-    const retryMessage = capacityDataStale
-        ? 'Capacity could not be refreshed. Showing last loaded values.'
-        : 'Capacity is unavailable. Retry.';
-    const showFutureSprintEmptyStatus = futureSprintCapacityIssuesMissing && !capacityReadError;
     // A mismatch: a matched ticket the user may write and a number the user typed that differs from it (after rounding).
     // It marks the card, and its push icon (→) joins the hover rail when the card has the Jira capacity writer.
     const mismatchOf = (entry) => {
@@ -795,8 +838,6 @@ export default function PlanningTeamCapacityCards({
         if (samePlannedValue(stored, ticket == null ? null : { value: ticket })) return null;
         return { stored: stored.value, ticket };
     };
-    // A future Sprint with no capacity tickets yet: say so, and that the cards show stored numbers meanwhile.
-    const futureSprintUsesPlanned = sortedTeams.some(entry => entry.capacitySource === 'planned');
 
     return (
         <section className="planning-team-capacity-cards" aria-label="Planned story points by team">
@@ -805,38 +846,6 @@ export default function PlanningTeamCapacityCards({
                     <span className="planning-stat-label">Planned SP by Team:</span>
                 </div>
             </div>
-            {capacityReadError && (
-                <div className="team-capacity-read-status" role="status" aria-busy={capacityLoading}>
-                    <span>{retryMessage}</span>
-                    <button
-                        type="button"
-                        className="secondary compact"
-                        onClick={() => {
-                            if (!capacityLoading) onCapacityRetry?.();
-                        }}
-                        disabled={capacityLoading}
-                        aria-label={capacityLoading ? 'Retrying capacity' : 'Retry capacity'}
-                    >
-                        {capacityLoading ? 'Retrying capacity' : 'Retry'}
-                    </button>
-                </div>
-            )}
-            {showFutureSprintEmptyStatus && (
-                <div className="team-capacity-read-status" role="status" aria-busy={capacityLoading}>
-                    <span>Team capacity Jira issues have not been created yet for this future sprint.{futureSprintUsesPlanned ? ' Showing Team capacity (not in Jira) meanwhile.' : ''}</span>
-                    <button
-                        type="button"
-                        className="secondary compact"
-                        onClick={() => {
-                            if (!capacityLoading) onCapacityRetry?.();
-                        }}
-                        disabled={capacityLoading}
-                        aria-label={capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
-                    >
-                        {capacityLoading ? 'Refreshing capacity' : 'Refresh capacity'}
-                    </button>
-                </div>
-            )}
             <div
                 className="team-stats-grid"
                 style={{ '--planning-team-columns': columns }}

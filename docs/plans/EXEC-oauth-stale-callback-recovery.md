@@ -252,6 +252,6 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 | --- | --- | --- | --- |
 | 0 | complete | none (setup) | P = 8, last planning SHA `b9379b2d`. Python 3.14.10 with OpenSSL, Node v20.20.2, and PostgreSQL tools verified. `npm ci`, `npm run build`, and `run tests.test_agents_md_learnings` passed (12 tests). The owned PostgreSQL cluster required local sandbox escalation. |
 | 1 | complete | `684d81f2` | Red: four expected failures on the missing notice, with forwarding and the plain link passing. Green: all six entry cases and both neighbouring consent checks passed. |
-| 2 | not started | | |
+| 2 | complete | `2e9e1ad1` | Red: the backend reported 25 expected rejection assertion failures across 46 tests. Each of the two Chromium cases separately received `400` when expecting `302`. Green: both backend commands passed (46 and 99 tests) and all 19 tests in the three Chromium specs passed. Synthetic screenshots captured for the PR notes. |
 | 3 | not started | | |
 | 4 | not started | | |

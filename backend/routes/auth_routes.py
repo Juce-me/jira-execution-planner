@@ -19,6 +19,7 @@ from . import bind_server_globals
 
 
 bp = Blueprint("auth_routes", __name__)
+SIGN_IN_INCOMPLETE_URL = '/login?reason=sign_in_incomplete'
 
 
 @bp.before_request
@@ -74,12 +75,13 @@ def auth_entry_page():
         return redirect('/')
     recovery_reason = request.args.get('reason')
     terminal_recovery = recovery_reason in {'session_expired', 'missing_scope'}
+    validation_error_code = None
     if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect(pop_share_view_target(session))
-        except AuthError:
-            pass
+        except AuthError as error:
+            validation_error_code = error.code
     message = ''
     login_url = '/api/auth/atlassian/login'
     if recovery_reason == 'session_expired':
@@ -87,6 +89,14 @@ def auth_entry_page():
     elif recovery_reason == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
         login_url = '/api/auth/atlassian/login?prompt=consent'
+    elif recovery_reason == 'sign_in_incomplete':
+        message = (
+            '<p class="auth-notice" role="status">'
+            'Your sign-in did not finish, for example because the page was reloaded '
+            'or sign-in was started again in another tab. Sign in again to continue.</p>'
+        )
+        if validation_error_code == 'missing_oauth_scope':
+            login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">
@@ -364,14 +374,14 @@ def api_atlassian_callback():
     code_verifier = session.pop('oauth_pkce_verifier', None)
     actual_state = request.args.get('state')
     if not expected_state or actual_state != expected_state:
-        return jsonify({'error': 'invalid_oauth_state'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     if request.args.get('error'):
-        return jsonify({'error': 'oauth_authorization_failed'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     code = request.args.get('code')
     if not code:
-        return jsonify({'error': 'missing_oauth_code'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     if not code_verifier:
-        return jsonify({'error': 'missing_pkce_verifier'}), 400
+        return redirect(SIGN_IN_INCOMPLETE_URL)
     config = current_auth_config()
     exchange_started = False
     try:

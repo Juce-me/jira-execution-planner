@@ -23,6 +23,9 @@ from tests.oauth_test_helpers import forbid_jira_http
 from tests.postgres_test_db import fresh_database_url
 
 
+REJECTED = '/login?reason=sign_in_incomplete'
+
+
 class FakeResponse:
     def __init__(self, status_code, payload):
         self.status_code = status_code
@@ -134,6 +137,8 @@ class DbOauthCutoverTests(unittest.TestCase):
             response = client.get('/api/auth/atlassian/callback?state=state-123&code=abc')
 
         self.assertEqual(response.status_code, 302, response.get_data(as_text=True))
+        location = response.headers['Location']
+        self.assertTrue(location == '/' or location.startswith('/?'), location)
         with client.session_transaction() as session:
             session_payload = dict(session['db_oauth_session'])
         with self.factory() as session:
@@ -738,12 +743,12 @@ class DbOauthCutoverTests(unittest.TestCase):
         browser_b_id = callback_b.browser_session_id
 
         cases = (
-            ('invalid_state', 'state-1', 'verifier-1', '/api/auth/atlassian/callback?state=wrong&code=abc', 'invalid_oauth_state'),
-            ('authorization_denial', 'state-2', 'verifier-2', '/api/auth/atlassian/callback?state=state-2&error=access_denied', 'oauth_authorization_failed'),
-            ('missing_code', 'state-3', 'verifier-3', '/api/auth/atlassian/callback?state=state-3', 'missing_oauth_code'),
-            ('missing_pkce', 'state-4', None, '/api/auth/atlassian/callback?state=state-4&code=abc', 'missing_pkce_verifier'),
+            ('invalid_state', 'state-1', 'verifier-1', '/api/auth/atlassian/callback?state=wrong&code=abc', REJECTED),
+            ('authorization_denial', 'state-2', 'verifier-2', '/api/auth/atlassian/callback?state=state-2&error=access_denied', REJECTED),
+            ('missing_code', 'state-3', 'verifier-3', '/api/auth/atlassian/callback?state=state-3', REJECTED),
+            ('missing_pkce', 'state-4', None, '/api/auth/atlassian/callback?state=state-4&code=abc', REJECTED),
         )
-        for name, state_value, verifier, path, expected_error in cases:
+        for name, state_value, verifier, path, expected_location in cases:
             with self.subTest(name=name):
                 with client_a.session_transaction() as session:
                     session['oauth_state'] = state_value
@@ -756,8 +761,8 @@ class DbOauthCutoverTests(unittest.TestCase):
                     status_a = client_a.get('/api/auth/status')
                     status_b = client_b.get('/api/auth/status')
 
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(response.get_json()['error'], expected_error)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers['Location'], expected_location)
                 self.assertTrue(status_a.get_json()['authenticated'])
                 self.assertTrue(status_b.get_json()['authenticated'])
                 with client_a.session_transaction() as session:
@@ -1078,12 +1083,12 @@ class DbOauthCutoverTests(unittest.TestCase):
         """Every failed callback keeps the stash, including the one that deletes the DB browser session."""
         stash = self._pending_share_view()
         cases = (
-            ('invalid_state', 'state-1', 'verifier-1', '/api/auth/atlassian/callback?state=wrong&code=abc', 'invalid_oauth_state'),
-            ('authorization_denial', 'state-2', 'verifier-2', '/api/auth/atlassian/callback?state=state-2&error=access_denied', 'oauth_authorization_failed'),
-            ('missing_code', 'state-3', 'verifier-3', '/api/auth/atlassian/callback?state=state-3', 'missing_oauth_code'),
-            ('missing_pkce', 'state-4', None, '/api/auth/atlassian/callback?state=state-4&code=abc', 'missing_pkce_verifier'),
+            ('invalid_state', 'state-1', 'verifier-1', '/api/auth/atlassian/callback?state=wrong&code=abc', REJECTED),
+            ('authorization_denial', 'state-2', 'verifier-2', '/api/auth/atlassian/callback?state=state-2&error=access_denied', REJECTED),
+            ('missing_code', 'state-3', 'verifier-3', '/api/auth/atlassian/callback?state=state-3', REJECTED),
+            ('missing_pkce', 'state-4', None, '/api/auth/atlassian/callback?state=state-4&code=abc', REJECTED),
         )
-        for name, state_value, verifier, path, expected_error in cases:
+        for name, state_value, verifier, path, expected_location in cases:
             with self.subTest(name=name):
                 with self.client.session_transaction() as session:
                     session['oauth_state'] = state_value
@@ -1094,8 +1099,8 @@ class DbOauthCutoverTests(unittest.TestCase):
                         session['oauth_pkce_verifier'] = verifier
                 with self._db_route_mode():
                     response = self.client.get(path)
-                self.assertEqual(response.status_code, 400)
-                self.assertEqual(response.get_json()['error'], expected_error)
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers['Location'], expected_location)
                 self.assertEqual(self._pending_share_view_in_session(), stash)
 
         signed_in = self._store_callback_through_route()

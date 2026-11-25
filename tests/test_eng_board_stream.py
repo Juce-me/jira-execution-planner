@@ -748,8 +748,8 @@ class EngBoardHardTerminationFeasibilityTests(unittest.TestCase):
                     with selectors.DefaultSelector() as selector:
                         selector.register(process.stdout, selectors.EVENT_READ)
 
-                        def await_marker(marker):
-                            deadline = time.monotonic() + 5
+                        def await_marker(marker, timeout=5):
+                            deadline = time.monotonic() + timeout
                             while marker not in received:
                                 remaining = deadline - time.monotonic()
                                 self.assertGreater(remaining, 0, 'probe handshake timed out')
@@ -759,7 +759,8 @@ class EngBoardHardTerminationFeasibilityTests(unittest.TestCase):
                                 self.assertTrue(chunk, 'probe exited during handshake')
                                 received.extend(chunk)
 
-                        await_marker(b'BLOCKED\n')
+                        # The first marker includes process startup and imports.
+                        await_marker(b'BLOCKED\n', timeout=30)
                         process.stdin.write(b'cancel\n')
                         process.stdin.flush()
                         await_marker(b'BUDGET_CANCELLED\n')

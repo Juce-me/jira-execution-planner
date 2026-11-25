@@ -106,6 +106,11 @@ Reviewed on 2026-11-24 against released `main` commit `19b05ee9`. The operator c
 
 - [Perimeter session expiry recovery](DONE-perimeter-session-expiry-recovery.md): an expired OAuth2 Proxy session makes API calls redirect cross-origin; detect the redirect and recover with one draft-preserving reload instead of the "Server is not responding" banner.
 
+## OAuth callback recovery
+
+- [OAuth stale callback recovery design](SUPPORT-oauth-stale-callback-recovery-design.md): a replayed, superseded, denied or truncated Atlassian callback redirects to `/login?reason=sign_in_incomplete`, which forwards a signed-in browser to the dashboard and otherwise shows a notice; the state check and single pending login are unchanged.
+- [OAuth stale callback recovery](DONE-oauth-stale-callback-recovery.md): pre-exchange callback redirects, sign-in notice and forced consent, browser fixture checks, and verification.
+
 ## Epic header regression review
 
 - [Visible-height analysis](SUPPORT-epic-header-visible-height-analysis.md): historical diagnosis and validated specimen evidence; application source is now authoritative.

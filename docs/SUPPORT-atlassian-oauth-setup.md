@@ -194,16 +194,18 @@ The scope is in `ATLASSIAN_SCOPES`, but it was not added in the app's `Permissio
 
 The callback URL configured in Atlassian does not exactly match `ATLASSIAN_REDIRECT_URI`.
 
-`invalid_oauth_state`
+`Your sign-in did not finish…`
 
-The callback reached the local server, but the browser did not send the same Flask session that started `/api/auth/atlassian/login`. Common causes:
+In a healthy DB/OAuth runtime, a rejected callback returns a signed-in browser to the dashboard or its pending share view. A browser without a valid session sees the sign-in notice. If you cancel re-consent while your stored grant lacks base Jira scopes, the sign-in link asks for consent again. Cancelling the optional EPM Home permission prompt can return a browser with valid base Jira scopes to the dashboard, where EPM still asks for that permission.
+
+The callback can be rejected in any of these situations.
 
 - The callback URL was opened in a different browser or profile.
 - The flow mixed `localhost` and `127.0.0.1`.
 - The Flask server restarted after login with a different `FLASK_SECRET_KEY`.
 - An old callback URL was refreshed or pasted after the one-time authorization code was already stale.
 
-Start again from `/login` in the same browser tab. Do not reuse an old callback URL.
+Restart from `/login` in one tab and complete the newest attempt. An older return from another tab, Back navigation, or a second click on the sign-in link clears the newer pending sign-in in the same browser. If you see the notice after an older return, start once more. After a successful sign-in, going back to the Atlassian authorization page returns the signed-in browser to the dashboard.
 
 `route_not_oauth_ready`
 

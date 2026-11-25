@@ -23,6 +23,49 @@ test.describe('real DB/OAuth fixture lifecycle', () => {
         return { 'X-Requested-With': 'jira-execution-planner', 'X-CSRF-Token': await csrf(context) };
     }
 
+    async function navigateThroughRejectedCallback(page) {
+        const callbackPath = '/api/auth/atlassian/callback';
+        const landing = await page.goto(server.baseUrl + callbackPath + '?state=stale&code=synthetic');
+        let request = landing?.request();
+        while (request && new URL(request.url()).pathname !== callbackPath) {
+            request = request.redirectedFrom();
+        }
+        const callback = await request?.response();
+        expect(callback?.status()).toBe(302);
+        expect(callback.headers().location).toBe('/login?reason=sign_in_incomplete');
+    }
+
+    test('rejected callback returns a signed-in browser to the dashboard', async ({ browser }) => {
+        const context = await server.createContext(browser, 'actor-a');
+        try {
+            const page = await context.newPage();
+            await navigateThroughRejectedCallback(page);
+            expect(new URL(page.url()).pathname).toBe('/');
+            const response = await context.request.get(server.baseUrl + '/api/auth/status');
+            expect((await response.json()).authenticated).toBe(true);
+        } finally { await context.close(); }
+    });
+
+    test('rejected callback shows the sign-in notice to a signed-out browser', async ({ browser }, testInfo) => {
+        const context = await browser.newContext();
+        try {
+            const page = await context.newPage();
+            await navigateThroughRejectedCallback(page);
+            await expect(page).toHaveURL(server.baseUrl + '/login?reason=sign_in_incomplete');
+            await expect(page.getByRole('status')).toHaveText(
+                'Your sign-in did not finish, for example because the page was reloaded '
+                + 'or sign-in was started again in another tab. Sign in again to continue.',
+            );
+            await expect(page.getByRole('link', { name: 'Sign in with Atlassian' }))
+                .toHaveAttribute('href', '/api/auth/atlassian/login');
+            await page.evaluate(() => document.fonts.ready.then(() => undefined));
+            await page.screenshot({ path: testInfo.outputPath('oauth-rejected-callback.png') });
+            await page.goto(server.baseUrl + '/login');
+            await page.evaluate(() => document.fonts.ready.then(() => undefined));
+            await page.screenshot({ path: testInfo.outputPath('oauth-plain-login.png') });
+        } finally { await context.close(); }
+    });
+
     test('real callback creates private identities and rejects missing/cross-session CSRF', async ({ browser }) => {
         const { a, b } = await server.createContexts(browser);
         try {

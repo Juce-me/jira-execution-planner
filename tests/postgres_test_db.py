@@ -29,7 +29,7 @@ _MODEL_SCHEMA_DATABASES = {}
 _MODEL_SCHEMAS = {}
 _DROPPED_MODEL_SCHEMAS = set()
 _SCHEMA_ADMIN_OPTIONS = "-clock_timeout=1000 -cstatement_timeout=5000"
-_FINAL_DATABASE_DROP_OPTIONS = "-clock_timeout=1000 -cstatement_timeout=15000"
+_WORKER_DATABASE_OPTIONS = "-clock_timeout=1000 -cstatement_timeout=60000"
 
 
 def _admin_url() -> URL:
@@ -182,11 +182,13 @@ def fresh_model_schema_url(add_cleanup: Callable | None = None) -> str:
     if key not in _MODEL_SCHEMA_DATABASES:
         name = "jep_t_" + uuid.uuid4().hex
         worker = admin.set(database=name).render_as_string(hide_password=False)
+        # Physical database DDL can wait for a checkpoint under shard load.
+        database_admin = admin.update_query_dict({"options": _WORKER_DATABASE_OPTIONS})
         try:
-            _execute_admin(f'CREATE DATABASE "{name}"', admin)
+            _execute_admin(f'CREATE DATABASE "{name}"', database_admin)
         except BaseException:
             try:
-                drop_database(worker, admin)
+                drop_database(worker, database_admin)
             except BaseException:
                 _MODEL_SCHEMA_DATABASES[key] = worker  # Final cleanup must retry.
                 raise
@@ -273,7 +275,7 @@ def cleanup_model_fixtures() -> None:
         try:
             # DROP DATABASE waits for a checkpoint after many schema lifecycles.
             # Bound that final owned operation separately from per-case DDL.
-            admin = key[1].update_query_dict({"options": _FINAL_DATABASE_DROP_OPTIONS})
+            admin = key[1].update_query_dict({"options": _WORKER_DATABASE_OPTIONS})
             drop_database(worker, admin)
         except Exception as error:
             failure = error if failure is None else failure

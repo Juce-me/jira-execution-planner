@@ -251,11 +251,14 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 - [x] **Step 1: Base check.** The fetch returned `d66d8624`, two commits beyond the pinned `4693a05a`. The operator approved the rebase. Git's range comparison confirmed equivalent patches for all 12 commits.
 - [x] **Step 2: Pre-finalization scope.** Against `d66d8624`, Git reported the approved 12 commits (eight planning, three implementation, and the review follow-up) and exactly Step 4's paths with the execution plan at its pre-rename path. The working tree was clean.
 - [x] **Step 3: Finalization commit** ("Mark OAuth stale callback recovery plan done"). The renamed plan records the outcome, current accuracy and focused results. The design and index point to the renamed plan. The fixed-string scan for the old filename returned no matches.
-- [ ] **Step 4: Final scope check.** `git log --oneline <base>..HEAD` lists exactly 13 commits (Step 2's 12 plus the finalization commit). `git diff --name-status <base>...HEAD` lists exactly these paths.
+- [ ] **Step 4: Final scope check.** `git log --oneline <base>..HEAD` lists exactly 14 commits (Step 2's 12 plus the finalization and approved test-harness repair commits). `git diff --name-status <base>...HEAD` lists exactly these paths.
   - `backend/routes/auth_routes.py`
   - `tests/test_auth_routes.py`
   - `tests/test_db_oauth_cutover.py`
   - `tests/test_epm_home_scope_request.py`
+  - `tests/postgres_test_db.py`
+  - `tests/test_model_schema_fixture.py`
+  - `tests/test_eng_board_stream.py`
   - `tests/ui/db_oauth_fixture.js`
   - `tests/ui/db_oauth_lifecycle.spec.js`
   - `docs/SUPPORT-atlassian-oauth-setup.md`
@@ -281,3 +284,7 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 | 4 | finalization | this commit | The full delivery gate and publication checks follow this commit. |
 
 The post-implementation review added a case with state missing from both the callback and the session. The case keeps a synthetic code and a saved verifier so the later missing-code and missing-verifier checks cannot mask a broken state guard. Removing the missing-saved-state check in an isolated snapshot failed this case at the forbidden configuration-validation call.
+
+The full gate at the finalization commit `5263c008` failed twice in backend verification. PostgreSQL cancelled a forced drop of a disposable worker database, leaving it invalid and causing 54 subsequent errors on that worker in each run. The retry also recorded a worker database creation timeout and an ENG probe startup timeout. Both runs completed the build, frontend unit, and Chromium stages successfully.
+
+The operator approved a test-harness repair on this branch. The repair gives physical fixture lifecycle commands a separate statement limit, isolates tests that explicitly finalize a fixture worker, and separates ENG child startup from the cancellation handshake. All 113 focused tests passed. The database isolation regression reproduced the old failure, and a six-second injected startup delay failed under the old probe budget and passed under the new one. The full gate at the repair commit is recorded in its verification ledger.

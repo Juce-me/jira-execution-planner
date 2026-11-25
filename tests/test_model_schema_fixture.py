@@ -8,6 +8,7 @@ import io
 import os
 import unittest
 import uuid
+from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -27,6 +28,17 @@ class ModelSchemaFixtureTests(unittest.TestCase):
 
     def schema_url(self):
         return fixtures.fresh_model_schema_url(self.addCleanup)
+
+    def private_cleanup_schema_url(self):
+        # Tests that finalize fixture state must own the registries they drain.
+        registries = ExitStack()
+        self.addCleanup(registries.close)
+        registries.enter_context(patch.object(fixtures, '_MODEL_SCHEMA_DATABASES', {}))
+        registries.enter_context(patch.object(fixtures, '_MODEL_SCHEMAS', {}))
+        registries.enter_context(patch.object(fixtures, '_DROPPED_MODEL_SCHEMAS', set()))
+        registries.enter_context(patch.object(fixtures, '_MODEL_TEMPLATES', {}))
+        self.addCleanup(fixtures.cleanup_model_fixtures)
+        return self.schema_url()
 
     def schema_name(self, url):
         with db_engine.get_engine(url).connect() as connection:
@@ -302,8 +314,15 @@ class ModelSchemaFixtureTests(unittest.TestCase):
         self.assertIn('users', inspect(db_engine.get_engine(clone)).get_table_names())
 
     def test_comprehensive_cleanup_forces_owned_worker_drop_but_preserves_failure_verdict(self):
-        url = self.schema_url()
+        sibling_url = self.schema_url()
+        with patch.object(fixtures, '_execute_admin', wraps=fixtures._execute_admin) as execute_admin:
+            url = self.private_cleanup_schema_url()
         database = make_url(url).database
+        execute_admin.assert_any_call(
+            f'CREATE DATABASE "{database}"',
+            fixtures._model_schema_admin_url().update_query_dict(
+                {'options': '-clock_timeout=1000 -cstatement_timeout=60000'}),
+        )
         admin = self.administrative_engine(fixtures._admin_url().set(database='postgres').render_as_string(hide_password=False))
         engine = create_engine(url, poolclass=NullPool)
         self.addCleanup(engine.dispose)
@@ -313,6 +332,7 @@ class ModelSchemaFixtureTests(unittest.TestCase):
             with self.assertRaises(DBAPIError):
                 fixtures.cleanup_model_fixtures()
             self.assertFalse(self.database_exists(admin, database))
+            self.assertIn('users', inspect(db_engine.get_engine(sibling_url)).get_table_names())
         finally:
             try:
                 connection.close()
@@ -335,13 +355,14 @@ class ModelSchemaFixtureTests(unittest.TestCase):
             self.assertEqual(drop_admin.difference_update_query(['options']),
                              admin.difference_update_query(['options']))
             self.assertEqual(drop_admin.query['options'],
-                             '-clock_timeout=1000 -cstatement_timeout=15000')
+                             '-clock_timeout=1000 -cstatement_timeout=60000')
             self.assertEqual(admin.query['options'],
                              '-clock_timeout=1000 -cstatement_timeout=5000')
             self.assertNotIn(key, fixtures._MODEL_SCHEMA_DATABASES)
 
     def test_runner_drops_worker_database_before_reporting_success(self):
-        url = self.schema_url()
+        sibling_url = self.schema_url()
+        url = self.private_cleanup_schema_url()
         database = make_url(url).database
         admin = self.administrative_engine(fixtures._admin_url().set(database='postgres').render_as_string(hide_password=False))
         events = []
@@ -360,6 +381,7 @@ class ModelSchemaFixtureTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertEqual(events, ['test', 'cleanup'])
         self.assertFalse(self.database_exists(admin, database))
+        self.assertIn('users', inspect(db_engine.get_engine(sibling_url)).get_table_names())
 
 
 if __name__ == '__main__':

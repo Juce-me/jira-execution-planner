@@ -68,7 +68,7 @@ Approaches considered:
 - **B. Callback always redirects to `/login?reason=sign_in_incomplete`** (recommended, my call). One fixed target, no new session logic in the callback, the end destinations are identical to A. The extra same-origin `302` is not visible.
 - **C. Render an HTML error page from the callback.** Rejected: it would be a fourth copy of the auth card HTML and still need a "go to dashboard" path for signed-in users.
 
-Provider `error` is folded into the same reason on purpose: it is usually a cancelled consent, the user's next step is the same, and echoing Atlassian's `error`/`error_description` values would put provider text into the page. A browser whose grant is complete and which cancels a voluntary sign-in is forwarded to the dashboard by `/login`. A browser that cancels a *re-consent* is missing base scopes: `current_request_auth_context` raises `missing_oauth_scope` (`backend/auth/db_context.py`). See D8 for why its card must keep the consent link.
+Provider `error` is folded into the same reason on purpose: it is usually a cancelled consent, the user's next step is the same, and echoing Atlassian's `error`/`error_description` values would put provider text into the page. A browser whose grant is complete and which cancels a voluntary sign-in is forwarded to the dashboard by `/login`. A browser that cancels a re-consent while its stored grant lacks base scopes makes `current_request_auth_context` raise `missing_oauth_scope` (`backend/auth/db_context.py`) and gets the consent link (D8); one that cancels the optional EPM Home consent still has valid base scopes and is forwarded (D8 explains both).
 
 ### D8. Keep forced consent after an incomplete grant (**Operator**: approved 2026-11-24)
 

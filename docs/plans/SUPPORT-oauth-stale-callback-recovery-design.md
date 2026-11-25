@@ -12,7 +12,7 @@ The perimeter recovery work (`bugfix/perimeter-session-expiry-recovery`, PR #348
 
 ## How the journey works today
 
-Verified against `origin/main` `3c2d3186` on 2026-11-24 and re-checked at `30d0923b` (docs-only drift).
+Verified against `origin/main` `3c2d3186` on 2026-11-24 and re-checked at `30d0923b` (docs-only drift) and `1e16e8f0` on 2026-11-25 (upstream changed only capacity tests and three docs, none in the OAuth journey).
 
 1. A browser without a valid DB browser session asks for `/` or `/jira-dashboard.html`. `redirect_unauthenticated_oauth_dashboard_entry` (`jira_server.py`, `OAUTH_DASHBOARD_ENTRY_PATHS`) stashes a valid share-view query with `stash_share_view_query` and redirects to `/login`, or to `/login?reason=session_expired` when an old `db_oauth_session` cookie entry is present. Any `AuthError`, including `missing_oauth_scope` for a stored grant that lacks base scopes, takes that `session_expired` path, whose card offers the plain link.
 2. `/login` (`auth_entry_page`) forwards a browser with a valid session to `pop_share_view_target(session)` unless the reason is terminal (`session_expired`, `missing_scope`). Otherwise it renders the sign-in card with an optional `.auth-notice` paragraph and a "Sign in with Atlassian" link to `/api/auth/atlassian/login` (with `?prompt=consent` for `missing_scope`).

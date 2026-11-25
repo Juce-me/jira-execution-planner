@@ -1,6 +1,6 @@
 # OAuth stale callback recovery Implementation Plan
 
-> **Status:** Planned 2026-11-24, revised 2026-11-24 after a second and a third three-reviewer round, rebased 2026-11-25; base `origin/main` `1e16e8f0`; not executed. Implements D4 option 1 (single pending login) and D7 option 1 (accept follower release without a new sign-in), both accepted 2026-11-24, and D8 (keep forced consent after an incomplete grant), approved 2026-11-24.
+> **Status:** Planned 2026-11-24, revised 2026-11-24 after a second and a third three-reviewer round, rebased 2026-11-25; base `origin/main` `4693a05a`; not executed. Implements D4 option 1 (single pending login) and D7 option 1 (accept follower release without a new sign-in), both accepted 2026-11-24, and D8 (keep forced consent after an incomplete grant), approved 2026-11-24.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -55,7 +55,7 @@ run() { "$PY" tests/run_isolated_runtime_tests.py --node "$(command -v node)" "$
 ```
 
 Check: `run tests.test_agents_md_learnings` passes. Backend commands below are written as `run <ids>`.
-- [ ] **Step 6: Record the planning history.** Count the commits above the base before any implementation (`git rev-list --count 1e16e8f0..HEAD`; P = 7 at the plan's last revision) and write P and the last planning SHA in the Execution Status table's Task 0 row; it is committed with Task 1. Task 4 uses this P.
+- [ ] **Step 6: Record the planning history.** Count the commits above the base before any implementation (`git rev-list --count 4693a05a..HEAD`; P = 8 at the plan's last revision) and write P and the last planning SHA in the Execution Status table's Task 0 row; it is committed with Task 1. Task 4 uses this P.
 
 ### Task 1: `/login` renders the `sign_in_incomplete` reason
 
@@ -239,7 +239,7 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 
 ### Task 4: Finalization and publication gate (only when the operator asks to publish)
 
-- [ ] **Step 1: Base check.** `git fetch origin main`; if `origin/main` is no longer `1e16e8f0` (the base P was recorded against), stop and ask the operator whether to rebase; after an approved rebase P is unchanged (rebasing keeps the commit count); record the base actually used.
+- [ ] **Step 1: Base check.** `git fetch origin main`; if `origin/main` is no longer `4693a05a` (the base P was recorded against), stop and ask the operator whether to rebase; after an approved rebase P is unchanged (rebasing keeps the commit count); record the base actually used.
 - [ ] **Step 2: Pre-finalization scope.** Against the recorded base, `git log --oneline <base>..HEAD` lists exactly P + 3 commits: the P planning commits recorded in Task 0 Step 6, then Task 1, Task 2 and Task 3 and `git diff --name-status <base>...HEAD` lists exactly Step 4's paths with this plan's pre-rename path in place of its `DONE-*` path. `git status --short` is empty before anything is staged. Any difference: stop and ask.
 - [ ] **Step 3: Finalization commit** ("Mark OAuth stale callback recovery plan done"). Stage, then inspect `git diff --cached --name-status` before committing: `git mv` of this plan to `DONE-oauth-stale-callback-recovery.md`; its `> **Status:**` set to done naming the branch and Task 3's commit; an `## Outcome` and a `## Current Accuracy` section; Task 3's commit and the focused results in Execution Status; the design's `> **Status:**` changed from draft to implemented with the new plan link; every link to the old file updated. Link check, built so the command cannot match itself: `old="EXEC-oauth-stale-callback-recovery"; rg -l --fixed-strings "${old}.md" . ` prints nothing. After committing, `git show --stat HEAD` shows the rename with content changes.
 - [ ] **Step 4: Final scope check** per root `AGENTS.md` section 10: `git log --oneline <base>..HEAD` lists exactly P + 4 commits (Step 2's plus the finalization commit) and `git diff --name-status <base>...HEAD` lists exactly: `backend/routes/auth_routes.py`, `tests/test_auth_routes.py`, `tests/test_db_oauth_cutover.py`, `tests/test_epm_home_scope_request.py`, `tests/ui/db_oauth_fixture.js`, `tests/ui/db_oauth_lifecycle.spec.js`, `docs/SUPPORT-atlassian-oauth-setup.md`, `docs/ontology.md`, `docs/README_ANALYTICS.md`, `docs/plans/README.md`, `docs/plans/SUPPORT-multi-device-browser-sessions-design.md`, `docs/plans/SUPPORT-oauth-stale-callback-recovery-design.md`, `docs/plans/DONE-oauth-stale-callback-recovery.md`. `git status --short` is empty. Any difference: stop and ask.

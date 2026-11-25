@@ -72,12 +72,25 @@ These rules override later guidance in this file:
 
 ---
 
-## 4. Verification
+## 4. Work validation
 
 - Run the relevant tests, lint, type checks, validation scripts, or benchmarks. When behavior can be exercised automatically, add or identify a check that fails without the change and passes with it; otherwise document manual verification. Read complete failures and fix the cause, not the check.
 - For UI work, compare before-and-after screenshots and describe the visible change.
 - Never claim success from a plausible diff. Report the command run and its actual result.
 - Update affected documentation and active work artifacts when behavior, interfaces, layout, or workflow changes. Do not update unrelated docs for completeness.
+
+### Focused checks during development
+
+- Trace the affected behavior and its consumers, then run the relevant cases and contract checks. Use the same focused checks for local checkpoint commits.
+- Run application-importing backend tests through the isolated runner. Select a module with `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning` or a case with `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`. The runner provisions its own disposable PostgreSQL cluster and isolates the checkout dotenv and application database. Use `--postgres --postgres-config` only with a separately approved disposable descriptor.
+- Build with `npm run build` before checks that read the generated `frontend/dist`. For focused Chromium checks use `npm run test:frontend:ui -- eng_story_subtasks.spec.js`, optionally with `--grep 'case title'`. The Playwright config selects `tests/ui`; keep the npm script free of positional paths so a spec argument selects only that file.
+
+### Full delivery verification
+
+- Run `make verify ARGS=--no-deadline` before push and PR or when the operator explicitly requests the full suite. It builds once, then runs the isolated PostgreSQL backend suite (including security and race tests), frontend unit tests, and desktop Chromium. Every stage runs to completion, including after a failed stage. All stages must pass for publication. The runner reports elapsed time against the 600-second target and records any overrun in its output. Logs and `result.json` are under gitignored `tmp/verification/`.
+- Reserve plain `make verify` for measuring the 600-second budget, which includes setup and owned-process cleanup. A timed-out or incomplete budget run cannot establish full-suite coverage.
+- Use Node 20 and PostgreSQL server binaries (`initdb`, `pg_ctl`, `createdb`) on PATH or in `JEP_TEST_PG_BIN`. Chromium specs that start Flask use `.venv/bin/python` or `JEP_TEST_PYTHON` in a worktree without a virtual environment. Chromium is the required desktop browser. Add `--headed` to `ARGS` for visual acceptance that requires a visible browser.
+- The full runner defaults to four backend and four Chromium workers. For eight each use `make verify ARGS="--no-deadline --backend-workers 8 --workers 8"`. Add repeated `--include` flags for reviewed untracked sources and tests. Serialize full runs across worktrees and leave other tasks' processes alone. Keep browser contexts and mutable database state isolated while reusing immutable compiled fixtures per worker. For backend diagnosis, use the isolated runner's `--timings` and existing redaction. Keep PostgreSQL output summary-only.
 
 ---
 
@@ -151,17 +164,9 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 - Build: `npm run build`
 - Preflight: `.venv/bin/python scripts/check_startup_preflight.py`
 - Watch frontend: `npm run watch`
-- Test (all): `.venv/bin/python tests/run_isolated_runtime_tests.py --node "$(command -v node)"` with Node 20 on PATH and PostgreSQL server binaries (`initdb`, `pg_ctl`, `createdb`) on PATH or in `JEP_TEST_PG_BIN`; the runner provisions and removes its own throwaway cluster (run `npm run build` first: `frontend/dist` is gitignored and not committed, so tests that read it need a build; the same applies to `npm run test:frontend:unit`)
-- Test (single file): `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning`
-- Test (single case): `.venv/bin/python tests/run_isolated_runtime_tests.py tests.test_planning.PlanningSchedulerTests.test_dependency_ordering`
-- Verify (combined): `make verify` builds once, runs backend modules once including security/PostgreSQL races across four independent workers, frontend unit tests, then desktop Chromium with four workers. The shared 600-second wall-time limit includes setup/cleanup; incomplete or over-budget runs fail. Logs and the result ledger are under gitignored `tmp/verification/`. Use `ARGS="--backend-workers 8 --workers 8"` to change worker counts, `ARGS=--headed` for headed Chromium acceptance, repeated `--include` arguments in `ARGS` for reviewed untracked sources/tests, and runner `--timings` for diagnosis. Serialize full verification across worktrees; do not terminate another task's jobs or treat contended pilot timings as controlled benchmarks.
-- Test (UI focused): `npm run test:frontend:ui -- eng_story_subtasks.spec.js`, optionally `--grep 'case title'`. Configuration pins `tests/ui` and four default workers; the npm script must not include a positional directory, because Playwright ORs it with an appended spec and would select the whole suite. Reuse immutable compiled setup per worker while keeping browser contexts and mutable database state isolated.
-- Test (UI, local only): `npm run build && npx playwright test tests/ui --browser=chromium --workers=4`. Chromium is the only required browser; do not run Firefox or WebKit unless the user explicitly requests them. Specs that start Flask use `.venv/bin/python`; set `JEP_TEST_PYTHON` in a git worktree without a `.venv`. Real-server (DB/OAuth) specs need the PostgreSQL server binaries on PATH or in `JEP_TEST_PG_BIN`, as for the backend suite. Use headed Chromium when a glyph or geometry check requires a visible browser. The combined 600-second verification target is not yet met; do not rely on the former eight-minute UI estimate.
 - Run locally: `.venv/bin/python jira_server.py`
 - Quick API check: `curl http://localhost:5050/api/test`
 - EPM scope: configure `rootGoalKey` and `subGoalKey` in `Settings -> EPM`; the Atlassian site cloudId is detected from Jira /_edge/tenant_info
-
-During development, run only the affected test cases/files and their necessary contract checks, selected by tracing the changed behavior and consumers. Broaden focused coverage only when the change crosses those boundaries. Do not run complete backend, frontend-unit or Chromium suites after routine edits or checkpoint commits. Run the complete combined verification only before push and PR, or when the operator explicitly requests a full run. Application-importing tests use the isolated runner before imports; never run them against the checkout dotenv or application DB. While new task files are untracked, pass each reviewed source/test with `--include`. The owned throwaway cluster is the default test database; `--postgres --postgres-config` remains only for a separately approved disposable descriptor, never an application database. Sequence full backend and browser gates to avoid resource contention; stream non-PostgreSQL diagnostics through the runner's existing redaction, and keep PostgreSQL output summary-only.
 
 ### Layout
 - Backend/API: `jira_server.py`, `backend/epm/`, `backend/routes/`, `planning/`
@@ -218,14 +223,14 @@ During development, run only the affected test cases/files and their necessary c
 - Before editing, confirm the current branch and sync it when network access is available.
 - Keep commits atomic and honest. Do not claim measured improvements you did not verify.
 - For UI changes, include screenshots in the PR notes.
-- Before push and PR, run `npm run build`, then the full backend/frontend-unit suite and the full desktop Chromium `tests/ui` run, review `git log --oneline -5`, and wait for explicit user confirmation before push. Reuse a complete passing result for the same exact source/head between push and PR; rerun when the verified source changes. Routine development and checkpoint commits require focused affected tests, not the full gate.
+- Before push and PR, complete the full delivery verification in section 4, review `git log --oneline -5`, and wait for explicit user confirmation before push. Reuse a complete passing result for the same source/head between push and PR. Rerun when the verified source changes.
 - Commit after the focused relevant tests pass; an explicitly requested checkpoint of a known-failing state must record the failures and must not be presented as release-ready. Before every push and PR, switch the docs to done: a plan-driven feature is not published while its plan is still `EXEC-*`. When a plan-driven feature is implemented and verified, rename its `docs/plans/EXEC-*` plan to `DONE-*` and set its top `> **Status:**` to done before the push or PR, so the pushed branch already carries the finished plan: update the plan's Outcome and Current Accuracy, its `docs/plans/README.md` entry and every link to the old name in the same commit, and name the implementing branch or head commit (the PR number is added after the PR exists). A plan executed across several PRs records each PR's task status in the plan file; the PR that completes it does the rename. Finalizing a branch for push or PR is itself the switch to done: rename every plan the branch executed to `DONE-*` in that publication, and keep `EXEC-*` only when the operator says the PR is a partial delivery; unverified items go into the `DONE-*` status note and `docs/TODO.md`, never become a reason to publish an `EXEC-*` plan. Work that is blocked or abandoned keeps `EXEC-`.
 - `tests/ui` has no CI job, by decision. Local desktop Chromium is the browser gate; Firefox and WebKit verification is suspended, including the former cross-browser glyph and geometry requirements. Do not add a UI CI job without a new decision.
 - For publication, treat the final commit, push, and PR creation as one blocking transaction. An explicitly requested local checkpoint commit is separate: inspect its complete scope and record focused verification and known failures, without running the full gate. Before the first publication mutation:
   1. Fetch the intended base and record the exact base and head SHAs.
   2. Run `git status --short`, `git log --oneline origin/<base>..HEAD`, and `git diff --name-status origin/<base>...HEAD`.
   3. Compare the complete commit list, commit count, and every changed path with the approved plan and publication contract. A clean worktree is insufficient. If history or scope differs, stop before commit/push/PR and ask the operator whether to reconstruct it; do not stack cleanup commits or rewrite history without explicit authorization.
-  4. Run `npm run build`, then the required verification, at the exact proposed head; `frontend/dist` is untracked, so CI and the release job build it themselves.
+  4. Run the full delivery verification at the exact proposed head. Its first stage builds the untracked `frontend/dist`, which CI and the release job also build.
   5. Send multiline PR Markdown through stdin with `gh pr create --body-file -` or `gh pr edit --body-file -`. Never pass JSON-stringified, backslash-escaped, or command-substituted multiline content through `--body`.
   6. Before reporting success, prove the remote head equals the approved local head, read back the body as rendered text (not serialized JSON), visually inspect the GitHub PR page, verify the remote changed-file list and commit count, and report the actual CI state.
   7. If any post-publication check fails, report the publication as malformed and stop for operator direction. A successful CLI exit code is not proof of a correct PR.
@@ -488,9 +493,9 @@ When the user corrects your approach, append a one-line rule here before ending 
 - Keep DELIVERY Allocation values and Product/Tech mappings in shared Department settings; Legacy Component scope shows Epics and DELIVERY Allocation scope shows Initiatives under distinct scope tokens.
 
 - When asked to remove selector status labels, preserve all existing choices; verify requested Component/Allocation switching end to end before reporting it as working.
-- Support and verify desktop laptop and wide-screen layouts only; mobile is officially unsupported, and mobile verification is out of scope across the app, including `JEP_TEST_MOBILE` runs. Retire mobile-only cases and mobile phases without dropping desktop or unique functional coverage. The complete build/backend/frontend/desktop-Chromium gate has a combined 600-second target; report measured overruns and never substitute incomplete coverage or a timeout for a passing full gate. When the operator explicitly requests a full diagnostic, run every stage to completion without that cutoff and report the actual overrun; the normal bounded verification command keeps its cutoff.
+- Support and verify desktop laptop and wide-screen layouts only. Retire mobile-only cases and phases, including `JEP_TEST_MOBILE` runs, while preserving desktop and unique functional coverage.
 
-- During development, select only tests affected by the change; reserve complete backend/frontend-unit/desktop-Chromium verification for push and PR, except an explicit operator request for a full run.
+- Use `make verify ARGS=--no-deadline` for full delivery verification. The bounded command measures the runtime budget and can stop before later suites run.
 
 - For Chromium runtime work, optimize suite launch and shared fixture lifetimes before tuning individual test waits; keep browser contexts and mutable case data isolated.
 

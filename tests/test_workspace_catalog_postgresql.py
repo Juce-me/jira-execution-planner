@@ -7,6 +7,7 @@ import uuid
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from queue import Queue
 from threading import Barrier, Event, Lock
 from unittest.mock import patch
 
@@ -1282,17 +1283,10 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
         }
         holder, transaction, holder_pid = self._hold_workspace_fence()
         service_engine = db_engine.get_engine(self.database_url)
-        waiter_pids = set()
-        waiter_lock = Lock()
-        all_entered = Event()
+        waiting_connections = Queue()
         def observe_waiters(conn, _cursor, statement, _parameters, _context, _executemany):
-            if 'pg_advisory_xact_lock' not in statement:
-                return
-            pid = conn.connection.driver_connection.info.backend_pid
-            with waiter_lock:
-                waiter_pids.add(pid)
-                if len(waiter_pids) == 3:
-                    all_entered.set()
+            if 'pg_advisory_xact_lock' in statement:
+                waiting_connections.put(conn.connection.driver_connection.info.backend_pid)
         def publish_team(sprint_id, team):
             return publish_catalog(
                 self.context,
@@ -1322,33 +1316,28 @@ class WorkspaceCatalogPostgresqlTests(unittest.TestCase):
         event.listen(service_engine, 'before_cursor_execute', observe_waiters)
         try:
             with ThreadPoolExecutor(max_workers=3) as pool:
-                futures = (
-                    pool.submit(publish_team, '5', {'id': 'a', 'name': 'Alpha'}),
-                    pool.submit(publish_team, '6', {'id': 'b', 'name': 'Beta'}),
-                    pool.submit(directory_post),
-                )
-                if not all_entered.wait(5):
-                    outcomes = []
-                    for future in futures:
-                        outcomes.append(
-                            repr(future.exception()) if future.done() else 'still running'
-                        )
-                    self.fail(
-                        f'only advisory waiters {sorted(waiter_pids)} entered; '
-                        f'worker outcomes: {outcomes}'
-                    )
-                self.assertEqual(len(waiter_pids), 3)
-                self.assertNotIn(holder_pid, waiter_pids)
-                for pid in waiter_pids:
+                waiter_pids = set()
+
+                def queue_writer(write, *args):
+                    future = pool.submit(write, *args)
+                    pid = waiting_connections.get(timeout=5)
+                    self.assertNotIn(pid, waiter_pids | {holder_pid})
                     self._wait_for_lock_waiter(pid)
+                    waiter_pids.add(pid)
+                    return future
+
+                # Queue the POST between the publications so it reads only the first write.
+                first = queue_writer(publish_team, '5', {'id': 'a', 'name': 'Alpha'})
+                post = queue_writer(directory_post)
+                second = queue_writer(publish_team, '6', {'id': 'b', 'name': 'Beta'})
                 transaction.commit()
                 holder.close()
                 holder.engine.dispose()
-                self.assertTrue(futures[0].result(timeout=5))
-                self.assertTrue(futures[1].result(timeout=5))
-                status, response_payload = futures[2].result(timeout=5)
+                self.assertTrue(first.result(timeout=5))
+                self.assertTrue(second.result(timeout=5))
+                status, response_payload = post.result(timeout=5)
                 self.assertEqual(status, 200)
-                self.assertEqual(set(response_payload['catalog']), {'a', 'b', 'c'})
+                self.assertEqual(set(response_payload['catalog']), {'a', 'c'})
         finally:
             event.remove(service_engine, 'before_cursor_execute', observe_waiters)
             if transaction.is_active:

@@ -20,6 +20,10 @@ from tests.postgres_test_db import fresh_database_url
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+NOTICE = ('Your sign-in did not finish, for example because the page was reloaded '
+          'or sign-in was started again in another tab. Sign in again to continue.')
+PLAIN = 'href="/api/auth/atlassian/login"'
+CONSENT = 'href="/api/auth/atlassian/login?prompt=consent"'
 
 
 class TestAuthRoutes(unittest.TestCase):
@@ -226,6 +230,88 @@ class TestAuthRoutes(unittest.TestCase):
         body = response.get_data(as_text=True)
         self.assertIn('/api/auth/atlassian/login', body)
         self.assertIn('prompt=consent', body)
+
+    def test_sign_in_incomplete_entry_page_shows_the_notice(self):
+        response = self.client.get('/login?reason=sign_in_incomplete')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn('<p class="auth-notice" role="status">' + NOTICE + '</p>', body)
+        self.assertIn(PLAIN, body)
+        self.assertNotIn('prompt=consent', body)
+
+    def test_sign_in_incomplete_forwards_a_signed_in_browser_to_its_share_view(self):
+        forbid_jira_http(self)
+        self._prime_callback()
+        with self._oauth_flow():
+            callback = self.client.get(self.CALLBACK_URL)
+            self.assertEqual((callback.status_code, callback.headers['Location']), (302, '/'))
+            with self.client.session_transaction() as flask_session:
+                flask_session[self.PENDING_VIEW_KEY] = self._fresh_stash(self.SHARE_LINK)
+            first = self.client.get('/login?reason=sign_in_incomplete')
+            self.assertEqual((first.status_code, first.headers['Location']), (302, '/?' + self.SHARE_LINK))
+            self.assertIsNone(self._stash())
+            second = self.client.get('/login?reason=sign_in_incomplete')
+        self.assertEqual((second.status_code, second.headers['Location']), (302, '/'))
+
+    def test_sign_in_incomplete_with_an_incomplete_grant_keeps_forced_consent(self):
+        install_oauth_session(self.client, scope='read:me read:jira-work read:jira-user offline_access')
+        stash = self._fresh_stash(self.SHARE_LINK)
+        with self.client.session_transaction() as flask_session:
+            flask_session[self.PENDING_VIEW_KEY] = stash
+        with self._oauth_flow():
+            response = self.client.get('/login?reason=sign_in_incomplete')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn(NOTICE, body)
+        self.assertIn(CONSENT, body)
+        self.assertNotIn(PLAIN, body)
+        self.assertEqual(self._stash(), stash)
+
+    def test_plain_entry_page_with_an_incomplete_grant_keeps_the_plain_link(self):
+        install_oauth_session(self.client, scope='read:me read:jira-work read:jira-user offline_access')
+        with self._oauth_flow():
+            response = self.client.get('/login')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn(PLAIN, body)
+        self.assertNotIn('prompt=consent', body)
+
+    def test_sign_in_incomplete_with_a_deleted_browser_row_renders_the_card(self):
+        payload = install_oauth_session(self.client)
+        with db_engine.session_scope() as db:
+            db.delete(db.get(models.BrowserSession, payload['db_browser_session_id']))
+        invalidate_auth_status_cache()
+        stash = self._fresh_stash(self.SHARE_LINK)
+        with self.client.session_transaction() as flask_session:
+            flask_session[self.PENDING_VIEW_KEY] = stash
+        response = self.client.get('/login?reason=sign_in_incomplete')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn(NOTICE, body)
+        self.assertIn(PLAIN, body)
+        self.assertEqual(self._stash(), stash)
+
+    def test_sign_in_incomplete_with_a_revoked_connection_renders_the_card(self):
+        payload = install_oauth_session(self.client)
+        with db_engine.session_scope() as db:
+            browser = db.get(models.BrowserSession, payload['db_browser_session_id'])
+            connection = db.get(models.AuthConnection, browser.auth_connection_id)
+            connection.status = 'revoked'
+        invalidate_auth_status_cache()
+        stash = self._fresh_stash(self.SHARE_LINK)
+        with self.client.session_transaction() as flask_session:
+            flask_session[self.PENDING_VIEW_KEY] = stash
+        response = self.client.get('/login?reason=sign_in_incomplete')
+
+        self.assertEqual(response.status_code, 200)
+        body = response.get_data(as_text=True)
+        self.assertIn(NOTICE, body)
+        self.assertIn(PLAIN, body)
+        self.assertEqual(self._stash(), stash)
 
 
     def test_oauth_logout_requires_unsafe_method_header(self):

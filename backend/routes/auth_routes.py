@@ -74,12 +74,13 @@ def auth_entry_page():
         return redirect('/')
     recovery_reason = request.args.get('reason')
     terminal_recovery = recovery_reason in {'session_expired', 'missing_scope'}
+    validation_error_code = None
     if not terminal_recovery and database_storage_enabled() and db_oauth_browser_session_data():
         try:
             current_request_auth_context()
             return redirect(pop_share_view_target(session))
-        except AuthError:
-            pass
+        except AuthError as error:
+            validation_error_code = error.code
     message = ''
     login_url = '/api/auth/atlassian/login'
     if recovery_reason == 'session_expired':
@@ -87,6 +88,14 @@ def auth_entry_page():
     elif recovery_reason == 'missing_scope':
         message = '<p class="auth-notice" role="status">Your Jira sign-in needs updated permissions. Sign in again to continue.</p>'
         login_url = '/api/auth/atlassian/login?prompt=consent'
+    elif recovery_reason == 'sign_in_incomplete':
+        message = (
+            '<p class="auth-notice" role="status">'
+            'Your sign-in did not finish, for example because the page was reloaded '
+            'or sign-in was started again in another tab. Sign in again to continue.</p>'
+        )
+        if validation_error_code == 'missing_oauth_scope':
+            login_url = '/api/auth/atlassian/login?prompt=consent'
     return f"""
 <!doctype html>
 <html lang="en">

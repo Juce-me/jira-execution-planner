@@ -250,7 +250,7 @@ Expected: all PASS, including the unchanged `test_callback_redirects_to_the_stas
 
 | Task | State | Commit | Verification |
 | --- | --- | --- | --- |
-| 0 | not started | none (setup) | |
+| 0 | complete | none (setup) | P = 8, last planning SHA `b9379b2d`. Python 3.14.10 with OpenSSL, Node v20.20.2, and PostgreSQL tools verified. `npm ci`, `npm run build`, and `run tests.test_agents_md_learnings` passed (12 tests). The owned PostgreSQL cluster required local sandbox escalation. |
 | 1 | not started | | |
 | 2 | not started | | |
 | 3 | not started | | |

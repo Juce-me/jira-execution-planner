@@ -8,7 +8,7 @@ from pathlib import Path
 import signal
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, call, patch
 
 from tests import runtime_shards as shards
 
@@ -183,6 +183,7 @@ class RuntimeShardTests(unittest.TestCase):
 
     def test_interrupt_signals_every_owner_and_joins_before_returning(self):
         children, signals = [], []
+        ownership = Mock()
 
         def launch(*args, **kwargs):
             child = FakeProcess(42000 + len(children), None)
@@ -193,15 +194,42 @@ class RuntimeShardTests(unittest.TestCase):
             signals.append((pid, number))
             if number == signal.SIGTERM:
                 children[pid - 42000].returncode = -signal.SIGTERM
+            if number == 0 and children[pid - 42000].waited:
+                raise ProcessLookupError
 
         with patch.object(shards.subprocess, 'Popen', side_effect=launch), \
                 patch.object(shards.os, 'killpg', side_effect=kill), \
                 patch.object(shards.time, 'sleep', side_effect=KeyboardInterrupt), redirect_stdout(io.StringIO()):
-            report = shards.run_shards(self.root, self.modules, workers=2)
+            report = shards.run_shards(self.root, self.modules, workers=2, report_ownership=ownership)
         self.assertEqual(report['status'], 130)
         self.assertFalse(report['complete'])
+        self.assertCountEqual((module for group in report['assignments'] for module in group), self.modules)
+        self.assertEqual(report['test_count'], 0)
         self.assertEqual(signals[:2], [(42000, signal.SIGTERM), (42001, signal.SIGTERM)])
         self.assertTrue(all(child.waited for child in children))
+        self.assertEqual(ownership.call_args_list, [
+            call('backend-worker', 'started', pid=42000, group=42000),
+            call('backend-worker', 'started', pid=42001, group=42001),
+            call('backend-worker', 'stopped', pid=42000, group=42000),
+            call('backend-worker', 'stopped', pid=42001, group=42001),
+        ])
+
+    def test_ownership_logging_failure_still_joins_already_launched_worker(self):
+        worker = FakeProcess(42500, None)
+        ownership = Mock(side_effect=OSError('synthetic ledger failure'))
+
+        def kill(_pid, number):
+            if number == signal.SIGTERM:
+                worker.returncode = -signal.SIGTERM
+            if number == 0:
+                raise ProcessLookupError
+
+        with patch.object(shards.subprocess, 'Popen', return_value=worker), \
+                patch.object(shards.os, 'killpg', side_effect=kill), redirect_stdout(io.StringIO()):
+            report = shards.run_shards(self.root, self.modules, workers=2, report_ownership=ownership)
+        self.assertTrue(report['launch_failed'])
+        self.assertTrue(report['cleanup_failed'])
+        self.assertTrue(worker.waited)
 
     def test_worker_launch_failure_cleans_up_already_started_owner(self):
         child = FakeProcess(43000, None)

@@ -1,6 +1,8 @@
 """Owned-cluster lifecycle checks without starting PostgreSQL."""
 
 from pathlib import Path
+import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -35,6 +37,61 @@ class PostgresClusterLifecycleTests(unittest.TestCase):
                         self.fail('interrupted cluster must not yield')
             self.assertTrue(any(args[-1] == 'stop' for args in calls))
             self.assertFalse(base.exists())
+
+    def test_opt_in_reports_owned_pid_on_interrupted_start_before_cleanup(self):
+        root = Path(__file__).resolve().parents[1]
+        (root / 'tmp').mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='cluster-check-', dir=root / 'tmp') as directory:
+            base = Path(directory) / 'owned'
+            data = (base / 'data').resolve()
+            ledger = Path(directory) / 'ownership.jsonl'
+            ledger.touch()
+
+            def execute(_bin, args, **kwargs):
+                if args[0] == 'initdb':
+                    data.mkdir()
+                elif args[-1] == 'start':
+                    (data / 'postmaster.pid').write_text(f'12345\n{data}\n0\n55499\n')
+                    raise KeyboardInterrupt
+                return subprocess.CompletedProcess(args, 0)
+
+            environment = {'JEP_RUNTIME_OWNERSHIP_LOG': str(ledger.resolve()), 'JEP_RUNTIME_OWNERSHIP_STAGE': 'backend'}
+            identity = cluster.RuntimeProcessIdentity(12345, 1, 12345, (887, 22), os.geteuid(), 'postgres')
+            with patch.dict(os.environ, environment), \
+                    patch.object(cluster, 'postgres_bin_dir', return_value=Path('/synthetic/bin')), \
+                    patch.object(cluster, '_free_port', return_value=55499), \
+                    patch.object(cluster, 'runtime_process_identity', return_value=identity), \
+                    patch.object(cluster, '_run', side_effect=execute):
+                with self.assertRaises(KeyboardInterrupt):
+                    with cluster.owned_cluster(base):
+                        self.fail('interrupted cluster must not yield')
+
+            events = [json.loads(line) for line in ledger.read_text().splitlines()]
+            self.assertEqual([event['state'] for event in events], ['allocated', 'started', 'stopped'])
+            self.assertEqual([(event['pid'], event['port']) for event in events],
+                             [(None, None), (12345, 55499), (12345, 55499)])
+            self.assertEqual(events[1]['birth'], [887, 22])
+            self.assertEqual(events[1]['parent'], 1)
+            for event in events:
+                self.assertEqual(event['reporter'], os.getpid())
+                self.assertEqual(event['directory'], str(base.resolve()))
+                self.assertEqual(event['stage'], 'backend')
+                self.assertEqual(event['kind'], 'postgres')
+                self.assertIsNone(event['group'])
+            self.assertFalse(base.exists())
+
+    def test_start_receipt_requires_a_live_owned_process(self):
+        root = Path(__file__).resolve().parents[1]
+        (root / 'tmp').mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(prefix='cluster-check-', dir=root / 'tmp') as directory:
+            ledger = Path(directory) / 'ownership.jsonl'
+            ledger.touch()
+            environment = {'JEP_RUNTIME_OWNERSHIP_LOG': str(ledger.resolve()), 'JEP_RUNTIME_OWNERSHIP_STAGE': 'backend'}
+            with patch.dict(os.environ, environment), \
+                    patch.object(cluster, 'runtime_process_identity', return_value=None):
+                with self.assertRaises(OSError):
+                    cluster.report_runtime_ownership('backend-worker', 'started', pid=12345, group=12345)
+            self.assertEqual(ledger.read_text(), '')
 
     def test_shutdown_failure_preserves_cluster_inside_the_enclosing_snapshot(self):
         self.assert_shutdown_preserves_snapshot(None)

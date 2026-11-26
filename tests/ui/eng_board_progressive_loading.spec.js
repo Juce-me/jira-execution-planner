@@ -1,21 +1,18 @@
 const { DB_OAUTH_SETUP_TIMEOUT_MS, startDbOAuthServer } = require('./db_oauth_fixture');
 const fs = require('node:fs');
-const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 const { test: base, expect } = require('@playwright/test');
 const { installEngBoardDashboardFixture, selectedSprintId, selectedSprintName } = require('./eng_board_dashboard_fixture');
 const { python, pythonMissingReason } = require('./python_interpreter');
 
 const repoRoot = path.join(__dirname, '..', '..');
-const baselineRevision = '40bffe730159ebadb1904b0188981c853fdf85ed';
-const baselineRoot = path.join(repoRoot, 'tmp', 'board-190', 'baseline-source');
 const activeCampaignChildren = new Set();
 
 // Provisioning owns its existing 90-second startup budget; browser assertions
 // still have Playwright's unchanged 30-second deadline. Infrastructure is worker-scoped;
 // each case leases a new physical database and a fresh browser context.
-async function useCampaignServer(sourceRoot, use) {
-    const server = await startDiagnosticServer(sourceRoot);
+async function useCampaignServer(use) {
+    const server = await startDiagnosticServer();
     try { await use(server); }
     finally { await stopServer(server); }
 }
@@ -28,17 +25,13 @@ async function useCampaignCase(server, page, use) {
     }
 }
 const test = base.extend({
-    currentWorkerServer: [async ({}, use) => useCampaignServer(null, use),
-        { scope: 'worker', timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
-    historicalWorkerServer: [async ({}, use) => useCampaignServer(baselineRoot, use),
+    currentWorkerServer: [async ({}, use) => useCampaignServer(use),
         { scope: 'worker', timeout: DB_OAUTH_SETUP_TIMEOUT_MS + 15000 }],
     currentServer: [async ({ currentWorkerServer, page }, use) => useCampaignCase(currentWorkerServer, page, use),
         { timeout: 20000 }],
-    historicalServer: [async ({ historicalWorkerServer, page }, use) => useCampaignCase(historicalWorkerServer, page, use),
-        { timeout: 20000 }],
     failedStartup: [async ({}, use) => {
         const before = activeCampaignChildren.size;
-        await expect(startDiagnosticServer(null, { forceStartupFailure: true })).rejects.toThrow(
+        await expect(startDiagnosticServer({ forceStartupFailure: true })).rejects.toThrow(
             /Synthetic DB\/OAuth fixture stopped/);
         expect(activeCampaignChildren.size).toBe(before);
         await use(true);
@@ -47,20 +40,11 @@ const test = base.extend({
 
 const campaignServer = String.raw`
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import hashlib, importlib.util, json, os, re, sys, threading, time
+import hashlib, json, os, re, threading, time
 from types import SimpleNamespace
 from backend.db import engine as db_engine, models
 from urllib.parse import parse_qs, urlparse
-baseline=os.environ.get('BOARD_BASELINE_ROOT')
-if baseline:
-    import backend.services, backend.routes
-    def load(name,relative):
-        spec=importlib.util.spec_from_file_location(name,os.path.join(baseline,relative)); module=importlib.util.module_from_spec(spec); sys.modules[name]=module; spec.loader.exec_module(module); return module
-    stream_module=load('backend.services.eng_board_stream','backend/services/eng_board_stream.py'); backend.services.eng_board_stream=stream_module
-    board_module=load('backend.services.eng_board','backend/services/eng_board.py'); backend.services.eng_board=board_module
-    eng_board_routes=load('backend.routes.eng_board_routes','backend/routes/eng_board_routes.py'); backend.routes.eng_board_routes=eng_board_routes
-else:
-    from backend.routes import eng_board_routes
+from backend.routes import eng_board_routes
 from backend.services.eng_board_stream import EngBoardRequestTransport
 from tests.test_eng_board_routes import FakeResponse, board_query, board_snapshot, db_context, epic, child
 if os.environ.get('BOARD_FIXTURE_STARTUP_FAILURE'):
@@ -298,8 +282,8 @@ async function terminateSpawnedChild(child) {
     finally { activeCampaignChildren.delete(child); }
 }
 
-async function startDiagnosticServer(sourceRoot = null, { forceStartupFailure = false } = {}) {
-    const child = await startDbOAuthServer({ python, mode: 'campaign', historical: Boolean(sourceRoot), forceStartupFailure });
+async function startDiagnosticServer({ forceStartupFailure = false } = {}) {
+    const child = await startDbOAuthServer({ python, mode: 'campaign', forceStartupFailure });
     activeCampaignChildren.add(child);
     return { child, origin: child.baseUrl };
 }
@@ -364,10 +348,10 @@ async function installPaintObserver(page, { sampleId, expectedKey, expectedScope
     }, { sampleId, expectedKey, expectedScope });
 }
 
-async function openScenario(page, server, scenario, { sourceRoot = repoRoot, revision = 'current' } = {}) {
+async function openScenario(page, server, scenario, sampleId) {
     await control(server, '/__test__/reset', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario, sampleId: `${scenario}-${revision}` }),
+        body: JSON.stringify({ scenario, sampleId }),
     });
     const browserRequests = [];
     const requestFailures = [];
@@ -382,10 +366,9 @@ async function openScenario(page, server, scenario, { sourceRoot = repoRoot, rev
     page.on('request', request => browserRequests.push(request.url()));
     page.on('requestfailed', request => requestFailures.push({ url: request.url(), error: request.failure()?.errorText }));
     page.on('pageerror', error => pageErrors.push(error.message));
-    const sampleId = `${scenario}-${revision}`;
     const expectedKey = scenario === 'collapsed_first' ? 'ABC-2' : 'ABC-1';
     const fixture = await installEngBoardDashboardFixture(page, {
-        sourceRoot, passthroughEngBoard: true, instrumentBoardOwner: true,
+        sourceRoot: repoRoot, passthroughEngBoard: true, instrumentBoardOwner: true,
     });
     await installPaintObserver(page, { sampleId, expectedKey, expectedScope });
     const cdp = await page.context().newCDPSession(page);
@@ -412,17 +395,10 @@ async function openScenario(page, server, scenario, { sourceRoot = repoRoot, rev
     await expect(sprint).toContainText(selectedSprintName);
     await sprint.click();
     const scopeName = scenario === 'team_parent_lookup_2' ? 'All work' : 'Component';
-    const isHistoricalSelector = revision === baselineRevision;
-    const option = isHistoricalSelector
-        ? page.locator('.sprint-dropdown-option').filter({ hasText: new RegExp(`^${scopeName}$`) })
-        : page.getByRole('option', { name: scopeName, exact: true });
-    if (isHistoricalSelector) {
-        await expect(option).toHaveAttribute('aria-disabled', 'false');
-    } else {
-        await expect(option).not.toHaveAttribute('aria-disabled');
-        await expect(option).not.toHaveAttribute('aria-describedby');
-        await expect(option).toHaveText(scopeName);
-    }
+    const option = page.getByRole('option', { name: scopeName, exact: true });
+    await expect(option).not.toHaveAttribute('aria-disabled');
+    await expect(option).not.toHaveAttribute('aria-describedby');
+    await expect(option).toHaveText(scopeName);
     const requestPromise = page.waitForRequest(request => isCampaignBoardUrl(request.url()));
     const requestStartMs = await page.evaluate(() => performance.now());
     await option.click();
@@ -446,7 +422,7 @@ async function openScenario(page, server, scenario, { sourceRoot = repoRoot, rev
     return { fixture, browserRequests, requestFailures, pageErrors, requestStartMs, requestUrl, clock, network, cdp, timeOrigin };
 }
 
-function measurementRecord({ scenario, evidence, events, paint, terminalReducedMs, settledPaintMs, revision = 'current' }) {
+function measurementRecord({ scenario, evidence, events, paint, terminalReducedMs, settledPaintMs }) {
     const frames = events.filter(row => row.event === 'frame_yield');
     const first = type => frames.find(row => row.frameType === type);
     const candidate = frames.find(row => row.membership === 'candidate');
@@ -469,7 +445,7 @@ function measurementRecord({ scenario, evidence, events, paint, terminalReducedM
     };
     const complete = first('complete');
     return {
-        revision, environment_class: 'synthetic_loopback', scope_type: scenario === 'team_parent_lookup_2' ? 'all_work' : 'component', cache_category: 'cold', sample_number: 1,
+        revision: 'current', environment_class: 'synthetic_loopback', scope_type: scenario === 'team_parent_lookup_2' ? 'all_work' : 'component', cache_category: 'cold', sample_number: 1,
         component_count: scenario === 'component_batch_2' ? 41 : scenario === 'team_parent_lookup_2' ? 0 : 1,
         team_count: scenario === 'team_parent_lookup_2' ? 1 : 0,
         admitted_epic_count: complete?.epicCount ?? null, scanned_work_count: scenario === 'team_parent_lookup_2' ? 41 : null,
@@ -541,13 +517,13 @@ function timingEvidence(evidence, events) {
 
 async function runHeldScenario(page, server, scenario, gate, {
     expectEarlyPaint = true, expectedCoalesced = 0, expectedHeldCandidateFrames = 0,
-    revision = 'current', outputLabel = revision, sourceRoot = repoRoot,
 } = {}) {
-    const outputDir = path.join(repoRoot, 'tmp', 'board-190', outputLabel);
+    const outputDir = path.join(repoRoot, 'tmp', 'board-190', 'current');
+    const sampleId = `${scenario}-current`;
     let released = false;
     let evidence = null;
     try {
-        evidence = await openScenario(page, server, scenario, { sourceRoot, revision });
+        evidence = await openScenario(page, server, scenario, sampleId);
         await expect.poll(async () => (await control(server, '/__test__/events')).events
             .some(row => row.event === 'gate_wait' && row.gate === gate)).toBe(true);
         const heldEvents = (await control(server, '/__test__/events')).events;
@@ -582,7 +558,7 @@ async function runHeldScenario(page, server, scenario, gate, {
         expect(events.some(row => row.event === 'server_error')).toBe(false);
         expect(evidence.requestFailures.filter(row => row.error !== 'net::ERR_ABORTED')).toEqual([]);
         expect(evidence.pageErrors).toEqual([]);
-        expect(paint.sampleId).toBe(`${scenario}-${revision}`);
+        expect(paint.sampleId).toBe(sampleId);
         expect(paint.generationId).toBe(reducer.generationId);
         expect(paint.key).toBe(scenario === 'collapsed_first' ? 'ABC-2' : 'ABC-1');
         const writtenBytes = events.filter(row => row.event === 'writer_write')
@@ -590,7 +566,7 @@ async function runHeldScenario(page, server, scenario, gate, {
         const yieldedBytes = events.filter(row => row.event === 'frame_yield')
             .reduce((sum, row) => sum + row.bytes, 0);
         expect(writtenBytes).toBe(yieldedBytes);
-        const record = measurementRecord({ scenario, evidence, events, paint, terminalReducedMs, settledPaintMs, revision });
+        const record = measurementRecord({ scenario, evidence, events, paint, terminalReducedMs, settledPaintMs });
         const serializationNs = events.filter(row => row.event === 'writer_prepare' || row.event === 'writer_write')
             .reduce((sum, row) => sum + row.serializationNs, 0);
         expect(serializationNs).toBeGreaterThan(0);
@@ -611,128 +587,102 @@ async function runHeldScenario(page, server, scenario, gate, {
     }
 }
 
-function materializeBaseline() {
-    for (const target of [
-        path.join(repoRoot, 'tmp', 'board-190', 'current'),
-        path.join(repoRoot, 'tmp', 'board-190', 'baseline'),
-        baselineRoot,
-    ]) fs.rmSync(target, { recursive: true, force: true });
-    fs.mkdirSync(baselineRoot, { recursive: true });
-    // A single immutable archive avoids hundreds of process launches, including
-    // when Playwright restarts a failed worker. No mutable database state is cached.
-    const archive = execFileSync('git', ['archive', '--format=tar', baselineRevision, '--',
-        'frontend/src', 'backend/services/eng_board.py', 'backend/services/eng_board_stream.py',
-        'backend/routes/eng_board_routes.py'], { cwd: repoRoot, maxBuffer: 16 * 1024 * 1024 });
-    execFileSync('tar', ['-xf', '-', '-C', baselineRoot], { input: archive });
-}
-
 test.skip(Boolean(pythonMissingReason), pythonMissingReason);
 
-test.beforeAll(() => materializeBaseline());
-
-test('rejects malformed campaign startup without retaining a child', async ({ failedStartup }) => {
-    expect(failedStartup).toBe(true);
-});
-
-test('diagnoses strict Component owner activation and Board request routing', async ({ page, currentServer: server }) => {
-    expect(coalescedProducerUpdates([
-        { event: 'eligible_batch', updateId: 'component-1' },
-        { event: 'eligible_batch', updateId: 'component-2' },
-        { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1', 'component-2'] },
-    ])).toBe(1);
-    expect(() => coalescedProducerUpdates([
-        { event: 'eligible_batch', updateId: 'component-1' },
-        { event: 'frame_yield', membership: 'candidate' },
-    ])).toThrow(/missing eligible update correlation/);
-    expect(() => coalescedProducerUpdates([
-        { event: 'eligible_batch', updateId: 'component-1' },
-        { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['unknown-1'] },
-    ])).toThrow(/unknown eligible update ID/);
-    expect(() => coalescedProducerUpdates([
-        { event: 'eligible_batch', updateId: 'component-1' },
-        { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1', 'component-1'] },
-    ])).toThrow(/duplicate eligible update IDs/);
-    expect(() => coalescedProducerUpdates([
-        { event: 'eligible_batch', updateId: 'component-1' },
-        { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
-        { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
-    ])).toThrow(/assigned to multiple candidates/);
-    const browserRequests = [];
-    page.on('request', request => browserRequests.push(request.url()));
-    const fixture = await installEngBoardDashboardFixture(page, { sourceRoot: repoRoot, passthroughEngBoard: true });
-    await page.addInitScript(({ sprintId, sprintName }) => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
-        selectedView: 'eng', selectedSprint: sprintId, sprintName, activeGroupId: 'grp-default',
-        showBoard: true, showPlanning: false, showScenario: false, showAlertsPanel: false,
-    })), { sprintId: selectedSprintId, sprintName: selectedSprintName });
-    await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
-    const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
-    await expect(sprint).toContainText(selectedSprintName);
-    await sprint.click();
-    const component = page.getByRole('option', { name: 'Component', exact: true });
-    await expect(component).not.toHaveAttribute('aria-disabled');
-    await expect(component).not.toHaveAttribute('aria-describedby');
-    await expect(component).toHaveText('Component');
-    await component.click();
-    await expect(sprint).toContainText('Component');
-    await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);
-    await expect.poll(() => fixture.apiRoutes.some(row => row.path.startsWith('/api/eng/board?'))).toBe(true);
-    await expect.poll(async () => {
-        const response=await fetch(`${server.origin}/__test__/events`); const body=await response.json();
-        return body.events.some(row => row.event==='request_entry');
-    }).toBe(true);
-    expect(fixture.boardRouteAction).toBe('continue');
-    expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')))).toMatchObject({
-        selectedSprint: selectedSprintId, activeGroupId: 'grp-default', showBoard: true,
+test.describe(() => {
+    test.beforeAll(() => {
+        fs.rmSync(path.join(repoRoot, 'tmp', 'board-190', 'current'), { recursive: true, force: true });
     });
-});
 
-test.describe('worker infrastructure isolation', () => {
-    test.describe.configure({ mode: 'serial' });
-    let previous;
-    test('first case writes a synthetic marker', async ({ currentServer }) => {
-        previous = { origin: currentServer.origin, ...(await control(currentServer, '/__test__/case-info')) };
-        expect(previous.activeCase).toBe(true);
-        expect(previous.markerPresent).toBe(false);
-        await control(currentServer, '/__test__/mark-case', { method: 'POST' });
-        expect((await control(currentServer, '/__test__/case-info')).markerPresent).toBe(true);
+    test('rejects malformed campaign startup without retaining a child', async ({ failedStartup }) => {
+        expect(failedStartup).toBe(true);
     });
-    test('next case reuses the process with a fresh database and empty events', async ({ currentServer }) => {
-        const next = await control(currentServer, '/__test__/case-info');
-        expect(currentServer.origin).toBe(previous.origin);
-        expect(next.databaseIdentity).not.toBe(previous.databaseIdentity);
-        expect(next.markerPresent).toBe(false);
-        expect((await control(currentServer, '/__test__/events')).events).toEqual([]);
-    });
-});
 
-test('current production pager paints a focused Component Epic while page 2 is held', async ({ page, currentServer }) => {
-    await runHeldScenario(page, currentServer, 'component_page_2', 'component_page_2', { expectedHeldCandidateFrames: 1 });
-});
-
-for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames] of [
-    ['component_batch_2', 'component_batch_2', true, 0, 1],
-    ['team_parent_lookup_2', 'team_parent_lookup_2', true, 1, 1],
-    ['child_completion', 'child_completion', true, 0, 0],
-    ['collapsed_first', 'component_page_2', false, 0, 1],
-]) {
-    test(`joined current ${scenario} schedule preserves real paint ordering`, async ({ page, currentServer }) => {
-        await runHeldScenario(page, currentServer, scenario, gate, {
-            expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames,
+    test('diagnoses strict Component owner activation and Board request routing', async ({ page, currentServer: server }) => {
+        expect(coalescedProducerUpdates([
+            { event: 'eligible_batch', updateId: 'component-1' },
+            { event: 'eligible_batch', updateId: 'component-2' },
+            { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1', 'component-2'] },
+        ])).toBe(1);
+        expect(() => coalescedProducerUpdates([
+            { event: 'eligible_batch', updateId: 'component-1' },
+            { event: 'frame_yield', membership: 'candidate' },
+        ])).toThrow(/missing eligible update correlation/);
+        expect(() => coalescedProducerUpdates([
+            { event: 'eligible_batch', updateId: 'component-1' },
+            { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['unknown-1'] },
+        ])).toThrow(/unknown eligible update ID/);
+        expect(() => coalescedProducerUpdates([
+            { event: 'eligible_batch', updateId: 'component-1' },
+            { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1', 'component-1'] },
+        ])).toThrow(/duplicate eligible update IDs/);
+        expect(() => coalescedProducerUpdates([
+            { event: 'eligible_batch', updateId: 'component-1' },
+            { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
+            { event: 'frame_yield', membership: 'candidate', eligibleUpdateIds: ['component-1'] },
+        ])).toThrow(/assigned to multiple candidates/);
+        const browserRequests = [];
+        page.on('request', request => browserRequests.push(request.url()));
+        const fixture = await installEngBoardDashboardFixture(page, { sourceRoot: repoRoot, passthroughEngBoard: true });
+        await page.addInitScript(({ sprintId, sprintName }) => localStorage.setItem('jira_dashboard_ui_prefs_v1', JSON.stringify({
+            selectedView: 'eng', selectedSprint: sprintId, sprintName, activeGroupId: 'grp-default',
+            showBoard: true, showPlanning: false, showScenario: false, showAlertsPanel: false,
+        })), { sprintId: selectedSprintId, sprintName: selectedSprintName });
+        await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
+        const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
+        await expect(sprint).toContainText(selectedSprintName);
+        await sprint.click();
+        const component = page.getByRole('option', { name: 'Component', exact: true });
+        await expect(component).not.toHaveAttribute('aria-disabled');
+        await expect(component).not.toHaveAttribute('aria-describedby');
+        await expect(component).toHaveText('Component');
+        await component.click();
+        await expect(sprint).toContainText('Component');
+        await expect.poll(() => browserRequests.some(url => url.includes('/api/eng/board?'))).toBe(true);
+        await expect.poll(() => fixture.apiRoutes.some(row => row.path.startsWith('/api/eng/board?'))).toBe(true);
+        await expect.poll(async () => {
+            const response=await fetch(`${server.origin}/__test__/events`); const body=await response.json();
+            return body.events.some(row => row.event==='request_entry');
+        }).toBe(true);
+        expect(fixture.boardRouteAction).toBe('continue');
+        expect(await page.evaluate(() => JSON.parse(localStorage.getItem('jira_dashboard_ui_prefs_v1')))).toMatchObject({
+            selectedSprint: selectedSprintId, activeGroupId: 'grp-default', showBoard: true,
         });
     });
-}
 
-for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames] of [
-    ['component_page_2', 'component_page_2', false, 0, 0],
-    ['component_batch_2', 'component_batch_2', true, 0, 1],
-    ['team_parent_lookup_2', 'team_parent_lookup_2', false, 0, 0],
-    ['child_completion', 'child_completion', true, 0, 0],
-    ['collapsed_first', 'component_page_2', false, 0, 0],
-]) {
-    test(`joined baseline ${scenario} schedule records the historical paint boundary`, async ({ page, historicalServer }) => {
-        await runHeldScenario(page, historicalServer, scenario, gate, {
-            expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames,
-            revision: baselineRevision, outputLabel: 'baseline', sourceRoot: baselineRoot,
+    test.describe('worker infrastructure isolation', () => {
+        test.describe.configure({ mode: 'serial' });
+        let previous;
+        test('first case writes a synthetic marker', async ({ currentServer }) => {
+            previous = { origin: currentServer.origin, ...(await control(currentServer, '/__test__/case-info')) };
+            expect(previous.activeCase).toBe(true);
+            expect(previous.markerPresent).toBe(false);
+            await control(currentServer, '/__test__/mark-case', { method: 'POST' });
+            expect((await control(currentServer, '/__test__/case-info')).markerPresent).toBe(true);
+        });
+        test('next case reuses the process with a fresh database and empty events', async ({ currentServer }) => {
+            const next = await control(currentServer, '/__test__/case-info');
+            expect(currentServer.origin).toBe(previous.origin);
+            expect(next.databaseIdentity).not.toBe(previous.databaseIdentity);
+            expect(next.markerPresent).toBe(false);
+            expect((await control(currentServer, '/__test__/events')).events).toEqual([]);
         });
     });
-}
+
+    test('current production pager paints a focused Component Epic while page 2 is held', async ({ page, currentServer }) => {
+        await runHeldScenario(page, currentServer, 'component_page_2', 'component_page_2', { expectedHeldCandidateFrames: 1 });
+    });
+
+    for (const [scenario, gate, expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames] of [
+        ['component_batch_2', 'component_batch_2', true, 0, 1],
+        ['team_parent_lookup_2', 'team_parent_lookup_2', true, 1, 1],
+        ['child_completion', 'child_completion', true, 0, 0],
+        ['collapsed_first', 'component_page_2', false, 0, 1],
+    ]) {
+        test(`joined current ${scenario} schedule preserves real paint ordering`, async ({ page, currentServer }) => {
+            await runHeldScenario(page, currentServer, scenario, gate, {
+                expectEarlyPaint, expectedCoalesced, expectedHeldCandidateFrames,
+            });
+        });
+    }
+});

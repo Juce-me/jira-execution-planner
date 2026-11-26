@@ -378,11 +378,23 @@ def safe_output(value, postgres=None):
     return re.sub(r"postgres(?:ql)?(?:\+[a-z0-9]+)?://[^\s\"']+", "[test database]", value)
 
 
-def run_test_process(command, snapshot, env, postgres=None):
+def run_test_process(command, snapshot, env, postgres=None, *, report_ownership=None):
     """Own the test process group until it exits, including on interruption."""
+    def report_end(child):
+        if report_ownership is not None:
+            try:
+                os.killpg(child.pid, 0)
+            except ProcessLookupError:
+                state = 'stopped'
+            else:
+                state = 'failed'
+            report_ownership('backend-test-child', state, pid=child.pid, group=child.pid)
+
     with subprocess.Popen(command, cwd=snapshot, env=env, stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT, text=True, start_new_session=True) as child:
         try:
+            if report_ownership is not None:
+                report_ownership('backend-test-child', 'started', pid=child.pid, group=child.pid)
             if postgres:
                 output, _ = child.communicate()
                 print(safe_output(output, postgres), end='', flush=True)
@@ -407,10 +419,13 @@ def run_test_process(command, snapshot, env, postgres=None):
                 except ProcessLookupError:
                     pass
                 child.wait()
+            report_end(child)
             raise
         try:
             os.killpg(child.pid, 0)
         except ProcessLookupError:
+            if report_ownership is not None:
+                report_ownership('backend-test-child', 'stopped', pid=child.pid, group=child.pid)
             return child.returncode
         # A successful leader does not make abandoned background tests safe.
         # Dispose its owned process group before the caller stops PostgreSQL.
@@ -423,6 +438,7 @@ def run_test_process(command, snapshot, env, postgres=None):
             os.killpg(child.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+        report_end(child)
         return 1
 
 
@@ -485,6 +501,8 @@ def main(argv=None):
     try:
         pg = approved_postgres(args.postgres_config) if args.postgres else None
         node = approved_node(args.node)
+        clusters = load_cluster_module() if os.environ.get('JEP_RUNTIME_OWNERSHIP_LOG') else None
+        ownership_options = {'report_ownership': clusters.report_runtime_ownership} if clusters is not None else {}
         if args.postgres_config and not args.postgres:
             raise IsolationError("A PostgreSQL descriptor requires --postgres.")
         if args.workers > 1:
@@ -492,7 +510,8 @@ def main(argv=None):
                 raise IsolationError('Parallel workers require separately owned clusters, not an external descriptor.')
             modules = reviewed_test_modules(ROOT, args.include, args.modules)
             report = load_shard_module().run_shards(ROOT, modules, workers=args.workers,
-                                                   include_new=args.include, node=node, timings=args.timings)
+                                                   include_new=args.include, node=node, timings=args.timings,
+                                                   **ownership_options)
             return report['status']
         scratch = ROOT / "tmp"
         scratch.mkdir(exist_ok=True)
@@ -509,7 +528,7 @@ def main(argv=None):
                 cluster = None
                 phase_started = time.perf_counter()
                 if not pg:
-                    clusters = load_cluster_module()
+                    clusters = clusters or load_cluster_module()
                     try:
                         cluster = stack.enter_context(clusters.owned_cluster(snapshot / "tmp/isolated-runtime/postgres"))
                     except clusters.ClusterError as error:
@@ -523,7 +542,7 @@ def main(argv=None):
                     command.append('--timings')
                 command.extend(args.modules)
                 phase_started = time.perf_counter()
-                status = run_test_process(command, snapshot, env, pg)
+                status = run_test_process(command, snapshot, env, pg, **ownership_options)
                 phases['child'] = time.perf_counter() - phase_started
             if pg and status:
                 print("PostgreSQL test failed; connection diagnostics withheld.", file=sys.stderr)

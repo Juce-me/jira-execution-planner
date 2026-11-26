@@ -405,7 +405,9 @@ test('v2 stored capsules reject expiry, future clocks, principal mismatch and ex
         assert.equal(storage.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
     }
     const expired = createStorage(JSON.stringify({ ...value, capturedAt: 1000 }));
+    assert.equal(api.readAuthResumeState(expired, value.principal, 1000 + api.AUTH_RESUME_TTL_MS).version, 2);
     assert.equal(api.readAuthResumeState(expired, value.principal, 1001 + api.AUTH_RESUME_TTL_MS), null);
+    assert.equal(expired.getItem(api.AUTH_RESUME_STORAGE_KEY), null);
 });
 
 test('v2 valid capsules retain the first capture and storage failures preserve prior bytes', () => {

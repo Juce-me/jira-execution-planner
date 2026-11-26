@@ -106,7 +106,8 @@ def _read_summary(log):
     return count, verdict, expected
 
 
-def run_shards(root, modules, workers=1, include_new=(), node=None, timings=False, weights=None):
+def run_shards(root, modules, workers=1, include_new=(), node=None, timings=False, weights=None,
+               report_ownership=None):
     """Run isolated workers and return source-safe inventory/timing/result data.
 
     ``complete`` means every assigned command ended with a unittest summary;
@@ -127,6 +128,13 @@ def run_shards(root, modules, workers=1, include_new=(), node=None, timings=Fals
     def interrupt(_number, _frame):
         if not stopping:
             raise KeyboardInterrupt
+
+    def report_end(worker):
+        if report_ownership is not None and not worker.get('ownership_reported'):
+            child = worker['process']
+            state = 'failed' if _group_exists(child) else 'stopped'
+            report_ownership('backend-worker', state, pid=child.pid, group=child.pid)
+            worker['ownership_reported'] = True
 
     for number in (signal.SIGTERM, signal.SIGINT):
         previous[number] = signal.signal(number, interrupt)
@@ -151,6 +159,8 @@ def run_shards(root, modules, workers=1, include_new=(), node=None, timings=Fals
             running.append({'process': child, 'stream': stream, 'log': log, 'started': time.monotonic(),
                             'index': index + 1, 'modules': partition, 'exit_code': None,
                             'orphaned': False, 'seconds': None})
+            if report_ownership is not None:
+                report_ownership('backend-worker', 'started', pid=child.pid, group=child.pid)
         while any(worker['seconds'] is None for worker in running):
             for worker in running:
                 if worker['seconds'] is not None:
@@ -165,6 +175,7 @@ def run_shards(root, modules, workers=1, include_new=(), node=None, timings=Fals
                     _signal_group(worker['process'], signal.SIGKILL)
                     worker['process'].wait()
                 worker['seconds'] = time.monotonic() - worker['started']
+                report_end(worker)
                 print(f"Runtime shard {worker['index']}/{len(assignments)} finished; modules={len(worker['modules'])}", flush=True)
             if any(worker['seconds'] is None for worker in running):
                 time.sleep(0.05)
@@ -184,6 +195,10 @@ def run_shards(root, modules, workers=1, include_new=(), node=None, timings=Fals
                 worker['stream'].close()
                 if worker['seconds'] is None:
                     worker['seconds'] = time.monotonic() - worker['started']
+                try:
+                    report_end(worker)
+                except OSError:
+                    cleanup_failed = True
             for number, handler in previous.items():
                 signal.signal(number, handler)
     records = []

@@ -1,4 +1,4 @@
-"""Pure orchestration checks: complete coverage and deadline failure semantics."""
+"""Pure orchestration checks for uncapped verification and owned cleanup."""
 
 from contextlib import redirect_stdout
 import importlib.util
@@ -23,65 +23,54 @@ class VerificationGateTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name)
 
-    def run_gate(self, statuses, seconds, **options):
+    def run_gate(self, statuses, seconds):
         now = [0.0]
         self.timeouts = []
 
         def stage(*args, **kwargs):
-            self.timeouts.append(kwargs['timeout'])
-            now[0] += seconds.pop(0)
+            self.timeouts.append(kwargs.get('timeout'))
+            duration = seconds.pop(0)
+            now[0] += duration
             status = statuses.pop(0)
-            return {'status': status, 'exitCode': 0 if status == 'passed' else 124, 'seconds': now[0]}
+            return {'status': status, 'exitCode': 0 if status == 'passed' else 1, 'seconds': duration}
 
         stages = [(name, ['synthetic-command']) for name in ('build', 'backend', 'frontend-unit', 'chromium')]
         output = io.StringIO()
         with patch.object(verify, 'run_stage', side_effect=stage), redirect_stdout(output):
-            report = verify.run_gate(stages, root=ROOT, environment={}, directory=self.directory, clock=lambda: now[0], **options)
+            report = verify.run_gate(stages, root=ROOT, environment={}, directory=self.directory, clock=lambda: now[0])
         self.output = output.getvalue()
         return report
 
-    def test_each_required_stage_runs_once_and_total_includes_all_stages(self):
-        report = self.run_gate(['passed'] * 4, [1, 2, 3, 4])
+    def test_long_verification_runs_all_stages_once_and_records_elapsed_time(self):
+        report = self.run_gate(['passed'] * 4, [2, 1200, 20, 1200])
+        self.assertEqual(self.timeouts, [None] * 4)
+        self.assertTrue(report['complete'])
         self.assertTrue(report['passed'])
-        self.assertTrue(report['deadlineEnforced'])
-        self.assertEqual(report['seconds'], 10)
+        self.assertFalse(report['deadlineEnforced'])
+        self.assertEqual(report['seconds'], 2422)
         self.assertEqual([row['name'] for row in report['stages']], ['build', 'backend', 'frontend-unit', 'chromium'])
+        self.assertEqual(report['notRun'], [])
+        self.assertEqual(json.loads((self.directory / 'result.json').read_text()), report)
+        self.assertIn('Complete verification: passed; 2422.000s', self.output)
 
-    def test_without_deadline_every_stage_runs_to_completion_after_a_failure(self):
-        report = self.run_gate(['passed', 'failed', 'passed', 'failed'], [1, 900, 10, 900], enforce_deadline=False)
+    def test_verification_finishes_later_stages_after_a_failure(self):
+        report = self.run_gate(['passed', 'failed', 'passed', 'failed'], [1, 900, 10, 900])
         self.assertEqual(self.timeouts, [None] * 4)
         self.assertEqual([row['name'] for row in report['stages']], ['build', 'backend', 'frontend-unit', 'chromium'])
         self.assertEqual(report['notRun'], [])
         self.assertFalse(report['deadlineEnforced'])
         self.assertFalse(report['complete'])
         self.assertFalse(report['passed'])
-        self.assertIn('failed stages: backend, chromium', self.output)
+        self.assertIn('Failed stages: backend, chromium', self.output)
 
-    def test_without_deadline_a_complete_slow_run_passes_and_reports_the_overrun(self):
-        report = self.run_gate(['passed'] * 4, [100, 1500, 20, 180], enforce_deadline=False)
-        self.assertTrue(report['complete'])
-        self.assertTrue(report['passed'])
-        self.assertFalse(report['withinBudget'])
-        self.assertIn('600s target exceeded by 1200.000s', self.output)
-
-    def test_timed_out_backend_cannot_pass_or_claim_unrun_browser_coverage(self):
-        report = self.run_gate(['passed', 'deadline-exceeded'], [1, 600])
-        self.assertFalse(report['passed'])
-        self.assertFalse(report['complete'])
-        self.assertEqual(report['notRun'], ['frontend-unit', 'chromium'])
-        self.assertEqual(json.loads((self.directory / 'result.json').read_text()), report)
-
-    def test_complete_functional_success_above_budget_still_fails_performance(self):
-        report = self.run_gate(['passed'] * 4, [100, 100, 100, 301])
-        self.assertTrue(report['complete'])
-        self.assertFalse(report['withinBudget'])
-        self.assertFalse(report['passed'])
-
-    def test_stage_not_started_at_deadline_remains_in_not_run_inventory(self):
-        report = self.run_gate(['passed'] * 3, [200, 200, 200])
-        self.assertFalse(report['complete'])
-        self.assertEqual(report['stages'][-1]['status'], 'not-run-deadline-exceeded')
-        self.assertEqual(report['notRun'], ['chromium'])
+    def test_stage_waits_without_a_timeout_and_cleans_up_on_interrupt(self):
+        with patch.object(verify.subprocess, 'Popen') as launch, patch.object(verify, 'stop_process_group') as stop:
+            child = launch.return_value.__enter__.return_value
+            child.wait.side_effect = KeyboardInterrupt
+            with self.assertRaises(KeyboardInterrupt):
+                verify.run_stage(['synthetic-command'], root=ROOT, environment={}, log=self.directory / 'stage.log')
+        child.wait.assert_called_once_with()
+        stop.assert_called_once_with(child)
 
     def test_interrupt_records_incomplete_result_after_stage_cleanup(self):
         with patch.object(verify, 'run_stage', side_effect=KeyboardInterrupt), redirect_stdout(io.StringIO()):
@@ -89,6 +78,7 @@ class VerificationGateTests(unittest.TestCase):
         self.assertTrue(report['interrupted'])
         self.assertFalse(report['complete'])
         self.assertFalse(report['passed'])
+        self.assertEqual(report['notRun'], ['build'])
 
     def test_shared_worktree_slot_rejects_overlapping_gate_and_releases_after_failure(self):
         with self.assertRaisesRegex(RuntimeError, 'synthetic failure'):

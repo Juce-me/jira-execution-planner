@@ -261,14 +261,14 @@ Chromium itself is reused per worker. Compatible dashboard fixture bundles are a
 Run the full delivery check with:
 
 ```bash
-make verify ARGS=--no-deadline
+make verify
 ```
 
-Every stage runs to completion, including after a failed stage. The runner reports elapsed time against the 600-second target and records logs and `result.json` under gitignored `tmp/verification/`. Use Node 20 and the documented PostgreSQL binaries with dependencies installed. A repository-common advisory slot serializes cooperating full runs across worktrees. Coordinate older or custom runners separately to avoid CPU, disk, and database contention.
+Full verification has no overall cutoff. Later stages run after a nonzero stage exit and every required stage must pass. Individual test and fixture timeouts and bounded owned-process cleanup still apply. The runner records elapsed time, logs and `result.json` under gitignored `tmp/verification/`. Use Node 20 and the documented PostgreSQL binaries with dependencies installed. A repository-common advisory slot serializes cooperating full runs across worktrees. Coordinate older or custom runners separately to avoid CPU, disk, and database contention.
 
-Plain `make verify` checks the ten-minute runtime budget and reserves 90 seconds for owned-process and database cleanup. A timed-out or incomplete budget run fails. Two previous budget runs ended before frontend units or Chromium (527.762s and 518.790s total). A historical no-deadline run took 31m 28s and reported one backend source-contract failure and 20 Chromium failures. The ten-minute target is unmet.
+Existing `make verify ARGS=--no-deadline` invocations are equivalent to `make verify`.
 
-Use `make verify ARGS="--no-deadline --backend-workers 4 --workers 4"` to set backend and Chromium concurrency explicitly. Each accepts one through eight. Backend workers own separate snapshots and PostgreSQL clusters, and cases within each worker run sequentially. Audited ordinary fixtures use fresh schemas in a process-owned database, while empty, migration, history, and race fixtures retain physical database isolation. The 20-case schema pilot reduced median complete cold-process time by 26.3% before the final checked-out-connection survivor guard was added. The final implementation and full combined run have no measured gain claim yet.
+Use `make verify ARGS="--backend-workers 4 --workers 4"` to set backend and Chromium concurrency explicitly. Each accepts one through eight. Backend workers own separate snapshots and PostgreSQL clusters, and cases within each worker run sequentially. Audited ordinary fixtures use fresh schemas in a process-owned database, while empty, migration, history, and race fixtures retain physical database isolation. The 20-case schema pilot reduced median complete cold-process time by 26.3% before the final checked-out-connection survivor guard was added. The final implementation and full combined run have no measured gain claim yet.
 
 Add `--headed` to `ARGS` when glyph or geometry acceptance needs visible Chromium. Add repeated `--include` arguments for reviewed untracked sources and tests. Use `make test-security` for a focused security check. For backend diagnosis, add `--timings` to `tests/run_isolated_runtime_tests.py`. Module case totals include per-test setup and cleanup, and enclosing process time includes discovery, imports, and class and module fixtures. To run only the browser suite, use `npm run build && npx playwright test tests/ui --browser=chromium --workers=4`.
 

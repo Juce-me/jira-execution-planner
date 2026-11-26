@@ -87,10 +87,10 @@ These rules override later guidance in this file:
 
 ### Full delivery verification
 
-- Run `make verify ARGS=--no-deadline` before push and PR or when the operator explicitly requests the full suite. It builds once, then runs the isolated PostgreSQL backend suite (including security and race tests), frontend unit tests, and desktop Chromium. Every stage runs to completion, including after a failed stage. All stages must pass for publication. The runner reports elapsed time against the 600-second target and records any overrun in its output. Logs and `result.json` are under gitignored `tmp/verification/`.
-- Reserve plain `make verify` for measuring the 600-second budget, which includes setup and owned-process cleanup. A timed-out or incomplete budget run cannot establish full-suite coverage.
+- Run `make verify` before push and PR or when the operator explicitly requests the full suite. It builds once, then runs the isolated PostgreSQL backend suite (including security and race tests), frontend unit tests, and desktop Chromium. Later stages run after a nonzero stage exit. Every required stage must pass for publication. Logs, elapsed times, and `result.json` are under gitignored `tmp/verification/`.
+- Full verification has no overall cutoff. Individual test and fixture timeouts and bounded owned-process cleanup still apply. Run the full backend and browser stages sequentially.
 - Use Node 20 and PostgreSQL server binaries (`initdb`, `pg_ctl`, `createdb`) on PATH or in `JEP_TEST_PG_BIN`. Chromium specs that start Flask use `.venv/bin/python` or `JEP_TEST_PYTHON` in a worktree without a virtual environment. Chromium is the required desktop browser. Add `--headed` to `ARGS` for visual acceptance that requires a visible browser.
-- The full runner defaults to four backend and four Chromium workers. For eight each use `make verify ARGS="--no-deadline --backend-workers 8 --workers 8"`. Add repeated `--include` flags for reviewed untracked sources and tests. Serialize full runs across worktrees and leave other tasks' processes alone. Keep browser contexts and mutable database state isolated while reusing immutable compiled fixtures per worker. For backend diagnosis, use the isolated runner's `--timings` and existing redaction. Keep PostgreSQL output summary-only.
+- The full runner defaults to four backend and four Chromium workers. For eight each use `make verify ARGS="--backend-workers 8 --workers 8"`. Add repeated `--include` flags for reviewed untracked sources and tests. Serialize full runs across worktrees and leave other tasks' processes alone. Keep browser contexts and mutable database state isolated while reusing immutable compiled fixtures per worker. For backend diagnosis, use the isolated runner's `--timings` and existing redaction. Keep PostgreSQL output summary-only.
 
 ---
 
@@ -495,8 +495,10 @@ When the user corrects your approach, append a one-line rule here before ending 
 - When asked to remove selector status labels, preserve all existing choices; verify requested Component/Allocation switching end to end before reporting it as working.
 - Support and verify desktop laptop and wide-screen layouts only. Retire mobile-only cases and phases, including `JEP_TEST_MOBILE` runs, while preserving desktop and unique functional coverage.
 
-- Use `make verify ARGS=--no-deadline` for full delivery verification. The bounded command measures the runtime budget and can stop before later suites run.
+- Use `make verify` for full delivery verification. Record actual elapsed time and stage verdicts.
 
 - For Chromium runtime work, optimize suite launch and shared fixture lifetimes before tuning individual test waits; keep browser contexts and mutable case data isolated.
+
+- Before running a backend/Chromium overlap pilot, record operator approval and name the driver that holds the shared verification lease through child cleanup.
 
 - Exclude retired GATE-05 (Home project writes) from startup gate checks; do not request a disposable project or probe PASS to reopen it.

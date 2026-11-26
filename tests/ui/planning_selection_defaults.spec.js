@@ -1,4 +1,5 @@
 const path = require('node:path');
+const vm = require('node:vm');
 const esbuild = require('./fixture_bundles');
 const { test, expect } = require('@playwright/test');
 const { expectConfigBootstrapHoldsJiraWork, installDashboardShell } = require('./epm_view_fixture');
@@ -15,6 +16,7 @@ const secondFutureSprintName = '2026Q3 Sprint 2';
 const completedSprintId = 2001;
 const completedSprintName = '2026Q1 Sprint 9';
 const groupTeamIds = ['team-alpha'];
+const livePrincipal = { workspaceId: 'workspace-test', viewConfigId: 'view-test' };
 let dashboardJs;
 
 test.beforeAll(() => {
@@ -188,8 +190,7 @@ async function installPlanningFixture(page, {
                 userCanEditSettings: true,
                 environmentConfigExists: true,
                 viewConfig: {
-                    workspaceId: 'workspace-test',
-                    viewConfigId: 'view-test',
+                    ...livePrincipal,
                     version: 1,
                     view: {
                         selectedView: 'eng',
@@ -298,7 +299,7 @@ async function seedPlanningAuthResume(page, {
     sprintId = futureSprintId,
     engMode = 'planning',
     selectionMode = 'manual',
-    principal = { workspaceId: 'workspace-test', viewConfigId: 'view-test' },
+    principal = livePrincipal,
     capturedAtOffsetMs = 0,
     settingsOpen = false,
     settingsTab = 'teams',
@@ -309,34 +310,18 @@ async function seedPlanningAuthResume(page, {
 } = {}) {
     const sharedDraft = draft && { inclusionChanges: draft.map(({ key, included, baseRevision }) => ({ issueId: storyId(key), included, baseRevision })),
         initializePlan: false, basePlanRevision: 1, baseScopeProof: `synthetic-plan:group-alpha:${sprintId}`, baseSchemaRevision: 0, baseViewRevision: 0, schemaChanges: [], cellChanges: [] };
-    await page.addInitScript(({ sprintId, selectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft }) => {
+    const view = { selectedView: 'eng', activeGroupId: 'group-alpha', selectedSprint: String(sprintId), engMode, settingsOpen, settingsTab };
+    const planning = sharedDraft
+        ? { scope: { workspaceId: principal.workspaceId, groupId: 'group-alpha', sprintId: String(sprintId), namespaceId: null },
+            selectedTeams: ['team-alpha'], draft: sharedDraft, submission: null }
+        : { scopeKey: `planning::${sprintId}::group-alpha`, selectedTaskKeys, selectedTeams: ['team-alpha'], selectionMode };
+    const capsule = { version: sharedDraft ? 2 : 1, capturedAt: Date.now() + capturedAtOffsetMs, principal, view, planning };
+    const raw = JSON.stringify(capsule);
+    await page.addInitScript(({ sprintId, raw, capturedAt, seedUiPrefs, seedRecoveryAttempt }) => {
         const seedMarker = 'planning_auth_resume_fixture_seeded';
         if (window.sessionStorage.getItem(seedMarker)) return;
         window.sessionStorage.setItem(seedMarker, 'true');
-        const scopeKey = `planning::${sprintId}::group-alpha`;
-        const capturedAt = Date.now() + capturedAtOffsetMs;
-        const view = { selectedView: 'eng', activeGroupId: 'group-alpha', selectedSprint: String(sprintId), engMode, settingsOpen, settingsTab };
-        if (sharedDraft) window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({ version: 2, capturedAt, principal, view,
-            planning: { scope: { workspaceId: 'workspace-test', groupId: 'group-alpha', sprintId: String(sprintId), namespaceId: null }, selectedTeams: ['team-alpha'], draft: sharedDraft, submission: null } }));
-        else window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', JSON.stringify({
-            version: 1,
-            capturedAt,
-            principal,
-            view: {
-                selectedView: 'eng',
-                activeGroupId: 'group-alpha',
-                selectedSprint: String(sprintId),
-                engMode,
-                settingsOpen,
-                settingsTab,
-            },
-            planning: {
-                scopeKey,
-                selectedTaskKeys,
-                selectedTeams: ['team-alpha'],
-                selectionMode,
-            },
-        }));
+        window.sessionStorage.setItem('jira_dashboard_auth_resume_v1', raw);
         if (seedRecoveryAttempt) {
             const attemptId = 'attempt-planning-hydration';
             window.localStorage.setItem('jira_dashboard_auth_recovery_lease_v1', JSON.stringify({
@@ -356,7 +341,8 @@ async function seedPlanningAuthResume(page, {
                 showPlanning: false,
             }));
         }
-    }, { sprintId, selectedTaskKeys, engMode, selectionMode, principal, capturedAtOffsetMs, settingsOpen, settingsTab, seedUiPrefs, seedRecoveryAttempt, sharedDraft });
+    }, { sprintId, raw, capturedAt: capsule.capturedAt, seedUiPrefs, seedRecoveryAttempt });
+    return raw;
 }
 
 async function openFuturePlanning(page) {
@@ -697,14 +683,26 @@ test('matching auth resume overrides shared Planning state after exact-scope hyd
 });
 
 test('a principal-mismatched capsule is rejected before shell or Planning restore', async ({ page }) => {
-    await seedPlanningAuthResume(page, {
-        principal: { workspaceId: 'workspace-other', viewConfigId: 'view-other' }, draft: swapDraft,
-    });
+    const owner = { workspaceId: 'workspace-other', viewConfigId: 'view-other' };
+    const raw = await seedPlanningAuthResume(page, { principal: owner, draft: swapDraft });
+    const source = esbuild.buildSync({
+        entryPoints: [path.join(repoRoot, 'frontend', 'src', 'api', 'authResumeState.js')],
+        bundle: true, write: false, format: 'cjs', platform: 'browser',
+    }).outputFiles[0].text;
+    const module = { exports: {} };
+    vm.runInNewContext(source, { module, TextEncoder });
+    const { AUTH_RESUME_STORAGE_KEY, readAuthResumeState } = module.exports;
+    let stored = raw;
+    const readerStorage = { getItem: () => stored, removeItem: () => { stored = null; } };
+    expect(readAuthResumeState(readerStorage, owner)).toEqual(JSON.parse(raw));
+    expect(readAuthResumeState(readerStorage, livePrincipal)).toBe(null);
+    expect(readerStorage.getItem(AUTH_RESUME_STORAGE_KEY)).toBe(null);
+
     await installPlanningFixture(page, { plans: firstFuture });
     await page.goto(appBaseUrl);
 
-    await expect(page.locator('.planning-panel.open')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => window.sessionStorage.getItem('jira_dashboard_auth_resume_v1'))).toBe(null);
+    await expect(page.locator('.planning-panel.open')).toHaveCount(0);
     await openFuturePlanning(page);
     await showStoryRows(page);
     await expect(storyCheckbox(page, 'PLAN-1')).toBeChecked();

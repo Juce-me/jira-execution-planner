@@ -17,7 +17,7 @@ This directory contains automated tests for the Jira Delivery Planner.
 
 Run the full local delivery verification:
 ```bash
-make verify ARGS=--no-deadline
+make verify
 ```
 
 `frontend/dist` is not committed. Run `npm run build` first: tests that read the built bundle (`npm run test:frontend:unit`, `tests/ui`, parts of the Python suite) fail or run on a stale bundle without it.

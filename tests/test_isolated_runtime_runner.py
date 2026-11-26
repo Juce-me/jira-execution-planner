@@ -633,6 +633,26 @@ connect=Connection.connect
         self.assertEqual(kill.call_args_list, [mock.call(12345, 0), mock.call(12345, runner.signal.SIGTERM),
                                              mock.call(12345, runner.signal.SIGKILL)])
 
+    def test_opt_in_reports_direct_child_and_reaped_group_after_interrupt(self):
+        child = mock.MagicMock(pid=12345)
+        child.stdout.__iter__.side_effect = KeyboardInterrupt
+        report = mock.Mock()
+
+        def signal_group(_pid, number):
+            if number == 0:
+                self.assertEqual(child.wait.call_count, 2)
+                raise ProcessLookupError
+
+        with mock.patch.object(subprocess, 'Popen') as popen, \
+                mock.patch.object(runner.os, 'killpg', side_effect=signal_group):
+            popen.return_value.__enter__.return_value = child
+            with self.assertRaises(KeyboardInterrupt):
+                runner.run_test_process(['synthetic-child'], self.root, {}, report_ownership=report)
+        self.assertEqual(report.call_args_list, [
+            mock.call('backend-test-child', 'started', pid=12345, group=12345),
+            mock.call('backend-test-child', 'stopped', pid=12345, group=12345),
+        ])
+
     def test_failed_start_cleanup_keeps_preservation_flag_through_parent_refusal(self):
         class FailedCleanup(RuntimeError):
             preserve_directory = True

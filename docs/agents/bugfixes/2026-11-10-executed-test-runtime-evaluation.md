@@ -5,7 +5,7 @@ Type: bug investigation
 
 ## Outcome
 
-Evaluation completed; the first optimization batch is implemented on the active branch under [the runtime execution plan](../../plans/DONE-test-runtime-budget.md). The operator requires the complete build, backend, frontend-unit and desktop-Chromium verification to finish within 600 seconds combined. Mobile is officially unsupported. The first canonical full-gate attempt failed incomplete at 527.762s; the complete 600-second target is unmet.
+Evaluation completed; the first optimization batch is implemented on the active branch under [the runtime execution plan](../../plans/DONE-test-runtime-budget.md). At evaluation time the complete verification gate had a 600-second target. The operator retired that target and cutoff on 2026-11-25. Mobile is officially unsupported. The first canonical full-gate attempt failed incomplete at 527.762s; the complete 600-second target is unmet.
 
 Operator scope update (2026-11-10, after independent review): Chromium is the only required browser. Firefox and WebKit verification is suspended, including previously required headed glyph/geometry checks, unless explicitly requested. Active contributor instructions and the frontend UI command now reflect this decision; existing tests and historical cross-browser evidence are preserved.
 

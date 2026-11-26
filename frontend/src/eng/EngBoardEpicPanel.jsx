@@ -6,10 +6,12 @@ import StatusTransitionMenu from '../issues/StatusTransitionMenu.jsx';
 import PriorityTransitionMenu from '../issues/PriorityTransitionMenu.jsx';
 import ProjectTrackTransitionMenu from '../issues/ProjectTrackTransitionMenu.jsx';
 import IssuePersonEditor from '../issues/IssuePersonEditor.jsx';
+import IssueTeamEditor from '../issues/IssueTeamEditor.jsx';
+import StoryPointsEditor from '../issues/StoryPointsEditor.jsx';
 import { PersonAvatarSlot } from '../ui/PersonAvatar.jsx';
 import { getIssueStatusClassName } from '../issues/issueViewUtils.js';
 import { formatSubtaskUpdatedDate } from '../issues/subtaskProgressUtils.js';
-import { epicStatusName, formatStoryPointsFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
+import { epicStatusName, formatStoryPointsFixed, formatStoryPointsNumberFixed, getProjectTrackEmoji, getProjectTrackLabel } from './engTaskUtils.js';
 import { epicPriorityName } from './engBoardColumns.js';
 import { computeEpicStoryProgress } from './engBoardCardModel.js';
 import { isCombinedWorkModel, resolveEntityNames } from './engWorkModel.js';
@@ -283,6 +285,41 @@ export default function EngBoardEpicPanel({
     const childEditable = issue => (isCombinedWorkModel(workModel)
         ? Boolean(issue?.fields?.issuetype) && issue.fields.issuetype.subtask !== true
         : String(issue?.fields?.issuetype?.name || '').trim().toLowerCase() === 'story');
+    const renderStoryField = (task, field) => {
+        const isSprint = field === 'sprint';
+        const sprintLabel = isSprint && formatPanelSprints(
+            task.fields?.sprint ?? task.fields?.sprintIds ?? task.fields?.customfield_10101, sprintNames,
+        );
+        if (!issueFieldEdits || !childEditable(task)) return isSprint ? sprintLabel : formatStoryPointsFixed(task);
+        const editor = issueFieldEdits.activeEditor;
+        const active = editor?.issueKey === task.key && editor.field === field;
+        const status = active ? issueFieldEdits.status : '';
+        const metadata = active ? issueFieldEdits.metadata : null;
+        const common = {
+            issueKey: task.key,
+            isOpen: active,
+            loading: status === 'loading',
+            submitting: status === 'queued' || status === 'saving',
+            pending: issueFieldEdits.pendingIssueKeys?.has(task.key),
+            error: active ? issueFieldEdits.errorMessage : '',
+            recoveryMode: status === 'conflict' ? 'reload' : status === 'unknown' ? 'check_jira' : '',
+            onOpen: () => issueFieldEdits.openEditor({ issueKey: task.key, field, issueKind: names.childKind, sourceSurface: 'board' }),
+            onClose: reason => issueFieldEdits.closeEditor(reason, active ? editor.id : undefined),
+            onReload: issueFieldEdits.reload,
+            onCheckJira: issueFieldEdits.checkJira,
+        };
+        if (isSprint) {
+            const currentSprint = metadata?.currentValue?.find(sprint => ['active', 'future'].includes(sprint.state.toLowerCase()));
+            return <IssueTeamEditor {...common} fieldLabel="Sprint" currentValue={{ name: sprintLabel }}
+                metadata={metadata && { ...metadata, currentValue: currentSprint }}
+                onSelect={async sprint => {
+                    if (await issueFieldEdits.submit(sprint.id)) common.onClose('saved');
+                }} />;
+        }
+        return <StoryPointsEditor {...common} showUnit={false} metadata={metadata} formatValue={formatStoryPointsNumberFixed}
+            currentValue={task.fields?.customfield_10004 ?? null} onSubmit={issueFieldEdits.submit} />;
+    };
+
     const renderPersonEditor = (issue, role, field, label, value, triggerClassName = '') => {
         if (!issueFieldEdits || (role !== 'parent' && !childEditable(issue))) return value?.displayName || (field === 'deliveryOwner' ? 'Not set' : 'Unassigned');
         const active = issueFieldEdits.activeEditor?.issueKey === issue.key && issueFieldEdits.activeEditor.field === field;
@@ -512,6 +549,7 @@ export default function EngBoardEpicPanel({
                             <div className="story-subtask-head" aria-hidden="true">
                                 <span className="story-subtask-sprint">Sprint</span>
                                 <span className="story-subtask-sp">SP</span>
+                                <span className="story-subtask-updated">Updated</span>
                             </div>
                             {rows.map((task) => (
                                 <div
@@ -532,7 +570,10 @@ export default function EngBoardEpicPanel({
                                     <span className="story-subtask-assignee">{renderPersonEditor(task, 'child', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
                                     <span className="story-subtask-sprint">
                                         <span>Sprint: </span>
-                                        {formatPanelSprints(task.fields?.sprintIds ?? task.fields?.sprint ?? task.fields?.customfield_10101, sprintNames)}
+                                        {renderStoryField(task, 'sprint')}
+                                    </span>
+                                    <span className="story-subtask-sp">
+                                        {renderStoryField(task, 'storyPoints')}
                                     </span>
                                     {task?.fields?.updated ? (
                                         <time className="story-subtask-updated" dateTime={task.fields.updated}>
@@ -541,7 +582,6 @@ export default function EngBoardEpicPanel({
                                     ) : (
                                         <span className="story-subtask-updated">No update</span>
                                     )}
-                                    <span className="story-subtask-sp">{formatStoryPointsFixed(task)}</span>
                                 </div>
                             ))}
                         </div>

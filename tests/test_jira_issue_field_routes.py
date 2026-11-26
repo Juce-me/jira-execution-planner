@@ -109,6 +109,45 @@ class JiraIssueFieldRouteTests(unittest.TestCase):
         self.assertEqual(response.get_json()["error"], "csrf_required")
         self.assertEqual(response.headers["Cache-Control"], "no-store")
 
+    def test_sprint_read_and_write_share_the_server_board_and_custom_field(self):
+        headers = self.write_headers()
+        field_id = "customfield_19001"
+        future = {"id": 2, "name": "Synthetic Sprint", "state": "future"}
+        issue_fields = {"issuetype": {"name": "Story", "subtask": False}, "updated": "before", field_id: []}
+        read_responses = [
+            FakeResponse(payload={"fields": issue_fields}),
+            FakeResponse(payload={"fields": {field_id: {
+                "operations": ["set"],
+                "schema": {"type": "array", "custom": "com.pyxis.greenhopper.jira:gh-sprint"},
+            }}}),
+            FakeResponse(payload={"issues": [{"key": "DEMO-1"}], "isLast": True}),
+            FakeResponse(payload={"startAt": 0, "isLast": True, "values": [future]}),
+        ]
+        with self.oauth_mode(), \
+             patch.object(jira_server, "get_sprint_field_id", return_value=field_id), \
+             patch.object(jira_server, "get_effective_board_id", return_value="31"), \
+             patch.object(eng_routes, "clear_jira_issue_status_caches"), \
+             patch.object(jira_server, "current_jira_request", side_effect=[
+                 *read_responses, *read_responses, FakeResponse(204),
+                 FakeResponse(payload={"fields": {**issue_fields, "updated": "after", field_id: [future]}}),
+             ]) as jira:
+            metadata = self.client.get("/api/issues/DEMO-1/editable-fields?field=sprint", headers=headers)
+            self.assertEqual(metadata.status_code, 200, metadata.get_json())
+            base = metadata.get_json()
+            self.assertEqual(base["options"], [future])
+            saved = self.client.post("/api/issues/DEMO-1/field", headers=headers, json={
+                "field": "sprint", "value": future["id"], "baseValue": base["currentValue"],
+                "baseUpdated": base["baseUpdated"], "mappingRevision": base["mappingRevision"],
+            })
+        self.assertEqual(saved.status_code, 200, saved.get_json())
+        self.assertEqual(saved.get_json()["value"], [future])
+        self.assertEqual([call.args[1] for call in jira.call_args_list if "/board/" in call.args[1]], [
+            "/rest/software/1.0/board/31/issue", "/rest/agile/1.0/board/31/sprint",
+        ] * 2)
+        writes = [call for call in jira.call_args_list if call.args[0] == "PUT"]
+        self.assertEqual([call.args[1] for call in writes], ["/rest/api/3/issue/DEMO-1"])
+        self.assertEqual(writes[0].kwargs["json_body"], {"fields": {field_id: future["id"]}})
+
     def test_metadata_regular_non_admin_uses_context_and_server_field_ids(self):
         context = self._context()
         captured = {}

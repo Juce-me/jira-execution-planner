@@ -41,6 +41,7 @@ export function adaptStrictBoardChild(child, patch = null) {
             teamName: current.team?.name || '',
             project: current.project,
             sprintIds: (current.sprintIds || []).slice(),
+            ...(patch?.sprint ? { sprint: patch.sprint } : {}),
         },
     };
 }

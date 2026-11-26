@@ -8,7 +8,7 @@ export default function IssueTeamEditor({
     issueKey, currentValue = null, isOpen = false, metadata = null,
     loading = false, submitting = false, pending = false, error = '',
     recoveryMode = '', onOpen, onClose, onSelect, onReload, onCheckJira,
-    portalTarget, triggerClassName = '', useVisualViewport = true,
+    portalTarget, triggerClassName = '', useVisualViewport = true, fieldLabel = 'Team',
 }) {
     const wrapperRef = React.useRef(null);
     const inputRef = React.useRef(null);
@@ -86,20 +86,20 @@ export default function IssueTeamEditor({
         }
     };
 
-    const displayName = currentValue?.name || 'No Team';
+    const displayName = currentValue?.name || `No ${fieldLabel}`;
     const panel = isOpen && <div ref={panelRef} className={`issue-person-editor-menu${target ? ' is-portalled' : ''}`} data-issue-key={issueKey}
         onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeAndRestore('escape'); } }}>
-        {loading && <div className="issue-person-editor-menu-note issue-person-editor-menu-loading">Loading Teams…</div>}
+        {loading && <div className="issue-person-editor-menu-note issue-person-editor-menu-loading">Loading {fieldLabel}s…</div>}
         {!loading && error && <div className="issue-person-editor-menu-note issue-person-editor-menu-error" role="alert">{error}</div>}
-        {!loading && !locked && options.length > 0 && <div id={`${listId}-options`} className="issue-person-editor-menu-options" role="listbox" aria-label="Eligible Teams">
+        {!loading && !locked && options.length > 0 && <div id={`${listId}-options`} className="issue-person-editor-menu-options" role="listbox" aria-label={`Eligible ${fieldLabel}s`}>
             {options.map((team, index) => <button key={team.id} id={`${listId}-option-${index}`} type="button" role="option"
                 className={`issue-person-editor-option${index === activeIndex ? ' is-active' : ''}`} aria-selected={index === activeIndex}
                 onPointerMove={() => setPickedId(team.id)} onClick={() => selectTeam(team)}>
                 <span className="issue-person-editor-option-label">{team.name}{team.id === currentId ? ' (current)' : ''}</span>
             </button>)}
         </div>}
-        {!loading && !locked && options.length === 0 && <div className="issue-person-editor-menu-note">No matching Teams.</div>}
-        {submitting && <div className="issue-person-editor-menu-result" role="status" aria-live="polite">Saving Team.</div>}
+        {!loading && !locked && options.length === 0 && <div className="issue-person-editor-menu-note">No matching {fieldLabel}s.</div>}
+        {submitting && <div className="issue-person-editor-menu-result" role="status" aria-live="polite">Saving {fieldLabel}.</div>}
         {recoveryMode && <div className="issue-field-editor-recovery-actions">
             <button type="button" className="secondary compact" onClick={recoveryMode === 'reload' ? onReload : onCheckJira}>
                 {recoveryMode === 'reload' ? 'Reload' : 'Check Jira'}
@@ -109,7 +109,7 @@ export default function IssueTeamEditor({
     return <span ref={wrapperRef} className="issue-person-editor">
         <input ref={node => { triggerRef.current = node; inputRef.current = node; }} type="text" role="combobox"
             className={`issue-person-editor-trigger${pending ? ' is-pending' : ''} ${triggerClassName}`.trim()}
-            data-issue-person-editor-trigger="true" aria-label={isOpen ? 'Search Team' : `Team: ${displayName}`}
+            data-issue-person-editor-trigger="true" aria-label={isOpen ? `Search ${fieldLabel}` : `${fieldLabel}: ${displayName}`}
             aria-controls={`${listId}-options`} aria-haspopup="listbox" aria-expanded={isOpen} aria-autocomplete="list" aria-busy={pending}
             aria-activedescendant={isOpen && activeIndex >= 0 && !locked ? `${listId}-option-${activeIndex}` : undefined}
             disabled={!isOpen && pending} readOnly={!isOpen || locked}

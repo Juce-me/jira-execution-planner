@@ -11,12 +11,13 @@ import hashlib
 import json
 import math
 import re
+import time
 
 from backend.auth.jira_auth import AuthError
 from backend.security.avatar_urls import sanitize_avatar_url
 
 
-LOGICAL_FIELDS = frozenset({"assignee", "deliveryOwner", "storyPoints", "summary", "team"})
+LOGICAL_FIELDS = frozenset({"assignee", "deliveryOwner", "storyPoints", "summary", "team", "sprint"})
 PEOPLE_FIELDS = frozenset({"assignee", "deliveryOwner"})
 _ISSUE_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]+-\d+$")
 _CONTROL_CHARACTER_RE = re.compile(r"[\x00-\x1f\x7f]")
@@ -62,13 +63,14 @@ def _field_id(field, field_ids):
     return value.strip() if isinstance(value, str) else ""
 
 
-def _mapping_revision(context, field, field_id):
+def _mapping_revision(context, field, field_id, board_id=""):
     canonical = json.dumps(
         [
             str(getattr(context, "workspace_id", "") or ""),
             str(getattr(context, "cloud_id", "") or ""),
             field,
             field_id,
+            *([board_id] if field == "sprint" else []),
         ],
         ensure_ascii=False,
         separators=(",", ":"),
@@ -95,10 +97,10 @@ def _raise_read_status(response):
         raise FieldEditServiceError("jira_read_failed", 502)
 
 
-def _jira_read(jira_request, method, path, *, context, params=None):
+def _jira_read(jira_request, method, path, *, context, params=None, timeout=10):
     try:
         response = jira_request(
-            method, path, params=params, timeout=10, context=context,
+            method, path, params=params, timeout=timeout, context=context,
         )
     except AuthError:
         raise
@@ -176,6 +178,8 @@ def _normalize_current_value(field, raw):
         if not isinstance(raw, str):
             raise FieldEditServiceError("jira_read_failed", 502)
         return raw
+    if field == "sprint":
+        return _normalize_sprint_value(raw)
     if field == "team":
         return _normalize_team(raw)
     if field in PEOPLE_FIELDS:
@@ -230,18 +234,20 @@ def _issue_supports_field(snapshot, field, scope=None):
         role = scope.role(snapshot["issueTypeId"], snapshot["hierarchyLevel"])
         if field == "deliveryOwner":
             return role == "parent"
-        if field == "storyPoints":
+        if field in {"sprint", "storyPoints"}:
             return role == "child"
         return role is not None
     issue_type = snapshot["issueType"].lower()
     if field == "deliveryOwner":
         return issue_type == "epic"
-    if field == "storyPoints":
+    if field in {"sprint", "storyPoints"}:
         return issue_type == "story"
     return issue_type in {"epic", "story"}
 
 
 def _expected_schema(field):
+    if field == "sprint":
+        return {"type": "array", "custom": "com.pyxis.greenhopper.jira:gh-sprint"}
     if field == "summary":
         return {"type": "string", "system": "summary"}
     if field == "team":
@@ -298,7 +304,7 @@ def _metadata_payload(key, field, *, current_value, updated, revision,
         "baseUpdated": updated,
         "mappingRevision": revision,
         "me": me,
-        **({"options": options or []} if field == "team" else {}),
+        **({"options": options or []} if field in {"sprint", "team"} else {}),
     }
 
 
@@ -383,7 +389,87 @@ def _allowed_account_ids(metadata):
     return allowed
 
 
-def load_editable_field(issue_key, field, *, jira_request, context, field_ids, scope=None):
+def _sprint_id(value):
+    return type(value) is int and 0 < value <= 2**53 - 1
+
+
+def _normalize_sprint_value(raw):
+    if raw is None:
+        return []
+    entries = raw if isinstance(raw, list) else [raw]
+    sprints = {}
+    for entry in entries:
+        if isinstance(entry, str):
+            # Jira also returns older Sprint values as a serialized Java object.
+            entry = dict(re.findall(r"(?:\[|,)(id|name|state)=([^,\]]*)", entry))
+            raw_id = entry.get("id", "")
+            entry["id"] = int(raw_id) if re.fullmatch(r"[0-9]{1,16}", raw_id) else None
+        if not isinstance(entry, dict) or not _sprint_id(entry.get("id")):
+            raise FieldEditServiceError("jira_read_failed", 502)
+        sprint_id = entry["id"]
+        name, state = entry.get("name", ""), entry.get("state", "")
+        if not isinstance(name, str) or not isinstance(state, str):
+            raise FieldEditServiceError("jira_read_failed", 502)
+        sprints[sprint_id] = {"id": sprint_id, "name": name, "state": state}
+    return [sprints[sprint_id] for sprint_id in sorted(sprints)]
+
+
+def _sprint_options(key, board_id, *, jira_request, context):
+    if not re.fullmatch(r"[1-9][0-9]*", str(board_id or "")):
+        return []
+    deadline = time.monotonic() + 15
+
+    def read(path, params):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise FieldEditServiceError("jira_read_failed", 502)
+        try:
+            response = _jira_read(jira_request, "GET", path, params=params,
+                                  timeout=min(10, remaining), context=context)
+        except FieldEditServiceError as error:
+            if error.code == "issue_not_found":
+                return None
+            raise
+        return _response_json(response, dict)
+
+    membership = read(f"/rest/software/1.0/board/{board_id}/issue", {
+        "jql": f'key = "{key}"', "fields": "key", "maxResults": 1,
+    })
+    if membership is None:
+        return []
+    issues = membership.get("issues")
+    if not isinstance(issues, list):
+        raise FieldEditServiceError("jira_read_failed", 502)
+    if not any(isinstance(issue, dict) and issue.get("key") == key for issue in issues):
+        return []
+
+    options = {}
+    start = 0
+    for _ in range(20):
+        page = read(f"/rest/agile/1.0/board/{board_id}/sprint", {
+            "state": "active,future", "startAt": start, "maxResults": 100,
+        })
+        if page is None:
+            return []
+        values = page.get("values")
+        if not isinstance(values, list) or page.get("startAt") != start:
+            raise FieldEditServiceError("jira_read_failed", 502)
+        for sprint in values:
+            if not isinstance(sprint, dict):
+                raise FieldEditServiceError("jira_read_failed", 502)
+            sprint_id, name, state = sprint.get("id"), sprint.get("name"), sprint.get("state")
+            if _sprint_id(sprint_id) and isinstance(name, str) and name.strip() and state in ("active", "future"):
+                if str(sprint.get("originBoardId", board_id)) == str(board_id):
+                    options[sprint_id] = {"id": sprint_id, "name": name, "state": state}
+        if page.get("isLast") is True:
+            return sorted(options.values(), key=lambda sprint: (sprint["state"], sprint["name"], sprint["id"]))
+        if page.get("isLast") is not False or not values:
+            break
+        start += len(values)
+    raise FieldEditServiceError("jira_read_failed", 502)
+
+
+def load_editable_field(issue_key, field, *, jira_request, context, field_ids, scope=None, board_id=""):
     key = _normalize_issue_key(issue_key)
     logical_field = _normalize_field(field)
     resolved_field_id = _field_id(logical_field, field_ids)
@@ -392,7 +478,7 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids, s
             key, logical_field, current_value=None, updated=None, revision=None,
             editable=False, reason="field_mapping_missing",
         )
-    revision = _mapping_revision(context, logical_field, resolved_field_id)
+    revision = _mapping_revision(context, logical_field, resolved_field_id, board_id)
     context_display_name = _context_display_name(context)
     if logical_field in PEOPLE_FIELDS and context_display_name:
         account_id = str(getattr(context, "atlassian_account_id", "") or "").strip()
@@ -454,6 +540,13 @@ def load_editable_field(issue_key, field, *, jira_request, context, field_ids, s
             )
         me = None
         exact = None
+    if logical_field == "sprint":
+        options = _sprint_options(key, board_id, jira_request=jira_request, context=context)
+        return _metadata_payload(
+            key, logical_field, current_value=snapshot["value"],
+            updated=snapshot["updated"], revision=revision,
+            editable=bool(options), reason=None if options else "sprint_options_unavailable", options=options,
+        )
     if logical_field == "team":
         options = _team_options(metadata)
         return _metadata_payload(
@@ -703,6 +796,11 @@ def _validate_mutation_payload(payload):
         if (not isinstance(target, str) or not target.strip() or len(target) > 255
                 or _CONTROL_CHARACTER_RE.search(target) or not isinstance(baseline, str)):
             raise FieldEditInputError("invalid_value")
+    elif field == "sprint":
+        target, baseline = payload.get("value"), payload.get("baseValue")
+        if (not _sprint_id(target) or not isinstance(baseline, list)
+                or any(not isinstance(item, dict) or not _sprint_id(item.get("id")) for item in baseline)):
+            raise FieldEditInputError("invalid_value")
     elif field == "team":
         target = _validate_team_value(payload.get("value"))
         baseline = _validate_team_value(payload.get("baseValue"), allow_null=True)
@@ -713,6 +811,8 @@ def _validate_mutation_payload(payload):
 
 
 def _comparable_value(field, value):
+    if field == "sprint":
+        return {item["id"] for item in value}
     if field == "summary":
         return value
     if field == "team":
@@ -770,11 +870,11 @@ def _raise_put_failure(response, key, field, snapshot, revision):
         )
 
 
-def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, invalidate, scope=None):
+def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, invalidate, scope=None, board_id=""):
     key = _normalize_issue_key(issue_key)
     field, target, baseline, _base_updated, submitted_revision = _validate_mutation_payload(payload)
     resolved_field_id = _field_id(field, field_ids)
-    current_revision = _mapping_revision(context, field, resolved_field_id) if resolved_field_id else None
+    current_revision = _mapping_revision(context, field, resolved_field_id, board_id) if resolved_field_id else None
     if not current_revision or submitted_revision != current_revision:
         raise FieldEditServiceError("field_mapping_changed", 409)
     snapshot = _load_snapshot(
@@ -804,7 +904,15 @@ def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, 
         options = _team_options(metadata)
         if not options or target["id"] not in {option["id"] for option in options}:
             raise FieldEditServiceError("target_unavailable", 409)
-    if _comparable_value(field, snapshot["value"]) == _comparable_value(field, target):
+    if field == "sprint":
+        options = _sprint_options(key, board_id, jira_request=jira_request, context=context)
+        if target not in {option["id"] for option in options}:
+            raise FieldEditServiceError("target_unavailable", 409)
+        unchanged = any(sprint["id"] == target and sprint["state"].lower() in {"active", "future"}
+                        for sprint in snapshot["value"])
+    else:
+        unchanged = _comparable_value(field, snapshot["value"]) == _comparable_value(field, target)
+    if unchanged:
         return {
             "issueKey": key,
             "field": field,
@@ -861,6 +969,8 @@ def update_issue_field(issue_key, payload, *, jira_request, context, field_ids, 
         raise
     except FieldEditServiceError as error:
         raise _unknown_error(key, field) from error
+    if field == "sprint" and target not in _comparable_value(field, confirmed["value"]):
+        raise _unknown_error(key, field)
     return {
         "issueKey": key,
         "field": field,

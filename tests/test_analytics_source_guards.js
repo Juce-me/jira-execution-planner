@@ -120,12 +120,12 @@ test('issue field edit analytics stays typed, private, and mapped through the tw
     assert.equal((jiraApi.match(/trackedFetch\('jira_issue_field_edits'/g) || []).length, 3);
     for (const token of [
         "new Set(['open', 'submit', 'result'])",
-        "new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team'])",
+        "new Set(['assignee', 'delivery_owner', 'story_points', 'summary', 'team', 'sprint'])",
         "new Set(['initiative', 'epic', 'story', 'objective'])",
         "new Set(['catch_up', 'planning', 'board'])",
         "new Set(['success', 'unchanged', 'conflict', 'failure', 'unknown'])",
     ]) assert.ok(dashboardAnalytics.includes(token), `Expected fixed issue-field enum ${token}`);
-    for (const forbidden of ['query:', 'accountId:', 'issueKey:', 'fieldId:', 'storyPoints:', 'error:']) {
+    for (const forbidden of ['query:', 'accountId:', 'issueKey:', 'fieldId:', 'storyPoints:', 'sprintId:', 'sprintName:', 'error:']) {
         const start = dashboardAnalytics.indexOf('export function buildIssueFieldEditAnalyticsParams');
         const end = dashboardAnalytics.indexOf('\n}', start) + 2;
         assert.equal(dashboardAnalytics.slice(start, end).includes(forbidden), false, `Builder must omit ${forbidden}`);

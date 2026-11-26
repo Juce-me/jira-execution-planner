@@ -220,12 +220,12 @@ export function createEngIssueEditState(options = {}) {
     };
     const reconcileIssues = (issues, token) => (Array.isArray(issues) ? issues : []).map(issue => {
         let next = issue;
-        for (const field of ['assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team', ...PLANNING_FIELDS]) {
+        for (const field of ['assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team', 'sprint', ...PLANNING_FIELDS]) {
             const key = observationKey(issue?.key, field);
             const latest = observations.get(key);
             if (latest && latest.version > (token?.version || 0)) {
                 next = patchIssue(next, field, latest.value);
-            } else if (token && issue?.key && field !== 'summary' && field !== 'team' && !PLANNING_FIELDS.includes(field)) {
+            } else if (token && issue?.key && !['summary', 'team', 'sprint'].includes(field) && !PLANNING_FIELDS.includes(field)) {
                 // These new fields can have endpoint-specific projections.
                 // Only confirmed edits may override another in-flight read.
                 const storageField = normalizedStorageField(field);

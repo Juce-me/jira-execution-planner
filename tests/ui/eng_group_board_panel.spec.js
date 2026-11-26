@@ -13,6 +13,7 @@ const screenshotDir = path.join(__dirname, '..', '..', 'tmp', 'eng-group-board-p
 const appBaseUrl = process.env.JEP_TEST_BASE_URL || 'http://127.0.0.1:5050';
 const selectedSprintId = 34625;
 const selectedSprintName = '2026Q2 Sprint 42';
+const nextSprint = { id: selectedSprintId + 1, name: 'Next Sprint', state: 'future' };
 
 test.beforeAll(() => {
     fs.mkdirSync(screenshotDir, { recursive: true });
@@ -138,7 +139,12 @@ async function installBoardFixture(page, calls, {
     descriptionGate = null,
     descriptionHtml = DESCRIPTION_HTML,
     transitionStatuses = ['Done', 'To Do'],
+    editStoryFields = false,
 } = {}) {
+    const storyFieldUpdates = {};
+    const stories = storyPayload().map(issue => editStoryFields && issue.key === 'PLAT-1-b'
+        ? { ...issue, key: 'PLAT-101', id: 'PLAT-101' }
+        : issue);
     await installDashboardShell(page);
     await page.route('**/api/**', async (route) => {
         const request = route.request();
@@ -162,6 +168,7 @@ async function installBoardFixture(page, calls, {
         if (url.pathname === '/api/config') {
             return json({
                 jiraUrl: 'https://jira.example',
+                ...(editStoryFields ? { authMode: 'atlassian_oauth' } : {}),
                 capacityProject: '',
                 groupQueryTemplateEnabled: false,
                 settingsAdminOnly: false,
@@ -197,7 +204,33 @@ async function installBoardFixture(page, calls, {
                 return json({ issues: [], epics: {}, epicsInScope: [], names: {} });
             }
             const epics = epicPayload();
-            return json({ issues: storyPayload(), epics, epicsInScope: Object.values(epics), names: {} });
+            const issues = stories.map(issue => ({
+                ...issue, fields: { ...issue.fields, ...storyFieldUpdates[issue.key] },
+            }));
+            return json({ issues, epics, epicsInScope: Object.values(epics), names: {} });
+        }
+        const fieldRoute = url.pathname.match(/^\/api\/issues\/([^/]+)\/(editable-fields|field)$/);
+        if (fieldRoute) {
+            const [, issueKey, action] = fieldRoute;
+            const story = stories.find(issue => issue.key === issueKey);
+            if (!story) return json({ error: 'issue_not_found' }, 404);
+            const fields = { ...story.fields, ...storyFieldUpdates[issueKey] };
+            if (action === 'editable-fields') {
+                const field = url.searchParams.get('field');
+                return json({
+                    issueKey, field, editable: true, mappingRevision: 'synthetic', baseUpdated: fields.updated,
+                    currentValue: field === 'sprint' ? fields.sprint : fields.customfield_10004,
+                    options: field === 'sprint' ? [nextSprint] : [],
+                });
+            }
+            const body = request.postDataJSON();
+            const value = body.field === 'sprint' ? [nextSprint] : body.value;
+            const updated = '2026-08-01T00:00:00.000+0000';
+            storyFieldUpdates[issueKey] = {
+                ...storyFieldUpdates[issueKey], updated,
+                [body.field === 'sprint' ? 'sprint' : 'customfield_10004']: value,
+            };
+            return json({ issueKey, field: body.field, result: 'success', value, updated });
         }
         if (url.pathname === '/api/issues/description') {
             const key = url.searchParams.get('key');
@@ -759,6 +792,45 @@ test('the Legacy panel shows the Epic and Story Sprint values independently of B
     expect((await sprint.boundingBox()).x).toBeCloseTo((await heading.boundingBox()).x);
     expect(descriptionCalls(calls, 'PLAT-1').map(call => call.params.includeSprint)).toEqual(['true']);
     await panel(page).screenshot({ path: `${screenshotDir}/panel-after-sprint.png`, animations: 'disabled' });
+});
+
+test('Sprint and SP edit only the represented Story, with Updated at the far right', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls, { editStoryFields: true });
+    await openPanel(page, 'PLAT-1');
+    const detail = panel(page);
+    const row = detail.locator('[data-story-key="PLAT-101"]');
+    const sibling = detail.locator('[data-story-key="PLAT-1-d"]');
+    const points = row.getByRole('textbox', { name: 'Story Points' });
+
+    await points.focus();
+    await expect(points).toBeEditable();
+    await points.fill('3.5');
+    await points.press('Enter');
+    await expect(points).toHaveValue('3.5');
+    await expect(row.locator('time')).toHaveText('2026-08-01');
+
+    const sprint = row.locator('.story-subtask-sprint').getByRole('combobox');
+    await sprint.click();
+    await expect(page.getByRole('listbox', { name: 'Eligible Sprints' }).getByRole('option')).toHaveCount(1);
+    await page.getByRole('option', { name: nextSprint.name }).click();
+    await expect(sprint).toHaveValue(nextSprint.name);
+    await expect(sibling.getByRole('textbox', { name: 'Story Points' })).toHaveValue('2.0');
+    await expect(sibling.getByRole('combobox', { name: 'Sprint: No sprint' })).toHaveValue('No sprint');
+
+    const writes = calls.filter(call => call.method === 'POST' && call.pathname.endsWith('/field'));
+    expect(writes.map(call => [call.pathname, JSON.parse(call.body).field, JSON.parse(call.body).value])).toEqual([
+        ['/api/issues/PLAT-101/field', 'storyPoints', 3.5],
+        ['/api/issues/PLAT-101/field', 'sprint', nextSprint.id],
+    ]);
+    const updatedHeading = detail.locator('.story-subtask-head .story-subtask-updated');
+    await expect(updatedHeading).toHaveText('Updated');
+    expect((await row.locator('time').boundingBox()).x)
+        .toBeGreaterThan((await points.boundingBox()).x);
+    const rightEdge = await row.evaluate(node => node.getBoundingClientRect().right);
+    const updatedEdge = await updatedHeading.evaluate(node => node.getBoundingClientRect().right);
+    expect(updatedEdge).toBeCloseTo(rightEdge);
+    await detail.screenshot({ path: `${screenshotDir}/panel-story-fields.png`, animations: 'disabled' });
 });
 
 // #311: an SP header over a right-aligned fixed column (at least one decimal; #323 allows a second), mirrored by every row.

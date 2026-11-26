@@ -6887,6 +6887,7 @@ const adminSettingsLoadingFallback = <div className="stats-note">Loading Admin s
                         boardScopeRequested && !strictBoardActive && !((readPendingAuthenticationRequired() || sprintCatalogState.selectionPreserved) && strictBoardOwnerActive) ? renderBlockedBoardScope() : (
                             <EngBoardView
                                 workModel={workModel} workContext={workContext} entityNames={entityNames}
+                                sprints={availableSprints}
                                 board={activeGroup?.board || null}
                                 epicGroups={boardEpicGroupsFiltered}
                                 {...engBoardDataProps}

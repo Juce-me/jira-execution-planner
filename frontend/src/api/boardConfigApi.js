@@ -1,11 +1,16 @@
 import { jsonOrStructuredError, trackedFetch } from './http.js';
+import { applyContextToParams } from '../workStructure/configurationContext.js';
 
 const headers = () => ({
     'X-Requested-With': 'jira-execution-planner',
 });
 
-export function fetchEpicDescription(backendUrl, { key, signal } = {}) {
+export function fetchEpicDescription(backendUrl, { key, signal, includeSprint = false, workContext = null } = {}) {
     const params = new URLSearchParams({ key: String(key || '') });
+    if (includeSprint) {
+        params.set('includeSprint', 'true');
+        applyContextToParams(params, workContext);
+    }
     return trackedFetch('eng_issue_description', `${backendUrl}/api/issues/description?${params.toString()}`, {
         method: 'GET',
         cache: 'no-cache',

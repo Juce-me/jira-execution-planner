@@ -110,7 +110,7 @@ function storyPayload() {
             projectKey: 'PLAT',
             teamId: 'team-alpha',
             teamName: 'Alpha Team',
-            sprint: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
+            sprint: key === 'PLAT-1-d' ? [] : [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }],
             ...(key === 'PLAT-1-b' ? { subtaskSummary: SUBTASK_SUMMARY } : {}),
         },
     }));
@@ -201,12 +201,15 @@ async function installBoardFixture(page, calls, {
         }
         if (url.pathname === '/api/issues/description') {
             const key = url.searchParams.get('key');
-            if (key === 'PLAT-2') return json({ key, html: '', isEmpty: true });
+            if (key === 'PLAT-2') return json({ key, html: '', isEmpty: true, sprints: [] });
             if (key === 'PLAT-3') {
                 return json({ error: 'issue_description_fetch_failed', message: 'Jira returned status 500' }, 502);
             }
             if (key === 'PLAT-4' && descriptionGate) await descriptionGate;
-            return json({ key, html: descriptionHtml, isEmpty: false });
+            return json({
+                key, html: descriptionHtml, isEmpty: false,
+                sprints: [{ id: 82, name: '2026Q3 Sprint 43' }, { id: 83, name: '2026Q4 Sprint 44' }],
+            });
         }
         if (url.pathname === '/api/issues/transitions/options') {
             return json({
@@ -709,12 +712,11 @@ test('every story control resolves to an existing app class, priority asserted a
     await expect(row.locator('a.story-subtask-name')).toHaveCount(1);
     await expect(row.locator('span.story-subtask-assignee')).toHaveCount(1);
     await expect(row.locator('time.story-subtask-updated')).toHaveCount(1);
-    // The five cells of the table plus the Story Points cell (#311).
-    expect(await row.evaluate((node) => node.children.length)).toBe(6);
+    expect(await row.evaluate((node) => node.children.length)).toBe(7);
     await expect(row.locator('span.story-subtask-sp')).toHaveText('2.0');
 });
 
-test('the Board panel row computes six grid cells and Catch Up\'s computes four', async ({ page }) => {
+test('the Board panel row computes seven grid cells and Catch Up\'s computes four', async ({ page }) => {
     const calls = [];
     await openBoard(page, calls);
     await openPanel(page, 'PLAT-1');
@@ -723,10 +725,10 @@ test('the Board panel row computes six grid cells and Catch Up\'s computes four'
     await expect(rows.first()).toHaveClass(/has-priority/);
     const templates = await rowTemplates(rows);
     expect(templates.length).toBe(5);
-    templates.forEach((row) => expect(row.cells).toBe(6));
+    templates.forEach((row) => expect(row.cells).toBe(7));
     // Column-aligned: every row computes the identical template.
     expect(new Set(templates.map((row) => row.template)).size).toBe(1);
-    // Catch Up's shared intrinsic track must never leak into the six-column Board table.
+    // Catch Up's shared intrinsic track must never leak into the Board table.
     const starts = await rows.evaluateAll(nodes => nodes.map(node => [...node.children].map(cell => cell.getBoundingClientRect().left)));
     starts.forEach(row => row.forEach((left, index) => expect(Math.abs(left - starts[0][index])).toBeLessThan(1)));
 
@@ -740,6 +742,23 @@ test('the Board panel row computes six grid cells and Catch Up\'s computes four'
         return cells;
     });
     expect(bare).toBe(4);
+});
+
+test('the Legacy panel shows the Epic and Story Sprint values independently of Board scope', async ({ page }) => {
+    const calls = [];
+    await openBoard(page, calls);
+    await openPanel(page, 'PLAT-1');
+
+    await expect(panel(page).getByText('Sprint: 2026Q3 Sprint 43, 2026Q4 Sprint 44', { exact: true })).toBeVisible();
+    const heading = panel(page).locator('.story-subtask-head .story-subtask-sprint');
+    const row = panel(page).locator('[data-story-key="PLAT-1-b"]');
+    const sprint = row.locator('.story-subtask-sprint');
+    await expect(heading).toHaveText('Sprint');
+    await expect(sprint).toContainText(selectedSprintName);
+    await expect(panel(page).locator('[data-story-key="PLAT-1-d"] .story-subtask-sprint')).toContainText('No sprint');
+    expect((await sprint.boundingBox()).x).toBeCloseTo((await heading.boundingBox()).x);
+    expect(descriptionCalls(calls, 'PLAT-1').map(call => call.params.includeSprint)).toEqual(['true']);
+    await panel(page).screenshot({ path: `${screenshotDir}/panel-after-sprint.png`, animations: 'disabled' });
 });
 
 // #311: an SP header over a right-aligned fixed column (at least one decimal; #323 allows a second), mirrored by every row.

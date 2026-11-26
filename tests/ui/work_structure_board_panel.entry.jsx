@@ -11,7 +11,7 @@ const child = (key, typeName, extra = {}) => ({
         issuetype: { id: '10', name: typeName, ...extra } },
 });
 
-function mount(workModel, children) {
+function mount(workModel, children, sprints = []) {
     const opened = [];
     const issueFieldEdits = {
         activeEditor: null, metadata: null, suggestions: [], searchQuery: '', status: 'idle', pendingIssueKeys: new Set(),
@@ -22,7 +22,7 @@ function mount(workModel, children) {
         tasks: children, storyPoints: 8,
     };
     const root = createRoot(document.getElementById('panel'));
-    root.render(<EngBoardEpicPanel epicGroup={epicGroup} columns={COLUMNS} issueFieldEdits={issueFieldEdits} workModel={workModel} onClose={() => {}} />);
+    root.render(<EngBoardEpicPanel epicGroup={epicGroup} columns={COLUMNS} issueFieldEdits={issueFieldEdits} workModel={workModel} sprints={sprints} onClose={() => {}} />);
     return { opened, unmount: () => root.unmount() };
 }
 

@@ -63,3 +63,14 @@ test('new model: Epic children edit their assignee and the Initiative parent its
         { issueKey: 'PLAN-P1', field: 'assignee', issueKind: 'initiative', sourceSurface: 'board' },
     ]);
 });
+
+test('DELIVERY resolves Sprint IDs on Epic rows and omits the Initiative Sprint readout', async ({ page }) => {
+    await openHarness(page);
+    await page.evaluate(() => {
+        const epic = window.__boardPanel.child('PLAN-1', 'Epic');
+        epic.fields.sprintIds = [42, 43];
+        window.__boardPanel.mount('rnd_2027', [epic], [{ id: 42, name: '2027Q1 Sprint 42' }]);
+    });
+    await expect(rowFor(page, 'PLAN-1').locator('.story-subtask-sprint')).toHaveText('Sprint: 2027Q1 Sprint 42, 43');
+    await expect(page.locator('.m-head').getByText(/^Sprint:/)).toHaveCount(0);
+});

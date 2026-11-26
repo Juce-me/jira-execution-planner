@@ -109,6 +109,7 @@ export default function EngBoardView({
     strictColumns = null, authorityPending = false, stale = false,
     onResolvedFocusChange, freshnessBridge, onInteractionChange, renderEpicShareControl,
     workModel, workContext = null, entityNames = null,
+    sprints = [],
 }) {
     // EntityNames from the App (configured Jira type names); model defaults when absent. Kinds come from it too. Memoised:
     // the column model depends on it, and a fresh object each render would rebuild the columns and break reading restore.
@@ -1388,6 +1389,8 @@ export default function EngBoardView({
                     projectTrackTransitions={projectTrackTransitions}
                     issueFieldEdits={panelDeparting ? null : issueFieldEdits}
                     workModel={workModel}
+                    workContext={workContext}
+                    sprints={sprints}
                     entityNames={names}
                     onSortChange={() => freshnessBridge?.current.release?.()}
                     workItemLabel={strictWorkItemLabel}

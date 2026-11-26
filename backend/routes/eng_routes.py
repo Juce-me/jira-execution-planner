@@ -17,6 +17,7 @@ from backend.auth.db_context import is_db_auth_context
 from backend.auth.jira_auth import AuthError
 from backend.auth.project_access import project_access_denied_response, project_access_status
 from backend.epm.home import adf_to_html
+from backend.epm.scope import normalize_epm_sprint_field
 from backend.services import allocation_classification, eng_board, epic_refresh, planning_work, shared_group_config
 from backend.services import work_structure as work_structure_service
 from backend.services import work_write_scope
@@ -1285,9 +1286,16 @@ def get_issue_description():
 
     try:
         auth_context = current_request_auth_context()
+        include_sprint = request.args.get('includeSprint') == 'true'
+        sprint_field = None
+        if include_sprint:
+            work_request, work_error = admit_work_request(auth_context)
+            if work_error is not None:
+                return work_error
+            sprint_field = work_request.roles.sprint_field_id if work_request else get_sprint_field_id()
         response = current_jira_get(
             f'/rest/api/3/issue/{key}',
-            params={'fields': 'description'},
+            params={'fields': ','.join(dict.fromkeys(filter(None, ('description', sprint_field))))},
             context=auth_context,
         )
         if response.status_code in (404, 403):
@@ -1298,15 +1306,23 @@ def get_issue_description():
             return jsonify({'error': 'issue_not_found'}), 404
         if response.status_code != 200:
             raise RuntimeError(f'Jira returned status {response.status_code}')
-        data = response.json() or {}
-        html = adf_to_html((data.get('fields') or {}).get('description'))
+        fields = (response.json() or {}).get('fields') or {}
+        html = adf_to_html(fields.get('description'))
+        payload = {'key': key, 'html': html, 'isEmpty': _adf_html_is_blank(html)}
+        if include_sprint:
+            raw_sprint = fields.get(sprint_field) if sprint_field else None
+            if isinstance(raw_sprint, (int, str)) and str(raw_sprint).isdigit():
+                raw_sprint = {'id': raw_sprint}
+            elif isinstance(raw_sprint, str):
+                raw_sprint = [raw_sprint]
+            payload['sprints'] = normalize_epm_sprint_field(raw_sprint) if sprint_field in fields else None
     except AuthError as error:
         return _eng_auth_error_response(error)
     except Exception as e:
         logger.exception('Issue description Jira fetch failed')
         return jsonify({'error': 'issue_description_fetch_failed', 'message': str(e)}), 502
 
-    return jsonify({'key': key, 'html': html, 'isEmpty': _adf_html_is_blank(html)})
+    return jsonify(payload)
 
 
 @bp.route('/api/issues/transitions/options', methods=['POST'])

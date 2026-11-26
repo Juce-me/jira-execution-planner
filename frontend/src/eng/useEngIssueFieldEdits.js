@@ -23,6 +23,7 @@ const ERROR_MESSAGES = Object.freeze({
     field_mapping_changed: 'The Jira field configuration changed. Reload before editing.',
     field_not_editable: 'This field is no longer editable in Jira.',
     target_unavailable: 'That person is no longer available for this field.',
+    sprint_options_unavailable: 'No eligible active or future sprints on the configured Jira board.',
     team_options_unavailable: 'Jira has not provided eligible Team choices for this issue. Edit it in Jira.',
     jira_field_rejected: 'Jira rejected this field value. Review the selection and try again.',
     jira_configuration_invalid: 'Jira rejected the configured field. Check the Jira field configuration.',
@@ -51,7 +52,7 @@ function unknownSubmissionKey(editor) {
 }
 
 function mutationValue(field, value) {
-    if (field === 'storyPoints' || field === 'summary' || value === null) return value;
+    if (field === 'storyPoints' || field === 'summary' || field === 'sprint' || value === null) return value;
     if (field === 'team') return { id: String(value?.id || '').trim() };
     return { accountId: String(value?.accountId || '').trim() };
 }
@@ -200,7 +201,8 @@ export function createEngIssueFieldEditController(options = {}) {
         return loadMetadata(editor);
     };
 
-    const closeEditor = reason => {
+    const closeEditor = (reason, editorId) => {
+        if (editorId !== undefined && !isCurrentEditor(editorId)) return;
         if (reason === 'unchanged' && state.activeEditor) {
             runtimeOptions.onAction?.('submit', state.activeEditor);
             runtimeOptions.onAction?.('result', state.activeEditor, 'unchanged');
@@ -302,7 +304,7 @@ export function createEngIssueFieldEditController(options = {}) {
             if (getContextKey() !== frozen.contextKey || isAuthLocked()) return null;
             frozen.editState?.confirmMutation?.(frozen.mutation, response?.value, { mappingRevision: response?.mappingRevision ?? metadata.mappingRevision });
             unknownSubmissions.delete(unknownSubmissionKey(editor));
-            runtimeOptions.onConfirm?.({ issueKey: editor.issueKey, field: editor.field, value: response?.value, response, frozenContext: frozen.contextKey });
+            runtimeOptions.onConfirm?.({ ...editor, value: response?.value, response, frozenContext: frozen.contextKey });
             runtimeOptions.onAction?.('result', editor, response?.result === 'unchanged' ? 'unchanged' : 'success');
             if (isCurrentEditor(editor.id)) publish({ status: 'confirmed', outcome: { status: 'confirmed', response }, errorCode: '', errorMessage: '' });
             return response;
@@ -332,8 +334,10 @@ export function createEngIssueFieldEditController(options = {}) {
                 publish({
                     status: conflict ? 'conflict' : 'draft',
                     outcome: { status: conflict ? 'conflict' : 'rejected' },
-                    errorCode: code, errorMessage: editor.field === 'team' && code === 'target_unavailable'
-                        ? 'That Team is no longer eligible for this issue.' : issueFieldErrorMessage(code),
+                    errorCode: code, errorMessage: code === 'target_unavailable' && editor.field === 'sprint'
+                        ? 'That Sprint is no longer eligible for this issue.'
+                        : editor.field === 'team' && code === 'target_unavailable'
+                            ? 'That Team is no longer eligible for this issue.' : issueFieldErrorMessage(code),
                     ...(code === 'stale_issue' && Object.prototype.hasOwnProperty.call(error, 'currentValue')
                         ? { metadata: { ...metadata, currentValue: error.currentValue, baseUpdated: error.baseUpdated, mappingRevision: error.mappingRevision } }
                         : {}),
@@ -371,7 +375,7 @@ export function createEngIssueFieldEditController(options = {}) {
             return observed;
         }
         frozen.editState?.confirmMutation?.(frozen.mutation, observed.currentValue, { mappingRevision: observed.mappingRevision });
-        runtimeOptions.onConfirm?.({ issueKey: frozen.editor.issueKey, field: frozen.editor.field, value: observed.currentValue, observed: true, frozenContext: frozen.contextKey });
+        runtimeOptions.onConfirm?.({ ...frozen.editor, value: observed.currentValue, response: { updated: observed.baseUpdated }, observed: true, frozenContext: frozen.contextKey });
         unknownSubmissions.delete(unknownSubmissionKey(frozen.editor));
         publish({ outcome: { status: 'observed', value: observed.currentValue }, status: 'ready', metadata: observed, errorCode: '', errorMessage: '' });
         return observed;

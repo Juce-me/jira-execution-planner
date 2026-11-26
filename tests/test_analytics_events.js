@@ -1279,6 +1279,16 @@ test('issue field edit analytics builder emits only the fixed bounded contract',
     }
 });
 
+test('Sprint field analytics use the Board surface and omit the Sprint value', async () => {
+    const { buildIssueFieldEditAnalyticsParams } = await loadDashboardAnalytics();
+    const edit = { fieldName: 'sprint', issueKind: 'story', sourceSurface: 'board', result: 'success', sprintId: 123 };
+    assert.deepEqual(buildIssueFieldEditAnalyticsParams('result', edit), {
+        feature_name: 'eng_issue_field_edits', workflow_action: 'result', field_name: 'sprint',
+        issue_kind: 'story', source_surface: 'board', result: 'success',
+    });
+    assert.equal(buildIssueFieldEditAnalyticsParams('open', { ...edit, sourceSurface: 'planning' }), null);
+});
+
 test('issue field edit action is a canonical userevent with an allowlisted field_name', async () => {
     const { sanitizeAnalyticsParams, validateAnalyticsPayload } = await loadEvents();
     const clean = sanitizeAnalyticsParams({

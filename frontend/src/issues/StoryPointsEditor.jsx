@@ -23,6 +23,8 @@ export default function StoryPointsEditor({
     onReload,
     onCheckJira,
     triggerClassName = '',
+    showUnit = true,
+    formatValue,
 }) {
     const inputRef = React.useRef(null);
     const submittedRef = React.useRef(false);
@@ -91,6 +93,7 @@ export default function StoryPointsEditor({
         }
     };
 
+    const inputValue = !isOpen && formatValue ? formatValue(currentValue) : draft;
     const feedback = validationError || (configurationChanged
         ? 'Jira field configuration changed. Review the issue in Jira before trying again.'
         : error || statusMessage || (pending || submitting ? 'Saving Story Points.' : ''));
@@ -110,9 +113,9 @@ export default function StoryPointsEditor({
                 aria-describedby={feedback ? `story-points-feedback-${issueKey}` : undefined}
                 aria-busy={pending || loading || submitting}
                 title={feedback || 'Story Points'}
-                value={draft}
+                value={inputValue}
                 readOnly={readOnly}
-                style={{ width: `${Math.max(1, draft.length + 0.35)}ch` }}
+                style={{ width: `${Math.max(1, inputValue.length + 0.35)}ch` }}
                 onFocus={(event) => {
                     if (!isOpen) onOpen?.();
                     const input = event.currentTarget;
@@ -143,7 +146,7 @@ export default function StoryPointsEditor({
                 onClick={event => event.stopPropagation()}
                 onDragStart={event => { event.preventDefault(); event.stopPropagation(); }}
             />
-            <span className="story-points-editor-unit" aria-hidden="true">SP</span>
+            {showUnit && <span className="story-points-editor-unit" aria-hidden="true">SP</span>}
             {feedback && (
                 <span id={`story-points-feedback-${issueKey}`} className="story-points-editor-feedback" role={validationError || error ? 'alert' : 'status'}>
                     {feedback}

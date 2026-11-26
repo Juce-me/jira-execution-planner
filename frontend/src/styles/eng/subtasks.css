@@ -110,7 +110,7 @@
             grid-template-areas:
                 "pri name name"
                 "status status updated"
-                ". sprint sprint";
+                ". sprint sp";
         }
 
         .story-subtask-row.has-priority > .priority-transition,
@@ -188,8 +188,7 @@
             font-variant-numeric: tabular-nums;
         }
 
-        /* Story Points cell (#311): desktop-only like the assignee, right-aligned numerals. The
-           header row is aria-hidden chrome that reuses the row's own template. */
+        /* The Board header reuses the child row's desktop grid. */
         .story-subtask-sp {
             grid-area: sp;
             display: none;
@@ -201,6 +200,16 @@
 
         .story-subtask-head {
             display: none;
+        }
+
+        .story-subtask-row.has-priority > .story-subtask-sp {
+            display: block;
+        }
+
+        @media (max-width: 760px) {
+            .story-subtask-row.has-priority > .story-subtask-sp::before {
+                content: "SP: ";
+            }
         }
 
         @media (min-width: 761px) {
@@ -218,11 +227,11 @@
 
             .story-subtask-row.has-priority,
             .story-subtask-head {
-                grid-template-columns: 1.1rem minmax(0, 1fr) 5.8rem minmax(5rem, 7rem) 6.5rem 5.3rem 2rem;
-                grid-template-areas: "pri name status assignee sprint updated sp";
+                grid-template-columns: 1.1rem minmax(0, 1fr) 5.8rem minmax(5rem, 7rem) 6.5rem 3rem 5.3rem;
+                grid-template-areas: "pri name status assignee sprint sp updated";
             }
 
-            .story-subtask-sprint > span {
+            .story-subtask-row > .story-subtask-sprint > span:first-child {
                 position: absolute;
                 width: 1px;
                 height: 1px;
@@ -231,7 +240,6 @@
                 white-space: nowrap;
             }
 
-            .story-subtask-row.has-priority > .story-subtask-sp,
             .story-subtask-head > .story-subtask-sp {
                 display: block;
             }

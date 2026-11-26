@@ -810,7 +810,7 @@ def _missing_write_jira_work_scope(auth_context):
     return bool(missing_oauth_scopes(oauth_session_data(), {'write:jira-work'}))
 
 
-_ISSUE_FIELD_NAMES = frozenset({'assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team'})
+_ISSUE_FIELD_NAMES = frozenset({'assignee', 'deliveryOwner', 'storyPoints', 'summary', 'team', 'sprint'})
 _ISSUE_PEOPLE_FIELDS = frozenset({'assignee', 'deliveryOwner'})
 _ISSUE_FIELD_ERROR_DETAIL_KEYS = {
     'stale_issue': frozenset({
@@ -850,7 +850,7 @@ def _stamp_args_or_failure():
         return None, work_routes.work_error_response(error)
 
 
-def _issue_field_ids(scope=None):
+def _issue_field_ids(scope=None, *, field=None):
     if scope is not None:
         # Scoped requests never read ambient flat getters: ids come from the resolved configuration.
         return dict(scope.field_ids)
@@ -860,6 +860,7 @@ def _issue_field_ids(scope=None):
         'team': get_team_field_id(),
         'deliveryOwner': get_delivery_owner_field_id(),
         'storyPoints': get_story_points_field_id(),
+        **({'sprint': get_sprint_field_id()} if field == 'sprint' else {}),
     }
 
 
@@ -869,9 +870,17 @@ def _issue_field_scopes(field, *, write=False):
     scopes = {'read:jira-work'}
     if field in _ISSUE_PEOPLE_FIELDS:
         scopes.add('read:jira-user')
+    if field == 'sprint':
+        scopes.update({'read:board-scope:jira-software', 'read:sprint:jira-software'})
     if write:
         scopes.add('write:jira-work')
     return scopes
+
+
+def _sprint_edit_board(field, scope):
+    if field != 'sprint':
+        return {}
+    return {'board_id': scope.board_id if scope is not None else get_effective_board_id()}
 
 
 def _issue_field_auth_context(field):
@@ -937,7 +946,8 @@ def get_editable_issue_field(issue_key):
             field,
             jira_request=current_jira_request,
             context=auth_context,
-            field_ids=_issue_field_ids(scope),
+            field_ids=_issue_field_ids(scope, field=field),
+            **_sprint_edit_board(field, scope),
             **_scope_kwargs(scope),
         )
     except AuthError as error:
@@ -1041,8 +1051,9 @@ def post_issue_field(issue_key):
             payload,
             jira_request=current_jira_request,
             context=auth_context,
-            field_ids=_issue_field_ids(scope),
+            field_ids=_issue_field_ids(scope, field=field),
             invalidate=clear_jira_issue_status_caches,
+            **_sprint_edit_board(field, scope),
             **_scope_kwargs(scope),
         )
     except AuthError as error:

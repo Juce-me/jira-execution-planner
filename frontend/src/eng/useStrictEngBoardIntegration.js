@@ -119,7 +119,7 @@ export function strictEngBoardViewProps({ active, owner, model, legacyLoading, l
     };
 }
 
-export function strictEngBoardMutationProps({ active, coordinator, refresh, sourceSurface,
+export function strictEngBoardMutationProps({ active, scopeType, coordinator, refresh, sourceSurface,
     loadLegacy, retrySubtasks }) {
     return {
         status: { mutationCoordinator: coordinator,
@@ -136,5 +136,13 @@ export function strictEngBoardMutationProps({ active, coordinator, refresh, sour
             } },
         projectTrack: { mutationCoordinator: coordinator,
             onProjectTrackSuccessRefresh: () => active ? refresh() : Promise.resolve() },
+        onFieldConfirmed({ issueKey, field, value, response, sourceSurface: editSurface }, applyField) {
+            applyField(issueKey, field === 'storyPoints' ? 'customfield_10004' : field, value);
+            if (editSurface !== 'board' || !['sprint', 'storyPoints'].includes(field)) return;
+            if (response?.updated) applyField(issueKey, 'updated', response.updated);
+            if (field !== 'sprint' || response?.result === 'unchanged') return;
+            if (!active) loadLegacy();
+            else if (scopeType === 'sprint') refresh();
+        },
     };
 }

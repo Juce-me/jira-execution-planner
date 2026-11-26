@@ -125,6 +125,7 @@ def editmeta_payload(field_id, logical_field, *, operations=("set",), allowed_va
             "custom": "com.atlassian.jira.plugin.system.customfieldtypes:userpicker",
         },
         "storyPoints": {"type": "number"},
+        "sprint": {"type": "array", "custom": "com.pyxis.greenhopper.jira:gh-sprint"},
         "summary": {"type": "string", "system": "summary"},
         "team": {"type": "any", "custom": "com.atlassian.teams:rm-teams-custom-field-team",
                  "configuration": {"com.atlassian.jira.plugin.system.customfieldtypes:atlassian-team": True}},
@@ -723,6 +724,80 @@ class UpdateIssueFieldTests(unittest.TestCase):
             )
         self.assertEqual(caught.exception.code, "target_unavailable")
         self.assertEqual(caught.exception.status, 409)
+
+
+class SprintFieldEditTests(unittest.TestCase):
+    field_id = "customfield_19001"
+    board_id = "31"
+    historical = {"id": 1, "name": "Past", "state": "closed"}
+    future = {"id": 2, "name": "Next sprint", "state": "future"}
+    other_board = {"id": 3, "name": "Other board", "state": "active", "originBoardId": 32}
+
+    def setUp(self):
+        self.context = auth_context()
+        self.invalidations = []
+
+    def edit_reads(self, *, matching=True, options=None):
+        return [
+            FakeResponse(200, issue_payload(self.field_id, [
+                "Sprint[id=1,rapidViewId=31,state=CLOSED,name=Past]",
+            ])),
+            FakeResponse(200, editmeta_payload(self.field_id, "sprint")),
+            FakeResponse(200, {"issues": [{"key": "DEMO-1"}] if matching else [], "isLast": True}),
+            *([FakeResponse(200, {"startAt": 0, "isLast": True, "values": options})] if options is not None else []),
+        ]
+
+    def load(self, jira):
+        return load_editable_field("DEMO-1", "sprint", jira_request=jira.request,
+                                   context=self.context, field_ids={"sprint": self.field_id}, board_id=self.board_id)
+
+    def write(self, jira, metadata, *, target=2, board_id=None):
+        return update_issue_field("DEMO-1", {
+            "field": "sprint", "value": target, "baseValue": metadata["currentValue"],
+            "baseUpdated": metadata["baseUpdated"], "mappingRevision": metadata["mappingRevision"],
+        }, jira_request=jira.request, context=self.context, field_ids={"sprint": self.field_id},
+            board_id=board_id or self.board_id, invalidate=self.invalidations.append)
+
+    def test_sprint_options_page_and_update_only_the_child_preserving_closed_history(self):
+        jira = ScriptedJira([
+            *self.edit_reads(),
+            FakeResponse(200, {"startAt": 0, "isLast": False, "values": [self.other_board]}),
+            FakeResponse(200, {"startAt": 1, "isLast": True, "values": [self.historical, self.future]}),
+        ])
+        metadata = self.load(jira)
+        self.assertEqual(metadata["options"], [self.future])
+        self.assertEqual(metadata["currentValue"], [{**self.historical, "state": "CLOSED"}])
+        self.assertEqual(jira.calls[2]["params"]["jql"], 'key = "DEMO-1"')
+        self.assertEqual(jira.calls[4]["params"]["startAt"], 1)
+        self.assertTrue(all(call["context"] is self.context for call in jira.calls))
+
+        jira = ScriptedJira([
+            *self.edit_reads(options=[self.future]),
+            FakeResponse(204),
+            FakeResponse(200, issue_payload(self.field_id, [self.historical, self.future], updated="newer")),
+        ])
+        result = self.write(jira, metadata)
+        writes = [call for call in jira.calls if call["method"] == "PUT"]
+        self.assertEqual(len(writes), 1)
+        self.assertEqual(writes[0]["path"], "/rest/api/3/issue/DEMO-1")
+        self.assertEqual(writes[0]["json_body"], {"fields": {self.field_id: 2}})
+        self.assertEqual(result["value"], [self.historical, self.future])
+        self.assertEqual(result["updated"], "newer")
+        self.assertEqual(self.invalidations, ["issue_field_edit"])
+
+    def test_sprint_membership_and_open_target_are_rechecked_at_save(self):
+        metadata = self.load(ScriptedJira(self.edit_reads(options=[self.future])))
+        for reads in (self.edit_reads(matching=False), self.edit_reads(options=[self.historical, self.other_board])):
+            jira = ScriptedJira(reads)
+            with self.assertRaises(FieldEditServiceError) as caught:
+                self.write(jira, metadata)
+            self.assertEqual(caught.exception.code, "target_unavailable")
+            self.assertTrue(all(call["method"] == "GET" for call in jira.calls))
+        jira = ScriptedJira([])
+        with self.assertRaises(FieldEditServiceError) as caught:
+            self.write(jira, metadata, board_id="32")
+        self.assertEqual(caught.exception.code, "field_mapping_changed")
+        self.assertEqual(jira.calls, [])
 
 
 class SourceGuardTests(unittest.TestCase):

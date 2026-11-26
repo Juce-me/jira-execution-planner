@@ -34,7 +34,7 @@ async function openedFor(page, workModel, children, clickKeys) {
     await page.evaluate(({ workModel, children }) => {
         window.__mounted = window.__boardPanel.mount(workModel, children.map(([key, type, extra]) => window.__boardPanel.child(key, type, extra)));
     }, { workModel, children });
-    for (const key of clickKeys) await rowFor(page, key).locator('.issue-person-editor-trigger').click();
+    for (const key of clickKeys) await rowFor(page, key).locator('.story-subtask-assignee .issue-person-editor-trigger').click();
     return page.evaluate(() => window.__mounted.opened);
 }
 
@@ -71,6 +71,6 @@ test('DELIVERY resolves Sprint IDs on Epic rows and omits the Initiative Sprint 
         epic.fields.sprintIds = [42, 43];
         window.__boardPanel.mount('rnd_2027', [epic], [{ id: 42, name: '2027Q1 Sprint 42' }]);
     });
-    await expect(rowFor(page, 'PLAN-1').locator('.story-subtask-sprint')).toHaveText('Sprint: 2027Q1 Sprint 42, 43');
+    await expect(rowFor(page, 'PLAN-1').locator('.story-subtask-sprint').getByRole('combobox')).toHaveValue('2027Q1 Sprint 42, 43');
     await expect(page.locator('.m-head').getByText(/^Sprint:/)).toHaveCount(0);
 });

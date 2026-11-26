@@ -24,7 +24,7 @@ QUERY_STAMP_KEYS = ('configurationId', 'configurationRevision', 'quarter', 'conf
 _ID_RE = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _DIGEST_RE = re.compile(r'[0-9a-f]{32}')
 _REVISION_RE = re.compile(r'[0-9]{1,9}')
-_FIELD_NAMES = ('team', 'deliveryOwner', 'storyPoints', 'projectTrack')
+_FIELD_NAMES = ('team', 'deliveryOwner', 'storyPoints', 'projectTrack', 'sprint')
 # Review/hierarchy levels for the new model: planning type is the child (Epic), parent type the Initiative.
 CHILD_LEVEL, PARENT_LEVEL = 1, 2
 
@@ -39,6 +39,7 @@ class WriteScope:
     planning_type_id: str | None
     parent_type_id: str | None
     field_ids: object
+    board_id: str = ""
 
     @property
     def mapped(self):
@@ -132,7 +133,7 @@ def _scope_for(context):
         quarter=context.quarter, model=context.model,
         planning_type_id=hierarchy.get('planningIssueTypeId') or None,
         parent_type_id=hierarchy.get('parentIssueTypeId') or None,
-        field_ids=MappingProxyType(fields),
+        field_ids=MappingProxyType(fields), board_id=context.scope.get("boardId") or "",
     )
 
 

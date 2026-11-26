@@ -98,10 +98,12 @@ export function SprintControl({
     availableSprints,
 }) {
     const boardScopeControl = selectedView === 'eng' && showBoard;
+    const fieldLabel = boardScopeControl ? 'Scope' : 'Sprint';
+    const optionLabel = fieldLabel.toLowerCase();
     const canOpen = engSprintSelectorState.ordinarySelectable;
-    const displayedSprint = boardScopeControl && boardStrictScope
+    const displayedSelection = boardScopeControl && boardStrictScope
         ? (boardStrictScope === 'allocation' ? 'Allocation' : boardStrictScope === 'component' ? 'Component' : 'All work')
-        : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : 'Sprint'));
+        : (sprintName || (!selectedSprint && sprintsLoading && engWorkspaceConfigured ? 'Loading…' : fieldLabel));
     const options = getSprintSelectorOptions(boardScopeControl);
     const activeIndex = options.length
         ? Math.min(Math.max(sprintActiveOptionIndex, 0), options.length - 1)
@@ -149,7 +151,7 @@ export function SprintControl({
             commitSprintSelectorOption(options[activeIndex], boardScopeControl);
         }
     };
-    return (<ControlField label="Sprint">
+    return (<ControlField label={fieldLabel}>
         <div className={`sprint-dropdown sprint-selector-control${selectedView === 'eng' ? ' header-filter-dropdown header-filter-dropdown--sprint' : ''}`} ref={(node) => { sprintDropdownRefs.current[surface] = node; }}>
             {isActiveOpen ? (
                 <div
@@ -167,8 +169,8 @@ export function SprintControl({
                         }}
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={handleFilterKeyDown}
-                        placeholder={displayedSprint}
-                        aria-label="Filter sprints"
+                        placeholder={displayedSelection}
+                        aria-label={`Filter ${optionLabel}s`}
                         role="combobox"
                         aria-autocomplete="list"
                         aria-expanded="true"
@@ -187,7 +189,7 @@ export function SprintControl({
                     ref={(node) => { sprintTriggerRefs.current[surface] = node; }}
                     type="button"
                     className="sprint-dropdown-toggle"
-                    aria-label="Select sprint"
+                    aria-label={`Select ${optionLabel}`}
                     aria-haspopup="listbox"
                     aria-expanded="false"
                     aria-controls={listboxId}
@@ -201,7 +203,7 @@ export function SprintControl({
                     data-onboarding-target="sprint"
                     data-onboarding-surface={surface}
                 >
-                    <span>{displayedSprint}</span>
+                    <span>{displayedSelection}</span>
                     <svg viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
                         <path d="M6 9L1 4h10z"/>
                     </svg>
@@ -209,13 +211,13 @@ export function SprintControl({
             )}
             {isActiveOpen && (
                 <div className="sprint-dropdown-panel">
-                    <div className="sprint-dropdown-list" id={listboxId} role="listbox" aria-label="Sprint options">
+                    <div className="sprint-dropdown-list" id={listboxId} role="listbox" aria-label={`${fieldLabel} options`}>
                         {sprintsLoading && options.length === 0 ? (
-                            <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">Loading sprints...</div>
+                            <div className="dropdown-filter-empty" role="status" aria-label={`${fieldLabel} options status`}>Loading {optionLabel}s...</div>
                         ) : availableSprints.length === 0 && options.length === 0 ? (
-                            <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No sprints available</div>
+                            <div className="dropdown-filter-empty" role="status" aria-label={`${fieldLabel} options status`}>No {optionLabel}s available</div>
                         ) : options.length === 0 ? (
-                            <div className="dropdown-filter-empty" role="status" aria-label="Sprint options status">No matching sprints</div>
+                            <div className="dropdown-filter-empty" role="status" aria-label={`${fieldLabel} options status`}>No matching {optionLabel}s</div>
                         ) : (
                             options.map((option, optionIndex) => {
                                 const selected = option.kind === 'scope'

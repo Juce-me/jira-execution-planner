@@ -195,7 +195,7 @@ test('mounted Group selector stays disabled during Board configuration retry',as
     ctx.respond('/api/groups-config',async({json})=>{groupReads++;if(groupReads>1)await hold;return json(payload);});
     await page.addInitScript(value=>localStorage.setItem('jira_dashboard_ui_prefs_v1',JSON.stringify(value)),catchUpPrefs({showBoard:true}));
     await page.goto(appBaseUrl,{waitUntil:'networkidle'});
-    await page.getByRole('button',{name:'Select sprint',exact:true}).click();
+    await page.getByRole('button',{name:'Select scope',exact:true}).click();
     await page.getByRole('option',{name:'Component',exact:true}).click();
     await page.getByRole('button',{name:'Retry configuration',exact:true}).click();
     const group=page.getByRole('button',{name:'Select group',exact:true});

@@ -239,7 +239,7 @@ test('Board scope uses Allocation for DELIVERY and searches its displayed label'
     const scopeRequest = page.waitForRequest(req => new URL(req.url()).pathname === '/api/eng/board' && new URL(req.url()).searchParams.get('scope') === 'allocation');
     await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const selector = page.locator('.sprint-dropdown').first();
-    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    const trigger = selector.getByRole('button', { name: 'Select scope', exact: true });
     await expect(trigger).toBeVisible();
     await trigger.click();
     await expect(selector.getByRole('option', { name: 'All work', exact: true })).toBeVisible();
@@ -279,7 +279,7 @@ test('Legacy Board scope keeps Component and its Component search label', async 
     await mockApp(page, 'legacy', { boardScope: true });
     await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const selector = page.locator('.sprint-dropdown').first();
-    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    const trigger = selector.getByRole('button', { name: 'Select scope', exact: true });
     await expect(trigger).toHaveText('Component');
     await trigger.click();
     await selector.getByRole('combobox').fill('comp');
@@ -302,7 +302,7 @@ test('DELIVERY All work without Department membership shows Allocation guidance 
     await mockApp(page, 'delivery', { boardScope: true, emptyMembership: true });
     await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const selector = page.locator('.sprint-dropdown').first();
-    await selector.getByRole('button', { name: 'Select sprint', exact: true }).click();
+    await selector.getByRole('button', { name: 'Select scope', exact: true }).click();
     await selector.getByRole('option', { name: 'All work', exact: true }).click();
     const status = page.getByRole('status', { name: 'Board scope status', exact: true });
     await expect(status.getByRole('heading', { level: 2 })).toHaveText('Add Teams or Allocation values to this Department to use All work.');
@@ -318,7 +318,7 @@ for (const initial of ['legacy', 'delivery']) test(`Board switches Component and
     await mockApp(page, initial, { boardScope: true });
     await page.getByRole('radio', { name: 'Board', exact: true }).click();
     const selector = page.locator('.sprint-dropdown').first();
-    const trigger = selector.getByRole('button', { name: 'Select sprint', exact: true });
+    const trigger = selector.getByRole('button', { name: 'Select scope', exact: true });
     for (const scope of (initial === 'delivery' ? ['component', 'allocation'] : ['allocation', 'component'])) {
         await trigger.click();
         await selector.getByRole('option', { name: scope === 'allocation' ? 'Allocation' : 'Component', exact: true }).click();

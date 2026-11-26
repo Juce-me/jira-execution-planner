@@ -17766,7 +17766,7 @@
             "bag sprintTriggerRefs dynamic deep member"
           ],
           "inventory": {
-            "sourceDigest": "c284e780221f05e0e7bf94223d4c25a63d5fdce985addb3be75435fdd8bdcdc2",
+            "sourceDigest": "e054f03c57b20f6989a783c846a838d748a1e1b8453fb7b2258f8d09522078a3",
             "reviewed": true,
             "memberNames": [
               "activeControlSurface",
@@ -17802,7 +17802,7 @@
               "sprintsLoading",
               "surface"
             ],
-            "rationale": "Reviewed SprintControl after removing readiness annotations and allowing scope options with a matching configuration quarter. Dynamic ref members remain explicit; option data does not add component inputs."
+            "rationale": "Reviewed SprintControl after removing readiness annotations and allowing scope options with a matching configuration quarter. Dynamic ref members remain explicit; option data does not add component inputs. Board derives the Scope label and accessible names from the existing view props."
           },
           "callers": [
             {

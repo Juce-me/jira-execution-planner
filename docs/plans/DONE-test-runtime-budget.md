@@ -1,10 +1,10 @@
 # Desktop Chromium verification runtime
 
-> **Status:** Done for the implemented optimization delivery on `improvement/chromium-only-verification`. The combined 600-second performance target remains open in `docs/TODO.md`; this status does not attest passing performance acceptance. Publication-run measurements are reported in the PR. Prior uncapped baseline: 31m 28s with failures (2026-11-11).
+> **Status:** Done for the implemented optimization delivery on `improvement/chromium-only-verification`. The 600-second target and cutoff were retired on 2026-11-25. The previous contract and measurements below are historical.
 
 ## Outcome and Current Accuracy
 
-Implemented with changes and focused verification complete. The implementation and contributor workflow are the source of truth; full performance acceptance remains open and is tracked in `docs/TODO.md`. Historical evidence and the implementation ledger are in [the runtime evaluation](../agents/bugfixes/2026-11-10-executed-test-runtime-evaluation.md). This plan incorporates the independent PostgreSQL, browser and budget reviews plus the operator's Chromium-only and unsupported-mobile decisions.
+Implemented with changes and focused verification complete. The current verification workflow is documented in [the README](../../README.md). Later experiments and the Board test split are recorded in the [verification runtime follow-up](DONE-verification-runtime-follow-up.md). Historical evidence and the implementation ledger are in [the runtime evaluation](../agents/bugfixes/2026-11-10-executed-test-runtime-evaluation.md). This plan incorporates the independent PostgreSQL, browser and budget reviews plus the operator's Chromium-only and unsupported-mobile decisions.
 
 ## Contract
 

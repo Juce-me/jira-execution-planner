@@ -7,7 +7,9 @@ child installs sitecustomize guards before importing any application module.
 import argparse
 from contextlib import ExitStack, redirect_stdout
 import json
+import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import threading
@@ -46,23 +48,23 @@ def phase(name):
     print('Synthetic fixture phase: ' + name, file=sys.stderr, flush=True)
 
 
-def launch(database_url=None, *, mode='app', historical=False, force_startup_failure=False):
+def launch(database_url=None, *, mode='app', force_startup_failure=False):
     sys.path.insert(0, str(ROOT))
-    from tests.postgres_cluster import owned_cluster
+    from tests.postgres_cluster import owned_cluster, report_runtime_ownership
     from tests.run_isolated_runtime_tests import prepare_snapshot, runtime_directory, synthetic_environment
     scratch = ROOT / 'tmp'
     scratch.mkdir(exist_ok=True)
     with runtime_directory(scratch, prefix='db-oauth-browser-') as directory, ExitStack() as stack:
+        report_runtime_ownership('browser-launcher', 'started', pid=os.getpid(), group=os.getpgrp())
+        stack.callback(report_runtime_ownership, 'browser-launcher', 'stopped', pid=os.getpid(), group=os.getpgrp())
         phase('snapshot-prepare')
         snapshot = prepare_snapshot(ROOT, Path(directory) / 'checkout', include_new=NEW_SOURCES)
         phase('postgres-cluster')
-        import signal as signals
-
         def interrupt(_signal, _frame):
             raise KeyboardInterrupt
 
         # SIGTERM during provisioning still unwinds the stack and stops the cluster.
-        stack.callback(signals.signal, signals.SIGTERM, signals.signal(signals.SIGTERM, interrupt))
+        stack.callback(signal.signal, signal.SIGTERM, signal.signal(signal.SIGTERM, interrupt))
         # The cluster stops before the snapshot directory is removed (ExitStack exits first).
         cluster = stack.enter_context(owned_cluster(snapshot / 'tmp/isolated-runtime/postgres'))
         phase('synthetic-environment')
@@ -73,58 +75,74 @@ def launch(database_url=None, *, mode='app', historical=False, force_startup_fai
             if mode != 'campaign':
                 raise ValueError('Startup failure belongs to the campaign fixture.')
             env['BOARD_FIXTURE_STARTUP_FAILURE'] = '1'
-        if historical:
-            if mode != 'campaign':
-                raise ValueError('Historical source belongs to the campaign fixture.')
-            baseline = snapshot / 'tmp/board-190/baseline-source'
-            for relative in ('backend/services/eng_board.py', 'backend/services/eng_board_stream.py',
-                             'backend/routes/eng_board_routes.py'):
-                source = subprocess.run(['git', '-C', str(ROOT), 'show',
-                    '40bffe730159ebadb1904b0188981c853fdf85ed:' + relative],
-                    env={'PATH': '/usr/bin:/bin', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null'},
-                    capture_output=True, check=True).stdout
-                if relative == 'backend/routes/eng_board_routes.py':
-                    # Historical comparison only: the DB adapter never invokes
-                    # this now-retired Basic helper. Keep algorithms untouched.
-                    old_import = b'from backend.services import eng_board, eng_board_basic, shared_group_config, workspace_dashboard_config'
-                    if source.count(old_import) != 1:
-                        raise ValueError('Historical route import contract changed.')
-                    source = source.replace(old_import,
-                        b'from backend.services import eng_board, shared_group_config, workspace_dashboard_config')
-                target = baseline / relative
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(source)
-            env['BOARD_BASELINE_ROOT'] = str(baseline)
         # Never connect to a supplied operator/application DB; only the owned cluster.
         # Task1 can extend the explicit approved disposable-schema interface.
         if database_url and database_url != env['DATABASE_URL']:
             raise ValueError('Browser fixture requires its own disposable database.')
         lifecycle = {'port': 0, 'restart': None}
+        observe = bool(os.environ.get('JEP_RUNTIME_OWNERSHIP_LOG'))
+
+        def signal_group(process, value):
+            try:
+                os.killpg(process.pid, value)
+            except ProcessLookupError:
+                pass
+
+        def stop_child(process):
+            if process.poll() is None:
+                signal_group(process, signal.SIGTERM)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                signal_group(process, signal.SIGTERM)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    signal_group(process, signal.SIGKILL)
+                    process.wait()
+
+        def report_child_exit(process):
+            if observe:
+                try:
+                    os.killpg(process.pid, 0)
+                except ProcessLookupError:
+                    state = 'stopped'
+                else:
+                    state = 'failed'
+                report_runtime_ownership('browser-flask', state, pid=process.pid, group=process.pid)
 
         def start_child():
-            return subprocess.Popen(
-                [sys.executable, '-s', 'tests/fixtures/db_oauth_server.py', '--serve',
-                 '--port', str(lifecycle['port']), '--mode', mode],
-                cwd=snapshot, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                start_new_session=True,
-            )
+            interrupted = False
+
+            def defer_interrupt(_signal, _frame):
+                nonlocal interrupted
+                interrupted = True
+
+            handlers = {kind: signal.signal(kind, defer_interrupt) for kind in (signal.SIGINT, signal.SIGTERM)} if observe else {}
+            try:
+                process = subprocess.Popen(
+                    [sys.executable, '-s', 'tests/fixtures/db_oauth_server.py', '--serve',
+                     '--port', str(lifecycle['port']), '--mode', mode],
+                    cwd=snapshot, env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                    start_new_session=True,
+                )
+                if observe:
+                    stack.callback(stop_child, process)
+                    report_runtime_ownership('browser-flask', 'started', pid=process.pid, group=process.pid)
+            finally:
+                for kind, handler in handlers.items():
+                    signal.signal(kind, handler)
+            if interrupted:
+                raise KeyboardInterrupt
+            return process
 
         phase('child-start')
         child = start_child()
         phase('awaiting-ready')
-        import signal
-
         def terminate_launcher(_signal, _frame):
             raise KeyboardInterrupt
 
         previous = signal.signal(signal.SIGTERM, terminate_launcher)
-
-        def signal_owned_group(value):
-            import os
-            try:
-                os.killpg(child.pid, value)
-            except ProcessLookupError:
-                pass
 
         def forward_controls():
             try:
@@ -151,6 +169,8 @@ def launch(database_url=None, *, mode='app', historical=False, force_startup_fai
                         phase('ready-forwarded')
                         from urllib.parse import urlsplit
                         lifecycle['port'] = urlsplit(message['baseUrl']).port
+                        report_runtime_ownership('browser-flask', 'listening', pid=child.pid, group=child.pid,
+                                                 port=lifecycle['port'])
                         if lifecycle['restart'] is not None:
                             message = {'id': lifecycle['restart'], 'ok': True, 'restarted': True}
                             lifecycle['restart'] = None
@@ -159,20 +179,12 @@ def launch(database_url=None, *, mode='app', historical=False, force_startup_fai
                 child.wait()
                 if lifecycle['restart'] is None or child.returncode:
                     break
+                report_child_exit(child)
                 child = start_child()
         finally:
             signal.signal(signal.SIGTERM, previous)
-            if child.poll() is None:
-                signal_owned_group(signal.SIGTERM)
-            try:
-                child.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                signal_owned_group(signal.SIGTERM)
-                try:
-                    child.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    signal_owned_group(signal.SIGKILL)
-                    child.wait()
+            stop_child(child)
+            report_child_exit(child)
         return child.returncode
 
 
@@ -511,7 +523,6 @@ if __name__ == '__main__':
     parser.add_argument('--database-url')
     parser.add_argument('--port', type=int, default=0)
     parser.add_argument('--mode', choices=('app', 'measurement', 'stream', 'campaign', 'planning'), default='app')
-    parser.add_argument('--historical', action='store_true')
     parser.add_argument('--force-startup-failure', action='store_true')
     options = parser.parse_args()
     try:
@@ -524,7 +535,7 @@ if __name__ == '__main__':
                     serve(options.port, mode=options.mode)
         else:
             raise SystemExit(launch(options.database_url, mode=options.mode,
-                historical=options.historical, force_startup_failure=options.force_startup_failure))
+                force_startup_failure=options.force_startup_failure))
     except BaseException as error:
         if isinstance(error, SystemExit) and not error.code:
             raise

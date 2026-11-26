@@ -17,19 +17,22 @@ function postgresBinDir() {
 }
 
 // Every app import happens in the Python launcher's fresh synthetic checkout.
-// Only explicitly selected executable paths are inherited; never process.env.
-async function startDbOAuthServer({ python, databaseUrl, mode = 'app', historical = false, forceStartupFailure = false } = {}) {
+// Only explicitly selected fixture inputs are inherited; never process.env.
+async function startDbOAuthServer({ python, databaseUrl, mode = 'app', forceStartupFailure = false } = {}) {
     const root = path.resolve(__dirname, '..', '..');
     const executable = python || process.env.JEP_TEST_PYTHON || path.join(root, '.venv', 'bin', 'python');
     const args = ['-s', path.join(root, 'tests', 'fixtures', 'db_oauth_server.py')];
     if (databaseUrl) args.push('--database-url', databaseUrl);
     args.push('--mode', mode);
-    if (historical) args.push('--historical');
     if (forceStartupFailure) args.push('--force-startup-failure');
     const startupStarted = performance.now();
     const env = { PATH: '/usr/bin:/bin', PYTHONNOUSERSITE: '1', PYTHONDONTWRITEBYTECODE: '1' };
     const pgBin = postgresBinDir();
     if (pgBin) env.JEP_TEST_PG_BIN = pgBin;
+    if (process.env.JEP_RUNTIME_OWNERSHIP_LOG && process.env.JEP_RUNTIME_OWNERSHIP_STAGE === 'chromium') {
+        env.JEP_RUNTIME_OWNERSHIP_LOG = process.env.JEP_RUNTIME_OWNERSHIP_LOG;
+        env.JEP_RUNTIME_OWNERSHIP_STAGE = 'chromium';
+    }
     const child = spawn(executable, args, {
         cwd: root, env,
         stdio: ['pipe', 'pipe', 'pipe'],

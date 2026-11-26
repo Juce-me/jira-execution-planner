@@ -675,7 +675,7 @@ test('automatic ordinary Board preserves non-neutral facets and current scope wh
             {id:'done',name:'Done',colour:'#abcdef',statuses:['Done']},
         ]}}))}))});
     await page.getByRole('radiogroup',{name:'ENG view mode'}).getByRole('radio',{name:'Board',exact:true}).click();
-    const scope=await page.getByRole('button',{name:'Select sprint'}).first().innerText();
+    const scope=await page.getByRole('button',{name:'Select scope'}).first().innerText();
     await page.getByRole('button',{name:/^Filters(?: \d+)?$/}).click();
     const priority=page.getByRole('dialog',{name:'Filters',exact:true}).getByRole('group',{name:'Priority',exact:true});
     await priority.getByRole('button',{name:/Blocker/}).click();
@@ -687,7 +687,7 @@ test('automatic ordinary Board preserves non-neutral facets and current scope wh
     const since=ctx.calls.length;await lifecycle.returnAfter(13*60*1000);
     await expect(card).toContainText('Synthetic accepted with held Major facet');
     await expect(page.locator('.ecard[data-epic-key="EPIC-2"]')).toHaveCount(0);
-    await expect(page.getByRole('button',{name:'Select sprint'}).first()).toHaveText(scope);
+    await expect(page.getByRole('button',{name:'Select scope'}).first()).toHaveText(scope);
     await expect(page.locator('.col.is-focused')).toHaveAttribute('data-column-id','doing');
     await expect(page.locator('.col[data-column-id="done"]')).not.toHaveClass(/is-open/);
     await page.getByRole('button',{name:/^Filters(?:\s*\d+)?$/}).click();

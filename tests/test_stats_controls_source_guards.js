@@ -17,10 +17,11 @@ test('stats ranges use one stats-owned component and existing control classes', 
     assert.equal(source.includes("import './"), false);
 });
 
-test('dashboard keeps the global Sprint control isolated from stats ranges', () => {
+test('dashboard keeps the shared Scope and Sprint control isolated from stats ranges', () => {
     const controls = readOwnerSource(['frontend/src/eng/EngControls.jsx'], { anchor: 'export function SprintControl(' });
     const globalSprint = controls.slice(controls.indexOf('export function SprintControl('), controls.indexOf('export function GroupControl('));
-    assert.ok(globalSprint.includes('<ControlField label="Sprint">'));
+    assert.match(globalSprint, /const fieldLabel = boardScopeControl \? 'Scope' : 'Sprint';/);
+    assert.ok(globalSprint.includes('<ControlField label={fieldLabel}>'));
     assert.equal(globalSprint.includes('StatsRangeControl'), false);
 });
 

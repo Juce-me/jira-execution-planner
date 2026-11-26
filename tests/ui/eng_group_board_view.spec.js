@@ -602,7 +602,7 @@ async function expectLockedSelectorInteractionBlocked(page, trigger) {
     await expect(signIn).toBeFocused();
     await page.keyboard.press('Shift+Tab');
     await expect(signIn).toBeFocused();
-    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('listbox', { name: /^(?:Scope|Sprint) options$/ })).toHaveCount(0);
 }
 
 const waitTwoFrames = page => page.evaluate(() => new Promise(resolve => (
@@ -747,7 +747,7 @@ async function installIncrementalStrictBoardResponse(page, requests) {
 }
 
 const expectActiveSprintOption = async (page, expectedName) => {
-    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
     const activeId = await combobox.getAttribute('aria-activedescendant');
     expect(activeId).toBeTruthy();
     const activeOption = page.locator(`#${activeId}`);
@@ -761,7 +761,7 @@ const expectActiveSprintOption = async (page, expectedName) => {
 test('selector keyboard: ordinary', async ({ page }) => {
     const requestLog = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requestLog });
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
 
     await expect(trigger).toHaveAttribute('type', 'button');
     await expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
@@ -769,10 +769,10 @@ test('selector keyboard: ordinary', async ({ page }) => {
     await expect(trigger).toHaveAttribute('aria-controls', 'sprint-main-listbox');
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
     await expect(combobox).toBeFocused();
     await expect(combobox).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toBeVisible();
+    await expect(page.getByRole('listbox', { name: /^(?:Scope|Sprint) options$/ })).toBeVisible();
     await combobox.fill('2026Q3 Sprint 43');
     await page.keyboard.press('ArrowDown');
     await expectActiveSprintOption(page, '2026Q3 Sprint 43');
@@ -796,24 +796,24 @@ test('selector keyboard: ordinary', async ({ page }) => {
     await expectActiveSprintOption(page, 'All work');
     await combobox.fill('does-not-exist');
     await expect(combobox).not.toHaveAttribute('aria-activedescendant');
-    await expect(page.getByRole('status', { name: 'Sprint options status', exact: true }))
-        .toHaveText('No matching sprints');
+    await expect(page.getByRole('status', { name: 'Scope options status', exact: true }))
+        .toHaveText('No matching scopes');
     await page.keyboard.press('Escape');
     await expect(trigger).toBeFocused();
     await trigger.click();
     await page.keyboard.press('Tab');
-    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('listbox', { name: /^(?:Scope|Sprint) options$/ })).toHaveCount(0);
     await expect(trigger).not.toBeFocused();
 });
 
 test('selector keyboard: Component', async ({ page }) => {
     const requests = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
 
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
     await combobox.fill('Component');
     await page.keyboard.press('ArrowDown');
     await expectActiveSprintOption(page, 'Component');
@@ -835,11 +835,11 @@ test('selector keyboard: All work', async ({ page }) => {
         selectedProjects: [],
         savedBoardId: '',
     });
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
 
     await trigger.focus();
     await page.keyboard.press('Enter');
-    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
     await combobox.fill('All');
     await page.keyboard.press('Space');
     await page.keyboard.type('work');
@@ -889,7 +889,7 @@ for (const modeProfile of [
             await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
         }
 
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await trigger.click();
         const pointerOption = page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true });
         await expect(pointerOption).toHaveAttribute('aria-selected', 'false');
@@ -910,7 +910,7 @@ for (const modeProfile of [
 
         await trigger.focus();
         await page.keyboard.press('Enter');
-        const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+        const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
         await combobox.fill('2026Q3 Sprint 43');
         await page.keyboard.press('ArrowDown');
         await expectActiveSprintOption(page, '2026Q3 Sprint 43');
@@ -957,7 +957,7 @@ test('selector Project Track: explicit Sprint selection bypasses prewarmed sourc
         .getByRole('radio', { name: 'Statistics', exact: true }).click();
     await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
 
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await trigger.click();
     await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
     await expectOneStatsSprintReload(requestLog, 34624, 1, { refresh: true });
@@ -994,7 +994,7 @@ test('selector Project Track: current Sprint repairs a divergent range once then
         .getByRole('radio', { name: 'Statistics', exact: true }).click();
     await expectOneStatsSprintReload(requestLog, 34624, 0);
 
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await trigger.click();
     await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
     await expectOneStatsSprintReload(requestLog, selectedSprintId, 1, { refresh: true });
@@ -1029,7 +1029,7 @@ test('selector modes: task-backed Statistics keeps the ordinary Sprint task sour
     });
     await page.getByRole('radiogroup', { name: 'ENG view mode' })
         .getByRole('radio', { name: 'Statistics', exact: true }).click();
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await trigger.click();
     await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
     await expect.poll(() => requestLog.some(({ url, method }) => {
@@ -1052,7 +1052,7 @@ test('selector modes: closed and future Sprint choices preserve mode eligibility
         ],
     });
     const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
 
     await trigger.click();
     await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
@@ -1161,7 +1161,7 @@ for (const modeName of ['Catch Up', 'Planning', 'Board', 'Statistics', 'Scenario
                 if (modeName === 'Statistics') {
                     await expectOneStatsSprintReload(requestLog, selectedSprintId, 0);
                 }
-                const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+                const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
                 await expect(trigger).toBeEnabled();
                 await trigger.click();
                 await page.getByRole('option', { name: '2026Q2 Sprint 41', exact: true }).click();
@@ -1209,9 +1209,9 @@ test('selector analytics: accepted Board scope emits once and search or reselect
     )))).toBe(true);
     await page.evaluate(() => { window.dataLayer.length = 0; });
 
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await trigger.click();
-    const combobox = page.getByRole('combobox', { name: 'Filter sprints', exact: true });
+    const combobox = page.getByRole('combobox', { name: /^Filter (?:scopes|sprints)$/ });
     await combobox.fill('Component');
     await waitTwoFrames(page);
     expect(await page.evaluate(() => (window.dataLayer || []).filter(entry => (
@@ -1256,7 +1256,7 @@ test('selector blocked state: Refresh retries configuration once and admin actio
         selectedProjects: [],
         savedBoardId: '',
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     const initialConfigReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length;
     const initialGroupReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length;
@@ -1285,7 +1285,7 @@ test('selector blocked state: configuration error action coordinates one retry',
         boardCapability: null,
         expectBoardColumns: false,
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     const initialConfigReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/config').length;
     const initialGroupReads = requestLog.filter(({ url }) => new URL(url).pathname === '/api/groups-config').length;
@@ -1306,7 +1306,7 @@ test('selector blocked state: non-admin project setup gives administrator guidan
         userCanEditSettings: false,
         settingsAdminOnly: true,
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'All work', exact: true }).click();
     const status = page.getByRole('status', { name: 'Board scope status', exact: true });
     await expect(status).toContainText('Select Jira projects or a Jira source Board before loading this scope.');
@@ -1329,7 +1329,7 @@ test('selector blocked state: All work requires Department membership', async ({
         }],
         expectBoardColumns: false,
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'All work', exact: true }).click();
     await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
         'Add Teams or Components to this Department to use All work.'
@@ -1348,7 +1348,7 @@ test('selector blocked state: Component setup opens Department Team groups', asy
             board: { columns: BOARD_COLUMNS },
         }],
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await page.getByRole('button', { name: 'Add Components', exact: true }).click();
 
@@ -1360,7 +1360,7 @@ test('selector blocked state: Component setup opens Department Team groups', asy
 
 test('selector blocked state: zero Departments action opens Department Team groups', async ({ page }) => {
     await openBoard(page, { strictBoard: true, sourceBundle: true, groups: [] });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await page.getByRole('button', { name: 'Choose a Department', exact: true }).click();
 
@@ -1372,20 +1372,22 @@ test('selector blocked state: zero Departments action opens Department Team grou
 
 test('selector compact surface: remount closes stale panel and preserves geometry and hit testing', async ({ page }) => {
     await openBoard(page, { strictBoard: true, sourceBundle: true, ...FALLBACK_VIEWPORT, reducedMotion: true });
-    const mainTrigger = page.locator('.view-selector').getByRole('button', { name: 'Select sprint', exact: true });
+    const mainTrigger = page.locator('.view-selector').getByRole('button', { name: 'Select scope', exact: true });
+    await expect(page.locator('.view-selector .control-field[data-label="Scope"] .control-label')).toHaveText('Scope');
     const mainGeometry = await mainTrigger.evaluate(node => {
         const rect = node.getBoundingClientRect();
         const icon = node.querySelector('svg').getBoundingClientRect();
         return { width: rect.width, height: rect.height, iconWidth: icon.width, iconHeight: icon.height };
     });
     await mainTrigger.click();
-    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('listbox', { name: 'Scope options', exact: true })).toHaveCount(1);
 
     await page.evaluate(() => window.scrollTo(0, 500));
     const compactHeader = page.locator('.compact-sticky-header.is-visible');
     await expect(compactHeader).toBeVisible();
-    await expect(page.getByRole('listbox', { name: 'Sprint options', exact: true })).toHaveCount(0);
-    const compactTrigger = compactHeader.getByRole('button', { name: 'Select sprint', exact: true });
+    await expect(page.getByRole('listbox', { name: 'Scope options', exact: true })).toHaveCount(0);
+    const compactTrigger = compactHeader.getByRole('button', { name: 'Select scope', exact: true });
+    await expect(compactHeader.locator('.control-field[data-label="Scope"] .control-label')).toHaveText('Scope');
     const compactGeometry = await compactTrigger.evaluate(node => {
         const rect = node.getBoundingClientRect();
         const icon = node.querySelector('svg').getBoundingClientRect();
@@ -1396,7 +1398,7 @@ test('selector compact surface: remount closes stale panel and preserves geometr
     expect(compactGeometry.iconHeight).toBeCloseTo(mainGeometry.iconHeight, 1);
 
     await compactTrigger.click();
-    const listbox = page.getByRole('listbox', { name: 'Sprint options', exact: true });
+    const listbox = page.getByRole('listbox', { name: 'Scope options', exact: true });
     await expect(listbox).toBeVisible();
     await expect(listbox.getByRole('option')).toHaveCount(6);
     expect(await listbox.getByRole('option').evaluateAll(options => options.every(option => (
@@ -1611,7 +1613,7 @@ for (const profile of boardAuthorityReadinessProfiles) {
                 ));
                 const ordinaryCountBeforeSelection = ordinaryRequests().length;
                 const expectation = profile[scopeProfile.scope];
-                const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+                const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
                 await expect(trigger).toBeEnabled();
                 await trigger.click();
                 await page.getByRole('option', { name: scopeProfile.label, exact: true }).click();
@@ -1671,7 +1673,7 @@ for (const draftCase of [
         await dialog.getByRole('button', { name: 'Admin' }).click();
         await draftCase.edit(dialog);
 
-        await page.locator('.sprint-dropdown-toggle[aria-label="Select sprint"]').first().dispatchEvent('click');
+        await page.locator('button.sprint-dropdown-toggle').first().dispatchEvent('click');
         const componentOption = page.getByRole('option', { name: 'Component', exact: true });
         const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
         await expect(componentOption).not.toHaveAttribute('aria-describedby');
@@ -1712,7 +1714,7 @@ for (const draftCase of [
         await dialog.getByRole('tab', { name: draftCase.tab }).click();
         await draftCase.edit(dialog);
 
-        await page.locator('.sprint-dropdown-toggle[aria-label="Select sprint"]').first().dispatchEvent('click');
+        await page.locator('button.sprint-dropdown-toggle').first().dispatchEvent('click');
         const panel = page.locator('.sprint-dropdown-panel');
         const componentOption = panel.getByRole('option', { name: 'Component', exact: true });
         await expect(componentOption).not.toHaveAttribute('aria-disabled');
@@ -1721,12 +1723,12 @@ for (const draftCase of [
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
             'Select Jira projects or a Jira source Board before loading this scope.'
         );
-        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().dispatchEvent('click');
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().dispatchEvent('click');
         const allWorkOption = page.getByRole('option', { name: 'All work', exact: true });
         await expect(allWorkOption).not.toHaveAttribute('aria-disabled');
         await expect(allWorkOption).toHaveText('All work');
         await allWorkOption.dispatchEvent('click');
-        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('All work');
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText('All work');
         await expect(page.getByRole('status', { name: 'Board scope status', exact: true })).toContainText(
             'Select Jira projects or a Jira source Board before loading this scope.'
         );
@@ -1739,15 +1741,15 @@ test('Board to Planning to Board re-enters Component and returns to the saved Sp
     const requests = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
     const taskRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(selectedSprintName);
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Planning' }).click();
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(selectedSprintName);
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
     await expectBoardEntersComponent(page);
     await pickOrdinarySprint(page);
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(selectedSprintName);
     await waitTwoFrames(page);
 
     expect(componentBoardRequests(requests).every(path => path.includes('scope=component'))).toBe(true);
@@ -1766,7 +1768,7 @@ test('strict fixture renders two Epics in two columns with transition routes', a
         ],
         heldTransitions: { calls, statuses: ['In Review'], currentStatus: 'In Progress' },
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     const cardIn = (columnId, key) => page.locator(
         `.eng-board .col[data-column-id="${columnId}"] .ecard[data-epic-key="${key}"]`);
@@ -1826,7 +1828,7 @@ async function openStrictMutationBoard(page, { scope, label }) {
 }
 
 async function selectStrictScope(page, label) {
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: label, exact: true }).click();
 }
 
@@ -1943,7 +1945,7 @@ for (const { scope, label, other } of STRICT_MUTATION_SCOPES) {
         const reloadsBefore = boardReloads();
         await selectStrictScope(page, other);
         await expect.poll(boardReloads).toBe(reloadsBefore + 1);
-        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText(other);
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(other);
         await expect(page.locator('.eng-board .col').first()).toBeVisible();
 
         calls.held.get('STRICT-A').release();
@@ -1971,19 +1973,22 @@ for (const { scope, label, other } of STRICT_MUTATION_SCOPES) {
     });
 }
 
-test('Board adds Component and All work to the existing Sprint selector without another scope control', async ({ page }) => {
+test('Board labels its shared dropdown Scope and Catch Up labels it Sprint', async ({ page }) => {
     const requests = [];
     await openBoard(page, { strictBoard: true, requests, sourceBundle: true, configDelayMs: 250 });
 
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await expect(page.locator('.eng-filter-bar').getByRole('button', { name: 'All work' })).toHaveCount(0);
-    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    const sprintControl = page.getByRole('button', { name: 'Select scope', exact: true }).first();
+    await expect(page.locator('.view-selector .control-field[data-label="Scope"] .control-label')).toHaveText('Scope');
     await expect(sprintControl).toContainText(selectedSprintName);
     await page.screenshot({ path: path.join(screenshotDir, 'sprint-reuses-catch-up.png'), animations: 'disabled' });
     expect(requests.filter((path) => path === '/api/tasks-with-team-name').length).toBeGreaterThan(0);
     expect(requests.filter((path) => path.startsWith('/api/eng/board?')).length).toBe(0);
 
     await sprintControl.click();
+    await expect(page.getByRole('combobox', { name: 'Filter scopes', exact: true })).toBeFocused();
+    await expect(page.getByRole('listbox', { name: 'Scope options', exact: true })).toBeVisible();
     const scopeOptions = page.locator('.sprint-dropdown-panel .sprint-dropdown-option');
     await expect(scopeOptions.nth(0)).toHaveAccessibleName('All work');
     await expect(scopeOptions.nth(1)).toHaveAccessibleName('Component');
@@ -1993,20 +1998,21 @@ test('Board adds Component and All work to the existing Sprint selector without 
     await page.screenshot({ path: path.join(screenshotDir, 'three-scope-sprint-selector.png'), animations: 'disabled' });
     await scopeOptions.nth(1).click();
     await expect.poll(() => requests.some((path) => path.includes('scope=component'))).toBe(true);
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText('Component');
+    await expect(page.getByRole('button', { name: 'Select scope', exact: true }).first()).toContainText('Component');
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotDir, 'component-in-sprint-selector.png'), animations: 'disabled' });
 
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: 'Select scope', exact: true }).first().click();
     await page.getByText('All work', { exact: true }).first().click();
     await expect.poll(() => requests.some((path) => path.includes('scope=all_work'))).toBe(true);
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText('All work');
+    await expect(page.getByRole('button', { name: 'Select scope', exact: true }).first()).toContainText('All work');
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     await page.screenshot({ path: path.join(screenshotDir, 'all-work-in-sprint-selector.png'), animations: 'disabled' });
     const allWorkRequestCount = requests.filter((requestPath) => requestPath.includes('scope=all_work')).length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Catch Up' }).click();
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.locator('.view-selector .control-field[data-label="Sprint"] .control-label')).toHaveText('Sprint');
+    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText(selectedSprintName);
     await expect(page.locator('.task-item[data-task-key="PLAT-1-1"]')).toBeVisible();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
@@ -2033,7 +2039,7 @@ test('catalog identity: saved label is visible but cannot authorize ENG before v
     }, { selectedSprintId });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(selectedSprintName);
     await expect.poll(() => page.evaluate(() => JSON.parse(
         localStorage.getItem('jira_dashboard_ui_prefs_v1') || '{}',
     ).sprintName)).toBe(selectedSprintName);
@@ -2045,7 +2051,7 @@ test('catalog identity: saved label is visible but cannot authorize ENG before v
     requests.length = 0;
     await page.reload({ waitUntil: 'domcontentloaded' });
 
-    const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+    const sprintControl = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await expect(sprintControl).toContainText(selectedSprintName);
     await expect(sprintControl).toHaveAttribute('aria-disabled', 'true');
     await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
@@ -2095,7 +2101,7 @@ test('catalog identity: removed Board 409 clears authority but keeps the saved d
     }, { selectedSprintId, selectedSprintName, source: SPRINT_SOURCE_A });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
-    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await expect(trigger).toContainText(selectedSprintName);
     await expect(trigger).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByText('Choose a Jira source Board in Settings.').first()).toBeVisible();
@@ -2118,7 +2124,7 @@ test('catalog identity: populated Board A to validated empty Board B clears choi
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
-    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await expect(trigger).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
     await expect.poll(() => page.evaluate(() => JSON.parse(
@@ -2147,7 +2153,7 @@ test('catalog identity: auth context change invalidates shared snapshot locally 
     try {
         await page.reload({ waitUntil: 'domcontentloaded' });
         await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
-        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toContainText(selectedSprintName);
         await expect(trigger).toHaveAttribute('aria-disabled', 'true');
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
@@ -2191,7 +2197,7 @@ test('catalog identity: delayed stale response is ignored after document generat
             window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true }));
         });
         await expect.poll(() => requestUrls.filter(value => value.startsWith('/api/sprints')).length).toBe(2);
-        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toContainText(replacementSprint.name);
         releaseFirst();
         releaseFirst = null;
@@ -2242,7 +2248,7 @@ test('catalog refresh: held worker completion updates an open menu', async ({ pa
 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toHaveAttribute('aria-disabled', 'false');
         await trigger.click();
         await expect(page.getByRole('option', { name: selectedSprintName, exact: true })).toBeVisible();
@@ -2292,7 +2298,7 @@ test('catalog refresh: manual refresh coalesces onto an ordinary pending attempt
         ))).toHaveLength(0);
         releaseCompletion();
         releaseCompletion = null;
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'false');
         expect(requestUrls.filter(value => value.includes('completionAttemptId='))).toHaveLength(1);
     } finally {
         releaseCompletion?.();
@@ -2340,7 +2346,7 @@ test('catalog refresh: initial failed validated snapshot remains usable', async 
         }) }),
     });
 
-    const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await expect(trigger).toHaveAttribute('aria-disabled', 'false');
     await expect(page.getByText('Sprint refresh failed. Retry.').first()).toBeVisible();
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
@@ -2368,7 +2374,7 @@ test('catalog refresh: same-identity failure preserves validated choices and wor
         value.startsWith('/api/sprints?') && value.includes('refresh=true')
     )).length).toBe(1);
     await expect(page.getByText('Sprint refresh failed. Retry.').first()).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'false');
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
 });
 
@@ -2404,7 +2410,7 @@ test('catalog refresh: Retry sends exactly one forced initiating request', async
     await expect(retry).toBeVisible();
     await retry.click();
     await expect.poll(() => requestUrls.filter(value => value.includes('refresh=true')).length).toBe(1);
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'false');
     expect(requestUrls.filter(value => value.includes('refresh=true'))).toHaveLength(1);
 });
 
@@ -2438,7 +2444,7 @@ test('catalog refresh: repeated manual clicks share one forced request', async (
         )).length).toBe(1);
         releaseForce();
         releaseForce = null;
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'false');
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'false');
         expect(requestUrls.filter(value => (
             value.startsWith('/api/sprints?') && value.includes('refresh=true')
         ))).toHaveLength(1);
@@ -2475,13 +2481,13 @@ test('catalog identity: auth lock cancels held completion and disables the selec
         await page.evaluate(() => window.dispatchEvent(new CustomEvent('jep:authentication-required', {
             detail: { locked: true, loginUrl: '/login?reason=session_expired' },
         })));
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'true');
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'true');
         releaseCompletion();
         releaseCompletion = null;
         const settledCount = requestUrls.length;
         await page.waitForTimeout(1200);
         expect(requestUrls).toHaveLength(settledCount);
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toHaveAttribute('aria-disabled', 'true');
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toHaveAttribute('aria-disabled', 'true');
     } finally {
         releaseCompletion?.();
     }
@@ -2521,7 +2527,7 @@ test('catalog refresh: document lifetime cancellation ignores held completion', 
         releaseCompletion();
         releaseCompletion = null;
         await waitTwoFrames(page);
-        const trigger = page.getByRole('button', { name: 'Select sprint' }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toHaveAttribute('aria-disabled', 'true');
         await expect(trigger).not.toContainText(lateSprint.name);
         const settledCount = requestUrls.length;
@@ -2548,7 +2554,7 @@ test('saved Sprint Board authority stays guarded until a held sprint catalog is 
     try {
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-        const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+        const sprintControl = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(sprintControl).toContainText(selectedSprintName);
         await expect(sprintControl).toHaveAttribute('aria-disabled', 'true');
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toHaveCount(0);
@@ -2593,7 +2599,7 @@ test('delayed saved config holds the sprint catalog and every strict scope until
         releaseConfig();
         releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-        const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+        const sprintControl = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(sprintControl).toHaveAttribute('aria-disabled', 'false');
         await sprintControl.click();
         const panel = page.locator('.sprint-dropdown-panel');
@@ -2659,7 +2665,7 @@ test('selector scheduling: blocked scope never falls back', async ({ page }) => 
         releaseConfig();
         releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toHaveAttribute('aria-disabled', 'false');
         await trigger.click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
@@ -2697,7 +2703,7 @@ test('selector scheduling: capability failure preserves intent', async ({ page }
         releaseConfig();
         releaseConfig = null;
         await expect.poll(() => requests.filter(path => path === '/api/sprints').length).toBe(1);
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(trigger).toHaveAttribute('aria-disabled', 'false');
         await trigger.click();
         await page.getByRole('option', { name: 'All work', exact: true }).click();
@@ -2726,7 +2732,7 @@ test('selector scheduling: group revision retires old generation', async ({ page
     });
 
     try {
-        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
 
@@ -2794,7 +2800,7 @@ for (const postSaveConfigRead of [
         });
 
         try {
-            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+            const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
             await trigger.click();
             await page.getByRole('option', { name: 'Component', exact: true }).click();
             await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
@@ -2901,7 +2907,7 @@ test('selector scheduling: workspace combined save waits for config acceptance',
     ));
 
     try {
-        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-WORKSPACE-OLD"]')).toBeVisible();
         await expect.poll(() => performanceLoads.filter(load => load.scopeType === 'component').length).toBe(1);
@@ -2996,7 +3002,7 @@ for (const preferenceConfigRead of [
         });
 
         try {
-            const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+            const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
             await trigger.click();
             await page.getByRole('option', { name: 'Component', exact: true }).click();
             const strictCard = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]');
@@ -3066,7 +3072,7 @@ test('selector scheduling: Department change preserves intent and retires stale 
     });
 
     try {
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await trigger.click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
@@ -3115,7 +3121,7 @@ test('selector scheduling: incrementally delivered retired frames cannot publish
     }, { selectedSprintId, selectedSprintName });
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await trigger.click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-PARTIAL-OLD"]')).toBeVisible();
@@ -3173,7 +3179,7 @@ test('selector scheduling: Retry connection probes config once and hard reloads 
         strictBoard: true,
     });
     await triggerConnectionOutage(page);
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     const requestsBefore = requests.length;
@@ -3257,7 +3263,7 @@ for (const probeFailure of [
             configStatus: ({ requestIndex }) => requestIndex === 2 ? probeFailure.status : 200,
         });
         await triggerConnectionOutage(page);
-        await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
         const documentsBefore = documents;
@@ -3286,7 +3292,7 @@ test('selector scheduling: revoked configuration blocks and repaired configurati
         strictBoard: true,
         strictEpicKeyForRequest: ({ requestIndex }) => requestIndex === 1 ? 'STRICT-BEFORE' : 'STRICT-AFTER',
     });
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: 'Component', exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-BEFORE"]')).toBeVisible();
     expect(requests.filter(path => path.includes('scope=component'))).toHaveLength(1);
@@ -3386,7 +3392,7 @@ for (const scopeProfile of [
         const requests = [];
         await openBoard(page, { strictBoard: true, sourceBundle: true, requests });
         const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await trigger.click();
         await page.getByRole('option', { name: scopeProfile.label, exact: true }).click();
         await expect.poll(() => requests.filter(path => path.includes(`scope=${scopeProfile.scope}`)).length).toBe(1);
@@ -3425,7 +3431,7 @@ for (const siblingMode of ['Catch Up', 'Statistics', 'Scenario']) {
         const initialOrdinaryLaneCount = ordinaryLaneCount();
         const modes = page.getByRole('radiogroup', { name: 'ENG view mode' });
         await modes.getByRole('radio', { name: siblingMode, exact: true }).click();
-        await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first())
             .toContainText(selectedSprintName);
         await modes.getByRole('radio', { name: 'Board', exact: true }).click();
         await expectBoardEntersComponent(page);
@@ -3460,7 +3466,7 @@ for (const siblingMode of ['Catch Up', 'Planning', 'Statistics', 'Scenario']) {
                 && !parsed.searchParams.has('purpose');
         }).length;
         const initialOrdinaryLaneCount = ordinaryLaneCount();
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await trigger.click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect.poll(() => requests.filter(path => path.includes('scope=component')).length).toBe(1);
@@ -3490,7 +3496,7 @@ test('selector round trips: rapid Component to All work to ordinary retires both
         boardResponseGate: ({ url }) => url.searchParams.get('scope') === 'component' ? componentGate : null,
     });
     const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
-    const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
 
     try {
         await trigger.click();
@@ -3559,7 +3565,7 @@ test('selector auth matrix: strict stream 401 locks globally and retires a delay
         )))).toBe(true);
         await page.evaluate(() => { window.dataLayer.length = 0; });
         const ordinaryCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
-        const trigger = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+        const trigger = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await trigger.click();
         await page.getByRole('option', { name: 'Component', exact: true }).click();
         await expect.poll(() => strictAttempts.filter(scope => scope === 'component').length).toBe(1);
@@ -3595,7 +3601,7 @@ for (const scope of ['component', 'all_work']) {
         await openBoard(page, { strictBoard: true, sourceBundle: true, requests, performanceLoads });
         await expect.poll(() => performanceLoads.filter(sample => sample.surface === 'eng_sprint').length).toBe(1);
 
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.locator('.sprint-dropdown-panel').getByText(
             scope === 'component' ? 'Component' : 'All work', { exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
@@ -3623,13 +3629,13 @@ test('a held Board observation response does not block completed Board controls 
     try {
         await openBoard(page, { strictBoard: true, sourceBundle: true, requests, performanceLoads,
             performanceResponseGate: observation => observation.surface === 'eng_board' ? performanceResponseGate : null });
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.locator('.sprint-dropdown-panel').getByText('All work', { exact: true }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
         await expect.poll(() => performanceLoads.filter(sample => sample.surface === 'eng_board').length).toBe(1);
         await expect(page.locator('.fb-readout')).toHaveText(/\b1 of 1 epic$/);
 
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.locator('.sprint-dropdown-panel').getByText(selectedSprintName, { exact: false }).click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
         await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Catch Up' }).click();
@@ -3653,13 +3659,13 @@ test('a rejected Board observation does not break Board completion or selector r
     const requests = [];
     await openBoard(page, { strictBoard: true, sourceBundle: true, requests, performanceLoads,
         performanceStatus: 503 });
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.locator('.sprint-dropdown-panel').getByText('Component', { exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
     await expect.poll(() => performanceLoads.filter(sample => sample.surface === 'eng_board').length).toBe(1);
     await expect(page.locator('.fb-readout')).toHaveText(/\b1 of 1 epic$/);
 
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.locator('.sprint-dropdown-panel').getByText(selectedSprintName, { exact: false }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await waitTwoFrames(page);
@@ -3708,7 +3714,7 @@ for (const sprintCatalog of [
 
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-        const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+        const sprintControl = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(sprintControl).toHaveAttribute('aria-disabled', 'true');
         await expect(sprintControl).toHaveAttribute('tabindex', '-1');
         if (sprintCatalog.error) {
@@ -3741,7 +3747,7 @@ test('selects the current sprint on first load when no cached sprint exists', as
 
     await page.goto(`${appBaseUrl}/`, { waitUntil: 'networkidle' });
 
-    await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(currentSprint.name);
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(currentSprint.name);
     await expect.poll(() => requestUrls.some(path => (
         path.startsWith('/api/tasks-with-team-name?')
         && new URLSearchParams(path.split('?')[1]).get('sprint') === String(currentSprint.id)
@@ -3786,8 +3792,8 @@ test('Catch Up authoritative empty snapshot stays authoritative when Board opens
     const loadedRequests = requests.filter(path => path === '/api/tasks-with-team-name').length;
 
     await page.getByRole('radiogroup', { name: 'ENG view mode' }).getByRole('radio', { name: 'Board' }).click();
-    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText('Component');
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
     await expect(page.getByText('No epics found', { exact: true })).toBeVisible();
     await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -3815,7 +3821,7 @@ for (const strictFailure of [
             }));
         }, { selectedSprintId, selectedSprintName });
         await page.goto(`${appBaseUrl}/`, { waitUntil: 'domcontentloaded' });
-        const sprintControl = page.getByRole('button', { name: 'Select sprint' }).first();
+        const sprintControl = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
         const sprintRequestCount = requests.filter(path => path === '/api/tasks-with-team-name').length;
         await sprintControl.click();
@@ -3823,13 +3829,13 @@ for (const strictFailure of [
         await expect(page.locator('.error')).toContainText('Board configuration could not be used. Review Board setup and retry.');
         await expect(page.locator('.error')).not.toContainText('board config invalid');
         await expect(page.getByText('Loaded so far')).toHaveCount(0);
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(strictFailure.label);
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(strictFailure.label);
         await page.screenshot({ path: path.join(screenshotDir, `strict-error-${strictFailure.scope}.png`), animations: 'disabled' });
         await expect.poll(() => requests.some(path => path.includes(`scope=${strictFailure.scope}`))).toBe(true);
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.getByText(selectedSprintName, { exact: false }).first().click();
         await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
-        await expect(page.getByRole('button', { name: 'Select sprint' }).first()).toContainText(selectedSprintName);
+        await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText(selectedSprintName);
         await expect(page.locator('.error')).toHaveCount(0);
         await settle(page);
         expect(requests.filter(path => path === '/api/tasks-with-team-name')).toHaveLength(sprintRequestCount);
@@ -3844,12 +3850,12 @@ const componentBoardRequests = (requests) => requests.filter(path => path.starts
 // Entering Board from another mode defaults to the Component scope; the saved Sprint is one
 // selector pick away and reuses the already-loaded snapshot.
 async function expectBoardEntersComponent(page) {
-    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first()).toContainText('Component');
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first()).toContainText('Component');
     await expect(page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]')).toBeVisible();
 }
 
 async function pickOrdinarySprint(page) {
-    await page.getByRole('button', { name: 'Select sprint', exact: true }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByRole('option', { name: selectedSprintName, exact: true }).click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
 }
@@ -5901,7 +5907,7 @@ test('All work preserves bounded partial cards after a hard limit and retries on
     });
     await openBoard(page, { strictBoard: true, sourceBundle: true, reducedMotion: false });
     const savedSprintRequestCount = await page.evaluate(() => window.boardFetchCount);
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByText('All work', { exact: true }).first().click();
     await page.waitForFunction(() => typeof window.pushBoardFrame === 'function');
     const epic = { key: 'EXAMPLE-1', summary: 'Component epic loads first', status: { id: '2', name: 'In Progress' },
@@ -5979,7 +5985,7 @@ test('All work preserves bounded partial cards after a hard limit and retries on
     await page.waitForTimeout(150);
     expect(await page.evaluate(() => window.boardFetchCount)).toBe(fetchesAfterLimit + 1);
 
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByText(selectedSprintName, { exact: false }).first().click();
     await expect(page.locator('.eng-board .ecard[data-epic-key="PLAT-8"]')).toBeVisible();
     await expect(page.locator('.board-data-state')).toHaveCount(0);
@@ -6009,7 +6015,7 @@ test('All work keeps a complete snapshot through a limited refresh and replaces 
         };
     });
     await openBoard(page, { strictBoard: true, sourceBundle: true, reducedMotion: true });
-    await page.getByRole('button', { name: 'Select sprint' }).first().click();
+    await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
     await page.getByText('All work', { exact: true }).first().click();
     await page.waitForFunction(() => window.boardStreams.length === 1);
 
@@ -6113,7 +6119,7 @@ for (const delayedFrame of ['complete', 'start', 'index', 'progress', 'column', 
         });
         const performanceLoads=[];
         await openBoard(page, { strictBoard: true, sourceBundle: true, reducedMotion: true, performanceLoads });
-        await page.getByRole('button', { name: 'Select sprint' }).first().click();
+        await page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first().click();
         await page.getByText('All work', { exact: true }).first().click();
         await page.waitForFunction(() => window.syntheticBoardStreams.length === 1);
         const column = { id: 'active', name: 'Active', color: '#597ef7', statusNames: ['In Progress'], terminal: false };
@@ -6162,7 +6168,7 @@ for (const delayedFrame of ['complete', 'start', 'index', 'progress', 'column', 
             await expect(card).toContainText(epic.summary);await expect(refresh).toBeEnabled();
             await page.keyboard.press('Escape');
             if(delayedFrame.startsWith('scope_')){
-                await page.getByRole('button',{name:'Select sprint'}).first().click();
+                await page.getByRole('button',{name:/^Select (?:scope|sprint)$/}).first().click();
                 await page.getByRole('option',{name:'Component',exact:true}).click();
             }else{
                 await page.getByRole('button',{name:'Manage team groups',exact:true}).click();
@@ -6186,7 +6192,7 @@ for (const delayedFrame of ['complete', 'start', 'index', 'progress', 'column', 
             await expect(card).toContainText('Synthetic current context accepted');await expect(refresh).toBeEnabled();
             expect(await page.evaluate(()=>window.syntheticBoardStreams.length)).toBe(3);
             await expect(page.locator('.epic-panel')).toHaveCount(0);
-            if(delayedFrame.startsWith('scope_'))await expect(page.getByRole('button',{name:'Select sprint'}).first()).toContainText('Component');
+            if(delayedFrame.startsWith('scope_'))await expect(page.getByRole('button',{name:/^Select (?:scope|sprint)$/}).first()).toContainText('Component');
             return;
         } else if(delayedFrame.startsWith('private_')){
             // Accept actual scope departure before the later whole-Board denial.
@@ -6492,7 +6498,7 @@ for (const scope of ['Component', 'All work']) test(`simulated persisted ${scope
             if (holdCatalog) await gate.promise;
             return { body: { sprints: [{ id: selectedSprintId, name: selectedSprintName, state: 'active' }] } };
         } });
-    const selector = page.getByRole('button', { name: 'Select sprint', exact: true }).first();
+    const selector = page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first();
     await selector.click(); await page.getByRole('option', { name: scope, exact: true }).click();
     const card = page.locator('.eng-board .ecard[data-epic-key="STRICT-1"]'); await expect(card).toBeVisible();
     await card.locator('.ecard-open').click(); const panel = page.locator('.epic-panel'); await expect(panel).toBeVisible();

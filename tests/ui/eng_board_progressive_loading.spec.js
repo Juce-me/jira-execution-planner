@@ -391,7 +391,7 @@ async function openScenario(page, server, scenario, sampleId) {
         showBoard: true, showPlanning: false, showScenario: false, showAlertsPanel: false,
     })), { sprintId: selectedSprintId, sprintName: selectedSprintName });
     await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
-    const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
+    const sprint = page.getByRole('button', { name: 'Select scope' }).first();
     await expect(sprint).toContainText(selectedSprintName);
     await sprint.click();
     const scopeName = scenario === 'team_parent_lookup_2' ? 'All work' : 'Component';
@@ -629,7 +629,7 @@ test.describe(() => {
             showBoard: true, showPlanning: false, showScenario: false, showAlertsPanel: false,
         })), { sprintId: selectedSprintId, sprintName: selectedSprintName });
         await page.goto(`${server.origin}/`, { waitUntil: 'domcontentloaded' });
-        const sprint = page.getByRole('button', { name: 'Select sprint' }).first();
+        const sprint = page.getByRole('button', { name: 'Select scope' }).first();
         await expect(sprint).toContainText(selectedSprintName);
         await sprint.click();
         const component = page.getByRole('option', { name: 'Component', exact: true });

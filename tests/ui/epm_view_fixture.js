@@ -314,7 +314,7 @@ function epmAccessCalls(calls) {
 }
 
 // The first /api/config read gates all ENG Jira work: while it is pending nothing loads and the
-// Sprint selector stays unavailable. `paths` returns the request pathnames seen so far.
+// shared scope selector stays unavailable. `paths` returns the request pathnames seen so far.
 async function expectConfigBootstrapHoldsJiraWork(page, paths) {
     await expect.poll(() => paths().includes('/api/config')).toBe(true);
     await page.evaluate(() => new Promise(resolve => (
@@ -324,7 +324,7 @@ async function expectConfigBootstrapHoldsJiraWork(page, paths) {
         pathname === '/api/sprints' || pathname === '/api/tasks-with-team-name'
             || pathname.startsWith('/api/eng/board') || pathname.startsWith('/api/stats/')
     ))).toEqual([]);
-    await expect(page.getByRole('button', { name: 'Select sprint', exact: true }).first())
+    await expect(page.getByRole('button', { name: /^Select (?:scope|sprint)$/ }).first())
         .toHaveAttribute('aria-disabled', 'true');
 }
 

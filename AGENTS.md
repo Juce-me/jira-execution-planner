@@ -247,6 +247,7 @@ When none apply, the move is mechanical: verify what you can locally, make the s
 
 When the user corrects your approach, append a one-line rule here before ending the session. Write it concretely ("Always use X for Y"), never abstractly ("be careful with Y"). If an existing line already covers the correction, tighten it instead of adding a new one. Remove lines when the underlying issue goes away (model upgrades, refactors, process changes).
 
+- Skip Scenario-specific backend, frontend unit and Chromium tests for local development and publication verification when the change cannot affect Scenario behavior or a shared contract Scenario consumes. Use scoped test selection, retain coverage of affected shared contracts, and record the exclusion with the verification results.
 - Keep auth-mode changes and OAuth entry screens isolated from `frontend/src/dashboard.jsx` unless the user explicitly approves dashboard auth UI.
 - Keep progress updates compact: state the action directly instead of explaining routine tool choices.
 - In settings UIs, when a value is already selected or the option set is small, default to a compact selected-state control and reveal search only on explicit change; do not leave persistent search inputs visible by default.

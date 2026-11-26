@@ -1854,6 +1854,27 @@ class IssueDescriptionRouteTests(DbOAuthFixture, unittest.TestCase):
         self.assertEqual(mock_get.call_args.args[0], "/rest/api/3/issue/PROD-1")
         self.assertEqual(mock_get.call_args.kwargs.get("params"), {"fields": "description"})
 
+    def test_description_route_can_return_own_sprints_from_the_admitted_mapping(self):
+        work_request = SimpleNamespace(roles=SimpleNamespace(sprint_field_id="customfield_12035"))
+        with patch.object(jira_server, "JIRA_AUTH_MODE", "atlassian_oauth"), \
+             patch.object(jira_server, "admit_work_request", return_value=(work_request, None)), \
+             patch.object(jira_server, "get_sprint_field_id", side_effect=AssertionError("flat mapping used")), \
+             patch.object(jira_server, "current_jira_get", return_value=FakeResponse(200, {
+                 "fields": {
+                     "description": None,
+                     "customfield_12035": [{"id": 42, "name": "2026Q3 Sprint 42", "state": "closed"}],
+                 },
+             })) as mock_get:
+            response = self.client.get("/api/issues/description?key=PROD-1&includeSprint=true")
+
+        self.assertEqual(response.status_code, 200, response.get_data(as_text=True))
+        self.assertEqual(response.get_json(), {
+            "key": "PROD-1", "html": "", "isEmpty": True,
+            "sprints": [{"id": 42, "name": "2026Q3 Sprint 42", "state": "closed"}],
+        })
+        mock_get.assert_called_once()
+        self.assertEqual(mock_get.call_args.kwargs["params"], {"fields": "description,customfield_12035"})
+
     def test_description_route_preserves_ordered_list_start_numbers(self):
         def list_node(label, attrs=None, node_type="orderedList"):
             node = {

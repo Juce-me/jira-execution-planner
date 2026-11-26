@@ -18,6 +18,7 @@ import {
     DEFAULT_PANEL_SORT,
     PANEL_SORT_OPTIONS,
     buildPanelStatusOrder,
+    formatPanelSprints,
     panelSortLabel,
     sortPanelStories,
 } from './engBoardPanelStories.js';
@@ -57,6 +58,8 @@ export default function EngBoardEpicPanel({
     onSubmitStatusTransition,
     issueFieldEdits = null,
     workModel = null,
+    workContext = null,
+    sprints = [],
     entityNames = null,
     onSortChange,
     onClose,
@@ -65,6 +68,8 @@ export default function EngBoardEpicPanel({
     const epicKey = (epicGroup && epicGroup.key) || epic.key || '';
     // EntityNames (configured Jira type names, model defaults when absent); its analytics kinds come from the configured levels.
     const names = entityNames || resolveEntityNames(workModel);
+    const showEpicSprint = !isCombinedWorkModel(workModel);
+    const sprintNames = React.useMemo(() => new Map(sprints.map(sprint => [String(sprint.id), sprint.name])), [sprints]);
     const summary = epic.summary || epicKey;
     const tasks = (epicGroup && epicGroup.tasks) || [];
     const privateKeys = epicGroup.readingDepartureKeys;
@@ -109,12 +114,14 @@ export default function EngBoardEpicPanel({
         let cancelled = false;
         const previousDescription = descriptionRef.current;
         setDescription({ status: 'loading' });
-        loadEpicDescription(backendUrl, { key: epicKey })
+        loadEpicDescription(backendUrl, { key: epicKey, includeSprint: showEpicSprint, workContext })
             .then((payload) => {
                 if (cancelled) return;
-                setDescription(payload?.isEmpty
-                    ? { status: 'empty' }
-                    : { status: 'loaded', html: String(payload?.html || '') });
+                setDescription({
+                    status: payload?.isEmpty ? 'empty' : 'loaded',
+                    html: String(payload?.html || ''),
+                    sprints: payload?.sprints,
+                });
             })
             .catch((error) => {
                 if (cancelled) return;
@@ -125,7 +132,11 @@ export default function EngBoardEpicPanel({
                 setDescription({ status: 'error', message: error?.message || 'Could not load the description.' });
             });
         return () => { cancelled = true; };
-    }, [backendUrl, epicKey, attempt]);
+    }, [backendUrl, epicKey, attempt, showEpicSprint, workContext]);
+
+    let epicSprint = 'Unavailable';
+    if (description.status === 'loading') epicSprint = 'Loading…';
+    if (Array.isArray(description.sprints)) epicSprint = formatPanelSprints(description.sprints, sprintNames);
 
     // Only offer "Show full description" when the body is actually taller than the clamp — an
     // affordance that reveals nothing is the dead control this plan calls a review stop. Measured
@@ -385,6 +396,7 @@ export default function EngBoardEpicPanel({
                         <span className="eperson"><span className="lbl">Delivery owner</span><PersonAvatarSlot avatarUrl={epic.deliveryOwner?.avatarUrl} /><b>{renderPersonEditor({ key: epicKey }, 'parent', 'deliveryOwner', 'Delivery owner', epic.deliveryOwner)}</b></span>
                     </div>
                     <h2 className="m-title" id={titleId}>{summary}</h2>
+                    {showEpicSprint && <div className="m-sec-label">Sprint: {epicSprint}</div>}
                 </div>
 
                 <div className="m-body">
@@ -497,7 +509,10 @@ export default function EngBoardEpicPanel({
                             {loading && <div aria-hidden="true"><span className="board-loading-bar" /><span className="board-loading-bar" /><span className="board-loading-bar" /></div>}
                         </div>}
                         <div className="story-subtasks-rows">
-                            <div className="story-subtask-head" aria-hidden="true"><span className="story-subtask-sp">SP</span></div>
+                            <div className="story-subtask-head" aria-hidden="true">
+                                <span className="story-subtask-sprint">Sprint</span>
+                                <span className="story-subtask-sp">SP</span>
+                            </div>
                             {rows.map((task) => (
                                 <div
                                     key={task.key}
@@ -515,6 +530,10 @@ export default function EngBoardEpicPanel({
                                     </a>
                                     {renderStoryStatus(task)}
                                     <span className="story-subtask-assignee">{renderPersonEditor(task, 'child', 'assignee', 'Assignee', task?.fields?.assignee)}</span>
+                                    <span className="story-subtask-sprint">
+                                        <span>Sprint: </span>
+                                        {formatPanelSprints(task.fields?.sprintIds ?? task.fields?.sprint ?? task.fields?.customfield_10101, sprintNames)}
+                                    </span>
                                     {task?.fields?.updated ? (
                                         <time className="story-subtask-updated" dateTime={task.fields.updated}>
                                             {formatSubtaskUpdatedDate(task.fields.updated)}

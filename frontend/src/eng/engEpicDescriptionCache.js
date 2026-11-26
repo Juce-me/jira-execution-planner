@@ -1,5 +1,6 @@
 import { fetchEpicDescription } from '../api/boardConfigApi.js';
 import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
+import { contextKey } from '../workStructure/configurationContext.js';
 
 // §9.2: the epic description is fetched lazily, one issue per opened panel, and "a second open of
 // the same epic in one session must not refetch". Task 3 deliberately added no server cache — the
@@ -14,14 +15,15 @@ import { AUTH_SESSION_REFRESH_EVENT } from '../api/authRefreshContract.js';
 const descriptionByKey = new Map();
 let authPartition = 0;
 
-export function loadEpicDescription(backendUrl, { key = '' } = {}) {
-    const cacheKey = `${authPartition}::${backendUrl}::${String(key || '').trim().toUpperCase()}`;
+export function loadEpicDescription(backendUrl, { key = '', includeSprint = false, workContext = null } = {}) {
+    const scope = includeSprint ? `sprint:${contextKey(workContext)}` : 'description';
+    const cacheKey = `${authPartition}::${backendUrl}::${String(key || '').trim().toUpperCase()}::${scope}`;
     const cached = descriptionByKey.get(cacheKey);
     if (cached) return cached;
 
     // Failures are never cached: a 502 is transient and the Retry control in the description block
     // (§9.2's error state) must be able to try again.
-    const pending = fetchEpicDescription(backendUrl, { key }).catch((error) => {
+    const pending = fetchEpicDescription(backendUrl, { key, includeSprint, workContext }).catch((error) => {
         descriptionByKey.delete(cacheKey);
         throw error;
     });

@@ -27,6 +27,19 @@ export const PANEL_SORT_OPTIONS = Object.freeze([
 
 export const DEFAULT_PANEL_SORT = PANEL_SORT_OPTIONS[0].value;
 
+export function formatPanelSprints(value, sprintNames) {
+    const entries = Array.isArray(value) ? value : [value];
+    const labels = new Set();
+    for (const entry of entries) {
+        const serialized = typeof entry === 'string' ? entry : '';
+        const id = String(entry?.id ?? serialized.match(/\bid=(\d+)/)?.[1] ?? entry ?? '').trim();
+        const name = String(entry?.name ?? serialized.match(/\bname=([^,\]]+)/)?.[1] ?? '').trim();
+        if (name) labels.add(name);
+        else if (/^[1-9]\d*$/.test(id)) labels.add(sprintNames.get(id) || id);
+    }
+    return [...labels].join(', ') || 'No sprint';
+}
+
 export function panelSortLabel(value) {
     return (PANEL_SORT_OPTIONS.find((option) => option.value === value) || PANEL_SORT_OPTIONS[0]).label;
 }
